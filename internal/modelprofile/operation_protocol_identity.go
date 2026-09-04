@@ -33,6 +33,12 @@ type chatOperationProtocolBindingKey struct {
 // validation contract, or reusing that contract from another Profile, does
 // not grant onboarding authority.
 var immutableChatOperationProtocolBindings = map[chatOperationProtocolBindingKey]string{
+	{ProfileID: "glm.5.3.api", ProfileVersion: "1.9.0", ProtocolProfileID: "protocol.glm-openai-chat.v7"}:                        ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "glm.5.2.api", ProfileVersion: "1.9.0", ProtocolProfileID: "protocol.glm-openai-chat.v7"}:                        ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "glm.5.1.api", ProfileVersion: "1.1.0", ProtocolProfileID: "protocol.glm-openai-chat.v7"}:                        ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "glm.5-turbo.api", ProfileVersion: "1.1.0", ProtocolProfileID: "protocol.glm-openai-chat.v7"}:                    ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "glm.5.api", ProfileVersion: "1.1.0", ProtocolProfileID: "protocol.glm-openai-chat.v7"}:                          ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "glm.5v-turbo.api", ProfileVersion: "1.12.0", ProtocolProfileID: "protocol.glm-openai-chat.glm5v.v6"}:            ChatOperationProtocolBindingVersionV1,
 	{ProfileID: "minimax.m2.7.payg", ProfileVersion: "1.3.0", ProtocolProfileID: "protocol.minimax-m27-openai-chat.v1"}:          ChatOperationProtocolBindingVersionV1,
 	{ProfileID: "deepseek.v4-flash.api", ProfileVersion: "1.4.0", ProtocolProfileID: "protocol.deepseek-openai-chat.v4"}:         ChatOperationProtocolBindingVersionV1,
 	{ProfileID: "deepseek.v4-flash.api", ProfileVersion: "1.5.0", ProtocolProfileID: "protocol.deepseek-openai-chat.v4"}:         ChatOperationProtocolBindingVersionV1,

@@ -1,6 +1,12 @@
 # UniRouter Current Status
 
-> Repository source candidate is 1.2.50/M112. M111 integrates the reviewed exact
+> Repository source candidate is 1.2.51/M113. M113 appends six GLM exact streaming
+> Function Tools Profile successors and 30 static bindings. Bounded SSE/tool
+> assembly is shared with M111, but reasoning/terminal policies remain exact;
+> old identities and non-stream preparation remain addressable. The declaration
+> follows M111 statically and M112 in schema order. It creates no dynamic Probe,
+> Approval, Release, Target apply, media qualification or Agent success by itself.
+> M111 integrates the reviewed exact
 > M2.7 PAYG Profile 1.3 streaming Function Tools candidate and its static
 > Publication. M112 adds repeated primary-Alias successor cutover to the
 > existing domain command; it is an ordinary schema migration, not another

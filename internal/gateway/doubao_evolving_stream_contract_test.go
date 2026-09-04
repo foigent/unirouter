@@ -118,7 +118,7 @@ func TestDoubaoSeedEvolvingStreamingCandidateNormalizesProviderPayloadOnce(t *te
 }
 
 func TestDoubaoSeedEvolvingExactStreamFramesEnforcePhasesAndTerminalUsage(t *testing.T) {
-	state := exactStreamStateForProtocol(doubaoEvolvingStreamProtocol)
+	state := exactStreamStateForProtocol(doubaoEvolvingStreamProtocol, "")
 	require.NotNil(t, state)
 	frames := []string{
 		`{"id":"chunk","object":"chat.completion.chunk","created":1,"model":"doubao-seed-evolving","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"summary"},"finish_reason":null}]}`,
@@ -135,7 +135,7 @@ func TestDoubaoSeedEvolvingExactStreamFramesEnforcePhasesAndTerminalUsage(t *tes
 	}
 	require.NoError(t, state.validateDone())
 
-	withoutOpaque := exactStreamStateForProtocol(doubaoEvolvingStreamProtocol)
+	withoutOpaque := exactStreamStateForProtocol(doubaoEvolvingStreamProtocol, "")
 	for _, raw := range []string{
 		`{"choices":[{"index":0,"delta":{"reasoning_content":"summary"},"finish_reason":null}]}`,
 		`{"choices":[{"index":0,"delta":{"content":"answer"},"finish_reason":"stop"}]}`,
@@ -167,7 +167,7 @@ func TestDoubaoSeedEvolvingExactStreamFramesEnforcePhasesAndTerminalUsage(t *tes
 		})
 	}
 
-	missingUsage := exactStreamStateForProtocol(doubaoEvolvingStreamProtocol)
+	missingUsage := exactStreamStateForProtocol(doubaoEvolvingStreamProtocol, "")
 	frame, err := parseGuardedStreamFrameForProtocol(
 		[]byte(`{"choices":[{"index":0,"delta":{"content":"answer"},"finish_reason":"stop"}]}`),
 		doubaoEvolvingStreamProtocol,
@@ -176,7 +176,7 @@ func TestDoubaoSeedEvolvingExactStreamFramesEnforcePhasesAndTerminalUsage(t *tes
 	require.NoError(t, missingUsage.accept(frame, false))
 	require.ErrorContains(t, missingUsage.validateDone(), "terminal usage")
 
-	outOfOrder := exactStreamStateForProtocol(doubaoEvolvingStreamProtocol)
+	outOfOrder := exactStreamStateForProtocol(doubaoEvolvingStreamProtocol, "")
 	require.NoError(t, outOfOrder.accept(frame, false))
 	opaque, err := parseGuardedStreamFrameForProtocol(
 		[]byte(`{"choices":[{"index":0,"delta":{"encrypted_content":"late"},"finish_reason":null}]}`),
@@ -185,7 +185,7 @@ func TestDoubaoSeedEvolvingExactStreamFramesEnforcePhasesAndTerminalUsage(t *tes
 	require.NoError(t, err)
 	require.ErrorContains(t, outOfOrder.accept(opaque, false), "encrypted_content phase")
 
-	duplicateUsage := exactStreamStateForProtocol(doubaoEvolvingStreamProtocol)
+	duplicateUsage := exactStreamStateForProtocol(doubaoEvolvingStreamProtocol, "")
 	terminalUsage, err := parseGuardedStreamFrameForProtocol(
 		[]byte(`{"choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`),
 		doubaoEvolvingStreamProtocol,
@@ -201,9 +201,9 @@ func TestDoubaoSeedEvolvingExactStreamFramesEnforcePhasesAndTerminalUsage(t *tes
 	)
 	require.NoError(t, err)
 	require.True(t, emptyUsage.terminalUsage)
-	require.ErrorContains(t, exactStreamStateForProtocol(doubaoEvolvingStreamProtocol).accept(emptyUsage, false), "provider usage contract")
+	require.ErrorContains(t, exactStreamStateForProtocol(doubaoEvolvingStreamProtocol, "").accept(emptyUsage, false), "provider usage contract")
 
-	duplicateOpaque := exactStreamStateForProtocol(doubaoEvolvingStreamProtocol)
+	duplicateOpaque := exactStreamStateForProtocol(doubaoEvolvingStreamProtocol, "")
 	require.NoError(t, duplicateOpaque.accept(opaque, false))
 	require.ErrorContains(t, duplicateOpaque.accept(opaque, false), "encrypted_content phase")
 

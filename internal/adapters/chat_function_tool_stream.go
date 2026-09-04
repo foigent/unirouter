@@ -7,18 +7,20 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/strictjson"
 )
 
 // FunctionToolStreamFacts contains only mechanical facts. The caller owns
 // envelope delivery policy, authoritative usage and capability assertions.
 type FunctionToolStreamFacts struct {
-	Model    string
-	Content  string
-	Choice   bool
-	Finish   string
-	HasUsage bool
-	Tools    []FunctionToolDelta
+	Model     string
+	Content   string
+	Reasoning string
+	Choice    bool
+	Finish    string
+	HasUsage  bool
+	Tools     []FunctionToolDelta
 }
 
 type FunctionToolDelta struct {
@@ -27,6 +29,22 @@ type FunctionToolDelta struct {
 }
 
 func ParseFunctionToolStreamFacts(data []byte) (FunctionToolStreamFacts, error) {
+	// Preserve the immutable M111 parser's accepted set, including nullable
+	// content and its role-owned terminal/usage assertions.
+	return parseFunctionToolStreamFacts(data, []string{"content"})
+}
+
+// ParseFunctionToolStreamFactsForContract selects already-reviewed delta text
+// fields from the protocol authority. It does not infer a provider or grant a
+// capability. The caller retains delivery, usage and Probe assertion authority.
+func ParseFunctionToolStreamFactsForContract(data []byte, contract modelprofile.ChatStreamContract) (FunctionToolStreamFacts, error) {
+	if !contract.ResponseModeled || !contract.FunctionToolDeltas {
+		return FunctionToolStreamFacts{}, fmt.Errorf("unmodeled function-tool stream")
+	}
+	return parseFunctionToolStreamFacts(data, contract.DeltaTextFields)
+}
+
+func parseFunctionToolStreamFacts(data []byte, textFields []string) (FunctionToolStreamFacts, error) {
 	var facts FunctionToolStreamFacts
 	if err := strictjson.Validate(data); err != nil {
 		return facts, err
@@ -66,13 +84,25 @@ func ParseFunctionToolStreamFacts(data []byte) (FunctionToolStreamFacts, error) 
 	if json.Unmarshal(raw["choices"], &choices) != nil || choices == nil {
 		return facts, fmt.Errorf("invalid stream choices")
 	}
+	allowedDelta := append([]string{"role", "tool_calls"}, textFields...)
 	for _, choice := range choices {
 		if !keys(choice, "index", "delta", "finish_reason") {
 			return facts, fmt.Errorf("unmodeled stream choice field")
 		}
 		var delta map[string]json.RawMessage
-		if json.Unmarshal(choice["delta"], &delta) != nil || delta == nil || !keys(delta, "role", "content", "tool_calls") {
+		if json.Unmarshal(choice["delta"], &delta) != nil || delta == nil || !keys(delta, allowedDelta...) {
 			return facts, fmt.Errorf("invalid stream delta")
+		}
+		for _, field := range textFields {
+			if raw, present := delta[field]; present {
+				var value *string
+				if json.Unmarshal(raw, &value) != nil {
+					return facts, fmt.Errorf("invalid stream text")
+				}
+				if field == "reasoning_content" && value != nil {
+					facts.Reasoning = *value
+				}
+			}
 		}
 		if value, present := delta["role"]; present {
 			var role string

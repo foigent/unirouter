@@ -3,4 +3,4 @@
 // runner or product-domain policy.
 package schemaauthority
 
-const LatestSupportedMigration = "000112_repeat_model_successor_cutover"
+const LatestSupportedMigration = "000113_glm_stream_function_tools_qualification"

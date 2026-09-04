@@ -894,12 +894,12 @@ func TestCurrentProviderProfilesPreserveDocumentedMaximumAndRequestDefault(t *te
 		defaultOut  int
 		protocolRef string
 	}{
-		{"glm-5.3", "glm.5.3.api", 1_000_000, 131_072, 65_536, "protocol.glm-openai-chat.v5"},
-		{"glm-5.2", "glm.5.2.api", 1_000_000, 131_072, 65_536, "protocol.glm-openai-chat.v6"},
-		{"glm-5.1", "glm.5.1.api", 200_000, 131_072, 65_536, "protocol.glm-openai-chat.v6"},
-		{"glm-5-turbo", "glm.5-turbo.api", 200_000, 131_072, 65_536, "protocol.glm-openai-chat.v6"},
-		{"glm-5", "glm.5.api", 200_000, 131_072, 65_536, "protocol.glm-openai-chat.v6"},
-		{"glm-5v-turbo", "glm.5v-turbo.api", 200_000, 131_072, 65_536, "protocol.glm-openai-chat.glm5v.v5"},
+		{"glm-5.3", "glm.5.3.api", 1_000_000, 131_072, 65_536, "protocol.glm-openai-chat.v7"},
+		{"glm-5.2", "glm.5.2.api", 1_000_000, 131_072, 65_536, "protocol.glm-openai-chat.v7"},
+		{"glm-5.1", "glm.5.1.api", 200_000, 131_072, 65_536, "protocol.glm-openai-chat.v7"},
+		{"glm-5-turbo", "glm.5-turbo.api", 200_000, 131_072, 65_536, "protocol.glm-openai-chat.v7"},
+		{"glm-5", "glm.5.api", 200_000, 131_072, 65_536, "protocol.glm-openai-chat.v7"},
+		{"glm-5v-turbo", "glm.5v-turbo.api", 200_000, 131_072, 65_536, "protocol.glm-openai-chat.glm5v.v6"},
 		{"qwen3.8-max", "qwen.3.8-max.api", 1_000_000, 131_072, 131_072, "protocol.qwen-openai-chat.v6"},
 		{"qwen3.7-plus", "qwen.3.7-plus.api", 1_000_000, 131_072, 131_072, "protocol.qwen-openai-chat.v6"},
 		{"qwen3.7-flash", "qwen.3.7-flash.api", 1_000_000, 131_072, 131_072, "protocol.qwen-openai-chat.flash.v6"},
@@ -1730,8 +1730,8 @@ func TestGLM5VTurboVideoInputIsVersionedAndLocallyModeled(t *testing.T) {
 func TestGLM5VTurboFileInputIsVersionedAndLocallyModeled(t *testing.T) {
 	profile, ok := Match("glm-5v-turbo")
 	require.True(t, ok)
-	require.Equal(t, "1.11.0", profile.Version)
-	require.Equal(t, "protocol.glm-openai-chat.glm5v.v5", profile.ProtocolProfile)
+	require.Equal(t, "1.12.0", profile.Version)
+	require.Equal(t, "protocol.glm-openai-chat.glm5v.v6", profile.ProtocolProfile)
 	require.Equal(t, []string{
 		CapabilityStreaming, CapabilityReasoning, CapabilityTools, CapabilityFunctionTools,
 		CapabilityToolChoiceAuto, CapabilityPromptCache, CapabilityVision, CapabilityVideo, CapabilityFiles,
@@ -1835,7 +1835,7 @@ func TestGLM52JSONObjectIsVersionedAndLocallyModeled(t *testing.T) {
 func TestGLM52CacheReadUsageIsVersionedAndLocallyModeled(t *testing.T) {
 	profile, ok := Match("glm-5.2")
 	require.True(t, ok)
-	require.Equal(t, "1.8.0", profile.Version)
+	require.Equal(t, "1.9.0", profile.Version)
 	require.Equal(t, "cache-usage.glm-openai.v1", profile.CacheUsageProfile)
 	require.Equal(t, []string{
 		CapabilityStreaming, CapabilityReasoning, CapabilityTools, CapabilityFunctionTools,
@@ -1860,13 +1860,13 @@ func TestGLMToggleFunctionToolsProfilesKeepExactReasoningAndMediaBoundaries(t *t
 		t.Run(identity.model, func(t *testing.T) {
 			profile, ok := Lookup(identity.profileID, identity.version)
 			require.True(t, ok)
-			require.True(t, profile.Current)
+			require.False(t, profile.Current)
 			require.Equal(t, []string{identity.model}, profile.UpstreamModelIDs)
 			require.Equal(t, identity.reasoningID, profile.ReasoningProfile)
 			require.Equal(t, identity.protocolID, profile.ProtocolProfile)
 			require.Contains(t, profile.Capabilities, CapabilityFunctionTools)
 			require.Contains(t, profile.Capabilities, CapabilityToolChoiceAuto)
-			require.NoError(t, ValidateNewAttachment(profile.ID, profile.Version))
+			require.Error(t, ValidateNewAttachment(profile.ID, profile.Version), "historical tuple stays executable but new attachment uses the stream successor")
 			protocol, ok := ResolveChatProtocolContract(profile.ProtocolProfile)
 			require.True(t, ok)
 			require.True(t, protocol.FunctionToolInvocationCapabilitiesModeled)
@@ -2018,7 +2018,7 @@ func TestGLM53JSONObjectIsVersionedAndLocallyModeled(t *testing.T) {
 func TestGLM53CacheReadUsageIsVersionedAndLocallyModeled(t *testing.T) {
 	profile, ok := Match("glm-5.3")
 	require.True(t, ok)
-	require.Equal(t, "1.8.0", profile.Version)
+	require.Equal(t, "1.9.0", profile.Version)
 	require.Equal(t, "cache-usage.glm-openai.v1", profile.CacheUsageProfile)
 	require.Equal(t, []string{
 		CapabilityStreaming, CapabilityReasoning, CapabilityTools, CapabilityFunctionTools,

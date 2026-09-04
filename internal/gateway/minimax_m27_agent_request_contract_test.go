@@ -79,7 +79,7 @@ func TestMiniMaxM27StreamClientRequestsReachExactWire(t *testing.T) {
 func TestMiniMaxM27StreamRuntimeUsesSharedProbeFixture(t *testing.T) {
 	fixture, err := os.ReadFile("../adapters/testdata/minimax_m27_stream_tools.sse")
 	require.NoError(t, err)
-	state := exactStreamStateForProtocol("protocol.minimax-m27-openai-chat.v1")
+	state := exactStreamStateForProtocol("protocol.minimax-m27-openai-chat.v1", "MiniMax-M2.7")
 	assembler, _ := adapters.NewChatSSEEventAssembler(1 << 20)
 	scanner := bufio.NewScanner(strings.NewReader(string(fixture)))
 	scanner.Split(adapters.SplitSSELines)

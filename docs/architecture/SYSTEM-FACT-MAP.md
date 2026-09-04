@@ -15,8 +15,13 @@ distinct. Opt-in client metadata projects a stable Release's sealed Profile and
 hard limits separately from its Profile-owned request default; local experiment
 limits are client configuration, never another server parameter authority.
 
-Repository source candidate is version 1.2.50 with PostgreSQL compatibility
-ceiling `000112_repeat_model_successor_cutover`. M111 introduces the exact
+Repository source candidate is version 1.2.51 with PostgreSQL compatibility
+ceiling `000113_glm_stream_function_tools_qualification`. M113 appends six GLM
+streaming Function Tools Profile successors and 30 static bindings. It shares
+bounded SSE/tool assembly with M111 while retaining GLM reasoning_content/DONE
+and old M111 embedded-thinking/EOF semantics. Media is not qualified. Its static
+predecessor is M111; its schema predecessor is ordinary M112. No dynamic evidence,
+Target-bound Plan, apply or Agent result follows from source. M111 introduces the exact
 MiniMax M2.7 PAYG Profile 1.3 streaming Function Tools contract and one static
 Publication after M110. M112 extends the existing successor domain command
 with a primary-Alias before-state and independent v4/v3 receipt pair. It permits

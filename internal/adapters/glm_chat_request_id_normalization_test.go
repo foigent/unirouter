@@ -30,6 +30,12 @@ func TestGLMRequestIDNormalizationExactCurrentTuples(t *testing.T) {
 		{"glm-5-turbo", "glm.5-turbo.api", "1.0.0", "protocol.glm-openai-chat.v6"},
 		{"glm-5", "glm.5.api", "1.0.0", "protocol.glm-openai-chat.v6"},
 		{"glm-5v-turbo", "glm.5v-turbo.api", "1.11.0", "protocol.glm-openai-chat.glm5v.v5"},
+		{"glm-5.3", "glm.5.3.api", "1.9.0", "protocol.glm-openai-chat.v7"},
+		{"glm-5.2", "glm.5.2.api", "1.9.0", "protocol.glm-openai-chat.v7"},
+		{"glm-5.1", "glm.5.1.api", "1.1.0", "protocol.glm-openai-chat.v7"},
+		{"glm-5-turbo", "glm.5-turbo.api", "1.1.0", "protocol.glm-openai-chat.v7"},
+		{"glm-5", "glm.5.api", "1.1.0", "protocol.glm-openai-chat.v7"},
+		{"glm-5v-turbo", "glm.5v-turbo.api", "1.12.0", "protocol.glm-openai-chat.glm5v.v6"},
 	} {
 		t.Run(tuple.model, func(t *testing.T) {
 			body := []byte(`{"id":"canonical-id","model":"` + tuple.model + `","request_id":"provider-correlation","unknown_sibling":{"preserved":true},"choices":[],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}`)

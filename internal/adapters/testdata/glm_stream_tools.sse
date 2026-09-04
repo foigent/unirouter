@@ -1,0 +1,15 @@
+: Constructed public fixture from GLM-5.3 observed envelope/terminal shapes.
+: IDs/content/usage replaced; fragmented arguments below are a boundary case,
+: not a replay of observed GLM argument fragments or private task content.
+
+data: {"id":"glm-fixture","object":"chat.completion.chunk","created":1,"model":"glm-5.3","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"Consider the requested echo."}}]}
+
+data: {"id":"glm-fixture","object":"chat.completion.chunk","created":1,"model":"glm-5.3","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_echo","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":"}}]}}]}
+
+data: {"id":"glm-fixture","object":"chat.completion.chunk","created":1,"model":"glm-5.3","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"UNIROUTER_TOOL_PROBE_OK\"}"}}]}}]}
+
+data: {"id":"glm-fixture","object":"chat.completion.chunk","created":1,"model":"glm-5.3","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":100,"completion_tokens":20,"total_tokens":120,"prompt_tokens_details":{"cached_tokens":10},"completion_tokens_details":{"reasoning_tokens":5}}}
+
+data: [DONE]
+
+: End of fixture; no additional event.

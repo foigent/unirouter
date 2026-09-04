@@ -376,7 +376,7 @@ func TestMiniMaxProductBindingAcceptsOnlyOfficialChinaOpenAIEndpoint(t *testing.
 }
 
 func TestGLM53CurrentProductBindingAcceptsOnlyOfficialOpenPlatformEndpoint(t *testing.T) {
-	profile, ok := Lookup("glm.5.3.api", "1.8.0")
+	profile, ok := Lookup("glm.5.3.api", "1.9.0")
 	require.True(t, ok)
 	require.Equal(t, []string{EndpointClassGLMOfficialOpenAIV4}, profile.EndpointClasses)
 	binding := ProductBinding{

@@ -63,40 +63,49 @@ func representativeReuseFunctionToolsBinding(contractID string) modelcapabilityq
 }
 
 func TestGLM5VTextFunctionToolsQualificationCannotAuthorizeMediaByItself(t *testing.T) {
-	encKey := []byte("0123456789abcdef0123456789abcdef")
-	plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions,
-		"https://open.bigmodel.cn/api/paas/v4", encKey, nil)
-	setExecutionTestProfile(t, &plan, "glm.5v-turbo.api", "1.11.0")
-	plan.Routes[0].Provider = "glm"
-	plan.Routes[0].UpstreamModel = "glm-5v-turbo"
-	relay := NewRelay(executionTestDB(), nil, nil, &mockBilling{}, nil, encKey)
-	require.NoError(t, relay.SetModelExecutionRuntime(
-		modelrouting.ModeCanonical, &executionPlannerStub{plan: plan}, &executionCoordinatorStub{}, routingpolicy.Default(),
-	))
+	for _, version := range []string{"1.11.0", "1.12.0"} {
+		t.Run(version, func(t *testing.T) {
+			encKey := []byte("0123456789abcdef0123456789abcdef")
+			plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions,
+				"https://open.bigmodel.cn/api/paas/v4", encKey, nil)
+			setExecutionTestProfile(t, &plan, "glm.5v-turbo.api", version)
+			plan.Routes[0].Provider = "glm"
+			plan.Routes[0].UpstreamModel = "glm-5v-turbo"
+			relay := NewRelay(executionTestDB(), nil, nil, &mockBilling{}, nil, encKey)
+			require.NoError(t, relay.SetModelExecutionRuntime(
+				modelrouting.ModeCanonical, &executionPlannerStub{plan: plan}, &executionCoordinatorStub{}, routingpolicy.Default(),
+			))
 
-	body := []byte(`{"model":"public-model","messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://example.test/layout.png"}},{"type":"text","text":"Inspect this layout with the tool"}]}],"tools":[{"type":"function","function":{"name":"inspect_layout","description":"Inspect a layout","parameters":{"type":"object","properties":{}}}}],"tool_choice":"auto","max_tokens":128}`)
-	explicitOutput := 128
-	batch, err := relay.prepareModelExecutionRoutes(
-		context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
-		"public-model", "public-model", "req-glm5v-media-tools-boundary",
-		modelExecutionRequestLimits{EstimatedInputTokens: 1, ExplicitOutputTokens: &explicitOutput, EstimateVersion: chatAdmissionEstimateVersion},
-		body, time.Now(),
-	)
-	require.NoError(t, err)
-	want := map[string]bool{
-		modelprofile.CapabilityFunctionTools: false,
-		modelprofile.CapabilityTools:         false,
-		modelprofile.CapabilityVision:        false,
+			body := []byte(`{"model":"public-model","messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://example.test/layout.png"}},{"type":"text","text":"Inspect this layout with the tool"}]}],"tools":[{"type":"function","function":{"name":"inspect_layout","description":"Inspect a layout","parameters":{"type":"object","properties":{}}}}],"tool_choice":"auto","max_tokens":128}`)
+			if version == "1.12.0" {
+				body = append([]byte(`{"stream":true,"stream_options":{"include_usage":true},`), body[1:]...)
+				_, err := modelcapabilityqualification.Resolve(modelprofile.OperationOpenAIChat, modelprofile.CapabilityVision, "glm.5v-turbo.api", version, "protocol.glm-openai-chat.glm5v.v6", "1.0.0")
+				require.Error(t, err, "text-stream qualification must not publish vision")
+			}
+			explicitOutput := 128
+			batch, err := relay.prepareModelExecutionRoutes(
+				context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
+				"public-model", "public-model", "req-glm5v-media-tools-boundary",
+				modelExecutionRequestLimits{EstimatedInputTokens: 1, ExplicitOutputTokens: &explicitOutput, EstimateVersion: chatAdmissionEstimateVersion},
+				body, time.Now(),
+			)
+			require.NoError(t, err)
+			want := map[string]bool{
+				modelprofile.CapabilityFunctionTools: false,
+				modelprofile.CapabilityTools:         false,
+				modelprofile.CapabilityVision:        false,
+			}
+			for _, requirement := range batch.plan.CapabilityRequirements {
+				if _, exists := want[requirement.CapabilityID]; exists {
+					want[requirement.CapabilityID] = true
+				}
+			}
+			for capability, found := range want {
+				require.True(t, found, "missing independent capability requirement %s", capability)
+			}
+			require.Equal(t, batch.plan.CapabilityRequirements, batch.routes[0].compat.PlanCapabilityRequirements)
+		})
 	}
-	for _, requirement := range batch.plan.CapabilityRequirements {
-		if _, exists := want[requirement.CapabilityID]; exists {
-			want[requirement.CapabilityID] = true
-		}
-	}
-	for capability, found := range want {
-		require.True(t, found, "missing independent capability requirement %s", capability)
-	}
-	require.Equal(t, batch.plan.CapabilityRequirements, batch.routes[0].compat.PlanCapabilityRequirements)
 }
 
 func TestRepresentativeReuseProbeRequestsPassExactProfileValidationAndAdmission(t *testing.T) {

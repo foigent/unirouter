@@ -103,6 +103,12 @@ func executeRepeatMigration(t *testing.T, pool *pgxpool.Pool, direction string) 
 func TestRepeatedModelSuccessorContinuousHistoryIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
+	// This round-trip exercises M112 against its supported schema ceiling.
+	// Remove only the later, unattached M113 test fixture through its guarded down.
+	body, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000113_glm_stream_function_tools_qualification.down.sql"))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(body))
+	require.NoError(t, err)
 	manager, err := runtimechange.NewManager(&recordingBeginTxPool{Pool: pool}, unusedDeploymentSnapshotBuilder{}, routingpolicy.Default())
 	require.NoError(t, err)
 	a := createCanonicalDeploymentFixture(t, pool, "repeat-a", "active", 100, 100)

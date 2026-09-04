@@ -722,8 +722,8 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 			applyKimiChatDiagnostic(&outcome, validationErr)
 			return outcome
 		}
-	case modelcapabilityqualification.MiniMaxM27StreamFunctionToolsProbeContractID:
-		observation, validationErr := modelcapabilityqualification.ValidateMiniMaxM27StreamFunctionToolsForBinding(modelCapabilityProbeBindingFromSnapshot(snapshot), response.Header.Get("Content-Type"), response.Body)
+	case modelcapabilityqualification.MiniMaxM27StreamFunctionToolsProbeContractID, modelcapabilityqualification.GLMStreamFunctionToolsProbeContractID:
+		observation, validationErr := modelcapabilityqualification.ValidateOpenAIChatStreamFunctionToolsForBinding(modelCapabilityProbeBindingFromSnapshot(snapshot), response.Header.Get("Content-Type"), response.Body)
 		outcome.ReportedModel = observation.ReportedModel
 		outcome.FinishReason = observation.FinishReason
 		outcome.PromptTokens = observation.PromptTokens
@@ -931,6 +931,8 @@ func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]b
 		)
 	case modelcapabilityqualification.MiniMaxM27StreamFunctionToolsProbeContractID:
 		return modelcapabilityqualification.BuildMiniMaxM27StreamFunctionToolsProbeRequest(modelCapabilityProbeBindingFromSnapshot(snapshot))
+	case modelcapabilityqualification.GLMStreamFunctionToolsProbeContractID:
+		return modelcapabilityqualification.BuildGLMStreamFunctionToolsProbeRequest(modelCapabilityProbeBindingFromSnapshot(snapshot))
 	default:
 		return nil, errModelCapabilityUnsupported
 	}

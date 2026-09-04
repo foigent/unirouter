@@ -61,6 +61,7 @@ func TestMiniMaxM27StreamActualRelayPreservesTerminalAndUsage(t *testing.T) {
 			relay.SetOutbox(queue)
 			relay.SetTraceEvents(true, 1)
 			route := &RouteResult{
+				MappedModel:                "MiniMax-M2.7",
 				Channel:                    models.Channel{ID: 1, Name: "fixture", Provider: "minimax"},
 				CacheUsageProfile:          "cache-usage.minimax-m27-openai.v3",
 				ModelProtocolProfile:       "protocol.minimax-m27-openai-chat.v1",
@@ -109,7 +110,7 @@ func TestMiniMaxM27StreamRejectsToolsOutsideFrozenRequest(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			relay := newTestRelay(p6f11RelayDB(), &mockBilling{})
-			route := &RouteResult{Channel: models.Channel{ID: 1, Provider: "minimax"}, CacheUsageProfile: "cache-usage.minimax-m27-openai.v3", ModelProtocolProfile: "protocol.minimax-m27-openai-chat.v1", PlanCapabilityRequirements: requirements}
+			route := &RouteResult{MappedModel: "MiniMax-M2.7", Channel: models.Channel{ID: 1, Provider: "minimax"}, CacheUsageProfile: "cache-usage.minimax-m27-openai.v3", ModelProtocolProfile: "protocol.minimax-m27-openai-chat.v1", PlanCapabilityRequirements: requirements}
 			recorder := httptest.NewRecorder()
 			relay.relayStreamRequest(p6f11StreamContext(nil, "req-m27-tools-denied"), recorder, &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(string(fixture)))}, route, "req-m27-tools-denied", 1, 2, "public-model", "public-model", "127.0.0.1", nil, logger.New(logger.Fields{}), time.Now(), 1000, adapters.NewOpenAICompatible(), "")
 			require.Contains(t, recorder.Body.String(), "stream_error.invalid_frame")

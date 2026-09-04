@@ -12,7 +12,11 @@ authorities project what the repository can currently do.
 The retained earlier development/test checkpoint ran exact 1.2.41/M109 main merge
 `a031cb81f611fa660ec63d30343dca0390c341d1`, tree
 `015d96819657204b1a6bd2e7e5aa6dae4689c237`, with M104 through M109 applied.
-Repository source candidate 1.2.50/M112 integrates M111 MiniMax M2.7 PAYG Profile 1.3 with
+Repository source candidate 1.2.51/M113 adds six GLM exact streamed Function Tools
+successors with 30 static bindings and independent Probe/approval requirements.
+M113 does not qualify media. Shared mechanics retain exact reasoning/terminal
+policies, and no Target or Agent success follows from source.
+The preceding 1.2.50/M112 integrates M111 MiniMax M2.7 PAYG Profile 1.3 with
 streaming Function Tools, explicit auto and correlated tool-result history.
 Five new exact bindings use a streaming Probe; cache reporting and prompt-cache
 use two separate non-stream bindings and require new exact qualification.
@@ -394,12 +398,12 @@ and Release claims still require their own exact identity/evidence.
 | `minimax.m3.payg@1.2.0` | MiniMax official CN Chat / PAYG; cached-token counter is mandatory only at the documented 512-token cache threshold |
 | `minimax.m2.7.payg@1.3.0` | MiniMax official CN Chat / PAYG; streaming Function Tools and explicit auto; stream cache counter may be absent without authority, non-stream counter remains mandatory at the 512-token threshold |
 | `minimax.m2.7-highspeed.payg@1.2.0` | MiniMax official CN Chat / PAYG; cached-token counter is mandatory only at the documented 512-token cache threshold |
-| `glm.5.3.api@1.8.0` | GLM official open-platform Chat |
-| `glm.5.2.api@1.8.0` | GLM official open-platform Chat |
-| `glm.5.1.api@1.0.0` | GLM official open-platform Chat |
-| `glm.5-turbo.api@1.0.0` | GLM official open-platform Chat |
-| `glm.5.api@1.0.0` | GLM official open-platform Chat |
-| `glm.5v-turbo.api@1.11.0` | GLM official open-platform multimodal Chat; M105 qualifies pure-text Function Tools only |
+| `glm.5.3.api@1.9.0` | GLM official open-platform Chat |
+| `glm.5.2.api@1.9.0` | GLM official open-platform Chat |
+| `glm.5.1.api@1.1.0` | GLM official open-platform Chat |
+| `glm.5-turbo.api@1.1.0` | GLM official open-platform Chat |
+| `glm.5.api@1.1.0` | GLM official open-platform Chat |
+| `glm.5v-turbo.api@1.12.0` | GLM official open-platform multimodal Chat; M113 qualifies pure-text streamed Function Tools only |
 | `qwen.3.8-max.api@1.8.0` | DashScope Beijing Chat |
 | `qwen.3.7-plus.api@1.7.0` | DashScope Beijing Chat |
 | `qwen.3.7-flash.api@1.7.0` | DashScope Beijing Chat |

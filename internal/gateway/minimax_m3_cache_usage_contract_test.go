@@ -129,7 +129,7 @@ func TestMiniMaxM3CacheReadUsageUsesExactNonStreamAndStreamWire(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"stream_options.include_usage=omitted->true"}, evidence.ProviderRequestNormalizations)
 
-	state := exactStreamStateForProtocol(miniMaxM3CacheProtocol)
+	state := exactStreamStateForProtocol(miniMaxM3CacheProtocol, "")
 	require.NotNil(t, state)
 	raw := []byte(`{"id":"chunk","object":"chat.completion.chunk","model":"MiniMax-M3","choices":[{"index":0,"delta":{"content":"answer","name":"MiniMax AI","audio_content":null},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":0}},"input_sensitive":false,"output_sensitive":false,"base_resp":{"status_code":0,"status_msg":"success"}}`)
 	normalized, err := adapter.NormalizeStreamFrame(context.Background(), adapters.StreamChunkInput{
@@ -147,7 +147,7 @@ func TestMiniMaxM3CacheReadUsageUsesExactNonStreamAndStreamWire(t *testing.T) {
 	require.NoError(t, state.accept(frame, usage.HasAuthoritativeCacheUsage()))
 	require.NoError(t, state.validateCleanEOF(true))
 
-	missing := exactStreamStateForProtocol(miniMaxM3CacheProtocol)
+	missing := exactStreamStateForProtocol(miniMaxM3CacheProtocol, "")
 	finish, err := parseGuardedStreamFrameForProtocol(
 		[]byte(`{"choices":[{"index":0,"delta":{"content":"answer"},"finish_reason":"stop"}],"usage":null}`),
 		miniMaxM3CacheProtocol,
