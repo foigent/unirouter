@@ -134,6 +134,94 @@ func TestRepresentativeReuseProbeRequestsPassExactProfileValidationAndAdmission(
 	}
 }
 
+// Use compiled current bindings, not a parallel model/normalization registry.
+// Response boundaries (including intentionally different Probe acceptance) are
+// covered by glm_request_id_delivery_test and minimax_highspeed_tool_index_delivery_test.
+func TestCurrentReuseProbeAndConsoleRequestsReachExactProviderWire(t *testing.T) {
+	bindings := append(modelcapabilityqualification.MiniMaxPAYGCurrentBindings(), modelcapabilityqualification.GLM53CurrentBindings()...)
+	bindings = append(bindings, modelcapabilityqualification.GLMToggleCurrentBindings()...)
+	modelsTested := 0
+	for _, binding := range bindings {
+		if binding.CapabilityID != modelprofile.CapabilityFunctionTools {
+			continue
+		}
+		modelsTested++
+		t.Run(binding.ExpectedUpstreamModel, func(t *testing.T) {
+			probe, err := modelcapabilityqualification.BuildOpenAIChatFunctionToolsProbeRequest(binding)
+			require.NoError(t, err)
+			// The Console's fixed pure-text Function Tool request: provider default
+			// is omission, not a model-name-based rewrite of explicit auto.
+			console := map[string]interface{}{
+				"model": "public-model", "stream": false, "max_tokens": 1024,
+				"messages": []interface{}{map[string]interface{}{"role": "user", "content": "Call unirouter_ui_echo with value ui-9-model-check."}},
+				"tools": []interface{}{map[string]interface{}{"type": "function", "function": map[string]interface{}{
+					"name": "unirouter_ui_echo", "description": "Echo a short validation value.",
+					"parameters": map[string]interface{}{"type": "object", "properties": map[string]interface{}{"value": map[string]interface{}{"type": "string"}}, "required": []string{"value"}, "additionalProperties": false},
+				}}},
+			}
+			if binding.ExpectedProvider == "glm" {
+				console["tool_choice"] = "auto"
+			}
+			consoleBody, err := json.Marshal(console)
+			require.NoError(t, err)
+			for name, body := range map[string][]byte{"probe": probe, "console": consoleBody} {
+				t.Run(name, func(t *testing.T) {
+					encKey := []byte("0123456789abcdef0123456789abcdef")
+					endpoint := "https://open.bigmodel.cn/api/paas/v4"
+					if binding.ExpectedProvider == "minimax" {
+						endpoint = "https://api.minimax.cn/v1"
+					}
+					plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions, endpoint, encKey, nil)
+					setExecutionTestProfile(t, &plan, binding.ExecutionProfileID, binding.ExecutionProfileVersion)
+					profile, ok := modelprofile.Lookup(binding.ExecutionProfileID, binding.ExecutionProfileVersion)
+					require.True(t, ok)
+					// The generic fixture's 128k ceiling cannot represent M3's
+					// modeled omitted-output default; use this exact Profile's limits.
+					plan.PublicContextLimit = profile.DefaultContextWindow
+					plan.Routes[0].MaxContext = profile.DefaultContextWindow
+					plan.PublicOutputLimit = profile.DefaultOutputLimit
+					plan.Routes[0].DefaultMaxOutput = profile.DefaultOutputLimit
+					plan.Routes[0].Provider = binding.ExpectedProvider
+					plan.Routes[0].UpstreamModel = binding.ExpectedUpstreamModel
+					relay := NewRelay(executionTestDB(), nil, nil, &mockBilling{}, nil, encKey)
+					require.NoError(t, relay.SetModelExecutionRuntime(modelrouting.ModeCanonical, &executionPlannerStub{plan: plan}, &executionCoordinatorStub{}, routingpolicy.Default()))
+					var input map[string]json.RawMessage
+					require.NoError(t, json.Unmarshal(body, &input))
+					var outputLimit *int
+					if value, exists := input["max_tokens"]; exists {
+						require.NoError(t, json.Unmarshal(value, &outputLimit))
+					}
+					batch, err := relay.prepareModelExecutionRoutes(context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
+						"public-model", "public-model", "req-reuse-contract",
+						modelExecutionRequestLimits{EstimatedInputTokens: 1, ExplicitOutputTokens: outputLimit, EstimateVersion: chatAdmissionEstimateVersion}, body, time.Now())
+					require.NoError(t, err)
+					require.Len(t, batch.routes, 1)
+					wire, err := providerRequestBody(batch.routes[0].upstreamRequest)
+					require.NoError(t, err)
+					var outbound map[string]json.RawMessage
+					require.NoError(t, json.Unmarshal(wire, &outbound))
+					require.JSONEq(t, `"`+binding.ExpectedUpstreamModel+`"`, string(outbound["model"]))
+					for _, field := range []string{"tools", "tool_choice", "thinking", "max_tokens", "stream"} {
+						if value, exists := input[field]; exists {
+							require.JSONEq(t, string(value), string(outbound[field]), field)
+						} else {
+							require.NotContains(t, outbound, field, "must not invent omitted defaults")
+						}
+					}
+				})
+			}
+			if binding.ExpectedProvider == "minimax" {
+				console["tool_choice"] = "auto"
+				explicitAuto, err := json.Marshal(console)
+				require.NoError(t, err)
+				_, err = validateChatExecutionProfileRequest(explicitAuto, executionProfilePlan(t, binding.ExecutionProfileID, binding.ExecutionProfileVersion))
+				require.Error(t, err, "explicit auto must not silently become provider-default omission")
+			}
+		})
+	}
+	require.Equal(t, 9, modelsTested)
+}
+
 func TestMiniMaxPAYGHighspeedSuccessorProbePassesExactProfileValidationAndAdmission(t *testing.T) {
 	binding := modelcapabilityqualification.Binding{
 		OperationID: modelprofile.OperationOpenAIChat, CapabilityID: modelprofile.CapabilityFunctionTools,

@@ -1,12 +1,20 @@
 # UniRouter Current Status
 
-> Repository source candidate is 1.2.47/M110. The exact current MiniMax Highspeed
+> Repository source candidate is 1.2.48/M110. Developer Console recent calls use
+> the actual requested model; canonical lookup details are limited to existing
+> organization/platform administrator views. Current nine-model Probe/Console
+> request regressions also cover exact admission and outbound payloads without
+> changing Runtime validators or capability identities. Retained Function Tools
+> UI evidence is 9/9: six GLM models on 1.2.45, MiniMax M3/M2.7 on 1.2.46 and
+> Highspeed on exact Target 1.2.47 commit 75401a03024427b775370f4b3bbd7b24acc59df0.
+> Supplier-budget reconciliation and this display fix's Target readback remain
+> separate closeout evidence; neither follows from the source version.
+> The exact current MiniMax Highspeed
 > Chat tuple reuses non-stream child tool-call index normalization; its typed
 > Probe rejects residual invalid indexes instead of ignoring them. The source
-> change introduces no new Profile, Probe identity or Publication. Real Function
-> Tools UI evidence is currently 8/9: six GLM models on Target 1.2.45 and MiniMax
-> M3/M2.7 on Target 1.2.46. Highspeed's retained 502 identifies a child index;
-> its actual value/type was not captured and live success remains unproven.
+> change introduces no new Profile, Probe identity or Publication. Highspeed's
+> retained earlier 502 identifies a child index; its actual value/type was not
+> captured and is not inferred from the later successful call.
 > Developer Console's Provider-default scenario omits `tool_choice` without
 > changing explicit-choice semantics. The prior candidate exposes
 > cache qualification controls and normalizes non-authoritative GLM request-ID

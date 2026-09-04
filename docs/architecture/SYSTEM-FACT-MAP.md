@@ -8,7 +8,7 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-Repository source candidate is version 1.2.47 with PostgreSQL compatibility
+Repository source candidate is version 1.2.48 with PostgreSQL compatibility
 ceiling `000110_openai_chat_runtime_capability_qualification`. M110 is one
 append-only Capability Publication for the exact runtime Function Tools
 composition of the current three MiniMax PAYG and six GLM model Profiles. It

@@ -640,7 +640,47 @@ describe('DeveloperConsolePage', () => {
       expect(mockGetLogs).toHaveBeenCalledWith(1, 1, { project_id: 7, request_id: 'req-001' });
       expect(mockGetLogDetail).toHaveBeenCalledWith(31);
     });
-    expect(screen.getByText('路由模型')).toBeTruthy();
+    expect(screen.queryByText('路由模型')).toBeNull();
+  });
+
+  it.each([
+    ['member', 'developer', false],
+    ['member', 'project_admin', false],
+    ['billing_admin', 'billing_admin', false],
+    ['org_viewer', 'viewer', false],
+    ['org_admin', 'org_admin', true],
+    ['platform_admin', 'platform_admin', true],
+    ['unknown-role', 'platform_admin', false],
+  ])('keeps request and audit identities separate for %s / %s', async (organizationRole, role, showCanonical) => {
+    const record = { ...LOGS.data[0], requested_model: 'glm-5.2', model: 'glm-5.2-20260903' };
+    mockGetLogs.mockResolvedValue({ data: [record], total: 1 });
+    mockGetLogDetail.mockResolvedValue(record);
+    renderPage(role);
+    act(() => useAuthStore.setState(state => ({ user: { ...state.user!, organization_role: organizationRole } })));
+
+    await screen.findByText('req-001');
+    const recent = screen.getByText('最近调用').closest('section')!;
+    expect(within(recent).getByText('glm-5.2')).toBeTruthy();
+    expect(within(recent).queryByText(record.model)).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText('req-...'), { target: { value: 'req-001' } });
+    fireEvent.click(screen.getByText('查询'));
+    await waitFor(() => expect(mockGetLogDetail).toHaveBeenCalledWith(31));
+    await waitFor(() => expect(screen.getAllByText('glm-5.2')).toHaveLength(2));
+    expect(Boolean(screen.queryByText('路由模型'))).toBe(showCanonical);
+    expect(Boolean(screen.queryByText(record.model))).toBe(showCanonical);
+    expect(record.model).toBe('glm-5.2-20260903');
+  });
+
+  it.each([undefined, ''])('preserves historical model names when requested_model is %s', async requestedModel => {
+    const record = { ...LOGS.data[0], requested_model: requestedModel, model: 'historical-model-20260801' };
+    mockGetLogs.mockResolvedValue({ data: [record], total: 1 });
+    mockGetLogDetail.mockResolvedValue(record);
+    renderPage();
+    await screen.findByText(record.model);
+    fireEvent.change(screen.getByPlaceholderText('req-...'), { target: { value: 'req-001' } });
+    fireEvent.click(screen.getByText('查询'));
+    await waitFor(() => expect(screen.getAllByText(record.model)).toHaveLength(2));
+    expect(screen.queryByText('路由模型')).toBeNull();
   });
 
   it('keeps project data visible when self usage analytics fails', async () => {
