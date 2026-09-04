@@ -403,6 +403,7 @@ VALUES ($1,$2,NULL,0,1)`, predecessor.PublicModelID, predecessor.ModelName)
 	require.True(t, replayed.Lifecycle.IdempotencyReplay)
 	require.Equal(t, receipt.Lifecycle.ReceiptID, replayed.Lifecycle.ReceiptID)
 
+	rewindSuccessorLaterMigrations(t, pool)
 	downSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000109_staging_model_successor_cutover.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(downSQL))
@@ -411,6 +412,7 @@ VALUES ($1,$2,NULL,0,1)`, predecessor.PublicModelID, predecessor.ModelName)
 
 func TestStagingModelSuccessorMigrationGuardedRoundTripWithoutEvidence(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
+	rewindSuccessorLaterMigrations(t, pool)
 	ctx := context.Background()
 	downSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000109_staging_model_successor_cutover.down.sql"))
 	require.NoError(t, err)
@@ -434,6 +436,7 @@ SELECT COUNT(*) FROM information_schema.columns
 
 func TestStableModelSuccessorCutoverMigrationGuardedRoundTripWithoutEvidence(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
+	rewindSuccessorLaterMigrations(t, pool)
 	ctx := context.Background()
 	m109DownSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000109_staging_model_successor_cutover.down.sql"))
 	require.NoError(t, err)
@@ -460,4 +463,20 @@ SELECT COUNT(*) FILTER (WHERE version='000106_minimax_official_cn_payg_endpoint_
 SELECT COUNT(*) FROM information_schema.columns
  WHERE table_schema=current_schema() AND table_name='model_aliases' AND column_name='is_primary'`).Scan(&primaryColumnCount))
 	require.Zero(t, primaryColumnCount)
+}
+
+// Exercise the historical down contracts from their supported predecessor,
+// without bypassing any later-migration or durable-evidence guard.
+func rewindSuccessorLaterMigrations(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	for _, migration := range []string{
+		"000112_repeat_model_successor_cutover",
+		"000111_minimax_m27_stream_function_tools_qualification",
+		"000110_openai_chat_runtime_capability_qualification",
+	} {
+		body, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), migration+".down.sql"))
+		require.NoError(t, err)
+		_, err = pool.Exec(context.Background(), string(body))
+		require.NoError(t, err, migration)
+	}
 }

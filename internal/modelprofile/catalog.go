@@ -534,6 +534,16 @@ func buildCatalog() []Profile {
 	result = append(result, currentProviderProfiles()...)
 	result = append(result, miniMaxOfficialCNPAYGEndpointSuccessorProfiles()...)
 	result = append(result, miniMaxCacheThresholdSuccessorProfiles()...)
+	for _, profile := range miniMaxCacheThresholdSuccessorProfiles() {
+		if profile.ID == "minimax.m2.7.payg" {
+			profile.Version = "1.3.0"
+			profile.Label = "MiniMax M2.7 PAYG 官方 API（Stream Function Tools）"
+			profile.ProtocolProfile = "protocol.minimax-m27-openai-chat.v1"
+			profile.ReasoningProfile = "reasoning.minimax-m27-required-embedded.v2"
+			profile.CacheUsageProfile = "cache-usage.minimax-m27-openai.v3"
+			result = append(result, profile)
+		}
+	}
 	result = append(result, identityHardenedProviderProfiles()...)
 	result = append(result, locallyConformantProviderProfiles()...)
 	result = append(result, legacyConformantProviderProfiles()...)
@@ -1026,6 +1036,7 @@ var immutableProfileEndpointClassOverrides = map[string][]string{
 	"minimax.m2.7-highspeed.payg@1.1.0":       {EndpointClassMiniMaxOfficialCNOpenAIV1},
 	"minimax.m3.payg@1.1.0":                   {EndpointClassMiniMaxOfficialCNOpenAIV1},
 	"minimax.m2.7.payg@1.2.0":                 {EndpointClassMiniMaxOfficialCNOpenAIV1},
+	"minimax.m2.7.payg@1.3.0":                 {EndpointClassMiniMaxOfficialCNOpenAIV1},
 	"minimax.m2.7-highspeed.payg@1.2.0":       {EndpointClassMiniMaxOfficialCNOpenAIV1},
 	"minimax.m3.payg@1.2.0":                   {EndpointClassMiniMaxOfficialCNOpenAIV1},
 	"glm.5.3.api@1.8.0":                       {EndpointClassGLMOfficialOpenAIV4},
@@ -1211,7 +1222,7 @@ var currentProfileManifests = map[string]currentProfileManifest{
 	"kimi.k2.6.api":                  currentProfile("1.7.0"),
 	"kimi.k2.7-code.api":             currentProfile("1.3.0"),
 	"kimi.k3.api":                    currentProfile("1.9.0"),
-	"minimax.m2.7.payg":              currentProfile("1.2.0"),
+	"minimax.m2.7.payg":              currentProfile("1.3.0"),
 	"minimax.m2.7-highspeed.payg":    currentProfile("1.2.0"),
 	"minimax.m3.payg":                currentProfile("1.2.0"),
 	"glm.5.3.api":                    currentProfile("1.8.0"),
@@ -3937,6 +3948,9 @@ func ValidateExecutableComponents(profile Profile) error {
 }
 
 func validateCacheUsageContractShape(contract CacheUsageContract) error {
+	if contract.StreamReadCounterOptional && (!contract.RequireReadCounter || !contract.ReportsRead || contract.WireSchema != CacheUsageWireOpenAICachedTokensV1) {
+		return fmt.Errorf("stream cache omission requires an exact enforced cached-token contract")
+	}
 	if contract.ReadCounterRequiredAtOrAbovePromptTokens < 0 {
 		return fmt.Errorf("cache-read counter threshold must be nonnegative")
 	}

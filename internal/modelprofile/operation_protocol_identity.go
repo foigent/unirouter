@@ -33,6 +33,7 @@ type chatOperationProtocolBindingKey struct {
 // validation contract, or reusing that contract from another Profile, does
 // not grant onboarding authority.
 var immutableChatOperationProtocolBindings = map[chatOperationProtocolBindingKey]string{
+	{ProfileID: "minimax.m2.7.payg", ProfileVersion: "1.3.0", ProtocolProfileID: "protocol.minimax-m27-openai-chat.v1"}:          ChatOperationProtocolBindingVersionV1,
 	{ProfileID: "deepseek.v4-flash.api", ProfileVersion: "1.4.0", ProtocolProfileID: "protocol.deepseek-openai-chat.v4"}:         ChatOperationProtocolBindingVersionV1,
 	{ProfileID: "deepseek.v4-flash.api", ProfileVersion: "1.5.0", ProtocolProfileID: "protocol.deepseek-openai-chat.v4"}:         ChatOperationProtocolBindingVersionV1,
 	{ProfileID: "deepseek.v4-pro.api", ProfileVersion: "1.4.0", ProtocolProfileID: "protocol.deepseek-openai-chat.v4"}:           ChatOperationProtocolBindingVersionV1,

@@ -35,6 +35,7 @@ import (
 	"github.com/uniroute/unirouter/internal/modelgov"
 	"github.com/uniroute/unirouter/internal/modellist"
 	"github.com/uniroute/unirouter/internal/modeloperation"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/outbox"
@@ -1856,7 +1857,11 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	)
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), streamPolicy.MaxSSELineBytes)
-	if currentKimiStream {
+	functionToolStream := false
+	if contract, ok := modelprofile.ResolveChatProtocolContract(route.ModelProtocolProfile); ok {
+		functionToolStream = contract.StreamContract.FunctionToolDeltas
+	}
+	if currentKimiStream || functionToolStream {
 		scanner.Split(adapters.SplitSSELines)
 	}
 	type streamScanEvent struct {
@@ -2009,6 +2014,11 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	providerTerminalObserved := false
 	providerFinishReasonObserved := false
 	exactStreamState := exactStreamStateForProtocol(route.ModelProtocolProfile)
+	var functionToolAssembler *adapters.ChatSSEEventAssembler
+	var functionToolSetupErr error
+	if exactStreamState != nil && exactStreamState.functionTools != nil {
+		functionToolAssembler, functionToolSetupErr = adapters.NewChatSSEEventAssembler(streamPolicy.MaxSSELineBytes)
+	}
 	var kimiStreamAssembler *adapters.ChatSSEEventAssembler
 	var kimiStreamState *adapters.KimiChatStreamState
 	var deepSeekStreamState *adapters.DeepSeekChatStreamState
@@ -2024,6 +2034,9 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	streamMechanicsSetupErr := kimiStreamSetupErr
 	if streamMechanicsSetupErr == nil {
 		streamMechanicsSetupErr = deepSeekStreamSetupErr
+	}
+	if streamMechanicsSetupErr == nil {
+		streamMechanicsSetupErr = functionToolSetupErr
 	}
 	if streamMechanicsSetupErr != nil {
 		streamPayloadInvalid = true
@@ -2317,6 +2330,54 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		providerFrameObserved = true
 		return enqueueGuardedFrame(frameData, false, prepared.HasTopLevelUsage, true)
 	}
+	processFunctionToolEvent := func(data []byte) bool {
+		invalid := func() bool {
+			streamPayloadInvalid = true
+			streamTerminationCode = "upstream_stream_invalid_frame"
+			return false
+		}
+		if string(data) == "[DONE]" {
+			if exactStreamState.validateDone() != nil {
+				return invalid()
+			}
+			providerTerminalObserved = true
+			done = true
+			return flushGuardrailBuffer()
+		}
+		// Raw duplicate validation must precede provider metadata map decoding.
+		if rejectDuplicateJSONMembers(data) != nil || !json.Valid(data) {
+			return invalid()
+		}
+		if streamFrameNormalizer != nil {
+			var err error
+			data, err = streamFrameNormalizer.NormalizeStreamFrame(ctx, adapters.StreamChunkInput{Data: data, Channel: route.Channel, RequestedModel: requestedModel, UpstreamModel: route.MappedModel, CacheUsageProfile: route.CacheUsageProfile, State: streamState})
+			if err != nil {
+				return invalid()
+			}
+		}
+		providerError, err := providerStreamErrorFrame(data)
+		if err != nil {
+			return invalid()
+		}
+		if providerError {
+			providerStreamErrorObserved = true
+			streamTerminationCode = "upstream_stream_provider_error"
+			return false
+		}
+		usage, present, err := adapters.ParseOpenAICompatibleStreamUsageWithCacheProfile(data, adapters.EndpointChatCompletions, metering.UsageSourceUpstream, route.CacheUsageProfile)
+		if err != nil {
+			return invalid()
+		}
+		if present {
+			streamUsage = usage
+			usedUpstreamUsage = true
+		}
+		if validateFunctionToolStreamInvocation(route, data) != nil {
+			return invalid()
+		}
+		providerFrameObserved = true
+		return enqueueGuardedFrame(data, false, present, false)
+	}
 	var scanErr error
 	firstSSELine := true
 streamLoop:
@@ -2332,6 +2393,15 @@ streamLoop:
 			}
 			if event.done {
 				scanErr = event.err
+				if functionToolAssembler != nil {
+					assembled, ready, err := functionToolAssembler.Finish()
+					if err != nil {
+						streamPayloadInvalid = true
+						streamTerminationCode = "upstream_stream_invalid_frame"
+					} else if ready && !processFunctionToolEvent(assembled.Data) {
+						done = true
+					}
+				}
 				if kimiStreamAssembler != nil {
 					assembled, ready, assembleErr := kimiStreamAssembler.Finish()
 					if assembleErr != nil {
@@ -2376,6 +2446,17 @@ streamLoop:
 			streamPayloadInvalid = true
 			streamTerminationCode = "upstream_stream_invalid_frame"
 			done = true
+			continue
+		}
+		if functionToolAssembler != nil {
+			assembled, ready, err := functionToolAssembler.AcceptLine(line)
+			if err != nil {
+				streamPayloadInvalid = true
+				streamTerminationCode = "upstream_stream_invalid_frame"
+				done = true
+			} else if ready && !processFunctionToolEvent(assembled.Data) {
+				done = true
+			}
 			continue
 		}
 		if kimiStreamAssembler != nil {
@@ -2555,7 +2636,7 @@ streamLoop:
 				done = true
 				continue
 			}
-			parsedUsage, hasUsage, usageErr := adapters.ParseOpenAICompatibleUsageWithCacheProfile(
+			parsedUsage, hasUsage, usageErr := adapters.ParseOpenAICompatibleStreamUsageWithCacheProfile(
 				frameData, adapters.EndpointChatCompletions, metering.UsageSourceUpstream, route.CacheUsageProfile,
 			)
 			if usageErr != nil {

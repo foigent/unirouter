@@ -1482,8 +1482,8 @@ paths:
       post: [platform_admin, org_admin]
     post:
       tags: [Admin]
-      summary: Atomically activate a first immutable successor and its stable request identity
-      description: Expansion requiring the Gateway License. The sealed parentless successor release, exact predecessor and successor registry before-state, absent stable alias, caller-frozen project model-set before-state, initial stable Slot, registry cutover and durable audit/receipt all commit in one transaction. Active secondary aliases targeting the successor are rejected. This endpoint supports only the first canonical-to-alias cutover; it does not retarget an existing primary alias.
+      summary: Atomically activate an immutable successor under one stable request identity
+      description: Expansion requiring the Gateway License. The sealed parentless successor release, exact registry and mode-specific Alias before-state, caller-frozen model-set references, initial stable Slot and durable audit/receipt commit together. Omitted/published mode preserves the first canonical-to-alias contract. primary_alias mode upgrades its current target using expected Alias ID, predecessor Slot version and stable Release ref. Both Releases must pin addressable non-unverified revisions of the same Profile product. Current canary, target Slot and secondary active aliases are rejected. Historical replay never retargets the current Alias.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/ModelDeploymentReleaseRef"
@@ -4939,8 +4939,25 @@ components:
     ModelSuccessorCutoverRequest:
       type: object
       additionalProperties: false
+      description: Published mode requires predecessor_model_name=stable_request_model. primary_alias requires a different GA/catalog predecessor and all three expected authority fields. The target remains staging and Slot-free until commit.
+      oneOf:
+        - properties:
+            predecessor_authority_mode: { type: string, enum: [published] }
+          not:
+            anyOf:
+              - required: [expected_primary_alias_id]
+              - required: [expected_predecessor_slot_version]
+              - required: [expected_predecessor_release_ref]
+        - required: [predecessor_authority_mode, expected_primary_alias_id, expected_predecessor_slot_version, expected_predecessor_release_ref]
+          properties:
+            predecessor_authority_mode: { type: string, enum: [primary_alias] }
+            expected_predecessor_lifecycle: { type: string, enum: [ga] }
       required: [expected_release_version, stable_request_model, predecessor_public_model_id, predecessor_model_name, expected_predecessor_lifecycle, expected_predecessor_approved_catalog, successor_public_model_id, successor_model_name, expected_successor_lifecycle, expected_successor_approved_catalog, expected_model_sets]
       properties:
+        predecessor_authority_mode: { type: string, enum: [published, primary_alias] }
+        expected_primary_alias_id: { type: integer, format: int64, minimum: 1 }
+        expected_predecessor_slot_version: { type: integer, format: int64, minimum: 1 }
+        expected_predecessor_release_ref: { type: string, pattern: '^rcr_[a-z0-9][a-z0-9._-]{2,63}$' }
         expected_release_version: { type: integer, format: int64, minimum: 1 }
         stable_request_model: { type: string, minLength: 1, maxLength: 100 }
         predecessor_public_model_id: { type: integer, format: int64, minimum: 1 }
@@ -5013,12 +5030,40 @@ components:
     ModelSuccessorCutoverReceipt:
       type: object
       additionalProperties: false
+      oneOf:
+        - properties:
+            contract_version: { enum: [unirouter.model-successor-cutover-receipt.v1] }
+            lifecycle:
+              properties:
+                contract_version: { enum: [unirouter.model-deployment-lifecycle-receipt.v2] }
+                action: { enum: [activate_initial] }
+          not:
+            anyOf:
+              - required: [predecessor_authority_mode]
+              - required: [predecessor_authority_snapshot]
+        - required: [predecessor_authority_mode, predecessor_authority_snapshot]
+          properties:
+            contract_version: { enum: [unirouter.model-successor-cutover-receipt.v3] }
+            lifecycle:
+              properties:
+                contract_version: { enum: [unirouter.model-deployment-lifecycle-receipt.v4] }
+                action: { enum: [activate_initial] }
       required: [contract_version, lifecycle, stable_request_model, predecessor_before, predecessor_after, successor_before, successor_after, alias_after, model_sets]
       properties:
-        contract_version: { type: string, enum: [unirouter.model-successor-cutover-receipt.v1] }
+        contract_version: { type: string, enum: [unirouter.model-successor-cutover-receipt.v1, unirouter.model-successor-cutover-receipt.v3] }
+        predecessor_authority_mode: { type: string, enum: [primary_alias] }
+        predecessor_authority_snapshot:
+          type: object
+          additionalProperties: false
+          required: [primary_alias_id, slot_version, stable_release_id, release_version]
+          properties:
+            primary_alias_id: { type: integer, format: int64, minimum: 1 }
+            slot_version: { type: integer, format: int64, minimum: 1 }
+            stable_release_id: { type: integer, format: int64, minimum: 1 }
+            release_version: { type: integer, format: int64, minimum: 1 }
         lifecycle:
           allOf: [{ $ref: "#/components/schemas/ModelDeploymentLifecycleReceipt" }]
-          description: Embedded initial activation receipt using contract_version unirouter.model-deployment-lifecycle-receipt.v2.
+          description: Embedded initial activation receipt using v2 for published-first or v4 for primary_alias. Only v3 child receipts include predecessor_authority_mode and predecessor_authority_snapshot.
         stable_request_model: { type: string }
         predecessor_before: { $ref: "#/components/schemas/ModelSuccessorRegistryState" }
         predecessor_after: { $ref: "#/components/schemas/ModelSuccessorRegistryState" }
@@ -5092,8 +5137,8 @@ components:
       properties:
         contract_version:
           type: string
-          enum: [unirouter.model-deployment-lifecycle-receipt.v1, unirouter.model-deployment-lifecycle-receipt.v2, unirouter.model-deployment-lifecycle-receipt.v3]
-          description: v2 is emitted only by the published-predecessor first-successor cutover; v3 only by the independently scoped never-activated staging predecessor cutover.
+          enum: [unirouter.model-deployment-lifecycle-receipt.v1, unirouter.model-deployment-lifecycle-receipt.v2, unirouter.model-deployment-lifecycle-receipt.v3, unirouter.model-deployment-lifecycle-receipt.v4]
+          description: v2 is emitted only by published-first cutover; v3 by never-activated staging cutover; v4 by the repeated primary_alias cutover. Their replay scopes remain independent.
         receipt_id: { type: integer, format: int64, minimum: 1 }
         action: { type: string, enum: [activate_initial, start_canary, promote, cancel_canary, rollback_stable, cutover_legacy, rollback_legacy] }
         target_release_ref: { type: string }
@@ -5201,9 +5246,9 @@ components:
         support_revision: { type: integer, format: int64, minimum: 1 }
         execution_profile_id: { type: string, enum: [deepseek.v4-flash.api, deepseek.v4-pro.api, glm.5-turbo.api, glm.5.api, glm.5.1.api, glm.5.2.api, glm.5.3.api, glm.5v-turbo.api, kimi.k2.6.api, kimi.k2.7-code.api, kimi.k3.api, minimax.m2.7-highspeed.payg, minimax.m2.7.payg, minimax.m3.payg, minimax.m3.token-plan] }
         execution_profile_version: { type: string, enum: [1.0.0, 1.1.0, 1.11.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.7.0, 1.8.0, 1.9.0] }
-        protocol_profile_id: { type: string, enum: [protocol.deepseek-openai-chat.v4, protocol.glm-openai-chat.glm5v.v5, protocol.glm-openai-chat.v5, protocol.glm-openai-chat.v6, openai.chat_completions, protocol.kimi-openai-chat.v5, protocol.kimi-openai-chat.k3.v5, protocol.minimax-m2-openai-chat.v7, protocol.minimax-m3-openai-chat.v9] }
+        protocol_profile_id: { type: string, enum: [protocol.deepseek-openai-chat.v4, protocol.glm-openai-chat.glm5v.v5, protocol.glm-openai-chat.v5, protocol.glm-openai-chat.v6, openai.chat_completions, protocol.kimi-openai-chat.v5, protocol.kimi-openai-chat.k3.v5, protocol.minimax-m2-openai-chat.v7, protocol.minimax-m27-openai-chat.v1, protocol.minimax-m3-openai-chat.v9] }
         protocol_profile_version: { type: string, enum: [1.0.0] }
-        probe_contract_id: { type: string, enum: [unirouter.capability-probe.deepseek-chat-sse.v1, unirouter.capability-probe.deepseek-chat-reasoning.v1, unirouter.capability-probe.deepseek-chat-reasoning-effort.v1, unirouter.capability-probe.deepseek-chat-function-tools.v1, unirouter.capability-probe.deepseek-chat-json-object.v1, unirouter.capability-probe.glm-chat-function-tools.v1, unirouter.capability-probe.glm-toggle-chat-function-tools.v1, unirouter.capability-probe.kimi-chat-sse.v1, unirouter.capability-probe.kimi-chat-reasoning.v1, unirouter.capability-probe.kimi-chat-reasoning-effort.v1, unirouter.capability-probe.kimi-chat-function-tools.v1, unirouter.capability-probe.kimi-chat-json-object.v1, unirouter.capability-probe.minimax-chat-function-tools.v1, unirouter.capability-probe.minimax-payg-m2-chat-function-tools.v1, unirouter.capability-probe.minimax-payg-m3-chat-function-tools.v1] }
+        probe_contract_id: { type: string, enum: [unirouter.capability-probe.deepseek-chat-sse.v1, unirouter.capability-probe.deepseek-chat-reasoning.v1, unirouter.capability-probe.deepseek-chat-reasoning-effort.v1, unirouter.capability-probe.deepseek-chat-function-tools.v1, unirouter.capability-probe.deepseek-chat-json-object.v1, unirouter.capability-probe.glm-chat-function-tools.v1, unirouter.capability-probe.glm-toggle-chat-function-tools.v1, unirouter.capability-probe.kimi-chat-sse.v1, unirouter.capability-probe.kimi-chat-reasoning.v1, unirouter.capability-probe.kimi-chat-reasoning-effort.v1, unirouter.capability-probe.kimi-chat-function-tools.v1, unirouter.capability-probe.kimi-chat-json-object.v1, unirouter.capability-probe.minimax-chat-function-tools.v1, unirouter.capability-probe.minimax-payg-m2-chat-function-tools.v1, unirouter.capability-probe.minimax-m27-chat-stream-tools.v1, unirouter.capability-probe.minimax-payg-m3-chat-function-tools.v1] }
         probe_contract_version: { type: string, enum: [1.0.0, 2.0.0, 3.0.0, 4.0.0], description: "Exact version is selected by the model, operation, capability, Execution Profile, and protocol-profile tuple." }
         probe_available: { type: boolean }
         probe_availability_reason_code: { type: string }

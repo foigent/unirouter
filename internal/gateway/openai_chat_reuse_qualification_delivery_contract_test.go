@@ -188,8 +188,10 @@ func TestCurrentReuseProbeAndConsoleRequestsReachExactProviderWire(t *testing.T)
 					var input map[string]json.RawMessage
 					require.NoError(t, json.Unmarshal(body, &input))
 					var outputLimit *int
-					if value, exists := input["max_tokens"]; exists {
-						require.NoError(t, json.Unmarshal(value, &outputLimit))
+					for _, limitField := range []string{"max_tokens", "max_completion_tokens"} {
+						if value, exists := input[limitField]; exists {
+							require.NoError(t, json.Unmarshal(value, &outputLimit))
+						}
 					}
 					batch, err := relay.prepareModelExecutionRoutes(context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
 						"public-model", "public-model", "req-reuse-contract",
@@ -201,7 +203,7 @@ func TestCurrentReuseProbeAndConsoleRequestsReachExactProviderWire(t *testing.T)
 					var outbound map[string]json.RawMessage
 					require.NoError(t, json.Unmarshal(wire, &outbound))
 					require.JSONEq(t, `"`+binding.ExpectedUpstreamModel+`"`, string(outbound["model"]))
-					for _, field := range []string{"tools", "tool_choice", "thinking", "max_tokens", "stream"} {
+					for _, field := range []string{"tools", "tool_choice", "thinking", "max_tokens", "max_completion_tokens", "stream", "stream_options"} {
 						if value, exists := input[field]; exists {
 							require.JSONEq(t, string(value), string(outbound[field]), field)
 						} else {
@@ -215,7 +217,11 @@ func TestCurrentReuseProbeAndConsoleRequestsReachExactProviderWire(t *testing.T)
 				explicitAuto, err := json.Marshal(console)
 				require.NoError(t, err)
 				_, err = validateChatExecutionProfileRequest(explicitAuto, executionProfilePlan(t, binding.ExecutionProfileID, binding.ExecutionProfileVersion))
-				require.Error(t, err, "explicit auto must not silently become provider-default omission")
+				if binding.ProtocolProfileID == "protocol.minimax-m27-openai-chat.v1" {
+					require.NoError(t, err, "new exact M2.7 contract supports explicit auto")
+				} else {
+					require.Error(t, err, "historical explicit auto must not silently become provider-default omission")
+				}
 			}
 		})
 	}

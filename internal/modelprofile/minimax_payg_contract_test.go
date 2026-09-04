@@ -8,15 +8,15 @@ import (
 
 func TestMiniMaxPAYGOfficialCNEndpointSuccessorsAreCurrentAndHistoricalProfilesRemainAddressable(t *testing.T) {
 	tests := []struct {
-		profileID, upstream, protocol string
-		contextWindow, maxOutput      int
+		profileID, version, upstream, protocol string
+		contextWindow, maxOutput               int
 	}{
-		{"minimax.m3.payg", "MiniMax-M3", "protocol.minimax-m3-openai-chat.v9", 1_000_000, 524_288},
-		{"minimax.m2.7.payg", "MiniMax-M2.7", "protocol.minimax-m2-openai-chat.v7", 204_800, 204_800},
-		{"minimax.m2.7-highspeed.payg", "MiniMax-M2.7-highspeed", "protocol.minimax-m2-openai-chat.v7", 204_800, 204_800},
+		{"minimax.m3.payg", "1.2.0", "MiniMax-M3", "protocol.minimax-m3-openai-chat.v9", 1_000_000, 524_288},
+		{"minimax.m2.7.payg", "1.3.0", "MiniMax-M2.7", "protocol.minimax-m27-openai-chat.v1", 204_800, 204_800},
+		{"minimax.m2.7-highspeed.payg", "1.2.0", "MiniMax-M2.7-highspeed", "protocol.minimax-m2-openai-chat.v7", 204_800, 204_800},
 	}
 	for _, test := range tests {
-		profile, ok := Lookup(test.profileID, "1.2.0")
+		profile, ok := Lookup(test.profileID, test.version)
 		require.True(t, ok, test.profileID)
 		require.True(t, profile.Current)
 		require.Equal(t, "minimax", profile.Provider)
@@ -49,7 +49,7 @@ func TestMiniMaxPAYGOfficialCNEndpointSuccessorsAreCurrentAndHistoricalProfilesR
 		require.NoError(t, ValidateProductBinding(historical, ProductBinding{
 			Provider: "minimax", BaseURL: "https://api.minimaxi.com/v1",
 			AdapterType: "openai_compatible", EndpointPathMode: EndpointPathModeCanonicalV1,
-			OperationID: OperationOpenAIChat, ProtocolProfileID: identity.ProtocolProfileID,
+			OperationID: OperationOpenAIChat, ProtocolProfileID: historical.ProtocolProfile,
 			ProtocolProfileVersion: identity.ProtocolProfileVersion, UpstreamModel: test.upstream,
 		}))
 	}

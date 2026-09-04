@@ -91,6 +91,11 @@ var openAIChatFunctionToolsBindingIdentities = map[string][]openAIChatFunctionTo
 	}},
 	MiniMaxPAYGM2ChatFunctionToolsProbeContractID: {
 		{
+			profileID: "minimax.m2.7.payg", profileVersion: "1.3.0",
+			protocolID: "protocol.minimax-m27-openai-chat.v1", protocolVersion: "1.0.0",
+			provider: "minimax", upstreamModel: "MiniMax-M2.7", path: "/v1/chat/completions",
+		},
+		{
 			profileID: "minimax.m2.7.payg", profileVersion: "1.0.0",
 			protocolID: "protocol.minimax-m2-openai-chat.v7", protocolVersion: "1.0.0",
 			provider: "minimax", upstreamModel: "MiniMax-M2.7", path: "/v1/chat/completions",
@@ -190,7 +195,7 @@ func openAIChatRuntimeCapabilityAllowed(binding Binding) bool {
 			modelprofile.CapabilityToolChoiceAuto,
 			modelprofile.CapabilityTools,
 		}
-		if binding.ExecutionProfileVersion != "1.2.0" {
+		if binding.ExecutionProfileVersion != "1.2.0" && !(binding.ExecutionProfileID == "minimax.m2.7.payg" && binding.ExecutionProfileVersion == "1.3.0" && (binding.CapabilityID == modelprofile.CapabilityPromptCache || binding.CapabilityID == modelprofile.CapabilityCacheReadUsage)) {
 			return false
 		}
 	case GLMChatFunctionToolsProbeContractID, GLMToggleChatFunctionToolsProbeContractID:
@@ -215,12 +220,22 @@ func openAIChatRuntimeProbePrompt() string {
 		"Call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly."
 }
 
+func openAIChatProbeTools() []map[string]interface{} {
+	return []map[string]interface{}{{"type": "function", "function": map[string]interface{}{
+		"name": "unirouter_probe_echo", "description": "Return the supplied probe value through a function call.",
+		"parameters": map[string]interface{}{"type": "object", "properties": map[string]interface{}{"value": map[string]string{"type": "string"}}, "required": []string{"value"}, "additionalProperties": false},
+	}}}
+}
+
 // BuildOpenAIChatFunctionToolsProbeRequest derives the exact fixed request
 // from the complete immutable Binding and the selected Profile contracts. The
 // two provider contracts deliberately keep separate identities because their
 // reasoning and tool-choice request semantics differ; only the mechanics are
 // shared.
 func BuildOpenAIChatFunctionToolsProbeRequest(binding Binding) ([]byte, error) {
+	if binding.ProbeContractID == MiniMaxM27StreamFunctionToolsProbeContractID {
+		return BuildMiniMaxM27StreamFunctionToolsProbeRequest(binding)
+	}
 	profile, protocol, reasoning, err := resolveOpenAIChatFunctionToolsBinding(binding)
 	if err != nil {
 		return nil, err
@@ -233,17 +248,7 @@ func BuildOpenAIChatFunctionToolsProbeRequest(binding Binding) ([]byte, error) {
 		"model":    binding.ExpectedUpstreamModel,
 		"messages": []map[string]string{{"role": "user", "content": prompt}},
 		"stream":   false,
-		"tools": []map[string]interface{}{{
-			"type": "function",
-			"function": map[string]interface{}{
-				"name": "unirouter_probe_echo", "description": "Return the supplied probe value through a function call.",
-				"parameters": map[string]interface{}{
-					"type": "object", "properties": map[string]interface{}{
-						"value": map[string]string{"type": "string"},
-					}, "required": []string{"value"}, "additionalProperties": false,
-				},
-			},
-		}},
+		"tools":    openAIChatProbeTools(),
 	}
 	if !protocol.OutputLimitModeled || protocol.OutputLimitField == "" || protocol.OutputLimitMax < 256 {
 		return nil, fmt.Errorf("%w: exact output limit contract", ErrUnsupported)

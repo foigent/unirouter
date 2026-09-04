@@ -522,7 +522,7 @@ func (a *OpenAICompatible) NormalizeStreamFrame(ctx context.Context, in StreamCh
 	if err != nil {
 		return nil, err
 	}
-	usage, present, err := ParseOpenAICompatibleUsageWithCacheProfile(
+	usage, present, err := ParseOpenAICompatibleStreamUsageWithCacheProfile(
 		body, EndpointChatCompletions, metering.UsageSourceUpstream, in.CacheUsageProfile,
 	)
 	if err != nil || !present {

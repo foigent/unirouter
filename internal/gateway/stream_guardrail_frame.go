@@ -12,6 +12,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/guardrail"
 	"github.com/uniroute/unirouter/internal/modelprofile"
 )
@@ -47,6 +48,7 @@ type guardedStreamFrame struct {
 }
 
 type exactStreamProtocolState struct {
+	functionTools    *adapters.FunctionToolStreamState
 	contract         modelprofile.ChatStreamContract
 	sawOpaque        bool
 	sawContent       bool
@@ -58,12 +60,23 @@ func exactStreamStateForProtocol(protocolProfile string) *exactStreamProtocolSta
 	if !ok || !contract.StreamContract.ResponseModeled {
 		return nil
 	}
-	return &exactStreamProtocolState{contract: contract.StreamContract}
+	state := &exactStreamProtocolState{contract: contract.StreamContract}
+	if contract.StreamContract.FunctionToolDeltas {
+		state.functionTools = adapters.NewFunctionToolStreamState("MiniMax-M2.7")
+	}
+	return state
 }
 
 func (state *exactStreamProtocolState) accept(frame *guardedStreamFrame, authoritativeUsage bool) error {
 	if state == nil || frame == nil {
 		return nil
+	}
+	if state.functionTools != nil {
+		facts, err := adapters.ParseFunctionToolStreamFacts(frame.raw)
+		if err != nil {
+			return err
+		}
+		return state.functionTools.Accept(facts, authoritativeUsage)
 	}
 	if frame.terminalUsage {
 		if state.contract.RequireTerminalUsage && !authoritativeUsage {
@@ -108,8 +121,44 @@ func (state *exactStreamProtocolState) validateDone() error {
 	if state == nil {
 		return nil
 	}
+	if state.functionTools != nil {
+		return state.functionTools.Finish()
+	}
 	if state.contract.RequireTerminalUsage && !state.sawTerminalUsage {
 		return fmt.Errorf("exact stream ended without the required terminal usage frame")
+	}
+	return nil
+}
+
+// Streaming introduces tool identities incrementally, but it must enforce the
+// same frozen request-name authority as complete non-stream responses before
+// disclosing the first identity. Do not derive an allowlist from provider data.
+func validateFunctionToolStreamInvocation(route *RouteResult, data []byte) error {
+	facts, err := adapters.ParseFunctionToolStreamFacts(data)
+	if err != nil {
+		return err
+	}
+	if len(facts.Tools) == 0 {
+		return nil
+	}
+	if route == nil {
+		return fmt.Errorf("missing stream invocation authority")
+	}
+	for _, requirement := range route.PlanCapabilityRequirements {
+		if requirement.FunctionToolChoice != nil && requirement.CapabilityID != modelprofile.CapabilityToolChoiceAuto && requirement.CapabilityID != modelprofile.CapabilityFunctionTools {
+			return fmt.Errorf("inapplicable stream invocation constraint")
+		}
+	}
+	var names []string
+	for _, tool := range facts.Tools {
+		if tool.Name != nil {
+			names = append(names, *tool.Name)
+		}
+	}
+	inspection := nonStreamOutputInspection{choiceFunctionToolNames: [][]string{names}}
+	inspectFunctionToolChoiceResponse(route, &inspection)
+	if !inspection.complete() {
+		return fmt.Errorf("stream tools violate frozen invocation constraint")
 	}
 	return nil
 }
@@ -262,6 +311,12 @@ func parseExactGuardedStreamFrame(data []byte, contract modelprofile.ChatStreamC
 		frame.unsupported = true
 	}
 	allowedDeltaFields := append([]string{"role"}, contract.DeltaTextFields...)
+	if contract.FunctionToolDeltas {
+		if _, err := adapters.ParseFunctionToolStreamFacts(data); err != nil {
+			return nil, err
+		}
+		allowedDeltaFields = append(allowedDeltaFields, "tool_calls")
+	}
 	allowedDeltaFields = append(allowedDeltaFields, contract.DeltaOpaqueFields...)
 	allChoicesTerminal := true
 	for choiceIndex, rawChoice := range choices {
@@ -297,6 +352,19 @@ func parseExactGuardedStreamFrame(data []byte, contract modelprofile.ChatStreamC
 		}
 		if !streamMapKeysSupported(delta, allowedDeltaFields...) {
 			frame.unsupported = true
+		}
+		if contract.FunctionToolDeltas {
+			if tools, ok := delta["tool_calls"].([]interface{}); ok {
+				for _, rawTool := range tools {
+					tool := rawTool.(map[string]interface{}) // shared parser validated shape
+					toolIndex, _ := streamEnvelopeIndex(tool, 0)
+					frame.collectString(tool, "id", fmt.Sprintf("choices[%d].tool_calls[%d].id", choiceIndex, toolIndex))
+					if function, ok := tool["function"].(map[string]interface{}); ok {
+						frame.collectString(function, "name", fmt.Sprintf("choices[%d].tool_calls[%d].function.name", choiceIndex, toolIndex))
+						frame.collectString(function, "arguments", fmt.Sprintf("choices[%d].tool_calls[%d].function.arguments", choiceIndex, toolIndex))
+					}
+				}
+			}
 		}
 		if role, exists := delta["role"]; exists && role != nil {
 			value, ok := role.(string)

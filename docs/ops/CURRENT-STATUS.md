@@ -1,11 +1,17 @@
 # UniRouter Current Status
 
-> Repository source candidate is 1.2.49/M110. Optional Chat preflight reuses
+> Repository source candidate is 1.2.50/M112. M111 integrates the reviewed exact
+> M2.7 PAYG Profile 1.3 streaming Function Tools candidate and its static
+> Publication. M112 adds repeated primary-Alias successor cutover to the
+> existing domain command; it is an ordinary schema migration, not another
+> Publication. Historical identities, receipts and first-cutover contracts stay
+> addressable. This source batch has no Target apply, rollout or Agent result.
+> Optional Chat preflight reuses
 > caller authorization and canonical request/route preparation without Provider
 > I/O or execution writes. Client sync separates stable sealed limits, Profile
 > request defaults and user overrides. Static verification is not live route or
-> Agent-task qualification. M111 stream-tools remains a separate unpublished
-> candidate; this source batch creates no Publication or Target evidence.
+> Agent-task qualification. Static declarations never create dynamic Probe,
+> approval or Release authority merely by existing in source.
 > Developer Console recent calls use
 > the actual requested model; canonical lookup details are limited to existing
 > organization/platform administrator views. Current nine-model Probe/Console

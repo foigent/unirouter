@@ -148,17 +148,27 @@ canonical 审计身份必须分离：
 - 首次切换由一个服务端领域命令完成：锁定并核对旧、新模型、Alias、
   Release/Slot 和受影响 model-set 的完整 before-state，在同一 PostgreSQL
   事务中激活 successor stable Slot、退役并下架 predecessor、创建一个
-  immutable primary Alias、把直接 model-set 引用改为稳定 Alias，并写入
+  primary Alias、把直接 model-set 引用改为稳定 Alias，并写入
   完整不可变收据。任一步失败时不得留下半切换状态。
 - 普通 Gateway 调用若绕过稳定请求名直接指定受 primary Alias 保护的
   canonical successor，必须 fail closed。`/v1/models`、项目 Catalog、
   Developer Console 和 API Docs 在完成调用者授权后投影 `request_model`；
   只有管理员投影可以同时显示 canonical identity 和历史关系。
-- primary Alias 不能通过通用 Alias CRUD 改写或停用。已经完成切换的
-  predecessor 不能复活，successor 不能回到 staging 或被直接删除；后续
-  Alias retarget 是新的版本化生命周期问题，不属于任何 first-cutover
-  合同。published predecessor v1 与 never-activated staging predecessor v2
-  不能交叉重放或共用 parent/child receipt。
+- primary Alias 不能通过通用 Alias CRUD 改写或停用。M112 在同一领域命令中
+  增加 `primary_alias` 前态：精确 expected Alias ID、旧 Slot version 和旧
+  stable Release ref，以及旧、新 registry/Release 状态。两个 sealed Release
+  必须使用同一非 unverified Profile ID 的可寻址精确版本，并通过已有 product
+  binding 校验；不能把任意自定义 upstream 当成同一模型的升级。
+- 连续 B→C→D 复用同一短事务，创建新目标 stable Slot、退役旧目标、切换 primary
+  Alias 和必要的直接 model-set 引用。已经引用稳定 Alias 的权限集合不变。
+  当前 canary、目标已有 Slot、错误组织/前态/Release 均拒绝。旧 Slot、Release
+  与历史收据保留；曾是 successor 不意味着必须永远保持当前 GA。
+  只有受控下一次切换才能退役它，已退役 predecessor 不得复活。
+- 三种前态的 parent/child receipt 分别为 v2/v1、v3/v2、v4/v3，使用独立
+  operation scope 与 fingerprint domain；旧 wire 和重放含义不变。M112 down
+  在新版本收据存在时拒绝，不能让旧二进制误解连续升级证据。
+- 已提交执行授权的在途请求保持冻结身份与计量归属；尚未获授权的旧 Plan
+  在 registry 退役后由现有 coordinator 拒绝，不另开 retired 绕过路径。
 - 请求重放返回相同收据；commit 结果不明确时只通过 parent lifecycle
   receipt 与完整 child evidence 回读恢复。提交后的读回故障不自动回滚
   已生效身份，必须依据不可变收据确认新状态后 forward-fix。

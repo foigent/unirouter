@@ -15,8 +15,17 @@ distinct. Opt-in client metadata projects a stable Release's sealed Profile and
 hard limits separately from its Profile-owned request default; local experiment
 limits are client configuration, never another server parameter authority.
 
-Repository source candidate is version 1.2.49 with PostgreSQL compatibility
-ceiling `000110_openai_chat_runtime_capability_qualification`. M110 is one
+Repository source candidate is version 1.2.50 with PostgreSQL compatibility
+ceiling `000112_repeat_model_successor_cutover`. M111 introduces the exact
+MiniMax M2.7 PAYG Profile 1.3 streaming Function Tools contract and one static
+Publication after M110. M112 extends the existing successor domain command
+with a primary-Alias before-state and independent v4/v3 receipt pair. It permits
+qualified versions of the same non-unverified Profile product to advance
+repeatedly, retains historical evidence, and preserves normal Alias CRUD fences.
+No new table or independent pointer authority is introduced. Registry, Slot,
+Alias and exact model-set changes remain atomic; old request replays return
+historical results. M112 is not a Capability Publication. Neither migration in
+source proves Target application or real Agent-task qualification. M110 is one
 append-only Capability Publication for the exact runtime Function Tools
 composition of the current three MiniMax PAYG and six GLM model Profiles. It
 advances existing provider-family Probe contracts to v2, preserves exact model

@@ -722,6 +722,24 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 			applyKimiChatDiagnostic(&outcome, validationErr)
 			return outcome
 		}
+	case modelcapabilityqualification.MiniMaxM27StreamFunctionToolsProbeContractID:
+		observation, validationErr := modelcapabilityqualification.ValidateMiniMaxM27StreamFunctionToolsForBinding(modelCapabilityProbeBindingFromSnapshot(snapshot), response.Header.Get("Content-Type"), response.Body)
+		outcome.ReportedModel = observation.ReportedModel
+		outcome.FinishReason = observation.FinishReason
+		outcome.PromptTokens = observation.PromptTokens
+		outcome.CompletionTokens = observation.CompletionTokens
+		outcome.TotalTokens = observation.TotalTokens
+		outcome.CacheReadCounterObserved = observation.CacheReadCounterObserved
+		outcome.CachedTokens = observation.CachedTokens
+		outcome.ResponseBytes = observation.ResponseBytes
+		outcome.ReasoningObserved = observation.ReasoningObserved
+		outcome.ToolCallObserved = observation.ToolCallObserved
+		if validationErr != nil {
+			outcome.LatencyMS = time.Since(started).Milliseconds()
+			outcome.ReasonCode = "provider_function_tools_contract_invalid"
+			outcome.ContractErrorCode = modelcapabilityqualification.OpenAIChatFunctionToolsErrorCode(validationErr)
+			return outcome
+		}
 	case modelcapabilityqualification.MiniMaxChatFunctionToolsProbeContractID,
 		modelcapabilityqualification.MiniMaxPAYGM3ChatFunctionToolsProbeContractID,
 		modelcapabilityqualification.MiniMaxPAYGM2ChatFunctionToolsProbeContractID,
@@ -911,6 +929,8 @@ func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]b
 		return modelcapabilityqualification.BuildOpenAIChatFunctionToolsProbeRequest(
 			modelCapabilityProbeBindingFromSnapshot(snapshot),
 		)
+	case modelcapabilityqualification.MiniMaxM27StreamFunctionToolsProbeContractID:
+		return modelcapabilityqualification.BuildMiniMaxM27StreamFunctionToolsProbeRequest(modelCapabilityProbeBindingFromSnapshot(snapshot))
 	default:
 		return nil, errModelCapabilityUnsupported
 	}

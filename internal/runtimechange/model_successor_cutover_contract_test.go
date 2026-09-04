@@ -111,6 +111,39 @@ func TestModelSuccessorContractIdentitiesCannotCrossReplayNamespaces(t *testing.
 	}
 }
 
+func TestRepeatedSuccessorRequiresExactCurrentAuthority(t *testing.T) {
+	valid := validModelSuccessorCutoverMutation()
+	valid.PredecessorAuthorityMode = ModelSuccessorPredecessorPrimaryAlias
+	valid.PredecessorModelName = "glm-5.2-prior"
+	valid.ExpectedPrimaryAliasID = 7
+	valid.ExpectedPredecessorSlotVersion = 3
+	valid.ExpectedPredecessorReleaseRef = "rcr_prior"
+	if _, err := NormalizeModelSuccessorCutoverMutation(valid); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutate := range []func(*ModelSuccessorCutoverMutation){
+		func(m *ModelSuccessorCutoverMutation) { m.ExpectedPrimaryAliasID = 0 },
+		func(m *ModelSuccessorCutoverMutation) { m.ExpectedPredecessorSlotVersion = 0 },
+		func(m *ModelSuccessorCutoverMutation) { m.ExpectedPredecessorReleaseRef = "invalid" },
+		func(m *ModelSuccessorCutoverMutation) { m.PredecessorModelName = m.StableRequestModel },
+		func(m *ModelSuccessorCutoverMutation) {
+			m.PredecessorAuthorityMode = ModelSuccessorPredecessorPublished
+		},
+	} {
+		invalid := valid
+		mutate(&invalid)
+		if _, err := NormalizeModelSuccessorCutoverMutation(invalid); err == nil {
+			t.Fatal("accepted incomplete or cross-mode authority")
+		}
+	}
+	identity := successorContractIdentity(valid)
+	if identity.childVersion != RepeatedModelSuccessorCutoverReceiptContractVersion ||
+		identity.lifecycleVersion != RepeatedModelSuccessorLifecycleReceiptContractVersion ||
+		identity.operationScope == modelSuccessorLifecycleOperationScope || identity.operationScope == stagingModelSuccessorLifecycleOperationScope {
+		t.Fatalf("repeated successor identity: %+v", identity)
+	}
+}
+
 func TestNormalizeModelSuccessorCutoverCommandRequiresDurableIdentity(t *testing.T) {
 	command := ModelSuccessorCutoverCommand{
 		Mutation: validModelSuccessorCutoverMutation(), CustomerOrgID: 1, ActorUserID: 2, ActorOrgID: 1,

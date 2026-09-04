@@ -136,6 +136,40 @@ SELECT access_credential_id,credential_ref,access_grant_id
 	require.Equal(t, grantID, storedGrantID)
 }
 
+// The lifecycle transaction tests prove atomic retargeting. This exercises the
+// existing dispatch boundary it relies on: retirement rejects a prepared plan,
+// while a committed attempt retains its original identity through completion.
+func TestRetirementRejectsPreparedPlanAndPreservesAuthorizedAttemptIntegration(t *testing.T) {
+	fixture := newExecutionFixture(t, true, false)
+	plan, route := fixture.plan(t, modelrouting.ModeCanonical, "retire-dispatch")
+	identity := fixture.freeze(t, "authorized-before-retire")
+	coordinator, err := New(fixture.pool, fixture.billing, DefaultConfig())
+	require.NoError(t, err)
+	authorized, err := coordinator.Authorize(t.Context(), plan, route, identity)
+	require.NoError(t, err)
+	require.Equal(t, Applied, authorized.Status)
+	preparedIdentity := fixture.freeze(t, "prepared-before-retire")
+	_, err = fixture.pool.Exec(t.Context(), `UPDATE model_registry SET lifecycle='retired',approved_catalog=FALSE WHERE id=$1`, plan.PublicModelID)
+	require.NoError(t, err)
+	denied, err := coordinator.Authorize(t.Context(), plan, route, preparedIdentity)
+	require.NoError(t, err)
+	require.Equal(t, Disabled, denied.Status)
+	fixture.requireAttemptCount(t, preparedIdentity.RequestID, 0)
+	require.NoError(t, fixture.billing.CompleteProviderAttempt(t.Context(), billing.ProviderAttemptCompletion{
+		OrgID: authorized.ProviderAttemptKey.OrgID, RequestID: authorized.ProviderAttemptKey.RequestID,
+		AttemptID: authorized.ProviderAttemptKey.AttemptID,
+		Outcome:   billing.ProviderAttemptOutcomeResponseAccepted, HTTPStatus: 200,
+	}))
+	var modelID, releaseID int64
+	var hash string
+	require.NoError(t, fixture.pool.QueryRow(t.Context(), `SELECT route_public_model_id,route_runtime_release_id,route_evidence_hash
+ FROM billing_provider_attempts WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3`,
+		fixture.orgID, identity.RequestID, identity.AttemptID).Scan(&modelID, &releaseID, &hash))
+	require.Equal(t, plan.PublicModelID, modelID)
+	require.Equal(t, plan.RuntimeReleaseID, releaseID)
+	require.Equal(t, authorized.EvidenceHash, hash)
+}
+
 func TestCoordinatorRejectsEveryPinnedAuthorityDriftWithoutAttempt(t *testing.T) {
 	tests := []struct {
 		name   string

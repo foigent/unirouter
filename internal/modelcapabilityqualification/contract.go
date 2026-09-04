@@ -39,6 +39,7 @@ const (
 	MiniMaxChatFunctionToolsProbeContractID       = "unirouter.capability-probe.minimax-chat-function-tools.v1"
 	MiniMaxPAYGM3ChatFunctionToolsProbeContractID = "unirouter.capability-probe.minimax-payg-m3-chat-function-tools.v1"
 	MiniMaxPAYGM2ChatFunctionToolsProbeContractID = "unirouter.capability-probe.minimax-payg-m2-chat-function-tools.v1"
+	MiniMaxM27StreamFunctionToolsProbeContractID  = "unirouter.capability-probe.minimax-m27-chat-stream-tools.v1"
 	GLMChatFunctionToolsProbeContractID           = "unirouter.capability-probe.glm-chat-function-tools.v1"
 	GLMToggleChatFunctionToolsProbeContractID     = "unirouter.capability-probe.glm-toggle-chat-function-tools.v1"
 	OpenAIChatFunctionToolsProbeContractVersion   = "1.0.0"
@@ -196,7 +197,7 @@ func MiniMaxPAYGCurrentBindings() []Binding {
 	bindings := make([]Binding, 0, 3)
 	for _, profile := range []struct{ id, version string }{
 		{"minimax.m3.payg", "1.2.0"},
-		{"minimax.m2.7.payg", "1.2.0"},
+		{"minimax.m2.7.payg", "1.3.0"},
 		{"minimax.m2.7-highspeed.payg", "1.2.0"},
 	} {
 		bindings = append(bindings, mustResolveAll("openai.chat_completions.v1", profile.id, profile.version, "")...)

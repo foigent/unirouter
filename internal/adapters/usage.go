@@ -314,6 +314,16 @@ func ParseOpenAICompatibleUsage(data []byte, endpoint Endpoint, source string) (
 // A top-level cached_tokens field is therefore billing authority for Kimi, but
 // remains an ignored unknown extension for generic OpenAI-compatible routes.
 func ParseOpenAICompatibleUsageWithCacheProfile(data []byte, endpoint Endpoint, source, cacheUsageProfile string) (Usage, bool, error) {
+	return parseOpenAICompatibleUsageWithContext(data, endpoint, source, cacheUsageProfile, false)
+}
+
+// ParseOpenAICompatibleStreamUsageWithCacheProfile requires a stream transport
+// caller. Upstream object/model strings cannot opt a non-stream response in.
+func ParseOpenAICompatibleStreamUsageWithCacheProfile(data []byte, endpoint Endpoint, source, cacheUsageProfile string) (Usage, bool, error) {
+	return parseOpenAICompatibleUsageWithContext(data, endpoint, source, cacheUsageProfile, true)
+}
+
+func parseOpenAICompatibleUsageWithContext(data []byte, endpoint Endpoint, source, cacheUsageProfile string, streaming bool) (Usage, bool, error) {
 	switch endpoint {
 	case EndpointChatCompletions, EndpointEmbeddings:
 	default:
@@ -532,7 +542,7 @@ func ParseOpenAICompatibleUsageWithCacheProfile(data []byte, endpoint Endpoint, 
 			)
 			return usage, true, err
 		}
-		if cacheContract.RequireReadCounter && (cacheContract.ReadCounterRequiredAtOrAbovePromptTokens == 0 ||
+		if cacheContract.RequireReadCounter && !(streaming && cacheContract.StreamReadCounterOptional) && (cacheContract.ReadCounterRequiredAtOrAbovePromptTokens == 0 ||
 			promptTokens >= cacheContract.ReadCounterRequiredAtOrAbovePromptTokens) {
 			return Usage{}, true, fmt.Errorf("cache profile %s requires prompt_tokens_details.cached_tokens, including an authoritative zero", cacheContract.ProfileID)
 		}

@@ -297,6 +297,7 @@ jobs:
           test_pattern+='|TestAgentCapabilityPostgresAuthorityAndRevocationIntegration'
           test_pattern+='|TestModelOperation(HTTPSOriginGoSQLGoldenVectors|ProductionQualification(DatabaseGuards|DownRejects(FrozenEvidence|FutureM76)))Integration'
           test_pattern+='|Test(ModelDeploymentLifecycleReceipt|DeploymentLifecycleReceipt|InitialDeploymentLifecycleReceipt).*Integration'
+          test_pattern+='|Test(RepeatedModelSuccessor|RepeatedSuccessor|ModelSuccessorCutoverAtomic|NeverActivatedStagingModelSuccessor|RetirementRejectsPreparedPlan).*Integration'
           test_pattern+='|TestAtomicModelReleaseAuthoring.*Integration'
           test_pattern+='|TestSealedModelExecutionContract.*Integration'
           test_pattern+='|TestEnsureBaseline.*Integration'
