@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -44,21 +45,33 @@ type catalogModel struct {
 }
 
 type catalogExecutionProfile struct {
-	Status                string   `json:"status"`
-	DisplayName           string   `json:"display_name"`
-	ContextWindow         int      `json:"context_window"`
-	MaxOutputTokens       int      `json:"max_output_tokens"`
-	Capabilities          []string `json:"capabilities"`
-	ReasoningEffortValues []string `json:"reasoning_effort_values"`
+	Status                     string   `json:"status"`
+	Source                     string   `json:"source"`
+	DisplayName                string   `json:"display_name"`
+	ContextWindow              int      `json:"context_window"`
+	MaxOutputTokens            int      `json:"max_output_tokens"`
+	RequestDefaultOutputTokens int      `json:"request_default_output_tokens"`
+	Capabilities               []string `json:"capabilities"`
+	ReasoningEffortValues      []string `json:"reasoning_effort_values"`
 }
 
 type syncReport struct {
-	Provider         string   `json:"provider"`
-	Models           int      `json:"models"`
-	VerifiedModels   int      `json:"verified_models"`
-	UnverifiedModels []string `json:"unverified_models"`
-	RemovedModels    []string `json:"removed_models"`
-	Written          bool     `json:"written"`
+	Provider         string                `json:"provider"`
+	Models           int                   `json:"models"`
+	VerifiedModels   int                   `json:"verified_models"`
+	UnverifiedModels []string              `json:"unverified_models"`
+	RemovedModels    []string              `json:"removed_models"`
+	Written          bool                  `json:"written"`
+	Parameters       []parameterProjection `json:"parameters,omitempty"`
+}
+
+type parameterProjection struct {
+	Model            string `json:"model"`
+	Source           string `json:"source"`
+	ContextWindow    int    `json:"context_window"`
+	OutputCeiling    int    `json:"output_ceiling"`
+	RequestOutput    int    `json:"request_output"`
+	RetainedOverride bool   `json:"retained_override"`
 }
 
 type httpDoer interface {
@@ -232,7 +245,13 @@ func projectOpenClawModels(provider string, catalog []catalogModel, existing []m
 		}
 		model["name"] = name
 		if source.Execution.Status == "verified" && source.Execution.ContextWindow > 0 && source.Execution.MaxOutputTokens > 0 {
+			parameters, err := projectOutputParameters(id, model, source.Execution)
+			if err != nil {
+				return nil, syncReport{}, err
+			}
 			applyVerifiedProjection(model, source.Execution)
+			model["contextWindow"], model["maxTokens"] = parameters.ContextWindow, parameters.OutputCeiling
+			report.Parameters = append(report.Parameters, parameters)
 			report.VerifiedModels++
 		} else {
 			clearExecutionProjection(model)
@@ -249,6 +268,70 @@ func projectOpenClawModels(provider string, catalog []catalogModel, existing []m
 	slices.Sort(report.UnverifiedModels)
 	slices.Sort(report.RemovedModels)
 	return result, report, nil
+}
+
+// The client treats maxTokens both as a ceiling and as an omitted-value
+// fallback. Its supported params override carries the separate request default.
+// Existing limits are user-owned; no hidden ownership ledger guesses their age.
+func projectOutputParameters(id string, model map[string]any, profile catalogExecutionProfile) (parameterProjection, error) {
+	result := parameterProjection{Model: id, Source: profile.Source, ContextWindow: profile.ContextWindow, OutputCeiling: profile.MaxOutputTokens}
+	invalid := func(reason string) (parameterProjection, error) {
+		return parameterProjection{}, fmt.Errorf("model %q: %s", id, reason)
+	}
+	if profile.Source != "stable_release" || profile.RequestDefaultOutputTokens <= 0 ||
+		profile.MaxOutputTokens > profile.ContextWindow || profile.RequestDefaultOutputTokens > profile.MaxOutputTokens {
+		return invalid("valid stable Release/default projection is required; no default was inferred from the ceiling")
+	}
+	for _, limit := range []struct {
+		key   string
+		value *int
+	}{{"contextWindow", &result.ContextWindow}, {"maxTokens", &result.OutputCeiling}} {
+		if raw, present := model[limit.key]; present {
+			value, valid := positiveTokenCount(raw)
+			if !valid || value > *limit.value {
+				return invalid("existing " + limit.key + " is invalid or exceeds the effective Release limit")
+			}
+			*limit.value = value
+			result.RetainedOverride = true
+		}
+	}
+	if result.OutputCeiling > result.ContextWindow {
+		return invalid("output ceiling exceeds the retained context limit")
+	}
+	if raw, exists := model["params"]; exists {
+		if _, valid := raw.(map[string]any); !valid {
+			return invalid("params must be an object")
+		}
+	}
+	params := objectField(model, "params")
+	for _, key := range []string{"maxTokens", "max_completion_tokens", "max_tokens"} {
+		if raw, present := params[key]; present {
+			value, valid := positiveTokenCount(raw)
+			if !valid || value > result.OutputCeiling || (result.RequestOutput != 0 && result.RequestOutput != value) {
+				return invalid("output params are invalid, conflicting or exceed the retained ceiling")
+			}
+			result.RequestOutput = value
+			result.RetainedOverride = true
+		}
+	}
+	if result.RequestOutput == 0 {
+		result.RequestOutput = min(profile.RequestDefaultOutputTokens, result.OutputCeiling)
+		params["maxTokens"] = result.RequestOutput
+	}
+	model["params"] = params
+	return result, nil
+}
+
+func positiveTokenCount(value any) (int, bool) {
+	switch number := value.(type) {
+	case int:
+		return number, number > 0 && number <= 1_000_000_000
+	case float64:
+		if !math.IsNaN(number) && number > 0 && number <= 1_000_000_000 && math.Trunc(number) == number {
+			return int(number), true
+		}
+	}
+	return 0, false
 }
 
 func applyVerifiedProjection(model map[string]any, profile catalogExecutionProfile) {

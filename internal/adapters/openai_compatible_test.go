@@ -16,6 +16,26 @@ import (
 
 type roundTripFunc func(req *http.Request) (*http.Response, error)
 
+func TestOpenAICompatiblePrepareMatchesBuildWithoutCredentials(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	for _, config := range []string{`{}`, `{"endpoint_path_mode":"base_relative"}`} {
+		input := RequestInput{Endpoint: EndpointChatCompletions, DownstreamBody: []byte(`{"model":"alias","messages":[],"max_tokens":8192,"precise":9223372036854775807}`), RequestedModel: "alias", MappedModel: "upstream", APIKey: "private-key", RequestID: "request", Channel: models.Channel{BaseURL: "https://provider.test/api/v4", AdapterConfig: json.RawMessage(config)}}
+		prepared, err := adapter.PrepareRequest(context.Background(), input)
+		require.NoError(t, err)
+		built, err := adapter.BuildRequest(context.Background(), input)
+		require.NoError(t, err)
+		before, err := io.ReadAll(prepared.Body)
+		require.NoError(t, err)
+		after, err := io.ReadAll(built.Body)
+		require.NoError(t, err)
+		require.Equal(t, before, after)
+		require.Equal(t, built.URL, prepared.URL)
+		require.Empty(t, prepared.Header.Get("Authorization"))
+		require.Equal(t, "Bearer private-key", built.Header.Get("Authorization"))
+		require.Contains(t, string(before), "9223372036854775807")
+	}
+}
+
 func (f roundTripFunc) Do(req *http.Request) (*http.Response, error) {
 	return f(req)
 }

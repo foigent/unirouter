@@ -64,6 +64,18 @@ func EffectiveEndpointPathMode(adapterType string, raw []byte) (string, error) {
 }
 
 func (a *OpenAICompatible) BuildRequest(ctx context.Context, in RequestInput) (*http.Request, error) {
+	req, err := a.PrepareRequest(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+in.APIKey)
+	return req, nil
+}
+
+// PrepareRequest performs exactly the local shaping used by BuildRequest,
+// without reading or attaching credentials or sending a request. Execution
+// preflight uses this boundary; it does not simulate a Provider response.
+func (a *OpenAICompatible) PrepareRequest(ctx context.Context, in RequestInput) (*http.Request, error) {
 	config, err := parseOpenAICompatibleConfig(in.Channel.AdapterConfig)
 	if err != nil {
 		return nil, err
@@ -98,7 +110,6 @@ func (a *OpenAICompatible) BuildRequest(ctx context.Context, in RequestInput) (*
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+in.APIKey)
 	if in.RequestID != "" {
 		req.Header.Set("X-Request-ID", in.RequestID)
 	}

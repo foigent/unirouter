@@ -832,20 +832,8 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", "model is required")
 		return
 	}
-	for _, tokenLimit := range []struct {
-		field string
-		limit *int
-	}{
-		{field: "max_tokens", limit: req.MaxTokens},
-		{field: "max_completion_tokens", limit: req.MaxCompletionTokens},
-	} {
-		if tokenLimit.limit != nil && (*tokenLimit.limit < 0 || *tokenLimit.limit > maxChatCompletionTokens) {
-			writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", tokenLimit.field+" is outside the supported range")
-			return
-		}
-	}
-	if req.MaxTokens != nil && req.MaxCompletionTokens != nil && *req.MaxTokens != *req.MaxCompletionTokens {
-		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", "max_tokens and max_completion_tokens must match when both are provided")
+	if message := validateChatOutputParameters(req); message != "" {
+		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", message)
 		return
 	}
 	requestedModel := middleware.GetModelAliasFromContext(ctx)

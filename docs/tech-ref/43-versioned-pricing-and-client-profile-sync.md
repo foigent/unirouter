@@ -187,7 +187,13 @@ GET /v1/models?include=execution_profile
 The extension contains only the caller's already-authorized models and
 repository-reviewed executable capabilities. Unregistered, unverified or
 invalid profile bindings are labeled explicitly and receive no inferred limits
-or capabilities.
+or capabilities. `verified` is static Profile/limit validation, not evidence
+that the current request combination has an executable route. With a canonical
+stable Release, `source=stable_release` identifies its sealed Profile and limits;
+`request_default_output_tokens` is the existing Profile policy default narrowed
+by that sealed public ceiling. This value is not automatically an official
+Provider recommendation. Registry-only history has `source=registry` and no
+active request default. Invalid stable pins do not fall back to registry values.
 
 `uniroute-openclaw-sync` consumes this projection and maps it to OpenClaw's
 model-level `contextWindow`, `maxTokens`, `reasoning`, `input` and safe `compat`
@@ -196,6 +202,15 @@ such as `cost`, `params`, `headers` and unrelated compatibility overrides, and
 removes models no longer authorized by the key. An unverified profile clears
 previously synchronized execution fields so stale metadata cannot masquerade as
 current verification.
+
+The sync preserves valid conservative local context/output ceilings and explicit
+`params.maxTokens`, `params.max_completion_tokens` or `params.max_tokens`
+overrides. A missing request default is written via supported `params.maxTokens`,
+not by replacing the `maxTokens` capability ceiling. Invalid/conflicting aliases
+and values outside the retained/effective limits stop before any write. A server
+without stable/default provenance is reported, never guessed from its maximum.
+Dry-run reports only model, source, selected limits/default and retained-override
+status; unrelated params and credentials are not printed.
 
 The command never accepts a key on argv and never prints it. It performs an
 OpenClaw schema dry-run first; only explicit `--write` changes the config:
@@ -212,6 +227,29 @@ This is a client projection, not a second execution authority. Runtime routing
 continues to use legacy `candidate.v1` while compatibility mode is selected;
 M82 canonical Release pins remain unchanged until a separately authorized
 canonical cutover.
+
+Client-specific transport checks are optional local regressions. Select the
+installed version's `OPENCLAW_TRANSPORT_MODULE`, `OPENCLAW_RUNTIME_HOST_MODULE`
+and, if needed, `OPENCLAW_NODE_BINARY`, then run the sync package's
+`TestInstalledOpenClawTransportConsumesProjectedDefaults`. It calls the actual
+payload builder with synthetic input and a no-network guard, not a live Agent.
+
+## 5.1 Optional request-level preflight
+
+`POST /v1/chat/completions/preflight` accepts the actual Chat request with the
+same key and Chat operation authorization. It reuses canonical Profile,
+capability, routing and credential-free outbound preparation. It reports safe
+exclusion codes such as `unsupported_capability:streaming`, not route secrets or
+internal successor names. It does not dispatch, decrypt, reserve execution
+quota/funds, claim a half-open lease or create execution/qualification evidence.
+
+The response is a non-cacheable local snapshot. A locally admissible route does
+not prove dynamic quota availability, content-policy/compression outcomes, live
+credential validity, Provider response delivery or Agent task completion.
+Normal requests still run every authoritative check. Clients need not invoke
+preflight before every request; SDK configuration alone is not a compatibility
+guarantee. No persistent Agent-ready flag or client-specific model directory is
+introduced.
 
 Provider cache usage has a separate response projection. When the selected
 execution profile makes Kimi's top-level `cached_tokens` or DeepSeek's exact

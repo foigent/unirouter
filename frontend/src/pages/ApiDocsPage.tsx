@@ -74,6 +74,7 @@ const endpointGroups: EndpointGroup[] = [
     endpoints: [
       ['GET', '/v1/models', '兼容 OpenAI 协议的模型列表'],
       ['POST', '/v1/chat/completions', '兼容 OpenAI 协议的对话补全'],
+      ['POST', '/v1/chat/completions/preflight', '使用相同 Chat 请求只读核对当前合同、路由资格与出站参数；不调用 Provider，不代表真实任务已通过'],
       ['POST', '/v1/embeddings', '兼容 OpenAI 协议的向量接口'],
       ['POST', '/v1/responses', '严格 OpenAI Responses 非流式文本子集；Bearer 鉴权、仅元数据幂等、绕过响应缓存'],
       ['POST', '/v1/messages', '严格 Anthropic Messages 非流式文本子集；x-api-key + anthropic-version、仅元数据幂等、绕过响应缓存'],

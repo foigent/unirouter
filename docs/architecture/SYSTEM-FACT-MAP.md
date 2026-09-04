@@ -8,7 +8,14 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-Repository source candidate is version 1.2.48 with PostgreSQL compatibility
+Optional Chat preflight reuses the canonical request/route authorities and
+credential-free outbound preparation, without execution effects or a persisted
+client-ready state. Static model metadata and live request eligibility remain
+distinct. Opt-in client metadata projects a stable Release's sealed Profile and
+hard limits separately from its Profile-owned request default; local experiment
+limits are client configuration, never another server parameter authority.
+
+Repository source candidate is version 1.2.49 with PostgreSQL compatibility
 ceiling `000110_openai_chat_runtime_capability_qualification`. M110 is one
 append-only Capability Publication for the exact runtime Function Tools
 composition of the current three MiniMax PAYG and six GLM model Profiles. It
