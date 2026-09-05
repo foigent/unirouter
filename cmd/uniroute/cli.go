@@ -60,6 +60,10 @@ func runCLIWithAdminPasswordInput(ctx context.Context, args []string, cfg *confi
 		return true, runMigrateCLI(ctx, args[1:], cfg)
 	case "capability-contract-publication":
 		return true, runCapabilityContractPublicationCLI(ctx, args[1:], cfg)
+	case "runtime-generation":
+		return true, runRuntimeGenerationCLI(ctx, args[1:], cfg)
+	case "compatible-expand":
+		return true, runCompatibleExpandCLI(ctx, args[1:], cfg)
 	case "model-route-authority":
 		return true, runModelRouteAuthorityCLI(ctx, args[1:], cfg)
 	case "reset":

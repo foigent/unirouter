@@ -768,7 +768,7 @@ func (orchestrator *publicNonStreamOrchestrator) prepare(
 		Mode: modelrouting.ModeCanonical, CustomerOrgID: request.OrgID,
 		PublicModel: request.ResolvedModel, ModelOperationID: string(request.Operation),
 		SelectionKey: request.RequestID,
-		DeriveInvocationCapabilities: func(profile modelprofile.Profile) ([]modelrouting.CapabilityRequirement, error) {
+		DeriveInvocationCapabilities: func(profile modelprofile.Profile, definition modelprofile.Definition) ([]modelrouting.CapabilityRequirement, error) {
 			binding, bindingErr := publicBindingForExecutionProfile(profile, string(request.Operation))
 			if bindingErr != nil || binding.PublicPath != request.Path {
 				return nil, errPublicNonStreamContractMismatch

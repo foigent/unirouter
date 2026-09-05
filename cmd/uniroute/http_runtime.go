@@ -13,6 +13,8 @@ import (
 
 	"github.com/uniroute/unirouter/internal/config"
 	"github.com/uniroute/unirouter/internal/modelprofile"
+	"github.com/uniroute/unirouter/internal/runtimegeneration"
+	"github.com/uniroute/unirouter/internal/schemaauthority"
 )
 
 const runtimeCleanupGrace = 120 * time.Second
@@ -20,24 +22,35 @@ const runtimeCleanupGrace = 120 * time.Second
 // httpRuntime owns only this process's accepted HTTP handlers. Ingress
 // withdrawal and fleet compatibility are separate orchestration authorities.
 type httpRuntime struct {
-	mu              sync.Mutex
-	instance        string
-	draining        bool
-	next            uint64
-	requests        map[uint64]context.CancelFunc
-	drained         chan struct{}
-	requestLifetime time.Duration
-	drainTimeout    time.Duration
-	schemaDigest    string
+	mu                   sync.Mutex
+	instance             string
+	draining             bool
+	next                 uint64
+	requests             map[uint64]context.CancelFunc
+	drained              chan struct{}
+	requestLifetime      time.Duration
+	drainTimeout         time.Duration
+	schemaDigest         string
+	supportDigest        string
+	artifact             string
+	leaseRequired        bool
+	leaseUntil           time.Time
+	authorityUnavailable bool
 }
 
 type httpRuntimeStatus struct {
-	Instance               string `json:"instance"`
-	State                  string `json:"state"`
-	ActiveRequests         int    `json:"active_requests"`
-	RequestLifetimeSeconds int64  `json:"request_lifetime_seconds"`
-	DrainTimeoutSeconds    int64  `json:"drain_timeout_seconds"`
-	SchemaLedgerDigest     string `json:"schema_ledger_digest"`
+	Instance               string   `json:"instance"`
+	Artifact               string   `json:"artifact_digest"`
+	LeaseRequired          bool     `json:"lease_required"`
+	LeaseRemainingSeconds  int64    `json:"lease_remaining_seconds"`
+	State                  string   `json:"state"`
+	ActiveRequests         int      `json:"active_requests"`
+	RequestLifetimeSeconds int64    `json:"request_lifetime_seconds"`
+	DrainTimeoutSeconds    int64    `json:"drain_timeout_seconds"`
+	SchemaLedgerDigest     string   `json:"schema_ledger_digest"`
+	SupportManifestDigest  string   `json:"support_manifest_digest"`
+	CompatibilityEpoch     string   `json:"compatibility_epoch"`
+	SupportedSchemaHeads   []string `json:"supported_schema_heads"`
 }
 
 func newHTTPRuntime(cfg *config.Config) (*httpRuntime, error) {
@@ -48,24 +61,19 @@ func newHTTPRuntime(cfg *config.Config) (*httpRuntime, error) {
 	// Keep the provider's shorter per-operation deadlines. This outer bound
 	// includes admission/body handling and finalization, and cannot truncate a
 	// currently implemented long reasoning/processing-tier contract.
-	providerSeconds := max(300, cfg.StreamMaxDurationSecs)
-	for _, profile := range modelprofile.All() {
-		if reasoning, ok := modelprofile.ResolveReasoningContract(profile.ReasoningProfile); ok {
-			providerSeconds = max(providerSeconds, reasoning.ActiveNonStreamTimeoutSeconds)
-		}
-		if tier, ok := modelprofile.ResolveProcessingTierPolicy(profile.ProcessingTierPolicy); ok {
-			providerSeconds = max(providerSeconds, tier.OmittedTimeoutSeconds)
-			for _, value := range tier.RequestValues {
-				providerSeconds = max(providerSeconds, value.RequestTimeoutSeconds)
-			}
-		}
-	}
+	providerSeconds := max(modelprofile.MaximumImplementedRequestTimeoutSeconds(), cfg.StreamMaxDurationSecs)
 	requestLifetime := time.Duration(providerSeconds)*time.Second + runtimeCleanupGrace
+	supportDigest, err := runtimegeneration.CurrentManifest([]string{schemaauthority.LegacyCapabilityHead, schemaauthority.CapabilityExpandHead}).Digest()
+	if err != nil {
+		return nil, err
+	}
 	return &httpRuntime{
 		instance: "uri_" + hex.EncodeToString(identity[:]),
 		requests: make(map[uint64]context.CancelFunc), drained: make(chan struct{}),
 		requestLifetime: requestLifetime,
 		drainTimeout:    max(requestLifetime+runtimeCleanupGrace, time.Duration(cfg.ShutdownTimeoutSecs)*time.Second),
+		supportDigest:   supportDigest,
+		artifact:        cfg.RuntimeImageDigest,
 	}, nil
 }
 
@@ -75,12 +83,18 @@ func (runtime *httpRuntime) status() httpRuntimeStatus {
 	state := "serving"
 	if runtime.draining {
 		state = "draining"
+	} else if runtime.authorityUnavailable || (runtime.leaseRequired && !time.Now().Before(runtime.leaseUntil)) {
+		state = "unavailable"
 	}
 	return httpRuntimeStatus{
 		Instance: runtime.instance, State: state, ActiveRequests: len(runtime.requests),
+		Artifact: runtime.artifact, LeaseRequired: runtime.leaseRequired, LeaseRemainingSeconds: max(0, int64(time.Until(runtime.leaseUntil)/time.Second)),
 		RequestLifetimeSeconds: int64(runtime.requestLifetime / time.Second),
 		DrainTimeoutSeconds:    int64(runtime.drainTimeout / time.Second),
 		SchemaLedgerDigest:     runtime.schemaDigest,
+		SupportManifestDigest:  runtime.supportDigest,
+		CompatibilityEpoch:     runtimegeneration.CompatibilityEpoch,
+		SupportedSchemaHeads:   []string{schemaauthority.LegacyCapabilityHead, schemaauthority.CapabilityExpandHead},
 	}
 }
 
@@ -94,17 +108,30 @@ func (runtime *httpRuntime) handler(next http.Handler) http.Handler {
 			return
 		}
 		runtime.mu.Lock()
-		if runtime.draining {
+		if runtime.draining || runtime.authorityUnavailable || (runtime.leaseRequired && !time.Now().Before(runtime.leaseUntil)) {
 			runtime.mu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Connection", "close")
 			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = w.Write([]byte(`{"error":{"type":"server_error","code":"runtime_draining","message":"Runtime is draining"}}`))
+			code := "runtime_unavailable"
+			runtime.mu.Lock()
+			if runtime.draining {
+				code = "runtime_draining"
+			}
+			runtime.mu.Unlock()
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"type": "server_error", "code": code, "message": "Runtime is not accepting new requests"}})
 			return
 		}
 		runtime.next++
 		id := runtime.next
 		ctx, cancel := context.WithTimeout(r.Context(), runtime.requestLifetime)
+		identity := runtimegeneration.Identity{Instance: runtime.instance, Artifact: runtime.artifact}
+		if identity.Validate() == nil {
+			// A request accepted on M113 may reach dispatch after the compatible
+			// expansion. Preserve this process identity now; dispatch persists it
+			// only when the M114 lease/attempt schema is actually present.
+			ctx = runtimegeneration.WithIdentity(ctx, identity)
+		}
 		runtime.requests[id] = cancel
 		runtime.mu.Unlock()
 		defer func() {

@@ -341,13 +341,13 @@ func canonicalEligibility(value snapshot, candidate canonicalCandidate, operatio
 		return false, "unsupported_operation"
 	}
 	if operation != legacyCompatibilityOp && (value.ExecutionProfileID != "" || value.ExecutionProfileVersion != "") {
-		profile, ok := modelprofile.Lookup(value.ExecutionProfileID, value.ExecutionProfileVersion)
+		profile, profileErr := resolvePlanProfile(value.ExecutionProfileID, value.ExecutionProfileVersion, value.Definition)
 		endpointPathMode := ""
 		var pathModeErr error
-		if ok && modelprofile.RequiredEndpointPathMode(profile) != "" {
+		if profileErr == nil && modelprofile.RequiredEndpointPathMode(profile) != "" {
 			endpointPathMode, pathModeErr = adapters.EffectiveEndpointPathMode(candidate.AdapterType, candidate.AdapterConfig)
 		}
-		if !ok || pathModeErr != nil || modelprofile.ValidateProductBinding(profile, modelprofile.ProductBinding{
+		if profileErr != nil || pathModeErr != nil || modelprofile.ValidateProductBinding(profile, modelprofile.ProductBinding{
 			Provider: candidate.Provider, BaseURL: candidate.BaseURL,
 			AdapterType: candidate.AdapterType, EndpointPathMode: endpointPathMode, OperationID: operation,
 			ProtocolProfileID: candidate.ProtocolProfileID, ProtocolProfileVersion: candidate.ProtocolProfileVersion,

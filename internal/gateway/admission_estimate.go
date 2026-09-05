@@ -152,7 +152,7 @@ func estimateChatAdmissionForPlanWithEvidence(
 			imageAdmissionEstimateVersion = evidence.ImageAdmissionEstimateVersion
 		} else {
 			legacyProtocolAuthority := false
-			if profile, ok := modelprofile.Lookup(plan.ExecutionProfileID, plan.ExecutionProfileVersion); ok {
+			if profile, err := plan.ExecutionProfile(); err == nil {
 				legacyProtocolAuthority = profile.LegacyProtocolAuthority
 			}
 			validation, err := validateAdvancedChatProtocolRequestWithAuthority(body, protocolContract, legacyProtocolAuthority)

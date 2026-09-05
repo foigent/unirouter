@@ -340,11 +340,12 @@ func (relay *Relay) prepareModelExecutionPlan(
 		Mode: runtime.mode, CustomerOrgID: middleware.GetOrgIDFromContext(ctx),
 		PublicModel: publicModel, ModelOperationID: string(operation),
 		SelectionKey: requestID,
-		DeriveInvocationCapabilities: func(profile modelprofile.Profile) ([]modelrouting.CapabilityRequirement, error) {
+		DeriveInvocationCapabilities: func(profile modelprofile.Profile, definition modelprofile.Definition) ([]modelrouting.CapabilityRequirement, error) {
 			if endpoint != adapters.EndpointChatCompletions {
 				return nil, nil
 			}
 			profilePlan := modelExecutionPlanForProfile(profile)
+			profilePlan.Definition = definition
 			evidence, validationErr := validateChatExecutionProfileRequest(body, profilePlan)
 			if validationErr != nil {
 				return nil, fmt.Errorf("%w: %v", errModelExecutionProfileRequestInvalid, validationErr)
@@ -645,7 +646,8 @@ func compatibilityRouteFromExecutionPlan(plan modelrouting.Plan, route modelrout
 		RuntimeReleaseRef: plan.RuntimeReleaseRef, RuntimeStage: plan.RuntimeStage,
 		ModelOperationID:   plan.ModelOperationID,
 		ExecutionProfileID: plan.ExecutionProfileID, ExecutionProfileVersion: plan.ExecutionProfileVersion,
-		ReasoningProfile: plan.ReasoningProfile, CacheUsageProfile: plan.CacheUsageProfile,
+		ProfileDefinition: plan.Definition,
+		ReasoningProfile:  plan.ReasoningProfile, CacheUsageProfile: plan.CacheUsageProfile,
 		ModelProtocolProfile:            plan.ModelProtocolProfile,
 		OperationProtocolProfileID:      route.ProtocolProfileID,
 		OperationProtocolProfileVersion: route.ProtocolProfileVersion,

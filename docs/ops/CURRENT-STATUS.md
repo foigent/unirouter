@@ -1,16 +1,21 @@
 # UniRouter Current Status
 
-> Source candidate 1.2.52 retains M113 and introduces the first same-schema
-> continuity slice: process admission/drain, readiness identity, dependency-safe
-> shutdown and explicit directory-carrier Nginx withdrawal. Initial carrier
-> installation is a bootstrap boundary; direct debug ports are outside the
-> ingress contract. Runtime lease, immutable dynamic Profiles, Release pinning
-> and online Publication remain subsequent slices, not completed architecture.
-> Local HTTP/SSE and controller recovery tests are separate from Target rollout
-> and real OpenClaw evidence. The execution scope now uses existing DeepSeek,
-> Kimi, MiniMax and GLM models; Bailian/Qwen and Hermes are deferred by the user.
+> Source candidate 1.2.53 contains the finite M113/M114 bridge, immutable data
+> Profiles and Release execution pins, an independent delta Publication owner,
+> CI Bundle carrier, and runtime lease/ingress coordination. These are source
+> capabilities, not a claim of Target qualification or Agent success. Ordinary
+> startup stays on an existing M113 ledger; M114 requires the explicit observed
+> fleet preflight. The last retained Target generation is 1.2.52/M113. Existing
+> DeepSeek, Kimi, MiniMax and GLM models are the active product scope; Bailian/Qwen
+> and Hermes remain deferred. See `CAPABILITY-DELIVERY.md` for the formal owner,
+> recovery and evidence boundaries. Real OpenClaw closure remains outstanding.
+>
+> The prior 1.2.52 same-schema slice added admission/drain and explicit directory
+> carrier withdrawal. Initial carrier installation is a bootstrap operation and
+> does not itself establish uninterrupted rollout. Long-stream Target proof is
+> still separate from local handler and controller regressions.
 
-> Repository source candidate is 1.2.51/M113. M113 appends six GLM exact streaming
+> Retained 1.2.51/M113 source-batch record: M113 appends six GLM exact streaming
 > Function Tools Profile successors and 30 static bindings. Bounded SSE/tool
 > assembly is shared with M111, but reasoning/terminal policies remain exact;
 > old identities and non-stream preparation remain addressable. The declaration

@@ -325,12 +325,29 @@ export default function ModelReleaseWorkspace({
   const submitAuthor = async () => {
     if (!canManage || !authorOption?.authoring.available || !authorOption.authoring.baseline) return;
     const reason = authorReason.trim();
-    const selections = authorOption.selection_options
-      .filter(option => authorSelections.includes(selectionKey(option)))
-      .map(option => ({ deployment_id: option.deployment_id, operation_id: option.operation_id }));
+    const selected = authorOption.selection_options.filter(option => authorSelections.includes(selectionKey(option)));
+    const revisions = new Set(selected.map(option => option.profile_definition_digest || ''));
+    if (revisions.size !== 1) {
+      Toast.error('一个 Release 的所有 Deployment 必须使用同一执行合同 revision');
+      return;
+    }
+    const definitionDigest = selected[0]?.profile_definition_digest;
+    const contextLimit = Math.min(...selected.map(option => option.max_context || 0));
+    const outputLimit = Math.min(...selected.map(option => option.default_max_output || 0));
+    if (definitionDigest && (contextLimit <= 0 || outputLimit <= 0)) {
+      Toast.error('候选 Deployment 缺少明确执行边界');
+      return;
+    }
+    const selections = selected.map(option => ({ deployment_id: option.deployment_id, operation_id: option.operation_id }));
     if (!reason || selections.length === 0) return;
     const input: CanonicalDeploymentReleaseAuthoringRequest = {
       public_model_id: authorOption.public_model.id,
+      ...(definitionDigest ? {
+        profile_definition_digest: definitionDigest,
+        public_context_limit: contextLimit,
+        public_output_limit: outputLimit,
+        capability_approval_ids: Array.from(new Set(selected.flatMap(option => option.capability_approval_ids || []))).sort((a, b) => a - b),
+      } : {}),
       baseline: { ...authorOption.authoring.baseline },
       selections,
       reason,
@@ -812,6 +829,7 @@ export default function ModelReleaseWorkspace({
                 <span className="ur-model-endpoint-name">
                   <Text code>deployment_id={option.deployment_id} · {option.operation_id}</Text>
                   <Text type="tertiary">{option.upstream_model || '未提供 upstream label'} · {option.connection_name || '未提供 connection label'}</Text>
+                  {option.profile_definition_digest && <Text type="tertiary">合同 {option.profile_definition_digest.slice(0, 12)} · context {option.max_context} / output {option.default_max_output} · {option.capability_approval_ids?.length || 0} 项资格批准</Text>}
                 </span>
               </label>;
             })}

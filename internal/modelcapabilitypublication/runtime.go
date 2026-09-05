@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/uniroute/unirouter/internal/schemaauthority"
 )
 
 // VerifyArtifactPublicationInventory proves the artifact has a bijection
@@ -82,6 +84,15 @@ func verifyArtifactPublicationInventory(migrationsDir string, artifactLedger []s
 // verifier. Dynamic Probe/Approval/qualification lifecycle remains owned by
 // the existing resolvers and is deliberately not scanned here.
 func VerifyRuntimeStaticProjection(ctx context.Context, q Querier, ledger []string) error {
+	if slices.Contains(ledger, schemaauthority.CapabilityExpandHead) {
+		head, err := ReadPublicationHeadV2(ctx, q)
+		if err != nil {
+			return err
+		}
+		if head.PublicationID != "" {
+			return verifyProjectionAtHeadV2(ctx, q, head)
+		}
+	}
 	expected, err := FoldedProjectionForLedger(ledger)
 	if err != nil {
 		return err

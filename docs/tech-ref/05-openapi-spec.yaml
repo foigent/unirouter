@@ -1057,6 +1057,7 @@ paths:
                   required: [upstream_model]
                   properties:
                     upstream_model: { type: string, maxLength: 200 }
+                    profile_definition_digest: { type: string, pattern: '^[a-f0-9]{64}$', description: "Published immutable revision for an existing stable model. Requires explicit positive limits; creates a separate candidate Deployment and does not activate it." }
                     priority: { type: integer, minimum: 1, maximum: 10000, default: 100 }
                     routing_weight: { type: integer, minimum: 1, maximum: 1000, default: 100 }
                     max_context: { type: integer, minimum: 0, default: 0, description: "Deployment context execution limit. The ordinary create UI requires a positive value; API zero records non-authorable staging state." }
@@ -2677,15 +2678,22 @@ paths:
     x-unirouter-rbac:
       get: [platform_admin, org_admin, org_viewer]
     description: |
-      Returns the immutable, repository-reviewed execution profile catalog used by
-      model-registry authoring and runtime admission. provider_capabilities are upstream
-      claims; capabilities are the narrower features verified end-to-end by UniRouter.
+      Returns immutable execution Profile data. Without public_model_id, returns the
+      compiled bootstrap catalog. With public_model_id, returns published data revisions
+      for that customer-owned stable product. provider_capabilities are upstream claims;
+      capabilities describe the static contract and do not prove live qualification.
       Customer context_length and output_limit remain explicit policy and may only narrow
       a verified provider maximum. No price record or provider credential is created.
     get:
       tags: [Admin]
       summary: List versioned model execution profiles
       security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: public_model_id
+          required: false
+          schema: { type: integer, format: int64, minimum: 1 }
+          description: Exact customer-owned stable product whose published data revisions are requested.
       responses:
         "200":
           description: Immutable execution profile catalog.
@@ -4647,10 +4655,14 @@ components:
     ModelDeploymentReleaseAuthoringRequest:
       type: object
       additionalProperties: false
-      description: Complete caller-owned authoring payload. Every baseline and selection must come from the latest collection response. The server derives all revisions, profiles, paths, public bindings, hashes, parent identities and the release reference. Authoring does not activate the result.
+      description: Complete caller-owned authoring payload. Every baseline and selection must come from the latest collection response. Data authoring explicitly pins a published Profile definition, limits and approval IDs; the server validates their exact product and qualification. Legacy authoring retains its bootstrap Profile behavior. The server derives route revisions, paths, hashes, parent identities and release reference. Authoring does not activate the result.
       required: [public_model_id, baseline, selections, reason]
       properties:
         public_model_id: { type: integer, format: int64, minimum: 1 }
+        profile_definition_digest: { type: string, pattern: '^[a-f0-9]{64}$' }
+        public_context_limit: { type: integer, minimum: 1, description: Required for a data definition. }
+        public_output_limit: { type: integer, minimum: 1, description: Required for a data definition. }
+        capability_approval_ids: { type: array, maxItems: 1024, uniqueItems: true, items: { type: integer, format: int64, minimum: 1 } }
         baseline: { $ref: "#/components/schemas/ModelDeploymentReleaseBaseline" }
         selections:
           type: array
@@ -4678,6 +4690,10 @@ components:
         operation_id: { type: string, enum: [openai.chat_completions.v1, openai.embeddings.v1, openai.responses.v1, anthropic.messages.v1] }
         upstream_model: { type: string }
         connection_name: { type: string }
+        profile_definition_digest: { type: string, pattern: '^[a-f0-9]{64}$' }
+        max_context: { type: integer, minimum: 0 }
+        default_max_output: { type: integer, minimum: 0 }
+        capability_approval_ids: { type: array, items: { type: integer, format: int64, minimum: 1 } }
     ModelDeploymentReleaseSummary:
       type: object
       additionalProperties: false
@@ -4840,6 +4856,8 @@ components:
         model_name: { type: string }
         execution_profile_id: { type: string, description: "M82 sealed execution profile. Present on exact release/lifecycle reads; omitted from the versioned v1 authoring receipt body." }
         execution_profile_version: { type: string, pattern: '^[0-9]+\.[0-9]+\.[0-9]+$' }
+        profile_definition_digest: { type: string, pattern: '^[a-f0-9]{64}$' }
+        execution_snapshot_digest: { type: string, pattern: '^[a-f0-9]{64}$' }
         public_context_limit: { type: integer, minimum: 1, description: "Release-pinned customer-visible context upper bound; runtime safety may narrow it." }
         public_output_limit: { type: integer, minimum: 1, description: "Release-pinned customer-visible output upper bound; runtime safety may narrow it." }
         candidate_version: { type: string, enum: [unirouter.runtime-change-candidate.v2] }
@@ -5249,8 +5267,8 @@ components:
         capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage] }
         support_state: { type: string, enum: [enabled, unsupported] }
         support_revision: { type: integer, format: int64, minimum: 1 }
-        execution_profile_id: { type: string, enum: [deepseek.v4-flash.api, deepseek.v4-pro.api, glm.5-turbo.api, glm.5.api, glm.5.1.api, glm.5.2.api, glm.5.3.api, glm.5v-turbo.api, kimi.k2.6.api, kimi.k2.7-code.api, kimi.k3.api, minimax.m2.7-highspeed.payg, minimax.m2.7.payg, minimax.m3.payg, minimax.m3.token-plan] }
-        execution_profile_version: { type: string, enum: [1.0.0, 1.1.0, 1.11.0, 1.12.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.7.0, 1.8.0, 1.9.0] }
+        execution_profile_id: { type: string, maxLength: 100, pattern: '^[a-z0-9][a-z0-9._-]{2,99}$', description: Exact compiled or published immutable Profile identity; format alone grants no qualification. }
+        execution_profile_version: { type: string, maxLength: 40, pattern: '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$', description: Exact retained revision; no mutable latest lookup. }
         protocol_profile_id: { type: string, enum: [protocol.deepseek-openai-chat.v4, protocol.glm-openai-chat.glm5v.v5, protocol.glm-openai-chat.v5, protocol.glm-openai-chat.v6, protocol.glm-openai-chat.v7, protocol.glm-openai-chat.glm5v.v6, openai.chat_completions, protocol.kimi-openai-chat.v5, protocol.kimi-openai-chat.k3.v5, protocol.minimax-m2-openai-chat.v7, protocol.minimax-m27-openai-chat.v1, protocol.minimax-m3-openai-chat.v9] }
         protocol_profile_version: { type: string, enum: [1.0.0] }
         probe_contract_id: { type: string, enum: [unirouter.capability-probe.deepseek-chat-sse.v1, unirouter.capability-probe.deepseek-chat-reasoning.v1, unirouter.capability-probe.deepseek-chat-reasoning-effort.v1, unirouter.capability-probe.deepseek-chat-function-tools.v1, unirouter.capability-probe.deepseek-chat-json-object.v1, unirouter.capability-probe.glm-chat-function-tools.v1, unirouter.capability-probe.glm-toggle-chat-function-tools.v1, unirouter.capability-probe.glm-chat-stream-tools.v1, unirouter.capability-probe.kimi-chat-sse.v1, unirouter.capability-probe.kimi-chat-reasoning.v1, unirouter.capability-probe.kimi-chat-reasoning-effort.v1, unirouter.capability-probe.kimi-chat-function-tools.v1, unirouter.capability-probe.kimi-chat-json-object.v1, unirouter.capability-probe.minimax-chat-function-tools.v1, unirouter.capability-probe.minimax-payg-m2-chat-function-tools.v1, unirouter.capability-probe.minimax-m27-chat-stream-tools.v1, unirouter.capability-probe.minimax-payg-m3-chat-function-tools.v1] }
@@ -6956,6 +6974,8 @@ components:
       properties:
         id: { type: string }
         version: { type: string }
+        profile_definition_digest: { type: string, pattern: '^[a-f0-9]{64}$', description: Present only for a published immutable data revision. }
+        product_lineage_id: { type: string, minLength: 1, maxLength: 200 }
         label: { type: string }
         tokenizer_profile_id: { type: string }
         tokenizer_profile_version: { type: string }

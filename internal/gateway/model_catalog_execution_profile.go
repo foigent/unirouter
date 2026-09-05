@@ -12,6 +12,7 @@ import (
 const publicModelExecutionProfileInclude = "execution_profile"
 
 type publicModelExecutionProfile struct {
+	ProfileDefinitionDigest    string   `json:"profile_definition_digest,omitempty"`
 	Status                     string   `json:"status"`
 	Source                     string   `json:"source,omitempty"`
 	DisplayName                string   `json:"display_name"`
@@ -70,7 +71,8 @@ SELECT resolved.requested_model,
          AND stable.candidate_version = 'unirouter.runtime-change-candidate.v2'
          AND stable.stage = 'active' AND stable.route_items_sealed_at IS NOT NULL
          AND stable.route_items_hash <> '' AND stable.route_items_count > 0
-       ), false)
+       ), false),
+       COALESCE(to_jsonb(stable)->>'profile_definition_digest','')
 FROM resolved
 LEFT JOIN model_registry registry
   ON registry.org_id = $1::bigint
@@ -83,25 +85,41 @@ ORDER BY resolved.ordinality`, orgID, models)
 	}
 	defer rows.Close()
 
-	result := make(map[string]publicModelExecutionProfile, len(models))
+	type catalogRow struct {
+		modelID, displayName, profileID, profileVersion string
+		registered                                      bool
+		contextWindow, outputLimit                      int
+		source                                          string
+		sourceValid                                     bool
+		definitionDigest                                string
+	}
+	var candidates []catalogRow
 	for rows.Next() {
-		var (
-			modelID, displayName, profileID, profileVersion string
-			registered                                      bool
-			contextWindow, outputLimit                      int
-			source                                          string
-			sourceValid                                     bool
-		)
-		if err := rows.Scan(&modelID, &displayName, &registered, &contextWindow, &outputLimit, &profileID, &profileVersion, &source, &sourceValid); err != nil {
+		var row catalogRow
+		if err := rows.Scan(&row.modelID, &row.displayName, &row.registered, &row.contextWindow, &row.outputLimit, &row.profileID, &row.profileVersion, &row.source, &row.sourceValid, &row.definitionDigest); err != nil {
 			return nil, fmt.Errorf("scan public model execution profile: %w", err)
 		}
+		candidates = append(candidates, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate public model execution profiles: %w", err)
+	}
+	// Return the connection before resolving immutable definitions. Even a
+	// one-connection pool must be able to serve catalog discovery.
+	rows.Close()
+	result := make(map[string]publicModelExecutionProfile, len(models))
+	for _, row := range candidates {
+		modelID, displayName, profileID, profileVersion := row.modelID, row.displayName, row.profileID, row.profileVersion
+		registered, contextWindow, outputLimit := row.registered, row.contextWindow, row.outputLimit
+		source, sourceValid, definitionDigest := row.source, row.sourceValid, row.definitionDigest
 
 		metadata := publicModelExecutionProfile{
-			Status:         "unregistered",
-			Source:         source,
-			DisplayName:    displayName,
-			ProfileID:      strings.TrimSpace(profileID),
-			ProfileVersion: strings.TrimSpace(profileVersion),
+			ProfileDefinitionDigest: definitionDigest,
+			Status:                  "unregistered",
+			Source:                  source,
+			DisplayName:             displayName,
+			ProfileID:               strings.TrimSpace(profileID),
+			ProfileVersion:          strings.TrimSpace(profileVersion),
 		}
 		if !registered {
 			result[modelID] = metadata
@@ -113,8 +131,8 @@ ORDER BY resolved.ordinality`, orgID, models)
 			continue
 		}
 
-		profile, ok := modelprofile.Lookup(metadata.ProfileID, metadata.ProfileVersion)
-		if !ok || modelprofile.ValidateEffectiveLimits(profile, contextWindow, outputLimit) != nil {
+		profile, err := modelprofile.ResolvePinned(ctx, relay.db, metadata.ProfileID, metadata.ProfileVersion, definitionDigest)
+		if err != nil || modelprofile.ValidateEffectiveLimits(profile, contextWindow, outputLimit) != nil {
 			metadata.Status = "invalid"
 			result[modelID] = metadata
 			continue
@@ -139,9 +157,6 @@ ORDER BY resolved.ordinality`, orgID, models)
 			metadata.ReasoningEffortValues = slices.Clone(reasoning.EffortControl.AllowedValues)
 		}
 		result[modelID] = metadata
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate public model execution profiles: %w", err)
 	}
 	return result, nil
 }

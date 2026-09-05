@@ -161,6 +161,11 @@ var openAIChatFunctionToolsBindingIdentities = map[string][]openAIChatFunctionTo
 }
 
 func openAIChatFunctionToolsIdentity(binding Binding) (openAIChatFunctionToolsBindingIdentity, bool) {
+	if binding.definition != nil && binding.validateDataDefinition() == nil {
+		return openAIChatFunctionToolsBindingIdentity{profileID: binding.ExecutionProfileID, profileVersion: binding.ExecutionProfileVersion,
+			protocolID: binding.ProtocolProfileID, protocolVersion: binding.ProtocolProfileVersion,
+			provider: binding.ExpectedProvider, upstreamModel: binding.ExpectedUpstreamModel, path: binding.PublicPath}, true
+	}
 	for _, candidate := range openAIChatFunctionToolsBindingIdentities[binding.ProbeContractID] {
 		if binding.ExecutionProfileID == candidate.profileID && binding.ExecutionProfileVersion == candidate.profileVersion &&
 			binding.ProtocolProfileID == candidate.protocolID && binding.ProtocolProfileVersion == candidate.protocolVersion &&
@@ -184,6 +189,9 @@ func isMiniMaxFunctionToolsProbe(contractID string) bool {
 }
 
 func openAIChatRuntimeCapabilityAllowed(binding Binding) bool {
+	if binding.definition != nil {
+		return binding.validateDataDefinition() == nil && binding.ProbeContractID == MiniMaxPAYGM2ChatFunctionToolsProbeContractID
+	}
 	var capabilities []string
 	switch binding.ProbeContractID {
 	case MiniMaxPAYGM3ChatFunctionToolsProbeContractID, MiniMaxPAYGM2ChatFunctionToolsProbeContractID:
@@ -296,14 +304,18 @@ func resolveOpenAIChatFunctionToolsBinding(binding Binding) (modelprofile.Profil
 		binding.ExecutionProfileID != want.profileID || binding.ExecutionProfileVersion != want.profileVersion {
 		return modelprofile.Profile{}, modelprofile.ChatProtocolContract{}, modelprofile.ReasoningContract{}, fmt.Errorf("%w: exact function-tools binding", ErrUnsupported)
 	}
-	profile, ok := modelprofile.Lookup(binding.ExecutionProfileID, binding.ExecutionProfileVersion)
-	if !ok || profile.Provider != binding.ExpectedProvider || profile.ProtocolProfile != binding.ProtocolProfileID ||
+	profile, profileErr := binding.ExecutionProfile()
+	if profileErr != nil || profile.Provider != binding.ExpectedProvider || profile.ProtocolProfile != binding.ProtocolProfileID ||
 		!slices.Contains(profile.UpstreamModelIDs, binding.ExpectedUpstreamModel) ||
 		!slices.Contains(profile.Capabilities, modelprofile.CapabilityFunctionTools) ||
 		!slices.Contains(profile.Capabilities, binding.CapabilityID) {
 		return modelprofile.Profile{}, modelprofile.ChatProtocolContract{}, modelprofile.ReasoningContract{}, fmt.Errorf("%w: exact execution Profile", ErrUnsupported)
 	}
 	identity, found, err := modelprofile.ResolveOperationProtocolIdentity(profile.ID, profile.Version, binding.OperationID)
+	if binding.definition != nil {
+		identity, err = binding.definition.OperationProtocolIdentity(binding.OperationID)
+		found = err == nil
+	}
 	if err != nil || !found || identity.ProtocolProfileID != binding.ProtocolProfileID || identity.ProtocolProfileVersion != binding.ProtocolProfileVersion {
 		return modelprofile.Profile{}, modelprofile.ChatProtocolContract{}, modelprofile.ReasoningContract{}, fmt.Errorf("%w: typed operation identity", ErrUnsupported)
 	}

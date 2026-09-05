@@ -89,7 +89,7 @@ func TestPublicResponsesExactProfileCapabilityEvidenceLoadsThroughSQLPlannerInte
 			// The operation parser derives provider-default semantics while the SQL
 			// Planner holds the exact Profile and route snapshot. Do not manufacture
 			// requirements from the Profile's supported-capability list.
-			derive := func(profile modelprofile.Profile) ([]modelrouting.CapabilityRequirement, error) {
+			derive := func(profile modelprofile.Profile, definition modelprofile.Definition) ([]modelrouting.CapabilityRequirement, error) {
 				require.Equal(t, model.profileID, profile.ID)
 				require.Equal(t, "1.2.0", profile.Version)
 				binding, bindErr := modelqualification.CompiledBindingFor(string(modeloperation.IDResponses), profile.ProtocolProfile, profile.ProtocolProfileVersion)

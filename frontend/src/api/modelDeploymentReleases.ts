@@ -22,6 +22,10 @@ export type CanonicalDeploymentReleaseSelection = {
 export type CanonicalDeploymentReleaseSelectionOption = CanonicalDeploymentReleaseSelection & {
   upstream_model?: string;
   connection_name?: string;
+  profile_definition_digest?: string;
+  max_context?: number;
+  default_max_output?: number;
+  capability_approval_ids?: number[];
 };
 
 export type CanonicalDeploymentReleasePublicModel = {
@@ -61,6 +65,10 @@ export type CanonicalDeploymentReleaseCollection = {
 };
 
 export type CanonicalDeploymentReleaseAuthoringRequest = {
+  profile_definition_digest?: string;
+  public_context_limit?: number;
+  public_output_limit?: number;
+  capability_approval_ids?: number[];
   public_model_id: number;
   baseline: CanonicalDeploymentReleaseBaseline;
   selections: CanonicalDeploymentReleaseSelection[];

@@ -3,4 +3,6 @@
 // runner or product-domain policy.
 package schemaauthority
 
-const LatestSupportedMigration = "000113_glm_stream_function_tools_qualification"
+const LegacyCapabilityHead = "000113_glm_stream_function_tools_qualification"
+const CapabilityExpandHead = "000114_capability_delivery_expand"
+const LatestSupportedMigration = CapabilityExpandHead

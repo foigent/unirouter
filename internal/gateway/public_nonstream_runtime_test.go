@@ -48,7 +48,7 @@ func (planner *publicRuntimePlanner) Plan(_ context.Context, request modelroutin
 		if !ok {
 			return modelrouting.Plan{}, errors.New("public planner fixture profile is unavailable")
 		}
-		requirements, err := request.DeriveInvocationCapabilities(profile)
+		requirements, err := request.DeriveInvocationCapabilities(profile, modelprofile.Definition{})
 		if err != nil {
 			return modelrouting.Plan{}, err
 		}

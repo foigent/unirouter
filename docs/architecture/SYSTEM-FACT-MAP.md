@@ -8,14 +8,31 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-`cmd/uniroute/http_runtime.go` owns process-local HTTP admission/drain accounting
-and a finite accepted-handler lifetime. Readiness exposes that instance and its
-verified schema-ledger digest; neither is a fleet compatibility lease.
-`scripts/runtime-ingress.py` explicitly changes the installed directory-mounted
-Nginx membership and observes old-worker exit before an operator may stop a
-backend. Same-schema continuity retains terminal dependency workers until HTTP
-responsibility closes. The exact bootstrap and direct-port boundaries are in
-`docs/ops/RUNTIME-CONTINUITY.md`; Publication and Model Slot are unchanged.
+`cmd/uniroute/http_runtime.go` owns process-local admission and bounded request
+Drain. On M114, `runtimegeneration` renews an exact Artifact/support lease; failure
+fences new requests without canceling accepted handlers. Ingress membership is
+separate: the directory controller commits pending/withdrawing intent, reloads
+Nginx and observes all old worker identities before confirming withdrawal. Slot
+activation and generation join serialize through the same domain locks and check
+all potential receivers. No backend stop occurs on ambiguous reload.
+
+`modelcapabilitypublication` remains the single static writer. M114 adds a
+capability ledger separate from schema history, immutable Profile bytes, and
+append-only binding origins. Bundle/Plan wire v2 is content-addressed and delta
+based; the owner recomputes the full publisher-owned DB projection before and
+after. Definitions remain runtime data, with typed implementations selected by
+existing exact component references. Publication changes no Slot or customer
+price and creates no observation or approval. Source/provenance is checked on
+the existing authenticated deployment-operator channel.
+
+Sealed data Releases retain the definition, capability decision/evidence pins,
+routes and limits. Planner, preflight, dispatch revalidation and response paths
+consume the same definition. Registry fields remain explicit legacy/bootstrap
+fallback. Candidate Deployments may share stable model, Connection and upstream
+while differing in immutable definition digest. Existing typed authoring and
+lifecycle receipts own these changes. ProviderAttempt links the serving runtime
+instance; its retained generation resolves to the Artifact. Billing Freeze keeps
+its independent price/usage/settlement authority.
 
 Optional Chat preflight reuses the canonical request/route authorities and
 credential-free outbound preparation, without execution effects or a persisted
@@ -24,8 +41,9 @@ distinct. Opt-in client metadata projects a stable Release's sealed Profile and
 hard limits separately from its Profile-owned request default; local experiment
 limits are client configuration, never another server parameter authority.
 
-Repository source candidate is version 1.2.52 with PostgreSQL compatibility
-ceiling `000113_glm_stream_function_tools_qualification`. M113 appends six GLM
+Repository source candidate is version 1.2.53 with an explicit finite bridge
+between exact M113 and M114 ledgers, not an arbitrary future-version ceiling.
+M114 is structural and never a daily capability migration. Historical M113 appends six GLM
 streaming Function Tools Profile successors and 30 static bindings. It shares
 bounded SSE/tool assembly with M111 while retaining GLM reasoning_content/DONE
 and old M111 embedded-thinking/EOF semantics. Media is not qualified. Its static

@@ -200,7 +200,11 @@ SELECT id,release_ref,public_model_id,model_name,
 	if lock {
 		query += ` FOR UPDATE`
 	}
-	return scanDeploymentRelease(store.QueryRow(ctx, query, ref))
+	result, err := scanDeploymentRelease(store.QueryRow(ctx, query, ref))
+	if err != nil {
+		return result, err
+	}
+	return readReleaseExecutionMetadata(ctx, store, result)
 }
 
 func readDeploymentReleaseByID(ctx context.Context, store deploymentManifestStore, id int64, lock bool) (DeploymentRelease, error) {
@@ -217,7 +221,11 @@ SELECT id,release_ref,public_model_id,model_name,
 	if lock {
 		query += ` FOR UPDATE`
 	}
-	return scanDeploymentRelease(store.QueryRow(ctx, query, id))
+	result, err := scanDeploymentRelease(store.QueryRow(ctx, query, id))
+	if err != nil {
+		return result, err
+	}
+	return readReleaseExecutionMetadata(ctx, store, result)
 }
 
 func scanDeploymentRelease(row interface{ Scan(...interface{}) error }) (DeploymentRelease, error) {

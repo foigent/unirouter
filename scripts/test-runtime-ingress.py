@@ -93,5 +93,55 @@ class MembershipTests(unittest.TestCase):
                 ingress.check_configuration(base + extra)
 
 
+class CoordinatedMembershipTests(unittest.TestCase):
+    def setUp(self):
+        self.health={role:{"instance":"uri_"+letter*32,"artifact_digest":"sha256:"+letter*64,"lease_required":True} for role,letter in (("stable","a"),("canary","b"))}
+        self.before={"before":ingress.membership("both"),"after":ingress.membership("canary"),"before_state":"both","configuration_sha256":"c"*64,"workers":{"10:100"},"health":self.health}
+        self.args=SimpleNamespace(change_id="withdraw",desired="canary",expected_config_sha256=ingress.digest(self.before["before"]),expected_nginx_sha256="c"*64,expected_container_id="d"*64,container="nginx")
+        self.events=[]
+        self.plan=None
+
+    def owner(self, container, action, document=None):
+        self.events.append(action)
+        if action=="inspect":
+            return {"head":"bootstrap","head_status":"applied","generations":[dict(i,ingress_state="receiving") for i in ingress.state_members("both",self.health)]}
+        if action=="prepare":
+            self.plan=document
+            return {"status":"pending"}
+        if action=="complete":
+            self.completion=document
+            return {"status":"applied" if document["old_workers_gone"] else "ambiguous"}
+        raise AssertionError(action)
+
+    def test_intent_precedes_reload_and_completion_waits_for_old_workers(self):
+        def reload(*args):
+            self.events.append("reload_and_wait")
+            self.assertEqual(self.plan["membership_before"],ingress.state_members("both",self.health))
+            self.assertEqual(self.plan["membership_after"],ingress.state_members("canary",self.health))
+            return "old_proxy_workers_exited"
+        with patch.object(ingress,"owner_command",self.owner),patch.object(ingress,"apply",reload):
+            ingress.coordinated_apply(self.args,self.before)
+        self.assertEqual(self.events,["inspect","prepare","reload_and_wait","complete"])
+        self.assertTrue(self.completion["old_workers_gone"])
+
+    def test_ambiguous_reload_never_confirms_withdrawal(self):
+        with patch.object(ingress,"owner_command",self.owner),patch.object(ingress,"apply",side_effect=RuntimeError("unknown reload")),patch.object(ingress,"docker_exec",return_value=self.before["after"]),self.assertRaisesRegex(RuntimeError,"unknown reload"):
+            ingress.coordinated_apply(self.args,self.before)
+        self.assertFalse(self.completion["old_workers_gone"])
+
+    def test_failed_prepare_does_not_touch_nginx(self):
+        def refuse(container,action,document=None):
+            if action=="prepare":raise RuntimeError("incompatible receiver")
+            return self.owner(container,action,document)
+        with patch.object(ingress,"owner_command",refuse),patch.object(ingress,"apply") as reload,self.assertRaisesRegex(RuntimeError,"incompatible"):
+            ingress.coordinated_apply(self.args,self.before)
+        reload.assert_not_called()
+
+    def test_import_cannot_silently_change_observed_membership(self):
+        with patch.object(ingress,"owner_command",return_value={"head":"","generations":[]}),patch.object(ingress,"apply") as reload,self.assertRaisesRegex(RuntimeError,"initial ingress import"):
+            ingress.coordinated_apply(self.args,self.before)
+        reload.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

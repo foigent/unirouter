@@ -10,6 +10,7 @@ import (
 	"sort"
 
 	publication "github.com/uniroute/unirouter/internal/modelcapabilitypublication"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 )
 
 const (
@@ -54,6 +55,7 @@ var ErrUnsupported = errors.New("model capability qualification contract is unsu
 // Binding is one immutable provider/product/surface capability probe contract.
 // It must match M88's immutable database support row exactly.
 type Binding struct {
+	definition              *modelprofile.Definition
 	OperationID             string
 	CapabilityID            string
 	ExecutionProfileID      string

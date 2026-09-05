@@ -27,6 +27,8 @@ func runCapabilityContractPublicationCLI(ctx context.Context, args []string, cfg
 		return fmt.Errorf("usage: uniroute capability-contract-publication <install-baseline|plan|apply|guarded-down|post-commit-recovery-check>")
 	}
 	switch args[0] {
+	case "check-bundle", "plan-v2", "apply-v2", "recover-v2":
+		return runCapabilityPublicationV2CLI(ctx, args[0], args[1:], cfg)
 	case "install-baseline":
 		return runCapabilityContractPublicationInstallBaseline(ctx, args[1:], cfg)
 	case "plan":

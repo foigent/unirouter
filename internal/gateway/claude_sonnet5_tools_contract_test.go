@@ -57,7 +57,7 @@ func TestClaudeSonnet5ToolsContractProjectsTypedInvocationIntoOnePlanAuthority(t
 		Mode: modelrouting.ModeCanonical, CustomerOrgID: 11, PublicModel: "public-claude",
 		ModelOperationID: modelprofile.OperationAnthropicMessage, SelectionKey: "request-1",
 		InvocationCapabilities: requirements,
-	})
+	}, modelprofile.Definition{})
 	require.NoError(t, err)
 	require.Equal(t, requirements, normalized)
 }

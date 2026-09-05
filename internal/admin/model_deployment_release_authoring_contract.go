@@ -20,10 +20,14 @@ var (
 )
 
 type canonicalDeploymentReleaseAuthoringRequest struct {
-	PublicModelID int64                                      `json:"public_model_id"`
-	Baseline      runtimechange.DeploymentReleaseBaseline    `json:"baseline"`
-	Selections    []runtimechange.DeploymentReleaseSelection `json:"selections"`
-	Reason        string                                     `json:"reason"`
+	ProfileDefinitionDigest string                                     `json:"profile_definition_digest,omitempty"`
+	PublicContextLimit      int                                        `json:"public_context_limit,omitempty"`
+	PublicOutputLimit       int                                        `json:"public_output_limit,omitempty"`
+	CapabilityApprovalIDs   []int64                                    `json:"capability_approval_ids,omitempty"`
+	PublicModelID           int64                                      `json:"public_model_id"`
+	Baseline                runtimechange.DeploymentReleaseBaseline    `json:"baseline"`
+	Selections              []runtimechange.DeploymentReleaseSelection `json:"selections"`
+	Reason                  string                                     `json:"reason"`
 }
 
 type canonicalDeploymentReleaseAuthoringDescriptor struct {
@@ -60,6 +64,7 @@ func canonicalDeploymentReleaseAuthoringMutation(
 ) (runtimechange.DeploymentReleaseAuthoringMutation, error) {
 	mutation, err := runtimechange.NormalizeDeploymentReleaseAuthoringMutation(
 		runtimechange.DeploymentReleaseAuthoringMutation{
+			ProfileDefinitionDigest: request.ProfileDefinitionDigest, PublicContextLimit: request.PublicContextLimit, PublicOutputLimit: request.PublicOutputLimit, CapabilityApprovalIDs: request.CapabilityApprovalIDs,
 			PublicModelID: request.PublicModelID,
 			Baseline:      request.Baseline,
 			Selections:    request.Selections,

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/uniroute/unirouter/internal/db"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
@@ -65,6 +66,7 @@ func (r *Router) Policy() routingpolicy.Config {
 
 // RouteResult contains the selected channel, key, and mapped model name.
 type RouteResult struct {
+	ProfileDefinition               modelprofile.Definition
 	Channel                         models.Channel
 	ChannelKey                      models.ChannelKey
 	MappedModel                     string

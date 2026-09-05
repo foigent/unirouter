@@ -246,6 +246,19 @@ SELECT model_name,lifecycle,context_length,output_limit,
 	if !ok {
 		return DeploymentRelease{}, fmt.Errorf("%w: unknown model execution profile", ErrConflict)
 	}
+	var definition modelprofile.Definition
+	if command.Mutation.ProfileDefinitionDigest != "" {
+		var err error
+		definition, err = resolveAuthoringDefinition(ctx, tx, command.Mutation, profile)
+		if err != nil {
+			return DeploymentRelease{}, err
+		}
+		profile = definition.Profile()
+		executionProfileID = profile.ID
+		executionProfileVersion = profile.Version
+		publicContextLimit = command.Mutation.PublicContextLimit
+		publicOutputLimit = command.Mutation.PublicOutputLimit
+	}
 	if err := modelprofile.ValidateEffectiveLimits(profile, publicContextLimit, publicOutputLimit); err != nil {
 		return DeploymentRelease{}, fmt.Errorf("%w: model execution profile limits: %v", ErrConflict, err)
 	}
@@ -291,21 +304,36 @@ SELECT nextval(pg_get_serial_sequence(
 		"route_items_count": len(routes),
 	})
 	var releaseID int64
+	columns, values := "", ""
+	arguments := []any{claim.TargetReleaseRef, modelName, DeploymentCandidateVersion, candidateHash, baselineHash, string(candidateJSON), string(reportJSON), parentID,
+		command.Mutation.Reason, command.ActorUserID, command.Mutation.PublicModelID, routeItemsHash, len(routes), claim.ReceiptID, executionProfileID, executionProfileVersion, publicContextLimit, publicOutputLimit}
+	if definition.Digest() != "" {
+		snapshot, err := buildReleaseExecutionSnapshot(ctx, tx, command, definition, routes, routeItemsHash)
+		if err != nil {
+			return DeploymentRelease{}, err
+		}
+		wire, err := snapshot.CanonicalBytes()
+		if err != nil {
+			return DeploymentRelease{}, err
+		}
+		digest, err := snapshot.Digest()
+		if err != nil {
+			return DeploymentRelease{}, err
+		}
+		columns = ",profile_definition_digest,execution_snapshot_format,execution_snapshot_digest,execution_snapshot_bytes"
+		values = ",$19,$20,$21,$22"
+		arguments = append(arguments, definition.Digest(), snapshot.SchemaVersion, digest, wire)
+	}
 	err = tx.QueryRow(ctx, `
 INSERT INTO runtime_change_releases (
   release_ref,model_name,candidate_version,candidate_hash,baseline_hash,
   candidate,provider_pack_pins,simulation_report,overall_risk,stage,version,
   parent_stable_release_id,canary_basis_points,reason,created_by,
   public_model_id,route_items_hash,route_items_count,authoring_receipt_id,
-  execution_profile_id,execution_profile_version,public_context_limit,public_output_limit)
+  execution_profile_id,execution_profile_version,public_context_limit,public_output_limit`+columns+`)
 VALUES ($1,$2,$3,$4,$5,$6::jsonb,'[]'::jsonb,$7::jsonb,'review_required',
-        'draft',1,$8,0,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
-RETURNING id`, claim.TargetReleaseRef, modelName, DeploymentCandidateVersion,
-		candidateHash, baselineHash, string(candidateJSON), string(reportJSON), parentID,
-		command.Mutation.Reason, command.ActorUserID, command.Mutation.PublicModelID,
-		routeItemsHash, len(routes), claim.ReceiptID,
-		executionProfileID, executionProfileVersion, publicContextLimit, publicOutputLimit,
-	).Scan(&releaseID)
+        'draft',1,$8,0,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18`+values+`)
+RETURNING id`, arguments...).Scan(&releaseID)
 	if err != nil {
 		return DeploymentRelease{}, classifyWriteError(err)
 	}

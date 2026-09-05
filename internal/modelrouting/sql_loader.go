@@ -15,6 +15,7 @@ import (
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/modelprofile"
+	"github.com/uniroute/unirouter/internal/releaseexecution"
 )
 
 type sqlSnapshotLoader struct{}
@@ -86,11 +87,20 @@ SELECT id,lifecycle,context_length,output_limit,execution_profile_id,execution_p
 		}
 		value.Legacy = legacy
 	}
-	profile, ok := modelprofile.Lookup(value.ExecutionProfileID, value.ExecutionProfileVersion)
-	if !ok {
-		return snapshot{}, fmt.Errorf("%w: unknown model execution profile %s@%s", ErrManifestStale, value.ExecutionProfileID, value.ExecutionProfileVersion)
+	if slot.Selected.Execution != nil {
+		value.Definition, err = modelprofile.ReadDefinition(ctx, tx, slot.Selected.Execution.ProfileDefinitionDigest)
+		if err != nil {
+			return snapshot{}, fmt.Errorf("%w: %v", ErrManifestStale, err)
+		}
+		if err = slot.Selected.Execution.ValidateDefinition(value.Definition); err != nil {
+			return snapshot{}, fmt.Errorf("%w: %v", ErrManifestStale, err)
+		}
 	}
-	value.CapabilityRequirements, err = ResolveCapabilityRequirements(profile, request)
+	profile, err := resolvePlanProfile(value.ExecutionProfileID, value.ExecutionProfileVersion, value.Definition)
+	if err != nil {
+		return snapshot{}, err
+	}
+	value.CapabilityRequirements, err = ResolveCapabilityRequirements(profile, request, value.Definition)
 	if err != nil {
 		return snapshot{}, err
 	}
@@ -151,11 +161,16 @@ SELECT id,lifecycle,context_length,output_limit,execution_profile_id,execution_p
 	if err != nil {
 		return snapshot{}, err
 	}
-	if err := loadCapabilities(
-		ctx, tx, value.CustomerOrgID, value.PublicModelID, operation,
-		value.ExecutionProfileID, value.ExecutionProfileVersion,
-		capabilityIDs(value.CapabilityRequirements), canonical,
-	); err != nil {
+	if slot.Selected.Execution != nil {
+		err = loadPinnedCapabilities(ctx, tx, value, operation, canonical)
+	} else {
+		err = loadCapabilities(
+			ctx, tx, value.CustomerOrgID, value.PublicModelID, operation,
+			value.ExecutionProfileID, value.ExecutionProfileVersion,
+			capabilityIDs(value.CapabilityRequirements), canonical,
+		)
+	}
+	if err != nil {
 		return snapshot{}, err
 	}
 	value.Canonical = canonical
@@ -248,7 +263,44 @@ SELECT s.public_model_id,s.slot_version,s.canary_basis_points,
 		result.Selected = result.Stable
 	}
 	result.Selected.Selected = true
+	if result.Selected.ID > 0 {
+		result.Selected.Execution, err = releaseexecution.ReadSnapshot(ctx, tx, result.Selected.ID)
+		if err != nil {
+			return slotSnapshot{}, fmt.Errorf("%w: %v", ErrManifestStale, err)
+		}
+		if result.Selected.Execution != nil {
+			result.Selected.ExecutionDigest, err = result.Selected.Execution.Digest()
+			if err != nil {
+				return slotSnapshot{}, err
+			}
+		}
+	}
 	return result, nil
+}
+
+func loadPinnedCapabilities(ctx context.Context, tx pgx.Tx, value snapshot, operation string, candidates []canonicalCandidate) error {
+	for index := range candidates {
+		candidate := &candidates[index]
+		candidate.Capabilities = map[string]capabilitySnapshot{}
+		for _, pin := range value.Slot.Selected.Execution.CapabilityPins {
+			if pin.DeploymentID != candidate.DeploymentID || pin.OperationID != operation {
+				continue
+			}
+			decision, err := releaseexecution.ReadCapabilityDecision(ctx, tx, releaseexecution.CapabilityTarget{
+				CustomerOrgID: value.CustomerOrgID, PublicModelID: value.PublicModelID, DeploymentID: candidate.DeploymentID,
+				OperationID: operation, ExecutionProfileID: value.ExecutionProfileID, ExecutionProfileVersion: value.ExecutionProfileVersion,
+				ProtocolProfileID: candidate.ProtocolProfileID, ProtocolProfileVersion: candidate.ProtocolProfileVersion}, pin.ApprovalID, &pin, false)
+			if err != nil {
+				if errors.Is(err, releaseexecution.ErrCapabilityUnavailable) {
+					continue
+				}
+				return fmt.Errorf("%w: read retained capability decision: %v", ErrUnavailable, err)
+			} // unavailable exact evidence never falls back to a current selector
+			entry := decision.Entry
+			candidate.Capabilities[pin.CapabilityID] = capabilitySnapshot{ID: entry.CapabilityID, SupportState: entry.SupportState, EvidenceState: entry.EvidenceState, EvidenceRef: entry.EvidenceRef, VerifiedAt: entry.VerifiedAt, Revision: entry.Revision}
+		}
+	}
+	return nil
 }
 
 func loadRelease(ctx context.Context, tx pgx.Tx, releaseID int64) (releaseSnapshot, error) {
@@ -273,6 +325,17 @@ SELECT id,release_ref,candidate_version,candidate_hash,COALESCE(route_items_hash
 			return releaseSnapshot{}, fmt.Errorf("%w: runtime release %d", ErrManifestStale, releaseID)
 		}
 		return releaseSnapshot{}, fmt.Errorf("%w: read runtime release: %v", ErrUnavailable, err)
+	}
+	var err error
+	result.Execution, err = releaseexecution.ReadSnapshot(ctx, tx, releaseID)
+	if err != nil {
+		return releaseSnapshot{}, fmt.Errorf("%w: %v", ErrManifestStale, err)
+	}
+	if result.Execution != nil {
+		result.ExecutionDigest, err = result.Execution.Digest()
+		if err != nil {
+			return releaseSnapshot{}, err
+		}
 	}
 	return result, nil
 }

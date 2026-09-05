@@ -251,6 +251,7 @@ export type CanonicalModelApplicationCreateRequest = {
     execution_profile_version?: string;
   };
   deployment: {
+    profile_definition_digest?: string;
     upstream_model: string;
     priority?: number;
     routing_weight?: number;

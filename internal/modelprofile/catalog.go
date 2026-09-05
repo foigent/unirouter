@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
+	"github.com/uniroute/unirouter/internal/tokenprofile"
 )
 
 const (
@@ -18,10 +19,10 @@ const (
 
 	TokenizerByteUpperID       = "tokenizer.byte-upper"
 	TokenizerByteUpperVersion  = "1.0.0"
-	TokenizerKimiK26ID         = "tokenizer.kimi-k2.6"
-	TokenizerKimiK26Version    = "1.0.0"
-	TokenizerMiniMaxM27ID      = "tokenizer.minimax-m2.7"
-	TokenizerMiniMaxM27Version = "1.0.0"
+	TokenizerKimiK26ID         = tokenprofile.KimiK26ID
+	TokenizerKimiK26Version    = tokenprofile.KimiK26Version
+	TokenizerMiniMaxM27ID      = tokenprofile.MiniMaxM27ID
+	TokenizerMiniMaxM27Version = tokenprofile.MiniMaxM27Version
 )
 
 // Profile is one immutable execution-contract bundle. Individual component
@@ -3600,14 +3601,21 @@ func matchCurrent(modelName, apiSurface string) (Profile, int) {
 // contract. It is used by both catalog selection and tests so a bad catalog
 // entry fails closed even outside CI.
 func ValidateExecutableComponents(profile Profile) error {
+	return validateExecutableComponents(profile, true)
+}
+
+// Compiled addresses retain their historical identity checks. Data definitions
+// obtain identity from immutable canonical bytes and reuse the same typed
+// behavior checks below; they never add entries to the compiled catalog.
+func validateExecutableComponents(profile Profile, compiledIdentity bool) error {
 	if strings.TrimSpace(profile.Provider) == "" || strings.TrimSpace(profile.Region) == "" {
 		return fmt.Errorf("model profile requires provider and region product identity")
 	}
 	stableIdentity, stable := stableProfileProductIdentities[profile.ID]
-	if !stable || profile.Provider != stableIdentity.Provider || profile.Region != stableIdentity.Region ||
+	if compiledIdentity && (!stable || profile.Provider != stableIdentity.Provider || profile.Region != stableIdentity.Region ||
 		!slices.Equal(profile.EndpointClasses, immutableProfileEndpointClasses(profile.ID, profile.Version)) ||
 		!slices.Equal(profile.UpstreamModelIDs, immutableProfileUpstreamModelIDs(profile.ID, profile.Version)) ||
-		profile.LegacyProtocolAuthority != isImmutableLegacyProtocolAuthority(profile.ID, profile.Version) {
+		profile.LegacyProtocolAuthority != isImmutableLegacyProtocolAuthority(profile.ID, profile.Version)) {
 		return fmt.Errorf("model profile product identity is not the stable identity for %s", profile.ID)
 	}
 	if profile.ID != UnverifiedProfileID && len(profile.UpstreamModelIDs) == 0 {
@@ -3615,12 +3623,12 @@ func ValidateExecutableComponents(profile Profile) error {
 	}
 	upstreamIdentity, upstreamIdentityModeled := immutableProfileUpstreamIdentity(profile.ID, profile.Version)
 	profileModelsUpstreamIdentity := profile.UpstreamModelFamily != "" || profile.UpstreamVersionPolicy != ""
-	if upstreamIdentityModeled != profileModelsUpstreamIdentity ||
+	if compiledIdentity && (upstreamIdentityModeled != profileModelsUpstreamIdentity ||
 		(upstreamIdentityModeled && (profile.UpstreamModelFamily != upstreamIdentity.ModelFamily ||
-			profile.UpstreamVersionPolicy != upstreamIdentity.VersionPolicy)) {
+			profile.UpstreamVersionPolicy != upstreamIdentity.VersionPolicy))) {
 		return fmt.Errorf("model profile upstream version identity is not immutable for %s@%s", profile.ID, profile.Version)
 	}
-	if upstreamIdentityModeled {
+	if upstreamIdentityModeled || profileModelsUpstreamIdentity {
 		if strings.TrimSpace(profile.UpstreamModelFamily) != profile.UpstreamModelFamily || profile.UpstreamModelFamily == "" ||
 			!slices.Contains([]string{UpstreamVersionPinned, UpstreamVersionFloating}, profile.UpstreamVersionPolicy) {
 			return fmt.Errorf("model profile has invalid upstream version identity")
@@ -3631,9 +3639,9 @@ func ValidateExecutableComponents(profile Profile) error {
 		}
 	}
 	executionIdentity, executionIdentityOK := immutableProfileExecutionIdentity(profile.ID, profile.Version)
-	if !executionIdentityOK || profile.APISurface != executionIdentity.APISurface ||
+	if compiledIdentity && (!executionIdentityOK || profile.APISurface != executionIdentity.APISurface ||
 		!slices.Equal(profile.Operations, executionIdentity.Operations) ||
-		profile.DefaultOutputAuthority != executionIdentity.DefaultOutputAuthority {
+		profile.DefaultOutputAuthority != executionIdentity.DefaultOutputAuthority) {
 		return fmt.Errorf("model profile execution identity is not immutable for %s@%s", profile.ID, profile.Version)
 	}
 	if len(profile.Operations) != 1 {
@@ -3688,19 +3696,19 @@ func ValidateExecutableComponents(profile Profile) error {
 		alwaysRequired[capability] = struct{}{}
 	}
 	endpointProtocol, frozenEndpointProtocol := immutableProfileEndpointProtocolIdentity(profile.ID, profile.Version)
-	if frozenEndpointProtocol != (profile.ProtocolProfileVersion != "") ||
+	if compiledIdentity && (frozenEndpointProtocol != (profile.ProtocolProfileVersion != "") ||
 		(frozenEndpointProtocol && (profile.ProtocolProfile != endpointProtocol.ProfileID ||
-			profile.ProtocolProfileVersion != endpointProtocol.ProfileVersion)) {
+			profile.ProtocolProfileVersion != endpointProtocol.ProfileVersion))) {
 		return fmt.Errorf("model profile endpoint protocol identity is not immutable for %s@%s", profile.ID, profile.Version)
 	}
-	if frozenEndpointProtocol {
-		if _, err := endpointprotocol.NewRegistry().Resolve(endpointProtocol.ProfileID, endpointProtocol.ProfileVersion); err != nil {
+	if profile.ProtocolProfileVersion != "" {
+		if _, err := endpointprotocol.NewRegistry().Resolve(profile.ProtocolProfile, profile.ProtocolProfileVersion); err != nil {
 			return fmt.Errorf("model profile endpoint protocol address is unavailable for %s@%s", profile.ID, profile.Version)
 		}
 	}
 	operationPolicy, frozenOperationPolicy := immutableProfileOperationPolicyIdentities[profile.ID+"@"+profile.Version]
-	if frozenOperationPolicy != (profile.OperationPolicyProfile != "") ||
-		(frozenOperationPolicy && profile.OperationPolicyProfile != operationPolicy) {
+	if compiledIdentity && (frozenOperationPolicy != (profile.OperationPolicyProfile != "") ||
+		(frozenOperationPolicy && profile.OperationPolicyProfile != operationPolicy)) {
 		return fmt.Errorf("model profile operation policy identity is not immutable for %s@%s", profile.ID, profile.Version)
 	}
 	if profile.OperationPolicyProfile != "" {

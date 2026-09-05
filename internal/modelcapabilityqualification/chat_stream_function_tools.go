@@ -23,7 +23,10 @@ func validateChatStreamFunctionTools(b Binding, contentType string, reader io.Re
 	if err != nil || mediaType != "text/event-stream" {
 		return observation, invalidOpenAIChatFunctionTools("content_type")
 	}
-	profile, _ := modelprofile.Lookup(b.ExecutionProfileID, b.ExecutionProfileVersion)
+	profile, err := b.ExecutionProfile()
+	if err != nil {
+		return observation, invalidOpenAIChatFunctionTools("probe_contract", err)
+	}
 	contract, ok := modelprofile.ResolveChatProtocolContract(b.ProtocolProfileID)
 	if !ok || !contract.StreamContract.FunctionToolDeltas {
 		return observation, invalidOpenAIChatFunctionTools("probe_contract")

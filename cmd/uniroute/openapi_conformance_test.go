@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"os"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -155,6 +156,44 @@ func TestOpenAPIModelCapabilityQualificationIdentityEnumsMatchCompiledBindings(t
 	}
 
 	for name, values := range compiled {
+		if name == "execution_profile_id" || name == "execution_profile_version" {
+			var pattern string
+			for _, line := range strings.Split(schema, "\n") {
+				if strings.HasPrefix(strings.TrimSpace(line), name+":") {
+					matches := regexp.MustCompile(`pattern: '([^']+)'`).FindStringSubmatch(line)
+					if len(matches) == 2 {
+						pattern = matches[1]
+					}
+					if strings.Contains(line, "enum:") {
+						t.Fatalf("data Profile address must not be a compiled enum: %s", name)
+					}
+				}
+			}
+			if pattern == "" {
+				t.Fatalf("missing bounded Profile identity pattern: %s", name)
+			}
+			compiledPattern, err := regexp.Compile(pattern)
+			if err != nil {
+				t.Fatal(err)
+			}
+			examples := append([]string{}, values...)
+			if name == "execution_profile_version" {
+				examples = append(examples, "99.0.0")
+			} else {
+				examples = append(examples, "glm.exact-data-revision.api")
+			}
+			for _, value := range examples {
+				if !compiledPattern.MatchString(value) {
+					t.Fatalf("%s rejects retained/data identity %q", name, value)
+				}
+			}
+			for _, value := range []string{"", "../escape", "latest", " identity"} {
+				if compiledPattern.MatchString(value) && !(name == "execution_profile_id" && value == "latest") {
+					t.Fatalf("%s accepts invalid address %q", name, value)
+				}
+			}
+			continue
+		}
 		got := uniqueSorted(openAPIFlowEnum(t, schema, name))
 		want := uniqueSorted(values)
 		if !reflect.DeepEqual(got, want) {

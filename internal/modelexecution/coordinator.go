@@ -20,6 +20,8 @@ import (
 	"github.com/uniroute/unirouter/internal/executionevidence"
 	"github.com/uniroute/unirouter/internal/modelqualification"
 	"github.com/uniroute/unirouter/internal/modelrouting"
+	"github.com/uniroute/unirouter/internal/runtimegeneration"
+	"github.com/uniroute/unirouter/internal/schemaauthority"
 )
 
 var credentialRefPattern = regexp.MustCompile(`^cred_[a-z0-9][a-z0-9_-]{7,66}$`)
@@ -108,6 +110,23 @@ func (c *Coordinator) authorizeOnce(ctx context.Context, request preparedRequest
 	defer tx.Rollback(ctx)
 
 	start := providerAttemptStart(request)
+	if request.runtimePin == nil {
+		return Decision{}, retryNone, fmt.Errorf("%w: dispatch runtime pin was not prepared", ErrInvalid)
+	}
+	if instance, ok := runtimegeneration.FromContext(ctx); ok && !request.runtimePin.resolved {
+		expanded, err := schemaauthority.HasCapabilityExpand(ctx, tx)
+		if err != nil {
+			return Decision{}, transactionRetryFor(err), wrapDatabaseError("read dispatch schema", err)
+		}
+		if expanded {
+			request.runtimePin.instance = instance.Instance
+		}
+		request.runtimePin.resolved = true
+	}
+	start.RuntimeInstanceID = request.runtimePin.instance
+	if request.plan.ReleaseExecution != nil && start.RuntimeInstanceID == "" {
+		return Decision{}, retryNone, fmt.Errorf("%w: data Release requires a leased runtime generation", ErrUnavailable)
+	}
 	created, err := c.ledger.BeginProviderAttemptOwnedTx(ctx, tx, start, request.dispatchOwnerHash)
 	if errors.Is(err, billing.ErrProviderAttemptConflict) {
 		var dbNow time.Time
@@ -152,6 +171,7 @@ func (c *Coordinator) prepareDispatchCapabilities(request preparedRequest) (prep
 	}
 	request.dispatchOwnerToken = owner
 	request.dispatchOwnerHash = probeTokenHash(owner)
+	request.runtimePin = &runtimeAttemptPin{}
 	if request.route.RequiresProbe {
 		request.probeToken, err = c.newToken()
 		if err != nil || !validEphemeralToken(request.probeToken) {

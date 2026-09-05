@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/executionevidence"
 	"github.com/uniroute/unirouter/internal/modelprofile"
+	"github.com/uniroute/unirouter/internal/releaseexecution"
 )
 
 const (
@@ -46,7 +47,7 @@ type FunctionToolChoiceConstraint struct {
 
 // CapabilityDeriver interprets one invocation only after the exact immutable
 // Profile has been selected inside the Planner's repeatable-read snapshot.
-type CapabilityDeriver func(modelprofile.Profile) ([]CapabilityRequirement, error)
+type CapabilityDeriver func(modelprofile.Profile, modelprofile.Definition) ([]CapabilityRequirement, error)
 
 // TxStarter is deliberately the exact transaction surface the planner needs.
 // *pgxpool.Pool satisfies it without an adapter.
@@ -69,6 +70,10 @@ type Request struct {
 }
 
 type Plan struct {
+	// Definition contains immutable data resolved by digest inside the route
+	// transaction. Its zero value is the explicit compiled legacy path.
+	Definition       modelprofile.Definition    `json:"-"`
+	ReleaseExecution *releaseexecution.Snapshot `json:"-"`
 	AuthorityMode    Mode
 	PublicModelID    int64
 	PublicModel      string
@@ -151,6 +156,8 @@ type Drift struct {
 }
 
 type releaseSnapshot struct {
+	ExecutionDigest         string                     `json:",omitempty"`
+	Execution               *releaseexecution.Snapshot `json:",omitempty"`
 	ID                      int64
 	Ref                     string
 	CandidateVersion        string
@@ -330,6 +337,7 @@ type canonicalCandidate struct {
 }
 
 type snapshot struct {
+	Definition              modelprofile.Definition `json:"-"`
 	Mode                    Mode
 	DBNow                   time.Time
 	CustomerOrgID           int64

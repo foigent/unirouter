@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Read-only planning / bounded apply for the installed same-schema Nginx carrier.
 
-Never stops a backend, installs the carrier, changes model Slots or claims
-mixed-version compatibility. Direct debug ports are outside this contract.
+Never stops a backend, installs the carrier, or changes model Slots. Expanded
+runtimes commit ingress intent through the same database compatibility owner.
 """
 import argparse
+import base64
 import fcntl
 import hashlib
 import json
@@ -101,7 +102,16 @@ def snapshot(args):
         stop_timeout = backend["Config"].get("StopTimeout")
         if not isinstance(stop_timeout, int) or stop_timeout <= runtime["drain_timeout_seconds"]:
             raise RuntimeError(f"{role} Compose stop grace does not exceed application drain")
+        if runtime.get("lease_required"):
+            if (runtime.get("artifact_digest") != backend["Image"] or
+                    runtime.get("lease_remaining_seconds", 0) <= 5):
+                raise RuntimeError(f"{role} lease/artifact identity differs from actual Docker instance")
+            for bindings in (backend["HostConfig"].get("PortBindings") or {}).values():
+                if any(binding.get("HostIp") not in ("127.0.0.1", "::1") for binding in (bindings or [])):
+                    raise RuntimeError(f"{role} has an ingress-bypassing public debug port")
         health[role] = runtime
+    if bool(health["stable"].get("lease_required")) != bool(health["canary"].get("lease_required")):
+        raise RuntimeError("bridge lease transition has not converged on both instances")
     if health["stable"]["schema_ledger_digest"] != health["canary"]["schema_ledger_digest"]:
         raise RuntimeError("different schema generations require the compatibility bridge")
     return {"before": before, "before_state": states[0], "after": membership(args.desired),
@@ -159,6 +169,79 @@ def apply(args, before):
     raise RuntimeError("withdrawal unproven before deadline; retain old backend and stop this rollout")
 
 
+def owner_command(container, command, document=None):
+    payload = b"" if document is None else json.dumps(document, sort_keys=True).encode()
+    result = subprocess.run(["docker", "exec", "-i", container, "./uniroute", "runtime-generation", command],
+                            input=payload, capture_output=True, timeout=30, check=False)
+    if result.returncode:
+        raise RuntimeError(f"runtime generation owner refused {command}; inspect retained intent before continuing")
+    return json.loads(result.stdout)
+
+
+def state_members(state, health):
+    roles = ("stable", "canary") if state == "both" else (state,)
+    return sorted(({"instance": health[role]["instance"], "artifact_digest": health[role]["artifact_digest"]}
+                   for role in roles), key=lambda item: item["instance"])
+
+
+def coordinated_apply(args, before):
+    if not before["health"]["stable"].get("lease_required"):
+        return apply(args, before)
+    if not args.change_id or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,159}", args.change_id):
+        raise RuntimeError("expanded ingress requires an exact change ID for ambiguity recovery")
+    if digest(before["before"]) != args.expected_config_sha256 or before["configuration_sha256"] != args.expected_nginx_sha256:
+        raise RuntimeError("ingress configuration changed before intent; no mutation")
+    owner = HOSTS["canary"] if args.desired == "canary" else HOSTS["stable"]
+    state = owner_command(owner, "inspect")
+    after = state_members(args.desired, before["health"])
+    if state["head"] == args.change_id:
+        retained = owner_command(owner, "read", {"change_id": args.change_id})
+        plan = retained["plan"]
+        if (plan["membership_after"] != after or plan["desired_config_digest"] != digest(before["after"]) or
+                base64.b64decode(plan["desired_config_bytes"], validate=True) != before["after"] or
+                digest(before["before"]) not in (plan["expected_config_digest"], plan["desired_config_digest"])):
+            raise RuntimeError("recovery identity/configuration differs from retained ingress intent")
+        if retained["status"] == "applied":
+            if digest(before["before"]) != plan["desired_config_digest"]:
+                raise RuntimeError("applied ingress has external configuration drift")
+            return "already_applied"
+    else:
+        active = sorted(({"instance": g["instance"], "artifact_digest": g["artifact_digest"]}
+                         for g in state["generations"] if g["ingress_state"] != "absent"), key=lambda item: item["instance"])
+        if state["head"]:
+            if state["head_status"] != "applied" or active != state_members(before["before_state"], before["health"]):
+                raise RuntimeError("database ingress membership and installed proxy differ")
+        elif active or args.desired != before["before_state"]:
+            raise RuntimeError("initial ingress import must retain the exact observed membership")
+        plan = {"change_id": args.change_id, "predecessor_id": state["head"],
+                "expected_config_digest": digest(before["before"]), "desired_config_digest": digest(before["after"]),
+                "desired_config_bytes": base64.b64encode(before["after"]).decode(),
+                "membership_before": active, "membership_after": after}
+        result = owner_command(owner, "prepare", plan)
+        if result["status"] != "pending":
+            raise RuntimeError("ingress intent was not confirmed; no reload")
+    observation = {"nginx_container_id": args.expected_container_id,
+                   "old_workers": sorted(before["workers"])}
+    try:
+        outcome = apply(args, before)
+    except Exception:
+        observation["outcome"] = "reload_or_withdrawal_unconfirmed"
+        try:
+            observed = digest(docker_exec(args.container, "cat", MOUNT + "/upstreams.conf"))
+            owner_command(owner, "complete", {"change_id": args.change_id, "observed_digest": observed,
+                                              "old_workers_gone": False, "observation": observation})
+        except Exception:
+            pass  # Pending intent already conservatively retains every receiver.
+        raise
+    observation["outcome"] = outcome
+    result = owner_command(owner, "complete", {"change_id": args.change_id,
+                           "observed_digest": digest(before["after"]), "old_workers_gone": True,
+                           "observation": observation})
+    if result["status"] != "applied":
+        raise RuntimeError("proxy exited but database completion is unconfirmed; retain old backend")
+    return outcome
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--directory", required=True, type=Path)
@@ -166,6 +249,7 @@ def main():
     parser.add_argument("--expected-container-id", required=True)
     parser.add_argument("--desired", required=True, choices=("stable", "canary", "both"))
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--change-id", help="durable expanded-schema ingress operation identity")
     parser.add_argument("--expected-config-sha256")
     parser.add_argument("--expected-nginx-sha256")
     parser.add_argument("--wait-seconds", type=int, default=2100)
@@ -182,7 +266,7 @@ def main():
         with (args.directory / ".ingress.lock").open("a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             before = snapshot(args)
-            outcome = apply(args, before)
+            outcome = coordinated_apply(args, before)
     else:
         before, outcome = snapshot(args), "read_only"
     print(json.dumps({"outcome": outcome, "container_id": args.expected_container_id,

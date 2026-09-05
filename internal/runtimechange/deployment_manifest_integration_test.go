@@ -925,9 +925,8 @@ SELECT status,key_enc,state_revision,fail_count,last_used_at,cooldown_until
 	require.Equal(t, fixture.CredentialRevision+2, credentialRevision)
 	require.Equal(t, 4, credentialFailCount)
 	require.NotNil(t, preservedLastUsedAt)
-	require.NotNil(t, preservedCooldownUntil)
+	require.Nil(t, preservedCooldownUntil, "canonical revoke clears cooldown; rejected reconciliation cannot restore it")
 	require.WithinDuration(t, canonicalLastUsedAt, *preservedLastUsedAt, time.Microsecond)
-	require.WithinDuration(t, canonicalCooldownUntil, *preservedCooldownUntil, time.Microsecond)
 	var credentialLinkCountAfter int
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT COUNT(*) FROM credential_binding_deployments WHERE binding_id=$1`, fixture.CredentialID).Scan(&credentialLinkCountAfter))
@@ -1330,6 +1329,15 @@ func createCanonicalDeploymentFixtureWithProduct(
 	provider, baseURL, upstreamModel string,
 ) canonicalDeploymentFixture {
 	t.Helper()
+	return createCanonicalDeploymentFixtureWithOrigin(t, pool, suffix, channelStatus, priority, weight,
+		provider, baseURL, upstreamModel, true)
+}
+
+func createCanonicalDeploymentFixtureWithOrigin(
+	t *testing.T, pool *pgxpool.Pool, suffix, channelStatus string, priority, weight int,
+	provider, baseURL, upstreamModel string, legacy bool,
+) canonicalDeploymentFixture {
+	t.Helper()
 	ctx := context.Background()
 	fixture := canonicalDeploymentFixture{
 		OrgID:              testutil.NewTestOrg(t, pool),
@@ -1352,25 +1360,29 @@ INSERT INTO model_registry (
     org_id,model_name,display_name,provider_family,lifecycle,approved_catalog,
     context_length,output_limit)
 VALUES ($1,$2,$2,$3,'ga',TRUE,128000,8192) RETURNING id`, fixture.OrgID, fixture.ModelName, provider).Scan(&fixture.PublicModelID))
-	require.NoError(t, pool.QueryRow(ctx, `
+	var legacyChannelID, legacyPublicModel, legacyCredentialID any
+	if legacy {
+		require.NoError(t, pool.QueryRow(ctx, `
 INSERT INTO channels (
     name,provider,base_url,models,model_mapping,adapter_type,adapter_config,
     priority,routing_weight,status,circuit_state,routing_epoch)
 VALUES ($1,$7,$8,$2,jsonb_build_object($2::text,$3::text),
         'openai_compatible','{}',$4,$5,$6,'healthy',1)
 RETURNING id,routing_epoch`, "v2-channel-"+suffix, fixture.ModelName,
-		fixture.UpstreamModel, priority, weight, channelStatus, provider, baseURL).Scan(
-		&fixture.ChannelID, &fixture.ChannelEpoch,
-	))
-	var legacyKeyID int64
-	require.NoError(t, pool.QueryRow(ctx, `
+			fixture.UpstreamModel, priority, weight, channelStatus, provider, baseURL).Scan(
+			&fixture.ChannelID, &fixture.ChannelEpoch,
+		))
+		var legacyKeyID int64
+		require.NoError(t, pool.QueryRow(ctx, `
 INSERT INTO channel_keys (channel_id,key_enc,allowed_models,status,state_epoch)
 VALUES ($1,'fixture',$2,'active',1) RETURNING id`, fixture.ChannelID, fixture.ModelName).Scan(&legacyKeyID))
+		legacyChannelID, legacyPublicModel, legacyCredentialID = fixture.ChannelID, fixture.ModelName, legacyKeyID
+	}
 	require.NoError(t, pool.QueryRow(ctx, `
 INSERT INTO provider_connections (
     legacy_channel_id,name,provider,base_url,adapter_type,adapter_config,admin_state,config_revision)
 VALUES ($1,$2,$3,$4,'openai_compatible','{}','enabled',1)
-RETURNING id`, fixture.ChannelID, "v2-connection-"+suffix, provider, baseURL).Scan(&fixture.ConnectionID))
+RETURNING id`, legacyChannelID, "v2-connection-"+suffix, provider, baseURL).Scan(&fixture.ConnectionID))
 	require.NoError(t, pool.QueryRow(ctx, `
 INSERT INTO model_deployments (
     customer_org_id,public_model_id,connection_id,upstream_model,admin_state,
@@ -1378,11 +1390,11 @@ INSERT INTO model_deployments (
     degradation_threshold,legacy_channel_id,legacy_public_model)
 VALUES ($1,$2,$3,$4,'enabled',1,$5,$6,128000,4096,10,$7,$8) RETURNING id`, fixture.OrgID,
 		fixture.PublicModelID, fixture.ConnectionID, fixture.UpstreamModel,
-		priority, weight, fixture.ChannelID, fixture.ModelName).Scan(&fixture.DeploymentID))
+		priority, weight, legacyChannelID, legacyPublicModel).Scan(&fixture.DeploymentID))
 	require.NoError(t, pool.QueryRow(ctx, `
 INSERT INTO provider_credential_bindings (
     connection_id,key_enc,status,state_revision,legacy_channel_key_id)
-VALUES ($1,'fixture','active',1,$2) RETURNING id`, fixture.ConnectionID, legacyKeyID).Scan(&fixture.CredentialID))
+VALUES ($1,'fixture','active',1,$2) RETURNING id`, fixture.ConnectionID, legacyCredentialID).Scan(&fixture.CredentialID))
 	_, err := pool.Exec(ctx, `
 INSERT INTO credential_binding_deployments (binding_id,deployment_id,connection_id)
 VALUES ($1,$2,$3)`, fixture.CredentialID, fixture.DeploymentID, fixture.ConnectionID)
@@ -1394,14 +1406,16 @@ INSERT INTO model_deployment_operations (
 VALUES ($1,$2,'enabled','live_probed','integration fixture',NOW(),1,$3,$4)`,
 		fixture.DeploymentID, fixture.OperationID, fixture.ProtocolProfileID, fixture.ProtocolVersion)
 	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `
+	if legacy {
+		_, err = pool.Exec(ctx, `
 INSERT INTO model_deployment_operations (
     deployment_id,operation_id,support_state,evidence_state,evidence_ref,revision,
     protocol_profile_id,protocol_profile_version)
 VALUES ($1,'legacy.any.v1','enabled','declared',$2,1,
         'legacy.channel_model_probe','v1')`, fixture.DeploymentID,
-		fmt.Sprintf("legacy:channel:%d", fixture.ChannelID))
-	require.NoError(t, err)
+			fmt.Sprintf("legacy:channel:%d", fixture.ChannelID))
+		require.NoError(t, err)
+	}
 	insertSuccessfulProbe(t, pool, fixture, "initial-"+suffix)
 	return fixture
 }

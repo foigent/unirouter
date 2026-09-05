@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/uniroute/unirouter/internal/config"
+	"github.com/uniroute/unirouter/internal/runtimegeneration"
 )
 
 func testHTTPRuntime(t *testing.T) *httpRuntime {
@@ -23,6 +24,65 @@ func testHTTPRuntime(t *testing.T) *httpRuntime {
 		t.Fatal(err)
 	}
 	return runtime
+}
+
+func TestHTTPRuntimeExpiredLeaseFencesOnlyNewRequests(t *testing.T) {
+	runtime := testHTTPRuntime(t)
+	runtime.leaseRequired = true
+	runtime.artifact = "sha256:" + strings.Repeat("a", 64)
+	runtime.leaseUntil = time.Now().Add(time.Hour)
+	accepted, finish, done := make(chan context.Context, 1), make(chan struct{}), make(chan struct{})
+	h := runtime.handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		accepted <- r.Context()
+		<-finish
+		w.WriteHeader(http.StatusOK)
+	}))
+	first := httptest.NewRecorder()
+	go func() {
+		defer close(done)
+		h.ServeHTTP(first, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil))
+	}()
+	ctx := <-accepted
+	identity, ok := runtimegeneration.FromContext(ctx)
+	if !ok || identity.Instance != runtime.instance || identity.Artifact != runtime.artifact {
+		t.Fatalf("missing server-owned runtime identity: %+v", identity)
+	}
+	runtime.mu.Lock()
+	runtime.leaseUntil = time.Now().Add(-time.Second)
+	runtime.mu.Unlock()
+	second := httptest.NewRecorder()
+	h.ServeHTTP(second, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil))
+	if second.Code != http.StatusServiceUnavailable || runtime.status().State != "unavailable" {
+		t.Fatal("expired lease admitted a new request")
+	}
+	if ctx.Err() != nil {
+		t.Fatal("expired lease canceled a previously accepted request")
+	}
+	close(finish)
+	<-done
+	if first.Code != http.StatusOK || runtime.status().ActiveRequests != 0 {
+		t.Fatal("accepted request failed to finish")
+	}
+}
+
+func TestHTTPRuntimeBridgeRetainsIdentityBeforeLeaseSchemaExists(t *testing.T) {
+	runtime := testHTTPRuntime(t)
+	runtime.artifact = "sha256:" + strings.Repeat("b", 64)
+	if runtime.leaseRequired {
+		t.Fatal("legacy bridge cannot require a nonexistent lease table")
+	}
+	h := runtime.handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		identity, ok := runtimegeneration.FromContext(r.Context())
+		if !ok || identity.Instance != runtime.instance || identity.Artifact != runtime.artifact {
+			t.Fatal("slow bridge request lost identity before a possible schema expand")
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	response := httptest.NewRecorder()
+	h.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil))
+	if response.Code != http.StatusOK {
+		t.Fatal("legacy request was prematurely fenced")
+	}
 }
 
 func TestHTTPRuntimeLifetimeCoversSupportedOperations(t *testing.T) {

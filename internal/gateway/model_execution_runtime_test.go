@@ -194,14 +194,15 @@ func (stub *executionPlannerStub) Plan(_ context.Context, request modelrouting.R
 	plan := stub.plan
 	recorded := request
 	if request.DeriveInvocationCapabilities != nil {
-		profile, ok := modelprofile.Lookup(plan.ExecutionProfileID, plan.ExecutionProfileVersion)
+		profile, profileErr := plan.ExecutionProfile()
+		ok := profileErr == nil
 		if !ok {
 			profile, ok = modelprofile.Lookup(modelprofile.UnverifiedProfileID, modelprofile.UnverifiedProfileVersion)
 		}
 		if !ok {
 			return modelrouting.Plan{}, errors.New("execution planner stub profile is unavailable")
 		}
-		requirements, err := modelrouting.ResolveCapabilityRequirements(profile, request)
+		requirements, err := modelrouting.ResolveCapabilityRequirements(profile, request, plan.Definition)
 		if err != nil {
 			return modelrouting.Plan{}, err
 		}

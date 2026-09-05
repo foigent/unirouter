@@ -75,6 +75,8 @@ type DeploymentDraftRequest struct {
 }
 
 type DeploymentRelease struct {
+	ProfileDefinitionDigest string              `json:"profile_definition_digest,omitempty"`
+	ExecutionSnapshotDigest string              `json:"execution_snapshot_digest,omitempty"`
 	ID                      int64               `json:"id"`
 	ReleaseRef              string              `json:"release_ref"`
 	PublicModelID           int64               `json:"public_model_id"`
