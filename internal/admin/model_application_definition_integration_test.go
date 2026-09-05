@@ -6,12 +6,16 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/testutil"
@@ -122,6 +126,88 @@ SELECT operation_id,capability_id,execution_profile_id,$1,protocol_profile_id,pr
 	require.Empty(t, oldDigest)
 	require.Equal(t, legacy.Application.Operations[0].EvidenceState, oldState)
 	require.Equal(t, legacy.Application.Operations[0].Revision, oldRevision)
+
+	stream, err := os.ReadFile("../adapters/testdata/glm_stream_tools.sse")
+	require.NoError(t, err)
+	validResponse := false
+	h.SetModelDeploymentProbeHTTPDoer(canonicalOperationProbeDoerFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		require.Equal(t, true, body["stream"])
+		require.Equal(t, "auto", body["tool_choice"])
+		require.Equal(t, float64(1024), body["max_tokens"])
+		require.Equal(t, "glm-5.3", body["model"])
+		response := string(stream)
+		if !validResponse {
+			response = strings.Replace(response, `"usage":`, `"unexpected":true,"usage":`, 1)
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(response))}, nil
+	}))
+	capabilityPath := fmt.Sprintf("/api/v1/model-deployments/%d/operations/openai.chat_completions.v1/capabilities/function_tools", candidate.Application.Deployment.ID)
+	setPath := func(r *http.Request) {
+		r.SetPathValue("deploymentID", strconv.FormatInt(candidate.Application.Deployment.ID, 10))
+		r.SetPathValue("operationID", string(modeloperation.IDChatCompletions))
+		r.SetPathValue("capabilityID", "function_tools")
+	}
+	read := func() modelCapabilityQualificationView {
+		r := actorRequest(http.MethodGet, capabilityPath, "")
+		setPath(r)
+		w := httptest.NewRecorder()
+		h.GetCanonicalModelCapabilityQualification(w, r)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		var view modelCapabilityQualificationView
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &view))
+		require.Equal(t, d.Digest(), view.ProfileDefinitionDigest)
+		require.Equal(t, "99.0.0", view.ExecutionProfileVersion)
+		return view
+	}
+	var successfulProbe modelCapabilityProbeResult
+	for _, valid := range []bool{false, true} {
+		validResponse = valid
+		r := actorRequest(http.MethodPost, capabilityPath+"/probes", fmt.Sprintf(`{"credential_binding_id":%d}`, legacy.Application.Credential.Bindings[0].ID))
+		setPath(r)
+		w := httptest.NewRecorder()
+		h.ProbeCanonicalModelCapability(w, r)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		var result modelCapabilityProbeResult
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
+		require.True(t, result.ProviderSuccess, "%+v", result)
+		require.True(t, result.Current, "%+v", result)
+		require.Equal(t, valid, result.Success)
+		view := read()
+		require.NotNil(t, view.LatestProbe, "stored data revision evidence must be visible without changing the stable model Profile")
+		require.Equal(t, result.CapabilityProbeID, view.LatestProbe.CapabilityProbeID)
+		require.Equal(t, valid, view.LatestProbe.Success)
+		require.True(t, view.LatestProbe.Current)
+		if valid {
+			require.Equal(t, "probed_awaiting_approval", view.State)
+			successfulProbe = result
+		} else {
+			require.Equal(t, "probe_failed", view.State)
+		}
+	}
+	var operatorOrg, approver int64
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs(name,status,org_type) VALUES('data-approval','active','platform') RETURNING id`).Scan(&operatorOrg))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users(org_id,username,password_hash,organization_role,role,status) VALUES($1,'data-approver','fixture','platform_admin','platform_admin','active') RETURNING id`, operatorOrg).Scan(&approver))
+	approvalRequest := canonicalOperationProbeAuthorizedRequest(operatorOrg, org, approver, auth.RolePlatformAdmin)(http.MethodPost, capabilityPath+"/routing-approvals", fmt.Sprintf(`{"capability_probe_id":%d,"reason":"reviewed exact data revision evidence"}`, successfulProbe.CapabilityProbeID))
+	setPath(approvalRequest)
+	approvalResponse := httptest.NewRecorder()
+	h.ApproveCanonicalModelCapabilityRouting(approvalResponse, approvalRequest)
+	require.Equal(t, http.StatusCreated, approvalResponse.Code, approvalResponse.Body.String())
+	require.True(t, read().Qualified)
+	require.Equal(t, 3, calls, "GET and approval must not repeat the operation or capability Provider call")
+	_, err = pool.Exec(ctx, `UPDATE provider_credential_bindings SET state_revision=state_revision+1 WHERE id=$1`, legacy.Application.Credential.Bindings[0].ID)
+	require.NoError(t, err)
+	stale := read()
+	require.NotNil(t, stale.LatestProbe)
+	require.False(t, stale.LatestProbe.Current)
+	require.True(t, stale.Qualified, "credential eligibility remains separate from capability approval")
+	_, err = pool.Exec(ctx, `UPDATE provider_connections SET config_revision=config_revision+1 WHERE id=$1`, legacy.Application.Connection.ID)
+	require.NoError(t, err)
+	stale = read()
+	require.False(t, stale.Qualified)
+	require.Equal(t, 3, calls)
 	_, err = pool.Exec(ctx, `UPDATE model_deployments SET profile_definition_digest=$2 WHERE id=$1`, legacy.Application.Deployment.ID, d.Digest())
 	require.Error(t, err, "cannot retrofit an existing Deployment identity")
 }

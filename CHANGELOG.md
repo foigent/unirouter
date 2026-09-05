@@ -4,6 +4,19 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.54] - 2026-09-05
+
+### Fixed
+
+- Capability qualification now reads the latest Probe against the candidate
+  Operation's immutable data Profile, so successful or failed evidence remains
+  visible when the stable model retains its legacy Profile. Existing revision,
+  selector and credential freshness checks and independent Approval remain intact.
+- Probe/Approval confirmation uses the same exact execution Profile and Definition
+  identity as the Operation. Missing data identity blocks confirmation; a changed
+  digest invalidates pending confirmation. No new schema, evidence replay or
+  Provider call is needed to recover a previously persisted Probe.
+
 ## [1.2.53] - 2026-09-05
 
 ### Changed

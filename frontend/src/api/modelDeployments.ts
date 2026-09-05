@@ -133,6 +133,9 @@ export type CanonicalOperationProbe = {
 };
 
 export type CanonicalOperation = {
+  profile_definition_digest?: string;
+  execution_profile_id?: string;
+  execution_profile_version?: string;
   operation_id: CanonicalOperationID;
   protocol_profile_id: string;
   protocol_profile_version: string;
