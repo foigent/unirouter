@@ -16,8 +16,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/modelprofile"
+	"github.com/uniroute/unirouter/internal/releaseexecution"
+	"github.com/uniroute/unirouter/internal/routingpolicy"
+	"github.com/uniroute/unirouter/internal/runtimechange"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -27,7 +31,7 @@ func TestDataCandidateUsesSameStableProductAndConnectionWithoutMutatingLegacyInt
 	var org, actor int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs(name,status,org_type) VALUES('data-candidate','active','customer') RETURNING id`).Scan(&org))
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users(org_id,username,password_hash,organization_role,role,status) VALUES($1,'data-candidate','fixture','org_admin','org_admin','active') RETURNING id`, org).Scan(&actor))
-	h := NewHandler(pool, "data-fixture", []byte("0123456789abcdef01234567"), nil)
+	h := NewHandlerWithAPIKeyHashSecret(pool, "data-fixture", "data-http-hash-secret", []byte("0123456789abcdef01234567"), nil)
 	actorRequest := canonicalApplicationAuthorizedRequest(org, actor)
 	request := canonicalModelApplicationCreateRequest{
 		Connection:  canonicalConnectionInput{Name: "Data candidate GLM", Provider: "glm", BaseURL: "https://open.bigmodel.cn/api/paas/v4", AdapterType: "openai_compatible", AdapterConfig: json.RawMessage(`{"endpoint_path_mode":"base_relative"}`)},
@@ -197,6 +201,47 @@ SELECT operation_id,capability_id,execution_profile_id,$1,protocol_profile_id,pr
 	require.Equal(t, http.StatusCreated, approvalResponse.Code, approvalResponse.Body.String())
 	require.True(t, read().Qualified)
 	require.Equal(t, 3, calls, "GET and approval must not repeat the operation or capability Provider call")
+	// Exercise the actual HTTP decoder, command owner and sealed DB snapshot
+	// with a real nonempty capability decision, not a writer stub or plain Chat.
+	var approval modelCapabilityApprovalResult
+	require.NoError(t, json.Unmarshal(approvalResponse.Body.Bytes(), &approval))
+	policy := routingpolicy.Default()
+	router, err := gateway.NewRouterWithPolicy(pool, policy)
+	require.NoError(t, err)
+	manager, err := runtimechange.NewManager(pool, router, policy)
+	require.NoError(t, err)
+	h.SetRuntimeChangeManager(manager)
+	authorBody := canonicalDeploymentReleaseAuthoringRequest{
+		PublicModelID:           candidate.Application.PublicModel.ID,
+		Baseline:                runtimechange.DeploymentReleaseBaseline{Kind: runtimechange.DeploymentReleaseBaselineInitial},
+		Selections:              []runtimechange.DeploymentReleaseSelection{{DeploymentID: candidate.Application.Deployment.ID, OperationID: string(modeloperation.IDChatCompletions)}},
+		ProfileDefinitionDigest: d.Digest(), PublicContextLimit: 64000, PublicOutputLimit: 4096,
+		CapabilityApprovalIDs: []int64{approval.ApprovalID}, Reason: "seal exact data capability evidence through HTTP",
+	}
+	sealedReceipt, _ := serveCanonicalDeploymentReleaseAuthoring(t, h, actorRequest, authorBody, "data-http-author", http.StatusCreated)
+	sealed, err := releaseexecution.ReadSnapshot(ctx, pool, sealedReceipt.Release.ID)
+	require.NoError(t, err)
+	require.NotNil(t, sealed)
+	require.NoError(t, sealed.ValidateDefinition(d))
+	require.Equal(t, d.Digest(), sealed.ProfileDefinitionDigest)
+	require.Equal(t, 64000, sealed.PublicContextLimit)
+	require.Equal(t, 4096, sealed.PublicOutputLimit)
+	require.Len(t, sealed.CapabilityPins, 1)
+	pin := sealed.CapabilityPins[0]
+	require.Equal(t, candidate.Application.Deployment.ID, pin.DeploymentID)
+	require.Equal(t, approval.ApprovalID, pin.ApprovalID)
+	require.Equal(t, successfulProbe.CapabilityProbeID, pin.ProbeID)
+	require.Equal(t, "function_tools", pin.CapabilityID)
+	var probeContractID, probeContractVersion string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT probe_contract_id,probe_contract_version FROM model_capability_probes WHERE capability_probe_id=$1`, pin.ProbeID).Scan(&probeContractID, &probeContractVersion))
+	require.Equal(t, probeContractID, pin.ProbeContractID)
+	require.Equal(t, probeContractVersion, pin.ProbeContractVersion)
+	require.NotEmpty(t, pin.BindingDigest)
+	require.NotEmpty(t, pin.EvidenceDigest)
+	require.NotEmpty(t, pin.SelectorDigest)
+	replayedRelease, _ := serveCanonicalDeploymentReleaseAuthoring(t, h, actorRequest, authorBody, "data-http-author", http.StatusOK)
+	require.True(t, replayedRelease.IdempotencyReplay)
+	require.Equal(t, sealedReceipt.Release.ID, replayedRelease.Release.ID)
 	_, err = pool.Exec(ctx, `UPDATE provider_credential_bindings SET state_revision=state_revision+1 WHERE id=$1`, legacy.Application.Credential.Bindings[0].ID)
 	require.NoError(t, err)
 	stale := read()
@@ -208,6 +253,21 @@ SELECT operation_id,capability_id,execution_profile_id,$1,protocol_profile_id,pr
 	stale = read()
 	require.False(t, stale.Qualified)
 	require.Equal(t, 3, calls)
+	// A new command cannot seal stale qualification; a rejected transaction
+	// leaves neither another Release nor an authoring receipt.
+	var releaseCount, receiptCount int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM runtime_change_releases`).Scan(&releaseCount))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM model_deployment_release_authoring_receipts`).Scan(&receiptCount))
+	serveCanonicalDeploymentReleaseAuthoring(t, h, actorRequest, authorBody, "data-http-stale", http.StatusConflict)
+	var releaseCountAfter, receiptCountAfter int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM runtime_change_releases`).Scan(&releaseCountAfter))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM model_deployment_release_authoring_receipts`).Scan(&receiptCountAfter))
+	require.Equal(t, releaseCount, releaseCountAfter)
+	require.Equal(t, receiptCount, receiptCountAfter)
+	retained, err := releaseexecution.ReadSnapshot(ctx, pool, sealedReceipt.Release.ID)
+	require.NoError(t, err)
+	require.Equal(t, sealed, retained, "mutable safety rejection cannot rewrite the sealed interpretation")
+	require.Equal(t, 3, calls, "Release authoring and rejection make no Provider request")
 	_, err = pool.Exec(ctx, `UPDATE model_deployments SET profile_definition_digest=$2 WHERE id=$1`, legacy.Application.Deployment.ID, d.Digest())
 	require.Error(t, err, "cannot retrofit an existing Deployment identity")
 }

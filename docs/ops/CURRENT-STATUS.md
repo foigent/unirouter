@@ -1,23 +1,23 @@
 # UniRouter Current Status
 
-> Source candidate 1.2.55 adds the remaining existing-family streamed-tools
-> implementations for immutable data definitions: DeepSeek Flash/Pro, Kimi
-> K2.6/K2.7 Code/K3, MiniMax M3 and M2.7 Highspeed. Shared wire facts retain
-> Provider-specific reasoning, cache and DONE/EOF rules. Historical contracts
-> remain unchanged; this Artifact alone publishes or activates no model.
-> Local request/history, actual relay, safe usage/settlement and formal Probe
-> persistence regressions passed. Model qualification and OpenClaw remain
-> separate Target results. No Qwen, Hermes, Token Plan or media expansion.
+> Source candidate 1.2.56 repairs the data Release HTTP decoder: the existing
+> Profile digest, public limits and Approval ID fields reach the unchanged
+> atomic authoring owner. HTTP/DB regression seals exact Probe/Approval pins,
+> replays the same receipt and rejects stale qualification without new writes.
+> No schema or qualification policy changes; Target verification is pending.
 >
-> PR388 merged the 1.2.54 data qualification readback repair at f40ac7fb;
-> its five required CI jobs passed. The last verified development Target is
-> still 1.2.53/M114 on Artifact fe2393fdf3a2, with both official GLM/M2.7 data
-> Publications committed and old Release/Slot/binding/selector rows unchanged.
-> GLM-5.3 Deployment #22 has successful Operation Probe #21 and streamed
-> Function Tools Probe #135. Reuse these exact records after the readback repair;
-> do not generate another paid Probe to repair a management projection.
-> Remaining qualification, Release activation, real OpenClaw and long-stream
-> continuity are outstanding. See `CAPABILITY-DELIVERY.md` for formal owners.
+> PR389 merged the seven remaining existing-family streamed-tools implementations
+> at 8b90564f (1.2.55/M114); all five CI checks passed. PR390 carries only the
+> seven data definitions and their 39 binding/selector tuples; it is not evidence
+> of Target publication or routability. No Qwen, Hermes, Token Plan or media.
+>
+> Last verified development Target is 1.2.54/M114 on exact Artifact f40ac7fb,
+> with both official GLM/M2.7 data Publications committed and old Release/Slot
+> rows unchanged. GLM-5.3 Deployment #22 has Operation Probe #21, capability
+> Probes #135–139 and qualified Approvals #119–123. Reuse those records after
+> this HTTP repair; the rejected authoring request created no Release/receipt.
+> Real OpenClaw and long-stream rollout continuity remain outstanding.
+> See `CAPABILITY-DELIVERY.md` for the formal Publication and activation owners.
 >
 > The prior 1.2.52 same-schema slice added admission/drain and explicit directory
 > carrier withdrawal. Initial carrier installation is a bootstrap operation and
