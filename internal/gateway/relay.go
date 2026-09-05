@@ -2017,6 +2017,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	providerTerminalObserved := false
 	providerFinishReasonObserved := false
 	exactStreamState := exactStreamStateForProtocol(route.ModelProtocolProfile, route.MappedModel)
+	toolEnvelope, toolEnvelopeErr := adapters.NewToolStreamEnvelope(route.ModelProtocolProfile, route.Channel.Provider, route.MappedModel, route.CacheUsageProfile)
 	var functionToolAssembler *adapters.ChatSSEEventAssembler
 	var functionToolSetupErr error
 	if exactStreamState != nil && exactStreamState.functionTools != nil {
@@ -2040,6 +2041,9 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	}
 	if streamMechanicsSetupErr == nil {
 		streamMechanicsSetupErr = functionToolSetupErr
+	}
+	if streamMechanicsSetupErr == nil {
+		streamMechanicsSetupErr = toolEnvelopeErr
 	}
 	if streamMechanicsSetupErr != nil {
 		streamPayloadInvalid = true
@@ -2340,7 +2344,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			return false
 		}
 		if string(data) == "[DONE]" {
-			if exactStreamState.validateDone() != nil {
+			if toolEnvelope.AcceptDone() != nil || exactStreamState.validateDone() != nil {
 				return invalid()
 			}
 			providerTerminalObserved = true
@@ -2367,6 +2371,13 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			streamTerminationCode = "upstream_stream_provider_error"
 			return false
 		}
+		data, skip, prepareErr := toolEnvelope.Prepare(data)
+		if skip {
+			return true
+		}
+		if data == nil {
+			return invalid()
+		}
 		usage, present, err := adapters.ParseOpenAICompatibleStreamUsageWithCacheProfile(data, adapters.EndpointChatCompletions, metering.UsageSourceUpstream, route.CacheUsageProfile)
 		if err != nil {
 			return invalid()
@@ -2374,6 +2385,9 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		if present {
 			streamUsage = usage
 			usedUpstreamUsage = true
+		}
+		if prepareErr != nil {
+			return invalid()
 		}
 		if validateFunctionToolStreamInvocation(route, data) != nil {
 			return invalid()

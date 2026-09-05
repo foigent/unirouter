@@ -764,7 +764,9 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 			applyKimiChatDiagnostic(&outcome, validationErr)
 			return outcome
 		}
-	case modelcapabilityqualification.MiniMaxM27StreamFunctionToolsProbeContractID, modelcapabilityqualification.GLMStreamFunctionToolsProbeContractID:
+	case modelcapabilityqualification.MiniMaxM27StreamFunctionToolsProbeContractID, modelcapabilityqualification.GLMStreamFunctionToolsProbeContractID,
+		modelcapabilityqualification.DeepSeekStreamFunctionToolsProbeContractID, modelcapabilityqualification.KimiStreamFunctionToolsProbeContractID,
+		modelcapabilityqualification.MiniMaxM3StreamFunctionToolsProbeContractID:
 		observation, validationErr := modelcapabilityqualification.ValidateOpenAIChatStreamFunctionToolsForBinding(modelCapabilityProbeBindingFromSnapshot(snapshot), response.Header.Get("Content-Type"), response.Body)
 		outcome.ReportedModel = observation.ReportedModel
 		outcome.FinishReason = observation.FinishReason
@@ -827,6 +829,9 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 }
 
 func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]byte, error) {
+	if snapshot.Definition.Digest() != "" {
+		return modelcapabilityqualification.BuildOpenAIChatFunctionToolsProbeRequest(snapshot.DataBinding)
+	}
 	const (
 		kimiK3DefaultReasoningProbeMaxCompletionTokens  = 4096
 		kimiK3BoundedCapabilityProbeMaxCompletionTokens = 512
@@ -975,6 +980,9 @@ func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]b
 		return modelcapabilityqualification.BuildMiniMaxM27StreamFunctionToolsProbeRequest(modelCapabilityProbeBindingFromSnapshot(snapshot))
 	case modelcapabilityqualification.GLMStreamFunctionToolsProbeContractID:
 		return modelcapabilityqualification.BuildGLMStreamFunctionToolsProbeRequest(modelCapabilityProbeBindingFromSnapshot(snapshot))
+	case modelcapabilityqualification.DeepSeekStreamFunctionToolsProbeContractID, modelcapabilityqualification.KimiStreamFunctionToolsProbeContractID,
+		modelcapabilityqualification.MiniMaxM3StreamFunctionToolsProbeContractID:
+		return modelcapabilityqualification.BuildExistingFamilyStreamFunctionToolsProbeRequest(modelCapabilityProbeBindingFromSnapshot(snapshot))
 	default:
 		return nil, errModelCapabilityUnsupported
 	}
@@ -1010,6 +1018,7 @@ func normalizeOpenAIChatFunctionToolsProbeResponse(
 			AdapterType: snapshot.AdapterType, AdapterConfig: snapshot.AdapterConfig,
 		},
 		RequestedModel: snapshot.UpstreamModel, UpstreamModel: snapshot.UpstreamModel,
+		ProfileDefinition:  snapshot.Definition,
 		ModelOperationID:   snapshot.OperationID,
 		ExecutionProfileID: snapshot.ExecutionProfileID, ExecutionProfileVersion: snapshot.ExecutionProfileVersion,
 		CacheUsageProfile: profile.CacheUsageProfile, ProtocolProfile: snapshot.ProtocolProfileID,
@@ -1018,6 +1027,27 @@ func normalizeOpenAIChatFunctionToolsProbeResponse(
 }
 
 func resolveKimiProbeThinking(snapshot modelCapabilitySnapshot) (map[string]string, bool, bool, error) {
+	if snapshot.Definition.Digest() != "" {
+		profile, err := snapshot.DataBinding.ExecutionProfile()
+		if err != nil {
+			return nil, false, false, errModelCapabilityUnsupported
+		}
+		if profile.Provider != "kimi" {
+			return nil, false, false, nil
+		}
+		contract, ok := modelprofile.ResolveReasoningContract(profile.ReasoningProfile)
+		if !ok {
+			return nil, false, false, errModelCapabilityUnsupported
+		}
+		if contract.Mode == modelprofile.ReasoningModeRequired {
+			thinking := map[string]string{"type": contract.ToggleControl.ProviderDefault}
+			if contract.ThinkingKeepProviderDefault != "" {
+				thinking["keep"] = contract.ThinkingKeepProviderDefault
+			}
+			return thinking, true, false, nil
+		}
+		return nil, false, contract.Mode == modelprofile.ReasoningModeAlwaysOn, nil
+	}
 	thinking, required, err := resolveKimiRequiredThinkingContract(
 		snapshot.ExecutionProfileID, snapshot.ExecutionProfileVersion,
 	)

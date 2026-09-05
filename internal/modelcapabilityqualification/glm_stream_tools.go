@@ -49,6 +49,12 @@ func BuildGLMStreamFunctionToolsProbeRequest(b Binding) ([]byte, error) {
 }
 
 func ValidateOpenAIChatStreamFunctionToolsForBinding(b Binding, contentType string, reader io.Reader) (OpenAIChatFunctionToolsObservation, error) {
+	if existingFamilyStreamProbe(b.ProbeContractID) {
+		if err := b.validateDataDefinition(); err != nil {
+			return OpenAIChatFunctionToolsObservation{}, invalidOpenAIChatFunctionTools("probe_contract", err)
+		}
+		return validateChatStreamFunctionTools(b, contentType, reader, b.ProbeContractID == MiniMaxM3StreamFunctionToolsProbeContractID)
+	}
 	if b.ProbeContractID == MiniMaxM27StreamFunctionToolsProbeContractID {
 		return ValidateMiniMaxM27StreamFunctionToolsForBinding(b, contentType, reader)
 	}

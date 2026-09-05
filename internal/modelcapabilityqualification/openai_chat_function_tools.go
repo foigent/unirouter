@@ -190,7 +190,7 @@ func isMiniMaxFunctionToolsProbe(contractID string) bool {
 
 func openAIChatRuntimeCapabilityAllowed(binding Binding) bool {
 	if binding.definition != nil {
-		return binding.validateDataDefinition() == nil && binding.ProbeContractID == MiniMaxPAYGM2ChatFunctionToolsProbeContractID
+		return binding.validateDataDefinition() == nil && (binding.ProbeContractID == MiniMaxPAYGM2ChatFunctionToolsProbeContractID || binding.ProbeContractID == MiniMaxPAYGM3ChatFunctionToolsProbeContractID)
 	}
 	var capabilities []string
 	switch binding.ProbeContractID {
@@ -241,6 +241,9 @@ func openAIChatProbeTools() []map[string]interface{} {
 // reasoning and tool-choice request semantics differ; only the mechanics are
 // shared.
 func BuildOpenAIChatFunctionToolsProbeRequest(binding Binding) ([]byte, error) {
+	if existingFamilyStreamProbe(binding.ProbeContractID) {
+		return BuildExistingFamilyStreamFunctionToolsProbeRequest(binding)
+	}
 	if binding.ProbeContractID == GLMStreamFunctionToolsProbeContractID {
 		return BuildGLMStreamFunctionToolsProbeRequest(binding)
 	}
