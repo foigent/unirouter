@@ -1548,7 +1548,7 @@ SELECT approval_id,capability_probe_id,qualification_state,qualified
 	latest := modelCapabilityProbeView{}
 	var responseSummary json.RawMessage
 	var latestCurrent bool
-	err = tx.QueryRow(ctx, `
+	query = `
 SELECT probe.capability_probe_id,probe.credential_binding_id,probe.success,
        probe.provider_success,probe.status_code,probe.latency_ms,probe.reported_model,
        probe.error_summary,probe.response_summary,probe.tested_at,
@@ -1594,7 +1594,13 @@ SELECT probe.capability_probe_id,probe.credential_binding_id,probe.success,
    AND link.deployment_id=probe.deployment_id AND link.connection_id=probe.connection_id
  WHERE probe.deployment_id=$1 AND probe.operation_id=$2 AND probe.capability_id=$3
    AND probe.execution_profile_id=$4 AND probe.execution_profile_version=$5
- ORDER BY probe.tested_at DESC,probe.capability_probe_id DESC LIMIT 1`,
+ ORDER BY probe.tested_at DESC,probe.capability_probe_id DESC LIMIT 1`
+	if expanded {
+		query = strings.ReplaceAll(query, "model.execution_profile_id", "COALESCE(definition.profile_id,model.execution_profile_id)")
+		query = strings.ReplaceAll(query, "model.execution_profile_version", "COALESCE(definition.profile_version,model.execution_profile_version)")
+		query = strings.Replace(query, "JOIN model_deployment_capabilities capability", "LEFT JOIN model_profile_definitions definition ON definition.definition_digest=operation.profile_definition_digest\n  JOIN model_deployment_capabilities capability", 1)
+	}
+	err = tx.QueryRow(ctx, query,
 		deploymentID, operationID, capabilityID, view.ExecutionProfileID, view.ExecutionProfileVersion).Scan(
 		&latest.CapabilityProbeID, &latest.CredentialBindingID, &latest.Success,
 		&latest.ProviderSuccess, &latest.StatusCode, &latest.LatencyMS, &latest.ReportedModel,

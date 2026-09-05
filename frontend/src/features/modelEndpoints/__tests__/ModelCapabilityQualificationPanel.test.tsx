@@ -84,6 +84,41 @@ describe('ModelCapabilityQualificationPanel', () => {
     });
   });
 
+  it('confirms the exact data Profile and invalidates confirmation when its digest changes', async () => {
+    let confirmationConfig: any;
+    const destroy = vi.fn();
+    vi.spyOn(Modal, 'confirm').mockImplementation((config: any) => {
+      confirmationConfig = config;
+      return { destroy, update: vi.fn() } as any;
+    });
+    const dataOperation = {
+      ...operation,
+      profile_definition_digest: 'a'.repeat(64),
+      execution_profile_id: 'deepseek.v4-flash.api',
+      execution_profile_version: '99.0.0',
+    };
+    const props = { selected, operation: dataOperation, canManage: true, canApprove: true, gatewayLicensed: true, gatewayRestriction: '' };
+    const panel = render(<ModelCapabilityQualificationPanel {...props} />);
+    fireEvent.click(await screen.findByRole('button', { name: /运行流式能力探测/ }));
+    const confirmation = render(confirmationConfig.content);
+    expect(confirmation.getByText(/deepseek\.v4-flash\.api@99\.0\.0/)).toBeInTheDocument();
+    expect(confirmation.queryByText(/deepseek\.v4-flash\.api@1\.4\.0/)).not.toBeInTheDocument();
+    const staleConfirm = confirmationConfig.onOk;
+    panel.rerender(<ModelCapabilityQualificationPanel {...props} operation={{ ...dataOperation, profile_definition_digest: 'b'.repeat(64) }} />);
+    await waitFor(() => expect(destroy).toHaveBeenCalled());
+    await act(async () => { await staleConfirm(); });
+    expect(mocks.probeCapability).not.toHaveBeenCalled();
+  });
+
+  it('does not fall back to the stable model when a data Profile identity is incomplete', async () => {
+    render(<ModelCapabilityQualificationPanel selected={selected}
+      operation={{ ...operation, profile_definition_digest: 'a'.repeat(64) }}
+      canManage canApprove gatewayLicensed gatewayRestriction="" />);
+    expect(await screen.findByRole('button', { name: /运行流式能力探测/ })).toBeDisabled();
+    expect(screen.getByText('执行合同身份不完整；请刷新后再探测或批准。')).toBeInTheDocument();
+    expect(mocks.probeCapability).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['cache_read_usage', '缓存读取计量', 0],
     ['prompt_cache', 'Prompt Cache 能力', 128],

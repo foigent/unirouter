@@ -132,11 +132,17 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
   const [reason, setReason] = useState(presentation.defaultReason);
   const deploymentID = selected.deployment.id;
   const operationID = operation.operation_id;
+  const definitionDigest = operation.profile_definition_digest || '';
+  const profileIdentityReady = !definitionDigest || Boolean(operation.execution_profile_id && operation.execution_profile_version);
+  const executionProfileID = definitionDigest ? operation.execution_profile_id : operation.execution_profile_id || selected.public_model.execution_profile_id;
+  const executionProfileVersion = definitionDigest ? operation.execution_profile_version : operation.execution_profile_version || selected.public_model.execution_profile_version;
+  const executionProfile = `${executionProfileID || 'unavailable'}@${executionProfileVersion || 'unavailable'}`;
   const identity = [
     `connection=${selected.connection.id}@${selected.connection.config_revision}`,
     `deployment=${deploymentID}@${selected.deployment.config_revision}`,
     `operation=${operationID}@${operation.revision}`,
-    `execution=${selected.public_model.execution_profile_id}@${selected.public_model.execution_profile_version}`,
+    `execution=${executionProfile}`,
+    `definition=${definitionDigest}`,
     `protocol=${operation.protocol_profile_id}@${operation.protocol_profile_version}`,
     `capability=${capabilityID}`,
   ].join(':');
@@ -154,7 +160,7 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
     connectionRevision: selected.connection.config_revision,
     deploymentRevision: selected.deployment.config_revision,
     operationRevision: operation.revision,
-    executionProfile: `${selected.public_model.execution_profile_id}@${selected.public_model.execution_profile_version}`,
+    executionProfile,
     protocolProfile: `${operation.protocol_profile_id}@${operation.protocol_profile_version}`,
   }), [
     capabilityID,
@@ -167,8 +173,7 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
     selected.connection.config_revision,
     selected.connection.id,
     selected.deployment.config_revision,
-    selected.public_model.execution_profile_id,
-    selected.public_model.execution_profile_version,
+    executionProfile,
   ]);
 
   const load = useCallback(async () => {
@@ -237,6 +242,7 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
   };
 
   const confirmProbe = (binding: CanonicalCredentialBinding) => {
+    if (!profileIdentityReady) return;
     const target = targetSummary;
     confirmationRef.current = Modal.confirm({
       title: `运行${presentation.shortName}探测？`,
@@ -308,6 +314,7 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
   >
     {loading && !qualification ? <Spin /> : <Space vertical align="start" style={{ width: '100%' }}>
       {error && <Banner type="danger" closeIcon={null} description={error} />}
+      {!profileIdentityReady && <Banner type="warning" closeIcon={null} description="执行合同身份不完整；请刷新后再探测或批准。" />}
       {qualification && <>
         <Space wrap>
           <StatusTag status={capabilityTone(qualification.state)}>{qualification.state}</StatusTag>
@@ -356,7 +363,7 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
             key={binding.id}
             type="primary"
             theme="borderless"
-            disabled={!props.gatewayLicensed || workingBindingID !== 0 || approving}
+            disabled={!profileIdentityReady || !props.gatewayLicensed || workingBindingID !== 0 || approving}
             loading={workingBindingID === binding.id}
             title={props.gatewayLicensed ? undefined : props.gatewayRestriction}
             onClick={() => confirmProbe(binding)}
@@ -376,7 +383,7 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
             <Button
               type="primary"
               loading={approving}
-              disabled={!reason.trim() || !props.gatewayLicensed}
+              disabled={!profileIdentityReady || !reason.trim() || !props.gatewayLicensed}
               title={props.gatewayLicensed ? undefined : props.gatewayRestriction}
               onClick={confirmApproval}
             >批准在当前环境进入路由池</Button>
