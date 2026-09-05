@@ -132,7 +132,8 @@ func decodeCanonicalDeploymentReleaseAuthoringRequest(
 	}
 	for member := range members {
 		switch member {
-		case "public_model_id", "baseline", "selections", "reason":
+		case "public_model_id", "baseline", "selections", "reason",
+			"profile_definition_digest", "public_context_limit", "public_output_limit", "capability_approval_ids":
 		default:
 			return canonicalDeploymentReleaseAuthoringRequest{}, errCanonicalDeploymentReleaseAuthoringInvalid
 		}

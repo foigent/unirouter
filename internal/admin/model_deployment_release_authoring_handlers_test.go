@@ -74,6 +74,50 @@ func TestCanonicalDeploymentReleaseAuthoringHandlerReturnsLaterReplayAs200(t *te
 	require.True(t, decoded.IdempotencyReplay)
 }
 
+func TestCanonicalDeploymentReleaseAuthoringHTTPPreservesDataPins(t *testing.T) {
+	t.Parallel()
+	stub := &deploymentLifecycleApplicationStub{authorReceipt: deploymentReleaseAuthoringHTTPReceipt(false)}
+	handler := NewHandlerWithAPIKeyHashSecret(nil, "jwt-secret", "hash-secret", nil, nil)
+	handler.deploymentLifecycleManager = stub
+	body := `{"public_model_id":7,"baseline":{"kind":"initial"},"selections":[{"deployment_id":19,"operation_id":"openai.chat_completions.v1"}],"reason":"data candidate","profile_definition_digest":"` + strings.Repeat("a", 64) + `","public_context_limit":64000,"public_output_limit":4096,"capability_approval_ids":[123,119]}`
+	request := canonicalLifecycleHandlerRequest(t, http.MethodPost, "/api/v1/model-deployment-releases", body, true)
+	response := httptest.NewRecorder()
+	middleware.OperationIdentityWithSecret("hash-secret")(http.HandlerFunc(handler.AuthorCanonicalDeploymentRelease)).ServeHTTP(response, request)
+	require.Equal(t, http.StatusCreated, response.Code, response.Body.String())
+	require.Equal(t, 1, stub.authorCalls)
+	require.Equal(t, strings.Repeat("a", 64), stub.authorCommand.Mutation.ProfileDefinitionDigest)
+	require.Equal(t, 64000, stub.authorCommand.Mutation.PublicContextLimit)
+	require.Equal(t, 4096, stub.authorCommand.Mutation.PublicOutputLimit)
+	require.Equal(t, []int64{119, 123}, stub.authorCommand.Mutation.CapabilityApprovalIDs)
+}
+
+func TestCanonicalDeploymentReleaseAuthoringDataHTTPRejectsMalformedPins(t *testing.T) {
+	t.Parallel()
+	valid := `{"public_model_id":7,"baseline":{"kind":"initial"},"selections":[{"deployment_id":19,"operation_id":"openai.chat_completions.v1"}],"reason":"data candidate","profile_definition_digest":"` + strings.Repeat("a", 64) + `","public_context_limit":64000,"public_output_limit":4096,"capability_approval_ids":[119]}`
+	for name, body := range map[string]string{
+		"unknown field":        strings.Replace(valid, `"reason":`, `"execution_snapshot_digest":"owned","reason":`, 1),
+		"unknown nested field": strings.Replace(valid, `"kind":"initial"`, `"kind":"initial","candidate_hash":"owned"`, 1),
+		"duplicate digest":     strings.Replace(valid, `"reason":`, `"profile_definition_digest":"`+strings.Repeat("a", 64)+`","reason":`, 1),
+		"bad digest":           strings.Replace(valid, strings.Repeat("a", 64), "not-a-digest", 1),
+		"invalid limit":        strings.Replace(valid, `"public_output_limit":4096`, `"public_output_limit":0`, 1),
+		"duplicate approval":   strings.Replace(valid, `[119]`, `[119,119]`, 1),
+		"invalid approval":     strings.Replace(valid, `[119]`, `[0]`, 1),
+		"wrong approval type":  strings.Replace(valid, `[119]`, `["119"]`, 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			stub := &deploymentLifecycleApplicationStub{}
+			handler := NewHandlerWithAPIKeyHashSecret(nil, "jwt-secret", "hash-secret", nil, nil)
+			handler.deploymentLifecycleManager = stub
+			request := canonicalLifecycleHandlerRequest(t, http.MethodPost, "/api/v1/model-deployment-releases", body, true)
+			response := httptest.NewRecorder()
+			middleware.OperationIdentityWithSecret("hash-secret")(http.HandlerFunc(handler.AuthorCanonicalDeploymentRelease)).ServeHTTP(response, request)
+			require.Equal(t, http.StatusBadRequest, response.Code, response.Body.String())
+			require.Contains(t, response.Body.String(), "canonical_deployment_release_authoring_invalid")
+			require.Zero(t, stub.authorCalls)
+		})
+	}
+}
+
 func TestCanonicalDeploymentReleaseAuthoringRejectsInvalidIngressBeforeWriter(t *testing.T) {
 	t.Parallel()
 

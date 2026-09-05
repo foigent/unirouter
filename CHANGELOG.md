@@ -4,6 +4,18 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.56] - 2026-09-05
+
+### Fixed
+
+- Admit the existing immutable Profile digest, public limits and capability
+  Approval IDs at the Release HTTP boundary. Valid data Release requests now
+  reach the unchanged atomic authoring owner; strict unknown/duplicate fields,
+  qualification freshness and immutable evidence checks remain enforced.
+- Exercise HTTP authoring with a stored data revision and a real Probe/Approval
+  decision, including sealed pins, idempotent replay and stale rejection with
+  no new Release or receipt. No schema or Provider protocol change.
+
 ## [1.2.55] - 2026-09-05
 
 ### Changed
