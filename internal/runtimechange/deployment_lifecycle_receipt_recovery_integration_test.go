@@ -241,12 +241,23 @@ DROP FUNCTION IF EXISTS m78_legacy_lifecycle_claim_barrier()`)
 	require.Eventually(t, func() bool {
 		var waiters int
 		err := pool.QueryRow(ctx, `
-SELECT COUNT(*)
-  FROM pg_stat_activity
+WITH claimant AS (
+ SELECT pid FROM pg_stat_activity
  WHERE datname=current_database()
    AND wait_event_type='Lock' AND wait_event='advisory'
-   AND query ILIKE '%INSERT INTO model_deployment_lifecycle_receipts%'`).Scan(&waiters)
-		return err == nil && waiters == 2
+   AND query ILIKE '%INSERT INTO model_deployment_lifecycle_receipts%'
+   AND $1::integer = ANY(pg_blocking_pids(pid))
+)
+SELECT COUNT(*) FROM pg_stat_activity contender
+JOIN claimant ON claimant.pid = ANY(pg_blocking_pids(contender.pid))
+WHERE contender.datname=current_database()
+  AND contender.wait_event_type='Lock' AND contender.wait_event='relation'
+  AND contender.query ILIKE '%LOCK TABLE runtime_change_slots IN SHARE ROW EXCLUSIVE MODE%'`,
+			int32(barrierOwner.Conn().PgConn().PID())).Scan(&waiters)
+		// Compatibility coordination serializes the second caller before its
+		// first business read. Prove both callers are blocked in that chain:
+		// winner at the held claim barrier, contender behind the winner's lock.
+		return err == nil && waiters == 1
 	}, 5*time.Second, 10*time.Millisecond)
 	_, err = barrierOwner.Exec(ctx, `SELECT pg_advisory_unlock($1)`, claimBarrierKey)
 	require.NoError(t, err)

@@ -160,3 +160,24 @@ Final affected adapter/Gateway/routing/qualification/execution/Profile/schema/
 tokenizer/billing/Release package race suites passed. The complete admin
 integration lane found only that deliberate-injection fixture issue, whose
 targeted repair passed. These are Local facts, not CI or external proof.
+
+## CI predecessor fixture repairs
+
+CI run33940872592 completed Backend in25m45s with three runtimechange test
+failures; it did not time out. The production source and reviewed M114 bytes
+remain unchanged. Historical successor rollback fixtures now execute the empty
+M114 guarded down before M113. The same-key concurrent cutover test now proves
+one caller held at the receipt claim barrier and a second blocked behind its
+compatibility table lock, then retains the original single-receipt/replay/event
+assertions. Waiting for two simultaneous receipt INSERTs contradicted the new
+pre-business-read serialization boundary.
+
+The complete local race integration package additionally exposed two existing
+fixture assumptions absent from the CI selector: clearing immutable legacy
+provenance after insertion, and retaining a cooldown after canonical credential
+revoke explicitly clears it. The fixture can now create native canonical rows
+without legacy origin from the outset; the reconciliation assertion preserves
+the actual revoked state. No production trigger or safety action changed.
+The complete `go test -race -tags=integration ./internal/runtimechange -count=1`
+passed in19.178s against isolated PostgreSQL16. These test-only repairs remain
+within the previous review's invariants and do not add product requirements.

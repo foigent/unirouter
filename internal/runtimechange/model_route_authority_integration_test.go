@@ -21,20 +21,12 @@ func TestCanonicalAuthorityAcceptsParentlessV2WithoutLegacyProvenance(t *testing
 	ctx := context.Background()
 	manager, err := runtimechange.NewManager(pool, unusedDeploymentSnapshotBuilder{}, routingpolicy.Default())
 	require.NoError(t, err)
-	fixture := createCanonicalDeploymentFixture(t, pool, "authority-parentless", "active", 100, 100)
+	// Create native canonical provenance at insertion. Legacy identity columns
+	// are immutable; clearing them afterward is not a supported predecessor.
+	fixture := createCanonicalDeploymentFixtureWithOrigin(t, pool, "authority-parentless", "active", 100, 100,
+		"custom", "https://provider.invalid", "upstream-v2-model-authority-parentless", false)
 	makeSoleInitialCustomer(t, pool, fixture.OrgID)
-
-	_, err = pool.Exec(ctx, `UPDATE model_deployments
-       SET legacy_channel_id=NULL,legacy_public_model=NULL WHERE id=$1`, fixture.DeploymentID)
-	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `UPDATE provider_credential_bindings
-       SET legacy_channel_key_id=NULL WHERE id=$1`, fixture.CredentialID)
-	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `UPDATE provider_connections
-       SET legacy_channel_id=NULL WHERE id=$1`, fixture.ConnectionID)
-	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `DELETE FROM channels WHERE id=$1`, fixture.ChannelID)
-	require.NoError(t, err)
+	require.Zero(t, fixture.ChannelID)
 
 	sealed := sealInitialDeploymentRoutes(
 		t, pool, manager, fixture, []runtimechange.DeploymentRoute{deploymentRoute(fixture)},
