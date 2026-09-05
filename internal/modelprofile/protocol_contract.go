@@ -1193,11 +1193,13 @@ var chatProtocolContracts = map[string]ChatProtocolContract{
 	"protocol.deepseek-openai-chat.v2":              deepSeekChatContract("protocol.deepseek-openai-chat.v2", true),
 	"protocol.deepseek-openai-chat.v3":              deepSeekV4FlashExactFunctionToolsContract("protocol.deepseek-openai-chat.v3"),
 	"protocol.deepseek-openai-chat.v4":              deepSeekV4ExactFunctionToolHistoryContract("protocol.deepseek-openai-chat.v4"),
+	"protocol.deepseek-openai-chat.v5":              deepSeekStreamFunctionToolsContract("protocol.deepseek-openai-chat.v5"),
 	"protocol.minimax-openai-chat.v3":               miniMaxChatContract("protocol.minimax-openai-chat.v3", true, 524_288),
 	"protocol.minimax-m2-openai-chat.v4":            miniMaxChatContract("protocol.minimax-m2-openai-chat.v4", true, 204_800),
 	"protocol.minimax-m2-openai-chat.v5":            miniMaxM2EmbeddedReasoningChatContract("protocol.minimax-m2-openai-chat.v5"),
 	"protocol.minimax-m2-openai-chat.v6":            miniMaxM2CacheReadChatContract("protocol.minimax-m2-openai-chat.v6"),
 	"protocol.minimax-m2-openai-chat.v7":            miniMaxM2FunctionToolsContract("protocol.minimax-m2-openai-chat.v7"),
+	"protocol.minimax-m2-openai-chat.v8":            miniMaxM27StreamFunctionToolsContract("protocol.minimax-m2-openai-chat.v8"),
 	"protocol.minimax-m27-openai-chat.v1":           miniMaxM27StreamFunctionToolsContract("protocol.minimax-m27-openai-chat.v1"),
 	"protocol.minimax-m3-openai-chat.v4":            miniMaxChatContract("protocol.minimax-m3-openai-chat.v4", true, 524_288),
 	"protocol.minimax-m3-openai-chat.v5":            miniMaxM3EmbeddedReasoningChatContract("protocol.minimax-m3-openai-chat.v5"),
@@ -1205,6 +1207,7 @@ var chatProtocolContracts = map[string]ChatProtocolContract{
 	"protocol.minimax-m3-openai-chat.v7":            miniMaxM3ProcessingTierContract("protocol.minimax-m3-openai-chat.v7"),
 	"protocol.minimax-m3-openai-chat.v8":            miniMaxM3CacheReadContract("protocol.minimax-m3-openai-chat.v8"),
 	"protocol.minimax-m3-openai-chat.v9":            miniMaxM3FunctionToolsContract("protocol.minimax-m3-openai-chat.v9"),
+	"protocol.minimax-m3-openai-chat.v10":           miniMaxM3StreamFunctionToolsContract("protocol.minimax-m3-openai-chat.v10"),
 	"protocol.qwen-openai-chat.v1":                  qwenChatBaseContract("protocol.qwen-openai-chat.v1"),
 	"protocol.qwen-openai-chat.v2":                  qwenChatToolsContract("protocol.qwen-openai-chat.v2"),
 	"protocol.qwen-openai-chat.v3":                  qwenChatStructuredOutputContract("protocol.qwen-openai-chat.v3", true),
@@ -1407,6 +1410,8 @@ var chatProtocolContracts = map[string]ChatProtocolContract{
 	"protocol.kimi-openai-chat.k3.v3": kimiK3ChatContract("protocol.kimi-openai-chat.k3.v3"),
 	"protocol.kimi-openai-chat.k3.v4": kimiK3ExactTopLevelFunctionToolsContract("protocol.kimi-openai-chat.k3.v4"),
 	"protocol.kimi-openai-chat.k3.v5": kimiK3ExactDynamicFunctionToolsContract("protocol.kimi-openai-chat.k3.v5"),
+	"protocol.kimi-openai-chat.v6":    kimiStreamFunctionToolsContract("protocol.kimi-openai-chat.v6", false),
+	"protocol.kimi-openai-chat.k3.v6": kimiStreamFunctionToolsContract("protocol.kimi-openai-chat.k3.v6", true),
 }
 
 func ResolveChatProtocolContract(profileID string) (ChatProtocolContract, bool) {

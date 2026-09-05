@@ -11,18 +11,33 @@ import (
 // cannot install an implementation or loosen its accepted protocol semantics.
 // Legacy contracts keep their exact historical tuple validation.
 var dataProbeImplementations = map[string]func(Binding, modelprofile.Profile) bool{
+	DeepSeekStreamFunctionToolsProbeContractID + "@1.0.0":  validExistingFamilyStreamComposition,
+	KimiStreamFunctionToolsProbeContractID + "@1.0.0":      validExistingFamilyStreamComposition,
+	MiniMaxM3StreamFunctionToolsProbeContractID + "@1.0.0": validExistingFamilyStreamComposition,
+	MiniMaxPAYGM3ChatFunctionToolsProbeContractID + "@2.0.0": func(b Binding, p modelprofile.Profile) bool {
+		return p.Provider == "minimax" && p.ProtocolProfile == "protocol.minimax-m3-openai-chat.v10" &&
+			p.ReasoningProfile == "reasoning.minimax-m3-adaptive-embedded.v2" && p.CacheUsageProfile == "cache-usage.minimax-openai.v2" &&
+			(b.CapabilityID == modelprofile.CapabilityCacheReadUsage || b.CapabilityID == modelprofile.CapabilityPromptCache)
+	},
 	GLMStreamFunctionToolsProbeContractID + "@1.0.0": func(b Binding, p modelprofile.Profile) bool {
 		return p.Provider == "glm" && slices.Contains([]string{"protocol.glm-openai-chat.v7", "protocol.glm-openai-chat.glm5v.v6"}, p.ProtocolProfile) && streamToolCapability(b.CapabilityID)
 	},
 	MiniMaxM27StreamFunctionToolsProbeContractID + "@1.0.0": func(b Binding, p modelprofile.Profile) bool {
-		return p.Provider == "minimax" && p.ProtocolProfile == "protocol.minimax-m27-openai-chat.v1" && streamToolCapability(b.CapabilityID)
+		return p.Provider == "minimax" && compatibleMiniMaxM2StreamImplementation(p) && streamToolCapability(b.CapabilityID)
 	},
 	MiniMaxPAYGM2ChatFunctionToolsProbeContractID + "@2.0.0": func(b Binding, p modelprofile.Profile) bool {
 		// The streamed M2 implementation retains its existing nonstream cache
 		// Probe. Neither a cache counter nor this binding claims a cache hit.
-		return p.Provider == "minimax" && p.ProtocolProfile == "protocol.minimax-m27-openai-chat.v1" &&
+		return p.Provider == "minimax" && compatibleMiniMaxM2StreamImplementation(p) &&
 			(b.CapabilityID == modelprofile.CapabilityCacheReadUsage || b.CapabilityID == modelprofile.CapabilityPromptCache)
 	},
+}
+
+func compatibleMiniMaxM2StreamImplementation(p modelprofile.Profile) bool {
+	// M2 v8 reuses tool assembly while retaining its existing nonstream child
+	// index normalizer, content replay and required eligible cache counter.
+	return p.ProtocolProfile == "protocol.minimax-m27-openai-chat.v1" ||
+		(p.ProtocolProfile == "protocol.minimax-m2-openai-chat.v8" && p.ReasoningProfile == "reasoning.minimax-m2-required-embedded.v1" && p.CacheUsageProfile == "cache-usage.minimax-openai.v2")
 }
 
 func streamToolCapability(capability string) bool {

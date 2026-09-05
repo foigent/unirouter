@@ -143,6 +143,7 @@ type CacheUsageContract struct {
 }
 
 var reasoningContracts = map[string]ReasoningContract{
+	"reasoning.minimax-m3-adaptive-embedded.v2": miniMaxM3StreamReasoningContract(),
 	"reasoning.openai-gpt-5.6-sol-responses.v1": {
 		ProfileID:          "reasoning.openai-gpt-5.6-sol-responses.v1",
 		Mode:               ReasoningModeAlwaysOn,

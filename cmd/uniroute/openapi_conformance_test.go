@@ -11,6 +11,7 @@ import (
 
 	"github.com/uniroute/unirouter/internal/modelcapabilitypublication"
 	"github.com/uniroute/unirouter/internal/modelcapabilityqualification"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"gopkg.in/yaml.v3"
 )
 
@@ -153,6 +154,26 @@ func TestOpenAPIModelCapabilityQualificationIdentityEnumsMatchCompiledBindings(t
 			compiled["probe_contract_id"] = append(compiled["probe_contract_id"], binding.ProbeContractID)
 			compiled["probe_contract_version"] = append(compiled["probe_contract_version"], binding.ProbeContractVersion)
 		}
+	}
+	// Data-only definitions have no compiled model bindings. Their finite wire
+	// and Probe implementation identities still belong to the installed typed
+	// registries; document those IDs without turning model revisions into enums.
+	for _, ref := range modelprofile.Implementations() {
+		if ref.Kind != "chat" {
+			continue
+		}
+		contract, ok := modelprofile.ResolveChatProtocolContract(ref.ID)
+		if ok && contract.StreamContract.FunctionToolDeltas {
+			compiled["protocol_profile_id"] = append(compiled["protocol_profile_id"], ref.ID)
+		}
+	}
+	for _, ref := range modelcapabilityqualification.ProbeImplementations() {
+		id, version, ok := strings.Cut(ref.ID, "@")
+		if !ok || id == "" || version == "" {
+			t.Fatalf("invalid installed Probe implementation identity %q", ref.ID)
+		}
+		compiled["probe_contract_id"] = append(compiled["probe_contract_id"], id)
+		compiled["probe_contract_version"] = append(compiled["probe_contract_version"], version)
 	}
 
 	for name, values := range compiled {

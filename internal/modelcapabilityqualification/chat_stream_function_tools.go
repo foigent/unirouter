@@ -37,12 +37,19 @@ func validateChatStreamFunctionTools(b Binding, contentType string, reader io.Re
 	scanner.Buffer(make([]byte, 4096), OpenAIChatFunctionToolsMaxResponseBytes)
 	assembler, _ := adapters.NewChatSSEEventAssembler(OpenAIChatFunctionToolsMaxResponseBytes)
 	state := adapters.NewFunctionToolStreamState(b.ExpectedUpstreamModel)
+	toolEnvelope, err := adapters.NewToolStreamEnvelope(b.ProtocolProfileID, b.ExpectedProvider, b.ExpectedUpstreamModel, profile.CacheUsageProfile)
+	if err != nil {
+		return observation, invalidOpenAIChatFunctionTools("probe_contract", err)
+	}
 	adapter := &adapters.OpenAICompatible{}
 	var content strings.Builder
 	done := false
 	process := func(raw []byte) error {
 		if string(raw) == "[DONE]" {
 			done = true
+			if err := toolEnvelope.AcceptDone(); err != nil {
+				return err
+			}
 			return state.Finish()
 		}
 		if err := strictjson.Validate(raw); err != nil {
@@ -51,6 +58,13 @@ func validateChatStreamFunctionTools(b Binding, contentType string, reader io.Re
 		body, err := adapter.NormalizeStreamFrame(context.Background(), adapters.StreamChunkInput{Data: raw, Channel: models.Channel{Provider: b.ExpectedProvider}, CacheUsageProfile: profile.CacheUsageProfile})
 		if err != nil {
 			return err
+		}
+		body, skip, prepareErr := toolEnvelope.Prepare(body)
+		if skip {
+			return nil
+		}
+		if body == nil {
+			return prepareErr
 		}
 		usage, present, err := adapters.ParseOpenAICompatibleStreamUsageWithCacheProfile(body, adapters.EndpointChatCompletions, metering.UsageSourceUpstream, profile.CacheUsageProfile)
 		if err != nil {
@@ -62,6 +76,9 @@ func validateChatStreamFunctionTools(b Binding, contentType string, reader io.Re
 			observation.TotalTokens = int64(usage.PromptTokens + usage.CompletionTokens)
 			observation.CacheReadCounterObserved = usage.CacheUsageStatus == adapters.CacheUsageStatusReadReported
 			observation.CachedTokens = int64(usage.CacheReadTokens)
+		}
+		if prepareErr != nil {
+			return prepareErr
 		}
 		facts, err := adapters.ParseFunctionToolStreamFactsForContract(body, contract.StreamContract)
 		if err != nil {

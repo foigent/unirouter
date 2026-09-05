@@ -4,6 +4,23 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.55] - 2026-09-05
+
+### Changed
+
+- Added exact typed streamed Function Tools implementations for existing
+  DeepSeek, Kimi, MiniMax M3 and M2 Highspeed data revisions. Historical Profile,
+  Protocol and Probe addresses remain unchanged; installing these implementations
+  creates no model definition, qualification, Release activation or schema change.
+- Reused shared SSE/tool assembly with finite DeepSeek/Kimi envelope preparation.
+  Kimi retains terminal-choice usage and one consistent usage-only repeat while
+  rejecting counter conflicts; DeepSeek/Kimi require DONE and MiniMax retains its
+  approved EOF policy. Invalid delivery preserves safe supplier usage evidence.
+- Data Probe construction, summaries and response normalization use immutable
+  definitions and installed typed implementations, including MiniMax cache
+  evidence and Highspeed child-index normalization. OpenAPI implementation enums
+  include installed data implementations without compiling model revisions.
+
 ## [1.2.54] - 2026-09-05
 
 ### Fixed
