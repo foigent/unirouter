@@ -14,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/uniroute/unirouter/internal/schemaauthority"
 )
 
 // migrationAdvisoryLockID serializes schema discovery and application across
@@ -25,6 +26,17 @@ const migrationAdvisoryLockID int64 = 86420517831702491
 // CapabilityContractPublicationMarker identifies declaration-owned migrations
 // that ordinary startup and migrate-up paths must never apply implicitly.
 const CapabilityContractPublicationMarker = "-- unirouter:capability-contract-publication-v1"
+const CompatibleExpandMarker = "-- unirouter:explicit-compatible-expand-v1"
+
+// CompatibleExpandHooks belongs to the same schema migration owner/lock.
+// Before must prove the exact serving fleet is already running the bridge.
+// After installs the verified initial leases in the same transaction as DDL.
+// Installation into an isolated empty test DB supplies its own explicit proof.
+type CompatibleExpandHooks struct {
+	ExpectedSHA256 string
+	Before         func(context.Context, *pgxpool.Conn) error
+	After          func(context.Context, pgx.Tx) error
+}
 
 // PublicationHooks bind one exact declaration-owned migration to its validated
 // environment Plan. All callbacks run while the same physical connection owns
@@ -56,12 +68,28 @@ type runOptions struct {
 	ceiling            string
 	requireExactPrefix bool
 	publication        *PublicationHooks
+	runtimeBridge      bool
+	scopeSet           bool
+	expand             *CompatibleExpandHooks
 }
 
 // Run applies all .up.sql migration files from dir that haven't been applied yet.
 // It creates a schema_migrations table to track applied versions.
 func Run(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 	return run(ctx, pool, dir, runOptions{})
+}
+
+// RunRuntime preserves pending explicit expansions. The caller must then
+// verify the actual complete ledger against the finite runtime bridge.
+func RunRuntime(ctx context.Context, pool *pgxpool.Pool, dir string) error {
+	return run(ctx, pool, dir, runOptions{runtimeBridge: true})
+}
+
+func RunCompatibleExpand(ctx context.Context, pool *pgxpool.Pool, dir string, hooks CompatibleExpandHooks) error {
+	if hooks.Before == nil || hooks.After == nil || len(hooks.ExpectedSHA256) != 71 || !strings.HasPrefix(hooks.ExpectedSHA256, "sha256:") {
+		return fmt.Errorf("compatible expand requires exact bytes and a fleet preflight")
+	}
+	return run(ctx, pool, dir, runOptions{expand: &hooks, ceiling: schemaauthority.CapabilityExpandHead, requireExactPrefix: true})
 }
 
 // RunThrough is an explicit install/restore primitive. It applies exactly the
@@ -231,6 +259,7 @@ func run(ctx context.Context, pool *pgxpool.Pool, dir string, options runOptions
 
 	pending := make([]string, 0)
 	publicationFiles := make(map[string]bool)
+	expandFiles := make(map[string]bool)
 	for _, fname := range files {
 		version := strings.TrimSuffix(fname, ".up.sql")
 		if applied[version] {
@@ -242,6 +271,19 @@ func run(ctx context.Context, pool *pgxpool.Pool, dir string, options runOptions
 		}
 		pending = append(pending, version)
 		publicationFiles[version] = strings.Contains(string(body), CapabilityContractPublicationMarker)
+		expandFiles[version] = strings.Contains(string(body), CompatibleExpandMarker)
+	}
+	if options.runtimeBridge {
+		options.scopeSet = true
+		for _, version := range pending {
+			if expandFiles[version] {
+				if version != schemaauthority.CapabilityExpandHead {
+					return fmt.Errorf("unknown runtime expand boundary %s", version)
+				}
+				break
+			}
+			options.allowedMigrations = append(options.allowedMigrations, version)
+		}
 	}
 	if options.ceiling != "" {
 		options.allowedMigrations = options.allowedMigrations[:0]
@@ -261,6 +303,26 @@ func run(ctx context.Context, pool *pgxpool.Pool, dir string, options runOptions
 	allowed, err := validateRunScope(pending, publicationFiles, options)
 	if err != nil {
 		return err
+	}
+	for _, version := range allowed {
+		if expandFiles[version] && (options.expand == nil || version != schemaauthority.CapabilityExpandHead) {
+			return fmt.Errorf("pending compatible expansion %s requires explicit fleet preflight", version)
+		}
+	}
+	if options.expand != nil {
+		if len(allowed) != 1 || allowed[0] != schemaauthority.CapabilityExpandHead || !expandFiles[allowed[0]] {
+			return fmt.Errorf("compatible expand requires the exact pending M114 transition")
+		}
+		wire, err := os.ReadFile(filepath.Join(dir, allowed[0]+".up.sql"))
+		if err != nil {
+			return err
+		}
+		if fileDigest(wire) != options.expand.ExpectedSHA256 {
+			return fmt.Errorf("compatible expand artifact bytes changed")
+		}
+		if err := options.expand.Before(ctx, conn); err != nil {
+			return fmt.Errorf("compatible expand fleet preflight: %w", err)
+		}
 	}
 	var publicationVerifyWire []byte
 	if options.publication != nil {
@@ -305,6 +367,9 @@ func run(ctx context.Context, pool *pgxpool.Pool, dir string, options runOptions
 		if err != nil {
 			return fmt.Errorf("read %s: %w", path, err)
 		}
+		if options.expand != nil && fileDigest(sqlBytes) != options.expand.ExpectedSHA256 {
+			return fmt.Errorf("compatible expand bytes changed after preflight")
+		}
 		if options.publication != nil {
 			if want, exists := options.publication.ExpectedUpSHA256[version]; !exists || fileDigest(sqlBytes) != want {
 				return fmt.Errorf("migration artifact bytes changed after Plan: %s", fname)
@@ -339,6 +404,12 @@ func run(ctx context.Context, pool *pgxpool.Pool, dir string, options runOptions
 		); err != nil {
 			_ = tx.Rollback(ctx)
 			return fmt.Errorf("record %s: %w", fname, err)
+		}
+		if options.expand != nil {
+			if err := options.expand.After(ctx, tx); err != nil {
+				_ = tx.Rollback(ctx)
+				return fmt.Errorf("initialize verified bridge fleet %s: %w", fname, err)
+			}
 		}
 		if err := tx.Commit(ctx); err != nil {
 			return fmt.Errorf("commit %s: %w", fname, err)
@@ -436,6 +507,18 @@ func acquireSessionLock(ctx context.Context, pool *pgxpool.Pool) (*pgxpool.Conn,
 	return conn, release, nil
 }
 
+// WithAuthorityLock serializes the established schema owner and capability
+// materializer without merging their ledgers. The lock is acquired before a
+// caller opens its transaction, so a waiting writer gets a fresh snapshot.
+func WithAuthorityLock(ctx context.Context, pool *pgxpool.Pool, fn func(*pgxpool.Conn) error) error {
+	conn, release, err := acquireSessionLock(ctx, pool)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return fn(conn)
+}
+
 func migrationFiles(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -452,7 +535,7 @@ func migrationFiles(dir string) ([]string, error) {
 }
 
 func validateRunScope(pending []string, publicationFiles map[string]bool, options runOptions) ([]string, error) {
-	if options.publication == nil && len(options.allowedMigrations) == 0 {
+	if options.publication == nil && len(options.allowedMigrations) == 0 && !options.scopeSet {
 		for _, version := range pending {
 			if publicationFiles[version] {
 				return nil, fmt.Errorf("pending declaration-owned publication %s requires explicit publication or install context", version)

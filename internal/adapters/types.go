@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/uniroute/unirouter/internal/metering"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/models"
 )
 
@@ -80,6 +81,7 @@ type RequestInput struct {
 }
 
 type ResponseInput struct {
+	ProfileDefinition               modelprofile.Definition
 	Endpoint                        Endpoint
 	StatusCode                      int
 	Header                          http.Header

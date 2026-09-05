@@ -119,6 +119,9 @@ type canonicalCredentialBindingRef struct {
 }
 
 type canonicalOperationAxis struct {
+	ProfileDefinitionDigest  string                                `json:"profile_definition_digest,omitempty"`
+	ExecutionProfileID       string                                `json:"execution_profile_id,omitempty"`
+	ExecutionProfileVersion  string                                `json:"execution_profile_version,omitempty"`
 	OperationID              string                                `json:"operation_id"`
 	ProtocolProfileID        string                                `json:"protocol_profile_id"`
 	ProtocolProfileVersion   string                                `json:"protocol_profile_version"`
@@ -296,12 +299,13 @@ type canonicalPublicModelInput struct {
 }
 
 type canonicalDeploymentInput struct {
-	UpstreamModel        string `json:"upstream_model"`
-	Priority             *int   `json:"priority,omitempty"`
-	RoutingWeight        *int   `json:"routing_weight,omitempty"`
-	MaxContext           *int   `json:"max_context,omitempty"`
-	DefaultMaxOutput     *int   `json:"default_max_output,omitempty"`
-	DegradationThreshold *int   `json:"degradation_threshold,omitempty"`
+	ProfileDefinitionDigest string `json:"profile_definition_digest,omitempty"`
+	UpstreamModel           string `json:"upstream_model"`
+	Priority                *int   `json:"priority,omitempty"`
+	RoutingWeight           *int   `json:"routing_weight,omitempty"`
+	MaxContext              *int   `json:"max_context,omitempty"`
+	DefaultMaxOutput        *int   `json:"default_max_output,omitempty"`
+	DegradationThreshold    *int   `json:"degradation_threshold,omitempty"`
 }
 
 type canonicalCredentialInput struct {
@@ -310,9 +314,10 @@ type canonicalCredentialInput struct {
 }
 
 type canonicalOperationInput struct {
-	OperationID            string `json:"operation_id"`
-	ProtocolProfileID      string `json:"-"`
-	ProtocolProfileVersion string `json:"-"`
+	ProfileDefinitionDigest string `json:"-"`
+	OperationID             string `json:"operation_id"`
+	ProtocolProfileID       string `json:"-"`
+	ProtocolProfileVersion  string `json:"-"`
 }
 
 type canonicalConnectionIdentity struct {
@@ -324,6 +329,7 @@ type canonicalConnectionIdentity struct {
 }
 
 type canonicalPublicModelIdentity struct {
+	Definition              modelprofile.Definition
 	ID                      int64
 	ExecutionProfileID      string
 	ExecutionProfileVersion string
@@ -641,6 +647,12 @@ func (h *Handler) createCanonicalModelApplicationWithReadbackAndIdempotency(
 	if err != nil {
 		return canonicalModelApplicationCreateResult{}, err
 	}
+	if request.Deployment.ProfileDefinitionDigest != "" {
+		publicModel, err = resolveCanonicalDataDefinition(ctx, tx, publicModel, request.Deployment)
+		if err != nil {
+			return canonicalModelApplicationCreateResult{}, err
+		}
+	}
 	request.Operation, err = resolveCanonicalTypedOperationProfile(publicModel, request.Operation)
 	if err != nil {
 		return canonicalModelApplicationCreateResult{}, err
@@ -725,6 +737,9 @@ func normalizeCanonicalApplicationCreate(request canonicalModelApplicationCreate
 	request.PublicModel.ExecutionProfileID = strings.TrimSpace(request.PublicModel.ExecutionProfileID)
 	request.PublicModel.ExecutionProfileVersion = strings.TrimSpace(request.PublicModel.ExecutionProfileVersion)
 	request.Deployment.UpstreamModel = strings.TrimSpace(request.Deployment.UpstreamModel)
+	if request.Deployment.ProfileDefinitionDigest != "" && (request.PublicModel.ID <= 0 || !modelprofile.IsDefinitionDigest(request.Deployment.ProfileDefinitionDigest) || request.Operation.OperationID != modelprofile.OperationOpenAIChat) {
+		return request, errCanonicalApplicationInvalid
+	}
 	request.Credential.APIKey = strings.TrimSpace(request.Credential.APIKey)
 	request.Operation.OperationID = strings.TrimSpace(request.Operation.OperationID)
 	if request.PublicModel.ID < 0 || request.Connection.ID < 0 || request.Credential.BindingID < 0 {
@@ -960,6 +975,11 @@ func resolveCanonicalTypedOperationProfile(
 		publicModel.ExecutionProfileID, publicModel.ExecutionProfileVersion,
 		operation.OperationID,
 	)
+	if publicModel.Definition.Digest() != "" {
+		override, err = publicModel.Definition.OperationProtocolIdentity(operation.OperationID)
+		found = err == nil
+		operation.ProfileDefinitionDigest = publicModel.Definition.Digest()
+	}
 	if err != nil {
 		return canonicalOperationInput{}, errCanonicalApplicationInvalid
 	}
@@ -984,6 +1004,10 @@ func validateCanonicalProfileProductBinding(
 	operation canonicalOperationInput,
 ) error {
 	profile, ok := modelprofile.Lookup(publicModel.ExecutionProfileID, publicModel.ExecutionProfileVersion)
+	if publicModel.Definition.Digest() != "" {
+		profile = publicModel.Definition.Profile()
+		ok = true
+	}
 	if !ok {
 		return errCanonicalApplicationInvalid
 	}
@@ -1007,7 +1031,7 @@ func validateCanonicalProfileProductBinding(
 }
 
 func validateCanonicalNewDeploymentProfile(publicModel canonicalPublicModelIdentity, deploymentReused bool) error {
-	if deploymentReused || modelprofile.ValidateNewAttachment(
+	if publicModel.Definition.Digest() != "" || deploymentReused || modelprofile.ValidateNewAttachment(
 		publicModel.ExecutionProfileID,
 		publicModel.ExecutionProfileVersion,
 	) == nil {
@@ -1264,15 +1288,20 @@ func ensureCanonicalDeployment(ctx context.Context, tx pgx.Tx, orgID, publicMode
 		threshold = *input.DegradationThreshold
 	}
 	var id int64
-	err := tx.QueryRow(ctx, `
+	query := `
 INSERT INTO model_deployments (
   customer_org_id,public_model_id,connection_id,upstream_model,admin_state,
   priority,routing_weight,max_context,default_max_output,degradation_threshold)
 VALUES ($1,$2,$3,$4,'enabled',$5,$6,$7,$8,$9)
-ON CONFLICT (customer_org_id,connection_id,public_model_id,upstream_model)
-  WHERE admin_state<>'retired' DO NOTHING
-	RETURNING id`, orgID, publicModelID, connectionID, input.UpstreamModel, priority,
-		routingWeight, maxContext, defaultMaxOutput, threshold).Scan(&id)
+ON CONFLICT DO NOTHING
+	RETURNING id`
+	args := []any{orgID, publicModelID, connectionID, input.UpstreamModel, priority, routingWeight, maxContext, defaultMaxOutput, threshold}
+	if input.ProfileDefinitionDigest != "" {
+		query = strings.Replace(query, "default_max_output,degradation_threshold)", "default_max_output,degradation_threshold,profile_definition_digest)", 1)
+		query = strings.Replace(query, "$7,$8,$9)", "$7,$8,$9,$10)", 1)
+		args = append(args, input.ProfileDefinitionDigest)
+	}
+	err := tx.QueryRow(ctx, query, args...).Scan(&id)
 	if err == nil {
 		return id, false, nil
 	}
@@ -1285,7 +1314,8 @@ SELECT id,priority,routing_weight,max_context,default_max_output,degradation_thr
   FROM model_deployments
  WHERE customer_org_id=$1 AND public_model_id=$2 AND connection_id=$3
    AND upstream_model=$4 AND admin_state<>'retired'
-	 FOR SHARE`, orgID, publicModelID, connectionID, input.UpstreamModel).Scan(
+   AND COALESCE(to_jsonb(model_deployments)->>'profile_definition_digest','')=$5
+	 FOR SHARE`, orgID, publicModelID, connectionID, input.UpstreamModel, input.ProfileDefinitionDigest).Scan(
 		&id, &storedPriority, &storedWeight, &storedMaxContext, &storedMaxOutput, &storedThreshold,
 	); err != nil {
 		return 0, false, fmt.Errorf("reuse canonical model deployment: %w", err)
@@ -1333,26 +1363,33 @@ VALUES ($1,$2,$3) ON CONFLICT (binding_id,deployment_id) DO NOTHING`, bindingID,
 }
 
 func ensureCanonicalOperation(ctx context.Context, tx pgx.Tx, deploymentID int64, input canonicalOperationInput) (bool, error) {
-	tag, err := tx.Exec(ctx, `
+	query := `
 INSERT INTO model_deployment_operations (
   deployment_id,operation_id,support_state,evidence_state,evidence_ref,revision,
   protocol_profile_id,protocol_profile_version)
 VALUES ($1,$2,'enabled','declared','',1,$3,$4)
-ON CONFLICT (deployment_id,operation_id) DO NOTHING`, deploymentID, input.OperationID, input.ProtocolProfileID, input.ProtocolProfileVersion)
+ON CONFLICT (deployment_id,operation_id) DO NOTHING`
+	args := []any{deploymentID, input.OperationID, input.ProtocolProfileID, input.ProtocolProfileVersion}
+	if input.ProfileDefinitionDigest != "" {
+		query = strings.Replace(query, "protocol_profile_id,protocol_profile_version)", "protocol_profile_id,protocol_profile_version,profile_definition_digest)", 1)
+		query = strings.Replace(query, "1,$3,$4)", "1,$3,$4,$5)", 1)
+		args = append(args, input.ProfileDefinitionDigest)
+	}
+	tag, err := tx.Exec(ctx, query, args...)
 	if err != nil {
 		return false, fmt.Errorf("declare canonical model operation: %w", err)
 	}
 	if tag.RowsAffected() == 1 {
 		return false, nil
 	}
-	var profileID, profileVersion, supportState string
+	var profileID, profileVersion, supportState, definitionDigest string
 	if err := tx.QueryRow(ctx, `
-SELECT protocol_profile_id,protocol_profile_version,support_state
+SELECT protocol_profile_id,protocol_profile_version,support_state,COALESCE(to_jsonb(model_deployment_operations)->>'profile_definition_digest','')
   FROM model_deployment_operations
- WHERE deployment_id=$1 AND operation_id=$2 FOR SHARE`, deploymentID, input.OperationID).Scan(&profileID, &profileVersion, &supportState); err != nil {
+ WHERE deployment_id=$1 AND operation_id=$2 FOR SHARE`, deploymentID, input.OperationID).Scan(&profileID, &profileVersion, &supportState, &definitionDigest); err != nil {
 		return false, fmt.Errorf("reuse canonical model operation: %w", err)
 	}
-	if profileID != input.ProtocolProfileID || profileVersion != input.ProtocolProfileVersion || supportState != "enabled" {
+	if definitionDigest != input.ProfileDefinitionDigest || profileID != input.ProtocolProfileID || profileVersion != input.ProtocolProfileVersion || supportState != "enabled" {
 		return false, errCanonicalApplicationConflict
 	}
 	return true, nil
@@ -1372,6 +1409,9 @@ func ensureCanonicalDeclaredCapabilities(
 	upstreamModel string,
 	operation canonicalOperationInput,
 ) error {
+	if publicModel.Definition.Digest() != "" {
+		return ensureCanonicalDataCapabilities(ctx, tx, deploymentID, publicModel.Definition, connection, upstreamModel, operation)
+	}
 	bindings, err := modelcapabilityqualification.ResolveAll(
 		operation.OperationID,
 		publicModel.ExecutionProfileID, publicModel.ExecutionProfileVersion,
@@ -1768,7 +1808,8 @@ SELECT md.id,operation.operation_id,operation.protocol_profile_id,
          'protocol_profile_version',canary_item.protocol_profile_version,
          'public_path',canary_item.public_path,
          'executor_contract_version',canary_item.executor_contract_version
-       )::text END AS canary_membership
+        )::text END AS canary_membership,
+       COALESCE(to_jsonb(operation)->>'profile_definition_digest','')
   FROM model_deployments md
   JOIN provider_connections pc ON pc.id=md.connection_id
   JOIN model_registry public_model
@@ -1883,7 +1924,7 @@ SELECT md.id,operation.operation_id,operation.protocol_profile_id,
 			&bindingID, &connectionRevision, &deploymentRevision, &credentialRevision,
 			&profileID, &profileVersion, &probeOperationRevision, &probePublicPath,
 			&probeExecutor, &probeHTTPSOrigin, &probeSourceKind, &testedAt, &testedBy, &current,
-			&slotVersion, &stableMembershipJSON, &canaryMembershipJSON,
+			&slotVersion, &stableMembershipJSON, &canaryMembershipJSON, &operation.ProfileDefinitionDigest,
 		); err != nil {
 			return fmt.Errorf("scan canonical deployment operation: %w", err)
 		}
@@ -2020,5 +2061,37 @@ SELECT md.id,operation.operation_id,operation.protocol_profile_id,
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("read canonical deployment operations: %w", err)
 	}
+	rows.Close()
+	for i := range applications {
+		for j := range applications[i].Operations {
+			op := &applications[i].Operations[j]
+			if op.ProfileDefinitionDigest == "" {
+				continue
+			}
+			definition, err := modelprofile.ReadDefinition(ctx, store, op.ProfileDefinitionDigest)
+			if err != nil {
+				return err
+			}
+			op.ExecutionProfileID, op.ExecutionProfileVersion = definition.Profile().ID, definition.Profile().Version
+			bindings, err := modelcapabilityqualification.ResolveDefinitionBindings(ctx, store, definition, op.OperationID, op.ProtocolProfileID, op.ProtocolProfileVersion)
+			if err != nil {
+				return err
+			}
+			op.CapabilityProbeContracts = make([]canonicalCapabilityProbeContractRef, 0, len(bindings))
+			for _, binding := range bindings {
+				op.CapabilityProbeContracts = append(op.CapabilityProbeContracts, canonicalCapabilityProbeContractRef{binding.CapabilityID, binding.ProbeContractID, binding.ProbeContractVersion})
+			}
+			snapshot := canonicalOperationProbeSnapshot{OperationID: op.OperationID, ProfileID: op.ProtocolProfileID, ProfileVersion: op.ProtocolProfileVersion,
+				ProfileDefinitionDigest: definition.Digest(), Definition: definition, UpstreamModel: applications[i].Deployment.UpstreamModel}
+			_, specErr := canonicalOperationProbeSpecForSnapshot(snapshot)
+			_, payloadErr := canonicalOperationProbePayloadForSnapshot(snapshot, "")
+			op.ProbeAvailable = specErr == nil && payloadErr == nil
+			op.ProbeAvailabilityReason = "operation_profile_not_probeable"
+			if op.ProbeAvailable {
+				op.ProbeAvailabilityReason = "exact_probe_contract_available"
+			}
+		}
+	}
+
 	return nil
 }

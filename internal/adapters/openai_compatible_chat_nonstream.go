@@ -50,6 +50,9 @@ func validateChatNonStreamMechanics(mechanics ChatNonStreamMechanics) error {
 }
 
 func runtimeChatNonStreamMechanics(in ResponseInput) (ChatNonStreamMechanics, bool, error) {
+	if in.ProfileDefinition.Digest() != "" {
+		return dataChatNonStreamMechanics(in)
+	}
 	mechanics, found, err := kimiRuntimeChatNonStreamMechanics(in)
 	if err != nil || found {
 		return mechanics, found, err

@@ -846,7 +846,7 @@ func TestOpenAIChatFunctionToolAutoRequiresEveryPublishedRuntimeCapability(t *te
 			requestRequirements[2].FunctionToolChoice = &FunctionToolChoiceConstraint{
 				DeclaredFunctionNames: []string{"unirouter_ui_echo"},
 			}
-			resolved, err := ResolveCapabilityRequirements(profile, Request{InvocationCapabilities: requestRequirements})
+			resolved, err := ResolveCapabilityRequirements(profile, Request{InvocationCapabilities: requestRequirements}, modelprofile.Definition{})
 			if err != nil {
 				t.Fatalf("resolve exact function-tool auto requirements: %v", err)
 			}
@@ -894,7 +894,7 @@ func TestExactPublicProfileSupportedCapabilitiesDoNotBecomeInvocationRequirement
 	if !ok {
 		t.Fatal("Sol Responses reasoning profile missing")
 	}
-	got, err := ResolveCapabilityRequirements(reasoning, Request{})
+	got, err := ResolveCapabilityRequirements(reasoning, Request{}, modelprofile.Definition{})
 	if err != nil || len(got) != 0 {
 		t.Fatalf("supported capability became invocation requirement: %v, %v", got, err)
 	}
@@ -902,7 +902,7 @@ func TestExactPublicProfileSupportedCapabilitiesDoNotBecomeInvocationRequirement
 	if !ok {
 		t.Fatal("Sol Responses core profile missing")
 	}
-	got, err = ResolveCapabilityRequirements(core, Request{})
+	got, err = ResolveCapabilityRequirements(core, Request{}, modelprofile.Definition{})
 	if err != nil || len(got) != 0 {
 		t.Fatalf("historical core acquired new requirements: %v, %v", got, err)
 	}
@@ -919,7 +919,7 @@ func TestCapabilityRequirementsHaveOneNormalizedAuthorityWithOriginSet(t *testin
 		{CapabilityID: modelprofile.CapabilityReasoningEffort, Origins: []string{CapabilityOriginExplicitRequest, CapabilityOriginProviderDefault}},
 	}}
 
-	got, err := ResolveCapabilityRequirements(profile, request)
+	got, err := ResolveCapabilityRequirements(profile, request, modelprofile.Definition{})
 	if err != nil {
 		t.Fatalf("resolveCapabilityRequirements() error = %v", err)
 	}
@@ -960,7 +960,7 @@ func TestFunctionToolChoiceConstraintIsNormalizedOnceAndBoundIntoPlanHash(t *tes
 			},
 		},
 	}}
-	got, err := ResolveCapabilityRequirements(profile, request)
+	got, err := ResolveCapabilityRequirements(profile, request, modelprofile.Definition{})
 	if err != nil {
 		t.Fatalf("normalize function tool choice: %v", err)
 	}
@@ -1016,7 +1016,7 @@ func TestFunctionToolChoiceNoneUsesFunctionToolsRequirementInTheSamePlanSnapshot
 		FunctionToolChoice: &FunctionToolChoiceConstraint{
 			DeclaredFunctionNames: []string{"zeta", "alpha", "alpha"},
 		},
-	}}})
+	}}}, modelprofile.Definition{})
 	if err != nil {
 		t.Fatalf("normalize function tool none constraint: %v", err)
 	}
@@ -1038,7 +1038,7 @@ func TestFunctionToolChoiceNoneUsesFunctionToolsRequirementInTheSamePlanSnapshot
 		CapabilityID:       modelprofile.CapabilityFunctionTools,
 		Origins:            []string{CapabilityOriginExplicitRequest},
 		FunctionToolChoice: &FunctionToolChoiceConstraint{},
-	}}})
+	}}}, modelprofile.Definition{})
 	if err != nil || len(got) != 1 || got[0].FunctionToolChoice == nil {
 		t.Fatalf("empty declared set must remain an explicit none constraint: got=%#v err=%v", got, err)
 	}
@@ -1074,7 +1074,7 @@ func TestFunctionToolChoiceConstraintConflictsFailClosed(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := ResolveCapabilityRequirements(profile, Request{InvocationCapabilities: test.requirements})
+			_, err := ResolveCapabilityRequirements(profile, Request{InvocationCapabilities: test.requirements}, modelprofile.Definition{})
 			if !errors.Is(err, ErrInvalidRequest) {
 				t.Fatalf("ResolveCapabilityRequirements() error = %v, want invalid request", err)
 			}
@@ -1087,7 +1087,7 @@ func TestDoubaoImplicitCacheUsesOneAlwaysRequiredCapabilityAuthority(t *testing.
 	if !ok {
 		t.Fatal("Doubao implicit-cache candidate profile missing")
 	}
-	got, err := ResolveCapabilityRequirements(profile, Request{})
+	got, err := ResolveCapabilityRequirements(profile, Request{}, modelprofile.Definition{})
 	if err != nil {
 		t.Fatalf("resolve implicit-cache requirements: %v", err)
 	}
@@ -1112,7 +1112,7 @@ func TestCapabilityRequirementsRejectUnsupportedAndUntrustedOrigins(t *testing.T
 		{CapabilityID: modelprofile.CapabilityReasoningEffort, Origins: []string{"client_claim"}},
 	}
 	for _, requirement := range tests {
-		_, err := ResolveCapabilityRequirements(profile, Request{InvocationCapabilities: []CapabilityRequirement{requirement}})
+		_, err := ResolveCapabilityRequirements(profile, Request{InvocationCapabilities: []CapabilityRequirement{requirement}}, modelprofile.Definition{})
 		if !errors.Is(err, ErrInvalidRequest) {
 			t.Fatalf("requirement %#v error = %v, want invalid request", requirement, err)
 		}

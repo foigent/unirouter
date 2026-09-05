@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -44,6 +45,8 @@ var ErrProviderAttemptUnresolved = errors.New("provider attempt has unresolved f
 // ProviderAttemptStart is the bounded identity envelope persisted before a
 // network call that may create provider liability. It deliberately excludes
 // credentials, prompts, response bodies, and full provider URLs.
+var runtimeInstancePattern = regexp.MustCompile(`^uri_[a-f0-9]{32}$`)
+
 type ProviderAttemptStart struct {
 	RequestID          string
 	AttemptID          string
@@ -63,6 +66,7 @@ type ProviderAttemptStart struct {
 	// independent from RouteEvidence.SnapshotHash because immutable legacy
 	// evidence intentionally has no canonical route snapshot field.
 	ExecutionSnapshotHash string
+	RuntimeInstanceID     string
 	// RouteEvidence is nil only for the pre-contract legacy writer. New
 	// dispatch coordinators persist the exact secret-free route proof before
 	// issuing an upstream request.
@@ -117,6 +121,7 @@ type providerAttemptRecord struct {
 	RouteEvidenceHash     sql.NullString
 	ExecutionSnapshotHash sql.NullString
 	DispatchOwnerHash     sql.NullString
+	RuntimeInstanceID     string
 }
 
 type providerAttemptEvidenceColumns struct {
@@ -252,6 +257,9 @@ func normalizeProviderAttemptStart(req ProviderAttemptStart) (normalizedProvider
 		return normalizedProviderAttemptStart{}, fmt.Errorf("provider attempt execution snapshot hash is invalid")
 	}
 
+	if req.RuntimeInstanceID != "" && !runtimeInstancePattern.MatchString(req.RuntimeInstanceID) {
+		return normalizedProviderAttemptStart{}, fmt.Errorf("invalid runtime instance identity")
+	}
 	normalized := normalizedProviderAttemptStart{ProviderAttemptStart: req}
 	if req.RouteEvidence != nil && req.PublicRouteEvidence != nil {
 		return normalizedProviderAttemptStart{}, fmt.Errorf("provider attempt route evidence versions are mutually exclusive")
@@ -482,8 +490,7 @@ func (b *Billing) beginProviderAttemptTx(
 	}
 
 	values := providerAttemptEvidenceValues(req)
-	if _, err := tx.Exec(ctx,
-		`INSERT INTO billing_provider_attempts (
+	query := `INSERT INTO billing_provider_attempts (
 		    org_id, request_id, attempt_id, api_key_id,
 		    project_id,access_credential_id,credential_ref,access_grant_id,
 		    channel_id,channel_key_id,deployment_id,
@@ -511,8 +518,8 @@ func (b *Billing) beginProviderAttemptTx(
 		           $29,NULLIF($30,0),$31,$32,$33,$34,$35,$36,$37,
 		           NULLIF($38,0),$39,NULLIF($40,0),$41,$42,NULLIF($43,0),$44,
 		           NULLIF($45,0),NULLIF($46,0),NULLIF($47,0),$48,$49,
-		           NULLIF($50,0),$51,$52,$53,NULLIF($54,''),NULLIF($55,''))`,
-		req.OrgID, req.RequestID, req.AttemptID, req.APIKeyID,
+		           NULLIF($50,0),$51,$52,$53,NULLIF($54,''),NULLIF($55,''))`
+	args := []any{req.OrgID, req.RequestID, req.AttemptID, req.APIKeyID,
 		record.ProjectID, req.AccessCredentialID, req.CredentialRef, req.AccessGrantID,
 		req.ChannelID, req.ChannelKeyID, values.deploymentID,
 		req.RouteSequence, req.RouteTotal, req.Endpoint, req.Provider, req.Channel,
@@ -529,7 +536,13 @@ func (b *Billing) beginProviderAttemptTx(
 		values.probeLeaseTokenHash, values.publicExecutionBindingID,
 		values.deliveryContractVersion, values.chargeContractVersion,
 		values.idempotencyContractVersion, req.ExecutionSnapshotHash, dispatchOwnerHash,
-	); err != nil {
+	}
+	if req.RuntimeInstanceID != "" {
+		query = strings.Replace(query, "execution_snapshot_hash,dispatch_owner_hash", "execution_snapshot_hash,dispatch_owner_hash,runtime_instance_id", 1)
+		query = strings.Replace(query, "NULLIF($55,''))", "NULLIF($55,''),$56)", 1)
+		args = append(args, req.RuntimeInstanceID)
+	}
+	if _, err := tx.Exec(ctx, query, args...); err != nil {
 		return false, fmt.Errorf("insert provider attempt: %w", err)
 	}
 	return true, nil
@@ -625,7 +638,7 @@ func providerAttemptForUpdate(ctx context.Context, tx pgx.Tx, orgID int64, reque
 		        endpoint, provider, channel_name, state, outcome_certainty, retry_authorized,
 		        http_status, failure_kind, upstream_request_id, calculated_cost_micros, charged_cost_micros,
 		        terminal_transaction_id,route_evidence_version,route_evidence_hash,
-		        execution_snapshot_hash,dispatch_owner_hash
+		        execution_snapshot_hash,dispatch_owner_hash,COALESCE(to_jsonb(billing_provider_attempts)->>'runtime_instance_id','')
 		 FROM billing_provider_attempts
 		 WHERE org_id = $1 AND request_id = $2 AND attempt_id = $3
 		 FOR UPDATE`, orgID, requestID, attemptID,
@@ -637,13 +650,13 @@ func providerAttemptForUpdate(ctx context.Context, tx pgx.Tx, orgID int64, reque
 		&record.UpstreamRequestID, &record.CalculatedCostMicros, &record.ChargedCostMicros,
 		&record.TerminalTransactionID, &record.RouteEvidenceVersion, &record.RouteEvidenceHash,
 		&record.ExecutionSnapshotHash,
-		&record.DispatchOwnerHash,
+		&record.DispatchOwnerHash, &record.RuntimeInstanceID,
 	)
 	return record, err
 }
 
 func providerAttemptStartMatches(record providerAttemptRecord, req normalizedProviderAttemptStart) bool {
-	identityMatches := record.APIKeyID == req.APIKeyID && nullableID(record.AccessCredentialID) == req.AccessCredentialID &&
+	identityMatches := record.RuntimeInstanceID == req.RuntimeInstanceID && record.APIKeyID == req.APIKeyID && nullableID(record.AccessCredentialID) == req.AccessCredentialID &&
 		nullableString(record.CredentialRef) == req.CredentialRef && nullableID(record.AccessGrantID) == req.AccessGrantID &&
 		nullableID(record.ChannelID) == req.ChannelID && nullableID(record.ChannelKeyID) == req.ChannelKeyID &&
 		record.RouteSequence == req.RouteSequence && record.RouteTotal == req.RouteTotal &&

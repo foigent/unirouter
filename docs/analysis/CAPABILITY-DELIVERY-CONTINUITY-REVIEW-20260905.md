@@ -74,3 +74,89 @@ cumulative maximum of 30 upstream calls and CNY10, including previous runs.
 Baseline evidence: config and streampolicy tests passed using existing local
 dependencies. Isolated PostgreSQL16 is running on a task-only Unix socket. No
 Provider request or Target mutation has occurred.
+
+## C-F implementation refinements within the reviewed object
+
+- Candidate Deployment identity required one additional immutable discriminator:
+  `profile_definition_digest`. The old unique Connection/model/upstream tuple
+  would force an operation revision update and invalidate an existing sealed
+  Release. New revisions use separate Deployments with the same Connection,
+  stable product and Credential; old identities cannot be retrofitted. This is
+  not a second model or execution revision entity.
+- Capability derivation receives the actual immutable Definition with the Profile.
+  Reconstructing a temporary plan from only an ID/version would send new data
+  revisions back through compiled Lookup. The same value travels into response
+  mechanics; existing exact Protocol references select normalizers, while old
+  compiled tuple behavior stays addressable.
+- Runtime joins, Release/Slot changes and Publication first acquire the existing
+  release-before-slot table locks, then the compatibility advisory lock. A utility
+  lock before the first business read avoids an RR snapshot taken while waiting
+  on an earlier join. Schema/static owner locks remain outside that boundary.
+- Unchanged runtime heartbeats renew only the exact immutable identity, manifest,
+  state and schema under a bounded lease; they do not acquire the global execution
+  lock or grant ingress membership. This prevents static projection work from
+  starving healthy instances. Registration/state changes retain the domain lock.
+  Transient renewal failure cannot extend the last confirmed deadline; explicit
+  incompatibility latches admission closed until a successful revalidation.
+- Bundle trust uses the existing authenticated deployment operator and SSH
+  channel: official private-repository successful main CI run, archive digest,
+  exact source commit/tree/blob and provenance are verified on the operator host.
+  Target receives bounded bytes and the approved identity. No GitHub credential
+  is copied, no admin HTTP upload exists, and the same materializer writes the
+  ledger. This does not claim a remotely signed Bundle management platform.
+- M114 expansion uses the installed host ingress lock and exact Docker/support
+  observations, excludes old shutting-down proxy workers, and repeats live
+  instance checks inside the existing schema owner. It supports only the full
+  known M113/M114 ledgers. Older Targets must reach their actual supported legacy
+  predecessor through the established owner; no historical receipt is invented.
+- ProviderAttempt adds only the server-owned runtime instance reference. Its
+  immutable generation identifies the Artifact. Existing Freeze/pricing_version
+  remains the customer price authority; no new PricingSnapshot owner is added.
+- Publication owns static definitions/bindings/selectors only. Dynamic candidate
+  Deployment writes remain separate exact authoring transactions, so publication
+  cannot revise an active operation or reinterpret an existing Release. Legacy
+  compiled selector addresses are frozen; data revisions require new addresses.
+- The exact code diff and regression results must receive the one closing review
+  before this source candidate is represented as merge-ready. Current local
+  results do not establish Target/Provider/OpenClaw closure or old-writer retirement.
+
+## C-F closing review and adjudicated fixes
+
+The same independent reviewer completed the one closing read-only review of
+tree `bc9acbca8b74578a2980081a2e0bec529cb7264f` against base
+`1b11a4ec831d228ce0f13587cdcdb087f8345b93`; its 134-path binary diff SHA256 is
+`f19c0c19f502945bbdcced8872be92f55c994736a42362b0eab56eed861dc030`.
+No additional product authority was requested or granted.
+
+- `validated_blocker`, accepted and fixed: an expanded schema could become
+  visible before the next process refresh registered its generation. The schema
+  owner's mandatory transactional After hook now installs verified bootstrap
+  leases before the DDL commit. It consumes the host-observed canonical support
+  manifests; ingress membership is still absent until the separate controller
+  import. A failed bootstrap rolls back the whole expansion.
+- `validated_blocker`, accepted and fixed: recomputing runtime identity on each
+  transaction retry could invalidate an M113 committed attempt after M114
+  arrived. Each ephemeral Authorize owner now fixes its runtime field at the
+  first successful schema read and preserves it during same-owner recovery.
+  Strict existing receipt comparison remains; historical rows are not changed.
+- `rejected`: the pre-code dynamic qualification/compiled startup gap persists.
+  The reviewer verified DB binding resolution and capability-head startup.
+- `rejected`: the pre-code current-selector reinterpretation gap persists.
+  The reviewer verified raw immutable pins in planning/dispatch and candidate
+  Deployment isolation. Existing current safety checks remain authoritative.
+
+Main-agent verification of the fixes passed actual PostgreSQL race regressions:
+`TestCapabilityExpandPublishesVerifiedLeasesAtomically`, the failed-bootstrap
+rollback branch of `TestCapabilityExpandRequiresExplicitBridgeAndPreservesLegacy`,
+and `TestAuthorizeOwnerSurvivesCommitAmbiguityAcrossCompatibleExpandIntegration`.
+The latter commits an M113 attempt, applies real M114 before returning the lost
+ACK, recovers the same owner without changing its row, then authorizes the next
+request immediately without calling Renew. A second owner remains rejected.
+The existing first-customer corruption fixture now disables both immutable
+binding triggers only inside its rolled-back isolated transaction; the actual
+writer protections are unchanged. Its targeted regression passed.
+
+Final affected adapter/Gateway/routing/qualification/execution/Profile/schema/
+tokenizer/billing/Release package race suites passed. The complete admin
+integration lane found only that deliberate-injection fixture issue, whose
+targeted repair passed. These are Local facts, not CI or external proof.

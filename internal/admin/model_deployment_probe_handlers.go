@@ -107,6 +107,8 @@ type canonicalOperationProbeSnapshot struct {
 	ProfileVersion          string
 	ExecutionProfileID      string
 	ExecutionProfileVersion string
+	ProfileDefinitionDigest string
+	Definition              modelprofile.Definition
 	EncryptedSecret         string
 	CredentialStatus        string
 	CredentialRevision      int64
@@ -448,7 +450,8 @@ SELECT deployment.customer_org_id,deployment.id,deployment.connection_id,binding
        operation.revision,operation.protocol_profile_id,operation.protocol_profile_version,
 	   public_model.execution_profile_id,public_model.execution_profile_version,
        binding.key_enc,binding.status,binding.state_revision,binding.cooldown_until,
-       (binding.cooldown_until IS NULL OR binding.cooldown_until<=transaction_timestamp())
+       (binding.cooldown_until IS NULL OR binding.cooldown_until<=transaction_timestamp()),
+       COALESCE(to_jsonb(operation)->>'profile_definition_digest','')
   FROM model_deployments deployment
   JOIN provider_connections connection ON connection.id=deployment.connection_id
 	JOIN model_registry public_model
@@ -470,12 +473,20 @@ SELECT deployment.customer_org_id,deployment.id,deployment.connection_id,binding
 		&snapshot.OperationRevision, &snapshot.ProfileID, &snapshot.ProfileVersion,
 		&snapshot.ExecutionProfileID, &snapshot.ExecutionProfileVersion,
 		&snapshot.EncryptedSecret, &snapshot.CredentialStatus, &snapshot.CredentialRevision,
-		&snapshot.CredentialCooldown, &snapshot.CredentialEligible,
+		&snapshot.CredentialCooldown, &snapshot.CredentialEligible, &snapshot.ProfileDefinitionDigest,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return canonicalOperationProbeSnapshot{}, errCanonicalOperationProbeNotFound
 		}
 		return canonicalOperationProbeSnapshot{}, fmt.Errorf("lock canonical operation probe target: %w", err)
+	}
+	if snapshot.ProfileDefinitionDigest != "" {
+		d, err := modelprofile.ReadDefinition(ctx, tx, snapshot.ProfileDefinitionDigest)
+		if err != nil {
+			return canonicalOperationProbeSnapshot{}, err
+		}
+		snapshot.Definition = d
+		snapshot.ExecutionProfileID, snapshot.ExecutionProfileVersion = d.Profile().ID, d.Profile().Version
 	}
 	if err := tx.QueryRow(ctx, `
 SELECT created_at,created_at<=transaction_timestamp() FROM credential_binding_deployments
@@ -490,10 +501,7 @@ SELECT created_at,created_at<=transaction_timestamp() FROM credential_binding_de
 }
 
 func validateCanonicalOperationProbeSnapshot(snapshot canonicalOperationProbeSnapshot) error {
-	spec, err := canonicalOperationProbeSpecForExactProfile(
-		modeloperation.ID(snapshot.OperationID), snapshot.ExecutionProfileID,
-		snapshot.ExecutionProfileVersion, snapshot.ProfileID, snapshot.ProfileVersion,
-	)
+	spec, err := canonicalOperationProbeSpecForSnapshot(snapshot)
 	if err != nil {
 		return err
 	}
@@ -528,10 +536,7 @@ func (h *Handler) executeCanonicalOperationProbe(
 	snapshot canonicalOperationProbeSnapshot,
 	probeText, requestID string,
 ) canonicalOperationProbeOutcome {
-	spec, err := canonicalOperationProbeSpecForExactProfile(
-		modeloperation.ID(snapshot.OperationID), snapshot.ExecutionProfileID,
-		snapshot.ExecutionProfileVersion, snapshot.ProfileID, snapshot.ProfileVersion,
-	)
+	spec, err := canonicalOperationProbeSpecForSnapshot(snapshot)
 	if err != nil {
 		return canonicalOperationProbeOutcome{ReasonCode: "operation_unsupported"}
 	}
@@ -539,10 +544,7 @@ func (h *Handler) executeCanonicalOperationProbe(
 	if err != nil || strings.TrimSpace(secret) == "" {
 		return canonicalOperationProbeOutcome{ReasonCode: "credential_unavailable"}
 	}
-	body, err := canonicalOperationProbePayload(
-		modeloperation.ID(snapshot.OperationID), snapshot.UpstreamModel, probeText,
-		snapshot.ExecutionProfileID, snapshot.ExecutionProfileVersion,
-	)
+	body, err := canonicalOperationProbePayloadForSnapshot(snapshot, probeText)
 	if err != nil {
 		return canonicalOperationProbeOutcome{ReasonCode: "request_build_failed"}
 	}
@@ -783,10 +785,10 @@ func canonicalOperationProbeRequestSummary(snapshot canonicalOperationProbeSnaps
 		"protocol_profile_id": snapshot.ProfileID, "protocol_profile_version": snapshot.ProfileVersion,
 		"execution_profile_id": snapshot.ExecutionProfileID, "execution_profile_version": snapshot.ExecutionProfileVersion,
 	}
-	body, err := canonicalOperationProbePayload(
-		modeloperation.ID(snapshot.OperationID), snapshot.UpstreamModel, "",
-		snapshot.ExecutionProfileID, snapshot.ExecutionProfileVersion,
-	)
+	if snapshot.ProfileDefinitionDigest != "" {
+		summary["profile_definition_digest"] = snapshot.ProfileDefinitionDigest
+	}
+	body, err := canonicalOperationProbePayloadForSnapshot(snapshot, "")
 	if err != nil {
 		return nil, err
 	}
@@ -863,10 +865,7 @@ func (h *Handler) persistCanonicalOperationProbe(
 	sourceRef string,
 	audit auditMeta,
 ) (canonicalOperationProbeResponse, error) {
-	spec, err := canonicalOperationProbeSpecForExactProfile(
-		modeloperation.ID(snapshot.OperationID), snapshot.ExecutionProfileID,
-		snapshot.ExecutionProfileVersion, snapshot.ProfileID, snapshot.ProfileVersion,
-	)
+	spec, err := canonicalOperationProbeSpecForSnapshot(snapshot)
 	if err != nil {
 		return canonicalOperationProbeResponse{}, err
 	}
@@ -1148,6 +1147,7 @@ func canonicalOperationProbeRouteInputsMatch(before, current canonicalOperationP
 		before.CredentialRevision == current.CredentialRevision &&
 		before.OperationID == current.OperationID &&
 		before.UpstreamModel == current.UpstreamModel &&
+		before.ProfileDefinitionDigest == current.ProfileDefinitionDigest &&
 		before.ExecutionProfileID == current.ExecutionProfileID &&
 		before.ExecutionProfileVersion == current.ExecutionProfileVersion &&
 		before.ProfileID == current.ProfileID && before.ProfileVersion == current.ProfileVersion &&
@@ -1182,10 +1182,7 @@ func canonicalOperationProbeFingerprintSourceKind(operationID string) string {
 }
 
 func canonicalOperationProbeFingerprintBinding(snapshot canonicalOperationProbeSnapshot) string {
-	spec, err := canonicalOperationProbeSpecForExactProfile(
-		modeloperation.ID(snapshot.OperationID), snapshot.ExecutionProfileID,
-		snapshot.ExecutionProfileVersion, snapshot.ProfileID, snapshot.ProfileVersion,
-	)
+	spec, err := canonicalOperationProbeSpecForSnapshot(snapshot)
 	if err != nil || spec.ExecutionBinding == nil {
 		return ""
 	}

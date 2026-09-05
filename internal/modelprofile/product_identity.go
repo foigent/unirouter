@@ -73,21 +73,25 @@ func ValidateProductBinding(profile Profile, binding ProductBinding) error {
 	return nil
 }
 
+var endpointPathModes = map[string]string{
+	EndpointClassProviderHTTPS:                  "",
+	EndpointClassGeminiOpenAICompatibility:      EndpointPathModeBaseRelative,
+	EndpointClassDeepSeekOfficialOpenAI:         EndpointPathModeBaseRelative,
+	EndpointClassGLMOfficialOpenAIV4:            EndpointPathModeBaseRelative,
+	EndpointClassDoubaoArkBeijingOpenAIV3:       EndpointPathModeBaseRelative,
+	EndpointClassOpenAIOfficialOrigin:           EndpointPathModeCanonicalV1,
+	EndpointClassOpenAIOfficialV1:               EndpointPathModeCanonicalV1,
+	EndpointClassKimiPlatformOpenAIV1:           EndpointPathModeCanonicalV1,
+	EndpointClassMiniMaxCNOpenAIV1:              EndpointPathModeCanonicalV1,
+	EndpointClassMiniMaxOfficialCNOpenAIV1:      EndpointPathModeCanonicalV1,
+	EndpointClassXAIOfficialOpenAIV1:            EndpointPathModeCanonicalV1,
+	EndpointClassAnthropicOfficialOrigin:        EndpointPathModeCanonicalV1,
+	EndpointClassDashScopeBeijingWorkspacePayGo: EndpointPathModeCanonicalV1,
+	EndpointClassDashScopeBeijingSharedPayGo:    EndpointPathModeCanonicalV1,
+}
+
 func requiredEndpointPathMode(endpointClass string) string {
-	switch endpointClass {
-	case EndpointClassGeminiOpenAICompatibility, EndpointClassDeepSeekOfficialOpenAI,
-		EndpointClassGLMOfficialOpenAIV4,
-		EndpointClassDoubaoArkBeijingOpenAIV3:
-		return EndpointPathModeBaseRelative
-	case EndpointClassOpenAIOfficialOrigin, EndpointClassOpenAIOfficialV1,
-		EndpointClassKimiPlatformOpenAIV1, EndpointClassMiniMaxCNOpenAIV1,
-		EndpointClassMiniMaxOfficialCNOpenAIV1,
-		EndpointClassXAIOfficialOpenAIV1, EndpointClassAnthropicOfficialOrigin,
-		EndpointClassDashScopeBeijingWorkspacePayGo, EndpointClassDashScopeBeijingSharedPayGo:
-		return EndpointPathModeCanonicalV1
-	default:
-		return ""
-	}
+	return endpointPathModes[endpointClass]
 }
 
 // RequiredEndpointPathMode reports whether a profile version has frozen URL
@@ -223,4 +227,19 @@ func ClassifyEndpoint(provider, rawBaseURL string) (string, error) {
 		return EndpointClassDashScopeBeijingWorkspacePayGo, nil
 	}
 	return "", fmt.Errorf("DashScope endpoint is not a Beijing pay-as-you-go workspace or legacy shared OpenAI endpoint")
+}
+
+// Product identity is explicit. This deliberately narrow compatibility
+// decision permits same-product technical revisions; it does not synthesize
+// lineage from endpoint/default fields or authorize commercial surface changes.
+func SameStableProductSurface(before, after Profile) bool {
+	equalSet := func(a, b []string) bool {
+		a = slices.Clone(a)
+		b = slices.Clone(b)
+		slices.Sort(a)
+		slices.Sort(b)
+		return slices.Equal(a, b)
+	}
+	return before.Provider == after.Provider && before.Region == after.Region && before.APISurface == after.APISurface &&
+		before.DefaultOutputAuthority == after.DefaultOutputAuthority && equalSet(before.EndpointClasses, after.EndpointClasses) && equalSet(before.UpstreamModelIDs, after.UpstreamModelIDs)
 }

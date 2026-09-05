@@ -115,22 +115,20 @@ func main() {
 	if cfg.SkipMigration {
 		log.Println("SKIP_MIGRATION=true, skipping database migrations")
 	} else {
-		if err := migrate.Run(context.Background(), postgres.Pool, migrationsDir); err != nil {
+		if err := migrate.RunRuntime(context.Background(), postgres.Pool, migrationsDir); err != nil {
 			log.Fatalf("Migration failed: %v", err)
 		}
 		log.Println("Migrations complete")
 	}
-	if err := requireExactRuntimeSchema(context.Background(), postgres.Pool, expectedSchemaLedger); err != nil {
+	actualSchemaLedger, err := verifyRuntimeAuthority(context.Background(), postgres.Pool, expectedSchemaLedger)
+	if err != nil {
 		log.Fatalf("Schema authority startup gate failed: %v", err)
 	}
-	ledgerBytes, err := json.Marshal(expectedSchemaLedger)
+	ledgerBytes, err := json.Marshal(actualSchemaLedger)
 	if err != nil {
 		log.Fatalf("Schema authority identity failed: %v", err)
 	}
 	httpRuntime.schemaDigest = fmt.Sprintf("%x", sha256.Sum256(ledgerBytes))
-	if err := modelcapabilitypublication.VerifyRuntimeStaticProjection(context.Background(), postgres.Pool, expectedSchemaLedger); err != nil {
-		log.Fatalf("Capability-contract static projection startup gate failed: %v", err)
-	}
 	baseline, err := customercontext.EnsureBaseline(context.Background(), postgres.Pool)
 	if err != nil {
 		log.Fatalf("Failed to initialize single-customer baseline: %v", err)
@@ -1299,6 +1297,11 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	}
 
 	// Start server in goroutine
+	stopRuntimeGeneration, runtimeGenerationDone, err := startRuntimeGeneration(context.Background(), postgres.Pool, httpRuntime, expectedSchemaLedger, actualSchemaLedger)
+	if err != nil {
+		log.Fatalf("Runtime generation authority failed: %v", err)
+	}
+	defer stopRuntimeGeneration()
 	runtimeStatus := httpRuntime.status()
 	log.Printf("HTTP runtime instance=%s request_lifetime_seconds=%d drain_timeout_seconds=%d",
 		runtimeStatus.Instance, runtimeStatus.RequestLifetimeSeconds, runtimeStatus.DrainTimeoutSeconds)
@@ -1322,6 +1325,8 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	}
 	// HTTP handlers may still need these services to persist terminal evidence.
 	// Stop them only after handler drain, retaining their durable recovery leases.
+	stopRuntimeGeneration()
+	<-runtimeGenerationDone
 	stopXInsightConnectorRuntime()
 	stopSettlementRecovery()
 	stopCompletedFeedRetention()

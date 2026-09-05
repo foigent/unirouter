@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
+	"github.com/uniroute/unirouter/internal/schemaauthority"
 )
 
 type deploymentLifecycleSlot struct {
@@ -454,10 +455,8 @@ func (m *Manager) beginDeploymentLifecycleTransaction(ctx context.Context) (pgx.
 // so it can prove that no current v2 assignment exists without racing a
 // cutover or deadlocking on lower-level route rows.
 func lockDeploymentAssignmentWriterTables(ctx context.Context, tx pgx.Tx) error {
-	for _, table := range []string{"runtime_change_releases", "runtime_change_slots"} {
-		if _, err := tx.Exec(ctx, "LOCK TABLE "+table+" IN ROW EXCLUSIVE MODE"); err != nil {
-			return lifecycleWriteError("lock deployment assignment writer", err)
-		}
+	if err := schemaauthority.LockExecutionCompatibility(ctx, tx); err != nil {
+		return lifecycleWriteError("lock execution compatibility", err)
 	}
 	return nil
 }

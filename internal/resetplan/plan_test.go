@@ -47,8 +47,8 @@ func TestBuildHasStableSemanticScopeAndVariableArtifactIdentity(t *testing.T) {
 	if first.Summary.ReviewRequiredCount != 0 || first.Summary.ProtectedCount != len(protectedTables) {
 		t.Fatalf("unexpected classification summary: %+v", first.Summary)
 	}
-	if first.Summary.TableCount != 125 || first.Summary.ResetCandidateCount != 113 ||
-		first.Summary.ProtectedCount != 10 || first.Summary.ProtectedPartialCount != 1 ||
+	if first.Summary.TableCount != 130 || first.Summary.ResetCandidateCount != 113 ||
+		first.Summary.ProtectedCount != 15 || first.Summary.ProtectedPartialCount != 1 ||
 		first.Summary.SchemaLedgerCount != 1 {
 		t.Fatalf("reset classification cardinality drifted: %+v", first.Summary)
 	}
@@ -93,7 +93,7 @@ func TestBuildSupportsExactCurrentSchemaAndRejectsPreviousOrFutureMax(t *testing
 	if got := plan.Schema.MigrationVersions[len(plan.Schema.MigrationVersions)-1]; got != schemaauthority.LatestSupportedMigration {
 		t.Fatalf("latest migration = %q, want %q", got, schemaauthority.LatestSupportedMigration)
 	}
-	if plan.Summary.TableCount != 125 || plan.Summary.ResetCandidateCount != 113 || plan.Summary.ReviewRequiredCount != 0 {
+	if plan.Summary.TableCount != 130 || plan.Summary.ResetCandidateCount != 113 || plan.Summary.ReviewRequiredCount != 0 {
 		t.Fatalf("current schema changed reviewed table classification: %+v", plan.Summary)
 	}
 	if plan.Schema.TriggerCount != len(resetDeleteTriggers)+6 {

@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/uniroute/unirouter/internal/modelprofile"
 )
 
 func TestKimiK26MatchesFrozenOfficialTokenizerVectors(t *testing.T) {
@@ -32,8 +31,8 @@ func TestKimiK26MatchesFrozenOfficialTokenizerVectors(t *testing.T) {
 
 func TestKimiK26LongRunMatchesOfficialSafetySplitting(t *testing.T) {
 	count, err := Count(
-		modelprofile.TokenizerKimiK26ID,
-		modelprofile.TokenizerKimiK26Version,
+		KimiK26ID,
+		KimiK26Version,
 		[]byte(strings.Repeat("a", 100_000)),
 	)
 	require.NoError(t, err)
@@ -61,18 +60,18 @@ func TestMiniMaxM27MatchesFrozenOfficialTokenizerVectors(t *testing.T) {
 }
 
 func TestCountRequiresExactTokenizerProfileAndValidUTF8(t *testing.T) {
-	kimiCount, err := Count(modelprofile.TokenizerKimiK26ID, modelprofile.TokenizerKimiK26Version, []byte("hello"))
+	kimiCount, err := Count(KimiK26ID, KimiK26Version, []byte("hello"))
 	require.NoError(t, err)
 	require.Positive(t, kimiCount)
 
-	count, err := Count(modelprofile.TokenizerMiniMaxM27ID, modelprofile.TokenizerMiniMaxM27Version, []byte("hello"))
+	count, err := Count(MiniMaxM27ID, MiniMaxM27Version, []byte("hello"))
 	require.NoError(t, err)
 	require.Positive(t, count)
 
-	_, err = Count(modelprofile.TokenizerMiniMaxM27ID, "2.0.0", []byte("hello"))
+	_, err = Count(MiniMaxM27ID, "2.0.0", []byte("hello"))
 	require.Error(t, err)
-	_, err = Count(modelprofile.TokenizerMiniMaxM27ID, modelprofile.TokenizerMiniMaxM27Version, []byte{0xff})
+	_, err = Count(MiniMaxM27ID, MiniMaxM27Version, []byte{0xff})
 	require.Error(t, err)
-	_, err = Count(modelprofile.TokenizerKimiK26ID, modelprofile.TokenizerKimiK26Version, []byte{0xff})
+	_, err = Count(KimiK26ID, KimiK26Version, []byte{0xff})
 	require.Error(t, err)
 }

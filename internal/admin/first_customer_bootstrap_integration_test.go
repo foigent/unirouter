@@ -221,6 +221,12 @@ func TestFirstCustomerBootstrapAcceptsExactFreshMigrationSeedAfterPasswordRotati
 			// restores both the immutable trigger and the exact migration-owned rows.
 			_, err = tx.Exec(t.Context(), "ALTER TABLE "+corruption.table+" DISABLE TRIGGER "+corruption.trigger)
 			require.NoError(t, err)
+			if corruption.table == "model_capability_probe_contract_bindings" {
+				// M114 adds a second append-only writer guard. Disable it only
+				// inside this rolled-back corruption fixture, not the real owner.
+				_, err = tx.Exec(t.Context(), "ALTER TABLE model_capability_probe_contract_bindings DISABLE TRIGGER capability_binding_writer_epoch")
+				require.NoError(t, err)
+			}
 			_, err = tx.Exec(t.Context(), corruption.statement)
 			require.NoError(t, err)
 			require.ErrorContains(t, handler.verifyFirstCustomerFreshMigrationCheckpoint(request, tx, adminID, adminOrgID), corruption.failedCheck)

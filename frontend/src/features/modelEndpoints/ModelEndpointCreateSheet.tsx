@@ -396,6 +396,9 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
   const [executionProfilesLoading, setExecutionProfilesLoading] = useState(false);
   const [executionProfilesError, setExecutionProfilesError] = useState('');
   const [selectedExecutionProfileKey, setSelectedExecutionProfileKey] = useState('');
+  const [dataProfiles, setDataProfiles] = useState<ModelExecutionProfile[]>([]);
+  const [dataProfilesLoading, setDataProfilesLoading] = useState(false);
+  const dataProfileRequest = useRef(0);
   const [selectedUpstreamModelID, setSelectedUpstreamModelID] = useState('');
   const [saving, setSaving] = useState(false);
   const createIntent = useRef<CreateIntent | null>(null);
@@ -565,6 +568,36 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     });
   };
 
+  const loadDataProfiles = async (value: unknown) => {
+    const generation = ++dataProfileRequest.current;
+    setDataProfiles([]);
+    if (formApi) patchFormValues(formApi, { profile_definition_digest: '' });
+    const id = Number(value);
+    if (!id) return;
+    setDataProfilesLoading(true);
+    try {
+      const result = await modelExecutionProfileApi.forStableModel(id);
+      if (generation === dataProfileRequest.current) setDataProfiles(result.data);
+    } catch {
+      if (generation === dataProfileRequest.current) Toast.error('无法读取该稳定模型的已发布执行合同');
+    } finally {
+      if (generation === dataProfileRequest.current) setDataProfilesLoading(false);
+    }
+  };
+
+  const selectDataProfile = (value: unknown) => {
+    const profile = dataProfiles.find(item => item.profile_definition_digest === value);
+    if (!profile || !formApi) return;
+    const limits = reviewedModelOnboardingLimits(profile);
+    patchFormValues(formApi, {
+      upstream_model: profile.upstream_model_ids[0],
+      deployment_max_context: limits.deploymentMaxContext,
+      deployment_default_max_output: limits.deploymentDefaultMaxOutput,
+      operation_id: 'openai.chat_completions.v1',
+    });
+    setOperationID('openai.chat_completions.v1');
+  };
+
   const submit = async (values: Record<string, unknown>) => {
     const upstreamModel = String(values.upstream_model || '').trim();
     const submittedOperationID = String(values.operation_id || '') as CanonicalOperationID;
@@ -647,10 +680,16 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     const credential = credentialMode === 'existing'
       ? { binding_id: Number(values.binding_id) }
       : { api_key: String(values.api_key || '').trim() };
+    const definitionDigest = publicModelMode === 'existing' ? String(values.profile_definition_digest || '') : '';
+    if (definitionDigest && !dataProfiles.some(profile => profile.profile_definition_digest === definitionDigest)) {
+      Toast.error('执行合同不属于当前公共模型，请重新选择');
+      return;
+    }
     const input: CanonicalModelApplicationCreateRequest = {
       connection,
       public_model: publicModel,
       deployment: {
+        ...(definitionDigest ? { profile_definition_digest: definitionDigest } : {}),
         upstream_model: upstreamModel,
         priority: values.route_role === 'backup' ? 200 : 100,
         routing_weight: 100,
@@ -869,8 +908,9 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
         options={[{ label: '新建公共模型', value: 'new' }, { label: '复用现有公共模型', value: 'existing' }]}
         onChange={(event) => setPublicModelMode(String(event?.target?.value || 'new') as 'new' | 'existing')}
       />
-      {publicModelMode === 'existing' ? <Form.Select
+      {publicModelMode === 'existing' ? <><Form.Select
         field="public_model_id"
+        onChange={value => { void loadDataProfiles(value); }}
         label={<span id="canonical-public-model-label">现有公共模型</span>}
         aria-labelledby="canonical-public-model-label"
         filter
@@ -883,7 +923,14 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
           };
         })}
         extraText="缺少正整数 context_length 或 output_limit 的公共模型不可复用；请先在公共模型目录修复执行边界。"
-      /> : <>
+      />
+      <Form.Select field="profile_definition_digest" label="执行合同 revision" initValue=""
+        loading={dataProfilesLoading} onChange={selectDataProfile}
+        optionList={[{ value: '', label: '沿用公共模型基础合同' }, ...dataProfiles.map(profile => ({
+          value: profile.profile_definition_digest!, label: `${profile.id}@${profile.version} · ${profile.profile_definition_digest!.slice(0, 12)}`,
+        }))]}
+        extraText="选择已发布 revision 会创建独立候选 Deployment；资格验证和 Release 激活后才用于请求。"
+      /></> : <>
         <div className="ur-model-endpoint-form-grid">
           {selectedReviewedModel ? <Form.Input
             field="model_name"

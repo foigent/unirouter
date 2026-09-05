@@ -4,6 +4,28 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.53] - 2026-09-05
+
+### Changed
+
+- Added the explicit M113/M114 compatibility bridge and independent append-only
+  capability publication ledger. Startup never applies M114 implicitly. Reviewed
+  CI Bundle files use one delta materializer with exact Target/Artifact identity,
+  real database projection digests and read-only ambiguous-commit recovery.
+- Added immutable data Profile revisions, candidate Deployments on the same
+  stable model and Connection, and exact capability/evidence pins on sealed
+  Releases. Request derivation, planning, dispatch and response mechanics retain
+  the selected definition; mutable safety state can still reject dispatch.
+- Added registry-derived runtime support, self-fencing leases and coordinated
+  ingress intent. Slot activation and generation join check compatible potential
+  receivers under one domain boundary; ambiguous reload retains old receivers.
+  Provider attempts identify their server-owned runtime generation. Existing
+  billing Freeze owns customer pricing and terminal settlement.
+- Exposed published execution revisions and explicit qualification selections in
+  the existing model/Release administration flow. Daily data delivery creates
+  neither schema migration nor backend image. Target continuity, actual model
+  qualification and OpenClaw outcomes remain separate deployment evidence.
+
 ## [1.2.52] - 2026-09-05
 
 ### Changed

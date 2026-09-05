@@ -57,11 +57,11 @@ func (p *Planner) Plan(ctx context.Context, request Request) (Plan, error) {
 		return Plan{}, err
 	}
 	if !snapshot.CapabilitiesResolved {
-		profile, ok := modelprofile.Lookup(snapshot.ExecutionProfileID, snapshot.ExecutionProfileVersion)
-		if !ok {
-			return Plan{}, fmt.Errorf("%w: unknown model execution profile %s@%s", ErrManifestStale, snapshot.ExecutionProfileID, snapshot.ExecutionProfileVersion)
+		profile, err := resolvePlanProfile(snapshot.ExecutionProfileID, snapshot.ExecutionProfileVersion, snapshot.Definition)
+		if err != nil {
+			return Plan{}, err
 		}
-		requirements, deriveErr := ResolveCapabilityRequirements(profile, request)
+		requirements, deriveErr := ResolveCapabilityRequirements(profile, request, snapshot.Definition)
 		if deriveErr != nil {
 			return Plan{}, deriveErr
 		}
@@ -81,9 +81,9 @@ func (p *Planner) Plan(ctx context.Context, request Request) (Plan, error) {
 func buildPlan(snapshot snapshot, request Request, policy routingpolicy.Config) (Plan, error) {
 	snapshot.Mode = request.Mode
 	snapshot.RequestedOperationID = request.ModelOperationID
-	profile, ok := modelprofile.Lookup(snapshot.ExecutionProfileID, snapshot.ExecutionProfileVersion)
-	if !ok {
-		return Plan{}, fmt.Errorf("%w: unknown model execution profile %s@%s", ErrManifestStale, snapshot.ExecutionProfileID, snapshot.ExecutionProfileVersion)
+	profile, err := resolvePlanProfile(snapshot.ExecutionProfileID, snapshot.ExecutionProfileVersion, snapshot.Definition)
+	if err != nil {
+		return Plan{}, err
 	}
 	if !snapshot.CapabilitiesResolved {
 		return Plan{}, fmt.Errorf("%w: invocation capabilities were not resolved", ErrManifestStale)
@@ -184,10 +184,10 @@ func normalizeRequest(request Request) (Request, error) {
 // ResolveCapabilityRequirements is the sole normalization authority for a
 // Profile's always-required capabilities and the typed requirements derived
 // from one invocation.
-func ResolveCapabilityRequirements(profile modelprofile.Profile, request Request) ([]CapabilityRequirement, error) {
+func ResolveCapabilityRequirements(profile modelprofile.Profile, request Request, definition modelprofile.Definition) ([]CapabilityRequirement, error) {
 	invocation := request.InvocationCapabilities
 	if request.DeriveInvocationCapabilities != nil {
-		derived, err := request.DeriveInvocationCapabilities(profile)
+		derived, err := request.DeriveInvocationCapabilities(profile, definition)
 		if err != nil {
 			return nil, err
 		}
@@ -353,6 +353,7 @@ func cloneCapabilityRequirements(requirements []CapabilityRequirement) []Capabil
 func planMetadata(value snapshot, profile modelprofile.Profile, hash string) Plan {
 	selected := value.Slot.Selected
 	return Plan{
+		Definition: value.Definition, ReleaseExecution: selected.Execution.Clone(),
 		AuthorityMode:             value.Mode,
 		PublicModelID:             value.PublicModelID,
 		PublicModel:               value.PublicModel,

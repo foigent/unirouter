@@ -171,7 +171,15 @@ type preparedRequest struct {
 	probeToken             string
 	dispatchOwnerToken     string
 	dispatchOwnerHash      string
+	runtimePin             *runtimeAttemptPin
 	underlying             operationIdentity
+}
+
+// One ephemeral dispatch owner keeps this choice across bounded transaction
+// recovery, including an M113 commit followed by an M114 expansion.
+type runtimeAttemptPin struct {
+	resolved bool
+	instance string
 }
 
 type operationIdentity struct {

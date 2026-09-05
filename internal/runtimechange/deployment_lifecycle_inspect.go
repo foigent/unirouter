@@ -3,6 +3,7 @@ package runtimechange
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -44,10 +45,14 @@ type DeploymentReleasePublicModelSummary struct {
 }
 
 type DeploymentReleaseSelectionOption struct {
-	DeploymentID   int64  `json:"deployment_id"`
-	OperationID    string `json:"operation_id"`
-	UpstreamModel  string `json:"upstream_model,omitempty"`
-	ConnectionName string `json:"connection_name,omitempty"`
+	DeploymentID            int64   `json:"deployment_id"`
+	OperationID             string  `json:"operation_id"`
+	UpstreamModel           string  `json:"upstream_model,omitempty"`
+	ConnectionName          string  `json:"connection_name,omitempty"`
+	ProfileDefinitionDigest string  `json:"profile_definition_digest,omitempty"`
+	MaxContext              int     `json:"max_context,omitempty"`
+	DefaultMaxOutput        int     `json:"default_max_output,omitempty"`
+	CapabilityApprovalIDs   []int64 `json:"capability_approval_ids,omitempty"`
 }
 
 // DeploymentReleaseAuthoringOption is server-derived optimistic truth for one
@@ -238,7 +243,11 @@ func readDeploymentReleaseSelectionOptions(
 ) (map[int64][]DeploymentReleaseSelectionOption, error) {
 	rows, err := tx.Query(ctx, `
 SELECT deployment.public_model_id,deployment.id,operation.operation_id,
-       deployment.upstream_model,connection.name
+       deployment.upstream_model,connection.name,
+       COALESCE(to_jsonb(operation)->>'profile_definition_digest',''),
+       COALESCE(deployment.max_context,0),COALESCE(deployment.default_max_output,0),
+       CASE WHEN COALESCE(to_jsonb(operation)->>'profile_definition_digest','')='' THEN '[]' ELSE
+       COALESCE((SELECT jsonb_agg(q.approval_id ORDER BY q.approval_id)::text FROM model_capability_approval_qualifications q WHERE q.deployment_id=deployment.id AND q.operation_id=operation.operation_id AND q.qualified),'[]') END
   FROM model_deployments deployment
   JOIN provider_connections connection ON connection.id=deployment.connection_id
   JOIN model_deployment_operations operation ON operation.deployment_id=deployment.id
@@ -263,11 +272,15 @@ SELECT deployment.public_model_id,deployment.id,operation.operation_id,
 	for rows.Next() {
 		var publicModelID int64
 		var option DeploymentReleaseSelectionOption
+		var approvals string
 		if err := rows.Scan(
 			&publicModelID, &option.DeploymentID, &option.OperationID,
-			&option.UpstreamModel, &option.ConnectionName,
+			&option.UpstreamModel, &option.ConnectionName, &option.ProfileDefinitionDigest, &option.MaxContext, &option.DefaultMaxOutput, &approvals,
 		); err != nil {
 			return nil, fmt.Errorf("%w: scan deployment release selection option: %v", ErrUnavailable, err)
+		}
+		if err := json.Unmarshal([]byte(approvals), &option.CapabilityApprovalIDs); err != nil {
+			return nil, err
 		}
 		result[publicModelID] = append(result[publicModelID], option)
 	}

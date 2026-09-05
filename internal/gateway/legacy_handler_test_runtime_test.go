@@ -47,7 +47,7 @@ func (planner *legacyHandlerTestPlanner) Plan(ctx context.Context, request model
 	}
 	var requirements []modelrouting.CapabilityRequirement
 	if request.DeriveInvocationCapabilities != nil {
-		requirements, err = request.DeriveInvocationCapabilities(profile)
+		requirements, err = request.DeriveInvocationCapabilities(profile, modelprofile.Definition{})
 		if err != nil {
 			return modelrouting.Plan{}, err
 		}

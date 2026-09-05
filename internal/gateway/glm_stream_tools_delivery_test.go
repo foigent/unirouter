@@ -46,7 +46,28 @@ func glmStreamFixtureBindings(t *testing.T) []qualification.Binding {
 }
 
 func TestGLMStreamProbeAndAgentRequestsReachExactProviderWire(t *testing.T) {
+	testGLMStreamExactProviderWire(t, false)
+}
+
+func TestGLMDataRevisionProbeAndAgentRequestsKeepExactProviderWire(t *testing.T) {
+	testGLMStreamExactProviderWire(t, true)
+}
+
+func testGLMStreamExactProviderWire(t *testing.T, data bool) {
 	for _, b := range glmStreamFixtureBindings(t) {
+		legacy := b
+		var definition modelprofile.Definition
+		if data {
+			p, ok := modelprofile.Lookup(b.ExecutionProfileID, b.ExecutionProfileVersion)
+			require.True(t, ok)
+			p.Version = "99.0.0"
+			var err error
+			definition, err = modelprofile.NewDefinition(p, "glm/"+b.ExpectedUpstreamModel, "")
+			require.NoError(t, err)
+			b.ExecutionProfileVersion = p.Version
+			b, err = qualification.BindDefinition(b, definition)
+			require.NoError(t, err)
+		}
 		for _, scenario := range []string{"probe", "first-default", "first-8192", "history-65536"} {
 			t.Run(b.ExpectedUpstreamModel+"/"+scenario, func(t *testing.T) {
 				body, err := qualification.BuildOpenAIChatFunctionToolsProbeRequest(b)
@@ -73,7 +94,11 @@ func TestGLMStreamProbeAndAgentRequestsReachExactProviderWire(t *testing.T) {
 				}
 				body, err = json.Marshal(request)
 				require.NoError(t, err)
-				profilePlan := executionProfilePlan(t, b.ExecutionProfileID, b.ExecutionProfileVersion)
+				profilePlan := executionProfilePlan(t, legacy.ExecutionProfileID, legacy.ExecutionProfileVersion)
+				if data {
+					profilePlan.Definition = definition
+					profilePlan.ExecutionProfileVersion = definition.Profile().Version
+				}
 				evidence, err := validateChatExecutionProfileRequest(body, profilePlan)
 				require.NoError(t, err)
 				evidence.bindAdmissionBody(body)
@@ -81,7 +106,11 @@ func TestGLMStreamProbeAndAgentRequestsReachExactProviderWire(t *testing.T) {
 				require.NoError(t, err)
 				key := []byte("0123456789abcdef0123456789abcdef")
 				plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions, "https://open.bigmodel.cn/api/paas/v4", key, nil)
-				setExecutionTestProfile(t, &plan, b.ExecutionProfileID, b.ExecutionProfileVersion)
+				setExecutionTestProfile(t, &plan, legacy.ExecutionProfileID, legacy.ExecutionProfileVersion)
+				if data {
+					plan.Definition = definition
+					plan.ExecutionProfileVersion = definition.Profile().Version
+				}
 				plan.Routes[0].Provider, plan.Routes[0].UpstreamModel = "glm", b.ExpectedUpstreamModel
 				plan.PublicOutputLimit = 131072
 				plan.Routes[0].DefaultMaxOutput = 65536

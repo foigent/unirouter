@@ -10,6 +10,12 @@ import (
 )
 
 func validateMiniMaxM27StreamBinding(b Binding) error {
+	if b.definition != nil {
+		if b.ProbeContractID != MiniMaxM27StreamFunctionToolsProbeContractID {
+			return ErrUnsupported
+		}
+		return b.validateDataDefinition()
+	}
 	if b.OperationID != modelprofile.OperationOpenAIChat || b.ExecutionProfileID != "minimax.m2.7.payg" || b.ExecutionProfileVersion != "1.3.0" || b.ProtocolProfileID != "protocol.minimax-m27-openai-chat.v1" || b.ProtocolProfileVersion != "1.0.0" || b.ProbeContractID != MiniMaxM27StreamFunctionToolsProbeContractID || b.ProbeContractVersion != "1.0.0" || b.ExpectedProvider != "minimax" || b.ExpectedUpstreamModel != "MiniMax-M2.7" || b.PublicPath != "/v1/chat/completions" || !slices.Contains([]string{modelprofile.CapabilityStreaming, modelprofile.CapabilityReasoning, modelprofile.CapabilityTools, modelprofile.CapabilityFunctionTools, modelprofile.CapabilityToolChoiceAuto}, b.CapabilityID) {
 		return fmt.Errorf("%w: exact M2.7 streamed tools binding", ErrUnsupported)
 	}

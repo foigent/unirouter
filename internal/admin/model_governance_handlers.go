@@ -103,7 +103,11 @@ func (state modelRegistryAuditState) auditMap(id int64) map[string]interface{} {
 	}
 }
 
-func (h *Handler) ListModelExecutionProfiles(w http.ResponseWriter, _ *http.Request) {
+func (h *Handler) ListModelExecutionProfiles(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Has("public_model_id") {
+		h.listProductProfileDefinitions(w, r)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"contract_version": "unirouter.model-execution-profiles.v1",
 		"data":             modelprofile.All(),

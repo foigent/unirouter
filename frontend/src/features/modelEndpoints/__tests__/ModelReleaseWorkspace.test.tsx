@@ -456,6 +456,38 @@ describe('ModelReleaseWorkspace', () => {
     expect(await screen.findByText('原子发布编排收据 #401')).toBeTruthy();
   });
 
+  it('authors one exact data revision with explicit limits and deduplicated qualification pins', async () => {
+    const digest = 'a'.repeat(64);
+    const option = { ...collection.models[0].selection_options[0], profile_definition_digest: digest,
+      max_context: 128000, default_max_output: 4096, capability_approval_ids: [8, 3, 8] };
+    mocks.releaseList.mockResolvedValue({ ...collection, models: [{ ...collection.models[0], selection_options: [option] }] });
+    renderWorkspace();
+    fireEvent.click((await screen.findByText('编排新 Release')).closest('button')!);
+    fireEvent.click(await screen.findByLabelText('选择 deployment 41 openai.responses.v1'));
+    fireEvent.change(screen.getByLabelText('Authoring reason'), { target: { value: 'qualified data revision' } });
+    fireEvent.click(screen.getByRole('button', { name: '生成 Sealed Validated Release' }));
+    await waitFor(() => expect(mocks.author).toHaveBeenCalledTimes(1));
+    expect(mocks.author.mock.calls[0][0]).toMatchObject({ profile_definition_digest: digest,
+      public_context_limit: 128000, public_output_limit: 4096, capability_approval_ids: [3, 8] });
+    expect(mocks.activateInitial).not.toHaveBeenCalled();
+    expect(mocks.cutoverLegacy).not.toHaveBeenCalled();
+  });
+
+  it('rejects mixed legacy and data definitions before creating a Release', async () => {
+	vi.spyOn(Toast, 'error').mockImplementation(() => '' as any);
+    const original = collection.models[0].selection_options[0];
+    mocks.releaseList.mockResolvedValue({ ...collection, models: [{ ...collection.models[0], selection_options: [original,
+      { ...original, deployment_id: 42, profile_definition_digest: 'b'.repeat(64), max_context: 128000, default_max_output: 4096 }] }] });
+    renderWorkspace();
+    fireEvent.click((await screen.findByText('编排新 Release')).closest('button')!);
+    fireEvent.click(await screen.findByLabelText('选择 deployment 41 openai.responses.v1'));
+    fireEvent.click(await screen.findByLabelText('选择 deployment 42 openai.responses.v1'));
+    fireEvent.change(screen.getByLabelText('Authoring reason'), { target: { value: 'incompatible selection' } });
+    fireEvent.click(screen.getByRole('button', { name: '生成 Sealed Validated Release' }));
+    expect(mocks.author).not.toHaveBeenCalled();
+    expect(Toast.error).toHaveBeenCalledWith('一个 Release 的所有 Deployment 必须使用同一执行合同 revision');
+  });
+
   it('uses descriptor availability instead of inferring an action from the release stage', async () => {
     mocks.current.mockResolvedValue(lifecycleView([
       descriptor('activate_initial', {

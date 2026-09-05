@@ -60,6 +60,11 @@ jobs:
                   # This contract is consumed by backend route-parity tests.
                   backend=true
                   ;;
+                capability-bundles/*.json)
+                  # Data delivery still receives Backend contract validation;
+                  # it does not produce a new backend/frontend image.
+                  backend=true
+                  ;;
                 docs/*|*.md|LICENSE*|.github/ISSUE_TEMPLATE/*|.github/PULL_REQUEST_TEMPLATE*)
                   ;;
                 .dockerignore|Dockerfile|frontend/.dockerignore)
@@ -249,7 +254,17 @@ jobs:
         run: go vet ./...
 
       - name: Check runtime ingress failure recovery
-        run: PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-runtime-ingress.py
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-runtime-ingress.py
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-capability-carrier.py
+
+      - name: Validate tracked capability Bundle sources
+        run: |
+          set -euo pipefail
+          go build -o /tmp/unirouter-bundle-check ./cmd/uniroute-capability-bundle-check
+          while IFS= read -r -d '' file; do
+            /tmp/unirouter-bundle-check < "$file"
+          done < <(git ls-files -z -- 'capability-bundles/*.json')
       
       - name: Run tests
         # Includes the untagged 000039 tenant-isolation migration regression.
@@ -303,6 +318,8 @@ jobs:
           test_pattern+='|Test(RepeatedModelSuccessor|RepeatedSuccessor|ModelSuccessorCutoverAtomic|NeverActivatedStagingModelSuccessor|RetirementRejectsPreparedPlan).*Integration'
           test_pattern+='|TestAtomicModelReleaseAuthoring.*Integration'
           test_pattern+='|TestSealedModelExecutionContract.*Integration'
+          test_pattern+='|TestDataReleaseAuthoringPinsDefinitionWithoutRewritingModelOrHistory|TestSealedCapabilityDecisionSurvivesSelectorButHonorsDisable'
+          test_pattern+='|TestAuthorizeOwnerSurvivesCommitAmbiguityAcrossCompatibleExpandIntegration'
           test_pattern+='|TestEnsureBaseline.*Integration'
           test_pattern+='|TestCanonicalConnectionLicenseAuthority.*Integration'
           test_pattern+='|TestObservationProviderCostReconciliationMigrationIntegration'

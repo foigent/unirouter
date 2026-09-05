@@ -10,6 +10,12 @@ import (
 )
 
 func validateGLMStreamBinding(b Binding) error {
+	if b.definition != nil {
+		if b.ProbeContractID != GLMStreamFunctionToolsProbeContractID {
+			return ErrUnsupported
+		}
+		return b.validateDataDefinition()
+	}
 	// The existing compiled declaration owns the exact tuple set; do not
 	// maintain another provider/model list beside Publication and Profile.
 	compiled, err := Resolve(b.OperationID, b.CapabilityID, b.ExecutionProfileID, b.ExecutionProfileVersion, b.ProtocolProfileID, b.ProtocolProfileVersion)
@@ -23,8 +29,8 @@ func BuildGLMStreamFunctionToolsProbeRequest(b Binding) ([]byte, error) {
 	if err := validateGLMStreamBinding(b); err != nil {
 		return nil, err
 	}
-	profile, ok := modelprofile.Lookup(b.ExecutionProfileID, b.ExecutionProfileVersion)
-	if !ok {
+	profile, err := b.ExecutionProfile()
+	if err != nil {
 		return nil, ErrUnsupported
 	}
 	protocol, ok := modelprofile.ResolveChatProtocolContract(b.ProtocolProfileID)

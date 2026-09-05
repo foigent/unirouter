@@ -1,0 +1,39 @@
+name: Capability Bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_path:
+        description: Exact tracked capability-bundles JSON path on main
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.25.12'
+      - name: Validate exact Bundle source
+        id: bundle
+        env:
+          BUNDLE_PATH: ${{ inputs.bundle_path }}
+        run: |
+          set -euo pipefail
+          python3 scripts/prepare-capability-bundle.py
+          go run ./cmd/uniroute-capability-bundle-check < /tmp/unirouter-capability-carrier/bundle.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: capability-bundle-${{ steps.bundle.outputs.digest }}
+          path: /tmp/unirouter-capability-carrier/
+          if-no-files-found: error
+          retention-days: 90

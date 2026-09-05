@@ -5,6 +5,8 @@ export type ModelExecutionProfile = {
   version: string;
   label: string;
   current: boolean;
+  profile_definition_digest?: string;
+  product_lineage_id?: string;
   tokenizer_profile_id: string;
   tokenizer_profile_version: string;
   reasoning_profile: string;
@@ -45,4 +47,5 @@ export type ModelExecutionProfileCatalog = {
 
 export const modelExecutionProfileApi = {
   list: () => request<ModelExecutionProfileCatalog>('/model-execution-profiles'),
+  forStableModel: (id: number) => request<ModelExecutionProfileCatalog>(`/model-execution-profiles?public_model_id=${id}`),
 };

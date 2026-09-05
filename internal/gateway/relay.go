@@ -1395,6 +1395,7 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 		ModelOperationID:                route.ModelOperationID,
 		ExecutionProfileID:              route.ExecutionProfileID,
 		ExecutionProfileVersion:         route.ExecutionProfileVersion,
+		ProfileDefinition:               route.ProfileDefinition,
 		CacheUsageProfile:               route.CacheUsageProfile,
 		ProtocolProfile:                 route.ModelProtocolProfile,
 		OperationProtocolProfileID:      route.OperationProtocolProfileID,
@@ -1841,7 +1842,8 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 
 	kimiStreamMechanics, currentKimiStream, kimiStreamSetupErr := adapters.ResolveKimiRuntimeChatStreamMechanics(
 		adapters.KimiChatStreamRuntimeIdentity{
-			OperationID: route.ModelOperationID, ExecutionProfileID: route.ExecutionProfileID,
+			ProfileDefinition: route.ProfileDefinition,
+			OperationID:       route.ModelOperationID, ExecutionProfileID: route.ExecutionProfileID,
 			ExecutionProfileVersion: route.ExecutionProfileVersion, Provider: route.Channel.Provider,
 			UpstreamModel: route.MappedModel, ProtocolProfileID: route.OperationProtocolProfileID,
 			ProtocolProfileVersion: route.OperationProtocolProfileVersion, CacheUsageProfile: route.CacheUsageProfile,
@@ -1849,7 +1851,8 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	)
 	deepSeekStreamMechanics, currentDeepSeekStream, deepSeekStreamSetupErr := adapters.ResolveDeepSeekRuntimeChatStreamMechanics(
 		adapters.DeepSeekChatStreamRuntimeIdentity{
-			OperationID: route.ModelOperationID, ExecutionProfileID: route.ExecutionProfileID,
+			ProfileDefinition: route.ProfileDefinition,
+			OperationID:       route.ModelOperationID, ExecutionProfileID: route.ExecutionProfileID,
 			ExecutionProfileVersion: route.ExecutionProfileVersion, Provider: route.Channel.Provider,
 			UpstreamModel: route.MappedModel, ProtocolProfileID: route.OperationProtocolProfileID,
 			ProtocolProfileVersion: route.OperationProtocolProfileVersion, CacheUsageProfile: route.CacheUsageProfile,

@@ -61,6 +61,7 @@ type ChatSSEEventAssembler struct {
 }
 
 type DeepSeekChatStreamRuntimeIdentity struct {
+	ProfileDefinition       modelprofile.Definition
 	OperationID             string
 	ExecutionProfileID      string
 	ExecutionProfileVersion string
@@ -105,6 +106,12 @@ type DeepSeekChatStreamMechanics struct {
 }
 
 func ResolveDeepSeekRuntimeChatStreamMechanics(identity DeepSeekChatStreamRuntimeIdentity) (DeepSeekChatStreamMechanics, bool, error) {
+	if d := identity.ProfileDefinition; d.Digest() != "" && d.Profile().Provider == "deepseek" && d.Profile().ProtocolProfile == "protocol.deepseek-openai-chat.v4" {
+		if err := validateDataMechanicsIdentity(d, identity.ExecutionProfileID, identity.ExecutionProfileVersion, identity.Provider, identity.UpstreamModel, identity.OperationID, identity.ProtocolProfileID, identity.ProtocolProfileVersion, identity.CacheUsageProfile); err != nil {
+			return DeepSeekChatStreamMechanics{}, false, err
+		}
+		return DeepSeekChatStreamMechanics{policy: deepSeekChatStreamRuntimeCompatibility, expectedModel: identity.UpstreamModel, cacheUsageProfile: identity.CacheUsageProfile, valid: true}, true, nil
+	}
 	expectedModel := ""
 	switch strings.TrimSpace(identity.ExecutionProfileID) + "\x00" + strings.TrimSpace(identity.ExecutionProfileVersion) {
 	case "deepseek.v4-flash.api\x001.5.0":
@@ -529,6 +536,7 @@ func (a *ChatSSEEventAssembler) finishEvent() (ChatSSEEvent, bool, error) {
 }
 
 type KimiChatStreamRuntimeIdentity struct {
+	ProfileDefinition       modelprofile.Definition
 	OperationID             string
 	ExecutionProfileID      string
 	ExecutionProfileVersion string
@@ -566,6 +574,14 @@ type KimiChatStreamMechanics struct {
 }
 
 func ResolveKimiRuntimeChatStreamMechanics(identity KimiChatStreamRuntimeIdentity) (KimiChatStreamMechanics, bool, error) {
+	if d := identity.ProfileDefinition; d.Digest() != "" && d.Profile().Provider == "kimi" && (d.Profile().ProtocolProfile == "protocol.kimi-openai-chat.v5" || d.Profile().ProtocolProfile == "protocol.kimi-openai-chat.k3.v5") {
+		if err := validateDataMechanicsIdentity(d, identity.ExecutionProfileID, identity.ExecutionProfileVersion, identity.Provider, identity.UpstreamModel, identity.OperationID, identity.ProtocolProfileID, identity.ProtocolProfileVersion, identity.CacheUsageProfile); err != nil {
+			return KimiChatStreamMechanics{}, false, err
+		}
+		mechanics := newKimiChatStreamMechanics(identity.UpstreamModel, identity.ProtocolProfileID, []string{"stop", "length", "content_filter"})
+		mechanics.normalizeEmptyReasoning = d.Profile().ReasoningProfile == "reasoning.kimi-k2.6-thinking-toggle.v2"
+		return mechanics, true, nil
+	}
 	expectedModel, expectedProtocol := "", ""
 	switch strings.TrimSpace(identity.ExecutionProfileID) + "\x00" + strings.TrimSpace(identity.ExecutionProfileVersion) {
 	case "kimi.k2.6.api\x001.7.0":

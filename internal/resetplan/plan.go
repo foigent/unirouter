@@ -50,6 +50,11 @@ var (
 	identifierPattern     = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 
 	protectedTables = map[string]string{
+		"capability_publications":                              "append-only capability publication authority and retained provenance survive product reset",
+		"model_profile_definitions":                            "immutable capability definitions remain addressable with their publication history",
+		"runtime_support_manifests":                            "immutable installed Artifact implementation support is host-operability evidence",
+		"runtime_generations":                                  "runtime membership and lease facts require their explicit ingress owner",
+		"runtime_ingress_changes":                              "ingress transition recovery history remains retained",
 		"commercial_license_entitlements":                      "verified commercial entitlement is deployment-scoped operability state",
 		"deployment_profiles":                                  "desired deployment topology is host-operability state",
 		"gateway_endpoints":                                    "gateway and TLS references are host-operability state",
@@ -576,6 +581,17 @@ func ClassifyTable(name string) (scope, action, reason string) {
 		return ScopeResetCandidate, ActionDeleteAll, "pre-reset product, control-plane, evidence, Feed, Outbox, checkpoint, credential, or business data"
 	}
 	return ScopeReviewRequired, "", "unclassified table blocks reset until the product contract is updated"
+}
+
+// ProtectedTableNames is shared by preview and apply inventory. Retaining one
+// classification prevents schema expansion from silently missing authority.
+func ProtectedTableNames() []string {
+	result := make([]string, 0, len(protectedTables))
+	for name := range protectedTables {
+		result = append(result, name)
+	}
+	slices.Sort(result)
+	return result
 }
 
 func ProtectedSettingKeys() []string {

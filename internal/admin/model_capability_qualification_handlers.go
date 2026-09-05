@@ -23,6 +23,7 @@ import (
 	"github.com/uniroute/unirouter/internal/modeldeployment"
 	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/models"
+	"github.com/uniroute/unirouter/internal/schemaauthority"
 	"github.com/uniroute/unirouter/internal/strictjson"
 )
 
@@ -91,6 +92,7 @@ type modelCapabilityApprovalResult struct {
 }
 
 type modelCapabilityQualificationView struct {
+	ProfileDefinitionDigest    string                    `json:"profile_definition_digest,omitempty"`
 	ContractVersion            string                    `json:"contract_version"`
 	DeploymentID               int64                     `json:"deployment_id"`
 	OperationID                string                    `json:"operation_id"`
@@ -138,6 +140,8 @@ type modelCapabilityProbeView struct {
 }
 
 type modelCapabilitySnapshot struct {
+	Definition                modelprofile.Definition
+	DataBinding               modelcapabilityqualification.Binding
 	CustomerOrgID             int64
 	DeploymentID              int64
 	PublicModelID             int64
@@ -207,6 +211,9 @@ func applyKimiChatDiagnostic(outcome *modelCapabilityProbeOutcome, err error) {
 }
 
 func modelCapabilityProbeBindingFromSnapshot(snapshot modelCapabilitySnapshot) modelcapabilityqualification.Binding {
+	if snapshot.Definition.Digest() != "" {
+		return snapshot.DataBinding
+	}
 	return modelcapabilityqualification.Binding{
 		OperationID: snapshot.OperationID, CapabilityID: snapshot.CapabilityID,
 		ExecutionProfileID: snapshot.ExecutionProfileID, ExecutionProfileVersion: snapshot.ExecutionProfileVersion,
@@ -409,7 +416,12 @@ func (h *Handler) loadModelCapabilitySnapshot(ctx context.Context, orgID, actorI
 
 func lockModelCapabilitySnapshotRows(ctx context.Context, tx pgx.Tx, orgID, deploymentID int64, operationID, capabilityID string, bindingID int64) (modelCapabilitySnapshot, error) {
 	var snapshot modelCapabilitySnapshot
-	err := tx.QueryRow(ctx, `
+	expanded, err := schemaauthority.HasCapabilityExpand(ctx, tx)
+	if err != nil {
+		return snapshot, err
+	}
+	var definitionDigest string
+	query := `
 SELECT deployment.customer_org_id,deployment.id,deployment.public_model_id,
        deployment.connection_id,binding.id,
        connection.provider,connection.base_url,connection.adapter_type,
@@ -423,7 +435,8 @@ SELECT deployment.customer_org_id,deployment.id,deployment.public_model_id,
        contract.expected_provider,contract.expected_upstream_model,contract.public_path,
        binding.key_enc,binding.status,binding.state_revision,binding.cooldown_until,
        (binding.cooldown_until IS NULL OR binding.cooldown_until<=transaction_timestamp()),
-       link.created_at
+       link.created_at,
+       COALESCE(to_jsonb(operation)->>'profile_definition_digest','')
   FROM model_deployments deployment
   JOIN provider_connections connection ON connection.id=deployment.connection_id
   JOIN model_registry model ON model.id=deployment.public_model_id
@@ -455,7 +468,13 @@ SELECT deployment.customer_org_id,deployment.id,deployment.public_model_id,
     ON link.binding_id=binding.id AND link.deployment_id=deployment.id
    AND link.connection_id=connection.id
  WHERE deployment.id=$2 AND deployment.customer_org_id=$1
- FOR SHARE OF deployment,connection,model,operation,capability,binding,link`,
+ FOR SHARE OF deployment,connection,model,operation,capability,binding,link`
+	if expanded {
+		query = strings.ReplaceAll(query, "model.execution_profile_id", "COALESCE(definition.profile_id,model.execution_profile_id)")
+		query = strings.ReplaceAll(query, "model.execution_profile_version", "COALESCE(definition.profile_version,model.execution_profile_version)")
+		query = strings.Replace(query, "JOIN model_deployment_capabilities capability", "LEFT JOIN model_profile_definitions definition ON definition.definition_digest=operation.profile_definition_digest\n  JOIN model_deployment_capabilities capability", 1)
+	}
+	err = tx.QueryRow(ctx, query,
 		orgID, deploymentID, operationID, capabilityID, bindingID).Scan(
 		&snapshot.CustomerOrgID, &snapshot.DeploymentID, &snapshot.PublicModelID,
 		&snapshot.ConnectionID, &snapshot.CredentialBindingID,
@@ -469,13 +488,32 @@ SELECT deployment.customer_org_id,deployment.id,deployment.public_model_id,
 		&snapshot.ProbeContractID, &snapshot.ProbeContractVersion,
 		&snapshot.ExpectedProvider, &snapshot.ExpectedUpstreamModel, &snapshot.PublicPath,
 		&snapshot.EncryptedSecret, &snapshot.CredentialStatus, &snapshot.CredentialRevision,
-		&snapshot.CredentialCooldown, &snapshot.CredentialEligible, &snapshot.CredentialLinkCreatedAt,
+		&snapshot.CredentialCooldown, &snapshot.CredentialEligible, &snapshot.CredentialLinkCreatedAt, &definitionDigest,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return modelCapabilitySnapshot{}, errModelCapabilityNotFound
 	}
 	if err != nil {
 		return modelCapabilitySnapshot{}, fmt.Errorf("lock model capability target: %w", err)
+	}
+	if definitionDigest != "" {
+		snapshot.Definition, err = modelprofile.ReadDefinition(ctx, tx, definitionDigest)
+		if err != nil {
+			return snapshot, err
+		}
+		bindings, err := modelcapabilityqualification.ResolveDefinitionBindings(ctx, tx, snapshot.Definition, snapshot.OperationID, snapshot.ProtocolProfileID, snapshot.ProtocolProfileVersion)
+		if err != nil {
+			return snapshot, err
+		}
+		for _, b := range bindings {
+			if b.CapabilityID == capabilityID {
+				snapshot.DataBinding = b
+				break
+			}
+		}
+		if snapshot.DataBinding.CapabilityID == "" {
+			return snapshot, errModelCapabilityUnsupported
+		}
 	}
 	return snapshot, nil
 }
@@ -486,6 +524,10 @@ func validateModelCapabilitySnapshot(snapshot modelCapabilitySnapshot) error {
 		snapshot.ExecutionProfileID, snapshot.ExecutionProfileVersion,
 		snapshot.ProtocolProfileID, snapshot.ProtocolProfileVersion,
 	)
+	if snapshot.Definition.Digest() != "" {
+		binding = snapshot.DataBinding
+		_, err = binding.ExecutionProfile()
+	}
 	if err != nil {
 		return errModelCapabilityUnsupported
 	}
@@ -957,8 +999,8 @@ func normalizeOpenAIChatFunctionToolsProbeResponse(
 	if err := strictjson.Validate(body); err != nil {
 		return nil, fmt.Errorf("function-tools Probe raw response is ambiguous: %w", err)
 	}
-	profile, ok := modelprofile.Lookup(snapshot.ExecutionProfileID, snapshot.ExecutionProfileVersion)
-	if !ok {
+	profile, profileErr := modelCapabilityProbeBindingFromSnapshot(snapshot).ExecutionProfile()
+	if profileErr != nil {
 		return nil, fmt.Errorf("function-tools Probe Profile is unavailable")
 	}
 	return adapter.ParseResponse(ctx, adapters.ResponseInput{
@@ -1249,7 +1291,7 @@ func summarizeModelCapabilityProbeRequest(snapshot modelCapabilitySnapshot, body
 }
 
 func sameModelCapabilitySnapshot(before, current modelCapabilitySnapshot) bool {
-	return before.CustomerOrgID == current.CustomerOrgID && before.DeploymentID == current.DeploymentID &&
+	return before.Definition.Digest() == current.Definition.Digest() && before.CustomerOrgID == current.CustomerOrgID && before.DeploymentID == current.DeploymentID &&
 		before.PublicModelID == current.PublicModelID && before.ConnectionID == current.ConnectionID &&
 		before.CredentialBindingID == current.CredentialBindingID && before.Provider == current.Provider &&
 		before.BaseURL == current.BaseURL && before.AdapterType == current.AdapterType && bytes.Equal(before.AdapterConfig, current.AdapterConfig) &&
@@ -1406,12 +1448,17 @@ func (h *Handler) loadModelCapabilityQualificationView(ctx context.Context, orgI
 	}
 	view := modelCapabilityQualificationView{ContractVersion: "unirouter.model-capability-qualification.v1"}
 	var probeContractID, probeContractVersion *string
-	err = tx.QueryRow(ctx, `
+	expanded, err := schemaauthority.HasCapabilityExpand(ctx, tx)
+	if err != nil {
+		return view, err
+	}
+	query := `
 SELECT deployment.id,operation.operation_id,capability.capability_id,
        capability.support_state,capability.support_revision,
        model.execution_profile_id,model.execution_profile_version,
        operation.protocol_profile_id,operation.protocol_profile_version,
-       current_contract.probe_contract_id,current_contract.probe_contract_version
+       current_contract.probe_contract_id,current_contract.probe_contract_version,
+       COALESCE(to_jsonb(operation)->>'profile_definition_digest','')
   FROM model_deployments deployment
   JOIN model_registry model ON model.id=deployment.public_model_id
   JOIN model_deployment_operations operation
@@ -1427,12 +1474,18 @@ SELECT deployment.id,operation.operation_id,capability.capability_id,
    AND current_contract.execution_profile_version=model.execution_profile_version
    AND current_contract.protocol_profile_id=operation.protocol_profile_id
    AND current_contract.protocol_profile_version=operation.protocol_profile_version
- WHERE deployment.customer_org_id=$1 AND deployment.id=$2`, orgID, deploymentID, operationID, capabilityID).Scan(
+ WHERE deployment.customer_org_id=$1 AND deployment.id=$2`
+	if expanded {
+		query = strings.ReplaceAll(query, "model.execution_profile_id", "COALESCE(definition.profile_id,model.execution_profile_id)")
+		query = strings.ReplaceAll(query, "model.execution_profile_version", "COALESCE(definition.profile_version,model.execution_profile_version)")
+		query = strings.Replace(query, "JOIN model_deployment_capabilities capability", "LEFT JOIN model_profile_definitions definition ON definition.definition_digest=operation.profile_definition_digest\n  JOIN model_deployment_capabilities capability", 1)
+	}
+	err = tx.QueryRow(ctx, query, orgID, deploymentID, operationID, capabilityID).Scan(
 		&view.DeploymentID, &view.OperationID, &view.CapabilityID,
 		&view.SupportState, &view.SupportRevision,
 		&view.ExecutionProfileID, &view.ExecutionProfileVersion,
 		&view.ProtocolProfileID, &view.ProtocolProfileVersion,
-		&probeContractID, &probeContractVersion,
+		&probeContractID, &probeContractVersion, &view.ProfileDefinitionDigest,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return modelCapabilityQualificationView{}, errModelCapabilityNotFound
@@ -1445,6 +1498,22 @@ SELECT deployment.id,operation.operation_id,capability.capability_id,
 		view.ProbeContractVersion = *probeContractVersion
 		_, resolveErr := modelcapabilityqualification.Resolve(view.OperationID, view.CapabilityID,
 			view.ExecutionProfileID, view.ExecutionProfileVersion, view.ProtocolProfileID, view.ProtocolProfileVersion)
+		if view.ProfileDefinitionDigest != "" {
+			definition, err := modelprofile.ReadDefinition(ctx, tx, view.ProfileDefinitionDigest)
+			if err != nil {
+				return view, err
+			}
+			bindings, err := modelcapabilityqualification.ResolveDefinitionBindings(ctx, tx, definition, view.OperationID, view.ProtocolProfileID, view.ProtocolProfileVersion)
+			resolveErr = errModelCapabilityUnsupported
+			if err == nil {
+				for _, binding := range bindings {
+					if binding.CapabilityID == view.CapabilityID && binding.ProbeContractID == view.ProbeContractID && binding.ProbeContractVersion == view.ProbeContractVersion {
+						resolveErr = nil
+						break
+					}
+				}
+			}
+		}
 		view.ProbeAvailable = resolveErr == nil && view.SupportState == "enabled"
 		if view.ProbeAvailable {
 			view.ProbeAvailabilityReason = "typed_probe_available"

@@ -21,6 +21,7 @@ import (
 	"github.com/uniroute/unirouter/internal/executionevidence"
 	"github.com/uniroute/unirouter/internal/modellist"
 	"github.com/uniroute/unirouter/internal/modelqualification"
+	"github.com/uniroute/unirouter/internal/releaseexecution"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 )
 
@@ -171,6 +172,12 @@ SELECT model_name,lifecycle,context_length,output_limit,execution_profile_id,exe
 	if lifecycle == "retired" {
 		return Disabled, nil
 	}
+	if request.plan.ReleaseExecution != nil {
+		if name != request.plan.PublicModel || request.plan.ReleaseExecution.PublicModelID != request.plan.PublicModelID {
+			return Stale, nil
+		}
+		return Applied, nil // mutable bootstrap Profile/limits cannot reinterpret a sealed Release
+	}
 	if name != request.plan.PublicModel || contextLimit != request.plan.PublicContextLimit || outputLimit != request.plan.PublicOutputLimit ||
 		executionProfileID != request.plan.ExecutionProfileID || executionProfileVersion != request.plan.ExecutionProfileVersion {
 		return Stale, nil
@@ -209,6 +216,26 @@ SELECT stable_release_id,canary_release_id,public_model_id,slot_version
 	}
 	if selectedID != request.plan.RuntimeReleaseID {
 		return runtimeProof{}, Stale, nil
+	}
+	sealed, err := releaseexecution.ReadSnapshot(ctx, tx, selectedID)
+	if err != nil {
+		return runtimeProof{}, "", err
+	}
+	if (sealed == nil) != (request.plan.ReleaseExecution == nil) {
+		return runtimeProof{}, Stale, nil
+	}
+	if sealed != nil {
+		actual, err := sealed.Digest()
+		if err != nil {
+			return runtimeProof{}, "", err
+		}
+		expected, err := request.plan.ReleaseExecution.Digest()
+		if err != nil {
+			return runtimeProof{}, Stale, nil
+		}
+		if actual != expected || sealed.ValidateDefinition(request.plan.Definition) != nil {
+			return runtimeProof{}, Stale, nil
+		}
 	}
 
 	var proof runtimeProof
@@ -732,6 +759,9 @@ func revalidateCapabilities(ctx context.Context, tx pgx.Tx, request preparedRequ
 	}
 	if len(ids) == 0 {
 		return Applied, nil
+	}
+	if request.plan.ReleaseExecution != nil {
+		return revalidatePinnedCapabilities(ctx, tx, request)
 	}
 	actual := make([]executionevidence.CapabilityEntry, 0, len(ids))
 	for _, bound := range wanted {

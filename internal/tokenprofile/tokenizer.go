@@ -11,20 +11,45 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 	"unicode/utf8"
 
 	tiktoken "github.com/pkoukk/tiktoken-go"
-	"github.com/uniroute/unirouter/internal/modelprofile"
 	"golang.org/x/text/unicode/norm"
 )
 
 const (
+	KimiK26ID              = "tokenizer.kimi-k2.6"
+	KimiK26Version         = "1.0.0"
+	MiniMaxM27ID           = "tokenizer.minimax-m2.7"
+	MiniMaxM27Version      = "1.0.0"
 	MiniMaxM27SourceCommit = "d494266a4affc0d2995ba1fa35c8481cbd84294b"
 	MiniMaxM27SHA256       = "757622126525aeeb131756849d93298070ff3f0319c455ec8c5bb0f6b1cebbe8"
 	miniMaxM27ArtifactSize = 9_730_160
 )
+
+// The same exact registry serves execution and support advertisement. Model
+// catalog entries cannot grant support to an unimplemented tokenizer.
+var encoders = map[string]func([]byte) ([]int, error){
+	KimiK26ID + "@" + KimiK26Version:       encodeKimiK26,
+	MiniMaxM27ID + "@" + MiniMaxM27Version: encodeMiniMaxM27,
+}
+
+func Implementations() []string {
+	result := make([]string, 0, len(encoders))
+	for identity := range encoders {
+		result = append(result, identity)
+	}
+	slices.Sort(result)
+	return result
+}
+
+func Supports(id, version string) bool {
+	_, ok := encoders[id+"@"+version]
+	return ok
+}
 
 //go:embed assets/minimax-m2.7-tokenizer.json.gz
 var miniMaxM27TokenizerGZIP []byte
@@ -55,18 +80,11 @@ var miniMaxM27State struct {
 }
 
 func Count(profileID, profileVersion string, value []byte) (int, error) {
-	var (
-		ids []int
-		err error
-	)
-	switch profileID + "\x00" + profileVersion {
-	case modelprofile.TokenizerKimiK26ID + "\x00" + modelprofile.TokenizerKimiK26Version:
-		ids, err = encodeKimiK26(value)
-	case modelprofile.TokenizerMiniMaxM27ID + "\x00" + modelprofile.TokenizerMiniMaxM27Version:
-		ids, err = encodeMiniMaxM27(value)
-	default:
+	encode, ok := encoders[profileID+"@"+profileVersion]
+	if !ok {
 		return 0, fmt.Errorf("unsupported tokenizer profile %s@%s", profileID, profileVersion)
 	}
+	ids, err := encode(value)
 	if err != nil {
 		return 0, err
 	}

@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/uniroute/unirouter/internal/modeloperation"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 )
 
 const (
@@ -48,10 +50,14 @@ type DeploymentReleaseSelection struct {
 }
 
 type DeploymentReleaseAuthoringMutation struct {
-	PublicModelID int64                        `json:"public_model_id"`
-	Baseline      DeploymentReleaseBaseline    `json:"baseline"`
-	Selections    []DeploymentReleaseSelection `json:"selections"`
-	Reason        string                       `json:"reason"`
+	ProfileDefinitionDigest string                       `json:"profile_definition_digest,omitempty"`
+	PublicContextLimit      int                          `json:"public_context_limit,omitempty"`
+	PublicOutputLimit       int                          `json:"public_output_limit,omitempty"`
+	CapabilityApprovalIDs   []int64                      `json:"capability_approval_ids,omitempty"`
+	PublicModelID           int64                        `json:"public_model_id"`
+	Baseline                DeploymentReleaseBaseline    `json:"baseline"`
+	Selections              []DeploymentReleaseSelection `json:"selections"`
+	Reason                  string                       `json:"reason"`
 }
 
 type DeploymentReleaseAuthoringCommand struct {
@@ -190,6 +196,22 @@ func NormalizeDeploymentReleaseAuthoringCommand(
 func NormalizeDeploymentReleaseAuthoringMutation(
 	mutation DeploymentReleaseAuthoringMutation,
 ) (DeploymentReleaseAuthoringMutation, error) {
+	if mutation.ProfileDefinitionDigest == "" {
+		if mutation.PublicContextLimit != 0 || mutation.PublicOutputLimit != 0 || len(mutation.CapabilityApprovalIDs) > 0 {
+			return DeploymentReleaseAuthoringMutation{}, fmt.Errorf("%w: execution snapshot requires exact Profile definition", ErrInvalid)
+		}
+	} else {
+		if !modelprofile.IsDefinitionDigest(mutation.ProfileDefinitionDigest) || mutation.PublicContextLimit <= 0 || mutation.PublicOutputLimit <= 0 || len(mutation.CapabilityApprovalIDs) > 1024 {
+			return DeploymentReleaseAuthoringMutation{}, fmt.Errorf("%w: data Release execution pins", ErrInvalid)
+		}
+		mutation.CapabilityApprovalIDs = slices.Clone(mutation.CapabilityApprovalIDs)
+		slices.Sort(mutation.CapabilityApprovalIDs)
+		for i, id := range mutation.CapabilityApprovalIDs {
+			if id <= 0 || (i > 0 && id == mutation.CapabilityApprovalIDs[i-1]) {
+				return DeploymentReleaseAuthoringMutation{}, fmt.Errorf("%w: duplicate or invalid capability approval", ErrInvalid)
+			}
+		}
+	}
 	mutation.Selections = append([]DeploymentReleaseSelection(nil), mutation.Selections...)
 	mutation.Reason = strings.TrimSpace(mutation.Reason)
 	mutation.Baseline.StableReleaseRef = strings.ToLower(strings.TrimSpace(
@@ -231,6 +253,9 @@ func NormalizeDeploymentReleaseAuthoringMutation(
 	for index := range mutation.Selections {
 		selection := &mutation.Selections[index]
 		selection.OperationID = strings.TrimSpace(selection.OperationID)
+		if mutation.ProfileDefinitionDigest != "" && selection.OperationID != modelprofile.OperationOpenAIChat {
+			return DeploymentReleaseAuthoringMutation{}, fmt.Errorf("%w: data Release v1 supports typed Chat only", ErrInvalid)
+		}
 		if selection.DeploymentID <= 0 {
 			return DeploymentReleaseAuthoringMutation{}, fmt.Errorf("%w: selections[%d].deployment_id", ErrInvalid, index)
 		}

@@ -144,9 +144,9 @@ func (e modelExecutionProfileEvidence) metadata() map[string]interface{} {
 // apply the generic admission grammar before secret decryption, Freeze, attempt
 // creation, coordinator authorization, or provider I/O.
 func validateChatExecutionProfileRequest(body []byte, plan modelrouting.Plan) (modelExecutionProfileEvidence, error) {
-	profile, ok := modelprofile.Lookup(plan.ExecutionProfileID, plan.ExecutionProfileVersion)
-	if !ok {
-		return modelExecutionProfileEvidence{}, fmt.Errorf("unknown model execution profile %s@%s", plan.ExecutionProfileID, plan.ExecutionProfileVersion)
+	profile, err := plan.ExecutionProfile()
+	if err != nil {
+		return modelExecutionProfileEvidence{}, err
 	}
 	if plan.ReasoningProfile != profile.ReasoningProfile ||
 		plan.CacheUsageProfile != profile.CacheUsageProfile ||
@@ -459,13 +459,17 @@ func validateCurrentKimiChatStreamUsageRequest(envelope map[string]json.RawMessa
 		return "", nil
 	}
 	expectedProtocol := ""
-	switch strings.TrimSpace(plan.ExecutionProfileID) + "\x00" + strings.TrimSpace(plan.ExecutionProfileVersion) {
-	case "kimi.k2.6.api\x001.7.0", "kimi.k2.7-code.api\x001.3.0":
-		expectedProtocol = "protocol.kimi-openai-chat.v5"
-	case "kimi.k3.api\x001.9.0":
-		expectedProtocol = "protocol.kimi-openai-chat.k3.v5"
-	default:
-		return "", nil
+	if d := plan.Definition; d.Digest() != "" && d.Profile().Provider == "kimi" && (d.Profile().ProtocolProfile == "protocol.kimi-openai-chat.v5" || d.Profile().ProtocolProfile == "protocol.kimi-openai-chat.k3.v5") {
+		expectedProtocol = d.Profile().ProtocolProfile
+	} else {
+		switch strings.TrimSpace(plan.ExecutionProfileID) + "\x00" + strings.TrimSpace(plan.ExecutionProfileVersion) {
+		case "kimi.k2.6.api\x001.7.0", "kimi.k2.7-code.api\x001.3.0":
+			expectedProtocol = "protocol.kimi-openai-chat.v5"
+		case "kimi.k3.api\x001.9.0":
+			expectedProtocol = "protocol.kimi-openai-chat.k3.v5"
+		default:
+			return "", nil
+		}
 	}
 	if strings.TrimSpace(plan.ModelProtocolProfile) != expectedProtocol ||
 		strings.TrimSpace(plan.CacheUsageProfile) != "cache-usage.kimi-platform.v1" {
