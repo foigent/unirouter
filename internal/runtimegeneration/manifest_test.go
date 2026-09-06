@@ -88,3 +88,12 @@ func TestMiniMaxContinuationRequiresExplicitNewImplementation(t *testing.T) {
 	}
 	require.Equal(t, 2, checked)
 }
+
+func TestKimiK3EffortPinRequiresNewProbeImplementation(t *testing.T) {
+	ref := modelprofile.ImplementationReference{Kind: "capability_probe", ID: "unirouter.capability-probe.kimi-chat-stream-tools.v1@2.0.0"}
+	m := CurrentManifest([]string{"M114"})
+	require.NoError(t, m.Require("M114", []modelprofile.ImplementationReference{ref}))
+	m.Implementations = slices.DeleteFunc(slices.Clone(m.Implementations), func(v modelprofile.ImplementationReference) bool { return v == ref })
+	require.Error(t, m.Require("M114", []modelprofile.ImplementationReference{ref}))
+	require.NoError(t, m.Require("M114", []modelprofile.ImplementationReference{{Kind: "capability_probe", ID: "unirouter.capability-probe.kimi-chat-stream-tools.v1@1.0.0"}}))
+}

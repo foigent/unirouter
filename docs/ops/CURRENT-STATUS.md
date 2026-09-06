@@ -1,5 +1,19 @@
 # UniRouter Current Status
 
+## Kimi K3 default-effort qualification candidate — 2026-09-06
+
+Local 1.2.61/M114 adds an exact streamed-tools Probe revision for K3's existing
+provider-default `max` effort. Actual OpenClaw preflight rejected the five-binding
+data Release before Provider dispatch because this sixth qualification was
+missing. The independent Bundle adds one binding/selector against the retained
+Profile digest; it does not change the Profile, old Release or public limits.
+The shared parser and usage contract are unchanged. No Target or Agent success
+is inferred from this source candidate; development/test remained on backend
+1.2.57/M114, with 11/14 real tool loops complete at this cutoff.
+See [bounded design](../analysis/KIMI-K3-DEFAULT-EFFORT-20260906.md).
+经验文件无需变化.
+
+
 ## MiniMax tool-history continuation candidate — 2026-09-06
 
 Local 1.2.60/M114 adds explicit Highspeed/M3 reasoning successors, exact Probe

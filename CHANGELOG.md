@@ -4,6 +4,11 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.61] - 2026-09-06
+
+### Fixed
+- Add exact Kimi K3 default-effort qualification for streamed tool requests. A new Probe implementation revision and independent one-binding Bundle reuse the retained data Profile and shared wire validator; prior bindings, Releases and evidence remain unchanged.
+
 ## [1.2.60] - 2026-09-06
 
 ### Fixed
