@@ -5,7 +5,7 @@ usage() {
   cat <<'EOF'
 Usage:
   RUNTIME_VERSION=VERSION RUNTIME_COMMIT=FULL_COMMIT \
-    scripts/internal-target-build-images.sh
+    scripts/internal-target-build-images.sh [--frontend-only]
 
 Optional environment:
   GOPROXY                         Go module proxy chain passed to the backend
@@ -21,14 +21,24 @@ This internal development/test helper builds each component at most once for a
 clean, exact Git commit. Existing target tags are reused only when their OCI
 version, revision and UniRouter component labels match. It never overwrites an
 existing tag and never deletes images, containers, caches or volumes.
+--frontend-only builds/selects only the frontend; it makes no backend selection
+or compatibility claim. Retain the separately verified running backend identity.
 EOF
 }
 
+frontend_only=false
+if [[ $# -gt 1 ]]; then
+  usage >&2
+  exit 2
+fi
 if [[ $# -gt 0 ]]; then
   case "$1" in
     -h|--help)
       usage
       exit 0
+      ;;
+    --frontend-only)
+      frontend_only=true
       ;;
     *)
       echo "internal target image build: unknown argument: $1" >&2
@@ -130,8 +140,11 @@ validate_exact_target() {
   fi
 }
 
-backend_needs_build=true
-if docker image inspect "${backend_image}" >/dev/null 2>&1; then
+backend_needs_build=false
+if [[ "${frontend_only}" == false ]]; then
+  backend_needs_build=true
+fi
+if [[ "${frontend_only}" == false ]] && docker image inspect "${backend_image}" >/dev/null 2>&1; then
   validate_exact_target backend "${backend_image}"
   backend_needs_build=false
   echo "REUSE_EXISTING component=backend image=${backend_image}"
@@ -206,7 +219,9 @@ if [[ "${frontend_needs_build}" == true ]]; then
   echo "BUILT_ONCE component=frontend image=${frontend_image}"
 fi
 
-backend_image_id="$(docker image inspect --format '{{.Id}}' "${backend_image}")"
 frontend_image_id="$(docker image inspect --format '{{.Id}}' "${selected_frontend_image}")"
-printf 'SELECTED UNIROUTER_BACKEND_IMAGE=%s IMAGE_ID=%s\n' "${backend_image}" "${backend_image_id}"
+if [[ "${frontend_only}" == false ]]; then
+  backend_image_id="$(docker image inspect --format '{{.Id}}' "${backend_image}")"
+  printf 'SELECTED UNIROUTER_BACKEND_IMAGE=%s IMAGE_ID=%s\n' "${backend_image}" "${backend_image_id}"
+fi
 printf 'SELECTED UNIROUTER_FRONTEND_IMAGE=%s IMAGE_ID=%s\n' "${selected_frontend_image}" "${frontend_image_id}"

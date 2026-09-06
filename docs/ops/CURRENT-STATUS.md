@@ -1,5 +1,23 @@
 # UniRouter Current Status
 
+> Source candidate 1.2.58 corrects data Release UI authoring: public limits are
+> explicit and distinct from Deployment defaults; stable baseline limits may
+> prefill the form. It adds a frontend-only mode to the existing exact build
+> helper. No backend, schema, qualification or Release writer contract changes.
+>
+> Latest development/test readback is backend/frontend 1.2.57/M114 at f940b1c9.
+> GLM-5.3 Release 38 and M2.7 Release 39 completed real OpenClaw streamed tool
+> loops (2/14); answer quality is partial/failed respectively. Their UI-authored
+> output ceilings were narrowed to 65536 from 131072/204800. Historical evidence
+> remains valid; new corrective Releases and boundary preflights are pending.
+> DeepSeek data Publication committed with backend images and schema unchanged.
+> Flash Deployment 24 has successful Probes 150–154 / Approvals 131–135. Its
+> new Release is withheld until the UI can preserve the existing 384000 ceiling
+> independently of the 32768 default. Same-image full data-to-Agent acceptance
+> remains open. No new-model, Production or old-writer retirement claim.
+>
+> The following entries retain their earlier source/Target cutoff.
+>
 > Source candidate 1.2.57 adds closed normalization failure diagnostics to
 > existing failed nonstream Probe summaries. It does not change response
 > acceptance, qualification, usage, schema or Release semantics. Local checks

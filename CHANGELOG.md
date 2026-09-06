@@ -4,6 +4,18 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.58] - 2026-09-06
+
+### Fixed
+
+- Keep data Release public context/output ceilings distinct from Deployment
+  request defaults. Authoring exposes explicit limits, prefills only a stable
+  Release's existing bounds, and preserves idempotency across unchanged retries.
+  Legacy and initial baselines require explicit data limits; the existing server
+  remains the final Profile and baseline validator.
+- Support frontend-only development builds with the existing exact-source,
+  immutable-image and storage gates, without rebuilding or relabeling a backend.
+
 ## [1.2.57] - 2026-09-06
 
 ### Fixed

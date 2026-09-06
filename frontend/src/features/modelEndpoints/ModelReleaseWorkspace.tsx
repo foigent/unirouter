@@ -3,6 +3,7 @@ import {
   Banner,
   Button,
   Descriptions,
+  Input,
   Modal,
   Select,
   SideSheet,
@@ -28,6 +29,7 @@ import {
   modelDeploymentReleaseApi,
   type CanonicalDeploymentReleaseAuthoringReceipt,
   type CanonicalDeploymentReleaseAuthoringRequest,
+  type CanonicalDeploymentReleaseAuthoringOption,
   type CanonicalDeploymentReleaseCollection,
   type CanonicalDeploymentReleaseSelectionOption,
 } from '../../api/modelDeploymentReleases';
@@ -75,6 +77,10 @@ function newIdempotencyKey(scope: 'author' | 'lifecycle') {
 
 function selectionKey(selection: CanonicalDeploymentReleaseSelectionOption) {
   return `${selection.deployment_id}:${selection.operation_id}`;
+}
+
+function validPublicLimit(value: number) {
+  return Number.isSafeInteger(value) && value > 0;
 }
 
 function errorText(error: unknown, fallback: string) {
@@ -192,6 +198,8 @@ export default function ModelReleaseWorkspace({
   const [authorModelID, setAuthorModelID] = useState(0);
   const [authorSelections, setAuthorSelections] = useState<string[]>([]);
   const [authorReason, setAuthorReason] = useState('');
+  const [authorContextLimit, setAuthorContextLimit] = useState('');
+  const [authorOutputLimit, setAuthorOutputLimit] = useState('');
   const [authoring, setAuthoring] = useState(false);
   const [lifecycleReason, setLifecycleReason] = useState('');
   const [canaryBasisPoints, setCanaryBasisPoints] = useState(500);
@@ -297,12 +305,19 @@ export default function ModelReleaseWorkspace({
     && stagingCutoverReason.trim(),
   );
 
+  const resetAuthorLimits = (option?: CanonicalDeploymentReleaseAuthoringOption) => {
+    const stable = option?.authoring.baseline?.kind === 'stable' ? option.authoring.stable_release : undefined;
+    setAuthorContextLimit(validPublicLimit(stable?.public_context_limit || 0) ? String(stable!.public_context_limit) : '');
+    setAuthorOutputLimit(validPublicLimit(stable?.public_output_limit || 0) ? String(stable!.public_output_limit) : '');
+  };
+
   const openAuthor = () => {
     const initial = collection?.models.find(option => option.authoring.available)
       || collection?.models[0];
     setAuthorModelID(initial?.public_model.id || 0);
     setAuthorSelections([]);
     setAuthorReason('');
+    resetAuthorLimits(initial);
     authorIntent.current = null;
     setAuthorOpen(true);
   };
@@ -311,6 +326,7 @@ export default function ModelReleaseWorkspace({
     setAuthorModelID(Number(value));
     setAuthorSelections([]);
     setAuthorReason('');
+    resetAuthorLimits(collection?.models.find(option => option.public_model.id === Number(value)));
     authorIntent.current = null;
   };
 
@@ -332,10 +348,10 @@ export default function ModelReleaseWorkspace({
       return;
     }
     const definitionDigest = selected[0]?.profile_definition_digest;
-    const contextLimit = Math.min(...selected.map(option => option.max_context || 0));
-    const outputLimit = Math.min(...selected.map(option => option.default_max_output || 0));
-    if (definitionDigest && (contextLimit <= 0 || outputLimit <= 0)) {
-      Toast.error('候选 Deployment 缺少明确执行边界');
+    const contextLimit = Number(authorContextLimit);
+    const outputLimit = Number(authorOutputLimit);
+    if (definitionDigest && (!validPublicLimit(contextLimit) || !validPublicLimit(outputLimit))) {
+      Toast.error('请输入有效的公开上下文与输出上限（正整数）');
       return;
     }
     const selections = selected.map(option => ({ deployment_id: option.deployment_id, operation_id: option.operation_id }));
@@ -595,10 +611,15 @@ export default function ModelReleaseWorkspace({
     },
   ];
 
+  const selectedAuthorOptions = authorOption?.selection_options.filter(option => authorSelections.includes(selectionKey(option))) || [];
+  const selectedAuthorRevisions = new Set(selectedAuthorOptions.map(option => option.profile_definition_digest || ''));
+  const authorHasData = selectedAuthorOptions.some(option => Boolean(option.profile_definition_digest));
+  const authorDataLimitsValid = validPublicLimit(Number(authorContextLimit)) && validPublicLimit(Number(authorOutputLimit));
   const selectedAuthorReady = Boolean(
     authorOption?.authoring.available
     && authorOption.authoring.baseline
     && authorSelections.length > 0
+    && (!authorHasData || selectedAuthorRevisions.size !== 1 || authorDataLimitsValid)
     && authorReason.trim(),
   );
 
@@ -829,13 +850,25 @@ export default function ModelReleaseWorkspace({
                 <span className="ur-model-endpoint-name">
                   <Text code>deployment_id={option.deployment_id} · {option.operation_id}</Text>
                   <Text type="tertiary">{option.upstream_model || '未提供 upstream label'} · {option.connection_name || '未提供 connection label'}</Text>
-                  {option.profile_definition_digest && <Text type="tertiary">合同 {option.profile_definition_digest.slice(0, 12)} · context {option.max_context} / output {option.default_max_output} · {option.capability_approval_ids?.length || 0} 项资格批准</Text>}
+                  {option.profile_definition_digest && <Text type="tertiary">合同 {option.profile_definition_digest.slice(0, 12)} · Deployment 上下文 {option.max_context} / 请求默认输出 {option.default_max_output} · {option.capability_approval_ids?.length || 0} 项资格批准</Text>}
                 </span>
               </label>;
             })}
             {authorOption && authorOption.selection_options.length === 0 && <Text type="tertiary">服务端没有返回可 author 的 deployment operation。</Text>}
           </div>
         </div>
+
+        {authorHasData && <Space vertical align="start" style={{ width: '100%' }}>
+          <Text type="tertiary">公开上限独立于请求默认值；已有稳定 Release 的上限可预填，最终由服务端校验所选合同。</Text>
+          <label style={{ width: '100%' }}>
+            <Text strong>公开上下文上限</Text>
+            <Input aria-label="公开上下文上限" inputMode="numeric" value={authorContextLimit} onChange={setAuthorContextLimit} />
+          </label>
+          <label style={{ width: '100%' }}>
+            <Text strong>公开输出上限</Text>
+            <Input aria-label="公开输出上限" inputMode="numeric" value={authorOutputLimit} onChange={setAuthorOutputLimit} />
+          </label>
+        </Space>}
 
         <label style={{ width: '100%' }}>
           <Text strong>Authoring reason</Text>
