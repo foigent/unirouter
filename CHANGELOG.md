@@ -4,6 +4,18 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.57] - 2026-09-06
+
+### Fixed
+
+- Preserve bounded, safe diagnostics when a nonstream capability Probe cannot
+  normalize a successful HTTP response: closed failure stage, captured byte
+  count, completeness and SHA-256. Failed normalization no longer leaves an
+  unexplained default zero byte count. Response text, credentials and arbitrary
+  parser errors are excluded; usage and qualification authority stay unchanged.
+- Keep adapter error messages and unwrap semantics compatible. Existing Probe
+  summaries, contracts, approvals, schema and sealed Releases remain unchanged.
+
 ## [1.2.56] - 2026-09-05
 
 ### Fixed
