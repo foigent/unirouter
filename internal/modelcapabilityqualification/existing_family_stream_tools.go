@@ -10,6 +10,7 @@ import (
 const (
 	DeepSeekStreamFunctionToolsProbeContractID  = "unirouter.capability-probe.deepseek-chat-stream-tools.v1"
 	KimiStreamFunctionToolsProbeContractID      = "unirouter.capability-probe.kimi-chat-stream-tools.v1"
+	KimiStreamReasoningEffortProbeVersion       = "2.0.0"
 	MiniMaxM3StreamFunctionToolsProbeContractID = "unirouter.capability-probe.minimax-m3-chat-stream-tools.v1"
 )
 
@@ -67,6 +68,11 @@ func BuildExistingFamilyStreamFunctionToolsProbeRequest(b Binding) ([]byte, erro
 		} else {
 			return nil, ErrUnsupported
 		}
+	}
+	if b.ProbeContractID == KimiStreamFunctionToolsProbeContractID && b.ProbeContractVersion == KimiStreamReasoningEffortProbeVersion {
+		// This version qualifies the existing provider-default effort together
+		// with streamed tools. It does not prove differences between effort levels.
+		payload[reasoning.EffortControl.Field] = reasoning.EffortControl.ProviderDefault
 	}
 	if slices.Contains(reasoning.UnsupportedRequestFieldsWhileActive, "tool_choice") {
 		// Existing DeepSeek authority normalizes redundant auto to its exact

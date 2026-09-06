@@ -11,8 +11,13 @@ import (
 // cannot install an implementation or loosen its accepted protocol semantics.
 // Legacy contracts keep their exact historical tuple validation.
 var dataProbeImplementations = map[string]func(Binding, modelprofile.Profile) bool{
-	DeepSeekStreamFunctionToolsProbeContractID + "@1.0.0":  validExistingFamilyStreamComposition,
-	KimiStreamFunctionToolsProbeContractID + "@1.0.0":      validExistingFamilyStreamComposition,
+	DeepSeekStreamFunctionToolsProbeContractID + "@1.0.0": validExistingFamilyStreamComposition,
+	KimiStreamFunctionToolsProbeContractID + "@1.0.0":     validExistingFamilyStreamComposition,
+	KimiStreamFunctionToolsProbeContractID + "@" + KimiStreamReasoningEffortProbeVersion: func(b Binding, p modelprofile.Profile) bool {
+		return b.CapabilityID == modelprofile.CapabilityReasoningEffort &&
+			p.Provider == "kimi" && p.ProtocolProfile == "protocol.kimi-openai-chat.k3.v6" &&
+			p.ReasoningProfile == "reasoning.kimi-k3-effort.v2" && p.CacheUsageProfile == "cache-usage.kimi-platform.v1"
+	},
 	MiniMaxM3StreamFunctionToolsProbeContractID + "@1.0.0": validExistingFamilyStreamComposition,
 	MiniMaxPAYGM3ChatFunctionToolsProbeContractID + "@2.0.0": func(b Binding, p modelprofile.Profile) bool {
 		return compatibleMiniMaxM3StreamImplementation(p) &&
