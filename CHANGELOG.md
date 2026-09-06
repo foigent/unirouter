@@ -4,6 +4,21 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.62] - 2026-09-06
+
+### Fixed
+
+- Add exact MiniMax Highspeed data Profile and Probe revisions that allow absent
+  stream cache counters without granting cache authority. Nonstream cache
+  qualification remains strict; historical contracts and Releases stay unchanged.
+- Honor exact data Profile tool-index normalization without falling back to
+  legacy model-name dispatch; legacy APIs and streaming indexes remain unchanged.
+- Raise the Backend CI deadline from 30 to 35 minutes after a confirmed timeout,
+  preserving all tests and required checks.
+- Correct reasoning-effort Probe confirmation text to describe the selected exact
+  contract, including streamed requests and provider-default effort, instead of
+  claiming all probes use nonstreaming low effort. Probe behavior is unchanged.
+
 ## [1.2.61] - 2026-09-06
 
 ### Fixed

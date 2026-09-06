@@ -31,6 +31,8 @@ type ChatNonStreamMechanics struct {
 	RejectDuplicateMembers bool
 	NormalizeToolCallIndex bool
 	NormalizeRequestID     bool
+	// Set only by the validated immutable data Profile selector.
+	dataToolCallIndex bool
 }
 
 // ChatNonStreamPrepared contains only the bytes prepared for the caller's
@@ -43,6 +45,9 @@ type ChatNonStreamPrepared struct {
 }
 
 func validateChatNonStreamMechanics(mechanics ChatNonStreamMechanics) error {
+	if mechanics.dataToolCallIndex && (!mechanics.NormalizeToolCallIndex || !mechanics.RejectDuplicateMembers) {
+		return errInvalidChatNonStreamMechanics
+	}
 	if (mechanics.NormalizeToolCallIndex || mechanics.NormalizeRequestID) && !mechanics.RejectDuplicateMembers {
 		return errInvalidChatNonStreamMechanics
 	}
@@ -214,8 +219,8 @@ func PrepareOpenAICompatibleChatNonStreamDocument(
 		var normalized []byte
 		var changed bool
 		var err error
-		if miniMaxHighspeedToolCallIndexScope(provider, upstreamModel, protocolProfile) {
-			// Only the exact current Profile selector enables these mechanics.
+		if mechanics.dataToolCallIndex || miniMaxHighspeedToolCallIndexScope(provider, upstreamModel, protocolProfile) {
+			// An exact legacy or immutable data Profile selector enables these mechanics.
 			// Keep the exported triple-only normalizer's historical scope intact.
 			normalized, changed, err = normalizeOpenAICompatibleChatToolCallIndexDocument(body)
 		} else {

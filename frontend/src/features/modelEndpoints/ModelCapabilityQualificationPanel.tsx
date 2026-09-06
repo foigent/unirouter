@@ -47,7 +47,7 @@ const capabilityPresentation: Record<QualifiedCapabilityID, {
     description: '验证当前精确部署是否接受 typed reasoning_effort，并将供应商默认思考语义形成独立路由资格。',
     defaultReason: '已审阅当前环境的推理强度探测证据',
     emptyEvidence: '尚未运行 typed reasoning_effort probe。',
-    probeContractSummary: '服务端固定使用非流式 reasoning_effort=low、精确答案、reasoning 存在性与最终 usage 合同；不会保存私有思维文本。',
+    probeContractSummary: '服务端按当前精确探测合同选择推理强度、流式模式和测试请求，并验证响应与最终用量；推理强度可显式设置或采用供应商默认值。',
   },
   tools: {
     title: '能力验证 · Tools 请求面', shortName: 'Tools 请求面',

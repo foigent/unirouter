@@ -219,6 +219,14 @@ func openAIChatRuntimeCapabilityAllowed(binding Binding) bool {
 	return slices.Contains(capabilities, binding.CapabilityID)
 }
 
+// The new cache Probe is data-only and requires its exact immutable composition.
+// Keep all legacy v2 semantics, including nonstream cache-hit qualification.
+func usesOpenAIChatRuntimeProbeSemantics(b Binding) bool {
+	return b.ProbeContractVersion == OpenAIChatRuntimeFunctionToolsProbeContractV2 ||
+		(b.ProbeContractID == MiniMaxPAYGM2ChatFunctionToolsProbeContractID && b.ProbeContractVersion == "3.0.0" &&
+			b.definition != nil && b.validateDataDefinition() == nil)
+}
+
 func openAIChatRuntimeProbePrompt() string {
 	// The provider-reported prompt token count, not this local construction,
 	// is the qualification authority. A deterministic long prefix makes the
@@ -255,7 +263,7 @@ func BuildOpenAIChatFunctionToolsProbeRequest(binding Binding) ([]byte, error) {
 		return nil, err
 	}
 	prompt := "Call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly."
-	if binding.ProbeContractVersion == OpenAIChatRuntimeFunctionToolsProbeContractV2 && isMiniMaxFunctionToolsProbe(binding.ProbeContractID) {
+	if usesOpenAIChatRuntimeProbeSemantics(binding) && isMiniMaxFunctionToolsProbe(binding.ProbeContractID) {
 		prompt = openAIChatRuntimeProbePrompt()
 	}
 	payload := map[string]interface{}{
@@ -299,7 +307,7 @@ func resolveOpenAIChatFunctionToolsBinding(binding Binding) (modelprofile.Profil
 	want, ok := openAIChatFunctionToolsIdentity(binding)
 	versionAllowed := binding.ProbeContractVersion == OpenAIChatFunctionToolsProbeContractVersion &&
 		binding.CapabilityID == modelprofile.CapabilityFunctionTools
-	if binding.ProbeContractVersion == OpenAIChatRuntimeFunctionToolsProbeContractV2 {
+	if usesOpenAIChatRuntimeProbeSemantics(binding) {
 		versionAllowed = openAIChatRuntimeCapabilityAllowed(binding)
 	}
 	if !ok || !versionAllowed ||
@@ -429,13 +437,13 @@ func ValidateNormalizedOpenAIChatFunctionToolsForBinding(
 		if len(choice.Message.Content) == 0 || json.Unmarshal(choice.Message.Content, &replayContent) != nil || strings.TrimSpace(replayContent) == "" {
 			return observation, invalidOpenAIChatFunctionTools("tool_calls")
 		}
-		if binding.ProbeContractVersion == OpenAIChatRuntimeFunctionToolsProbeContractV2 {
+		if usesOpenAIChatRuntimeProbeSemantics(binding) {
 			if !hasExactEmbeddedThinking(replayContent) {
 				return observation, invalidOpenAIChatFunctionTools("reasoning")
 			}
 			observation.ReasoningObserved = true
 		}
-	} else if binding.ProbeContractVersion == OpenAIChatRuntimeFunctionToolsProbeContractV2 {
+	} else if usesOpenAIChatRuntimeProbeSemantics(binding) {
 		var reasoning string
 		if len(choice.Message.Reasoning) == 0 || json.Unmarshal(choice.Message.Reasoning, &reasoning) != nil || strings.TrimSpace(reasoning) == "" {
 			return observation, invalidOpenAIChatFunctionTools("reasoning")
@@ -469,7 +477,7 @@ func ValidateNormalizedOpenAIChatFunctionToolsForBinding(
 	observation.TotalTokens = total
 	observation.CacheReadCounterObserved = cacheObserved
 	observation.CachedTokens = cached
-	if binding.ProbeContractVersion == OpenAIChatRuntimeFunctionToolsProbeContractV2 && isMiniMaxFunctionToolsProbe(binding.ProbeContractID) {
+	if usesOpenAIChatRuntimeProbeSemantics(binding) && isMiniMaxFunctionToolsProbe(binding.ProbeContractID) {
 		if prompt < 512 || !cacheObserved || cached < 0 || cached > prompt {
 			return observation, invalidOpenAIChatFunctionTools("cache_usage")
 		}

@@ -1,5 +1,23 @@
 # UniRouter Current Status
 
+## Highspeed stream-cache composition candidate — 2026-09-06
+
+Local 1.2.62/M114 adds an immutable Highspeed data Profile and exact Probe
+revisions using existing optional stream-cache semantics. Eligible nonstream
+cache qualification remains strict. Data Profile index normalization now reaches
+the existing implementation without a second legacy-name lookup. Old contracts,
+Releases and streaming index semantics remain unchanged.
+See [bounded design](../analysis/MINIMAX-HIGHSPEED-STREAM-CACHE-20260906.md).
+
+At the recorded development/test cutoff, both backend generations are 1.2.61/M114
+and real OpenClaw protocol coverage is 13/14. M3 Release55/Slot3 completed two
+requests and three reads; each has one Provider attempt and terminal settlement.
+Highspeed is incomplete and paid testing is paused at its cumulative 23-call /
+CNY8.61426 reservation under the 30-call / CNY10 cap. This source candidate does
+not establish Target deployment, new qualification or Agent success. No new-model
+onboarding or legacy-writer retirement claim. 经验文件无需变化.
+
+
 ## Kimi K3 default-effort qualification candidate — 2026-09-06
 
 Local 1.2.61/M114 adds an exact streamed-tools Probe revision for K3's existing

@@ -38,12 +38,12 @@ func dataChatNonStreamMechanics(in ResponseInput) (ChatNonStreamMechanics, bool,
 		if p.Provider != "kimi" {
 			return ChatNonStreamMechanics{}, false, fmt.Errorf("Kimi normalizer provider mismatch")
 		}
-		return ChatNonStreamMechanics{RejectDuplicateMembers: true, NormalizeToolCallIndex: true}, true, nil
+		return ChatNonStreamMechanics{RejectDuplicateMembers: true, NormalizeToolCallIndex: true, dataToolCallIndex: true}, true, nil
 	case "protocol.minimax-m2-openai-chat.v7", "protocol.minimax-m2-openai-chat.v8":
 		if p.Provider != "minimax" {
 			return ChatNonStreamMechanics{}, false, fmt.Errorf("MiniMax normalizer provider mismatch")
 		}
-		return ChatNonStreamMechanics{RejectDuplicateMembers: true, NormalizeToolCallIndex: true}, true, nil
+		return ChatNonStreamMechanics{RejectDuplicateMembers: true, NormalizeToolCallIndex: true, dataToolCallIndex: true}, true, nil
 	default:
 		return ChatNonStreamMechanics{}, false, nil
 	}
