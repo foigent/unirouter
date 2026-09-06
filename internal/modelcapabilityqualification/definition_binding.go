@@ -11,6 +11,13 @@ import (
 // cannot install an implementation or loosen its accepted protocol semantics.
 // Legacy contracts keep their exact historical tuple validation.
 var dataProbeImplementations = map[string]func(Binding, modelprofile.Profile) bool{
+	MiniMaxM27StreamFunctionToolsProbeContractID + "@2.0.0": func(b Binding, p modelprofile.Profile) bool {
+		return compatibleMiniMaxM2OptionalStreamCache(p) && streamToolCapability(b.CapabilityID)
+	},
+	MiniMaxPAYGM2ChatFunctionToolsProbeContractID + "@3.0.0": func(b Binding, p modelprofile.Profile) bool {
+		return compatibleMiniMaxM2OptionalStreamCache(p) &&
+			(b.CapabilityID == modelprofile.CapabilityCacheReadUsage || b.CapabilityID == modelprofile.CapabilityPromptCache)
+	},
 	DeepSeekStreamFunctionToolsProbeContractID + "@1.0.0": validExistingFamilyStreamComposition,
 	KimiStreamFunctionToolsProbeContractID + "@1.0.0":     validExistingFamilyStreamComposition,
 	KimiStreamFunctionToolsProbeContractID + "@" + KimiStreamReasoningEffortProbeVersion: func(b Binding, p modelprofile.Profile) bool {
@@ -35,6 +42,14 @@ var dataProbeImplementations = map[string]func(Binding, modelprofile.Profile) bo
 		return p.Provider == "minimax" && compatibleMiniMaxM2StreamImplementation(p) &&
 			(b.CapabilityID == modelprofile.CapabilityCacheReadUsage || b.CapabilityID == modelprofile.CapabilityPromptCache)
 	},
+}
+
+// This composition changes only explicit-stream cache-counter eligibility.
+// Historical Probe implementations retain their original accepted tuples.
+func compatibleMiniMaxM2OptionalStreamCache(p modelprofile.Profile) bool {
+	return p.Provider == "minimax" && p.ProtocolProfile == "protocol.minimax-m2-openai-chat.v8" &&
+		p.ReasoningProfile == "reasoning.minimax-m2-required-embedded.v2" &&
+		p.CacheUsageProfile == "cache-usage.minimax-m27-openai.v3"
 }
 
 func compatibleMiniMaxM2StreamImplementation(p modelprofile.Profile) bool {
