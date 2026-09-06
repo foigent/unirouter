@@ -636,6 +636,7 @@ jobs:
           scripts/release-worktree-retention-maintenance.sh --help >/dev/null
           scripts/test-release-worktree-retention.sh
           scripts/test-docker-image-retention-report.sh
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-internal-target-build-images.py
           grep -F 'location = /favicon.ico' frontend/nginx.conf
           grep -F 'return 204;' frontend/nginx.conf
           internal_target_compose="$(docker compose \

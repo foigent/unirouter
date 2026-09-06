@@ -1916,6 +1916,15 @@ docker compose \
 
 #### 9.10.1 development/test schema-ceiling 部署的唯一受支持顺序
 
+仅前端修复可在 exact clean worktree 使用
+`scripts/internal-target-build-images.sh --frontend-only`。此模式保留源码、锁、
+存储和不可变标签校验，只输出前端的 `SELECTED` 身份；不会检查、构建或重新
+标记 backend，也不证明前后端兼容。部署前核对当前 backend 的精确镜像、既有
+API 合同和完整 Compose 配置，保留其运行身份。只有前端服务的镜像发生变化时，
+使用已冻结的 Compose chain `up -d --no-build --no-deps --force-recreate frontend`；
+随后回读前端镜像、页面版本以及 backend 容器、schema、Release/Slot 均未改变。
+组件可以有不同的精确提交标识，不得把保留的 backend 冒充当前 frontend 提交。
+
 development/test 的现存 Compose project 是 `unirouter`，不是根据当前
 worktree 目录名推导的默认值。每次部署必须显式传入
 `--project-name unirouter`，并显式列出完整 Compose file chain。发布前先从

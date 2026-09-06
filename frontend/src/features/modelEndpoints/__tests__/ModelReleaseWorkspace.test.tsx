@@ -464,13 +464,97 @@ describe('ModelReleaseWorkspace', () => {
     renderWorkspace();
     fireEvent.click((await screen.findByText('编排新 Release')).closest('button')!);
     fireEvent.click(await screen.findByLabelText('选择 deployment 41 openai.responses.v1'));
+    expect(screen.getByLabelText('公开上下文上限')).toHaveValue('');
+    expect(screen.getByLabelText('公开输出上限')).toHaveValue('');
+    fireEvent.change(screen.getByLabelText('公开上下文上限'), { target: { value: '128000' } });
+    fireEvent.change(screen.getByLabelText('公开输出上限'), { target: { value: '8192' } });
     fireEvent.change(screen.getByLabelText('Authoring reason'), { target: { value: 'qualified data revision' } });
     fireEvent.click(screen.getByRole('button', { name: '生成 Sealed Validated Release' }));
     await waitFor(() => expect(mocks.author).toHaveBeenCalledTimes(1));
     expect(mocks.author.mock.calls[0][0]).toMatchObject({ profile_definition_digest: digest,
-      public_context_limit: 128000, public_output_limit: 4096, capability_approval_ids: [3, 8] });
+      public_context_limit: 128000, public_output_limit: 8192, capability_approval_ids: [3, 8] });
     expect(mocks.activateInitial).not.toHaveBeenCalled();
     expect(mocks.cutoverLegacy).not.toHaveBeenCalled();
+  });
+
+  it('preserves stable public ceilings independently of candidate defaults and retries by final payload', async () => {
+    vi.spyOn(Toast, 'error').mockImplementation(() => '' as any);
+    const model = collection.models[0];
+    mocks.releaseList.mockResolvedValue({ ...collection, models: [{ ...model,
+      authoring: { ...model.authoring, baseline: { ...model.authoring.baseline, kind: 'stable' },
+        stable_release: { ...model.authoring.stable_release, public_output_limit: 384000 } },
+      selection_options: [{ ...model.selection_options[0], profile_definition_digest: 'c'.repeat(64),
+        max_context: 1000000, default_max_output: 32768, capability_approval_ids: [1] }] }] });
+    mocks.author.mockRejectedValue(new TypeError('response lost'));
+    renderWorkspace();
+    fireEvent.click((await screen.findByText('编排新 Release')).closest('button')!);
+    fireEvent.click(await screen.findByLabelText('选择 deployment 41 openai.responses.v1'));
+    expect(screen.getByLabelText('公开上下文上限')).toHaveValue('1000000');
+    expect(screen.getByLabelText('公开输出上限')).toHaveValue('384000');
+    expect(screen.getByText(/请求默认输出 32768/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Authoring reason'), { target: { value: 'preserve stable bounds' } });
+    const submit = screen.getByRole('button', { name: '生成 Sealed Validated Release' });
+    fireEvent.click(submit);
+    await waitFor(() => expect(Toast.error).toHaveBeenCalledTimes(1));
+    expect(mocks.author.mock.calls[0][0]).toMatchObject({ public_context_limit: 1000000, public_output_limit: 384000 });
+    fireEvent.change(screen.getByLabelText('公开输出上限'), { target: { value: '38400' } });
+    fireEvent.change(screen.getByLabelText('公开输出上限'), { target: { value: '384000' } });
+    fireEvent.click(submit);
+    await waitFor(() => expect(Toast.error).toHaveBeenCalledTimes(2));
+    expect(mocks.author.mock.calls[1][1]).toBe(mocks.author.mock.calls[0][1]);
+    fireEvent.change(screen.getByLabelText('公开输出上限'), { target: { value: '131072' } });
+    fireEvent.click(submit);
+    await waitFor(() => expect(Toast.error).toHaveBeenCalledTimes(3));
+    expect(mocks.author.mock.calls[2][1]).not.toBe(mocks.author.mock.calls[0][1]);
+    expect(mocks.author.mock.calls[2][0]).toMatchObject({ public_output_limit: 131072 });
+  });
+
+  it('requires explicit initial data limits and refuses invalid bounds before authoring', async () => {
+    const model = collection.models[0];
+    mocks.releaseList.mockResolvedValue({ ...collection, models: [{ ...model,
+      authoring: { ...model.authoring, baseline: { kind: 'initial', expected_slot_version: 0 } },
+      selection_options: [{ ...model.selection_options[0], profile_definition_digest: 'd'.repeat(64),
+        max_context: 1000000, default_max_output: 32768, capability_approval_ids: [1] }] }] });
+    renderWorkspace();
+    fireEvent.click((await screen.findByText('编排新 Release')).closest('button')!);
+    fireEvent.click(await screen.findByLabelText('选择 deployment 41 openai.responses.v1'));
+    expect(screen.getByLabelText('公开上下文上限')).toHaveValue('');
+    expect(screen.getByLabelText('公开输出上限')).toHaveValue('');
+    fireEvent.change(screen.getByLabelText('Authoring reason'), { target: { value: 'initial explicit bounds' } });
+    const submit = screen.getByRole('button', { name: '生成 Sealed Validated Release' });
+    for (const field of ['公开上下文上限', '公开输出上限']) {
+      fireEvent.change(screen.getByLabelText('公开上下文上限'), { target: { value: '1000000' } });
+      fireEvent.change(screen.getByLabelText('公开输出上限'), { target: { value: '384000' } });
+      for (const value of ['', '0', '-1', '1.5', '9007199254740992', 'Infinity', 'invalid']) {
+        fireEvent.change(screen.getByLabelText(field), { target: { value } });
+        expect(submit).toBeDisabled();
+        fireEvent.click(submit);
+        expect(mocks.author).not.toHaveBeenCalled();
+      }
+    }
+  });
+
+  it('clears public limits when switching from a stable model to an initial model', async () => {
+    const model = collection.models[0];
+    const dataSelection = { ...model.selection_options[0], profile_definition_digest: 'e'.repeat(64),
+      max_context: 1000000, default_max_output: 32768, capability_approval_ids: [1] };
+    mocks.releaseList.mockResolvedValue({ ...collection, models: [{ ...model,
+      authoring: { ...model.authoring, baseline: { ...model.authoring.baseline, kind: 'stable' } },
+      selection_options: [dataSelection] }, { ...model,
+      public_model: { ...model.public_model, id: 8, display_name: 'Other model', model_name: 'other' },
+      authoring: { ...model.authoring, baseline: { kind: 'initial', expected_slot_version: 0 } },
+      selection_options: [{ ...dataSelection, deployment_id: 42 }] }] });
+    renderWorkspace();
+    fireEvent.click((await screen.findByText('编排新 Release')).closest('button')!);
+    fireEvent.click(await screen.findByLabelText('选择 deployment 41 openai.responses.v1'));
+    fireEvent.change(screen.getByLabelText('公开输出上限'), { target: { value: '384000' } });
+    fireEvent.click(screen.getByRole('combobox'));
+    fireEvent.click(await screen.findByText('Other model · other'));
+    fireEvent.click(await screen.findByLabelText('选择 deployment 42 openai.responses.v1'));
+    expect(screen.getByLabelText('公开上下文上限')).toHaveValue('');
+    expect(screen.getByLabelText('公开输出上限')).toHaveValue('');
+    expect(screen.getByRole('button', { name: '生成 Sealed Validated Release' })).toBeDisabled();
+    expect(mocks.author).not.toHaveBeenCalled();
   });
 
   it('rejects mixed legacy and data definitions before creating a Release', async () => {
