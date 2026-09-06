@@ -13,14 +13,20 @@ import (
 // implementations. It neither grants qualification nor owns tool assembly,
 // downstream delivery, or settlement. Historical M111/M113 use no preparer.
 type ToolStreamEnvelope struct {
-	contract modelprofile.ChatStreamContract
-	model    string
-	kimi     *KimiChatStreamState
+	contract    modelprofile.ChatStreamContract
+	model       string
+	kimi        *KimiChatStreamState
+	miniMaxTier bool
 }
 
 func NewToolStreamEnvelope(protocol, provider, model, cache string) (*ToolStreamEnvelope, error) {
 	var kimi bool
 	switch protocol {
+	case "protocol.minimax-m3-openai-chat.v11":
+		if provider != "minimax" || cache != "cache-usage.minimax-openai.v2" || model == "" {
+			return nil, fmt.Errorf("MiniMax tool stream component mismatch")
+		}
+		return &ToolStreamEnvelope{model: model, miniMaxTier: true}, nil
 	case "protocol.deepseek-openai-chat.v5":
 		if provider != "deepseek" || cache != "cache-usage.deepseek-v4.v1" {
 			return nil, fmt.Errorf("DeepSeek tool stream component mismatch")
@@ -58,6 +64,10 @@ func NewToolStreamEnvelope(protocol, provider, model, cache string) (*ToolStream
 func (s *ToolStreamEnvelope) Prepare(data []byte) (body []byte, skip bool, err error) {
 	if s == nil {
 		return data, false, nil
+	}
+	if s.miniMaxTier {
+		body, err := prepareMiniMaxM3StreamTier(data, s.model)
+		return body, false, err
 	}
 	if err := strictjson.Validate(data); err != nil {
 		return nil, false, err

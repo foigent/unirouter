@@ -15,7 +15,7 @@ var dataProbeImplementations = map[string]func(Binding, modelprofile.Profile) bo
 	KimiStreamFunctionToolsProbeContractID + "@1.0.0":      validExistingFamilyStreamComposition,
 	MiniMaxM3StreamFunctionToolsProbeContractID + "@1.0.0": validExistingFamilyStreamComposition,
 	MiniMaxPAYGM3ChatFunctionToolsProbeContractID + "@2.0.0": func(b Binding, p modelprofile.Profile) bool {
-		return p.Provider == "minimax" && p.ProtocolProfile == "protocol.minimax-m3-openai-chat.v10" &&
+		return p.Provider == "minimax" && slices.Contains([]string{"protocol.minimax-m3-openai-chat.v10", "protocol.minimax-m3-openai-chat.v11"}, p.ProtocolProfile) &&
 			p.ReasoningProfile == "reasoning.minimax-m3-adaptive-embedded.v2" && p.CacheUsageProfile == "cache-usage.minimax-openai.v2" &&
 			(b.CapabilityID == modelprofile.CapabilityCacheReadUsage || b.CapabilityID == modelprofile.CapabilityPromptCache)
 	},

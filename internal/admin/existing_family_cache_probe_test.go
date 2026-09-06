@@ -17,6 +17,7 @@ import (
 func TestExistingFamilyDataCacheProbeUsesFrozenNormalizer(t *testing.T) {
 	for _, tc := range []struct{ id, version, protocol string }{
 		{"minimax.m3.payg", "1.2.0", "protocol.minimax-m3-openai-chat.v10"},
+		{"minimax.m3.payg", "1.2.0", "protocol.minimax-m3-openai-chat.v11"},
 		{"minimax.m2.7-highspeed.payg", "1.2.0", "protocol.minimax-m2-openai-chat.v8"},
 		{"minimax.m2.7.payg", "1.3.0", "protocol.minimax-m27-openai-chat.v1"},
 	} {
