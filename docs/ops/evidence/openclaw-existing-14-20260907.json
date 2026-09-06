@@ -1,0 +1,355 @@
+{
+  "scope": "Existing14model real OpenClaw streamed tool loops; exact reports retain per-run Artifact identities; not14reruns on1.2.62",
+  "protocol_passed": 14,
+  "total_models": 14,
+  "quality": {
+    "passed": 2,
+    "partial": 9,
+    "failed": 3
+  },
+  "cost_evidence": "conservative exposure upper bounds, not provider invoices; failed/unknown prior reservations retained",
+  "rows": [
+    {
+      "model": "deepseek-v4-flash",
+      "protocol": "passed",
+      "answer_quality": "partial",
+      "cumulative_attempt_upper_bound": 9,
+      "cumulative_exposure_upper_cny": 1.06628,
+      "request_ids": [
+        "op_83924a8af702ef30f4a287ebbdff7b8d",
+        "op_d8b4857e114b5df2de4ea6aa1bcd5b6e",
+        "op_f6e723ad6cbb2a380c8c579b733510b4"
+      ],
+      "release_ids": [
+        42
+      ],
+      "request_execution_snapshot_hashes": [
+        "mrs1_1911dc219a7e05e8e4867d613ba00487e27ca869b74694b75ee97e88706be0ac",
+        "mrs1_a438c02f686fb840aa763ead242628b41c3a5787384bbd6d397b2f70aefb959b",
+        "mrs1_e92e0a5abedfc85075dc19f6351b59755a33f91bc91efc338c2e277a4d595c72"
+      ],
+      "source_report": "deepseek-flash-data-release-openclaw-result-20260906.json",
+      "source_report_sha256": "78eda633c439c9ea9f1fa87f1c381038b3b9eba2ccc3b5f28e42dbea7323d152",
+      "target_invocation": "t-wl06w7sylgxxzb4",
+      "fallback": false,
+      "client_elapsed_ms": 59487.888625,
+      "performance_comparison": "not_comparable_to_direct_provider_sample"
+    },
+    {
+      "model": "deepseek-v4-pro",
+      "protocol": "passed",
+      "answer_quality": "partial",
+      "cumulative_attempt_upper_bound": 8,
+      "cumulative_exposure_upper_cny": 2.57577,
+      "request_ids": [
+        "op_bd2377707be8fda3c4691d5e431f4743",
+        "op_fcbc79448022ac1be0d1d452088b960d"
+      ],
+      "release_ids": [
+        43
+      ],
+      "request_execution_snapshot_hashes": [
+        "mrs1_6185e3020994397a50ca8e1c900a4f2c485a8ea83916f6298f16281f57599334",
+        "mrs1_a211054e0a45f44ed9b2f0ef760a9437134354f6c929d22508dca0680e89b3f3"
+      ],
+      "source_report": "deepseek-pro-data-release-openclaw-result-20260906.json",
+      "source_report_sha256": "196e33dfe5860a66bf54bcca7b3d2e4fde3cf6f52c71b8ff94381b1d7cd68d67",
+      "target_invocation": "t-wl06w7vlrsjfrwg",
+      "fallback": false,
+      "client_elapsed_ms": 34643.24458300001,
+      "performance_comparison": "not_comparable_to_direct_provider_sample"
+    },
+    {
+      "model": "kimi-k2.6",
+      "protocol": "passed",
+      "answer_quality": "failed",
+      "cumulative_attempt_upper_bound": 10,
+      "cumulative_exposure_upper_cny": 2.72847,
+      "request_ids": [
+        "op_66148d1bad8cc294c60909f4356269a8",
+        "op_c3eb5f8e6332674db1938ce00e8597e4"
+      ],
+      "release_ids": [
+        50
+      ],
+      "request_execution_snapshot_hashes": [
+        "mrs1_590ee815c5970a84a577060d7d72ceb326a1020251058d8da2ae518f0e58b62e",
+        "mrs1_f04a60cc52710bfb7852ce93dfe00a5f7dbe31be4a6d8670e87c5b5d67c84e9f"
+      ],
+      "source_report": "kimi26-data-release-openclaw-result-20260906.json",
+      "source_report_sha256": "214a650800267ee89529ec415ae62b390735c9f5398ae4fa336f531274bc46d7",
+      "target_invocation": "t-wl06w8kalo2x3wg",
+      "fallback": false,
+      "client_elapsed_ms": 72651.667208,
+      "performance_comparison": "not_comparable_to_direct_provider_sample"
+    },
+    {
+      "model": "kimi-k2.7-code",
+      "protocol": "passed",
+      "answer_quality": "partial",
+      "cumulative_attempt_upper_bound": 8,
+      "cumulative_exposure_upper_cny": 2.5506,
+      "request_ids": [
+        "op_2d914236ca0be40bfde669bc77ba410f",
+        "op_66d2a75aac6112136ee38c857e4db629"
+      ],
+      "release_ids": [
+        51
+      ],
+      "request_execution_snapshot_hashes": [
+        "mrs1_53ef4081d57555af5e41a22442d1a75025b4129b28c87f0726749970a51f3a22",
+        "mrs1_d225a3b5f33bf2400a92d1624a17a26be312b8aa5668b5366bfc38208c088c0a"
+      ],
+      "source_report": "kimi27code-data-release-openclaw-result-20260906.json",
+      "source_report_sha256": "abe2ec1d61813f03b00c8aaa04490ea18084af46a366fe0b35fa6b5dc4b15ce3",
+      "target_invocation": "t-wl06w8m3xu0baio",
+      "fallback": false,
+      "client_elapsed_ms": 93028.193792,
+      "performance_comparison": "not_comparable_to_direct_provider_sample"
+    },
+    {
+      "model": "kimi-k3",
+      "protocol": "passed",
+      "answer_quality": "partial",
+      "cumulative_attempt_upper_bound": 9,
+      "cumulative_exposure_upper_cny": 2.72674,
+      "request_ids": [
+        "op_1687e0d2ef66c37c5061a24fae2b192b",
+        "op_5d7a2efda791384753262f7bdbbb95dd"
+      ],
+      "release_ids": [
+        53
+      ],
+      "request_execution_snapshot_hashes": [
+        "mrs1_197d9a641ebd52c58c7046d8bb6aa3badb19026e2ca6f5b6ad5be4e27672e376",
+        "mrs1_260decfb60be9f7d65bb6768ae7170329409e66131cc2e92bfe9bcdec4e5f52a"
+      ],
+      "source_report": "kimi3-data-release-openclaw-result-20260906.json",
+      "source_report_sha256": "9e9bd29fc6ef722f70d0ddf5ff16399153932ffbd65863585cd6d5d4c1b7a6ef",
+      "target_invocation": "t-wl06w923wqlahvk",
+      "fallback": false,
+      "client_elapsed_ms": 55782.566834,
+      "performance_comparison": "not_comparable_to_direct_provider_sample"
+    },
+    {
+      "model": "minimax-m3",
+      "protocol": "passed",
+      "answer_quality": "partial",
+      "cumulative_attempt_upper_bound": 22,
+      "cumulative_exposure_upper_cny": 7.80076,
+      "request_ids": [
+        "op_4ae37ecb7cac26c8bdadcd7e22d099ec",
+        "op_94ca21c21158effd4eea19c2052dbd6a"
+      ],
+      "release_ids": [
+        55
+      ],
+      "request_execution_snapshot_hashes": [
+        "mrs1_487d6714a9280f8a0b44de901abd059ad968cffc8ecb91f8e32198a91b36a716",
+        "mrs1_f131ad26835bd4fdca530ad52cf3073db8279910ee6764651249f3f80b24c3c1"
+      ],
+      "source_report": "m3-data-release-openclaw-result-20260906.json",
+      "source_report_sha256": "107676a549656834e7e29a2aba5ece77f693ce179fff7f9b868b7b0e20748560",
+      "target_invocation": "t-wl06w99yss4oem8",
+      "fallback": false,
+      "client_elapsed_ms": 37857.965708,
+      "performance_comparison": "not_comparable_to_direct_provider_sample"
+    },
+    {
+      "model": "minimax-m2.7",
+      "protocol": "passed",
+      "answer_quality": "failed",
+      "cumulative_attempt_upper_bound": 26,
+      "cumulative_exposure_upper_cny": 9.25714,
+      "request_ids": [
+        "op_196f2efcf298b4854c8d3f2b8351ec55",
+        "op_ac9ee39458aa32bf77db8e6760f6cdc4"
+      ],
+      "release_ids": [
+        39
+      ],
+      "request_execution_snapshot_hashes": [],
+      "source_report": "minimax-m2.7-data-release-openclaw-result-20260906.json",
+      "source_report_sha256": "a4ab4b052bc5026a9b458ab0ed7bf66de228e216c3e418c1e6e3b343828e8e6c",
+      "target_invocation": "t-wl06w7gut8hs0sg",
+      "fallback": false,
+      "client_elapsed_ms": 35636.238208,
+      "performance_comparison": "not_comparable_to_direct_provider_sample"
+    },
+    {
+      "model": "minimax-m2.7-highspeed",
+      "protocol": "passed",
+      "answer_quality": "partial",
+      "cumulative_attempt_upper_bound": 33,
+      "cumulative_exposure_upper_cny": 7.35316,
+      "request_ids": [
+        "op_fa84b4e192cfc3f6a80a3a4191050cab",
+        "op_ff4069dba0ecd12fba8386eb72597138"
+      ],
+      "release_ids": [
+        56
+      ],
+      "request_execution_snapshot_hashes": [
+        "mrs1_0b21e6a09efa2f9574405c11baf37e3dd67ea30a255a520082c2a4b3c86b2adf",
+        "mrs1_d105c30a25f8123aab375bdc1cc4ab4d40d79fb78cc21ef2848f7e2080b61de6"
+      ],
+      "source_report": "highspeed-data-release-openclaw-result-20260907.json",
+      "source_report_sha256": "e6db02600bcfd47ac21463393a57d4bc49fb695ed9519b08b38c9fafbda5ad29",
+      "target_invocation": "t-wl06wa77v2owb28",
+      "fallback": false,
+      "client_elapsed_ms": 47428.7365,
+      "performance_comparison": "not_comparable_to_direct_provider_sample"
+    },
+    {
+      "model": "glm-5",
+      "protocol": "passed",
+      "answer_quality": "passed",
+      "cumulative_attempt_upper_bound": 8,
+      "cumulative_exposure_upper_cny": 2.56374,
+      "request_ids": [
+        "op_4184d28387e36527ab2a035f737bde81",
+        "op_86601c9341527aa034510e5c5eeeb5b4"
+      ],
+      "release_ids": [
+        44
+      ],
+      "request_execution_snapshot_hashes": [
+        "mrs1_c52462e872705493dedd8d91a404fc0d9da3938204cc1a218b1d90441d093445",
+        "mrs1_f7234a1c6c6b2ac23e6a2c4fe95aabd22051e503fc206f3555357750791643d8"
+      ],
+      "source_report": "glm5-data-release-openclaw-result-20260906.json",
+      "source_report_sha256": "0c33d9b661cfa9576ed6630c6417d478dc34db161579097d830a5bb82949a34a",
+      "target_invocation": "t-wl06w7y0egdnhmo",
+      "fallback": false,
+      "client_elapsed_ms": 50361.699333000004,
+      "performance_comparison": "not_comparable_to_direct_provider_sample"
+    },
+    {
+      "model": "glm-5-turbo",
+      "protocol": "passed",
+      "answer_quality": "failed",
+      "cumulative_attempt_upper_bound": 8,
+      "cumulative_exposure_upper_cny": 2.57202,
+      "request_ids": [
+        "op_818760a58a4d4b186ae2f8686971c50e",
+        "op_f70090bdbba5d6fe0f927c46d08370db"
+      ],
+      "release_ids": [
+        45
+      ],
+      "request_execution_snapshot_hashes": [
+        "mrs1_68853b0a503e733e24fa8a311f5589a1f66ad4447772e05756ddc1d994cdd747",
+        "mrs1_ee6d13bd23324192ab43abef3182cc3ca2cdd0a6ff08d5946c1bd922a498f381"
+      ],
+      "source_report": "glm5turbo-data-release-openclaw-result-20260906.json",
+      "source_report_sha256": "e118b01b0a93e76f92ab33dfac962faf543e384e4c1b0fd1355ba39d25ed72be",
+      "target_invocation": "t-wl06w807z3m39c0",
+      "fallback": false,
+      "client_elapsed_ms": 97907.866,
+      "performance_comparison": "not_comparable_to_direct_provider_sample"
+    },
+    {
+      "model": "glm-5.1",
+      "protocol": "passed",
+      "answer_quality": "passed",
+      "cumulative_attempt_upper_bound": 9,
+      "cumulative_exposure_upper_cny": 2.74602,
+      "request_ids": [
+        "op_253762e6a5f0b5cea5335ed7bf48e528",
+        "op_4f24cd4bdcb9eaf82590cc24b8b721f5",
+        "op_9febd56726b9c0fc050d30074dbe409a"
+      ],
+      "release_ids": [
+        46
+      ],
+      "request_execution_snapshot_hashes": [
+        "mrs1_93de7e48b5fa29502fc60c8ffc0ab2e58de34704c6ac0ee83ff8c0e624030700",
+        "mrs1_94efea20b248cd33f6b0d7fc0ad1051352c7cdccc24bacfc5c309c985b136d0c",
+        "mrs1_f7cd0e583c619f122b12902096204cbe85af19451665913a79656f00a032401f"
+      ],
+      "source_report": "glm51-data-release-openclaw-result-20260906.json",
+      "source_report_sha256": "5ef69cda71bc4761c6a4560a0eae46f45ff6d918b94c65a6ef562062064faf82",
+      "target_invocation": "t-wl06w828zetdkhs",
+      "fallback": false,
+      "client_elapsed_ms": 73929.555542,
+      "performance_comparison": "not_comparable_to_direct_provider_sample"
+    },
+    {
+      "model": "glm-5.2",
+      "protocol": "passed",
+      "answer_quality": "partial",
+      "cumulative_attempt_upper_bound": 8,
+      "cumulative_exposure_upper_cny": 2.57346,
+      "request_ids": [
+        "op_173a7c5ca9fc507989af5ca29f3d1edb",
+        "op_dbd80f369c92161d53e71c065886caa3"
+      ],
+      "release_ids": [
+        47
+      ],
+      "request_execution_snapshot_hashes": [
+        "mrs1_30a1e537eccda7d109d6c50ba29a70db0ddfff7f33e0659574798d5be71b15df",
+        "mrs1_d2967da55157aeb8a5ea4528677d650d547eec51638b553c5d4f035a268a5a79"
+      ],
+      "source_report": "glm52-data-release-openclaw-result-20260906.json",
+      "source_report_sha256": "511c4f39fdcf5e50c1a1108584711991d542e066f11760727d6e2a17454e4a02",
+      "target_invocation": "t-wl06w83u6srpp1c",
+      "fallback": false,
+      "client_elapsed_ms": 51131.883292,
+      "performance_comparison": "not_comparable_to_direct_provider_sample"
+    },
+    {
+      "model": "glm-5.3",
+      "protocol": "passed",
+      "answer_quality": "partial",
+      "cumulative_attempt_upper_bound": 23,
+      "cumulative_exposure_upper_cny": 8.9639,
+      "request_ids": [
+        "op_3d4aa4f66d1ad816ccd3c344a55047b2",
+        "op_4cc26a29a626c94f515dbd41e9f7909f",
+        "op_6433cfddf959e8c95b2ff6f2fc4698ac",
+        "op_cb93faf9530ec1332912b0e2508efa4f"
+      ],
+      "release_ids": [
+        38
+      ],
+      "request_execution_snapshot_hashes": [
+        "mrs1_1b2e6f4f14817c87762e85e638d9e2375a3d53ad29e6174c0c718b66eb31c9c0",
+        "mrs1_27b2df9a50128b83571274597f46eb9cf9fb05092fc1cc89245a75e4c940283e",
+        "mrs1_3ea0bb876577c1504f77c8ad4aba5b3530729c3f105c8c5ac106d2ba7a13fc3f",
+        "mrs1_f7ff79642598a519d35b35e0e539075832b9b3c21f52f6555586705e8e07b8dd"
+      ],
+      "source_report": "glm-5.3-data-release-openclaw-result-20260906.json",
+      "source_report_sha256": "34122d19dd175f6b0e32f7dccd992b320daa9446a2c9f99c213b5c93055289bc",
+      "target_invocation": "t-wl06w6zuj9m14ow",
+      "fallback": false,
+      "client_elapsed_ms": 105944.389792,
+      "performance_comparison": "not_comparable_to_direct_provider_sample"
+    },
+    {
+      "model": "glm-5v-turbo",
+      "protocol": "passed",
+      "answer_quality": "partial",
+      "cumulative_attempt_upper_bound": 8,
+      "cumulative_exposure_upper_cny": 2.55183,
+      "request_ids": [
+        "op_68a443d20bade1dbeb5d291b18f62673",
+        "op_6902a50edbff7c03cbe84932e83f639e"
+      ],
+      "release_ids": [
+        48
+      ],
+      "request_execution_snapshot_hashes": [
+        "mrs1_0c9aa4f2a1822c06c474f73842e5691de8c80b009cd593026dcb5241df6820c9",
+        "mrs1_859799940b137b38123ce42cca449a0b4b95da7b0b74e9af17aaecb8f6eaf136"
+      ],
+      "source_report": "glm5vturbo-data-release-openclaw-result-20260906.json",
+      "source_report_sha256": "2395790042d3c2d39a90492b7a5e7de6bd8f23d8d192e7d757428c9ea9a3af36",
+      "target_invocation": "t-wl06w86db5gtce8",
+      "fallback": false,
+      "client_elapsed_ms": 62069.1455,
+      "performance_comparison": "not_comparable_to_direct_provider_sample"
+    }
+  ],
+  "recorded_at": "2026-09-06T20:51:07.201323+00:00"
+}

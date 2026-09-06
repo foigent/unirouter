@@ -1,5 +1,33 @@
 # UniRouter Current Status
 
+## Existing-family OpenClaw execution verified — 2026-09-07
+
+The authorized development/test experiment now has **14/14 real OpenClaw
+multi-turn streamed tool loops** across DeepSeek, Kimi, MiniMax and GLM. Answer
+quality remains separate: 2 passed, 9 partial, 3 failed. These are historical
+runs on their recorded exact Artifacts, not 14 reruns on the latest image.
+See the [model evidence matrix](evidence/openclaw-existing-14-20260907.json)
+and [closeout boundaries](evidence/openclaw-existing-14-closeout-20260907.md).
+
+Final Target readback is 1.2.62/M114, source `00e30b8a521f`, backend image
+`sha256:5cf6fce011e55556e6e9d6d0aa080c0ac35b6b79dcc91153092a3306f868fab2`.
+Highspeed Release56/Slot7 fixes Profile1.5/Deployment39 and seven exact
+Probe/Approval pins. Its two successful requests executed three reads and each
+has one Provider attempt, completed delivery and one final provider-usage
+settlement receipt. Added Highspeed authorization was used for 10 requests and
+CNY0.91420 conservative exposure, within the additional 20/CNY5 allowance.
+
+Independent Bundle delivery and existing-model data revision paths are verified;
+this does not prove brand-new-model onboarding. Qwen/Hermes and retirement of
+legacy writers remain deferred. The original roll62 HTTP2/curl16 failure is
+retained: later bounded accepted-stream and idle-session GOAWAY evidence does
+not reconstruct its missing stderr or turn that rollout into a passing run.
+No Production, SLA, comparable direct/Gateway performance or invoice claim.
+经验文件无需变化.
+
+The entries below retain their source-candidate and earlier Target cutoffs.
+
+
 ## Highspeed stream-cache composition candidate — 2026-09-06
 
 Local 1.2.62/M114 adds an immutable Highspeed data Profile and exact Probe
