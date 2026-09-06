@@ -15,8 +15,7 @@ var dataProbeImplementations = map[string]func(Binding, modelprofile.Profile) bo
 	KimiStreamFunctionToolsProbeContractID + "@1.0.0":      validExistingFamilyStreamComposition,
 	MiniMaxM3StreamFunctionToolsProbeContractID + "@1.0.0": validExistingFamilyStreamComposition,
 	MiniMaxPAYGM3ChatFunctionToolsProbeContractID + "@2.0.0": func(b Binding, p modelprofile.Profile) bool {
-		return p.Provider == "minimax" && slices.Contains([]string{"protocol.minimax-m3-openai-chat.v10", "protocol.minimax-m3-openai-chat.v11"}, p.ProtocolProfile) &&
-			p.ReasoningProfile == "reasoning.minimax-m3-adaptive-embedded.v2" && p.CacheUsageProfile == "cache-usage.minimax-openai.v2" &&
+		return compatibleMiniMaxM3StreamImplementation(p) &&
 			(b.CapabilityID == modelprofile.CapabilityCacheReadUsage || b.CapabilityID == modelprofile.CapabilityPromptCache)
 	},
 	GLMStreamFunctionToolsProbeContractID + "@1.0.0": func(b Binding, p modelprofile.Profile) bool {
@@ -35,9 +34,19 @@ var dataProbeImplementations = map[string]func(Binding, modelprofile.Profile) bo
 
 func compatibleMiniMaxM2StreamImplementation(p modelprofile.Profile) bool {
 	// M2 v8 reuses tool assembly while retaining its existing nonstream child
-	// index normalizer, content replay and required eligible cache counter.
+	// index normalizer and required eligible cache counter. Content replay is
+	// selected by the exact reasoning revision, never guessed from the model.
 	return p.ProtocolProfile == "protocol.minimax-m27-openai-chat.v1" ||
-		(p.ProtocolProfile == "protocol.minimax-m2-openai-chat.v8" && p.ReasoningProfile == "reasoning.minimax-m2-required-embedded.v1" && p.CacheUsageProfile == "cache-usage.minimax-openai.v2")
+		(p.ProtocolProfile == "protocol.minimax-m2-openai-chat.v8" &&
+			slices.Contains([]string{"reasoning.minimax-m2-required-embedded.v1", "reasoning.minimax-m2-required-embedded.v2"}, p.ReasoningProfile) && p.CacheUsageProfile == "cache-usage.minimax-openai.v2")
+}
+
+func compatibleMiniMaxM3StreamImplementation(p modelprofile.Profile) bool {
+	if p.Provider != "minimax" || p.CacheUsageProfile != "cache-usage.minimax-openai.v2" {
+		return false
+	}
+	return (slices.Contains([]string{"protocol.minimax-m3-openai-chat.v10", "protocol.minimax-m3-openai-chat.v11"}, p.ProtocolProfile) && p.ReasoningProfile == "reasoning.minimax-m3-adaptive-embedded.v2") ||
+		(p.ProtocolProfile == "protocol.minimax-m3-openai-chat.v11" && p.ReasoningProfile == "reasoning.minimax-m3-adaptive-embedded.v3")
 }
 
 func streamToolCapability(capability string) bool {

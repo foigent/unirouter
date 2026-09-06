@@ -62,3 +62,29 @@ func TestSupportIsImplementationInclusionNotCatalogOrWholeDigest(t *testing.T) {
 	require.False(t, ok)
 	require.GreaterOrEqual(t, modelprofile.MaximumImplementedRequestTimeoutSeconds(), 1800)
 }
+
+func TestMiniMaxContinuationRequiresExplicitNewImplementation(t *testing.T) {
+	wire, err := os.ReadFile("../../capability-bundles/minimax-tool-history-continuation.json")
+	require.NoError(t, err)
+	var bundle struct {
+		Definitions []json.RawMessage `json:"definitions"`
+	}
+	require.NoError(t, json.Unmarshal(wire, &bundle))
+	checked := 0
+	for _, raw := range bundle.Definitions {
+		d, err := modelprofile.DecodeDefinition(raw)
+		require.NoError(t, err)
+		p := d.Profile()
+		if p.ID == "minimax.m3.payg" && p.Version == "1.4.0" {
+			continue
+		}
+		m := CurrentManifest([]string{"M114"})
+		require.NoError(t, m.Require("M114", d.Requirements()))
+		ref := modelprofile.ImplementationReference{Kind: "reasoning", ID: p.ReasoningProfile}
+		require.Contains(t, d.Requirements(), ref)
+		m.Implementations = slices.DeleteFunc(slices.Clone(m.Implementations), func(v modelprofile.ImplementationReference) bool { return v == ref })
+		require.Error(t, m.Require("M114", d.Requirements()), "old Artifact cannot claim support through already-known chat/M27 refs")
+		checked++
+	}
+	require.Equal(t, 2, checked)
+}

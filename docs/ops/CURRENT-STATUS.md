@@ -1,5 +1,17 @@
 # UniRouter Current Status
 
+## MiniMax tool-history continuation candidate — 2026-09-06
+
+Local 1.2.60/M114 adds explicit Highspeed/M3 reasoning successors, exact Probe
+composition and immutable data Profile1.4/1.5 Bundle. Old implementations and
+historical evidence remain unchanged. Six relevant Go packages pass race tests.
+The Highspeed null-content continuation was accepted by its official Provider
+but ended at the diagnostic1024-token limit; no Agent completion is inferred.
+Source details: [bounded design](../analysis/MINIMAX-TOOL-HISTORY-CONTINUATION-20260906.md).
+Target, Artifact and Agent results require their own readback; this entry does
+not promote the Local candidate. 经验文件无需变化.
+
+
 > Source candidate 1.2.59 adds exact M3 protocol v11 response-tier preparation
 > shared by Probe and Runtime, selected by data Profile 1.4 in a new independent
 > Bundle. Existing v10, published definitions and evidence remain unchanged.

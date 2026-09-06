@@ -32,8 +32,7 @@ func validExistingFamilyStreamComposition(b Binding, p modelprofile.Profile) boo
 		return (p.ProtocolProfile == "protocol.kimi-openai-chat.k3.v6" && p.ReasoningProfile == "reasoning.kimi-k3-effort.v2") ||
 			(p.ProtocolProfile == "protocol.kimi-openai-chat.v6" && slices.Contains([]string{"reasoning.kimi-k2.6-thinking-toggle.v2", "reasoning.kimi-k2.7-thinking-required.v2"}, p.ReasoningProfile))
 	case MiniMaxM3StreamFunctionToolsProbeContractID:
-		return p.Provider == "minimax" && slices.Contains([]string{"protocol.minimax-m3-openai-chat.v10", "protocol.minimax-m3-openai-chat.v11"}, p.ProtocolProfile) &&
-			p.ReasoningProfile == "reasoning.minimax-m3-adaptive-embedded.v2" && p.CacheUsageProfile == "cache-usage.minimax-openai.v2"
+		return compatibleMiniMaxM3StreamImplementation(p)
 	}
 	return false
 }

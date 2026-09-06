@@ -144,6 +144,8 @@ type CacheUsageContract struct {
 
 var reasoningContracts = map[string]ReasoningContract{
 	"reasoning.minimax-m3-adaptive-embedded.v2": miniMaxM3StreamReasoningContract(),
+	"reasoning.minimax-m3-adaptive-embedded.v3": miniMaxM3ToolContinuationReasoningContract(),
+	"reasoning.minimax-m2-required-embedded.v2": miniMaxRequiredToolContinuationReasoningContract("reasoning.minimax-m2-required-embedded.v2"),
 	"reasoning.openai-gpt-5.6-sol-responses.v1": {
 		ProfileID:          "reasoning.openai-gpt-5.6-sol-responses.v1",
 		Mode:               ReasoningModeAlwaysOn,
@@ -767,15 +769,7 @@ var reasoningContracts = map[string]ReasoningContract{
 		ActiveStreamingUnsupported:      true,
 		AssistantToolHistoryReplayField: "content",
 	},
-	"reasoning.minimax-m27-required-embedded.v2": {
-		ProfileID:                   "reasoning.minimax-m27-required-embedded.v2",
-		Mode:                        ReasoningModeRequired,
-		ResponseThinkingTextMode:    ReasoningResponseThinkingEmbedded,
-		DefaultAuthority:            ReasoningDefaultProvider,
-		SplitOutputField:            "reasoning_split",
-		SplitOutputProviderDefault:  false,
-		SplitOutputEnabledSupported: false,
-	},
+	"reasoning.minimax-m27-required-embedded.v2": miniMaxRequiredToolContinuationReasoningContract("reasoning.minimax-m27-required-embedded.v2"),
 	"reasoning.minimax-m2-required-embedded.v1": {
 		ProfileID:                       "reasoning.minimax-m2-required-embedded.v1",
 		Mode:                            ReasoningModeRequired,
