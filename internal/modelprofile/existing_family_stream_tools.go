@@ -49,3 +49,22 @@ func miniMaxM3StreamReasoningContract() ReasoningContract {
 		SplitOutputField: "reasoning_split", AssistantToolHistoryReplayField: "content",
 	}
 }
+
+func miniMaxM3ToolContinuationReasoningContract() ReasoningContract {
+	c := miniMaxM3StreamReasoningContract()
+	c.ProfileID = "reasoning.minimax-m3-adaptive-embedded.v3"
+	c.AssistantToolHistoryReplayField = ""
+	return c
+}
+
+// The explicit implementation revision is required by the data Profile so an
+// older fleet cannot advertise support for the new composition accidentally.
+// It reuses M2.7's established embedded-thinking continuation semantics.
+func miniMaxRequiredToolContinuationReasoningContract(id string) ReasoningContract {
+	return ReasoningContract{
+		ProfileID: id, Mode: ReasoningModeRequired,
+		ResponseThinkingTextMode: ReasoningResponseThinkingEmbedded,
+		DefaultAuthority:         ReasoningDefaultProvider, SplitOutputField: "reasoning_split",
+		SplitOutputProviderDefault: false, SplitOutputEnabledSupported: false,
+	}
+}

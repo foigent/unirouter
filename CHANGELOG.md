@@ -4,6 +4,18 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.60] - 2026-09-06
+
+### Fixed
+
+- Add explicit MiniMax Highspeed and M3 reasoning revisions that accept
+  self-consistent tool-result history without requiring assistant content replay.
+  Historical contracts remain unchanged; no content or tool identity is invented.
+- Deliver immutable data Profile successors through the existing Bundle channel,
+  with exact Probe composition and runtime implementation requirements. Old
+  runtimes fail compatibility checks; qualification and Agent completion remain
+  separate evidence, with no schema, pricing or public model identity change.
+
 ## [1.2.59] - 2026-09-06
 
 ### Fixed
