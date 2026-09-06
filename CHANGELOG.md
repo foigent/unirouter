@@ -4,6 +4,14 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.62] - 2026-09-06
+
+### Fixed
+
+- Correct reasoning-effort Probe confirmation text to describe the selected exact
+  contract, including streamed requests and provider-default effort, instead of
+  claiming all probes use nonstreaming low effort. Probe behavior is unchanged.
+
 ## [1.2.61] - 2026-09-06
 
 ### Fixed
