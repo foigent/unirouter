@@ -24,6 +24,7 @@ func TestExistingFamilyDataProbeAndAgentHistoryReachExactWire(t *testing.T) {
 		{"kimi.k2.7-code.api", "1.3.0", "protocol.kimi-openai-chat.v6", qualification.KimiStreamFunctionToolsProbeContractID, "https://api.moonshot.cn/v1"},
 		{"kimi.k3.api", "1.9.0", "protocol.kimi-openai-chat.k3.v6", qualification.KimiStreamFunctionToolsProbeContractID, "https://api.moonshot.cn/v1"},
 		{"minimax.m3.payg", "1.2.0", "protocol.minimax-m3-openai-chat.v10", qualification.MiniMaxM3StreamFunctionToolsProbeContractID, "https://api.minimax.cn/v1"},
+		{"minimax.m3.payg", "1.2.0", "protocol.minimax-m3-openai-chat.v11", qualification.MiniMaxM3StreamFunctionToolsProbeContractID, "https://api.minimax.cn/v1"},
 		{"minimax.m2.7-highspeed.payg", "1.2.0", "protocol.minimax-m2-openai-chat.v8", qualification.MiniMaxM27StreamFunctionToolsProbeContractID, "https://api.minimax.cn/v1"},
 	} {
 		p, ok := modelprofile.Lookup(tc.id, tc.version)

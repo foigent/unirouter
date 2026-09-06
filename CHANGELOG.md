@@ -4,6 +4,18 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.59] - 2026-09-06
+
+### Fixed
+
+- Add an exact MiniMax M3 streamed-tools implementation that validates and
+  normalizes supplier `service_tier` response metadata through the shared Probe
+  and Runtime path. Older protocol revisions retain their accepted responses;
+  the metadata cannot change request tier, pricing or settlement authority.
+- Deliver M3 Profile 1.4 as a separate data Bundle requiring that implementation,
+  with no schema migration, Catalog entry or new public model identity. Real
+  qualification and Release activation remain separate Target actions.
+
 ## [1.2.58] - 2026-09-06
 
 ### Fixed

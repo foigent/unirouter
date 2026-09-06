@@ -1208,6 +1208,7 @@ var chatProtocolContracts = map[string]ChatProtocolContract{
 	"protocol.minimax-m3-openai-chat.v8":            miniMaxM3CacheReadContract("protocol.minimax-m3-openai-chat.v8"),
 	"protocol.minimax-m3-openai-chat.v9":            miniMaxM3FunctionToolsContract("protocol.minimax-m3-openai-chat.v9"),
 	"protocol.minimax-m3-openai-chat.v10":           miniMaxM3StreamFunctionToolsContract("protocol.minimax-m3-openai-chat.v10"),
+	"protocol.minimax-m3-openai-chat.v11":           miniMaxM3StreamFunctionToolsContract("protocol.minimax-m3-openai-chat.v11"),
 	"protocol.qwen-openai-chat.v1":                  qwenChatBaseContract("protocol.qwen-openai-chat.v1"),
 	"protocol.qwen-openai-chat.v2":                  qwenChatToolsContract("protocol.qwen-openai-chat.v2"),
 	"protocol.qwen-openai-chat.v3":                  qwenChatStructuredOutputContract("protocol.qwen-openai-chat.v3", true),

@@ -5,6 +5,15 @@ import (
 	"testing"
 )
 
+func TestMiniMaxM3StreamTierKeepsRequestAndMeteringContract(t *testing.T) {
+	old, ok := ResolveChatProtocolContract("protocol.minimax-m3-openai-chat.v10")
+	require.True(t, ok)
+	next, ok := ResolveChatProtocolContract("protocol.minimax-m3-openai-chat.v11")
+	require.True(t, ok)
+	next.ProfileID = old.ProfileID
+	require.Equal(t, old, next, "only exact-scoped adapter response preparation differs")
+}
+
 func TestExistingFamilyStreamImplementationsLeaveHistoryUnchanged(t *testing.T) {
 	for _, pair := range [][2]string{
 		{"protocol.deepseek-openai-chat.v4", "protocol.deepseek-openai-chat.v5"},

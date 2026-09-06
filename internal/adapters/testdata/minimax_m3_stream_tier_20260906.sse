@@ -1,0 +1,38 @@
+data: {"id":"06ec4dd7a937876decdcc6825c58ded2","choices":[{"index":0,"delta":{"content":"","role":"assistant"}}],"created":1788680919,"model":"MiniMax-M3","object":"chat.completion.chunk","usage":null,"service_tier":"standard"}
+
+data: {"id":"06ec4dd7a937876decdcc6825c58ded2","choices":[{"index":0,"delta":{"content":"<think>The user wants me to call the unirouter_probe","role":"assistant"}}],"created":1788680919,"model":"MiniMax-M3","object":"chat.completion.chunk","usage":null,"service_tier":"standard"}
+
+data: {"id":"06ec4dd7a937876decdcc6825c58ded2","choices":[{"index":0,"delta":{"content":"_echo tool with the value \"UNIROUTER","role":"assistant"}}],"created":1788680919,"model":"MiniMax-M3","object":"chat.completion.chunk","usage":null,"service_tier":"standard"}
+
+data: {"id":"06ec4dd7a937876decdcc6825c58ded2","choices":[{"index":0,"delta":{"content":"_TOOL_PROBE_OK\" after thinking briefly.","role":"assistant"}}],"created":1788680919,"model":"MiniMax-M3","object":"chat.completion.chunk","usage":null,"service_tier":"standard"}
+
+data: {"id":"06ec4dd7a937876decdcc6825c58ded2","choices":[{"index":0,"delta":{"content":"</think>\n\n","role":"assistant","tool_calls":[{"id":"chatcmpl-tool-9389725ea4d7f4ed","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{"},"index":0}]}}],"created":1788680919,"model":"MiniMax-M3","object":"chat.completion.chunk","usage":null,"service_tier":"standard"}
+
+data: {"id":"06ec4dd7a937876decdcc6825c58ded2","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"function":{"arguments":"\"value\": \""},"index":0}]}}],"created":1788680919,"model":"MiniMax-M3","object":"chat.completion.chunk","usage":null,"service_tier":"standard"}
+
+data: {"id":"06ec4dd7a937876decdcc6825c58ded2","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"function":{"arguments":"UNI"},"index":0}]}}],"created":1788680919,"model":"MiniMax-M3","object":"chat.completion.chunk","usage":null,"service_tier":"standard"}
+
+data: {"id":"06ec4dd7a937876decdcc6825c58ded2","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"function":{"arguments":"ROUT"},"index":0}]}}],"created":1788680919,"model":"MiniMax-M3","object":"chat.completion.chunk","usage":null,"service_tier":"standard"}
+
+data: {"id":"06ec4dd7a937876decdcc6825c58ded2","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"function":{"arguments":"ER"},"index":0}]}}],"created":1788680919,"model":"MiniMax-M3","object":"chat.completion.chunk","usage":null,"service_tier":"standard"}
+
+data: {"id":"06ec4dd7a937876decdcc6825c58ded2","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"function":{"arguments":"_TO"},"index":0}]}}],"created":1788680919,"model":"MiniMax-M3","object":"chat.completion.chunk","usage":null,"service_tier":"standard"}
+
+data: {"id":"06ec4dd7a937876decdcc6825c58ded2","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"function":{"arguments":"OL"},"index":0}]}}],"created":1788680919,"model":"MiniMax-M3","object":"chat.completion.chunk","usage":null,"service_tier":"standard"}
+
+data: {"id":"06ec4dd7a937876decdcc6825c58ded2","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"function":{"arguments":"_PRO"},"index":0}]}}],"created":1788680919,"model":"MiniMax-M3","object":"chat.completion.chunk","usage":null,"service_tier":"standard"}
+
+data: {"id":"06ec4dd7a937876decdcc6825c58ded2","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"function":{"arguments":"BE"},"index":0}]}}],"created":1788680919,"model":"MiniMax-M3","object":"chat.completion.chunk","usage":null,"service_tier":"standard"}
+
+data: {"id":"06ec4dd7a937876decdcc6825c58ded2","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"function":{"arguments":"_OK"},"index":0}]}}],"created":1788680919,"model":"MiniMax-M3","object":"chat.completion.chunk","usage":null,"service_tier":"standard"}
+
+data: {"id":"06ec4dd7a937876decdcc6825c58ded2","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"function":{"arguments":"\""},"index":0}]}}],"created":1788680919,"model":"MiniMax-M3","object":"chat.completion.chunk","usage":null,"service_tier":"standard"}
+
+data: {"id":"06ec4dd7a937876decdcc6825c58ded2","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"function":{"arguments":"}"},"index":0}]}}],"created":1788680919,"model":"MiniMax-M3","object":"chat.completion.chunk","usage":null,"service_tier":"standard"}
+
+data: {"id":"06ec4dd7a937876decdcc6825c58ded2","choices":[{"index":0,"delta":{"role":"assistant"}}],"created":1788680919,"model":"MiniMax-M3","object":"chat.completion.chunk","usage":null,"service_tier":"standard"}
+
+data: {"id":"06ec4dd7a937876decdcc6825c58ded2","choices":[{"finish_reason":"tool_calls","index":0,"delta":{"role":"assistant"}}],"created":1788680919,"model":"MiniMax-M3","object":"chat.completion.chunk","usage":null,"service_tier":"standard"}
+
+data: {"id":"06ec4dd7a937876decdcc6825c58ded2","choices":[],"created":1788680919,"model":"MiniMax-M3","object":"chat.completion.chunk","usage":{"total_tokens":511,"total_characters":0,"prompt_tokens":441,"completion_tokens":70,"completion_tokens_details":{"reasoning_tokens":0},"prompt_tokens_details":{"cached_tokens":128}},"service_tier":"standard","base_resp":{"status_code":0,"status_msg":""}}
+

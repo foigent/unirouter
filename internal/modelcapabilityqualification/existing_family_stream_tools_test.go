@@ -17,6 +17,7 @@ func TestExistingFamilyDataProbeCompositions(t *testing.T) {
 		{"kimi.k2.7-code.api", "1.3.0", "protocol.kimi-openai-chat.v6", KimiStreamFunctionToolsProbeContractID},
 		{"kimi.k3.api", "1.9.0", "protocol.kimi-openai-chat.k3.v6", KimiStreamFunctionToolsProbeContractID},
 		{"minimax.m3.payg", "1.2.0", "protocol.minimax-m3-openai-chat.v10", MiniMaxM3StreamFunctionToolsProbeContractID},
+		{"minimax.m3.payg", "1.2.0", "protocol.minimax-m3-openai-chat.v11", MiniMaxM3StreamFunctionToolsProbeContractID},
 		{"minimax.m2.7-highspeed.payg", "1.2.0", "protocol.minimax-m2-openai-chat.v8", MiniMaxM27StreamFunctionToolsProbeContractID},
 	} {
 		t.Run(tc.id, func(t *testing.T) {

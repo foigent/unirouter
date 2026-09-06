@@ -1,20 +1,29 @@
 # UniRouter Current Status
 
-> Source candidate 1.2.58 corrects data Release UI authoring: public limits are
-> explicit and distinct from Deployment defaults; stable baseline limits may
-> prefill the form. It adds a frontend-only mode to the existing exact build
-> helper. No backend, schema, qualification or Release writer contract changes.
+> Source candidate 1.2.59 adds exact M3 protocol v11 response-tier preparation
+> shared by Probe and Runtime, selected by data Profile 1.4 in a new independent
+> Bundle. Existing v10, published definitions and evidence remain unchanged.
+> No schema change, automatic activation or new public model identity.
 >
-> Latest development/test readback is backend/frontend 1.2.57/M114 at f940b1c9.
-> GLM-5.3 Release 38 and M2.7 Release 39 completed real OpenClaw streamed tool
-> loops (2/14); answer quality is partial/failed respectively. Their UI-authored
-> output ceilings were narrowed to 65536 from 131072/204800. Historical evidence
-> remains valid; new corrective Releases and boundary preflights are pending.
-> DeepSeek data Publication committed with backend images and schema unchanged.
-> Flash Deployment 24 has successful Probes 150–154 / Approvals 131–135. Its
-> new Release is withheld until the UI can preserve the existing 384000 ceiling
-> independently of the 32768 default. Same-image full data-to-Agent acceptance
-> remains open. No new-model, Production or old-writer retirement claim.
+> Development/test readback before this candidate: backend 1.2.57/M114 at
+> f940b1c9 and frontend 1.2.58 at 59bf3d21. Real OpenClaw streamed tool loops are
+> 9/14: six GLM, MiniMax M2.7, DeepSeek Flash and Pro. Answer quality is separate;
+> only GLM-5 and GLM-5.1 meet this task's full answer criterion so far.
+> Flash and Pro prove existing-model data revisions from independent Bundle
+> through qualification, Release and Agent without a backend image change.
+> All six data/legacy-import Publication ledger entries are committed; latest
+> MiniMax/Kimi Publications preserve 27 Releases, 15 Slots and prior static rows.
+> Corrected GLM/M2.7 Releases restore the prior public output ceilings; actual
+> SDK boundary preflights confirm the change without paid reruns.
+>
+> M3 candidate 31's Probe 187 failed on stream parsing; no M3 data Release was
+> activated. A separate bounded official diagnostic isolates `service_tier`:
+> raw replay fails v10, while removing only that metadata in a local copy passes
+> tools, reasoning, terminal and full usage. The new implementation must still
+> pass CI, exact Artifact rollout, a new data Publication and real qualification
+> before any M3 Agent-success claim. The original failed Probe is retained.
+> Highspeed and three Kimi Agent tasks remain pending. No brand-new-model,
+> Production, Hermes, Qwen or old-writer retirement claim.
 >
 > The following entries retain their earlier source/Target cutoff.
 >
