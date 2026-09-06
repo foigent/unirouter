@@ -1,5 +1,31 @@
 # UniRouter Current Status
 
+> Source candidate 1.2.57 adds closed normalization failure diagnostics to
+> existing failed nonstream Probe summaries. It does not change response
+> acceptance, qualification, usage, schema or Release semantics. Local checks
+> and Target delivery are recorded separately in the active delivery evidence.
+>
+> Development/test Target is verified on exact 1.2.56/M114 Artifact 18f5e675.
+> GLM-5.3 data Release #38/Slot #3 completed one real OpenClaw task; protocol
+> coverage is 1/14, with partially correct answer quality recorded separately.
+> Same-schema rolling exercised a real long stream, bounded short requests and
+> cancellation with one Provider attempt and one settlement per request. This
+> is scoped planned-change continuity, not a Production or universal guarantee.
+> Backend effective Compose configuration now uses five formal files.
+>
+> M2.7 candidate #23 has exact data Profile 1.4 and successful Probes #141–145
+> with Approvals #124–128. Cache-read Probes #140/#146 returned HTTP 200 but
+> failed normalization; their response bodies and usage cannot be reconstructed.
+> A separate official response passes the full handler offline and cannot
+> replace those failed observations. Stop blind retries; deploy the diagnostic
+> change before another budgeted test. M2.7 Release/Slot activation is pending.
+> Remaining staged data Bundles are not yet published. Existing-revision
+> delivery does not prove brand-new-model onboarding; retain the legacy writer
+> code and historical readers under the accepted per-Target writer epoch.
+>
+> Historical source-candidate record follows; its Target-pending statements
+> describe the earlier cutoff rather than the current verified Target.
+>
 > Source candidate 1.2.56 repairs the data Release HTTP decoder: the existing
 > Profile digest, public limits and Approval ID fields reach the unchanged
 > atomic authoring owner. HTTP/DB regression seals exact Probe/Approval pins,

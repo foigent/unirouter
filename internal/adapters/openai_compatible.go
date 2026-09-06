@@ -153,7 +153,7 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 	if in.StatusCode >= 200 && in.StatusCode < 300 {
 		mechanics, exactPreparedChat, mechanicsErr := runtimeChatNonStreamMechanics(in)
 		if mechanicsErr != nil {
-			return nil, mechanicsErr
+			return nil, normalizationError("identity", mechanicsErr)
 		}
 		// The exact tuples whose non-stream wire metadata is normalized must
 		// reject duplicate JSON members before usage or delivery parsing can
@@ -162,13 +162,13 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 		// retained, but an ambiguous document is never accepted as usage evidence.
 		if exactPreparedChat {
 			if err := ValidateOpenAICompatibleChatNonStreamDocument(responseBody, mechanics); err != nil {
-				return nil, fmt.Errorf("validate exact Chat response: %w", err)
+				return nil, normalizationError("json", fmt.Errorf("validate exact Chat response: %w", err))
 			}
 		} else if in.Endpoint == EndpointChatCompletions && openAICompatibleChatToolCallIndexScope(
 			in.Channel.Provider, in.UpstreamModel, in.ProtocolProfile,
 		) {
 			if err := strictjson.Validate(responseBody); err != nil {
-				return nil, fmt.Errorf("validate OpenAI-compatible Chat response: %w", err)
+				return nil, normalizationError("json", fmt.Errorf("validate OpenAI-compatible Chat response: %w", err))
 			}
 		}
 		var err error
@@ -177,10 +177,10 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 			in.Body, in.Endpoint, metering.UsageSourceUpstream, in.CacheUsageProfile,
 		)
 		if err != nil {
-			return nil, err
+			return nil, normalizationError("usage", err)
 		}
 		if cacheContract, ok := modelprofile.ResolveCacheUsageContract(strings.TrimSpace(in.CacheUsageProfile)); ok && cacheContract.RequireReadCounter && !usagePresent {
-			return nil, fmt.Errorf("cache profile %s requires final response usage with prompt_tokens_details.cached_tokens", cacheContract.ProfileID)
+			return nil, normalizationError("usage", fmt.Errorf("cache profile %s requires final response usage with prompt_tokens_details.cached_tokens", cacheContract.ProfileID))
 		}
 		if in.Endpoint == EndpointChatCompletions {
 			var exactDeliveryIssue ChatNonStreamDeliveryIssue
@@ -190,7 +190,7 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 					in.OperationProtocolProfileVersion, responseBody, mechanics,
 				)
 				if prepareErr != nil {
-					return nil, fmt.Errorf("prepare exact Chat response: %w", prepareErr)
+					return nil, normalizationError("tool_normalization", fmt.Errorf("prepare exact Chat response: %w", prepareErr))
 				}
 				exactDeliveryIssue = prepared.DeliveryIssue
 				if exactDeliveryIssue == ChatNonStreamDeliveryIssueNone {
@@ -205,7 +205,7 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 				// canonical guardrail withhold the original body. A structurally
 				// valid document still requires exact meter evidence.
 				if !exactPreparedChat || !mechanics.NormalizeToolCallIndex || exactDeliveryIssue == ChatNonStreamDeliveryIssueNone {
-					return nil, meterErr
+					return nil, normalizationError("builtin_metering", meterErr)
 				}
 				meterUsage = []metering.MeterQuantity{}
 			}
@@ -225,11 +225,11 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 			}
 			responseBody, err = normalizeMiniMaxOpenAIEnvelope(in.Channel.Provider, responseBody)
 			if err != nil {
-				return nil, fmt.Errorf("normalize MiniMax response: %w", err)
+				return nil, normalizationError("provider_envelope", fmt.Errorf("normalize MiniMax response: %w", err))
 			}
 			responseBody, err = normalizeOpenAIClientCacheUsage(responseBody, usage)
 			if err != nil {
-				return nil, fmt.Errorf("normalize provider cache usage: %w", err)
+				return nil, normalizationError("cache_projection", fmt.Errorf("normalize provider cache usage: %w", err))
 			}
 			if exactPreparedChat {
 				if object, objectErr := decodeOpenAICompatibleChatNonStreamObject(responseBody); objectErr == nil {

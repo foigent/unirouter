@@ -149,3 +149,20 @@ quality independently from protocol delivery. Existing exact models retain their
 historical cumulative limit of 30 upstream requests and CNY10 each. Until those
 proofs exist, do not claim full architecture/14-model closure or retire historical
 compatibility readers.
+
+
+### Failed nonstream Probe normalization diagnostics
+
+From 1.2.57, a failed nonstream Probe may include `normalization_diagnostic` in
+its existing `response_summary`: a closed `stage`, `bytes`, `full` and
+`body_sha256`. The hash covers exactly the captured bytes. `full=false` means
+read failure or the response limit left only a prefix; a zero-byte prefix does
+not prove the Provider returned an empty response. No response text, arbitrary
+error details or credentials are retained. Prior failed rows may lack these
+fields and must not be backfilled with invented evidence.
+
+These fields locate a failure for a bounded investigation. They never establish
+valid usage, qualify a capability, authorize an automatic retry or justify
+reducing a missing-usage cost reservation. Inspect the original Probe identity
+and numeric/closed fields only; use the existing qualification and approval
+owners after resolving the actual cause.

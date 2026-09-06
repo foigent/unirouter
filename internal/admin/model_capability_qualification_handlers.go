@@ -181,6 +181,7 @@ type modelCapabilitySnapshot struct {
 }
 
 type modelCapabilityProbeOutcome struct {
+	NormalizationDiagnostic  *modelCapabilityNormalizationDiagnostic
 	ProviderSuccess          bool
 	ContractSuccess          bool
 	StatusCode               int
@@ -796,6 +797,7 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 			outcome.LatencyMS = time.Since(started).Milliseconds()
 			outcome.ReasonCode = "provider_function_tools_contract_invalid"
 			outcome.ContractErrorCode = "delivery_shape"
+			applyCapabilityNormalizationDiagnostic(&outcome, normalizeErr)
 			return outcome
 		}
 		observation, validationErr := modelcapabilityqualification.ValidateNormalizedOpenAIChatFunctionToolsForBinding(
@@ -995,23 +997,27 @@ func normalizeOpenAIChatFunctionToolsProbeResponse(
 	limited := &io.LimitedReader{R: response.Body, N: modelcapabilityqualification.OpenAIChatFunctionToolsMaxResponseBytes + 1}
 	body, err := io.ReadAll(limited)
 	if err != nil {
-		return nil, err
+		return nil, capabilityNormalizationError(capabilityReadFailureStage(err), body, false, err)
 	}
 	if limited.N <= 0 {
-		return nil, fmt.Errorf("function-tools Probe response exceeds bounded size")
+		return nil, capabilityNormalizationError("response_too_large", body, false, fmt.Errorf("function-tools Probe response exceeds bounded size"))
 	}
 	// Validate before the adapter's safe provider-envelope normalization can
 	// decode through maps and erase ordinary or escaped-equivalent duplicate
 	// members. The adapter still owns normalization; this preserves the raw
 	// document's ambiguity as a fail-closed Probe fact.
 	if err := strictjson.Validate(body); err != nil {
-		return nil, fmt.Errorf("function-tools Probe raw response is ambiguous: %w", err)
+		stage := "invalid_json"
+		if errors.Is(err, strictjson.ErrDuplicateKey) {
+			stage = "duplicate_json"
+		}
+		return nil, capabilityNormalizationError(stage, body, true, fmt.Errorf("function-tools Probe raw response is ambiguous: %w", err))
 	}
 	profile, profileErr := modelCapabilityProbeBindingFromSnapshot(snapshot).ExecutionProfile()
 	if profileErr != nil {
-		return nil, fmt.Errorf("function-tools Probe Profile is unavailable")
+		return nil, capabilityNormalizationError("profile_unavailable", body, true, fmt.Errorf("function-tools Probe Profile is unavailable"))
 	}
-	return adapter.ParseResponse(ctx, adapters.ResponseInput{
+	normalized, err := adapter.ParseResponse(ctx, adapters.ResponseInput{
 		Endpoint: adapters.EndpointChatCompletions, StatusCode: response.StatusCode, Header: response.Header, Body: body,
 		Channel: models.Channel{
 			Name: "typed-capability-probe", Provider: snapshot.Provider, BaseURL: snapshot.BaseURL,
@@ -1024,6 +1030,10 @@ func normalizeOpenAIChatFunctionToolsProbeResponse(
 		CacheUsageProfile: profile.CacheUsageProfile, ProtocolProfile: snapshot.ProtocolProfileID,
 		OperationProtocolProfileID: snapshot.ProtocolProfileID, OperationProtocolProfileVersion: snapshot.ProtocolProfileVersion,
 	})
+	if err != nil {
+		return nil, capabilityNormalizationError(capabilityAdapterFailureStage(err), body, true, err)
+	}
+	return normalized, nil
 }
 
 func resolveKimiProbeThinking(snapshot modelCapabilitySnapshot) (map[string]string, bool, bool, error) {
@@ -1136,7 +1146,7 @@ func (h *Handler) persistModelCapabilityProbe(ctx context.Context, actorID int64
 		requestSummaryFields[key] = value
 	}
 	requestSummary, _ := json.Marshal(requestSummaryFields)
-	responseSummary, _ := json.Marshal(map[string]interface{}{
+	responseSummaryFields := map[string]interface{}{
 		"provider_success": outcome.ProviderSuccess, "contract_success": outcome.ContractSuccess,
 		"current": currentProof, "reason_code": reasonCode, "provider_reason_code": outcome.ReasonCode,
 		"contract_error_code": outcome.ContractErrorCode,
@@ -1149,7 +1159,11 @@ func (h *Handler) persistModelCapabilityProbe(ctx context.Context, actorID int64
 		"tool_call_observed":          outcome.ToolCallObserved,
 		"structured_output_observed":  outcome.StructuredObserved,
 		"usage":                       map[string]int64{"prompt_tokens": outcome.PromptTokens, "completion_tokens": outcome.CompletionTokens, "total_tokens": outcome.TotalTokens},
-	})
+	}
+	if outcome.NormalizationDiagnostic != nil && !outcome.ContractSuccess {
+		responseSummaryFields["normalization_diagnostic"] = outcome.NormalizationDiagnostic
+	}
+	responseSummary, _ := json.Marshal(responseSummaryFields)
 	fingerprint := modelCapabilityProbeFingerprint(snapshot, outcome, sourceRef)
 	errorSummary := ""
 	if !success {
