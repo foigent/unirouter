@@ -1,5 +1,22 @@
 # UniRouter Current Status
 
+## Stream checkpoint counter repair candidate — 2026-09-07
+
+Local1.2.68/M114 aligns newly emitted checkpoint completion counts and their
+128-token cadence with the existing live customer estimate. No estimator,
+output admission bound, Provider-final usage rule or historical row changes.
+The real relay-to-PostgreSQL recovery regression verifies exactly one settlement
+and rejects the expired original owner. This local candidate is not a Target
+rollout or proof that conservative output stopping is resolved.
+See [the exact review and validation object](../analysis/STREAM-CHECKPOINT-COUNTER-CONSISTENCY-20260907.md).
+
+PR404 is merged as maina43c4879, tree34648de9, version1.2.67/M114. CI34130263337
+passed all five required checks. Its exact source Bundle was uploaded to the
+development/test Target and verified, but build was refused by the unchanged
+80% storage gate at81%. The last runtime read remains1.2.66/M114. No1.2.67
+Artifact or rollout is claimed. The parameter candidate record below retains
+its original pre-CI cutoff.
+
 ## Exact parameter description and OpenClaw projection candidate — 2026-09-07
 
 Local1.2.67/M114 describes immutable output and reasoning controls in the public

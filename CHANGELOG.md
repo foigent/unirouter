@@ -4,6 +4,16 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.68] - 2026-09-07
+
+### Fixed
+
+- Persist streamed delivery checkpoints with the same existing customer token
+  estimate used by live interruption settlement. Recovery and checkpoint cadence
+  no longer interpret the UTF-8 admission bound as customer tokens. Preserve
+  Provider-final charge requirements, partial-write semantics, frozen prices and
+  historical rows; the separate conservative output guard remains unchanged.
+
 ## [1.2.67] - 2026-09-07
 
 ### Added
