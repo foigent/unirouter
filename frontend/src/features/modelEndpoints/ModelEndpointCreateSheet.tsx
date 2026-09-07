@@ -34,6 +34,7 @@ import {
   type ProviderPreset,
 } from '../../utils/providerEndpoints';
 import { endpointError } from './presentation';
+import ModelParameterDescription from './ModelParameterDescription';
 
 const { Text } = Typography;
 
@@ -1037,6 +1038,8 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
           />
         </div>
       </>}
+
+      {activeReviewedModel && <ModelParameterDescription profile={activeReviewedModel.profile} />}
 
       {activeReviewedModel ? <Form.Select
         field="upstream_model"

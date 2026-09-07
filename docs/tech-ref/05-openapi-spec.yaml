@@ -6986,6 +6986,60 @@ components:
           required: [model_name]
           properties:
             org_id: { type: integer, format: int64, minimum: 1 }
+    ModelParameterControl:
+      type: object
+      additionalProperties: false
+      required: [field, wire_type, values]
+      properties:
+        object: { type: string }
+        field: { type: string }
+        wire_type: { type: string, enum: [string, boolean] }
+        values: { type: array, items: { type: string } }
+        provider_default: { type: string }
+        disabled_values: { type: array, items: { type: string } }
+        aliases: { type: object, additionalProperties: { type: string } }
+    ModelParameterControls:
+      type: object
+      additionalProperties: false
+      required: [version]
+      description: Read-only projection of exact referenced implementations, outside immutable Profile bytes. It does not grant request qualification or activation. Provider defaults apply only to omitted wire fields, independently of client defaults.
+      properties:
+        version: { type: string, enum: [unirouter.parameter-controls.v1] }
+        output:
+          type: object
+          additionalProperties: false
+          required: [field, accepted_fields, minimum, maximum, mutually_exclusive]
+          properties:
+            field: { type: string }
+            accepted_fields: { type: array, items: { type: string } }
+            minimum: { type: integer, minimum: 0 }
+            maximum: { type: integer, minimum: 0 }
+            field_maximums: { type: object, additionalProperties: { type: integer } }
+            mutually_exclusive: { type: boolean }
+        reasoning:
+          type: object
+          additionalProperties: false
+          required: [profile_id, mode, default_authority, thinking_clear_supported, toggle_and_effort_mutually_exclusive]
+          properties:
+            profile_id: { type: string }
+            mode: { type: string, enum: [toggle, required, always_on] }
+            default_authority: { type: string }
+            toggle: { $ref: "#/components/schemas/ModelParameterControl" }
+            effort: { $ref: "#/components/schemas/ModelParameterControl" }
+            thinking_clear_supported: { type: boolean }
+            toggle_and_effort_mutually_exclusive: { type: boolean }
+            active_output_field_maximums: { type: object, additionalProperties: { type: integer } }
+            budget:
+              type: object
+              additionalProperties: false
+              required: [field, minimum, maximum, provider_default, requires_active_reasoning, mutually_exclusive_with_effort]
+              properties:
+                field: { type: string }
+                minimum: { type: integer, minimum: 0 }
+                maximum: { type: integer, minimum: 0 }
+                provider_default: { type: integer, minimum: 0 }
+                requires_active_reasoning: { type: boolean }
+                mutually_exclusive_with_effort: { type: boolean }
     PublicModelExecutionProjection:
       type: object
       additionalProperties: false
@@ -7000,6 +7054,9 @@ components:
           enum: [stable_release, registry]
           description: Provenance of the exact Profile and hard ceilings. Registry metadata does not prove activation.
         display_name: { type: string }
+        profile_definition_digest: { type: string, pattern: '^[a-f0-9]{64}$' }
+        parameter_controls: { $ref: "#/components/schemas/ModelParameterControls" }
+        stream_output_accounting: { type: string, enum: [utf8_byte_upper_bound], description: Current conservative stream guard counts delivered UTF8 bytes against the reserved allowance. It is not a provider token count or a promise to reach the full token ceiling. }
         profile_id: { type: string }
         profile_version: { type: string }
         protocol_profile: { type: string }
@@ -7058,6 +7115,7 @@ components:
       additionalProperties: false
       required: [id, version, label, tokenizer_profile_id, tokenizer_profile_version, reasoning_profile, cache_usage_profile, protocol_profile, provider_context_window, provider_max_output, default_context_window, default_output_limit, provider_capabilities, capabilities, always_required_capabilities, aliases, evidence_refs]
       properties:
+        parameter_controls: { $ref: "#/components/schemas/ModelParameterControls" }
         id: { type: string }
         version: { type: string }
         profile_definition_digest: { type: string, pattern: '^[a-f0-9]{64}$', description: Present only for a published immutable data revision. }

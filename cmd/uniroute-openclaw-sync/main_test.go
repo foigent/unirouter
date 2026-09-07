@@ -111,6 +111,7 @@ func TestSynchronizeProjectsVerifiedProfilesAndPreservesUserOverrides(t *testing
 
 	require.NoError(t, err)
 	require.Equal(t, syncReport{
+		Controls: []clientControlProjection{{Model: "Kimi K2.6", Mode: "legacy_metadata"}},
 		Provider: "unirouter", Models: 2, VerifiedModels: 1,
 		UnverifiedModels: []string{"custom-model"}, RemovedModels: []string{"no-longer-authorized"}, Written: false,
 		Parameters: []parameterProjection{{Model: "Kimi K2.6", Source: "stable_release", ContextWindow: 262144, OutputCeiling: 32768, RequestOutput: 8192}},

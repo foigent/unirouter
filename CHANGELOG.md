@@ -4,6 +4,25 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.67] - 2026-09-07
+
+### Added
+
+- Describe exact model output and thinking controls separately in model catalogs
+  and onboarding: native effort, explicit aliases, provider defaults, independent
+  budgets and mutual exclusions. Historical Profile/Definition/Release bytes and
+  public limits remain unchanged.
+
+### Fixed
+
+- Project only verified thinking menus and wire controls for OpenClaw's selected
+  Chat transport. Preserve provider defaults when controls cannot be represented;
+  report those limits and reject stale or conflicting explicit configuration before
+  writes. Native max and aliases targeting it are withheld because this client can
+  introduce ultra or silently downgrade the wire value.
+- Keep client defaults distinct from provider defaults and expose the current
+  conservative UTF8 stream guard without claiming a provider token count.
+
 ## [1.2.66] - 2026-09-07
 
 ### Fixed

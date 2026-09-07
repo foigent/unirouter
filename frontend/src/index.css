@@ -83,6 +83,19 @@
   background: var(--ur-bg-subtle);
 }
 
+.ur-model-parameter-description {
+  margin: 12px 0;
+  padding: 12px 16px;
+  border: 1px solid var(--ur-border-soft);
+  border-radius: 10px;
+  background: var(--ur-bg-subtle);
+  overflow-wrap: anywhere;
+}
+
+.ur-model-parameter-description dt { margin-top: 10px; font-weight: 600; }
+.ur-model-parameter-description dd { margin: 4px 0 0; }
+.ur-model-parameter-description p { margin: 8px 0; }
+
 @media (max-width: 900px) {
   .ur-model-endpoint-kpis,
   .ur-model-endpoint-sheet-summary,
