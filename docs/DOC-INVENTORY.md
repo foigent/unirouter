@@ -2,7 +2,9 @@
 
 > Purpose: classify documents so agents know what is current truth, implementation reference, historical evidence, or stale/conflicting material.
 
-## Current Truth
+## Current authorities and indexed evidence
+
+This section mixes governing documents and dated evidence references. Each file retains its own scope, approval state and evidence cutoff; inclusion here does not make an old Target report live or a candidate approved. Use `ops/CURRENT-STATUS.md` and the active execution record for current task facts.
 
 | File | Role |
 |------|------|
@@ -37,7 +39,7 @@
 | `docs/ops/evidence/PRD7-B13-P7F19-async-media-pre-gate-local-20260731.md` | Immutable historical pre-P7-D03 async-media planning contract and 55-case/36-class evidence; not current runtime truth |
 | `docs/architecture/44-async-media-image-v1-runtime-contract.md` | User-resolved P7-D03 repository-local GPT Image V1 job, identity, state, persistence, expiry, billing and compatibility contract |
 | `docs/ops/evidence/PRD7-B14-P7F19-async-media-image-v1-runtime-local-20260731.md` | PRD7 B14 Image V1 API/worker/PostgreSQL/S3-compatible/UI implementation, isolated integration and multi-viewport Local evidence |
-| `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
+| `docs/PROJECT-HANDOFF.md` | Task-based navigation; checkpoint bodies are historical |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
 | `docs/planning/PRD6-START-HERE.md` | PRD6 Completed (Accepted Scope) state, preserved future boundaries and read order |
 | `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md` | PRD6 Git/CI/test/X-Insight/code-finding baseline evidence |
@@ -96,7 +98,7 @@
 | `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` | Accepted future Cache Service direction, service boundary, capacity planning triggers, SaaS cell reuse and non-authorization guardrails |
 | `docs/tech-ref/34-exact-response-cache.md` | Exact Response Cache V2: route-complete identity, encrypted Redis values, Shadow/Canary, current delivery identity, zero Provider/charge settlement and recovery |
 | `docs/tech-ref/40-invocation-optimization-v1.md` | Product-local invocation-optimization lifecycle, content-free deterministic assignment, conservative Compression evaluator and metadata-only evidence |
-| `docs/tech-ref/44-model-adaptation-required-baseline-v1.md` | Immutable 30-model requirement scope, exact surface/version policy and milestone acceptance classes; never a runtime, evidence, release or pricing authority |
+| `docs/tech-ref/44-model-adaptation-required-baseline-v1.md` | Draft candidate requirement matrix; not an issued immutable approved Baseline. Exact identities and approval state live in its body; independently accepted user requirements retain their scope. Never runtime, evidence, release or pricing authority |
 | `docs/tech-ref/35-provider-cogs-offline.md` | PRD7 Provider COGS offline contract, financial authority separation, exact attribution, capture gaps, replay and non-persistence boundary |
 | `docs/tech-ref/36-governance-simulation-v1.md` | PRD7 strict offline route/policy simulator, shared kernel, Provider Pack change classification and no-runtime-promotion lifecycle |
 | `docs/tech-ref/37-member-lifecycle-v1.md` | PRD7 IdP-neutral project-member lifecycle, effective-access convergence, session versioning and SCIM decision boundary |
@@ -135,8 +137,8 @@
 | `docs/issues/OPEN-ISSUES.md` | Current unresolved issue queue |
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
-| `docs/agent-workflows/AGENT-PROTOCOL.md` | Required single-owner execution, approval, evidence and optional-review workflow |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD8 documentation freeze, followed by completed PRD7 and historical Receipt V0, V1, PRD6 and PRD5 records |
+| `docs/agent-workflows/AGENT-PROTOCOL.md` | Single-owner execution, approval and evidence; mandatory review triggers are defined by root AGENTS.md |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Active delivery scope and authority, followed by dated historical records; do not infer current scope from an old checkpoint |
 | `docs/tech-ref/38-agent-trust-firewall.md` | PRD7 Agent Trust authority tree, signed receipt and direct B8 Digital Twin reuse boundary |
 | `docs/ops/evidence/PRD7-B10-P7F12-P7F13-P7F14-agent-trust-local-20260731.md` | PRD7 B10 local conformance, UI and non-runtime trust evidence |
 | `docs/tech-ref/39-provenance-passport-and-second-connector.md` | PRD7 exact Source provenance groups, Capture-Gap Passport, shared-authority second Connector and runtime-isolation boundary |
@@ -275,13 +277,13 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | File | Role |
 |------|------|
 | `docs/agent-workflows/README.md` | Agent workflow index |
-| `docs/agent-workflows/AGENT-PROTOCOL.md` | Current Agent Protocol v2.1 |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD8 documentation freeze, followed by completed PRD7 and historical Receipt V0, V1, PRD6 and PRD5 records |
+| `docs/agent-workflows/AGENT-PROTOCOL.md` | Current Agent Protocol v2.3; apply root AGENTS.md review triggers |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Active delivery scope and authority, followed by dated historical records; do not infer current scope from an old checkpoint |
 | `docs/agent-workflows/reviews/README.md` | Independent review naming, contents and severity rules |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |
 | `docs/agent-workflows/CHECKLIST.md` | Historical Canary checklist/reference; optional review input only |
-| `docs/agent-workflows/PLAN.md` | Historical/current plan notes; do not treat as canonical without reconciliation |
+| `docs/agent-workflows/PLAN.md` | Historical/temporary plan notes; not the current task authority |
 | `docs/agent-workflows/CONTEXT_HANDOFF.md` | Context transfer notes; reference only |
 
 ## Historical Archive

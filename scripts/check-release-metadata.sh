@@ -49,29 +49,48 @@ if ! git cat-file -e "${head_sha}^{commit}" 2>/dev/null; then
   exit 2
 fi
 
-release_bearing=false
-while IFS= read -r -d '' path; do
-  case "${path}" in
-    VERSION|CHANGELOG.md|docs/agent-workflows/EXECUTION-RECORD.md|docs/ops/evidence/*)
-      ;;
-    *.go|go.mod|go.sum|migrations/*|cmd/*|internal/*|frontend/*|scripts/*|deploy/*|Dockerfile|docker-compose*.yml|docs/tech-ref/05-openapi-spec.yaml|docs/architecture/*|docs/CODEBASE-MAP.md)
-      release_bearing=true
-      ;;
-  esac
-done < <(git diff --no-renames --name-only -z "${base_sha}" "${head_sha}")
+# This classifies known paths, not the semantic intent of prose or test code.
+# Shipped contracts remain subject to the version/review policy in governance.
+# Consume the diff through a checked pipeline: process substitution can hide a
+# failed git diff and incorrectly turn it into an empty non-release change.
+change_flags="$(
+  git diff --no-renames --name-only -z "${base_sha}" "${head_sha}" | {
+    result=false
+    version_changed=false
+    changelog_changed=false
+    while IFS= read -r -d '' path; do
+      case "${path}" in
+        (VERSION) version_changed=true ;;
+        (CHANGELOG.md) changelog_changed=true ;;
+        (docs/agent-workflows/EXECUTION-RECORD.md|docs/ops/evidence/*)
+          ;;
+        (*_test.go|frontend/src/*.test.ts|frontend/src/*.test.tsx|docs/architecture/*.md|docs/CODEBASE-MAP.md)
+          # Go excludes _test.go from normal builds. Frontend test entrypoints
+          # were checked separately; type-check, Vitest and Docker CI still run.
+          ;;
+        (scripts/check-release-metadata.sh|scripts/test-release-metadata.py)
+          # Exact internal verification tools, not all scripts/check-* or test-*.
+          ;;
+        (*.go|go.mod|go.sum|migrations/*|cmd/*|internal/*|frontend/*|scripts/*|deploy/*|Dockerfile|docker-compose*.yml|docs/tech-ref/05-openapi-spec.yaml|docs/architecture/*)
+          result=true
+          ;;
+      esac
+    done
+    printf '%s %s %s\n' "${result}" "${version_changed}" "${changelog_changed}"
+  }
+)"
+read -r release_bearing version_changed changelog_changed <<< "${change_flags}"
 
 if [[ "${release_bearing}" != true ]]; then
   printf 'RELEASE_METADATA_OK version=%s mode=non-release-bearing\n' "${current_version}"
   exit 0
 fi
 
-if ! git diff --quiet "${base_sha}" "${head_sha}" -- VERSION; then
-  :
-else
+if [[ "${version_changed}" != true ]]; then
   echo "release metadata: a release-bearing change must update VERSION" >&2
   exit 1
 fi
-if git diff --quiet "${base_sha}" "${head_sha}" -- CHANGELOG.md; then
+if [[ "${changelog_changed}" != true ]]; then
   echo "release metadata: a release-bearing change must update CHANGELOG.md" >&2
   exit 1
 fi

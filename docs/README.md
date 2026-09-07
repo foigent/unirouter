@@ -2,6 +2,8 @@
 
 ## 当前入口
 
+先按任务读取 [项目规则](../AGENTS.md)、[当前状态](ops/CURRENT-STATUS.md) 和 [活动执行记录](agent-workflows/EXECUTION-RECORD.md)。以下历史证据保留各自截止时间，不因列在入口中成为实时状态或当前授权。
+
 - [PRD-Phase8.md](PRD-Phase8.md) — 当前前向产品合同：UniRouter、X-Insight、Tool Gateway、MCP Gateway 和共享协议边界封板
 - [ops/PRD8-BOUNDARY-MATRIX.md](ops/PRD8-BOUNDARY-MATRIX.md) — PRD7 十九项能力的保留、收窄、迁出、UI 归并和兼容处置
 - [planning/PRD8-IMPLEMENTATION-PLAN.md](planning/PRD8-IMPLEMENTATION-PLAN.md) — UI、企业目录/财务、受控发布与模型调用授权的依赖顺序、已闭环 Local 批次和真实客户决策门
@@ -22,7 +24,7 @@
 - [ops/evidence/PRD8-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260802.md](ops/evidence/PRD8-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260802.md) — PR #247 CI/合并、开发测试 ECS 备份与迁移、精确发布、兼容性回读和登录后 UI 验收
 - [PRD-Phase7.md](PRD-Phase7.md) 与 [ops/PRD7-ACCEPTANCE-MATRIX.md](ops/PRD7-ACCEPTANCE-MATRIX.md) — 已完成 repository-local 实现与证据基线；不再决定新增能力所有权
 - [planning/PRD7-IMPLEMENTATION-PLAN.md](planning/PRD7-IMPLEMENTATION-PLAN.md) — 已完成 B0–B14 的历史依赖顺序和仍未授权的外部门
-- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前 PRD8 文档封板和此前 PRD7 实施记录；不重开 PRD5/PRD6
+- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前活动批次、验收和授权边界；旧 PRD 实施记录保留为历史，不静默重开完成阶段
 - [ops/evidence/PRD7-B1-P7F02-P7F03-provider-conformance-local-20260731.md](ops/evidence/PRD7-B1-P7F02-P7F03-provider-conformance-local-20260731.md) — 三个 Provider Pack、Azure OpenAI、常驻 Provider Inspector 与完整本地验证
 - [ops/evidence/PRD7-B2-P7F02-contextual-inspectors-local-20260731.md](ops/evidence/PRD7-B2-P7F02-contextual-inspectors-local-20260731.md) — Audit/Projects 常驻检查器、深链、本地视图、全量回归与响应式浏览器证据
 - [ops/evidence/PRD7-B6-P7F08-endpoint-protocol-conformance-local-20260731.md](ops/evidence/PRD7-B6-P7F08-endpoint-protocol-conformance-local-20260731.md) — Responses、Cohere Rerank V2、GPT Image 固定协议与 25 项零网络一致性证据
@@ -31,7 +33,7 @@
 - [ops/evidence/PRD7-B9-P7F11-member-lifecycle-local-20260731.md](ops/evidence/PRD7-B9-P7F11-member-lifecycle-local-20260731.md) — IdP 中立成员生命周期、访问收敛、旧会话失效、17 项一致性和常驻 Lifecycle Inspector
 - [ops/evidence/PRD7-B10-P7F12-P7F13-P7F14-agent-trust-local-20260731.md](ops/evidence/PRD7-B10-P7F12-P7F13-P7F14-agent-trust-local-20260731.md) — Agent 有效权限树、祖先预算、衰减/撤销、签名收据、B8 数字孪生复用与常驻 Trust Inspector
 - [ops/evidence/PRD7-B11-P7F15-P7F16-provenance-passport-local-20260731.md](ops/evidence/PRD7-B11-P7F15-P7F16-provenance-passport-local-20260731.md) — 精确 Source Passport、四类 provenance、固定 Capture Gaps 与隔离的第二 Connector 一致性证明
-- [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
+- [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — 按任务导航；其中历史检查点不替代当前状态
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前已验证项目状态和明确非声明
 - [ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md](ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md) — 当前 `1.0.1` 七角色开发目标验收与清理证据
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 活动、延期和未实现问题登记
@@ -46,7 +48,7 @@
 <details>
 <summary>展开 V1、PRD6 及更早阶段的直接链接</summary>
 
-- [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
+- [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — 按任务导航；其中历史检查点不替代当前状态
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前项目真实状态（进度、测试、部署、缺口）
 - [ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md](ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md) — PR #217、`1.0.1`/sequence 5/schema 42、七角色 UI/API/session/key/数据库/清理的开发目标收口证据
 - [ops/evidence/V1-SECURITY-REMEDIATION-LOCAL-20260717.md](ops/evidence/V1-SECURITY-REMEDIATION-LOCAL-20260717.md) — 39 项安全修复、`000038`–`000042`、本地/OIDC 身份与安全 CLI 的不可变本地前置证据
@@ -124,8 +126,8 @@
 - [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
 - [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
-- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前 PRD8 文档封板及此前 PRD7/V1/PRD6/PRD5 历史边界
-- [agent-workflows/reviews/README.md](agent-workflows/reviews/README.md) — 可选独立复核记录格式和问题级别规则
+- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前活动批次、验收与授权；旧 PRD/V1 记录保留其历史边界
+- [agent-workflows/reviews/README.md](agent-workflows/reviews/README.md) — 独立复核记录格式；明确触发项与时点见项目 AGENTS.md
 - [ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md](ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md) — 单一执行负责人、Git/CI、高影响授权和复核规则的确认记录
 - [ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md](ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md) — Batch 1W 根因、代码、回归和目标证据边界
 - [ops/evidence/PRD5-B1W-target-rerun-20260710.md](ops/evidence/PRD5-B1W-target-rerun-20260710.md) — Batch 1W 目标部署、单次拒绝复测、临时密钥禁用、第二轮 X-Insight 持久化回读和基础设施风险
@@ -204,8 +206,8 @@
 - [ops/PRD1-REMAINING-ACCEPTANCE-PACK.md](ops/PRD1-REMAINING-ACCEPTANCE-PACK.md) — PRD1 历史剩余验收包
 
 ## Agent 协作
-- [agent-workflows/AGENT-PROTOCOL.md](agent-workflows/AGENT-PROTOCOL.md) — 单一执行负责人、授权、证据和可选独立复核协议
-- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前 PRD8 文档批次、已关闭批次、延期项和历史测试/CI/部署记录
+- [agent-workflows/AGENT-PROTOCOL.md](agent-workflows/AGENT-PROTOCOL.md) — 单一执行负责人、授权、证据和按明确触发项执行的独立复核协议
+- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前活动批次及已关闭批次、延期项和历史测试/CI/部署记录
 - [agent-workflows/reviews/README.md](agent-workflows/reviews/README.md) — 独立复核入口
 - [agent-workflows/FIX-SIGNAL.md](agent-workflows/FIX-SIGNAL.md) — 协议 v1.x 兼容入口
 - [agent-workflows/VERIFY-RESULT.md](agent-workflows/VERIFY-RESULT.md) — 协议 v1.x 历史结果

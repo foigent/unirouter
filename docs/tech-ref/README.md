@@ -49,7 +49,7 @@
 | 40 | [Invocation Optimization And Compression V1](40-invocation-optimization-v1.md) | 调用优化生命周期、内容无关分桶、Compression Shadow/Canary 与元数据证据 | v1.0 |
 | 42 | [Model Execution Profile And Capability Status](42-model-execution-profile-capability-status.md) | 版本化模型执行档案、M82 Release 密封、供应商能力与 UniRouter 已验证能力的事实边界 | v1.1 |
 | 43 | [Versioned Pricing Profiles And Client Projection](43-versioned-pricing-and-client-profile-sync.md) | 绝对单价、来源证据、Freeze 版本、非 Token 计费与 OpenClaw Profile 投影 | v1.0 |
-| 44 | [Model Adaptation Required Baseline V1](44-model-adaptation-required-baseline-v1.md) | 30 个产品身份的不可变需求范围、surface/version policy 与里程碑验收分类；不作为运行时状态机 | v1.0 |
+| 44 | [Model Adaptation Required Baseline V1](44-model-adaptation-required-baseline-v1.md) | 需求矩阵草案，尚未签发不可变批准 Baseline；身份数量与批准状态以正文为准，另有明确用户承诺的要求保留；不是运行时权威 | v1.0 |
 
 ## 关联文档
 - [PRD Phase 1](../PRD-Phase1.md) — 历史需求参考
