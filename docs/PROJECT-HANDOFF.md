@@ -1,8 +1,26 @@
 # UniRouter Agent Handoff
 
-> Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
-> Read this file first, then follow the linked current-state documents.
-> **Newest product/Target checkpoint (2026-08-03):** PRD8 is the active
+> Purpose: task-based navigation for taking over the repository. Read only the
+> sources needed for the current request; this page is not a live deployment record.
+
+## Current navigation
+
+- [Project instructions](../AGENTS.md): applicable task, review and approval boundaries.
+- [Current status](ops/CURRENT-STATUS.md): dated evidence summary and explicit non-claims.
+- [Execution record](agent-workflows/EXECUTION-RECORD.md): active batch, accepted criteria, authority and blockers.
+- [PRD8](PRD-Phase8.md) and [boundary matrix](ops/PRD8-BOUNDARY-MATRIX.md): forward product ownership; completed PRD7 evidence remains historical.
+- [Agent protocol](agent-workflows/AGENT-PROTOCOL.md) and [engineering governance](governance/README.md): applicable execution and validation requirements.
+- [Document inventory](DOC-INVENTORY.md): references with their own scope, date and approval state.
+
+## Historical checkpoints and reference navigation
+
+All checkpoint narratives below describe their recorded dates and scopes, including
+uses of “current”, “next”, version numbers and authorization windows. They do not
+establish today’s Target state, reopen a completed phase, extend expired authority,
+or cancel a later explicit decision. Follow the current navigation above before
+an action that depends on changing facts. Historical evidence bodies are retained.
+
+> **Historical product/Target checkpoint (2026-08-03):** PRD8 is the active
 > product boundary. The authorized existing-ECS release remains exact deployed
 > code `f81d8431aed9fea1f1ff63467f2c4df6cecfd2f5`; the development Gateway is now
 > externally verified at `https://8.130.18.85/` with Base URL
@@ -15,7 +33,7 @@
 > customer DNS/CA or Production. Read `docs/PRD-Phase8.md`,
 > `docs/runbooks/SECOND-INTEGRATION-POC.md` and
 > `docs/ops/evidence/PRD8-PUBLIC-HTTPS-TARGET-20260803.md` before action.
-> **Current product iteration (2026-07-31):** PRD7 is accepted for
+> **Historical product iteration (2026-07-31):** PRD7 is accepted for
 > repository-local implementation and active on
 > `codex/product-iteration-20260730`. Read `docs/PRD-Phase7.md`,
 > `docs/ops/PRD7-ACCEPTANCE-MATRIX.md`,
@@ -41,7 +59,7 @@
 > D04, D05, D06 or D07. No deployment, traffic, real credentials/providers/
 > object stores/IdPs, non-test DB changes, cursor/checkpoint changes, push, PR
 > or merge is authorized by the product-iteration scope.
-> **Newest checkpoint (2026-07-21
+> **Historical checkpoint (2026-07-21
 > `FV-SOURCE-QUALIFICATION-CURRENT-ECS-REPLACEMENT`):** UniRouter accepted the
 > exact User
 > [authorization](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-21-prd2-fresh-controlled-existing-ecs-replacement-lifecycle-authorization.md>)
@@ -426,7 +444,7 @@ using the preserved PRD6 history below.
 45. `/Users/m4/Desktop/projects/X-Insight/docs/architecture/runtime-contract-capability-status.md` - X-Insight implemented/not-implemented runtime facts.
 46. `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-11-prd5-runtime-contract-v1-boundary.md` - accepted cross-project decision.
 47. `docs/issues/OPEN-ISSUES.md` - active issues and future evidence.
-48. `docs/agent-workflows/AGENT-PROTOCOL.md` - execution, approval, evidence and optional-review rules.
+48. `docs/agent-workflows/AGENT-PROTOCOL.md` - execution, approval, evidence and the project’s explicit review requirements.
 49. `docs/agent-workflows/EXECUTION-RECORD.md` - current branch/batch verification.
 50. `docs/CODEBASE-MAP.md`, `docs/DOC-INVENTORY.md`, and `docs/DOCS-GOVERNANCE.md` - code and documentation lifecycle maps.
 51. `docs/ops/evidence/PRD6-B3H-P6F40A-cost-shortfall-local-20260713.md` - current COST-009 shortfall/top-up/pending implementation and verification boundary.
@@ -632,25 +650,18 @@ no PRD6 response persistence, deployment or semantic cache is accepted.
 | Which PRD2 items are frozen/accepted/deferred? | `docs/ops/PRD2-ACCEPTANCE-MATRIX.md` |
 | Which capabilities were PRD4 candidates before formal scoping? | `docs/planning/PRD4-BACKLOG.md` |
 | What should be fixed next? | `docs/issues/OPEN-ISSUES.md` |
-| How does execution, approval and optional review work? | `docs/agent-workflows/AGENT-PROTOCOL.md` |
+| How does execution, approval and risk-proportionate review work? | `docs/agent-workflows/AGENT-PROTOCOL.md` |
 | Which old docs may be stale? | `docs/DOC-INVENTORY.md` |
 
 PRD1 and PRD2 documents remain useful requirements/evidence references, but they are not the active planning surface for new work. Do not treat files under `docs/testing/archive/` as current status. They are historical evidence unless reconciled into the current-state files above.
 
-## Risk-Gated Execution Workflow
+## Execution workflow reference
 
-Use `docs/agent-workflows/AGENT-PROTOCOL.md` before changing code or status:
+Use root `AGENTS.md` and `docs/agent-workflows/AGENT-PROTOCOL.md` for the current
+R0–R3 definitions, mandatory pre-code review triggers, approval requirements and
+completion rules. This navigation page does not maintain a duplicate checklist.
 
-1. Codex is the single execution owner for planning, implementation, tests, repository integration and authorized environment work.
-2. R2/R3/R4 batches update `docs/agent-workflows/EXECUTION-RECORD.md` and applicable immutable evidence.
-3. Codex creates a `codex/` branch and PR; required GitHub CI must pass before merge. Direct push to `main` is prohibited.
-4. Authorized non-production deployment may proceed without a separate Atlas gate after secure access exists.
-5. Production, destructive target data, credential, expanded export, excess-cost provider and public-release actions require specific User approval.
-6. Canary, Sentinel, Atlas or other capable reviewers may independently review without becoming a default serial gate.
-7. Independent results go under `docs/agent-workflows/reviews/`; P0/P1 findings block or reopen a batch.
-8. Local, CI, target, production and external-integration evidence remain separate status levels.
-
-## Current Verification Baseline
+## Historical Verification Baseline
 
 Current execution has completed PRD6 Batch 0B P6-F16 through PR #140 /
 `f244f669`; its post-merge `main` CI is green. Fresh full repository checks and

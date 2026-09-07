@@ -5,6 +5,26 @@ Current code, Baseline/ADR, Target state and provider documentation remain the
 authorities; Git retains event history. Entries stay only while their invariant
 and executable enforcement remain applicable.
 
+## Active-lesson admission threshold
+
+Admit a lesson only when all of the following are met:
+
+- Current task evidence supports a reusable invariant, not just an incident
+  narrative, preference, reviewer suggestion or unapproved product choice.
+- Its scope and trigger identify when it applies and avoid generalizing a
+  provider, environment or lifecycle exception beyond the verified boundary.
+- An existing executable enforcement is identified by an accurate code, test,
+  validator or supported runbook reference, and relevant execution evidence
+  verifies that enforcement. A proposed check or prose reminder is insufficient.
+- It is merged with an overlapping active lesson, or has a distinct invariant
+  that warrants a separate entry. Revise or retire superseded entries.
+
+Keep unadmitted candidates and their evidence gaps in the current task report;
+do not add a second permanent learning backlog or invent implementation work to
+qualify them. Non-admission alone does not block an otherwise satisfied accepted
+task criterion and never waives a required product check. Read-only work proposes
+changes without editing this file.
+
 ### MAR-001 Validate capability composition under effective defaults
 
 - Invariant: A Profile may expose only request combinations that its exact provider surface can execute; individually valid capabilities do not prove their composition under omitted fields or provider defaults.

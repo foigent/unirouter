@@ -97,6 +97,9 @@ jobs:
             echo "docker=$docker"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Test release metadata policy
+        run: PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-release-metadata.py
+
       - name: Validate product version and release notes
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}

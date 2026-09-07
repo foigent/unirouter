@@ -1,9 +1,11 @@
 # FIX-SIGNAL.md - Legacy Compatibility Entry
 
-> Agent Protocol v2.0 no longer uses Canary verification as a mandatory serial gate.
+> Compatibility navigation only. Current project AGENTS.md defines mandatory
+> pre-code review triggers; the current Agent Protocol governs execution.
+> The v2.0 record below remains historical and does not define today’s risk tiers.
 > Current execution state is maintained in `docs/agent-workflows/EXECUTION-RECORD.md`.
 
-## Current Batch
+## Historical Batch Snapshot (2026-07-10)
 
 - Batch: PRD5 Batch 1Z Target Deployment And Infrastructure Security
 - Owner: Codex
@@ -15,7 +17,7 @@
 
 ## Reviewer Entry
 
-Independent review is optional and asynchronous. A reviewer should read the execution record and evidence, then write a new file under:
+For current work, use the mandatory/optional review distinction and exact-object requirements in root AGENTS.md and AGENT-PROTOCOL.md. New review results go under:
 
 ```text
 docs/agent-workflows/reviews/<batch-id>-<reviewer>-<YYYYMMDD>.md
@@ -23,4 +25,4 @@ docs/agent-workflows/reviews/<batch-id>-<reviewer>-<YYYYMMDD>.md
 
 Do not overwrite `VERIFY-RESULT.md`; it is the most recent protocol v1.x historical verification result.
 
-P0/P1 findings block or reopen the batch. P2/P3 findings are triaged under `AGENT-PROTOCOL.md`.
+Verified findings are adjudicated under the current `AGENT-PROTOCOL.md`; historical severity or role labels do not create new scope or reopen completed phases.

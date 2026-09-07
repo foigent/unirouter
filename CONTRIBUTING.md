@@ -12,14 +12,17 @@ Docker 开发路径使用根目录 source Compose，不得将其当作客户正�
 ## 开发流程
 
 每轮只保留一个 Active Milestone。先完成 coherent diff 和聚焦测试，
-diff 冻结后只运行一次与风险相称的项目 gate。只有 migration、security、
-identity/authorization、financial 或不可逆变化默认提高验证强度；普通
-可逆 UI/API 变更不强制增加迁移、恢复或独立证据仪式。
+候选稳定后完成适用的必需检查；仅因新变化、失败或未解决风险重复验证。
+项目 `AGENTS.md` 明确的编码前独立审查触发项仍适用，包括身份、路由、
+Release 及启动/恢复合同；普通未命中项不强制增加迁移或恢复仪式。
 
 ### 1. 创建分支
 
+以下是开发者命令示例，按任务选用；已有工作树存在改动时优先隔离，
+不把示例当作每次必须切换分支、联网拉取或启动服务的指令。
+
 ```bash
-# 从最新 main 创建工作分支
+# 从已核对的 main 创建工作分支
 git checkout main
 git pull --ff-only
 git checkout -b codex/short-description
@@ -28,6 +31,8 @@ git checkout -b codex/short-description
 不得直接推送 `main`。人工开发者可以使用团队约定的命名空间；自动执行负责人默认使用 `codex/`。
 
 ### 2. 开发 + 测试
+
+以下命令按影响面选择；稳定候选仍完成该类改动的必需检查。
 
 ```bash
 # 后端测试
@@ -49,7 +54,8 @@ curl http://localhost:8080/health/ready
 
 Release-bearing 变更必须先更新根目录 `VERSION`（SemVer）和
 `CHANGELOG.md`，并保持 `frontend/package.json`、
-`frontend/package-lock.json` 同版本。提交前运行：
+`frontend/package-lock.json` 同版本。纯测试/文字及已明确识别的内部检查工具
+按工程治理的非 release-bearing 范围处理，不因此跳过适用 CI。提交前运行：
 
 ```bash
 scripts/check-release-metadata.sh
@@ -86,16 +92,16 @@ Fixes #45"
 
 ### 4. 验收流程（单一执行负责人）
 
-当前流程由一个执行负责人完成实现、验证、PR、CI 和已授权的非生产部署；独立复核按风险选择，不是固定串行关卡：
+当前流程由一个执行负责人完成实现、验证、PR、CI 和已授权的非生产部署；命中项目 AGENTS.md 明确触发项时先独立审查，其他复核按需进行：
 
 ```
-范围确认 → 实现与本地验证 → PR → required CI → 合并 → 按授权部署与目标验证
+明确目标与已有授权 → 适用的前置审查 → 实现与验证 → 仅按授权进行 PR/合并/部署 → 完成当前请求
 ```
 
 **详细流程**：
 1. 执行负责人确认范围、风险、非目标和授权边界。
-2. 完成聚焦回归；diff 冻结后执行一次与风险相称的项目 gate。只有长时间、R2 风险或跨外部生命周期工作才更新执行记录和不可变 evidence。
-3. 创建 PR；不得绕过分支保护或 required CI。
+2. 完成定向与必要回归；长时间、跨外部生命周期或需恢复时维护已有执行记录，在适用的重要风险事实节点记录证据。普通任务不强制新建矩阵或台账。
+3. 当前授权覆盖时创建 PR；适用 CI 通过且合并获准后才合并，不得绕过分支保护或 required CI。
 4. `Change Routing` 对变更分类；适用的 `Backend Tests`、`Frontend Build`、`Docker Build` 必须成功。纯文档 PR 可以由路由明确跳过昂贵任务。
 5. 合并后，以 `origin/main` 的实际提交为准更新状态；已授权的非生产部署仍需记录版本、健康、回滚和目标证据。
 
@@ -103,7 +109,7 @@ Fixes #45"
 - `docs/agent-workflows/AGENT-PROTOCOL.md` — 当前授权、风险、证据和合并规则
 - `docs/agent-workflows/EXECUTION-RECORD.md` — 当前批次可变执行记录
 - `docs/ops/evidence/` — 重要事实节点的不可变证据
-- `docs/agent-workflows/reviews/` — 可选独立复核结果
+- `docs/agent-workflows/reviews/` — 独立复核结果；明确前置要求见项目 AGENTS.md
 
 `FIX-SIGNAL.md` 和 `VERIFY-RESULT.md` 仅保留协议 v1.x 的历史兼容，不再作为新批次的强制门禁。
 
@@ -128,7 +134,7 @@ Fixes #45"
 
 ## 测试
 - [ ] 本地测试通过
-- [ ] 新增测试用例
+- [ ] 受影响的必要测试已完成（新增或复用；不适用时说明）
 - [ ] 适用的 required CI 通过
 - [ ] 目标环境状态与非目标已说明
 
@@ -162,7 +168,7 @@ Fixes #45"
 ## 测试要求
 
 - **新功能**：必须有对应测试
-- **Bug 修复**：必须有回归测试
+- **Bug 修复**：功能行为修复必须有有效回归测试，可新增或复用能检验缺陷的既有测试；低风险文字修订按回读和 diff 验证
 - **测试覆盖率**：关注变更路径的有效回归；覆盖率是观察指标，不替代行为验证，也不是当前统一合并阈值
 
 ```bash
