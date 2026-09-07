@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"sort"
@@ -176,6 +177,25 @@ func TestOpenAPIModelCapabilityQualificationIdentityEnumsMatchCompiledBindings(t
 		compiled["probe_contract_version"] = append(compiled["probe_contract_version"], version)
 	}
 
+	// Data bundles may introduce another already-modeled capability without a
+	// schema migration or compiled per-model binding. Keep its API name covered.
+	files, err := filepath.Glob("../../capability-bundles/*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range files {
+		wire, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bundle, err := modelcapabilitypublication.DecodeBundleV2(wire)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, binding := range bundle.BindingDelta {
+			compiled["capability_id"] = append(compiled["capability_id"], binding.CapabilityID)
+		}
+	}
 	for name, values := range compiled {
 		if name == "execution_profile_id" || name == "execution_profile_version" {
 			var pattern string

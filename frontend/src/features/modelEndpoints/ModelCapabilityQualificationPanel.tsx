@@ -13,7 +13,7 @@ import { endpointError } from './presentation';
 
 const { Text } = Typography;
 
-export type QualifiedCapabilityID = 'streaming' | 'reasoning' | 'reasoning_effort' |
+export type QualifiedCapabilityID = 'streaming' | 'reasoning' | 'reasoning_effort' | 'reasoning_budget' |
   'tools' | 'function_tools' | 'tool_choice_auto' | 'tool_choice_named' |
   'tool_choice_required' | 'json_object' | 'cache_read_usage' | 'prompt_cache';
 
@@ -48,6 +48,13 @@ const capabilityPresentation: Record<QualifiedCapabilityID, {
     defaultReason: '已审阅当前环境的推理强度探测证据',
     emptyEvidence: '尚未运行 typed reasoning_effort probe。',
     probeContractSummary: '服务端按当前精确探测合同选择推理强度、流式模式和测试请求，并验证响应与最终用量；推理强度可显式设置或采用供应商默认值。',
+  },
+  reasoning_budget: {
+    title: '能力验证 · 思考预算', shortName: '思考预算能力',
+    description: '验证当前精确合同接受思考预算参数，并保留工具调用与最终用量。',
+    defaultReason: '已审阅当前环境的思考预算探测证据',
+    emptyEvidence: '尚未运行思考预算探测。',
+    probeContractSummary: '服务端按精确合同限定总输出与思考预算，并验证工具调用、流式结束和最终用量；不把参数被接受解释为供应商逐 Token 严格计数保证。',
   },
   tools: {
     title: '能力验证 · Tools 请求面', shortName: 'Tools 请求面',

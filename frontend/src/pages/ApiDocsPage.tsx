@@ -182,6 +182,7 @@ const endpointGroups: EndpointGroup[] = [
       ['GET', '/api/v1/channels/{id}/provider-models', '用已保存凭证读取供应商当前可用的模型 ID，不回显凭证'],
       ['GET', '/api/v1/model-endpoints', '读取模型、供应商端点、真实检测与当前路由的唯一权威投影'],
       ['GET', '/api/v1/model-deployments', '读取模型部署五条独立事实轴；安全只读，不要求 Gateway License'],
+      ['GET', '/api/v1/model-deployments/{deploymentID}/model-discovery', '使用所属连接和明确凭证读取北京业务空间的模型目录；仅管理员可用，目录不证明调用权限或执行资格，不运行推理探测'],
       ['GET', '/api/v1/model-deployments/{deploymentID}', '按持久 deployment ID 和 operation 精确读取，不回退到其他端点'],
       ['POST', '/api/v1/model-deployments', '在同一事务中创建或精确重放连接、公共模型、部署、凭证绑定与 operation；仅对编译合同与数据库支持合同完全一致的 M88 DeepSeek Flash Chat streaming tuple 写入 enabled/declared 能力投影，不调用供应商，也不产生探测、批准、路由或 Release；要求 Gateway License 和 Idempotency-Key（24 小时、按操作者隔离，不保存请求或密钥）'],
       ['POST', '/api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes', '以精确 deployment、operation 与 credential binding 对 Chat Completions、Embeddings、Responses 或 Messages 执行有界真实探测；后两者必须使用 operation 绑定的 endpointprotocol profile 与不可变 public path，本地 fixture 不能充当探测'],

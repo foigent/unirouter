@@ -32,7 +32,7 @@ page.on('response', (response) => {
 });
 
 async function selectOption(root, label, option) {
-  const field = root.locator('.semi-form-field').filter({ hasText: label }).first();
+  const field = root.locator('.semi-form-field').filter({ has: page.getByText(label, { exact: true }) }).first();
   await field.locator('.semi-select').click();
   await page.locator('.semi-select-option:visible').getByText(option, { exact: true }).last().click();
   await field.getByText(option, { exact: true }).waitFor({ state: 'visible' });
@@ -65,10 +65,12 @@ try {
   await page.goto('/channels');
   await page.getByRole('heading', { name: '模型接入', exact: true }).waitFor({ state: 'visible' });
   await page.getByRole('button', { name: '接入模型', exact: true }).click();
-  const createSheet = page.locator('.semi-sidesheet:visible').filter({ hasText: '接入模型' }).last();
+  await page.getByRole('button', { name: '新建平台连接', exact: true }).click();
+  const createSheet = page.locator('.semi-sidesheet:visible').filter({ hasText: '创建模型接入' }).last();
   await createSheet.waitFor({ state: 'visible' });
 
-  await selectOption(createSheet, '接入模板', '自定义 OpenAI 兼容供应商');
+  await selectOption(createSheet, '平台', '自定义平台');
+  await selectOption(createSheet, '接口与地域', '自定义 OpenAI 兼容供应商');
   await createSheet.getByLabel('连接名称').fill('Model Browser DeepSeek');
   await createSheet.getByLabel('供应商标识').fill('deepseek-browser');
   await createSheet.getByLabel('Base URL').fill(fixture.provider_url);
@@ -109,6 +111,12 @@ try {
   assert.ok(deploymentID > 0);
   assert.ok(publicModelID > 0);
   assert.ok(credentialBindingID > 0);
+  assert.equal(created.selected_credential_binding_id, credentialBindingID);
+
+  const batchSheet = page.locator('.semi-sidesheet:visible').filter({ hasText: '批量添加模型' }).last();
+  await batchSheet.waitFor({ state: 'visible' });
+  await batchSheet.getByRole('button', { name: '关闭', exact: true }).click();
+  await batchSheet.waitFor({ state: 'hidden' });
 
   let endpointSheet = page.locator('.semi-sidesheet:visible').filter({ hasText: `Deployment #${deploymentID}` }).last();
   await endpointSheet.waitFor({ state: 'visible' });

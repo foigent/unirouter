@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Banner, Button, Input, Modal, Space, Table, Toast, Typography } from '@douyinfe/semi-ui';
+import { Banner, Button, Input, Modal, SideSheet, Space, Table, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconPlus, IconRefresh, IconSearch } from '@douyinfe/semi-icons';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -12,6 +12,7 @@ import {
   type CanonicalOperation,
   type CanonicalOperationID,
 } from '../api/modelDeployments';
+import ModelEndpointBatchSheet from '../features/modelEndpoints/ModelEndpointBatchSheet';
 import ModelEndpointCreateSheet from '../features/modelEndpoints/ModelEndpointCreateSheet';
 import ModelEndpointDetailsSheet from '../features/modelEndpoints/ModelEndpointDetailsSheet';
 import ModelReleaseWorkspace from '../features/modelEndpoints/ModelReleaseWorkspace';
@@ -71,7 +72,10 @@ export default function ModelEndpointsPage() {
   const [loadError, setLoadError] = useState('');
   const [detailError, setDetailError] = useState('');
   const [filter, setFilter] = useState('');
+  const [entryOpen, setEntryOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [batchInitial, setBatchInitial] = useState({ connectionID: 0, bindingID: 0 });
+  const [batchOpen, setBatchOpen] = useState(false);
   const [workingBindingID, setWorkingBindingID] = useState(0);
   const listVersion = useRef(0);
   const detailVersion = useRef(0);
@@ -230,6 +234,16 @@ export default function ModelEndpointsPage() {
     const operation = result.application.operations[0];
     await load();
     if (operation) selectExactIdentity(result.application.deployment.id, operation.operation_id);
+    if (operation?.operation_id === 'openai.chat_completions.v1') {
+      // The server identifies the exact fresh binding. A replay without that
+      // identity requires an explicit binding selection in the next step.
+      setProjection(current => current ? {
+        ...current,
+        applications: [result.application, ...current.applications.filter(a => a.deployment.id !== result.application.deployment.id)],
+      } : current);
+      setBatchInitial({ connectionID: result.application.connection.id, bindingID: result.selected_credential_binding_id || 0 });
+      setBatchOpen(true);
+    }
   };
 
   const executeProbe = async (binding: CanonicalCredentialBinding) => {
@@ -355,7 +369,7 @@ export default function ModelEndpointsPage() {
     <PageHeader
       eyebrow="模型接入"
       title="模型接入"
-      description="接入、探测并发布精确模型执行目标；内部以 deployment_id + operation_id 保持配置、凭证、探测、运行时和调用授权五个独立事实轴。"
+      description="连接模型平台，复用凭证批量配置模型，并分别查看验证、发布和应用授权状态。"
       actions={<Space>
         {viewNavigation}
         <Button icon={<IconRefresh />} loading={loading} onClick={() => void load()}>刷新</Button>
@@ -364,7 +378,7 @@ export default function ModelEndpointsPage() {
           type="primary"
           disabled={!gatewayLicensed}
           title={!gatewayLicensed ? gatewayRestriction : undefined}
-          onClick={() => setCreateOpen(true)}
+          onClick={() => setEntryOpen(true)}
         >接入模型</Button>}
       </Space>}
     />
@@ -428,7 +442,7 @@ export default function ModelEndpointsPage() {
             empty={<EmptyState
               title="还没有模型执行目标"
               description={canManage ? '接入第一个模型；创建后仍需分别完成精确 Operation 探测与发布。' : '当前组织还没有可读取的模型执行目标。'}
-              actions={canManage ? <Button type="primary" disabled={!gatewayLicensed} title={!gatewayLicensed ? gatewayRestriction : undefined} onClick={() => setCreateOpen(true)}>接入模型</Button> : undefined}
+              actions={canManage ? <Button type="primary" disabled={!gatewayLicensed} title={!gatewayLicensed ? gatewayRestriction : undefined} onClick={() => setEntryOpen(true)}>接入模型</Button> : undefined}
               minHeight={300}
             />}
           />}
@@ -442,7 +456,7 @@ export default function ModelEndpointsPage() {
     />
 
     <ModelEndpointDetailsSheet
-      selected={exactDetail}
+      selected={entryOpen || createOpen || batchOpen ? undefined : exactDetail}
       operation={selectedOperation}
       canManage={canManage}
       canApproveCapabilities={canApproveCapabilities}
@@ -454,6 +468,24 @@ export default function ModelEndpointsPage() {
       onInspectRelease={inspectReleaseFromDetail}
     />
     {detailLoading && deploymentID > 0 && operationID && !detail && <Text type="tertiary">正在读取精确 deployment 详情…</Text>}
+    {canManage && entryOpen && <SideSheet title="接入模型" visible onCancel={() => setEntryOpen(false)} width="min(680px, 100vw)">
+      <Typography.Paragraph>一个平台连接可复用 API Key，配置多个模型。先选择连接方式，再选择模型。</Typography.Paragraph>
+      <Space vertical align="start">
+        <Button type="primary" disabled={!projection?.applications.some(a => !a.connection.retired_at)} onClick={() => {
+          setEntryOpen(false); setBatchInitial({ connectionID: 0, bindingID: 0 }); setBatchOpen(true);
+        }}>向已有连接添加模型</Button>
+        <Text type="tertiary">复用已保存的地域、业务空间和凭证，多选模型后统一保存。</Text>
+        <Button onClick={() => { setEntryOpen(false); setCreateOpen(true); }}>新建平台连接</Button>
+        <Text type="tertiary">选择平台并保存首个模型，随后继续为该连接选择更多模型。手动 ID 和详细配置也在此完成。</Text>
+      </Space>
+    </SideSheet>}
+    {canManage && batchOpen && <ModelEndpointBatchSheet
+      applications={projection?.applications || []}
+      initialConnectionID={batchInitial.connectionID}
+      initialBindingID={batchInitial.bindingID}
+      onClose={() => setBatchOpen(false)}
+      onChanged={load}
+    />}
     {canManage && <ModelEndpointCreateSheet
       open={createOpen}
       applications={projection?.applications || []}

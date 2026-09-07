@@ -82,6 +82,10 @@ func TestRegisterModelDeploymentRoutesEnforcesRoleAndGatewayLicenseBoundaries(t 
 		require.Equal(t, http.StatusBadRequest, response.Code, "licensed probe role=%s body=%s", role, response.Body.String())
 		require.Contains(t, response.Body.String(), "canonical_operation_probe_invalid", "role=%s", role)
 	}
+	for _, role := range []string{auth.RoleOrgViewer, auth.RoleBillingAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper} {
+		require.Equal(t, http.StatusForbidden, serve(validMux, http.MethodGet, "/api/v1/model-deployments/1/model-discovery", "", role).Code)
+	}
+	require.Equal(t, http.StatusBadRequest, serve(validMux, http.MethodGet, "/api/v1/model-deployments/1/model-discovery", "", auth.RoleOrgAdmin).Code)
 	viewerWrite := serve(validMux, http.MethodPost, "/api/v1/model-deployments", "not-json", auth.RoleOrgViewer)
 	require.Equal(t, http.StatusForbidden, viewerWrite.Code)
 	require.NotContains(t, viewerWrite.Body.String(), "license_error", "RBAC must reject before the License gate")
@@ -121,6 +125,9 @@ func TestRegisterModelDeploymentRoutesEnforcesRoleAndGatewayLicenseBoundaries(t 
 	writeWithoutLicense := serve(missingLicenseMux, http.MethodPost, "/api/v1/model-deployments", "not-json", auth.RoleOrgAdmin)
 	require.Equal(t, http.StatusForbidden, writeWithoutLicense.Code)
 	require.Contains(t, writeWithoutLicense.Body.String(), "license_error.missing")
+	discoveryWithoutLicense := serve(missingLicenseMux, http.MethodGet, "/api/v1/model-deployments/1/model-discovery", "", auth.RoleOrgAdmin)
+	require.Equal(t, http.StatusForbidden, discoveryWithoutLicense.Code)
+	require.Contains(t, discoveryWithoutLicense.Body.String(), "license_error.missing")
 	probeWithoutLicense := serve(
 		missingLicenseMux, http.MethodPost,
 		"/api/v1/model-deployments/1/operations/openai.chat_completions.v1/probes",

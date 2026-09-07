@@ -66,6 +66,7 @@ VALUES ($1,$2,'fixture','org_admin','org_admin','active') RETURNING id`,
 	var created canonicalModelApplicationCreateResult
 	require.NoError(t, json.Unmarshal(first.Body.Bytes(), &created))
 	require.False(t, created.IdempotencyReplay)
+	require.Positive(t, created.SelectedCredentialBindingID)
 	require.Empty(t, first.Header().Get(middleware.IdempotencyReplayHeader))
 	require.Equal(t, 1, invalidator.calls)
 
@@ -91,6 +92,7 @@ VALUES ($1,$2,'fixture','org_admin','org_admin','active') RETURNING id`,
 	var replayed canonicalModelApplicationCreateResult
 	require.NoError(t, json.Unmarshal(replay.Body.Bytes(), &replayed))
 	require.True(t, replayed.IdempotencyReplay)
+	require.Zero(t, replayed.SelectedCredentialBindingID, "historical receipt cannot infer the original credential from current bindings")
 	require.Equal(t, created.Application.Deployment.ID, replayed.Application.Deployment.ID)
 	require.Equal(t, created.Reused, replayed.Reused)
 	require.Equal(t, "true", replay.Header().Get(middleware.IdempotencyReplayHeader))

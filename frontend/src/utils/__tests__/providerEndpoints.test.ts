@@ -4,6 +4,8 @@ import {
   providerPreset,
   providerPresetAdapterConfigMatches,
   providerPresets,
+  providerPlatforms,
+  presetsForPlatform,
 } from '../providerEndpoints';
 
 describe('provider endpoint presets', () => {
@@ -97,6 +99,13 @@ describe('provider endpoint presets', () => {
     });
     expect(providerPreset('dashscope-shared').baseURL).toBe('https://dashscope.aliyuncs.com/compatible-mode/v1');
     expect(providerPreset('not-built-in').value).toBe('custom');
+  });
+
+  it('groups each exact connection preset once and exposes the Qianwen portal without a new runtime provider', () => {
+    expect(providerPlatforms.filter(p => p.value === 'openai')).toHaveLength(1);
+    expect(providerPlatforms.filter(p => p.value === 'dashscope')).toHaveLength(1);
+    expect(providerPlatforms.flatMap(p => presetsForPlatform(p.value)).map(p => p.value).sort()).toEqual(providerPresets.map(p => p.value).sort());
+    expect(providerPreset('qianwen')).toMatchObject({ provider: 'dashscope', region: 'cn-beijing', endpointClass: 'dashscope_cn_beijing_shared_payg' });
   });
 
   it('defaults an unknown provider identity to the supported OpenAI-compatible protocol', () => {

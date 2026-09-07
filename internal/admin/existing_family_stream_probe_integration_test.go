@@ -24,6 +24,7 @@ func TestExistingFamilyDataProbeDispatchAndPersistenceIntegration(t *testing.T) 
 		{"deepseek.v4-flash.api", "1.5.0", "protocol.deepseek-openai-chat.v5", qualification.DeepSeekStreamFunctionToolsProbeContractID, "https://api.deepseek.com"},
 		{"kimi.k3.api", "1.9.0", "protocol.kimi-openai-chat.k3.v6", qualification.KimiStreamFunctionToolsProbeContractID, "https://api.moonshot.cn/v1"},
 		{"minimax.m3.payg", "1.2.0", "protocol.minimax-m3-openai-chat.v10", qualification.MiniMaxM3StreamFunctionToolsProbeContractID, "https://api.minimax.cn/v1"},
+		{"qwen.3.7-flash.api", "1.7.0", "protocol.qwen-openai-chat.flash.v7", qualification.QwenStreamFunctionToolsProbeContractID, "https://dashscope.aliyuncs.com/compatible-mode/v1"},
 	} {
 		t.Run(tc.id, func(t *testing.T) {
 			pool := testutil.SetupMigratedTestDB(t)
@@ -44,10 +45,19 @@ func TestExistingFamilyDataProbeDispatchAndPersistenceIntegration(t *testing.T) 
 			if p.Provider == "deepseek" {
 				request.Connection.AdapterConfig = json.RawMessage(`{"endpoint_path_mode":"base_relative"}`)
 			}
+			if p.Provider == "dashscope" {
+				request.Connection.AdapterConfig = json.RawMessage(`{"endpoint_path_mode":"canonical_v1"}`)
+			}
 			legacy := createCanonicalApplicationForTest(t, h, authorized, request, http.StatusCreated)
 			p.Version, p.ProtocolProfile = "99.0.0", tc.protocol
 			if p.Provider == "minimax" {
 				p.ReasoningProfile = "reasoning.minimax-m3-adaptive-embedded.v2"
+			}
+			capability := "function_tools"
+			if p.Provider == "dashscope" {
+				capability = "reasoning_budget"
+				p.Capabilities = []string{modelprofile.CapabilityStreaming, modelprofile.CapabilityReasoning, modelprofile.CapabilityReasoningBudget, modelprofile.CapabilityTools, modelprofile.CapabilityFunctionTools, modelprofile.CapabilityToolChoiceAuto}
+				p.EvidenceRefs = []string{"https://help.aliyun.com/zh/model-studio/qwen3-7-flash", "https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions", "https://help.aliyun.com/zh/model-studio/qwen-function-calling"}
 			}
 			d, err := modelprofile.NewDefinition(p, p.Provider+"/"+strings.ToLower(p.UpstreamModelIDs[0]), "")
 			require.NoError(t, err)
@@ -65,10 +75,10 @@ VALUES('family-fixture','legacy_import','000113_glm_stream_function_tools_qualif
 			_, err = tx.Exec(ctx, `INSERT INTO model_profile_definitions(definition_digest,profile_id,profile_version,product_lineage_id,schema_version,canonical_bytes,publication_id) VALUES($1,$2,$3,$4,$5,$6,'family-fixture')`, d.Digest(), p.ID, p.Version, d.ProductLineageID(), modelprofile.DefinitionSchemaV1, d.CanonicalBytes())
 			require.NoError(t, err)
 			_, err = tx.Exec(ctx, `INSERT INTO model_capability_probe_contract_bindings(operation_id,capability_id,execution_profile_id,execution_profile_version,protocol_profile_id,protocol_profile_version,probe_contract_id,probe_contract_version,expected_provider,expected_upstream_model,public_path,introduced_publication_id,profile_definition_digest)
-VALUES($1,'function_tools',$2,$3,$4,'1.0.0',$5,'1.0.0',$6,$7,'/v1/chat/completions','family-fixture',$8)`, modelprofile.OperationOpenAIChat, p.ID, p.Version, tc.protocol, tc.probe, p.Provider, p.UpstreamModelIDs[0], d.Digest())
+VALUES($1,$9,$2,$3,$4,'1.0.0',$5,'1.0.0',$6,$7,'/v1/chat/completions','family-fixture',$8)`, modelprofile.OperationOpenAIChat, p.ID, p.Version, tc.protocol, tc.probe, p.Provider, p.UpstreamModelIDs[0], d.Digest(), capability)
 			require.NoError(t, err)
 			_, err = tx.Exec(ctx, `INSERT INTO model_capability_current_probe_contracts(operation_id,capability_id,execution_profile_id,execution_profile_version,protocol_profile_id,protocol_profile_version,probe_contract_id,probe_contract_version)
-VALUES($1,'function_tools',$2,$3,$4,'1.0.0',$5,'1.0.0')`, modelprofile.OperationOpenAIChat, p.ID, p.Version, tc.protocol, tc.probe)
+VALUES($1,$6,$2,$3,$4,'1.0.0',$5,'1.0.0')`, modelprofile.OperationOpenAIChat, p.ID, p.Version, tc.protocol, tc.probe, capability)
 			require.NoError(t, err)
 			require.NoError(t, tx.Commit(ctx))
 			request.Connection = canonicalConnectionInput{ID: legacy.Application.Connection.ID}
@@ -89,7 +99,13 @@ VALUES($1,'function_tools',$2,$3,$4,'1.0.0',$5,'1.0.0')`, modelprofile.Operation
 					require.Equal(t, true, body["stream"])
 					require.Equal(t, map[string]any{"include_usage": true}, body["stream_options"])
 					contract, _ := modelprofile.ResolveChatProtocolContract(tc.protocol)
-					require.Equal(t, float64(1024), body[contract.OutputLimitField])
+					if p.Provider == "dashscope" {
+						require.Equal(t, float64(2048), body[contract.OutputLimitField])
+						require.Equal(t, true, body["enable_thinking"])
+						require.Equal(t, float64(1024), body["thinking_budget"])
+					} else {
+						require.Equal(t, float64(1024), body[contract.OutputLimitField])
+					}
 					if p.Provider == "deepseek" {
 						require.NotContains(t, body, "tool_choice")
 					} else {
@@ -102,6 +118,8 @@ VALUES($1,'function_tools',$2,$3,$4,'1.0.0',$5,'1.0.0')`, modelprofile.Operation
 						usage["prompt_cache_hit_tokens"], usage["prompt_cache_miss_tokens"] = 10, 90
 					case "kimi":
 						usage["cached_tokens"] = 10
+					case "dashscope":
+						usage["prompt_tokens_details"] = map[string]any{"cached_tokens": 10}
 					default:
 						usage["prompt_tokens_details"] = map[string]any{"cached_tokens": 10}
 						delete(delta, "reasoning_content")
@@ -116,11 +134,11 @@ VALUES($1,'function_tools',$2,$3,$4,'1.0.0',$5,'1.0.0')`, modelprofile.Operation
 					require.NoError(t, err)
 					return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader("data: " + string(response) + "\n\ndata: [DONE]\n\n"))}, nil
 				}))
-				path := fmt.Sprintf("/api/v1/model-deployments/%d/operations/%s/capabilities/function_tools/probes", candidate.Application.Deployment.ID, modelprofile.OperationOpenAIChat)
+				path := fmt.Sprintf("/api/v1/model-deployments/%d/operations/%s/capabilities/%s/probes", candidate.Application.Deployment.ID, modelprofile.OperationOpenAIChat, capability)
 				req := authorized(http.MethodPost, path, fmt.Sprintf(`{"credential_binding_id":%d}`, request.Credential.BindingID))
 				req.SetPathValue("deploymentID", strconv.FormatInt(candidate.Application.Deployment.ID, 10))
 				req.SetPathValue("operationID", modelprofile.OperationOpenAIChat)
-				req.SetPathValue("capabilityID", "function_tools")
+				req.SetPathValue("capabilityID", capability)
 				rec := httptest.NewRecorder()
 				h.ProbeCanonicalModelCapability(rec, req)
 				require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
@@ -135,6 +153,14 @@ VALUES($1,'function_tools',$2,$3,$4,'1.0.0',$5,'1.0.0')`, modelprofile.Operation
 				require.Equal(t, "99.0.0", storedVersion)
 				require.Equal(t, tc.protocol, storedProtocol)
 				require.Equal(t, valid, storedSuccess)
+				if p.Provider == "dashscope" {
+					var summary map[string]any
+					require.NoError(t, pool.QueryRow(ctx, `SELECT request_summary FROM model_capability_probes WHERE capability_probe_id=$1`, result.CapabilityProbeID).Scan(&summary))
+					require.Equal(t, true, summary["enable_thinking"])
+					require.Equal(t, float64(1024), summary["thinking_budget"])
+					require.NotContains(t, summary, "messages")
+				}
+
 			}
 			require.Equal(t, 2, calls, "one fake Provider dispatch per explicit Probe")
 		})

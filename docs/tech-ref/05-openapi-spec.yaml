@@ -1091,11 +1091,75 @@ paths:
           content:
             application/json:
               schema: { type: object }
-        "201": { $ref: "#/components/responses/JSON" }
+        "201":
+          description: "Fresh canonical create result includes selected_credential_binding_id. Historical idempotency replay may omit it and must not infer it from current bindings."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  selected_credential_binding_id: { type: integer, format: int64, minimum: 1 }
+                  application: { type: object }
+                  idempotency_replay: { type: boolean }
+                  reused: { type: object }
         "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+
+  /api/v1/model-deployments/{deploymentID}/model-discovery:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+    get:
+      tags: [Admin]
+      summary: Read supplier model metadata through an owned existing binding
+      description: "Requires a Gateway License. Supports only the exact Beijing DashScope workspace endpoint. No Probe, qualification, price, configuration or routing writes. Responses and errors never contain credentials or raw supplier diagnostics."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: credential_binding_id, in: query, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: connection_revision, in: query, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: credential_revision, in: query, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: page, in: query, required: true, schema: { type: integer, minimum: 1, maximum: 1000 } }
+        - { name: query, in: query, schema: { type: string, maxLength: 200 }, description: Supplier name search. }
+      responses:
+        "200":
+          description: Metadata only; never execution admissibility or qualification.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [contract_version, connection_id, connection_revision, credential_binding_id, credential_revision, observed_at, source, page, page_size, total, models]
+                properties:
+                  contract_version: { type: string, enum: [unirouter.model-discovery.v1] }
+                  connection_id: { type: integer, format: int64 }
+                  connection_revision: { type: integer, format: int64 }
+                  credential_binding_id: { type: integer, format: int64 }
+                  credential_revision: { type: integer, format: int64 }
+                  observed_at: { type: string, format: date-time }
+                  source: { type: string, enum: [provider_catalog] }
+                  page: { type: integer }
+                  page_size: { type: integer, enum: [50] }
+                  total: { type: integer, minimum: 0 }
+                  models:
+                    type: array
+                    maxItems: 50
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, maxLength: 200 }
+                        name: { type: string, maxLength: 500 }
+                        provider: { type: string, maxLength: 200 }
+                        inference_provider: { type: string, maxLength: 200 }
+                        documented_capabilities: { type: array, items: { type: string } }
+                        documented_features: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
 
   /api/v1/model-deployments/{deploymentID}:
     x-unirouter-rbac:
@@ -1220,7 +1284,7 @@ paths:
       parameters:
         - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
         - { name: operationID, in: path, required: true, schema: { type: string, enum: [openai.chat_completions.v1] } }
-        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage] } }
+        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming, reasoning, reasoning_effort, reasoning_budget, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage] } }
       responses:
         "200":
           description: Sanitized current qualification, preferred approval and latest probe projection.
@@ -1242,7 +1306,7 @@ paths:
       parameters:
         - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
         - { name: operationID, in: path, required: true, schema: { type: string, enum: [openai.chat_completions.v1] } }
-        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage] } }
+        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming, reasoning, reasoning_effort, reasoning_budget, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage] } }
       requestBody:
         required: true
         content:
@@ -1276,7 +1340,7 @@ paths:
       parameters:
         - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
         - { name: operationID, in: path, required: true, schema: { type: string, enum: [openai.chat_completions.v1] } }
-        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage] } }
+        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming, reasoning, reasoning_effort, reasoning_budget, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage] } }
       requestBody:
         required: true
         content:
@@ -5264,14 +5328,14 @@ components:
         contract_version: { type: string, enum: [unirouter.model-capability-qualification.v1] }
         deployment_id: { type: integer, format: int64, minimum: 1 }
         operation_id: { type: string, enum: [openai.chat_completions.v1] }
-        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage] }
+        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, reasoning_budget, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage] }
         support_state: { type: string, enum: [enabled, unsupported] }
         support_revision: { type: integer, format: int64, minimum: 1 }
         execution_profile_id: { type: string, maxLength: 100, pattern: '^[a-z0-9][a-z0-9._-]{2,99}$', description: Exact compiled or published immutable Profile identity; format alone grants no qualification. }
         execution_profile_version: { type: string, maxLength: 40, pattern: '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$', description: Exact retained revision; no mutable latest lookup. }
-        protocol_profile_id: { type: string, enum: [protocol.deepseek-openai-chat.v4, protocol.deepseek-openai-chat.v5, protocol.glm-openai-chat.glm5v.v5, protocol.glm-openai-chat.v5, protocol.glm-openai-chat.v6, protocol.glm-openai-chat.v7, protocol.glm-openai-chat.glm5v.v6, openai.chat_completions, protocol.kimi-openai-chat.v5, protocol.kimi-openai-chat.v6, protocol.kimi-openai-chat.k3.v5, protocol.kimi-openai-chat.k3.v6, protocol.minimax-m2-openai-chat.v7, protocol.minimax-m2-openai-chat.v8, protocol.minimax-m27-openai-chat.v1, protocol.minimax-m3-openai-chat.v9, protocol.minimax-m3-openai-chat.v10, protocol.minimax-m3-openai-chat.v11] }
+        protocol_profile_id: { type: string, enum: [protocol.deepseek-openai-chat.v4, protocol.deepseek-openai-chat.v5, protocol.glm-openai-chat.glm5v.v5, protocol.glm-openai-chat.v5, protocol.glm-openai-chat.v6, protocol.glm-openai-chat.v7, protocol.glm-openai-chat.glm5v.v6, openai.chat_completions, protocol.kimi-openai-chat.v5, protocol.kimi-openai-chat.v6, protocol.kimi-openai-chat.k3.v5, protocol.kimi-openai-chat.k3.v6, protocol.minimax-m2-openai-chat.v7, protocol.minimax-m2-openai-chat.v8, protocol.minimax-m27-openai-chat.v1, protocol.minimax-m3-openai-chat.v9, protocol.minimax-m3-openai-chat.v10, protocol.minimax-m3-openai-chat.v11, protocol.qwen-openai-chat.flash.v7] }
         protocol_profile_version: { type: string, enum: [1.0.0] }
-        probe_contract_id: { type: string, enum: [unirouter.capability-probe.deepseek-chat-stream-tools.v1, unirouter.capability-probe.kimi-chat-stream-tools.v1, unirouter.capability-probe.minimax-m3-chat-stream-tools.v1, unirouter.capability-probe.deepseek-chat-sse.v1, unirouter.capability-probe.deepseek-chat-reasoning.v1, unirouter.capability-probe.deepseek-chat-reasoning-effort.v1, unirouter.capability-probe.deepseek-chat-function-tools.v1, unirouter.capability-probe.deepseek-chat-json-object.v1, unirouter.capability-probe.glm-chat-function-tools.v1, unirouter.capability-probe.glm-toggle-chat-function-tools.v1, unirouter.capability-probe.glm-chat-stream-tools.v1, unirouter.capability-probe.kimi-chat-sse.v1, unirouter.capability-probe.kimi-chat-reasoning.v1, unirouter.capability-probe.kimi-chat-reasoning-effort.v1, unirouter.capability-probe.kimi-chat-function-tools.v1, unirouter.capability-probe.kimi-chat-json-object.v1, unirouter.capability-probe.minimax-chat-function-tools.v1, unirouter.capability-probe.minimax-payg-m2-chat-function-tools.v1, unirouter.capability-probe.minimax-m27-chat-stream-tools.v1, unirouter.capability-probe.minimax-payg-m3-chat-function-tools.v1] }
+        probe_contract_id: { type: string, enum: [unirouter.capability-probe.deepseek-chat-stream-tools.v1, unirouter.capability-probe.kimi-chat-stream-tools.v1, unirouter.capability-probe.minimax-m3-chat-stream-tools.v1, unirouter.capability-probe.deepseek-chat-sse.v1, unirouter.capability-probe.deepseek-chat-reasoning.v1, unirouter.capability-probe.deepseek-chat-reasoning-effort.v1, unirouter.capability-probe.deepseek-chat-function-tools.v1, unirouter.capability-probe.deepseek-chat-json-object.v1, unirouter.capability-probe.glm-chat-function-tools.v1, unirouter.capability-probe.glm-toggle-chat-function-tools.v1, unirouter.capability-probe.glm-chat-stream-tools.v1, unirouter.capability-probe.kimi-chat-sse.v1, unirouter.capability-probe.kimi-chat-reasoning.v1, unirouter.capability-probe.kimi-chat-reasoning-effort.v1, unirouter.capability-probe.kimi-chat-function-tools.v1, unirouter.capability-probe.kimi-chat-json-object.v1, unirouter.capability-probe.minimax-chat-function-tools.v1, unirouter.capability-probe.minimax-payg-m2-chat-function-tools.v1, unirouter.capability-probe.minimax-m27-chat-stream-tools.v1, unirouter.capability-probe.minimax-payg-m3-chat-function-tools.v1, unirouter.capability-probe.qwen-chat-stream-tools.v1] }
         probe_contract_version: { type: string, enum: [1.0.0, 2.0.0, 3.0.0, 4.0.0], description: "Exact version is selected by the model, operation, capability, Execution Profile, and protocol-profile tuple." }
         probe_available: { type: boolean }
         probe_availability_reason_code: { type: string }
@@ -5289,7 +5353,7 @@ components:
         capability_probe_id: { type: integer, format: int64, minimum: 1 }
         deployment_id: { type: integer, format: int64, minimum: 1 }
         operation_id: { type: string, enum: [openai.chat_completions.v1] }
-        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage] }
+        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, reasoning_budget, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage] }
         success: { type: boolean }
         provider_success: { type: boolean }
         current: { type: boolean }
@@ -5365,7 +5429,7 @@ components:
         capability_probe_id: { type: integer, format: int64, minimum: 1 }
         deployment_id: { type: integer, format: int64, minimum: 1 }
         operation_id: { type: string, enum: [openai.chat_completions.v1] }
-        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage] }
+        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, reasoning_budget, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage] }
         qualified: { type: boolean }
         qualification_state: { type: string }
         evidence_ref: { type: string, pattern: '^capability_approval:[1-9][0-9]*$' }

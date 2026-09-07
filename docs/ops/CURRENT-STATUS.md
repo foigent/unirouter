@@ -1,5 +1,27 @@
 # UniRouter Current Status
 
+## Platform onboarding and Qwen streamed-tools candidate — 2026-09-07
+
+Local 1.2.63/M114 introduces a single onboarding entry with platform grouping,
+explicit QianwenAI, connection-scoped Beijing model discovery and per-item bulk
+configuration through the existing canonical create owner. Discovery metadata
+and saved configuration do not grant execution qualification or activate traffic.
+
+Qwen Flash data Profile1.8 and protocol v7 add the bounded streamed-tools subset,
+with exact null-field preparation, continuation-ID semantics and shared mechanics.
+The draft independent Bundle adds one Definition and six capability bindings.
+This typed implementation requires an Artifact update; it is not evidence for
+new wire semantics without a build. The existing M114 materializer and schema are
+unchanged. See the [onboarding design](../analysis/PLATFORM-MODEL-ONBOARDING-20260907.md)
+and [Qwen supplement](../analysis/QWEN-STREAMED-TOOLS-SUPPLEMENT-20260907.md).
+
+Latest verified Target before these changes remains 1.2.62/M114. Deployment40,
+Connection14 and credential binding14 exist; Qwen has no live qualification,
+Release or Agent success yet. New-batch paid calls remain zero at this source
+cutoff. Remaining Bailian families and native Messages follow the first Qwen
+vertical closure; prior direct-provider 14/14 evidence is retained separately.
+经验文件无需变化.
+
 ## Existing-family OpenClaw execution verified — 2026-09-07
 
 The authorized development/test experiment now has **14/14 real OpenClaw

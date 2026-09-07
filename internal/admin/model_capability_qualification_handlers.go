@@ -767,7 +767,7 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 		}
 	case modelcapabilityqualification.MiniMaxM27StreamFunctionToolsProbeContractID, modelcapabilityqualification.GLMStreamFunctionToolsProbeContractID,
 		modelcapabilityqualification.DeepSeekStreamFunctionToolsProbeContractID, modelcapabilityqualification.KimiStreamFunctionToolsProbeContractID,
-		modelcapabilityqualification.MiniMaxM3StreamFunctionToolsProbeContractID:
+		modelcapabilityqualification.MiniMaxM3StreamFunctionToolsProbeContractID, modelcapabilityqualification.QwenStreamFunctionToolsProbeContractID:
 		observation, validationErr := modelcapabilityqualification.ValidateOpenAIChatStreamFunctionToolsForBinding(modelCapabilityProbeBindingFromSnapshot(snapshot), response.Header.Get("Content-Type"), response.Body)
 		outcome.ReportedModel = observation.ReportedModel
 		outcome.FinishReason = observation.FinishReason
@@ -980,6 +980,8 @@ func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]b
 		)
 	case modelcapabilityqualification.MiniMaxM27StreamFunctionToolsProbeContractID:
 		return modelcapabilityqualification.BuildMiniMaxM27StreamFunctionToolsProbeRequest(modelCapabilityProbeBindingFromSnapshot(snapshot))
+	case modelcapabilityqualification.QwenStreamFunctionToolsProbeContractID:
+		return modelcapabilityqualification.BuildQwenStreamFunctionToolsProbeRequest(modelCapabilityProbeBindingFromSnapshot(snapshot))
 	case modelcapabilityqualification.GLMStreamFunctionToolsProbeContractID:
 		return modelcapabilityqualification.BuildGLMStreamFunctionToolsProbeRequest(modelCapabilityProbeBindingFromSnapshot(snapshot))
 	case modelcapabilityqualification.DeepSeekStreamFunctionToolsProbeContractID, modelcapabilityqualification.KimiStreamFunctionToolsProbeContractID,
@@ -1264,6 +1266,8 @@ func summarizeModelCapabilityProbeRequest(snapshot modelCapabilitySnapshot, body
 		MaxTokens           *int64          `json:"max_tokens"`
 		MaxCompletionTokens *int64          `json:"max_completion_tokens"`
 		ReasoningEffort     string          `json:"reasoning_effort"`
+		EnableThinking      *bool           `json:"enable_thinking"`
+		ThinkingBudget      *int64          `json:"thinking_budget"`
 		Thinking            json.RawMessage `json:"thinking"`
 		StreamOptions       struct {
 			IncludeUsage bool `json:"include_usage"`
@@ -1287,6 +1291,12 @@ func summarizeModelCapabilityProbeRequest(snapshot modelCapabilitySnapshot, body
 	}
 	if payload.MaxCompletionTokens != nil {
 		summary["max_completion_tokens"] = *payload.MaxCompletionTokens
+	}
+	if payload.EnableThinking != nil {
+		summary["enable_thinking"] = *payload.EnableThinking
+	}
+	if payload.ThinkingBudget != nil {
+		summary["thinking_budget"] = *payload.ThinkingBudget
 	}
 	if payload.ReasoningEffort != "" {
 		summary["reasoning_effort"] = payload.ReasoningEffort

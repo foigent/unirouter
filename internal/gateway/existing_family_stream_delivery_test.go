@@ -26,6 +26,7 @@ func TestExistingFamilyDataProbeAndAgentHistoryReachExactWire(t *testing.T) {
 		{"minimax.m3.payg", "1.2.0", "protocol.minimax-m3-openai-chat.v10", qualification.MiniMaxM3StreamFunctionToolsProbeContractID, "https://api.minimax.cn/v1"},
 		{"minimax.m3.payg", "1.2.0", "protocol.minimax-m3-openai-chat.v11", qualification.MiniMaxM3StreamFunctionToolsProbeContractID, "https://api.minimax.cn/v1"},
 		{"minimax.m2.7-highspeed.payg", "1.2.0", "protocol.minimax-m2-openai-chat.v8", qualification.MiniMaxM27StreamFunctionToolsProbeContractID, "https://api.minimax.cn/v1"},
+		{"qwen.3.7-flash.api", "1.7.0", "protocol.qwen-openai-chat.flash.v7", qualification.QwenStreamFunctionToolsProbeContractID, "https://dashscope.aliyuncs.com/compatible-mode/v1"},
 	} {
 		p, ok := modelprofile.Lookup(tc.id, tc.version)
 		require.True(t, ok)
@@ -33,12 +34,16 @@ func TestExistingFamilyDataProbeAndAgentHistoryReachExactWire(t *testing.T) {
 		if tc.id == "minimax.m3.payg" {
 			p.ReasoningProfile = "reasoning.minimax-m3-adaptive-embedded.v2"
 		}
+		if p.Provider == "dashscope" {
+			p.Capabilities = []string{modelprofile.CapabilityStreaming, modelprofile.CapabilityReasoning, modelprofile.CapabilityReasoningBudget, modelprofile.CapabilityTools, modelprofile.CapabilityFunctionTools, modelprofile.CapabilityToolChoiceAuto}
+			p.EvidenceRefs = []string{"https://help.aliyun.com/zh/model-studio/qwen3-7-flash", "https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions", "https://help.aliyun.com/zh/model-studio/qwen-function-calling"}
+		}
 		d, err := modelprofile.NewDefinition(p, p.Provider+"/"+strings.ToLower(p.UpstreamModelIDs[0]), "")
 		require.NoError(t, err)
 		b, err := qualification.BindDefinition(qualification.Binding{OperationID: modelprofile.OperationOpenAIChat, CapabilityID: modelprofile.CapabilityFunctionTools, ExecutionProfileID: p.ID, ExecutionProfileVersion: p.Version, ProtocolProfileID: p.ProtocolProfile, ProtocolProfileVersion: "1.0.0", ProbeContractID: tc.probe, ProbeContractVersion: "1.0.0", ExpectedProvider: p.Provider, ExpectedUpstreamModel: p.UpstreamModelIDs[0], PublicPath: "/v1/chat/completions"}, d)
 		require.NoError(t, err)
 		for _, scenario := range []string{"probe", "default", "history", "disabled"} {
-			if scenario == "disabled" && tc.id != "minimax.m3.payg" && tc.id != "kimi.k2.6.api" {
+			if scenario == "disabled" && tc.id != "minimax.m3.payg" && tc.id != "kimi.k2.6.api" && p.Provider != "dashscope" {
 				continue
 			}
 			t.Run(tc.id+"/"+scenario, func(t *testing.T) {
@@ -62,7 +67,12 @@ func TestExistingFamilyDataProbeAndAgentHistoryReachExactWire(t *testing.T) {
 					request["messages"] = []interface{}{map[string]interface{}{"role": "user", "content": "Read the public fixture."}, assistant, map[string]interface{}{"role": "tool", "tool_call_id": "call_echo", "content": "UNIROUTER_TOOL_PROBE_OK"}}
 				}
 				if scenario == "disabled" {
-					request["thinking"] = map[string]string{"type": "disabled"}
+					if p.Provider == "dashscope" {
+						request["enable_thinking"] = false
+						delete(request, "thinking_budget")
+					} else {
+						request["thinking"] = map[string]string{"type": "disabled"}
+					}
 				}
 				body, err = json.Marshal(request)
 				require.NoError(t, err)
@@ -87,6 +97,9 @@ func TestExistingFamilyDataProbeAndAgentHistoryReachExactWire(t *testing.T) {
 				n := 8192
 				if scenario == "probe" {
 					n = 1024
+					if p.Provider == "dashscope" {
+						n = 2048
+					}
 				}
 				batch, err := relay.prepareModelExecutionRoutes(context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions, "public-model", "public-model", "existing-family-wire", modelExecutionRequestLimits{EstimatedInputTokens: 1, ExplicitOutputTokens: &n, EstimateVersion: chatAdmissionEstimateVersion}, body, time.Now())
 				require.NoError(t, err)
@@ -97,6 +110,15 @@ func TestExistingFamilyDataProbeAndAgentHistoryReachExactWire(t *testing.T) {
 				require.NoError(t, json.Unmarshal(body, &input))
 				for _, field := range []string{"messages", "tools", "stream", "stream_options", contract.OutputLimitField} {
 					require.JSONEq(t, string(input[field]), string(sent[field]), field)
+				}
+				if p.Provider == "dashscope" {
+					for _, field := range []string{"enable_thinking", "thinking_budget"} {
+						if raw, present := input[field]; present {
+							require.JSONEq(t, string(raw), string(sent[field]), field)
+						} else {
+							require.NotContains(t, sent, field)
+						}
+					}
 				}
 				if p.Provider == "deepseek" {
 					require.NotContains(t, sent, "tool_choice")

@@ -14,8 +14,7 @@ export type ProviderPreset = {
   editableBaseURL?: boolean;
 };
 
-// Presets are shortcuts, not an allowlist. Keep custom first so a provider
-// missing from the catalog is still an obvious, supported path.
+// Presets describe exact connection surfaces; platform grouping is presentation only.
 export const providerPresets: ProviderPreset[] = [
   {
     value: 'custom',
@@ -118,6 +117,13 @@ export const providerPresets: ProviderPreset[] = [
     note: '仅用于仍依赖共享兼容域名的存量接入；官方推荐生产迁移到业务空间专属 Host。价格与能力仍锁定北京地域。',
   },
   {
+    value: 'qianwen', label: '千问平台 · 北京按量 Chat', provider: 'dashscope', region: 'cn-beijing',
+    apiSurface: 'openai_chat_completions', baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1', adapterType: 'openai_compatible',
+    endpointClass: 'dashscope_cn_beijing_shared_payg',
+    adapterConfig: { endpoint_path_mode: 'canonical_v1' },
+    note: '使用千问平台普通按量 API Key。与百炼复用 DashScope 协议；同一业务空间已有连接时可直接复用，无需再次保存 Key。',
+  },
+  {
     value: 'anthropic', label: 'Anthropic 官方', provider: 'anthropic', region: 'global',
     apiSurface: 'anthropic_messages', baseURL: 'https://api.anthropic.com', adapterType: 'anthropic_native',
     endpointClass: 'anthropic_official_origin',
@@ -162,4 +168,24 @@ export function providerPresetAdapterConfigMatches(
 
 export function providerPreset(value: unknown): ProviderPreset {
   return providerPresets.find((preset) => preset.value === value) || providerPresets[0];
+}
+
+// These labels do not create provider or account identities. Region and workspace
+// remain properties of the concrete connection selected by the user.
+export function platformForPreset(preset: ProviderPreset) {
+  return preset.value === 'qianwen' ? 'qianwen' : preset.provider;
+}
+
+const platformLabels: Record<string, string> = {
+  custom: '自定义平台', deepseek: 'DeepSeek', kimi: 'Kimi / Moonshot', minimax: 'MiniMax',
+  glm: '智谱 GLM', mimo: '小米 MiMo', hy3: '腾讯混元', openai: 'OpenAI', gemini: 'Google Gemini',
+  xai: 'xAI', doubao: '火山方舟', openrouter: 'OpenRouter', dashscope: '阿里云百炼',
+  qianwen: '千问官方平台', anthropic: 'Anthropic', azure: 'Azure OpenAI / Foundry',
+};
+
+export const providerPlatforms = Array.from(new Set(providerPresets.map(platformForPreset)))
+  .map(value => ({ value, label: platformLabels[value] || value }));
+
+export function presetsForPlatform(platform: string) {
+  return providerPresets.filter(preset => platformForPreset(preset) === platform);
 }

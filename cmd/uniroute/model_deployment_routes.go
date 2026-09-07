@@ -21,6 +21,7 @@ type modelDeploymentRouteGuards struct {
 func registerModelDeploymentRoutes(mux *http.ServeMux, handler *admin.Handler, guards modelDeploymentRouteGuards) {
 	mux.Handle("GET /api/v1/model-deployments", guards.read(handler.ListCanonicalModelApplications))
 	mux.Handle("GET /api/v1/model-deployments/{deploymentID}", guards.read(handler.GetCanonicalModelApplication))
+	mux.Handle("GET /api/v1/model-deployments/{deploymentID}/model-discovery", guards.write(handler.DiscoverCanonicalModels))
 	mux.Handle("POST /api/v1/model-deployments", guards.write(handler.CreateCanonicalModelApplication))
 	mux.Handle("POST /api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes", guards.write(handler.ProbeCanonicalModelOperation))
 	mux.Handle("POST /api/v1/model-deployments/{deploymentID}/operations/{operationID}/production-approvals", guards.approve(handler.ApproveCanonicalModelOperationProduction))

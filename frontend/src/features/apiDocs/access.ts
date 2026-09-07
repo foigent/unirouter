@@ -173,6 +173,7 @@ export function endpointVisibleForAuthz(
       );
     }
     if (isOrgAdminRole(organizationRole)) {
+      const isCanonicalModelDiscovery = method === 'GET' && path === '/api/v1/model-deployments/{deploymentID}/model-discovery';
       const isCanonicalModelDeploymentCreate = method === 'POST' && path === '/api/v1/model-deployments';
       const isCanonicalModelDeploymentReleaseAuthor = method === 'POST' &&
         path === '/api/v1/model-deployment-releases';
@@ -181,7 +182,7 @@ export function endpointVisibleForAuthz(
       const isCanonicalModelDeploymentLifecycleWrite =
         organizationModelDeploymentLifecycleWrites.has(`${method} ${path}`);
       const isModelRouteSafetyWrite = organizationModelRouteSafetyWrites.has(`${method} ${path}`);
-      return isCanonicalModelDeploymentRead || isCanonicalModelDeploymentCreate ||
+      return isCanonicalModelDeploymentRead || isCanonicalModelDiscovery || isCanonicalModelDeploymentCreate ||
         isCanonicalModelDeploymentReleaseAuthor || isCanonicalModelDeploymentProbe ||
         isCanonicalModelDeploymentLifecycleWrite || isModelRouteSafetyWrite || [
         '/dashboard/stats', '/keys', '/limit-policies', '/guardrail-policies',

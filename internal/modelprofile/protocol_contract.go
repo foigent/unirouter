@@ -1219,6 +1219,7 @@ var chatProtocolContracts = map[string]ChatProtocolContract{
 	"protocol.qwen-openai-chat.flash.v4":            qwenChatCacheContract("protocol.qwen-openai-chat.flash.v4", false),
 	"protocol.qwen-openai-chat.flash.v5":            qwenChatMultimodalContract("protocol.qwen-openai-chat.flash.v5", false),
 	"protocol.qwen-openai-chat.flash.v6":            qwenChatSearchContract("protocol.qwen-openai-chat.flash.v6", false),
+	"protocol.qwen-openai-chat.flash.v7":            qwenFlashStreamFunctionToolsContract("protocol.qwen-openai-chat.flash.v7"),
 	"protocol.gemini-openai-chat.v1":                geminiChatBaseContract("protocol.gemini-openai-chat.v1"),
 	"protocol.gemini-openai-chat.v2":                geminiChatToolsContract("protocol.gemini-openai-chat.v2"),
 	"protocol.gemini-openai-chat.v3":                geminiChatStructuredOutputContract("protocol.gemini-openai-chat.v3"),

@@ -49,7 +49,7 @@ func BuildGLMStreamFunctionToolsProbeRequest(b Binding) ([]byte, error) {
 }
 
 func ValidateOpenAIChatStreamFunctionToolsForBinding(b Binding, contentType string, reader io.Reader) (OpenAIChatFunctionToolsObservation, error) {
-	if existingFamilyStreamProbe(b.ProbeContractID) {
+	if existingFamilyStreamProbe(b.ProbeContractID) || b.ProbeContractID == QwenStreamFunctionToolsProbeContractID {
 		if err := b.validateDataDefinition(); err != nil {
 			return OpenAIChatFunctionToolsObservation{}, invalidOpenAIChatFunctionTools("probe_contract", err)
 		}

@@ -97,3 +97,24 @@ func TestKimiK3EffortPinRequiresNewProbeImplementation(t *testing.T) {
 	require.Error(t, m.Require("M114", []modelprofile.ImplementationReference{ref}))
 	require.NoError(t, m.Require("M114", []modelprofile.ImplementationReference{{Kind: "capability_probe", ID: "unirouter.capability-probe.kimi-chat-stream-tools.v1@1.0.0"}}))
 }
+
+func TestQwenStreamBundleRequiresChatAndProbeImplementations(t *testing.T) {
+	wire, err := os.ReadFile("../../capability-bundles/qwen-flash-streamed-tools.json")
+	require.NoError(t, err)
+	var bundle struct {
+		Definitions []json.RawMessage `json:"definitions"`
+	}
+	require.NoError(t, json.Unmarshal(wire, &bundle))
+	require.Len(t, bundle.Definitions, 1)
+	d, err := modelprofile.DecodeDefinition(bundle.Definitions[0])
+	require.NoError(t, err)
+	probe := modelprofile.ImplementationReference{Kind: "capability_probe", ID: "unirouter.capability-probe.qwen-chat-stream-tools.v1@1.0.0"}
+	requirements := append(d.Requirements(), probe)
+	m := CurrentManifest([]string{"M114"})
+	require.NoError(t, m.Require("M114", requirements))
+	for _, missing := range []modelprofile.ImplementationReference{{Kind: "chat", ID: "protocol.qwen-openai-chat.flash.v7"}, probe} {
+		old := m
+		old.Implementations = slices.DeleteFunc(slices.Clone(m.Implementations), func(ref modelprofile.ImplementationReference) bool { return ref == missing })
+		require.Error(t, old.Require("M114", requirements), "old runtime cannot activate an unsupported Qwen Release")
+	}
+}
