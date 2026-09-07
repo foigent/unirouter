@@ -117,6 +117,35 @@ new contract. ProviderAttempt identifies the runtime instance/Artifact on M114;
 existing billing Freeze fixes the independent pricing identity. An Agent's later
 HTTP round may select a newer Release: this is per-request consistency.
 
+## Client migration for an activated output contract
+
+Use the active model catalog's exact parameter controls; do not infer an accepted
+field from a model's name. Qwen v8 Releases accept only `max_completion_tokens`,
+including reasoning and visible answer, above10 and within the published limit.
+Remove `max_tokens`; do not send both or subtract the provider tolerance in the
+client. UR reserves the accepted total and sends ten fewer tokens once. A budget
+for thinking is a separate control, not permission to exceed the total completion
+limit. Other Releases retain their own accepted spelling and semantics.
+
+For OpenClaw, run the existing `uniroute-openclaw-sync --base-url <gateway-url>
+--provider <existing-provider-id> --api-key-env <approved-key-variable>` in dry-run
+mode first. It validates the projected model configuration and preserves supported
+explicit experiment overrides. Review removed/unsupported controls before adding
+`--write`; choose an isolated configuration with `OPENCLAW_CONFIG_PATH` when
+validating migration. Do not place credential values in commands or config exports.
+An off/low menu for Qwen means disabled/enabled thinking, not native low intensity.
+
+Before a paid task, POST its actual first and tool-continuation shapes to
+`/v1/chat/completions/preflight`. With1.2.71, an unsupported output spelling retains
+`validation_error.model_execution_profile` in `reasons` and includes optional
+`parameter_errors`, for example parameter `max_tokens`, accepted_parameters
+`["max_completion_tokens"]`, code `unsupported_output_parameter`. Normal Chat keeps
+HTTP400 and the same error code, with safe migration guidance. Unknown/internal
+failures remain generic. Conflicting values retain their earlier invalid-request
+error. No response echoes prompt content, route secrets or internal diagnostics.
+Preflight observes current active routing, not an inactive Release, and cannot
+prove credential liveness, provider behavior, settlement or an Agent outcome.
+
 ## Recovery and rollback
 
 - Unknown Publication commit: use `recover-v2` with the exact retained Plan on a

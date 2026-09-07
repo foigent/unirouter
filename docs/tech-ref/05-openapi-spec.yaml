@@ -7096,11 +7096,26 @@ components:
         max_decoded_output_bytes: { type: integer, enum: [16777216] }
         max_upstream_wire_bytes: { type: integer, enum: [134217728] }
       description: Typed resource and supplier contracts. Final overrun is held for reconciliation without automatic retry; ordinary interruption retains the existing marked estimate and frozen price. The accepted Token limit and reservation are not billing hard caps.
+    ChatOutputParameterError:
+      type: object
+      additionalProperties: false
+      required: [code, parameter, accepted_parameters, message]
+      properties:
+        code: { type: string, enum: [unsupported_output_parameter] }
+        parameter: { type: string, enum: [max_tokens, max_completion_tokens] }
+        accepted_parameters:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items: { type: string, enum: [max_tokens, max_completion_tokens] }
+        message: { type: string, description: Safe migration guidance; never contains internal diagnostics or request content. }
+      description: Exact output-field rejection. The accepted field differs from the rejected field. Other contract failures retain generic reasons.
     ChatPreflightResult:
       type: object
       additionalProperties: false
       required: [object, request_model, operation, locally_admissible, required_capabilities, reasons, not_checked]
       properties:
+        parameter_errors: { type: array, items: { $ref: "#/components/schemas/ChatOutputParameterError" } }
         output_enforcement: { $ref: "#/components/schemas/StreamOutputEnforcement" }
         accepted_completion_tokens: { type: integer, minimum: 11 }
         provider_completion_tokens: { type: integer, minimum: 1 }

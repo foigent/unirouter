@@ -314,6 +314,9 @@ func modelExecutionLimitErrorDetails(err error) (code, message string, ok bool) 
 	case errors.Is(err, errModelExecutionOutputLimitRequired):
 		return "validation_error.output_limit_required", "An explicit output token limit is required because no provider-compatible published output limit is available", true
 	case errors.Is(err, errModelExecutionProfileRequestInvalid):
+		if detail := publicOutputParameterError(err); detail != nil {
+			return "validation_error.model_execution_profile", detail.Message, true
+		}
 		return "validation_error.model_execution_profile", "Request is incompatible with the selected model execution profile", true
 	default:
 		return "", "", false
@@ -358,7 +361,7 @@ func (relay *Relay) prepareModelExecutionPlan(
 			profilePlan.Definition = definition
 			evidence, validationErr := validateChatExecutionProfileRequest(body, profilePlan)
 			if validationErr != nil {
-				return nil, fmt.Errorf("%w: %v", errModelExecutionProfileRequestInvalid, validationErr)
+				return nil, fmt.Errorf("%w: %w", errModelExecutionProfileRequestInvalid, validationErr)
 			}
 			if replayErr := validatePreservedAssistantToolHistory(ctx, body, profilePlan.ReasoningProfile); replayErr != nil {
 				return nil, fmt.Errorf("%w: %v", errModelExecutionProfileRequestInvalid, replayErr)

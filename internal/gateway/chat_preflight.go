@@ -34,6 +34,7 @@ func validateChatOutputParameters(req ChatCompletionRequest) string {
 // This is an ephemeral, caller-authorized projection, never an execution
 // entitlement. In particular it contains neither the internal Plan nor routes.
 type chatPreflightResult struct {
+	ParameterErrors            []chatOutputParameterError      `json:"parameter_errors,omitempty"`
 	OutputEnforcement          *modelprofile.OutputEnforcement `json:"output_enforcement,omitempty"`
 	AcceptedCompletionTokens   int                             `json:"accepted_completion_tokens,omitempty"`
 	ProviderCompletionTokens   int                             `json:"provider_completion_tokens,omitempty"`
@@ -125,7 +126,7 @@ func (relay *Relay) HandleChatPreflight(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	if err != nil {
-		result.Reasons = append(result.Reasons, preflightFailureCode(err))
+		result.addFailure(err)
 		writeChatPreflight(w, result)
 		return
 	}
@@ -138,7 +139,7 @@ func (relay *Relay) HandleChatPreflight(w http.ResponseWriter, r *http.Request) 
 		}
 		shaped, limits, prepareErr := prepareExecutionRouteBody(adapters.EndpointChatCompletions, batch, route)
 		if prepareErr != nil {
-			result.Reasons = append(result.Reasons, preflightFailureCode(prepareErr))
+			result.addFailure(prepareErr)
 			continue
 		}
 		upstream, buildErr := openAI.PrepareRequest(ctx, adapters.RequestInput{
@@ -156,12 +157,23 @@ func (relay *Relay) HandleChatPreflight(w http.ResponseWriter, r *http.Request) 
 			_, bodyErr = validateExecutionOutboundLimits(adapters.EndpointChatCompletions, actual, batch.plan, route, limits)
 		}
 		if bodyErr != nil {
-			result.Reasons = append(result.Reasons, preflightFailureCode(bodyErr))
+			result.addFailure(bodyErr)
 			continue
 		}
 		result.LocallyAdmissible = true
 	}
 	writeChatPreflight(w, result)
+}
+
+func (result *chatPreflightResult) addFailure(err error) {
+	result.Reasons = append(result.Reasons, preflightFailureCode(err))
+	if detail := publicOutputParameterError(err); detail != nil {
+		if !slices.ContainsFunc(result.ParameterErrors, func(existing chatOutputParameterError) bool {
+			return existing.Parameter == detail.Parameter
+		}) {
+			result.ParameterErrors = append(result.ParameterErrors, *detail)
+		}
+	}
 }
 
 func writeChatPreflight(w http.ResponseWriter, result chatPreflightResult) {
