@@ -55,7 +55,21 @@ func existingFamilyRelayFixture(t *testing.T, p modelprofile.Profile, scenario s
 				envelope["service_tier"] = 1
 			}
 		}
-		if p.Provider != "minimax" {
+		if p.Provider == "dashscope" {
+			envelope["system_fingerprint"], envelope["service_tier"] = nil, nil
+			if scenario == "invalid tier with usage" && counters != nil {
+				envelope["service_tier"] = "unknown"
+			}
+			for _, raw := range choices {
+				choice := raw.(map[string]any)
+				choice["logprobs"] = nil
+				delta := choice["delta"].(map[string]any)
+				delta["function_call"], delta["refusal"] = nil, nil
+				if _, present := delta["role"]; !present {
+					delta["role"] = nil
+				}
+			}
+		} else if p.Provider != "minimax" {
 			envelope["system_fingerprint"] = "fixture-fingerprint"
 		}
 		wire, err := json.Marshal(envelope)
@@ -80,6 +94,9 @@ func existingFamilyRelayFixture(t *testing.T, p modelprofile.Profile, scenario s
 	if !answer {
 		finish = "tool_calls"
 		terminalDelta["tool_calls"] = []any{map[string]any{"index": 0, "function": map[string]any{"arguments": `"UNIROUTER_TOOL_PROBE_OK"}`}}}
+		if p.Provider == "dashscope" {
+			terminalDelta["tool_calls"].([]any)[0].(map[string]any)["id"] = ""
+		}
 	}
 	terminal := map[string]any{"index": 0, "delta": terminalDelta, "finish_reason": finish}
 	terminalUsage := usage
@@ -109,6 +126,7 @@ func TestExistingFamilyActualRelayKeepsToolUsageAndSettlementBoundaries(t *testi
 		{"minimax.m3.payg", "1.2.0", "protocol.minimax-m3-openai-chat.v10"},
 		{"minimax.m3.payg", "1.2.0", "protocol.minimax-m3-openai-chat.v11"},
 		{"minimax.m2.7-highspeed.payg", "1.2.0", "protocol.minimax-m2-openai-chat.v8"},
+		{"qwen.3.7-flash.api", "1.7.0", "protocol.qwen-openai-chat.flash.v7"},
 	} {
 		p, ok := modelprofile.Lookup(tc.id, tc.version)
 		require.True(t, ok)
@@ -116,6 +134,9 @@ func TestExistingFamilyActualRelayKeepsToolUsageAndSettlementBoundaries(t *testi
 		scenarios := []string{"tools", "answer", "EOF", "invalid sibling with usage", "conflicting repeat"}
 		if tc.protocol == "protocol.minimax-m3-openai-chat.v11" {
 			scenarios = append(scenarios, "captured M3 tier", "invalid tier with usage")
+		}
+		if p.Provider == "dashscope" {
+			scenarios = append(scenarios, "invalid tier with usage")
 		}
 		for _, scenario := range scenarios {
 			if scenario == "conflicting repeat" && p.Provider != "kimi" {

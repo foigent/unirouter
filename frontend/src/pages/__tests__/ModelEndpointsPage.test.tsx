@@ -14,6 +14,7 @@ import { useAuthStore } from '../../store/auth';
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
+  discover: vi.fn(),
   get: vi.fn(),
   create: vi.fn(),
   probe: vi.fn(),
@@ -67,6 +68,7 @@ vi.mock('../../api/modelDeployments', async importOriginal => {
     ...actual,
     modelDeploymentApi: {
       list: mocks.list,
+      discover: mocks.discover,
       get: mocks.get,
       create: mocks.create,
       probe: mocks.probe,
@@ -325,6 +327,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     vi.clearAllMocks();
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-08-24T12:00:00Z'));
     setRole('org_admin');
+    useAuthStore.setState({ isAuthenticated: true });
     mocks.list.mockResolvedValue(projection());
     mocks.releaseList.mockResolvedValue({
       contract_version: 'unirouter.model-deployment-release-authoring-options.v1',
@@ -555,12 +558,14 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     const createButton = (await screen.findByText('接入模型')).closest('button');
     expect(createButton).toBeTruthy();
     await user.click(createButton!);
+    await user.click(await screen.findByRole('button', { name: '新建平台连接' }));
     expect(await screen.findByText(/无法加载版本化执行 Profile/)).toBeTruthy();
-    await waitFor(() => expect(screen.getByRole('combobox', { name: '接入模板' })).not.toBeDisabled());
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '接口与地域' })).not.toBeDisabled());
 
-    await chooseSelectOption('接入模板', '自定义 OpenAI 兼容供应商', user);
+    await chooseSelectOption('平台', '自定义平台', user);
+    await chooseSelectOption('接口与地域', '自定义 OpenAI 兼容供应商', user);
 
-    await waitFor(() => expect(screen.getByRole('combobox', { name: '接入模板' })).toHaveTextContent('自定义 OpenAI 兼容供应商'));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '接口与地域' })).toHaveTextContent('自定义 OpenAI 兼容供应商'));
     expect(screen.getByLabelText('供应商标识')).not.toBeDisabled();
     expect(screen.getByLabelText('Base URL')).not.toBeDisabled();
   });
@@ -593,7 +598,9 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
 	renderPage();
 
 	await user.click((await screen.findByText('接入模型')).closest('button')!);
-	await chooseSelectOption('接入模板', 'Google Gemini 官方', user);
+    await user.click(await screen.findByRole('button', { name: '新建平台连接' }));
+	await chooseSelectOption('平台', 'Google Gemini', user);
+    await chooseSelectOption('接口与地域', 'Google Gemini 官方', user);
 
 	expect(await screen.findByText(/processing-tier\.gemini-openai-compatibility\.v1/)).toBeTruthy();
 	expect(screen.getByText(/显式 flex\/priority 目前只允许 cost_observation，不代表客户计费、live verified 或 released/)).toBeTruthy();
@@ -881,6 +888,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     renderPage();
 
     await user.click((await screen.findByText('接入模型')).closest('button')!);
+    await user.click(await screen.findByRole('button', { name: '新建平台连接' }));
     await user.click(screen.getByText('复用现有公共模型', { exact: true }));
     await chooseSelectOption('现有公共模型', /DeepSeek V4 Flash/, user);
 
@@ -924,6 +932,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     renderPage();
 
     await user.click((await screen.findByText('接入模型')).closest('button')!);
+    await user.click(await screen.findByRole('button', { name: '新建平台连接' }));
     await user.click(screen.getByText('复用现有连接', { exact: true }));
     await chooseSelectOption('现有连接', /Pathful OpenAI connection/, user);
     await chooseSelectOption('Operation', /Responses · POST \/v1\/responses/, user);
@@ -962,6 +971,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     renderPage();
 
     await user.click((await screen.findByText('接入模型')).closest('button')!);
+    await user.click(await screen.findByRole('button', { name: '新建平台连接' }));
     await user.click(screen.getByText('复用现有连接', { exact: true }));
     await chooseSelectOption('现有连接', /DeepSeek official/, user);
 
@@ -997,6 +1007,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     renderPage();
 
     await user.click((await screen.findByText('接入模型')).closest('button')!);
+    await user.click(await screen.findByRole('button', { name: '新建平台连接' }));
     await user.click(screen.getByText('复用现有连接', { exact: true }));
     await chooseSelectOption('现有连接', /Gemini malformed path mode/, user);
 
@@ -1032,6 +1043,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     renderPage();
 
     await user.click((await screen.findByText('接入模型')).closest('button')!);
+    await user.click(await screen.findByRole('button', { name: '新建平台连接' }));
     await user.click(screen.getByText('复用现有连接', { exact: true }));
     await chooseSelectOption('现有连接', /Kimi Code subscription/, user);
 
@@ -1053,8 +1065,10 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     const createButton = (await screen.findByText('接入模型')).closest('button');
     expect(createButton).toBeTruthy();
     await user.click(createButton!);
+    await user.click(await screen.findByRole('button', { name: '新建平台连接' }));
     await screen.findByText(/deepseek\.v4-flash\.api@1\.5\.0/);
-    await chooseSelectOption('接入模板', '自定义 OpenAI 兼容供应商', user);
+    await chooseSelectOption('平台', '自定义平台', user);
+    await chooseSelectOption('接口与地域', '自定义 OpenAI 兼容供应商', user);
     fireEvent.change(await screen.findByLabelText('连接名称'), { target: { value: 'DeepSeek new production' } });
     fireEvent.change(await screen.findByLabelText('供应商标识'), { target: { value: 'deepseek' } });
     fireEvent.change(await screen.findByLabelText('Base URL'), { target: { value: 'https://api.deepseek.com' } });
@@ -1091,11 +1105,16 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     await waitFor(() => expect(mocks.get).toHaveBeenCalledWith(41, 'openai.responses.v1'));
   }, 20_000);
 
-  it('composes an official provider preset with the latest reviewed model profile and pins it on create', async () => {
+  it.each([91, undefined])('pins the reviewed model and continues with only an exact returned binding (%s)', async selectedBinding => {
     const user = userEvent.setup({ skipHover: true, delay: null });
+    const saved = application();
+    saved.operations[0].operation_id = 'openai.chat_completions.v1';
+    mocks.create.mockResolvedValue({ application: saved, selected_credential_binding_id: selectedBinding,
+      idempotency_replay: !selectedBinding, reused: {} });
     renderPage();
 
     await user.click((await screen.findByText('接入模型')).closest('button')!);
+    await user.click(await screen.findByRole('button', { name: '新建平台连接' }));
     expect(await screen.findByText(/deepseek\.v4-flash\.api@1\.5\.0/)).toBeTruthy();
     expect(screen.getByText(/deepseek \/ cn \/ openai_chat_completions/)).toBeTruthy();
     expect(screen.getByText(/Catalog 证据 locally_conformant（不代表 live\/released）/)).toBeTruthy();
@@ -1138,6 +1157,50 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
       operation: { operation_id: 'openai.chat_completions.v1' },
     }));
     expect(mocks.importOfficialRateCardDraft).not.toHaveBeenCalled();
+    const bindingSelect = await screen.findByRole('combobox', { name: '批量现有凭证' });
+    if (selectedBinding) expect(bindingSelect).toHaveTextContent('凭证 #91');
+    else expect(bindingSelect).not.toHaveTextContent('凭证 #91');
+    expect(mocks.probe).not.toHaveBeenCalled();
+  });
+
+  it('discovers metadata with an explicit binding and only batches modeled rows', async () => {
+    useAuthStore.setState({ isAuthenticated: true });
+    const user = userEvent.setup({ skipHover: true, delay: null });
+    const a = application();
+    a.connection = { ...a.connection, provider: 'dashscope', name: '北京工作空间', base_url: 'https://workspace.cn-beijing.maas.aliyuncs.com/compatible-mode/v1', adapter_config: { endpoint_path_mode: 'canonical_v1' } };
+    mocks.list.mockResolvedValue(projection([a]));
+    mocks.profileList.mockResolvedValue({ data: [executionProfile({
+      id: 'qwen.flash.api', label: 'Qwen Flash', provider: 'dashscope', region: 'cn-beijing',
+      endpoint_classes: ['dashscope_cn_beijing_workspace_payg'], upstream_model_ids: ['qwen-flash'], aliases: ['qwen-flash'],
+    })] });
+    mocks.discover.mockResolvedValue({ contract_version: 'unirouter.model-discovery.v1', connection_id: 13, connection_revision: 5,
+      credential_binding_id: 91, credential_revision: 3, observed_at: '2026-09-07T00:00:00Z', source: 'provider_catalog', page: 1, page_size: 50, total: 2,
+      models: [{ id: 'qwen-flash', name: 'Qwen Flash', provider: 'qwen' }, { id: 'unsupported-future', name: 'Future Model', provider: 'unknown' }] });
+    mocks.create.mockResolvedValue({ application: a, idempotency_replay: false, reused: {} });
+    renderPage();
+    await user.click((await screen.findByText('接入模型')).closest('button')!);
+    await user.click(await screen.findByRole('button', { name: '向已有连接添加模型' }));
+    await chooseSelectOption('批量现有连接', '北京工作空间 · dashscope · #13', user);
+    expect(screen.getByRole('button', { name: '读取平台模型' })).toBeDisabled();
+    await chooseSelectOption('批量现有凭证', '凭证 #91 · active', user);
+    await user.click(screen.getByRole('button', { name: '读取平台模型' }));
+    expect(await screen.findByText('Future Model')).toBeTruthy();
+    expect(mocks.discover).toHaveBeenCalledWith(41, { credential_binding_id: 91, connection_revision: 5, credential_revision: 3, page: 1, query: '' });
+    const unsupported = screen.getByText('Future Model').closest('tr')!;
+    expect(within(unsupported).getByRole('checkbox')).toBeDisabled();
+    const row = screen.getByText('Qwen Flash').closest('tr')!;
+    await user.click(within(row).getByRole('checkbox'));
+    fireEvent.change(screen.getByLabelText('公共模型 ID qwen-flash'), { target: { value: a.public_model.model_name } });
+    expect(screen.getByRole('button', { name: '保存 1 个模型' })).toBeDisabled();
+    expect(screen.getByText(/模型名已存在；请选择兼容的现有模型/)).toBeTruthy();
+    expect(mocks.create).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('公共模型 ID qwen-flash'), { target: { value: 'qwen-flash' } });
+    await user.click(screen.getByRole('button', { name: '保存 1 个模型' }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    expect(mocks.create.mock.calls[0][0]).toMatchObject({ connection: { id: 13 }, credential: { binding_id: 91 }, deployment: { upstream_model: 'qwen-flash' } });
+    expect(mocks.probe).not.toHaveBeenCalled();
+    expect(mocks.authorRelease).not.toHaveBeenCalled();
+    expect(await screen.findByLabelText('批量创建结果')).toHaveTextContent('已保存 #41');
   });
 
   it('requires an explicit Beijing workspace Host for the recommended Qwen preset', async () => {
@@ -1164,7 +1227,9 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     renderPage();
 
     await user.click((await screen.findByText('接入模型')).closest('button')!);
-    await chooseSelectOption('接入模板', '阿里云百炼（北京业务空间）', user);
+    await user.click(await screen.findByRole('button', { name: '新建平台连接' }));
+    await chooseSelectOption('平台', '阿里云百炼', user);
+    await chooseSelectOption('接口与地域', '阿里云百炼（北京业务空间）', user);
 
     expect(await screen.findByText(/qwen\.3\.8-max\.api@1\.7\.0/)).toBeTruthy();
     expect(screen.getByText(/dashscope \/ cn-beijing \/ openai_chat_completions/)).toBeTruthy();
@@ -1229,7 +1294,9 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     renderPage();
 
     await user.click((await screen.findByText('接入模型')).closest('button')!);
-    await chooseSelectOption('接入模板', '小米 MiMo 官方', user);
+    await user.click(await screen.findByRole('button', { name: '新建平台连接' }));
+    await chooseSelectOption('平台', '小米 MiMo', user);
+    await chooseSelectOption('接口与地域', '小米 MiMo 官方', user);
     await screen.findByText(/^待审核 Pricing Profile 草稿 ·/);
     await user.click(screen.getByLabelText('同时创建待审核 Pricing Profile 草稿'));
     await pasteValue(user, screen.getByLabelText('供应商 API Key'), 'sk-test-only');

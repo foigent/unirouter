@@ -4,6 +4,26 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.63] - 2026-09-07
+
+### Added
+
+- Group model onboarding by platform, expose QianwenAI explicitly, and reuse a
+  saved connection and exact credential binding for multiple model configurations.
+  Beijing workspace model discovery is optional metadata, with administrator
+  scope, bounded responses and no inference, qualification or activation effect.
+- Add Qwen3.7-Flash's exact streamed-tools protocol and data Bundle, sharing
+  tool assembly with finite Qwen envelope preparation. Probe and Runtime preserve
+  tool history, reasoning, terminal usage and failed-delivery accounting boundaries.
+  Existing contracts remain unchanged; qualification and Agent completion require
+  separate live validation after deployment.
+
+### Fixed
+
+- Retain one configuration idempotency key across uncertain retries within a
+  bounded actor-scoped window. Fresh creation returns the exact selected binding;
+  replay cannot guess it from current credential rows.
+
 ## [1.2.62] - 2026-09-06
 
 ### Fixed

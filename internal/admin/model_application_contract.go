@@ -341,11 +341,12 @@ type canonicalApplicationReadStore interface {
 }
 
 type canonicalModelApplicationCreateResult struct {
-	Application         canonicalModelApplication `json:"application"`
-	IdempotencyReplay   bool                      `json:"idempotency_replay"`
-	OriginalHTTPStatus  int                       `json:"-"`
-	OriginalOperationID string                    `json:"-"`
-	Reused              struct {
+	SelectedCredentialBindingID int64                     `json:"selected_credential_binding_id,omitempty"`
+	Application                 canonicalModelApplication `json:"application"`
+	IdempotencyReplay           bool                      `json:"idempotency_replay"`
+	OriginalHTTPStatus          int                       `json:"-"`
+	OriginalOperationID         string                    `json:"-"`
+	Reused                      struct {
 		Connection  bool `json:"connection"`
 		PublicModel bool `json:"public_model"`
 		Deployment  bool `json:"deployment"`
@@ -712,7 +713,7 @@ func (h *Handler) createCanonicalModelApplicationWithReadbackAndIdempotency(
 	if len(projection.Applications) != 1 || len(projection.Applications[0].Operations) != 1 {
 		return canonicalModelApplicationCreateResult{}, fmt.Errorf("read canonical application after create: %w", errCanonicalApplicationNotFound)
 	}
-	result := canonicalModelApplicationCreateResult{Application: projection.Applications[0]}
+	result := canonicalModelApplicationCreateResult{Application: projection.Applications[0], SelectedCredentialBindingID: bindingID}
 	result.Reused.Connection = connectionReused
 	result.Reused.PublicModel = publicModelReused
 	result.Reused.Deployment = deploymentReused

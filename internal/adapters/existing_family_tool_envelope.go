@@ -17,11 +17,17 @@ type ToolStreamEnvelope struct {
 	model       string
 	kimi        *KimiChatStreamState
 	miniMaxTier bool
+	qwen        bool
 }
 
 func NewToolStreamEnvelope(protocol, provider, model, cache string) (*ToolStreamEnvelope, error) {
 	var kimi bool
 	switch protocol {
+	case "protocol.qwen-openai-chat.flash.v7":
+		if provider != "dashscope" || cache != "cache-usage.qwen-context-cache.v1" || model == "" {
+			return nil, fmt.Errorf("Qwen tool stream component mismatch")
+		}
+		return &ToolStreamEnvelope{model: model, qwen: true}, nil
 	case "protocol.minimax-m3-openai-chat.v11":
 		if provider != "minimax" || cache != "cache-usage.minimax-openai.v2" || model == "" {
 			return nil, fmt.Errorf("MiniMax tool stream component mismatch")
@@ -64,6 +70,10 @@ func NewToolStreamEnvelope(protocol, provider, model, cache string) (*ToolStream
 func (s *ToolStreamEnvelope) Prepare(data []byte) (body []byte, skip bool, err error) {
 	if s == nil {
 		return data, false, nil
+	}
+	if s.qwen {
+		body, err := prepareQwenToolEnvelope(data, s.model)
+		return body, false, err
 	}
 	if s.miniMaxTier {
 		body, err := prepareMiniMaxM3StreamTier(data, s.model)

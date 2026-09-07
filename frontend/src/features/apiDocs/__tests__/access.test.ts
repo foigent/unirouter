@@ -62,6 +62,15 @@ describe('API reference audience projection', () => {
       .toHaveLength(2);
   });
 
+  it('limits credential-backed discovery to model administrators despite using GET', () => {
+    const path = '/api/v1/model-deployments/{deploymentID}/model-discovery';
+    for (const role of ['platform_admin', 'org_admin', 'org_viewer', 'member']) {
+      const authz = authzContextForUser({ organization_role: role });
+      expect(endpointVisibleForAuthz('Admin', 'GET', path, authz, { agentCapabilities: false }))
+        .toBe(role === 'platform_admin' || role === 'org_admin');
+    }
+  });
+
   it('shows canonical model deployment reads to both organization read roles', () => {
     const organizationAdmin = authzContextForUser({ organization_role: 'org_admin' });
     const organizationViewer = authzContextForUser({ organization_role: 'org_viewer' });

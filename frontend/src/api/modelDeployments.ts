@@ -272,6 +272,7 @@ export type CanonicalModelApplicationCreateRequest = {
 };
 
 export type CanonicalModelApplicationCreateResult = {
+  selected_credential_binding_id?: number;
   application: CanonicalModelApplication;
   idempotency_replay: boolean;
   reused: {
@@ -394,7 +395,20 @@ export type CanonicalCapabilityApprovalResult = {
   idempotency_replay: boolean;
 };
 
+export type ModelDiscoveryResult = {
+  contract_version: 'unirouter.model-discovery.v1';
+  connection_id: number; connection_revision: number;
+  credential_binding_id: number; credential_revision: number;
+  observed_at: string; source: 'provider_catalog'; page: number; page_size: number; total: number;
+  models: { id: string; name: string; provider: string; inference_provider: string;
+    documented_capabilities: string[]; documented_features: string[] }[];
+};
+
 export const modelDeploymentApi = {
+  discover: (deploymentID: number, params: { credential_binding_id: number; connection_revision: number;
+    credential_revision: number; page: number; query?: string }) => request<ModelDiscoveryResult>(
+    `/model-deployments/${deploymentID}/model-discovery?${new URLSearchParams(Object.entries(params).map(([key, value]) => [key, String(value)]))}`,
+  ),
   list: (operationID?: CanonicalOperationID) => request<CanonicalModelApplicationProjection>(
     operationID ? `/model-deployments?operation=${encodeURIComponent(operationID)}` : '/model-deployments',
   ),

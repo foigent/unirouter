@@ -9,6 +9,8 @@ import {
 } from '../../api/modelDeployments';
 import { enterpriseFinanceApi, type RateCardRecord } from '../../api/enterpriseFinance';
 import { modelExecutionProfileApi, type ModelExecutionProfile } from '../../api/modelExecutionProfiles';
+import { useAuthStore } from '../../store/auth';
+import { modelBatchRetryWindowMS } from '../../utils/modelOnboardingBatch';
 import { ApiError } from '../../api/transport';
 import { PasswordField } from '../../ui';
 import {
@@ -26,6 +28,9 @@ import {
   providerPreset,
   providerPresetAdapterConfigMatches,
   providerPresets,
+  providerPlatforms,
+  platformForPreset,
+  presetsForPlatform,
   type ProviderPreset,
 } from '../../utils/providerEndpoints';
 import { endpointError } from './presentation';
@@ -39,7 +44,15 @@ type Props = {
   onCreated: (result: CanonicalModelApplicationCreateResult) => Promise<void> | void;
 };
 
-type CreateIntent = { fingerprint: string; idempotencyKey: string };
+function onboardingActorIdentity() {
+  const state = useAuthStore.getState();
+  const user = state.user;
+  return state.isAuthenticated && user
+    ? JSON.stringify([user.id, user.customer_context, user.org_id, user.organization_role, user.role])
+    : '';
+}
+
+type CreateIntent = { fingerprint: string; idempotencyKey: string; startedAt: number; lastCheckedAt: number; actor: string };
 
 const operationOptionsByAdapter: Record<string, { label: string; value: CanonicalOperationID }[]> = {
   openai_compatible: [
@@ -267,11 +280,11 @@ export function providerPresetBaseURLError(
       return 'xAI 官方模板要求精确使用 https://api.x.ai/v1';
     }
   }
-  if (presetValue !== 'dashscope' && presetValue !== 'dashscope-shared') return '';
+  if (presetValue !== 'dashscope' && presetValue !== 'dashscope-shared' && presetValue !== 'qianwen') return '';
 
   try {
     const parsed = new URL(baseURL);
-    if (presetValue === 'dashscope-shared') {
+    if (presetValue === 'dashscope-shared' || presetValue === 'qianwen') {
       return baseURL.replace(/\/$/u, '') === 'https://dashscope.aliyuncs.com/compatible-mode/v1'
         ? ''
         : '北京共享兼容模板只接受 https://dashscope.aliyuncs.com/compatible-mode/v1';
@@ -699,14 +712,26 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
       credential,
       operation: { operation_id: submittedOperationID },
     };
+    const now = Date.now();
+    const actor = onboardingActorIdentity();
+    if (!actor) return;
+    if (createIntent.current && (actor !== createIntent.current.actor || now < createIntent.current.lastCheckedAt || now - createIntent.current.startedAt >= modelBatchRetryWindowMS)) {
+      createIntent.current = null;
+      formApi?.setValue('api_key', '');
+      Toast.warning('创建重试窗口或登录身份已变化；请刷新现有配置并核对结果，选择明确的现有连接与凭证后继续。');
+      return;
+    }
     const fingerprint = JSON.stringify(input);
     if (!createIntent.current || createIntent.current.fingerprint !== fingerprint) {
-      createIntent.current = { fingerprint, idempotencyKey: newIdempotencyKey() };
+      createIntent.current = { fingerprint, idempotencyKey: newIdempotencyKey(), startedAt: now, lastCheckedAt: now, actor };
     }
+    createIntent.current.lastCheckedAt = now;
     setSaving(true);
     try {
       const result = await modelDeploymentApi.create(input, createIntent.current.idempotencyKey);
       createIntent.current = null;
+      formApi?.setValue('api_key', '');
+      if (onboardingActorIdentity() !== actor) return;
       let pricingDraftState: 'skipped' | 'created' | 'reused' = 'skipped';
       if (createPricingDraft && submittedPricingDraft?.state === 'available') {
         try {
@@ -738,6 +763,22 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     }
   };
 
+  const selectPreset = (value: unknown) => {
+    const preset = providerPreset(value);
+    clearReviewedModelDraft();
+    formApi?.setValue('preset', preset.value);
+    setSelectedPreset(preset.value);
+    setAdapterType(preset.adapterType);
+    const defaultOperation = defaultOperationForPreset(preset);
+    const nextBaseURL = canonicalOperationBaseURLForPreset(preset.value, defaultOperation);
+    setOperationID(defaultOperation);
+    setNewConnectionBaseURL(nextBaseURL);
+    formApi?.setValue('provider', preset.value === 'custom' ? '' : preset.provider);
+    formApi?.setValue('base_url', nextBaseURL);
+    formApi?.setValue('adapter_type', preset.adapterType);
+    formApi?.setValue('operation_id', defaultOperation);
+  };
+
   const cancel = () => {
     createIntent.current = null;
     onCancel();
@@ -747,7 +788,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     <Banner
       type="info"
       closeIcon={null}
-      description="一次提交原子创建或精确复用供应商连接、公共模型、执行目标、凭证绑定与一个 Operation。可选 Pricing Profile 是随后独立写入的待审核草稿；失败不会回滚已创建的模型接入，也不会批准、激活或切换计价权威。内部持久身份仍是 deployment_id + operation_id；创建不等于探测通过、已发布或对调用者可用。"
+      description="选择平台和模型，保存连接与 API Key。已有连接可直接复用，也可在列表页批量添加模型。保存后还需验证和发布，才会对应用开放。"
       style={{ marginBottom: 16 }}
     />
     <Form key={open ? 'canonical-create-open' : 'canonical-create-closed'} getFormApi={setFormApi} initValues={initialFormValues} onSubmit={submit}>
@@ -821,28 +862,19 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
         }}
         extraText="已暂停或 retired 的连接不能通过创建流程重新启用。"
       /> : <>
+        <Form.Select field="platform" initValue="deepseek" label="平台"
+          optionList={providerPlatforms} filter
+          onChange={value => { const preset = presetsForPlatform(String(value))[0]; if (preset) selectPreset(preset.value); }}
+          extraText="先选择平台，再选择该平台支持的接口与地域。业务空间只需配置一次，可复用连接批量添加模型。"
+        />
         <Form.Select
           field="preset"
           initValue="deepseek"
-          label={<span id="canonical-preset-label">接入模板</span>}
+          label={<span id="canonical-preset-label">接口与地域</span>}
           aria-labelledby="canonical-preset-label"
           disabled={executionProfilesLoading}
-          optionList={providerPresets.map(preset => ({ label: preset.label, value: preset.value }))}
-          onChange={(value) => {
-            const preset = providerPreset(value);
-            clearReviewedModelDraft();
-            formApi?.setValue('preset', preset.value);
-            setSelectedPreset(preset.value);
-            setAdapterType(preset.adapterType);
-            const defaultOperation = defaultOperationForPreset(preset);
-            const nextBaseURL = canonicalOperationBaseURLForPreset(preset.value, defaultOperation);
-            setOperationID(defaultOperation);
-            setNewConnectionBaseURL(nextBaseURL);
-            formApi?.setValue('provider', preset.value === 'custom' ? '' : preset.provider);
-            formApi?.setValue('base_url', nextBaseURL);
-            formApi?.setValue('adapter_type', preset.adapterType);
-            formApi?.setValue('operation_id', defaultOperation);
-          }}
+          optionList={presetsForPlatform(platformForPreset(providerPreset(selectedPreset))).map(preset => ({ label: preset.label, value: preset.value }))}
+          onChange={selectPreset}
           extraText={providerPreset(selectedPreset).note}
         />
         <div className="ur-model-endpoint-form-grid">
