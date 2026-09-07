@@ -69,6 +69,20 @@ describe('modelDeploymentApi', () => {
     );
   });
 
+  it('uses exact planned members and physical source refs without transport retries', async () => {
+    response({ groups: [], separate_capabilities: [] });
+    await modelDeploymentApi.getCapabilityProbePlan(41, 'openai.chat_completions.v1', 91);
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/model-deployments/41/operations/openai.chat_completions.v1/capability-probe-plan?credential_binding_id=91');
+    const input = { credential_binding_id: 91, plan_digest: 'a'.repeat(64), capability_ids: ['function_tools', 'streaming'] };
+    response({ error: { source_ref: 'op_' + '1'.repeat(32) } }, 503);
+    await expect(modelDeploymentApi.probeCapabilityGroup(41, 'openai.chat_completions.v1', input)).rejects.toMatchObject({ status: 503 });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch.mock.calls[1][1]).toMatchObject({ method: 'POST', body: JSON.stringify(input) });
+    response({ observation: {} });
+    await modelDeploymentApi.getCapabilityProbeGroup(41, 'openai.chat_completions.v1', 'op_' + '1'.repeat(32));
+    expect(mockFetch.mock.calls[2][0]).toBe('/api/v1/model-deployments/41/operations/openai.chat_completions.v1/capability-probe-groups/op_' + '1'.repeat(32));
+  });
+
   it('requires the caller-owned Idempotency-Key on canonical create', async () => {
     const input: CanonicalModelApplicationCreateRequest = {
       connection: { id: 13 },

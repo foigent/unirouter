@@ -96,6 +96,13 @@ func TestRegisterModelDeploymentRoutesEnforcesRoleAndGatewayLicenseBoundaries(t 
 	)
 	require.Equal(t, http.StatusForbidden, viewerProbe.Code)
 	require.NotContains(t, viewerProbe.Body.String(), "license_error", "probe RBAC must reject before the License gate")
+	groupBase := "/api/v1/model-deployments/1/operations/openai.chat_completions.v1"
+	for _, role := range []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin} {
+		require.Equal(t, http.StatusBadRequest, serve(validMux, http.MethodPost, groupBase+"/capability-probe-groups", "not-json", role).Code)
+		require.Equal(t, http.StatusBadRequest, serve(validMux, http.MethodGet, groupBase+"/capability-probe-plan", "", role).Code)
+	}
+	require.Equal(t, http.StatusForbidden, serve(validMux, http.MethodPost, groupBase+"/capability-probe-groups", "not-json", auth.RoleOrgViewer).Code)
+	require.Equal(t, http.StatusBadRequest, serve(validMux, http.MethodGet, groupBase+"/capability-probe-groups/invalid", "", auth.RoleOrgViewer).Code)
 	approvalPath := "/api/v1/model-deployments/1/operations/openai.responses.v1/production-approvals"
 	platformApproval := serve(validMux, http.MethodPost, approvalPath, "not-json", auth.RolePlatformAdmin)
 	require.Equal(t, http.StatusBadRequest, platformApproval.Code, platformApproval.Body.String())
@@ -120,6 +127,8 @@ func TestRegisterModelDeploymentRoutesEnforcesRoleAndGatewayLicenseBoundaries(t 
 		read: readRoute, write: licensedWriteRoute(licensing.NewRuntime(nil)),
 		approve: licensedApprovalRoute(licensing.NewRuntime(nil)), safety: safetyRoute,
 	})
+	require.Equal(t, http.StatusForbidden, serve(missingLicenseMux, http.MethodPost, groupBase+"/capability-probe-groups", "not-json", auth.RoleOrgAdmin).Code)
+	require.Equal(t, http.StatusBadRequest, serve(missingLicenseMux, http.MethodGet, groupBase+"/capability-probe-groups/invalid", "", auth.RoleOrgViewer).Code)
 	readWithoutLicense := serve(missingLicenseMux, http.MethodGet, "/api/v1/model-deployments", "", auth.RoleOrgViewer)
 	require.NotEqual(t, http.StatusForbidden, readWithoutLicense.Code, readWithoutLicense.Body.String())
 	writeWithoutLicense := serve(missingLicenseMux, http.MethodPost, "/api/v1/model-deployments", "not-json", auth.RoleOrgAdmin)

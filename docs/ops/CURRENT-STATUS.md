@@ -1,5 +1,23 @@
 # UniRouter Current Status
 
+
+## Concentrated qualification candidate and client migration Target — 2026-09-08
+
+Development/test now runs exact main PR409/07761d73, version1.2.71/M114.
+Both backends are healthy; 39 Releases/17 Slots/13 Publications and Flash59/Max60
+Slot3 are unchanged. Eight actual SDK preflights and one ordinary negative Chat
+request pass migration-diagnostic acceptance, with zero additional Provider
+attempts/Freeze/settlement. See [Target evidence](evidence/CLIENT-MIGRATION-DIAGNOSTICS-20260908.md).
+
+Local1.2.72 connects saved-model next actions, concentrated qualification and
+client setup. Exact equivalent streamed-tool contracts share one physical Probe
+and atomically append separate facts; approvals stay explicit and independent.
+Readback uses the physical source_ref, never latest success or plan digest.
+This candidate does not change schema, runtime, model contracts, Release/Slot or
+pricing and is not yet CI/Artifact/Target72. The versioned interruption estimator
+remains a separate accepted followup. Existing cumulative budgets and prior
+quality/evidence boundaries remain. 经验文件无需变化.
+
 ## Qwen completion contract Target results — 2026-09-08 05:05 CST
 
 Exact main PR408/ac3e7600 (1.2.70/M114) is deployed to development/test. Flash

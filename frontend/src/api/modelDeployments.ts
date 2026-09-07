@@ -404,6 +404,29 @@ export type ModelDiscoveryResult = {
     documented_capabilities: string[]; documented_features: string[] }[];
 };
 
+export type CapabilityProbeGroup = {
+  plan_digest: string; request_digest: string; capability_ids: string[];
+  probe_contract: string; planned_provider_requests: number;
+};
+export type CapabilityProbePlan = {
+  deployment_id: number; operation_id: CanonicalOperationID; credential_binding_id: number;
+  groups: CapabilityProbeGroup[]; separate_capabilities: string[];
+};
+export type SharedProbeObservation = {
+  version: string; source_ref: string; plan_digest: string; request_digest: string;
+  capability_ids: string[]; anchor_capability_id: string;
+  dispatch_state: 'not_started' | 'started' | 'response_received'; outcome_ambiguous: boolean;
+};
+export type CapabilityProbeGroupResult = {
+  observation: SharedProbeObservation; results: CanonicalCapabilityProbeResult[];
+};
+export type CapabilityProbeGroupReadback = {
+  observation: SharedProbeObservation;
+  facts: Array<{ capability_probe_id: number; capability_id: string; success_at_observation: boolean; status_code: number; error_summary?: string }>;
+  response_summary: { usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number }; reason_code?: string };
+  current_qualifications: CanonicalCapabilityQualification[];
+};
+
 export const modelDeploymentApi = {
   discover: (deploymentID: number, params: { credential_binding_id: number; connection_revision: number;
     credential_revision: number; page: number; query?: string }) => request<ModelDiscoveryResult>(
@@ -435,6 +458,16 @@ export const modelDeploymentApi = {
     capabilityID: string,
   ) => request<CanonicalCapabilityQualification>(
     `/model-deployments/${deploymentID}/operations/${encodeURIComponent(operationID)}/capabilities/${encodeURIComponent(capabilityID)}`,
+  ),
+  getCapabilityProbePlan: (deploymentID: number, operationID: CanonicalOperationID, bindingID: number) => request<CapabilityProbePlan>(
+    `/model-deployments/${deploymentID}/operations/${encodeURIComponent(operationID)}/capability-probe-plan?credential_binding_id=${bindingID}`,
+  ),
+  probeCapabilityGroup: (deploymentID: number, operationID: CanonicalOperationID, input: { credential_binding_id: number; plan_digest: string; capability_ids: string[] }) => request<CapabilityProbeGroupResult>(
+    `/model-deployments/${deploymentID}/operations/${encodeURIComponent(operationID)}/capability-probe-groups`,
+    { method: 'POST', body: JSON.stringify(input) },
+  ),
+  getCapabilityProbeGroup: (deploymentID: number, operationID: CanonicalOperationID, sourceRef: string) => request<CapabilityProbeGroupReadback>(
+    `/model-deployments/${deploymentID}/operations/${encodeURIComponent(operationID)}/capability-probe-groups/${encodeURIComponent(sourceRef)}`,
   ),
   probeCapability: (
     deploymentID: number,

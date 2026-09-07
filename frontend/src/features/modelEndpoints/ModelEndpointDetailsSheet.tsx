@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Banner, Button, Descriptions, SideSheet, Space, Typography } from '@douyinfe/semi-ui';
 import {
   canonicalOperationProbeAvailability,
@@ -8,6 +9,8 @@ import {
 } from '../../api/modelDeployments';
 import { LatencyText, StatusTag, Surface } from '../../ui';
 import { formatDateTime } from '../../utils/formatDate';
+import ModelQualificationWorkspace from './ModelQualificationWorkspace';
+import ModelClientSetup from './ModelClientSetup';
 import ModelCapabilityQualificationPanel, { isQualifiedCapabilityID } from './ModelCapabilityQualificationPanel';
 
 const { Text } = Typography;
@@ -23,6 +26,7 @@ type Props = {
   onClose: () => void;
   onProbe: (binding: CanonicalCredentialBinding) => void;
   onInspectRelease: (releaseRef: string) => void;
+  onOpenReleaseWorkspace: () => void;
 };
 
 const operationLabels: Record<string, string> = {
@@ -43,6 +47,7 @@ function runtimeMembershipSummary(operation: CanonicalOperation) {
 
 export default function ModelEndpointDetailsSheet(props: Props) {
   const { selected, operation } = props;
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const visible = Boolean(selected && operation);
   const probeAvailability = operation ? canonicalOperationProbeAvailability(operation) : { available: false, reason: '', source: 'server' as const };
   const eligibleBindings = selected?.credential.bindings.filter(binding => binding.eligible) || [];
@@ -153,7 +158,11 @@ export default function ModelEndpointDetailsSheet(props: Props) {
       </Surface>
 
       {operation.capability_probe_contracts.length > 0 && <>
-          {operation.capability_probe_contracts.map(contract => isQualifiedCapabilityID(contract.capability_id) ? (
+          <ModelQualificationWorkspace key={`${selected.deployment.id}/${operation.operation_id}`}
+            selected={selected} operation={operation} canManage={props.canManage}
+            canApprove={props.canApproveCapabilities} gatewayLicensed={props.gatewayLicensed}/>
+          <Button theme="borderless" onClick={() => setDetailsOpen(!detailsOpen)}>{detailsOpen ? '收起详细能力验证' : '查看详细能力验证'}</Button>
+          {detailsOpen && operation.capability_probe_contracts.map(contract => isQualifiedCapabilityID(contract.capability_id) ? (
             <ModelCapabilityQualificationPanel
               key={contract.capability_id}
               selected={selected}
@@ -172,6 +181,7 @@ export default function ModelEndpointDetailsSheet(props: Props) {
           <Space wrap><StatusTag status={operation.runtime.state}>{operation.runtime.state}</StatusTag><Text>{runtimeMembershipSummary(operation)}</Text></Space>
           <Text type="tertiary">operation reason: {operation.runtime.reason_code} · application runtime: {selected.runtime.state} / {selected.runtime.reason_code}</Text>
           <Space wrap>
+            {props.canManage && <Button onClick={props.onOpenReleaseWorkspace}>前往发布工作台</Button>}
             {operation.runtime.stable_membership && <Button
               theme="borderless"
               onClick={() => props.onInspectRelease(operation.runtime.stable_membership!.release_ref)}
@@ -192,6 +202,8 @@ export default function ModelEndpointDetailsSheet(props: Props) {
           <Text type="tertiary">reason: {selected.callability.reason_code}</Text>
         </Space>
       </Surface>
+
+      <ModelClientSetup model={selected.public_model.model_name} active={Boolean(operation.runtime.stable_membership)} chat={operation.operation_id === 'openai.chat_completions.v1'}/>
 
       {props.canManage && !props.gatewayLicensed && <Banner
         type="warning"

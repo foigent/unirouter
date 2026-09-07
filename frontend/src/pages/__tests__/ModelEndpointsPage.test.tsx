@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   probe: vi.fn(),
   getCapabilityQualification: vi.fn(),
+  getCapabilityProbePlan: vi.fn(),
   releaseList: vi.fn(),
   authorRelease: vi.fn(),
   lifecycleCurrent: vi.fn(),
@@ -74,6 +75,7 @@ vi.mock('../../api/modelDeployments', async importOriginal => {
       create: mocks.create,
       probe: mocks.probe,
       getCapabilityQualification: mocks.getCapabilityQualification,
+      getCapabilityProbePlan: mocks.getCapabilityProbePlan,
     },
   };
 });
@@ -361,6 +363,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
       import_state: 'draft', automatic_activation: false, network_fetch_performed: false,
     });
     mocks.getRateCards.mockResolvedValue({ data: [], total: 0 });
+    mocks.getCapabilityProbePlan.mockResolvedValue({ deployment_id: 41, operation_id: 'openai.chat_completions.v1', credential_binding_id: 91, groups: [], separate_capabilities: [] });
     mocks.getCapabilityQualification.mockImplementation(async (
       deploymentID: number, operationID: string, capabilityID: string,
     ) => ({
@@ -709,10 +712,14 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
 
     renderPage('/channels?deployment_id=41&operation_id=openai.chat_completions.v1');
 
+    expect(await screen.findByText('3 · 集中验证')).toBeInTheDocument();
+    await waitFor(() => expect(mocks.getCapabilityQualification).toHaveBeenCalledTimes(9));
+    expect(screen.queryByText('能力验证 · 流式输出（SSE）')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看详细能力验证' }));
     expect(await screen.findByText('能力验证 · 流式输出（SSE）')).toBeTruthy();
     expect(screen.getByText('能力验证 · Named tool_choice')).toBeTruthy();
     expect(screen.getByText('能力验证 · JSON Object')).toBeTruthy();
-    await waitFor(() => expect(mocks.getCapabilityQualification).toHaveBeenCalledTimes(9));
+    await waitFor(() => expect(mocks.getCapabilityQualification).toHaveBeenCalledTimes(18));
     expect(mocks.getCapabilityQualification).toHaveBeenCalledWith(
       41, 'openai.chat_completions.v1', 'streaming',
     );
@@ -748,10 +755,14 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
 
     renderPage('/channels?deployment_id=41&operation_id=openai.chat_completions.v1');
 
+    expect(await screen.findByText('3 · 集中验证')).toBeInTheDocument();
+    await waitFor(() => expect(mocks.getCapabilityQualification).toHaveBeenCalledTimes(9));
+    expect(screen.queryByText('能力验证 · 流式输出（SSE）')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看详细能力验证' }));
     expect(await screen.findByText('能力验证 · 流式输出（SSE）')).toBeTruthy();
     expect(screen.getByText('能力验证 · 推理强度')).toBeTruthy();
     expect(screen.getByText('能力验证 · JSON Object')).toBeTruthy();
-    await waitFor(() => expect(mocks.getCapabilityQualification).toHaveBeenCalledTimes(9));
+    await waitFor(() => expect(mocks.getCapabilityQualification).toHaveBeenCalledTimes(18));
   });
 
   it('does not offer Pro capability qualification for the unbound generic Chat tuple', async () => {

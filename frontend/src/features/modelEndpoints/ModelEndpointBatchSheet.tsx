@@ -13,6 +13,7 @@ type Props = {
   initialBindingID?: number;
   onClose: () => void;
   onChanged: () => Promise<void>;
+  onContinue: (application: CanonicalModelApplication) => void;
 };
 type Row = {
   id: string;
@@ -25,7 +26,7 @@ function actorIdentity() {
   const s = useAuthStore.getState(), u = s.user;
   return s.isAuthenticated && u ? JSON.stringify([u.id, u.customer_context, u.org_id, u.organization_role, u.role]) : '';
 }
-export default function ModelEndpointBatchSheet({ applications, initialConnectionID = 0, initialBindingID = 0, onClose, onChanged }: Props) {
+export default function ModelEndpointBatchSheet({ applications, initialConnectionID = 0, initialBindingID = 0, onClose, onChanged, onContinue }: Props) {
   const user = useAuthStore(s => s.user);
   const [connectionID, setConnectionID] = useState(initialConnectionID), [bindingID, setBindingID] = useState(initialBindingID);
   const [catalogSource, setCatalogSource] = useState<ProfileCatalogSource>('compiled');
@@ -207,7 +208,7 @@ export default function ModelEndpointBatchSheet({ applications, initialConnectio
       </Space> : '—' },
     ]}/>
   {discovery && <Space style={{ marginTop: 12 }}><Button disabled={locked || discovery.page <= 1} onClick={() => void discover(discovery.page - 1)}>上一页</Button><Typography.Text>第 {discovery.page} 页</Typography.Text><Button disabled={locked || discovery.page * discovery.page_size >= discovery.total} onClick={() => void discover(discovery.page + 1)}>下一页</Button></Space>}
-  {batch.current && <div aria-label="批量创建结果" style={{ marginTop: 16 }}>{batch.current.items.map(i => <p key={i.idempotencyKey}><strong>{i.model}</strong> · {i.state === 'succeeded' ? `已保存 #${i.result?.application.deployment.id}` : i.state === 'sending' ? '正在提交' : i.state === 'unconfirmed' ? i.error : '尚未提交'}</p>)}</div>}
+  {batch.current && <div aria-label="批量创建结果" style={{ marginTop: 16 }}>{batch.current.items.map(i => <p key={i.idempotencyKey}><strong>{i.model}</strong> · {i.state === 'succeeded' ? `已保存 #${i.result?.application.deployment.id}` : i.state === 'sending' ? '正在提交' : i.state === 'unconfirmed' ? i.error : '尚未提交'} {i.state === 'succeeded' && i.result && <Button disabled={busy} onClick={() => onContinue(i.result!.application)}>继续验证与启用</Button>}</p>)}</div>}
   {!batch.current && selected.length > 0 && <Typography.Paragraph style={{ marginTop: 16 }}>
       已选 {selected.length} 个模型：复用 {selected.filter(id => !!modelIDs[id]).length} 个公共模型，新建 {selected.filter(id => !modelIDs[id]).length} 个名称。
       {previewErrors.size > 0 ? ` ${previewErrors.size} 项需处理。` : ' 仅保存配置，不会调用模型或切换流量。'}

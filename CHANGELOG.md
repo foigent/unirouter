@@ -4,6 +4,16 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.72] - 2026-09-08
+
+### Added
+- Concentrated model qualification with one credential selection, exact server-planned shared probes, individual results and explicit independent approvals. One equivalent streamed-tools request can produce several capability facts; non-equivalent contracts remain separate.
+- Exact shared-observation readback after an unconfirmed result, without repeating Provider I/O. Group persistence is atomic and current safety/revision drift invalidates the complete group.
+- Saved-model next actions and client setup using stable names, application-key placeholders and the existing OpenClaw dry-run sync.
+
+### Unchanged
+- No schema, Profile/Bundle, Release/Slot, runtime parser, pricing or historical evidence changes. Probe success does not approve or activate a model.
+
 ## [1.2.71] - 2026-09-08
 
 ### Fixed
