@@ -1,5 +1,23 @@
 # UniRouter Current Status
 
+## Qwen complete-output contract candidate — 2026-09-08
+
+Local1.2.70/M114 introduces opt-in protocolv8 and Probev2, plus immutable Flash1.9
+and Max1.1 candidates. This is a platform implementation change, not a no-build
+model batch. No new Bundle Publication, Release/Slot activation or Provider result
+is claimed. Existing prices, budgets, old contracts and historical evidence remain.
+The user approved supplier-bound enforcement, legacy-field migration and marked
+interruption estimates; token/Freeze values are not monetary caps. See the
+[exact design and adjudication](../analysis/STREAM-OUTPUT-AUTHORITY-20260908-REVIEW.md).
+
+Main PR407/f8da27d7 and all five CI checks are complete. Exact1.2.69 is deployed
+to development/test with healthy backends/M114,37Releases/17Slots/11Publications
+unchanged. The formal qualified-client observer passed short requests only;
+real loaded-stream and cancellation joint continuity remains open. The60GiB root
+filesystem has16.66GiB available/71percent after rollout. Earlier entries retain
+their original evidence cutoffs. 经验文件无需变化.
+
+
 ## Pinned ingress observer candidate — 2026-09-08
 
 Local1.2.69/M114 changes only the formal development/test rollout observer to

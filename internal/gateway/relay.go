@@ -66,6 +66,7 @@ type BillingProvider interface {
 	PrepareNonStreamDelivery(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error)
 	PrepareResponseCacheDelivery(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error)
 	HoldNonStreamOutput(ctx context.Context, req billing.SettleRequest, reason string) error
+	HoldStreamOutput(ctx context.Context, req billing.SettleRequest, deliveredBytes int64, deliveredChunks int) error
 	RecordDelivery(ctx context.Context, event billing.DeliveryEvent) error
 	RecordResponseCacheDelivery(ctx context.Context, event billing.ResponseCacheDeliveryEvent) error
 	MarkBillableOutput(ctx context.Context, requestID string, orgID int64) error
@@ -1502,6 +1503,27 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 			evidenceUsage, 0, status, elapsedMilliseconds(requestStart), 0, false, estimatedTokens, upstreamRequestID, nil)
 		return nil
 	}
+	// The new complete-output contract also has to retain a final non-stream
+	// violation before any disclosure. Older protocols keep their existing rules.
+	if enforcement, ok := modelprofile.ResolveOutputEnforcement(route.ModelProtocolProfile); ok &&
+		enforcement.Accounting == modelprofile.OutputEnforcementProviderCompletionV1 &&
+		normalized.Usage.Authority == metering.UsageAuthorityProviderReported &&
+		normalized.Usage.Finality == metering.UsageFinalityFinal && normalized.Usage.CompletionTokens > reservedCompletionTokens {
+		stopProbeLease()
+		if healthErr := relay.applyRouteHealth(context.WithoutCancel(ctx), route, executionHealthProviderFailure); healthErr != nil {
+			relay.recordExecutionHealthFailure(ctx, requestID, model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), executionHealthProviderFailure, healthErr)
+		}
+		if err := holdUndeliveredOutput(http.StatusBadGateway, billing.OutputHoldReasonProviderResponseUnusable); err != nil {
+			reqLog.Error("Failed to retain supplier completion violation: %v", err)
+			writeError(w, http.StatusInternalServerError, "server_error", "billing_error.provider_attempt_failed", "Failed to retain provider cost authority")
+			return
+		}
+		relay.recordTraceEvent(ctx, requestID, "provider.response_unusable", "provider", "warning", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"failure_kind": billing.ProviderOutputLimitExceeded,
+		}, upstreamRequestID)
+		writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", "Supplier exceeded the completion contract; usage requires reconciliation")
+		return
+	}
 	deliveryInspection := inspectNonStreamOutputTextsForRoute(responseMap, route)
 	if !deliveryInspection.complete() {
 		stopProbeLease()
@@ -1865,7 +1887,13 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			ProtocolProfileVersion: route.OperationProtocolProfileVersion, CacheUsageProfile: route.CacheUsageProfile,
 		},
 	)
-	scanner := bufio.NewScanner(resp.Body)
+	outputEnforcement, _ := modelprofile.ResolveOutputEnforcement(route.ModelProtocolProfile)
+	providerCompletionBound := outputEnforcement.Accounting == modelprofile.OutputEnforcementProviderCompletionV1
+	var streamReader io.Reader = resp.Body
+	if providerCompletionBound {
+		streamReader = &boundedStreamReader{reader: resp.Body, remaining: outputEnforcement.MaxUpstreamWireBytes}
+	}
+	scanner := bufio.NewScanner(streamReader)
 	scanner.Buffer(make([]byte, 0, 64*1024), streamPolicy.MaxSSELineBytes)
 	functionToolStream := false
 	if contract, ok := modelprofile.ResolveChatProtocolContract(route.ModelProtocolProfile); ok {
@@ -1934,6 +1962,13 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			return false
 		}
 		projected := int(projected64)
+		if providerCompletionBound {
+			if projected64 > outputEnforcement.MaxDecodedOutputBytes {
+				streamTerminationCode = "stream_resource_limit_exceeded"
+				return false
+			}
+			return true
+		}
 		if !reservationState.AllowExtension {
 			if projected <= reservationState.ReservedCompletionTokens {
 				return true
@@ -2762,7 +2797,9 @@ streamLoop:
 	}
 	if scanErr != nil && !preOutputBillingFailure {
 		reqLog.Error("Upstream stream ended with a read error: %v", scanErr)
-		if errors.Is(scanErr, bufio.ErrTooLong) {
+		if errors.Is(scanErr, errStreamResourceLimit) {
+			streamTerminationCode = "stream_resource_limit_exceeded"
+		} else if errors.Is(scanErr, bufio.ErrTooLong) {
 			streamTerminationCode = "stream_frame_too_large"
 		} else {
 			streamTerminationCode = "upstream_stream_read_failed"
@@ -2771,7 +2808,13 @@ streamLoop:
 	if !done && streamTerminationCode == "" && !preOutputBillingFailure {
 		streamTerminationCode = "upstream_stream_read_failed"
 	}
-	providerStreamFailed := scanErr != nil || streamPayloadInvalid || providerStreamErrorObserved || (!providerTerminalObserved && streamTerminationCode == "upstream_stream_read_failed")
+	supplierOutputOverrun := providerCompletionBound && usedUpstreamUsage &&
+		streamUsage.Authority == metering.UsageAuthorityProviderReported && streamUsage.Finality == metering.UsageFinalityFinal &&
+		streamUsage.CompletionTokens > reservationState.ReservedCompletionTokens
+	if supplierOutputOverrun {
+		streamTerminationCode = billing.ProviderOutputLimitExceeded
+	}
+	providerStreamFailed := supplierOutputOverrun || scanErr != nil || streamPayloadInvalid || providerStreamErrorObserved || (!providerTerminalObserved && streamTerminationCode == "upstream_stream_read_failed")
 	switch {
 	case providerStreamFailed:
 		recordRouteHealth(executionHealthProviderFailure)
@@ -2852,6 +2895,10 @@ streamLoop:
 			writeSSE("data: {\"error\":{\"type\":\"guardrail_error\",\"code\":\"guardrail_error.stream_inspection_unavailable\",\"message\":\"Stream output could not be inspected safely\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
 		case "stream_budget_extension_denied":
 			writeSSE("data: {\"error\":{\"type\":\"billing_error\",\"code\":\"billing_error.stream_budget_exhausted\",\"message\":\"Stream budget could not be extended\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
+		case billing.ProviderOutputLimitExceeded:
+			writeSSE("data: {\"error\":{\"type\":\"stream_error\",\"code\":\"stream_error.provider_output_limit_exceeded\",\"message\":\"Supplier exceeded the completion contract; usage requires reconciliation\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
+		case "stream_resource_limit_exceeded":
+			writeSSE("data: {\"error\":{\"type\":\"stream_error\",\"code\":\"stream_error.resource_limit_exceeded\",\"message\":\"Stream exceeded a transport resource limit\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
 		case "stream_output_limit_exceeded":
 			writeSSE("data: {\"error\":{\"type\":\"stream_error\",\"code\":\"stream_error.output_limit_exceeded\",\"message\":\"Stream exceeded its explicit output limit\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
 		case "stream_lease_lost", "stream_checkpoint_unpersisted":
@@ -2875,6 +2922,32 @@ streamLoop:
 			"delivered_bytes":        deliveredBytes,
 			"delivered_chunks":       deliveredChunks,
 		}, upstreamRequestID)
+	}
+
+	if supplierOutputOverrun {
+		holdReq := settleRequestFromUsage(requestID, attemptIDFromContext(ctx), orgID, providerUsage)
+		holdCtx, holdCancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+		var holdErr error
+		if deliveryStarted.Load() {
+			holdReq.StreamFence = &streamFence
+			holdErr = relay.billing.HoldStreamOutput(holdCtx, holdReq, deliveredBytes, deliveredChunks)
+		} else {
+			holdErr = relay.billing.HoldNonStreamOutput(holdCtx, holdReq, billing.OutputHoldReasonProviderResponseUnusable)
+		}
+		holdCancel()
+		billingStatus := "provider_cost_pending"
+		if holdErr != nil {
+			leaveLeaseForRecovery = true
+			billingStatus = "provider_usage_hold_unpersisted"
+			reqLog.Error("Supplier overrun hold was not confirmed: %v", holdErr)
+		} else {
+			leaseTerminalReason = billing.ProviderOutputLimitExceeded
+			leaveLeaseForRecovery = false
+		}
+		recordStreamMetrics(providerUsage, 0, nil)
+		recordStreamTermination(billing.ProviderOutputLimitExceeded, billingStatus)
+		writeTerminationFrame(billing.ProviderOutputLimitExceeded, billingStatus)
+		return
 	}
 
 	if deliveryReceiptFailure {

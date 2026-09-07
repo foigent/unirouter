@@ -11,6 +11,7 @@ import (
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modeloperation"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/payloadpolicy"
 )
@@ -33,20 +34,23 @@ func validateChatOutputParameters(req ChatCompletionRequest) string {
 // This is an ephemeral, caller-authorized projection, never an execution
 // entitlement. In particular it contains neither the internal Plan nor routes.
 type chatPreflightResult struct {
-	Object                     string     `json:"object"`
-	RequestModel               string     `json:"request_model"`
-	Operation                  string     `json:"operation"`
-	LocallyAdmissible          bool       `json:"locally_admissible"`
-	SnapshotAt                 *time.Time `json:"snapshot_at,omitempty"`
-	ProfileID                  string     `json:"profile_id,omitempty"`
-	ProfileVersion             string     `json:"profile_version,omitempty"`
-	ProtocolProfile            string     `json:"protocol_profile,omitempty"`
-	RequiredCapabilities       []string   `json:"required_capabilities"`
-	ContextWindow              int        `json:"context_window,omitempty"`
-	MaxOutputTokens            int        `json:"max_output_tokens,omitempty"`
-	RequestDefaultOutputTokens int        `json:"request_default_output_tokens,omitempty"`
-	Reasons                    []string   `json:"reasons"`
-	NotChecked                 []string   `json:"not_checked"`
+	OutputEnforcement          *modelprofile.OutputEnforcement `json:"output_enforcement,omitempty"`
+	AcceptedCompletionTokens   int                             `json:"accepted_completion_tokens,omitempty"`
+	ProviderCompletionTokens   int                             `json:"provider_completion_tokens,omitempty"`
+	Object                     string                          `json:"object"`
+	RequestModel               string                          `json:"request_model"`
+	Operation                  string                          `json:"operation"`
+	LocallyAdmissible          bool                            `json:"locally_admissible"`
+	SnapshotAt                 *time.Time                      `json:"snapshot_at,omitempty"`
+	ProfileID                  string                          `json:"profile_id,omitempty"`
+	ProfileVersion             string                          `json:"profile_version,omitempty"`
+	ProtocolProfile            string                          `json:"protocol_profile,omitempty"`
+	RequiredCapabilities       []string                        `json:"required_capabilities"`
+	ContextWindow              int                             `json:"context_window,omitempty"`
+	MaxOutputTokens            int                             `json:"max_output_tokens,omitempty"`
+	RequestDefaultOutputTokens int                             `json:"request_default_output_tokens,omitempty"`
+	Reasons                    []string                        `json:"reasons"`
+	NotChecked                 []string                        `json:"not_checked"`
 }
 
 // HandleChatPreflight must be mounted behind the real Chat caller, retained
@@ -105,6 +109,12 @@ func (relay *Relay) HandleChatPreflight(w http.ResponseWriter, r *http.Request) 
 		result.ProtocolProfile = plan.ModelProtocolProfile
 		result.ContextWindow, result.MaxOutputTokens = plan.PublicContextLimit, plan.PublicOutputLimit
 		result.RequestDefaultOutputTokens = plan.RequestDefaultOutputLimit
+		if batch.limits.OutputEnforcement.Accounting != "" {
+			enforcement := batch.limits.OutputEnforcement
+			result.OutputEnforcement = &enforcement
+			result.AcceptedCompletionTokens = batch.limits.EstimatedOutputTokens
+			result.ProviderCompletionTokens = batch.limits.ProviderOutputLimit
+		}
 		result.RequiredCapabilities = append(result.RequiredCapabilities, plan.RequiredCapabilities...)
 		if !plan.DatabaseTime.IsZero() {
 			snapshotAt := plan.DatabaseTime.UTC()

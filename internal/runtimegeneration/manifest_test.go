@@ -118,3 +118,14 @@ func TestQwenStreamBundleRequiresChatAndProbeImplementations(t *testing.T) {
 		require.Error(t, old.Require("M114", requirements), "old runtime cannot activate an unsupported Qwen Release")
 	}
 }
+
+func TestQwenProviderCompletionRequiresNewRuntimeImplementations(t *testing.T) {
+	requirements := []modelprofile.ImplementationReference{{Kind: "chat", ID: "protocol.qwen-openai-chat.flash.v8"}, {Kind: "capability_probe", ID: "unirouter.capability-probe.qwen-chat-stream-tools.v2@1.0.0"}}
+	m := CurrentManifest([]string{"M114"})
+	require.NoError(t, m.Require("M114", requirements))
+	for _, missing := range requirements {
+		old := m
+		old.Implementations = slices.DeleteFunc(slices.Clone(m.Implementations), func(ref modelprofile.ImplementationReference) bool { return ref == missing })
+		require.Error(t, old.Require("M114", requirements), "v7 chat or v1 probe support cannot substitute for the new output contract")
+	}
+}

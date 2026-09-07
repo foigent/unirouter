@@ -11,9 +11,47 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
+
+func TestProviderCompletionCatalogReadsExactDataReleaseMode(t *testing.T) {
+	pool := testutil.SetupIsolatedTestDB(t)
+	ctx := t.Context()
+	d := providerCompletionTestPlan(t).Definition
+	p := d.Profile()
+	_, err := pool.Exec(ctx, `CREATE TABLE model_registry (id bigint,org_id bigint,model_name text,display_name text,context_length integer,output_limit integer,execution_profile_id text,execution_profile_version text);
+CREATE TABLE model_aliases (org_id bigint,alias text,target_model text,status text);
+CREATE TABLE runtime_change_slots (model_name text,public_model_id bigint,stable_release_id bigint);
+CREATE TABLE runtime_change_releases (id bigint,public_model_id bigint,model_name text,candidate_version text,stage text,route_items_sealed_at timestamptz,route_items_hash text,route_items_count integer,execution_profile_id text,execution_profile_version text,public_context_limit integer,public_output_limit integer,profile_definition_digest text);
+CREATE TABLE model_profile_definitions (definition_digest text,profile_id text,profile_version text,product_lineage_id text,schema_version text,canonical_bytes bytea,predecessor_digest text);
+INSERT INTO model_registry VALUES (1,7,'qwen-test','Qwen',1000,100,'invalid-old-registry','missing');
+INSERT INTO runtime_change_slots VALUES ('qwen-test',1,11);`)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO model_profile_definitions VALUES ($1,$2,$3,$4,$5,$6,NULL)`, d.Digest(), p.ID, p.Version, d.ProductLineageID(), modelprofile.DefinitionSchemaV1, d.CanonicalBytes())
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO runtime_change_releases VALUES (11,1,'qwen-test','unirouter.runtime-change-candidate.v2','active',NOW(),'sealed',1,$1,$2,$3,$4,$5)`, p.ID, p.Version, p.DefaultContextWindow, p.ProviderMaxOutput, d.Digest())
+	require.NoError(t, err)
+	relay := NewRelay(pool, nil, nil, &mockBilling{}, nil, nil)
+	items, err := relay.loadPublicModelExecutionProfiles(ctx, 7, []string{"qwen-test"})
+	require.NoError(t, err)
+	m := items["qwen-test"]
+	require.Equal(t, "verified", m.Status)
+	require.Equal(t, modelprofile.OutputEnforcementProviderCompletionV1, m.StreamOutputAccounting)
+	require.Equal(t, d.Digest(), m.ProfileDefinitionDigest)
+	require.NotNil(t, m.OutputEnforcement)
+	require.EqualValues(t, 16<<20, m.OutputEnforcement.MaxDecodedOutputBytes)
+	require.EqualValues(t, 128<<20, m.OutputEnforcement.MaxUpstreamWireBytes)
+	require.Equal(t, 10, m.OutputEnforcement.ProviderDeviationTokens)
+	_, err = pool.Exec(ctx, `UPDATE model_profile_definitions SET canonical_bytes='corrupt'`)
+	require.NoError(t, err)
+	items, err = relay.loadPublicModelExecutionProfiles(ctx, 7, []string{"qwen-test"})
+	require.NoError(t, err)
+	require.Equal(t, "invalid", items["qwen-test"].Status)
+	require.Empty(t, items["qwen-test"].StreamOutputAccounting)
+	require.Nil(t, items["qwen-test"].OutputEnforcement)
+}
 
 func TestRequestIncludesModelExecutionProfiles(t *testing.T) {
 	require.True(t, requestIncludesModelExecutionProfiles([]string{"price, execution_profile"}))

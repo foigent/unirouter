@@ -23,7 +23,7 @@ type ToolStreamEnvelope struct {
 func NewToolStreamEnvelope(protocol, provider, model, cache string) (*ToolStreamEnvelope, error) {
 	var kimi bool
 	switch protocol {
-	case "protocol.qwen-openai-chat.flash.v7":
+	case "protocol.qwen-openai-chat.flash.v7", "protocol.qwen-openai-chat.flash.v8":
 		if provider != "dashscope" || cache != "cache-usage.qwen-context-cache.v1" || model == "" {
 			return nil, fmt.Errorf("Qwen tool stream component mismatch")
 		}

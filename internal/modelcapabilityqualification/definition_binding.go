@@ -12,6 +12,7 @@ import (
 // Legacy contracts keep their exact historical tuple validation.
 var dataProbeImplementations = map[string]func(Binding, modelprofile.Profile) bool{
 	QwenStreamFunctionToolsProbeContractID + "@1.0.0": validQwenStreamComposition,
+	QwenProviderCompletionProbeContractID + "@1.0.0":  validQwenStreamComposition,
 	MiniMaxM27StreamFunctionToolsProbeContractID + "@2.0.0": func(b Binding, p modelprofile.Profile) bool {
 		return compatibleMiniMaxM2OptionalStreamCache(p) && streamToolCapability(b.CapabilityID)
 	},

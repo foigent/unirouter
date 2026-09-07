@@ -405,6 +405,15 @@ func (b *Billing) RecordDelivery(ctx context.Context, event DeliveryEvent) error
 		return fmt.Errorf("begin delivery receipt: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	if err := recordDeliveryTx(ctx, tx, event); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// recordDeliveryTx shares the existing delivery authority with atomic financial
+// holds. Callers must normalize the event and own the transaction.
+func recordDeliveryTx(ctx context.Context, tx pgx.Tx, event DeliveryEvent) error {
 	record, err := reservationForUpdate(ctx, tx, event.RequestID, event.OrgID)
 	if err != nil {
 		return fmt.Errorf("lock delivery receipt: %w", err)
@@ -434,7 +443,7 @@ func (b *Billing) RecordDelivery(ctx context.Context, event DeliveryEvent) error
 	if err == nil && previous.AttemptID == event.AttemptID && previous.Mode == event.Mode && previous.Outcome == event.Outcome &&
 		previous.DeliveredBytes == event.DeliveredBytes && previous.DeliveredChunks == event.DeliveredChunks &&
 		previous.HTTPStatus == event.HTTPStatus && previous.ErrorCode == event.ErrorCode {
-		return tx.Commit(ctx)
+		return nil
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		sequence = 0
@@ -477,7 +486,14 @@ func (b *Billing) RecordDelivery(ctx context.Context, event DeliveryEvent) error
 	// gateway can report whether its final protocol frame was accepted. Never
 	// regress an already terminal provider attempt while recording that fact.
 	if record.Status == "settled" || record.Status == "cancelled" {
-		return tx.Commit(ctx)
+		return nil
+	}
+	if event.Outcome == DeliveryOutcomeWriteFailed &&
+		record.SettlementPendingReason == OutputHoldReasonProviderResponseUnusable &&
+		record.UsagePurpose == metering.UsagePurposeProviderEvidence && record.UsageFinality == metering.UsageFinalityFinal {
+		// A supplier overrun can coincide with a partial first frame. Preserve
+		// final provider evidence without inventing a completely delivered chunk.
+		return nil
 	}
 	if (event.Outcome == DeliveryOutcomeCompleted || event.Outcome == DeliveryOutcomeInterrupted) &&
 		(record.SettlementPendingReason == "insufficient_topup" ||
@@ -487,7 +503,7 @@ func (b *Billing) RecordDelivery(ctx context.Context, event DeliveryEvent) error
 		// Delivery metadata may finish after a financial hold is established.
 		// Preserve the stronger funding/provider-liability state while retaining
 		// the append-only terminal delivery fact.
-		return tx.Commit(ctx)
+		return nil
 	}
 
 	if event.Mode == DeliveryModeStream && event.Outcome == DeliveryOutcomeInterrupted &&
@@ -507,7 +523,7 @@ WHERE org_id=$1 AND request_id=$2 AND status='settlement_pending'`, event.OrgID,
 			if err != nil {
 				return fmt.Errorf("hold interrupted public stream without final usage: %w", err)
 			}
-			return tx.Commit(ctx)
+			return nil
 		}
 	}
 
@@ -573,7 +589,7 @@ WHERE org_id=$1 AND request_id=$2 AND status='settlement_pending'`, event.OrgID,
 			return err
 		}
 	}
-	return tx.Commit(ctx)
+	return nil
 }
 
 func updateProviderAttemptDeliveryState(ctx context.Context, tx pgx.Tx, event DeliveryEvent, state, certainty string) error {

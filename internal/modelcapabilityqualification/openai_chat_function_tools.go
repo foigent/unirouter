@@ -249,7 +249,7 @@ func openAIChatProbeTools() []map[string]interface{} {
 // reasoning and tool-choice request semantics differ; only the mechanics are
 // shared.
 func BuildOpenAIChatFunctionToolsProbeRequest(binding Binding) ([]byte, error) {
-	if binding.ProbeContractID == QwenStreamFunctionToolsProbeContractID {
+	if binding.ProbeContractID == QwenStreamFunctionToolsProbeContractID || binding.ProbeContractID == QwenProviderCompletionProbeContractID {
 		return BuildQwenStreamFunctionToolsProbeRequest(binding)
 	}
 	if existingFamilyStreamProbe(binding.ProbeContractID) {

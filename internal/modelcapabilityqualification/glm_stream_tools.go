@@ -49,11 +49,15 @@ func BuildGLMStreamFunctionToolsProbeRequest(b Binding) ([]byte, error) {
 }
 
 func ValidateOpenAIChatStreamFunctionToolsForBinding(b Binding, contentType string, reader io.Reader) (OpenAIChatFunctionToolsObservation, error) {
-	if existingFamilyStreamProbe(b.ProbeContractID) || b.ProbeContractID == QwenStreamFunctionToolsProbeContractID {
+	if existingFamilyStreamProbe(b.ProbeContractID) || b.ProbeContractID == QwenStreamFunctionToolsProbeContractID || b.ProbeContractID == QwenProviderCompletionProbeContractID {
 		if err := b.validateDataDefinition(); err != nil {
 			return OpenAIChatFunctionToolsObservation{}, invalidOpenAIChatFunctionTools("probe_contract", err)
 		}
-		return validateChatStreamFunctionTools(b, contentType, reader, b.ProbeContractID == MiniMaxM3StreamFunctionToolsProbeContractID)
+		observation, err := validateChatStreamFunctionTools(b, contentType, reader, b.ProbeContractID == MiniMaxM3StreamFunctionToolsProbeContractID)
+		if err == nil && b.ProbeContractID == QwenProviderCompletionProbeContractID && observation.CompletionTokens > 2048 {
+			return observation, invalidOpenAIChatFunctionTools("usage", fmt.Errorf("provider completion exceeds probe contract"))
+		}
+		return observation, err
 	}
 	if b.ProbeContractID == MiniMaxM27StreamFunctionToolsProbeContractID {
 		return ValidateMiniMaxM27StreamFunctionToolsForBinding(b, contentType, reader)

@@ -51,6 +51,7 @@ type mockBilling struct {
 	completeAttemptFn      func(ctx context.Context, req billing.ProviderAttemptCompletion) error
 	prepareDeliveryFn      func(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error)
 	prepareCacheDeliveryFn func(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error)
+	holdStreamOutputFn     func(context.Context, billing.SettleRequest, int64, int) error
 	holdOutputFn           func(ctx context.Context, req billing.SettleRequest, reason string) error
 	recordDeliveryFn       func(ctx context.Context, event billing.DeliveryEvent) error
 	recordCacheDeliveryFn  func(ctx context.Context, event billing.ResponseCacheDeliveryEvent) error
@@ -94,6 +95,13 @@ func (m *mockBilling) PrepareNonStreamDelivery(ctx context.Context, req billing.
 func (m *mockBilling) HoldNonStreamOutput(ctx context.Context, req billing.SettleRequest, reason string) error {
 	if m.holdOutputFn != nil {
 		return m.holdOutputFn(ctx, req, reason)
+	}
+	return nil
+}
+
+func (m *mockBilling) HoldStreamOutput(ctx context.Context, req billing.SettleRequest, deliveredBytes int64, deliveredChunks int) error {
+	if m.holdStreamOutputFn != nil {
+		return m.holdStreamOutputFn(ctx, req, deliveredBytes, deliveredChunks)
 	}
 	return nil
 }

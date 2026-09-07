@@ -13,6 +13,7 @@ const publicModelExecutionProfileInclude = "execution_profile"
 
 type publicModelExecutionProfile struct {
 	ParameterControls          *modelprofile.ParameterControls `json:"parameter_controls,omitempty"`
+	OutputEnforcement          *modelprofile.OutputEnforcement `json:"output_enforcement,omitempty"`
 	StreamOutputAccounting     string                          `json:"stream_output_accounting,omitempty"`
 	ProfileDefinitionDigest    string                          `json:"profile_definition_digest,omitempty"`
 	Status                     string                          `json:"status"`
@@ -157,7 +158,11 @@ ORDER BY resolved.ordinality`, orgID, models)
 		controls := modelprofile.DescribeParameterControls(profile)
 		metadata.ParameterControls = &controls
 		if profile.APISurface == "openai_chat_completions" {
-			metadata.StreamOutputAccounting = "utf8_byte_upper_bound"
+			metadata.StreamOutputAccounting = modelprofile.OutputEnforcementByteUpperBound
+			if enforcement, ok := modelprofile.ResolveOutputEnforcement(profile.ProtocolProfile); ok && enforcement.Accounting != modelprofile.OutputEnforcementByteUpperBound {
+				metadata.OutputEnforcement = &enforcement
+				metadata.StreamOutputAccounting = enforcement.Accounting
+			}
 		}
 		if reasoning, ok := modelprofile.ResolveReasoningContract(profile.ReasoningProfile); ok {
 			metadata.ReasoningMode = reasoning.Mode

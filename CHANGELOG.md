@@ -4,6 +4,26 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.70] - 2026-09-08
+
+### Added
+
+- Add an opt-in Qwen complete-output contract and immutable Flash/Max data
+  candidates. New Releases accept only `max_completion_tokens > 10`, reserve
+  the accepted total and send ten fewer tokens under the supplier's documented
+  allowance. Old protocols and active Releases keep their existing behavior.
+- Expose accepted/provider limits and stream resource bounds. The new stream
+  contract uses supplier final usage with separate finite transport limits,
+  instead of comparing UTF-8 bytes with the requested token count.
+
+### Fixed
+
+- Retain final supplier output-limit violations as provider evidence pending
+  explicit reconciliation. Atomically record actual streamed delivery, the exact
+  lease fence and the terminal hold, including commit-ambiguity readback. No
+  automatic charge or Provider retry; interrupted streams retain existing marked
+  estimates and frozen pricing. Neither a token limit nor Freeze is a bill cap.
+
 ## [1.2.69] - 2026-09-08
 
 ### Fixed

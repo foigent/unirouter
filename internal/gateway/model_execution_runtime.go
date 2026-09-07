@@ -128,20 +128,22 @@ var (
 
 // legacyImplicitOutputLimitV1 preserves the pre-catalog compatibility
 // reservation without pretending a route's DefaultMaxOutput is a maximum. It
-// becomes a real hard bound only because the legacy adapter contract injects
-// the same value upstream before Freeze and dispatch.
+// is also injected upstream before Freeze and dispatch. It does not promise
+// that an estimate or reservation is a monetary ceiling.
 const legacyImplicitOutputLimitV1 = 1000
 
 // modelExecutionRequestLimits binds admission accounting to the exact provider
 // request built before Freeze. When the caller omits an output limit,
-// ProviderOutputLimit is injected into every compatible provider request so the
-// reserved amount is also an upstream liability cap.
+// ProviderOutputLimit is injected into every compatible provider request. The
+// exact contract determines any supplier allowance; reservation and final
+// charging remain distinct authorities.
 type modelExecutionRequestLimits struct {
 	EstimatedInputTokens  int
 	EstimatedOutputTokens int
 	ExplicitOutputTokens  *int
 	ProviderOutputLimit   int
 	EstimateVersion       string
+	OutputEnforcement     modelprofile.OutputEnforcement
 }
 
 func (limits modelExecutionRequestLimits) estimatedTotal() int64 {
@@ -177,6 +179,14 @@ func (limits modelExecutionRequestLimits) resolveOutputReservation(plan modelrou
 			return modelExecutionRequestLimits{}, errModelExecutionOutputLimitRequired
 		}
 		resolved.EstimatedOutputTokens = resolved.ProviderOutputLimit
+	}
+	if enforcement, ok := modelprofile.ResolveOutputEnforcement(plan.ModelProtocolProfile); ok &&
+		enforcement.Accounting == modelprofile.OutputEnforcementProviderCompletionV1 {
+		if resolved.EstimatedOutputTokens <= enforcement.ProviderDeviationTokens {
+			return modelExecutionRequestLimits{}, errModelExecutionProfileRequestInvalid
+		}
+		resolved.OutputEnforcement = enforcement
+		resolved.ProviderOutputLimit = resolved.EstimatedOutputTokens - enforcement.ProviderDeviationTokens
 	}
 	if err := resolved.validatePublic(plan); err != nil {
 		return modelExecutionRequestLimits{}, err
@@ -404,6 +414,10 @@ func (relay *Relay) prepareModelExecutionPlan(
 	limits, err = limits.resolveOutputReservation(plan, plan.RequiredCapabilities)
 	if err != nil {
 		return nil, err
+	}
+	if limits.OutputEnforcement.Accounting != "" {
+		profileEvidence.ProviderRequestNormalizations = append(profileEvidence.ProviderRequestNormalizations,
+			fmt.Sprintf("max_completion_tokens=%d->%d:provider_deviation_10", limits.EstimatedOutputTokens, limits.ProviderOutputLimit))
 	}
 	return &preparedModelExecutionBatch{
 		plan: plan, limits: limits, profileEvidence: profileEvidence,
