@@ -4,6 +4,17 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.69] - 2026-09-08
+
+### Fixed
+
+- Run development/test rollout observation with the existing pinned ingress
+  container's qualified curl, disabling curlrc and retaining strict HTTPS,
+  HTTP/1.1 and HTTP/2 response checks. Record client identity, bounded complete
+  authentication-error response evidence and connection counts. Historical
+  failed or incomplete observer windows remain failed or unproven after resume;
+  no Provider retry, fallback, schema or model execution change is introduced.
+
 ## [1.2.68] - 2026-09-07
 
 ### Fixed

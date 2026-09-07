@@ -139,6 +139,28 @@ retained through resume; an interrupted window cannot become green on recovery.
 backend withdrawal/drain/stop, cancellation, Provider attempts and settlement
 remain separate acceptance requirements; the tool does not claim them by health.
 
+New observer windows use `unirouter.ingress-observer.v2`. The already pinned
+Nginx container must be running and contain curl 8.19 or newer with HTTPS/HTTP2
+support; the qualified development image contains 8.19.0. The tool checks this
+before changing runtime state and fails if the client is unavailable. It does
+not install/pull a client or fall back to the host version. Initial dual-protocol
+samples must also pass before mutation, and client identity is rechecked at exit.
+
+Each fixed, unauthenticated POST runs with curlrc disabled (`-q` first), TLS
+verification, no redirects and `--retry 0`; HTTP2 uses strict prior knowledge.
+The existing client's standards-defined reconnect for an unprocessed HTTP2 stream
+is recorded by connection count. No application or Provider retry is added.
+The vantage is the ingress container's network namespace reaching the public
+HTTPS URL; it is not an external Internet measurement. A 401 JSON error response
+must be complete and bounded to 64 KiB. Client/image identity, body bytes/digest,
+protocol and exit code are retained; raw response text and environment values
+are not. Nonzero exit, status000, downgrade and incomplete/invalid response fail.
+
+Only the exact historical unversioned receipt shape uses the legacy reader. New
+records with missing/unknown versions or mixed fields cannot downgrade to it.
+The [client diagnosis and review](../analysis/INGRESS-OBSERVER-CLIENT-20260908.md)
+keep old curl failures distinct from this new observer contract.
+
 See the [exact recovery design](../analysis/INTERNAL-TARGET-ROLLOUT-RECOVERY-20260907.md).
 Old version-specific wrappers and failed runs remain historical evidence, not
 supported authoring paths after this procedure's Target acceptance. No legacy

@@ -470,5 +470,131 @@ class ObserverEvidenceTests(unittest.TestCase):
         self.assertEqual(rollout.observation_acceptance(self.evidence), "failed")
 
 
+class PinnedObserverTests(unittest.TestCase):
+    CLIENT = {"container_id": "d" * 64, "image_digest": "sha256:" + "e" * 64,
+              "curl_version": "curl 8.19.0 (fixture) libcurl/8.19.0\nProtocols: http https\nFeatures: HTTP2 SSL",
+              "vantage": "pinned_ingress_container_public_https"}
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="unirouter-pinned-observer-")
+        self.addCleanup(self.temp.cleanup)
+        self.evidence = rollout.Evidence(Path(self.temp.name).resolve())
+        self.observer = rollout.Observer(self.evidence, "https://8.130.18.85", self.CLIENT["container_id"])
+        self.observer.client = dict(self.CLIENT)
+
+    def sample(self, body=b'{"error":{"type":"authentication_error"}}', metadata=b"401 2 1", exit=0, protocol="--http2"):
+        response = SimpleNamespace(returncode=exit, stdout=body + b"\n" + metadata, stderr=b"sensitive error not retained")
+        with patch.object(rollout.subprocess, "run", return_value=response) as command:
+            row = self.observer.sample(protocol)
+        return row, command
+
+    def write_window(self, row=None):
+        self.evidence.write("observer-1-start.json", {"at": "start", "contract_version": rollout.OBSERVER_CONTRACT,
+                                                     "origin": self.observer.origin, "client": self.CLIENT})
+        h2 = row or self.sample()[0]
+        h1 = self.sample(metadata=b"401 1.1 1", protocol="--http1.1")[0]
+        self.evidence.write("observer-1-samples.jsonl", b"".join(rollout.canonical(r) + b"\n" for r in [h1, h2]))
+        self.evidence.write("observer-1-end.json", {"at": "end", "samples": 2, "failed": not h2["ok"], "error": None})
+
+    def test_existing_exact_container_and_config_free_credential_free_command(self):
+        row, command = self.sample(metadata=b"401 2 2")
+        argv = command.call_args.args[0]
+        self.assertEqual(argv[:5], ["docker", "exec", self.CLIENT["container_id"], "curl", "-q"])
+        self.assertIn("--http2-prior-knowledge", argv)
+        self.assertEqual(argv[argv.index("--retry") + 1], "0")
+        self.assertEqual(argv[argv.index("--noproxy") + 1], "*")
+        self.assertEqual(argv[argv.index("--max-filesize") + 1], "65536")
+        self.assertEqual(argv[-1], "https://8.130.18.85/v1/chat/completions")
+        self.assertEqual(argv[argv.index("-H") + 1], "Content-Type: application/json")
+        self.assertFalse(any(v in argv for v in ("-k", "-L", "--netrc", "--retry-all-errors", "-K", "--config")))
+        self.assertNotIn("shell", command.call_args.kwargs)
+        self.assertEqual(row["num_connects"], 2)
+        self.assertTrue(row["ok"])
+        self.assertNotIn("sensitive", str(row))
+        self.assertEqual(row["client_digest"], rollout.digest(rollout.canonical(self.CLIENT)))
+
+    def test_failures_are_not_reinterpreted_as_success(self):
+        for kwargs in ({"metadata": b"401 2 1", "exit": 92}, {"metadata": b"000 0 1", "exit": 16},
+                       {"metadata": b"401 1.1 1"}, {"metadata": b"503 2 1"},
+                       {"body": b'{"error":{"message":"truncated"}'}, {"body": b'{"error":{}}'},
+                       {"body": b'{"choices":[]}'}, {"body": b'{"error":{},"error":{"type":"x"}}'},
+                       {"metadata": b"401 2 0"}, {"metadata": b"401 2 x"}, {"metadata": b"401 2"},
+                       {"body": b'{"error":{"message":"' + b"x" * 65536 + b'"}}'}):
+            with self.subTest(kwargs={k: str(v)[:70] for k, v in kwargs.items()}):
+                self.assertFalse(self.sample(**kwargs)[0]["ok"])
+
+    def test_client_preflight_refuses_old_or_unsupported_versions(self):
+        for version in ("curl 7.81.0 (fixture)\nProtocols: https\nFeatures: HTTP2", "not curl",
+                        "curl 8.19.0 (fixture)\nProtocols: https\nFeatures: SSL",
+                        "curl 8.19.0 (fixture)\nProtocols: http\nFeatures: HTTP2"):
+            with self.subTest(version=version), self.assertRaises(RuntimeError):
+                rollout.qualified_observer_client(dict(self.CLIENT, curl_version=version))
+
+    def test_unavailable_container_refuses_before_thread_or_receipt(self):
+        with patch.object(rollout, "inspect", return_value={"Id": self.CLIENT["container_id"], "State": {"Running": False}}), \
+                patch.object(self.observer.thread, "start") as start, self.assertRaises(RuntimeError):
+            self.observer.start()
+        start.assert_not_called()
+        self.assertFalse(self.evidence.has("observer-1-start.json"))
+
+    def test_named_container_or_url_credentials_are_never_accepted(self):
+        for origin, identity in (("https://8.130.18.85", "uniroute-nginx"), ("http://8.130.18.85", "d" * 64),
+                                 ("https://secret@8.130.18.85", "d" * 64), ("https://8.130.18.85/path", "d" * 64)):
+            with self.subTest(origin=origin), self.assertRaises(RuntimeError):
+                rollout.Observer(self.evidence, origin, identity)
+
+    def test_client_image_drift_makes_end_unproven(self):
+        self.write_window()
+        # Use a fresh actual window name; do not overwrite immutable fixtures.
+        self.observer.name = "observer-2"
+        with patch.object(self.observer.thread, "join"), patch.object(self.observer.thread, "is_alive", return_value=False), \
+                patch.object(self.observer, "read_client", return_value=dict(self.CLIENT, image_digest="sha256:" + "f" * 64)):
+            self.observer.stop()
+        self.assertEqual(self.evidence.read("observer-2-end.json")["error"], "RuntimeError")
+
+    def test_new_proof_is_strict_but_keeps_legacy_failure(self):
+        self.write_window()
+        self.assertEqual(rollout.observation_acceptance(self.evidence), "passed_short_requests_only")
+        self.evidence.write("observer-2-start.json", {"at": "legacy"})
+        bad = {"at": "start", "completed_at": "end", "protocol": "--http2", "exit": 16, "result": "000 0", "ok": False}
+        self.evidence.write("observer-2-samples.jsonl", rollout.canonical(bad) + b"\n" + rollout.canonical(bad) + b"\n")
+        self.evidence.write("observer-2-end.json", {"at": "end", "samples": 2, "failed": True, "error": None})
+        self.assertEqual(rollout.observation_acceptance(self.evidence), "failed")
+
+    def test_new_window_requires_both_protocols_in_order(self):
+        self.write_window()
+        path = self.evidence.root / "observer-1-samples.jsonl"
+        rows = [rollout.load(line) for line in path.read_bytes().splitlines()]
+        path.write_bytes(rollout.canonical(rows[1]) + b"\n" + rollout.canonical(rows[1]) + b"\n")
+        self.assertEqual(rollout.observation_acceptance(self.evidence), "unproven_gap")
+
+    def test_missing_or_unknown_version_cannot_downgrade_new_proof(self):
+        for mutation in ("remove_version", "unknown_version", "legacy_start", "wrong_client", "false_verdict"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory(prefix="unirouter-proof-negative-") as directory:
+                old = self.evidence
+                self.evidence = rollout.Evidence(Path(directory).resolve())
+                self.write_window()
+                if mutation in ("remove_version", "unknown_version", "legacy_start"):
+                    path = self.evidence.root / "observer-1-start.json"
+                    value = rollout.load(path.read_bytes())
+                    if mutation == "remove_version":
+                        del value["contract_version"]
+                    elif mutation == "unknown_version":
+                        value["contract_version"] = "future"
+                    else:
+                        value = {"at": value["at"]}
+                    path.write_bytes(rollout.canonical(value))
+                else:
+                    path = self.evidence.root / "observer-1-samples.jsonl"
+                    rows = [rollout.load(line) for line in path.read_bytes().splitlines()]
+                    if mutation == "wrong_client":
+                        rows[0]["client_digest"] = "0" * 64
+                    else:
+                        rows[0]["exit"] = 92
+                    path.write_bytes(b"".join(rollout.canonical(r) + b"\n" for r in rows))
+                self.assertEqual(rollout.observation_acceptance(self.evidence), "unproven_gap")
+                self.evidence = old
+
+
 if __name__ == "__main__":
     unittest.main()
