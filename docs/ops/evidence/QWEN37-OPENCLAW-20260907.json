@@ -1,0 +1,335 @@
+{
+  "scope": "development/test Qwen3.7-Flash OpenClaw streamed tools",
+  "source_commit": "ce3b6f2cd7b4e5666a128d0a16bb8b76ee2bb353",
+  "version": "1.2.64",
+  "schema": "M114",
+  "target_instance": "i-0jl0x8x34xgaake6li28",
+  "protocol_result": "passed",
+  "answer_quality": "failed",
+  "recommendation_word_limit_result": "passed",
+  "fallback": false,
+  "session_consistency": "per request only",
+  "source_readbacks": [
+    {
+      "invoke_id": "t-wl06wbhn98tn0n4",
+      "ExitCode": 1,
+      "InvocationStatus": "Failed",
+      "Dropped": 0,
+      "output_sha256": "f4f668b9045cd15ee813bdac594614f77d1397b434751cd547020a2a231f948a"
+    },
+    {
+      "invoke_id": "t-wl06wbhrsgjsmio",
+      "ExitCode": 0,
+      "InvocationStatus": "Success",
+      "Dropped": 0,
+      "output_sha256": "f3f2f9c66b2bfebfcb753b9ed5323e3816b3fe156d2ea90d0cb866ee7ae4b052"
+    }
+  ],
+  "database": {
+    "attempts": [
+      {
+        "state": "settled",
+        "api_key_id": 103,
+        "attempt_id": "att_00f0c0557af5b75c379ce0d7f957dfba",
+        "request_id": "op_5a1f4906d96fccff8cb9075bfc3eec90",
+        "started_at": "2026-09-07T05:25:36.615271+00:00",
+        "http_status": 200,
+        "route_total": 1,
+        "deployment_id": 41,
+        "route_sequence": 1,
+        "retry_authorized": false,
+        "outcome_certainty": "known_usage",
+        "route_slot_version": 1,
+        "route_snapshot_hash": "mrs1_bdc2580f6c186f6d67a25fa6439a2b138e39f649b6db1b2658fcc8cda9711cf8",
+        "runtime_instance_id": "uri_1ec8a531c59888fcf096a241d289771b",
+        "response_received_at": "2026-09-07T05:25:37.115191+00:00",
+        "financial_resolved_at": "2026-09-07T05:25:38.35166+00:00",
+        "execution_snapshot_hash": "mrs1_bdc2580f6c186f6d67a25fa6439a2b138e39f649b6db1b2658fcc8cda9711cf8",
+        "route_runtime_release_id": 57,
+        "route_protocol_profile_id": "protocol.qwen-openai-chat.flash.v7",
+        "route_runtime_release_ref": "rcr_deployment_20260907t050607_bdaead4b3020e418c3629b6b",
+        "route_capability_evidence_hash": "sha256:6483d7e9ac0fbed6b733ce413d4bbbabef7bc05ce64266055904e480bfc74b1c",
+        "route_protocol_profile_version": "1.0.0"
+      },
+      {
+        "state": "settled",
+        "api_key_id": 103,
+        "attempt_id": "att_2a2cd6b914ab25dac90f1dec5ea3852f",
+        "request_id": "op_ff983a9881a50b70ecee1492ad7709d3",
+        "started_at": "2026-09-07T05:25:44.838877+00:00",
+        "http_status": 200,
+        "route_total": 1,
+        "deployment_id": 41,
+        "route_sequence": 1,
+        "retry_authorized": false,
+        "outcome_certainty": "known_usage",
+        "route_slot_version": 1,
+        "route_snapshot_hash": "mrs1_6d4095ab99aacf9dd8e31f74c8335eb3ef1c1ff8a4476f6a0097686829121a80",
+        "runtime_instance_id": "uri_c2c70532df8a6b4ddc19c83bd61ce7b1",
+        "response_received_at": "2026-09-07T05:25:46.142689+00:00",
+        "financial_resolved_at": "2026-09-07T05:25:59.155676+00:00",
+        "execution_snapshot_hash": "mrs1_6d4095ab99aacf9dd8e31f74c8335eb3ef1c1ff8a4476f6a0097686829121a80",
+        "route_runtime_release_id": 57,
+        "route_protocol_profile_id": "protocol.qwen-openai-chat.flash.v7",
+        "route_runtime_release_ref": "rcr_deployment_20260907t050607_bdaead4b3020e418c3629b6b",
+        "route_capability_evidence_hash": "sha256:6483d7e9ac0fbed6b733ce413d4bbbabef7bc05ce64266055904e480bfc74b1c",
+        "route_protocol_profile_version": "1.0.0"
+      }
+    ],
+    "freeze": [
+      {
+        "status": "settled",
+        "request_id": "op_5a1f4906d96fccff8cb9075bfc3eec90",
+        "billing_mode": "cost_observation",
+        "pricing_version": "uo1_fdff5f8c41df6b7e88fa29979406732621b5f4d54c82949bf3dc06e5e9bfced9",
+        "charged_cost_micros": 0,
+        "calculated_cost_micros": 0,
+        "execution_snapshot_hash": "mrs1_bdc2580f6c186f6d67a25fa6439a2b138e39f649b6db1b2658fcc8cda9711cf8",
+        "terminal_observation_receipt_id": 266
+      },
+      {
+        "status": "settled",
+        "request_id": "op_ff983a9881a50b70ecee1492ad7709d3",
+        "billing_mode": "cost_observation",
+        "pricing_version": "uo1_fdff5f8c41df6b7e88fa29979406732621b5f4d54c82949bf3dc06e5e9bfced9",
+        "charged_cost_micros": 0,
+        "calculated_cost_micros": 0,
+        "execution_snapshot_hash": "mrs1_6d4095ab99aacf9dd8e31f74c8335eb3ef1c1ff8a4476f6a0097686829121a80",
+        "terminal_observation_receipt_id": 267
+      }
+    ],
+    "delivery": [
+      {
+        "mode": "stream",
+        "outcome": "write_started",
+        "sequence": 1,
+        "error_code": "",
+        "request_id": "op_5a1f4906d96fccff8cb9075bfc3eec90",
+        "http_status": 200,
+        "occurred_at": "2026-09-07T05:25:37.120962+00:00",
+        "delivered_bytes": 0,
+        "delivered_chunks": 0
+      },
+      {
+        "mode": "stream",
+        "outcome": "partial",
+        "sequence": 2,
+        "error_code": "",
+        "request_id": "op_5a1f4906d96fccff8cb9075bfc3eec90",
+        "http_status": 200,
+        "occurred_at": "2026-09-07T05:25:37.133502+00:00",
+        "delivered_bytes": 263,
+        "delivered_chunks": 1
+      },
+      {
+        "mode": "stream",
+        "outcome": "completed",
+        "sequence": 3,
+        "error_code": "",
+        "request_id": "op_5a1f4906d96fccff8cb9075bfc3eec90",
+        "http_status": 200,
+        "occurred_at": "2026-09-07T05:25:38.369227+00:00",
+        "delivered_bytes": 15361,
+        "delivered_chunks": 51
+      },
+      {
+        "mode": "stream",
+        "outcome": "write_started",
+        "sequence": 1,
+        "error_code": "",
+        "request_id": "op_ff983a9881a50b70ecee1492ad7709d3",
+        "http_status": 200,
+        "occurred_at": "2026-09-07T05:25:46.14892+00:00",
+        "delivered_bytes": 0,
+        "delivered_chunks": 0
+      },
+      {
+        "mode": "stream",
+        "outcome": "partial",
+        "sequence": 2,
+        "error_code": "",
+        "request_id": "op_ff983a9881a50b70ecee1492ad7709d3",
+        "http_status": 200,
+        "occurred_at": "2026-09-07T05:25:46.160665+00:00",
+        "delivered_bytes": 263,
+        "delivered_chunks": 1
+      },
+      {
+        "mode": "stream",
+        "outcome": "completed",
+        "sequence": 3,
+        "error_code": "",
+        "request_id": "op_ff983a9881a50b70ecee1492ad7709d3",
+        "http_status": 200,
+        "occurred_at": "2026-09-07T05:25:59.177123+00:00",
+        "delivered_bytes": 105236,
+        "delivered_chunks": 407
+      }
+    ],
+    "cost_observations": [
+      {
+        "id": 266,
+        "request_id": "op_5a1f4906d96fccff8cb9075bfc3eec90",
+        "usage_purpose": "customer_charge",
+        "usage_finality": "final",
+        "pricing_version": "uo1_fdff5f8c41df6b7e88fa29979406732621b5f4d54c82949bf3dc06e5e9bfced9",
+        "terminal_status": "settled",
+        "usage_authority": "provider_reported",
+        "charged_cost_micros": 0,
+        "calculated_cost_micros": 0,
+        "usage_contract_version": "unirouter.usage.v1"
+      },
+      {
+        "id": 267,
+        "request_id": "op_ff983a9881a50b70ecee1492ad7709d3",
+        "usage_purpose": "customer_charge",
+        "usage_finality": "final",
+        "pricing_version": "uo1_fdff5f8c41df6b7e88fa29979406732621b5f4d54c82949bf3dc06e5e9bfced9",
+        "terminal_status": "settled",
+        "usage_authority": "provider_reported",
+        "charged_cost_micros": 0,
+        "calculated_cost_micros": 0,
+        "usage_contract_version": "unirouter.usage.v1"
+      }
+    ],
+    "usage_journal": [
+      {
+        "event_type": "usage_prepared",
+        "request_id": "op_5a1f4906d96fccff8cb9075bfc3eec90",
+        "usage_source": "upstream",
+        "prompt_tokens": 6246,
+        "pricing_version": "uo1_fdff5f8c41df6b7e88fa29979406732621b5f4d54c82949bf3dc06e5e9bfced9",
+        "cache_read_tokens": 0,
+        "completion_tokens": 199,
+        "cache_creation_tokens": 0
+      },
+      {
+        "event_type": "settled",
+        "request_id": "op_5a1f4906d96fccff8cb9075bfc3eec90",
+        "usage_source": "upstream",
+        "prompt_tokens": 6246,
+        "pricing_version": "uo1_fdff5f8c41df6b7e88fa29979406732621b5f4d54c82949bf3dc06e5e9bfced9",
+        "cache_read_tokens": 0,
+        "completion_tokens": 199,
+        "cache_creation_tokens": 0
+      },
+      {
+        "event_type": "usage_prepared",
+        "request_id": "op_ff983a9881a50b70ecee1492ad7709d3",
+        "usage_source": "upstream",
+        "prompt_tokens": 19122,
+        "pricing_version": "uo1_fdff5f8c41df6b7e88fa29979406732621b5f4d54c82949bf3dc06e5e9bfced9",
+        "cache_read_tokens": 0,
+        "completion_tokens": 1369,
+        "cache_creation_tokens": 0
+      },
+      {
+        "event_type": "settled",
+        "request_id": "op_ff983a9881a50b70ecee1492ad7709d3",
+        "usage_source": "upstream",
+        "prompt_tokens": 19122,
+        "pricing_version": "uo1_fdff5f8c41df6b7e88fa29979406732621b5f4d54c82949bf3dc06e5e9bfced9",
+        "cache_read_tokens": 0,
+        "completion_tokens": 1369,
+        "cache_creation_tokens": 0
+      }
+    ],
+    "release_pins": [
+      {
+        "id": 57,
+        "execution_snapshot_digest": "b55e97f7216c4177a5e0a2c2683d2f99d95021362f1cdf23819ee67966bdda49",
+        "execution_snapshot_format": "unirouter.release-execution.v1",
+        "profile_definition_digest": "e0cea94fc6780d101c7ff547c778259f0515c084fd574322d84a79ffc1132b0a"
+      }
+    ],
+    "generation": [
+      {
+        "state": "serving",
+        "instance_id": "uri_1ec8a531c59888fcf096a241d289771b",
+        "schema_head": "000114_capability_delivery_expand",
+        "ingress_state": "receiving",
+        "artifact_digest": "sha256:765ff70390a65207efaa1fb8f97767b74246eb638af268e1f17b518d1bcb7c14",
+        "compatibility_epoch": "unirouter.runtime-compatibility.v1"
+      },
+      {
+        "state": "serving",
+        "instance_id": "uri_c2c70532df8a6b4ddc19c83bd61ce7b1",
+        "schema_head": "000114_capability_delivery_expand",
+        "ingress_state": "receiving",
+        "artifact_digest": "sha256:765ff70390a65207efaa1fb8f97767b74246eb638af268e1f17b518d1bcb7c14",
+        "compatibility_epoch": "unirouter.runtime-compatibility.v1"
+      }
+    ]
+  },
+  "budget": {
+    "model": "qwen3.7-flash",
+    "attemptUpperBound": 9,
+    "reservedCny": 0.805295,
+    "maximum_calls": 30,
+    "maximum_cny": 5,
+    "invoice_verified": false
+  },
+  "rounds": [
+    {
+      "finish": "tool_calls",
+      "usage": {
+        "prompt_tokens": 6246,
+        "completion_tokens": 199,
+        "total_tokens": 6445
+      },
+      "extras": {
+        "cached_tokens": 0,
+        "reasoning_tokens": 65
+      },
+      "requestId": "op_5a1f4906d96fccff8cb9075bfc3eec90",
+      "responseSha256": "c47ecdb05418b88efcee2be2c44a39546730a3036b74f78b9a8b20309b546311",
+      "header_ms": 2541.4962499999997,
+      "tool_calls": 3,
+      "capture_bytes": 16637
+    },
+    {
+      "finish": "stop",
+      "usage": {
+        "prompt_tokens": 19122,
+        "completion_tokens": 1369,
+        "total_tokens": 20491
+      },
+      "extras": {
+        "cached_tokens": 0,
+        "reasoning_tokens": 404
+      },
+      "requestId": "op_ff983a9881a50b70ecee1492ad7709d3",
+      "responseSha256": "a8b558e59681660e7ca6a9b77d0c44ffac61275ad30a6dd3dd82ecd960c4747d",
+      "header_ms": 6843.7278750000005,
+      "tool_calls": 0,
+      "capture_bytes": 106516
+    }
+  ],
+  "run": {
+    "exit": 0,
+    "elapsedMs": 30305.179292
+  },
+  "tool_history": {
+    "successful_reads": 3,
+    "files": [
+      {
+        "name": "check-release-metadata.sh",
+        "sha256": "74b65d49d5bb91b3edae0da141c5cf118734c8594212c19ebb770ac229283b42",
+        "characters": 3796,
+        "matches_second_request": true
+      },
+      {
+        "name": "VERSION",
+        "sha256": "6e7bddb0088a83e08b0cbf200d0d7673dbb44a869529cc21b274b319cec29c90",
+        "characters": 7,
+        "matches_second_request": true
+      },
+      {
+        "name": "ci.yml",
+        "sha256": "a9fd612234848e2900eebb8935cfb3748349e8d4c5a95e4d8210fc0173b5ad73",
+        "characters": 42382,
+        "matches_second_request": true
+      }
+    ]
+  }
+}
