@@ -131,12 +131,14 @@ Docker Compose（6 个容器）：
 
 ## 文档
 
+- [项目协作规则](AGENTS.md) — 适用范围、自主执行、明确批准、独立审查和完成边界
+
 - [客户正式安装](deploy/customer/README.md) — 签名发布包、digest 镜像与 source-free Compose 边界
 - [部署与升级手册](docs/ops/deployment-runbook.md) — 开发/内部测试与客户交付的分离流程
 - [商业授权](docs/tech-ref/16-license-foundation.md) 与 [签名离线升级](docs/tech-ref/27-signed-offline-upgrade.md) — V1 发布信任合同
 - [OpenAPI 合同](docs/tech-ref/05-openapi-spec.yaml) — 当前网关与管理 API 路径
 - [贡献指南](CONTRIBUTING.md) 与 [Agent 协议](docs/agent-workflows/AGENT-PROTOCOL.md) — 开发、验证、PR 与授权边界
-- [当前执行记录](docs/agent-workflows/EXECUTION-RECORD.md) — 当前 PRD7 本地实施批次、证据与下一依赖；不重开 PRD5/PRD6
+- [当前执行记录](docs/agent-workflows/EXECUTION-RECORD.md) — 当前活动批次、验收、授权及阻塞；不静默重开已完成阶段
 - [PRD7 B2 本地证据](docs/ops/evidence/PRD7-B2-P7F02-contextual-inspectors-local-20260731.md) — Audit/Projects 常驻检查器、深链、本地元数据视图与响应式验收
 - [当前状态](docs/ops/CURRENT-STATUS.md) 与 [Open Issues](docs/issues/OPEN-ISSUES.md) — 已验证事实、缺口和后续决策
 - [文档目录](docs/README.md) 与 [文档清单](docs/DOC-INVENTORY.md) — 技术参考、不可变证据与历史 PRD 索引

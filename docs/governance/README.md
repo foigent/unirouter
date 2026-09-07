@@ -6,7 +6,7 @@
 
 ## Purpose
 
-This document defines the minimum engineering rules for any change to UniRouter.
+This document defines engineering rules applied according to the actual task, change risk and accepted scope; it is not a checklist for every question or edit.
 Completed PRD scope remains historical; current execution authority comes from
 the active issue/batch record and explicit User decisions.
 
@@ -19,18 +19,22 @@ the first two enter the current diff.
 
 For ordinary product changes, the default economical path is:
 
-1. inspect the current authority and freeze the acceptance matrix;
+1. inspect the applicable authority and establish the current acceptance criteria; use an existing matrix when the task needs one;
 2. complete the coherent diff and focused regression tests;
-3. freeze the diff, run one risk-proportionate repository gate, then make at
-   most one normal push/CI cycle when that external action is authorized;
-4. rerun only a failed job when the exact commit is unchanged and the failure
-   is demonstrably external.
+3. stabilize the diff, complete the applicable risk-proportionate checks, and
+   push coherent batches only when authorized; new changes, failures or unresolved
+   risks justify additional verification, not an arbitrary one-attempt limit;
+4. reuse still-valid successful evidence and rerun only failed jobs when all
+   relevant inputs are unchanged and the failure is demonstrably external.
 
 Migration, security, identity/authorization, financial, and irreversible
 changes elevate verification: add the relevant negative states, rollback or
 recovery proof, independent review, and target evidence. UI wording, normal
 API composition, and other reversible product behavior do not receive that
-ceremony by default. Provider-generic protocol evidence is authoritative for
+ceremony by default. Root `AGENTS.md` defines mandatory pre-code independent
+review triggers, including exact Profile identity and Release binding changes;
+data-only changes reuse accepted architecture but are not automatically exempt.
+Provider-generic protocol evidence is authoritative for
 UniRouter behavior; named Agent frameworks receive bounded compatibility smoke
 tests and are not billing or usage authorities.
 
@@ -87,6 +91,25 @@ changes increment `MAJOR.MINOR.PATCH` and add a dated entry to `CHANGELOG.md`:
 - `MINOR`: backward-compatible capability or material product behavior;
 - `PATCH`: backward-compatible correction.
 
+`scripts/check-release-metadata.sh` implements conservative path classification,
+not semantic approval of a change. Known Go `*_test.go`, verified frontend
+`frontend/src/*.test.ts` / `*.test.tsx` paths (including subdirectories), architecture
+Markdown and `docs/CODEBASE-MAP.md`, and the exact internal release checker and
+its regression test do not mechanically require a product version bump.
+Other scripts, fixtures, frontend build/config/dependency inputs, migrations,
+OpenAPI and non-Markdown architecture inputs retain their existing treatment.
+If a nominal test or document changes a shipped runtime, public API, installation,
+upgrade, verification or recovery contract, it is not a pure test/document edit
+and still needs the corresponding product version and review. Do not bypass an
+unexempted check or broaden exemptions merely from a filename.
+
+Independent capability Bundles retain their own identities, digests and evidence.
+They do not imply a backend rebuild when implementation is unchanged; the current
+CI still runs their existing Backend coverage. Required Backend/Frontend/Docker
+checks, exact-main protocol evidence, and unknown-path fail-safe remain intact.
+This policy does not authorize a smaller replacement for required regression,
+a budget increase, or an ECS self-hosted runner.
+
 Runtime images also retain an immutable runtime version and exact commit. That
 deployment identity is evidence for a build and must not be substituted for,
 or allowed to silently regress, the product SemVer.
@@ -102,7 +125,10 @@ Schema changes must include:
 - tests or smoke evidence for security, billing, RBAC, routing, and audit-impact
   migrations.
 
-Operational rules:
+Operational rules for the existing shared-DB stable/canary startup-migration
+topology follow. A different explicitly accepted migration topology uses its
+applicable runbook and single migration owner; these examples do not authorize
+a topology change or an additional migration writer.
 
 - Only one stable instance should run migrations against a shared production DB.
 - Canary instances sharing the same DB must use `SKIP_MIGRATION=true`.
@@ -126,8 +152,8 @@ Before a release or PR merge that changes code or acceptance-sensitive docs:
   state; ordinary local changes do not create evidence ceremony by default.
 - `Change Routing` and every applicable required CI job pass; docs-only changes
   may skip expensive jobs only when routing classifies them explicitly.
-- `docs/ops/CURRENT-STATUS.md`, acceptance matrix, and `docs/issues/OPEN-ISSUES.md`
-  are updated when acceptance state changes.
+- Update only affected status, acceptance or issue sources when their facts change;
+  do not rewrite every document merely because another source changed.
 - Deployment-affecting changes include rollback notes and target-environment
   boundaries.
 
@@ -150,6 +176,11 @@ PRD labels.
 ## Deprecation Policy
 
 Deprecation is required before removing or breaking a current integration path.
+Apply root `AGENTS.md` retirement boundaries and the accepted design/runbook’s
+finite exit criteria. History readability does not promise permanent legacy
+execution; supported consumers and rollback promises still require evidence.
+Use the retirement table in the applicable existing design or runbook rather
+than creating another ledger. File and user-data deletion approvals remain intact.
 
 Minimum deprecation record:
 

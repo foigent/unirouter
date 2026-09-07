@@ -293,6 +293,40 @@ rewriting all historical Releases. Retiring obsolete code requires no active,
 in-flight or promised-rollback references; permanent history readability does
 not promise permanent historical executable support.
 
+### Retirement scope and evidence (2026-09-06)
+
+This elaborates slice H and directly related consolidation during earlier
+slices. Source inspection is bound to `18f5e675ce94babf94af07b3420df3c413070255`
+(1.2.56/M114). It confirms the entry points below, not absence of live consumers;
+no Target inventory, migration completion or code removal is claimed here.
+The objects are units to evaluate, not an approved bulk file-deletion list.
+
+| Retirement unit | Replacement or retained authority | Observed dependency and remaining users to establish | Exit evidence |
+|---|---|---|---|
+| V1 publication authoring/execution: `cmd/uniroute/capability_contract_publication_cli.go` (`plan`, `apply`, `guarded-down`), `internal/modelcapabilitypublication/plan.go` and writer portions of `apply.go` | `plan_v2.go`, `materializer_v2.go` and the append-only `ledger_v2.go`; corrections use a new compensating Publication | Both CLI generations remain reachable in source. Establish the affected supported Target/import set, operator workflows and promised pre-import rollback needs. The M114 writer fence proves mutation exclusion, not implementation removal. | Keep H's two real data batches and verified migration conditions. Show that no supported daily-publication or rollback workflow needs each removed entry point, and preserve stale/legacy-writer rejection, replay/ambiguity handling and migration guards. Do not silently alias legacy down to compensation. |
+| New capability SQL artifact generation: `cmd/uniroute-capability-contract-generate/main.go` and `WriteGeneratedMigrationFiles` in `generator.go` | Reviewed `capability-bundles` data, `scripts/prepare-capability-bundle.py` and the existing publisher | The generation command still calls the file writer. Inventory build, test and supported bootstrap/recovery callers; historical files remain immutable. | Prove the supported new data-delivery path no longer needs generated capability SQL; account for remaining callers before removing the command or writer. Retain required historical verification independently. |
+| Shared historical verification/bootstrap: `VerifyGeneratedMigrationFiles` and `GenerateMigration` in `generator.go`, `runtime.go`, and `install-baseline` | Minimum sufficient historical artifact/projection verification and supported installation/import paths | `cmd/uniroute/main.go` calls `VerifyArtifactPublicationInventory`, which still calls generated-file verification; `plan_v2.go` still folds the legacy projection for import. Whole-file deletion would remove active dependencies. | Preserve the runbook's historical-reader acceptance gate and equivalent integrity, drift-rejection, startup, installation and import checks. Split duties before retiring unused generation/writer code; retaining history does not require retaining every authoring command. |
+| Legacy Release/Profile execution resolution: `internal/modelrouting/profile.go`, `internal/modelexecution/revalidate.go` and the related authoring branch in `internal/runtimechange/deployment_release_authoring.go` | Exact definitions and sealed snapshots in `internal/releaseexecution`, consumed through the existing planning/dispatch owners | Source retains legacy Profile lookup and optional snapshot paths. Establish active/selected/in-flight Release/Slot references, supported predecessors and promised rollback consumers; missing Target access is not evidence of zero users. | No affected active, in-flight or promised-rollback references; any required successor Release/Slot transition must be covered by the current request or existing explicit authorization; do not request the same approval again. Preserve historical readability, exact request interpretation and billing/evidence identities. |
+| Transitional Compose overlays and deployment wrappers | The existing reviewed effective Compose configuration and formal entry points, including `runtime-ingress.py`, `compatible-expand.py` and `publish-capability-bundle.py` | The current effective Target chain and exact redundant files still need inventory. Source filenames or a historical layer count do not establish redundancy. | Identify exact overlays/wrappers and consumers, then prove equivalent configuration, ingress withdrawal/drain, migration ownership, provenance and supported rollback. Retire only redundant resources within authorization; do not replace working formal owners with another orchestration system. |
+
+Update this table with exact consumer and exit evidence as implementation
+progresses; use the existing task report for transient details rather than
+creating another ledger. Independently removable redundant logic may be retired
+in earlier slices after its consumers and relevant checks are accounted for;
+this does not waive H's old-writer gate or the historical-reader safeguards in
+`docs/ops/CAPABILITY-DELIVERY.md`.
+
+A deferred model, including Qwen, blocks only retirement units with a demonstrated
+dependency on its supported consumers or an applicable accepted proof. Existing
+model batches may prove the shared delivery properties they actually exercise;
+they do not replace missing pure-data-model, Provider/Agent or whole-mission
+acceptance. Keep those evidence claims separate and retain the agreed call budgets.
+
+Report new-path availability, supported migration and implementation retirement
+separately. Close each slice against its accepted criteria; close the overall
+replacement only after its agreed retirement conditions are met. Scope-external
+cleanup is not a new gate, and net deleted lines are not an acceptance metric.
+
 Acceptance tests are behavior/failure tests, not copies of implementation:
 
 - A real HTTP/SSE stream and short requests during a Nginx worker reload and

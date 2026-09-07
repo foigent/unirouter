@@ -1,6 +1,6 @@
 # Independent Review Records
 
-This directory stores optional independent review results under Agent Protocol v2.0.
+This directory stores independent reviews under the current Agent Protocol. Root `AGENTS.md` defines mandatory pre-code triggers, exact-object requirements, reuse and the closing-review limit; other reviews are optional. Severity labels do not grant product or external authority.
 
 Reviewers do not overwrite `EXECUTION-RECORD.md`, `FIX-SIGNAL.md`, `VERIFY-RESULT.md`, or another reviewer's file.
 
@@ -14,9 +14,9 @@ Each review must include:
 
 1. Reviewer identity or agent name.
 2. Whether the review is independent from implementation.
-3. Scope and baseline commit.
+3. Scope and exact review object: design identity/digest, working-tree diff, commit or PR diff; a pre-code review does not require a code commit. Include the Active Milestone, invariants, non-goals, tests actually run and known blockers.
 4. Commands/checks actually executed and their results.
-5. Findings classified as P0, P1, P2, or P3.
+5. Findings classified as `validated_blocker`, `validated_required`, `valid_deferred`, `rejected`, or `product_decision_required`; P0–P3 may additionally describe validated severity.
 6. Final conclusion and any unverified boundary.
 
-P0/P1 findings block or reopen the batch. P2 findings require explicit triage. P3 findings are non-blocking suggestions.
+The execution owner verifies and adjudicates findings. Validated current P0/P1 blockers stop the affected promotion; post-release defects create a corrective batch without rewriting historical evidence or reopening completed product scope. Required current acceptance work is resolved; new non-blocking findings default to deferred. Record independent suggestions briefly without automatically creating permanent issues. Product decisions do not become implementation requirements without the corresponding authority.
