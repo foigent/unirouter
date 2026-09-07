@@ -1979,9 +1979,12 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		if !deliveryStarted.Load() || deliveredBytes <= 0 || deliveredChunks <= 0 {
 			return true
 		}
+		// Recovery consumes the same customer estimate as live interruption;
+		// the byte-based admission bound is not a customer token count.
+		completionTokens := deliveredCounter.OutputTokens()
 		if !force && time.Since(lastCheckpointAt) < streampolicy.CheckpointInterval &&
 			deliveredBytes-checkpointBytes < streampolicy.CheckpointDeliveredBytes &&
-			admittedOutputTokens-checkpointTokens < streampolicy.CheckpointCompletionTokens {
+			completionTokens-checkpointTokens < streampolicy.CheckpointCompletionTokens {
 			return true
 		}
 		checkpointCtx, checkpointCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
@@ -1989,7 +1992,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			RequestID: requestID, AttemptID: leaseStart.AttemptID, OwnerID: leaseStart.OwnerID, OrgID: orgID,
 			Generation:     leaseStart.Generation,
 			DeliveredBytes: deliveredBytes, DeliveredChunks: deliveredChunks,
-			PromptTokens: deliveredCounter.InputTokens(), CompletionTokens: admittedOutputTokens,
+			PromptTokens: deliveredCounter.InputTokens(), CompletionTokens: completionTokens,
 			PolicySetVersion: streamGuardrailProfile.PolicySetVersion,
 			LeaseTTL:         streampolicy.CheckpointLeaseDuration,
 		})
@@ -2003,7 +2006,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		}
 		lastCheckpointAt = time.Now()
 		checkpointBytes = deliveredBytes
-		checkpointTokens = admittedOutputTokens
+		checkpointTokens = completionTokens
 		return true
 	}
 	ttftMs := 0
