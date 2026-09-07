@@ -17,6 +17,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/uniroute/unirouter/internal/modelprofile"
 )
 
 const maxCatalogBytes = 4 << 20
@@ -45,24 +47,26 @@ type catalogModel struct {
 }
 
 type catalogExecutionProfile struct {
-	Status                     string   `json:"status"`
-	Source                     string   `json:"source"`
-	DisplayName                string   `json:"display_name"`
-	ContextWindow              int      `json:"context_window"`
-	MaxOutputTokens            int      `json:"max_output_tokens"`
-	RequestDefaultOutputTokens int      `json:"request_default_output_tokens"`
-	Capabilities               []string `json:"capabilities"`
-	ReasoningEffortValues      []string `json:"reasoning_effort_values"`
+	ParameterControls          *modelprofile.ParameterControls `json:"parameter_controls"`
+	Status                     string                          `json:"status"`
+	Source                     string                          `json:"source"`
+	DisplayName                string                          `json:"display_name"`
+	ContextWindow              int                             `json:"context_window"`
+	MaxOutputTokens            int                             `json:"max_output_tokens"`
+	RequestDefaultOutputTokens int                             `json:"request_default_output_tokens"`
+	Capabilities               []string                        `json:"capabilities"`
+	ReasoningEffortValues      []string                        `json:"reasoning_effort_values"`
 }
 
 type syncReport struct {
-	Provider         string                `json:"provider"`
-	Models           int                   `json:"models"`
-	VerifiedModels   int                   `json:"verified_models"`
-	UnverifiedModels []string              `json:"unverified_models"`
-	RemovedModels    []string              `json:"removed_models"`
-	Written          bool                  `json:"written"`
-	Parameters       []parameterProjection `json:"parameters,omitempty"`
+	Controls         []clientControlProjection `json:"controls,omitempty"`
+	Provider         string                    `json:"provider"`
+	Models           int                       `json:"models"`
+	VerifiedModels   int                       `json:"verified_models"`
+	UnverifiedModels []string                  `json:"unverified_models"`
+	RemovedModels    []string                  `json:"removed_models"`
+	Written          bool                      `json:"written"`
+	Parameters       []parameterProjection     `json:"parameters,omitempty"`
 }
 
 type parameterProjection struct {
@@ -250,10 +254,18 @@ func projectOpenClawModels(provider string, catalog []catalogModel, existing []m
 				return nil, syncReport{}, err
 			}
 			applyVerifiedProjection(model, source.Execution)
+			controls, err := projectReasoningParameters(provider, id, model, source.Execution)
+			if err != nil {
+				return nil, syncReport{}, err
+			}
+			report.Controls = append(report.Controls, controls)
 			model["contextWindow"], model["maxTokens"] = parameters.ContextWindow, parameters.OutputCeiling
 			report.Parameters = append(report.Parameters, parameters)
 			report.VerifiedModels++
 		} else {
+			if hasExplicitReasoningProjection(model) {
+				return nil, syncReport{}, fmt.Errorf("model %q: execution metadata is invalid; existing explicit thinking controls cannot be verified", id)
+			}
 			clearExecutionProjection(model)
 			report.UnverifiedModels = append(report.UnverifiedModels, id)
 		}

@@ -116,9 +116,14 @@ func (h *Handler) ListModelExecutionProfiles(w http.ResponseWriter, r *http.Requ
 		h.listProductProfileDefinitions(w, r)
 		return
 	}
+	profiles := modelprofile.All()
+	entries := make([]profileParameterCatalogEntry, 0, len(profiles))
+	for _, p := range profiles {
+		entries = append(entries, profileParameterCatalogEntry{p, modelprofile.DescribeParameterControls(p)})
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"contract_version": "unirouter.model-execution-profiles.v1",
-		"data":             modelprofile.All(),
+		"data":             entries,
 	})
 }
 

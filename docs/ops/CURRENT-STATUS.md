@@ -1,5 +1,35 @@
 # UniRouter Current Status
 
+## Exact parameter description and OpenClaw projection candidate — 2026-09-07
+
+Local1.2.67/M114 describes immutable output and reasoning controls in the public
+opt-in catalog, admin catalogs and model onboarding. It separates public output,
+request defaults, native effort, aliases and thinking budgets; no Profile bytes,
+data Bundle, schema, Release or stored public limit changes. OpenClaw sync keeps
+only verified controls, reports unsupported paths and rejects conflicting/stale
+explicit configuration before writes. See the
+[exact design and adjudication](../analysis/EXECUTION-PARAMETER-CONTROLS-20260907.md).
+
+Affected Go packages and the real isolated-DB data-candidate qualification/catalog
+integration passed. Frontend types, affected33 tests, Qwen form integration and
+production build passed. The closing review caught DeepSeek history removal by
+the normal client's extra-parameter wrapper; the repaired projection produced68
+zero-send first/continuation captures through that wrapper across10 names including
+a custom stable alias. Active reasoning history, menus and emitted fields match
+the verified projection. This is not new Provider or Agent
+qualification. No1.2.67 CI/Artifact/Target claim at this candidate cutoff.
+
+Latest Target readback21:35CST is1.2.66/M114, backendd2fc360847e1bb47
+and frontend23c5dd408de1d462 from main17f98d80. The real loaded Flash stream stayed
+active across its backend withdrawal, then completed with final usage/one
+settlement before old proxy exit and backend stop. Cancellation produced one
+estimated receipt. HTTP2 reload observations still failed; full planned-change
+continuity remains open. Existing37Releases/17Slots/11Publications were unchanged.
+These supersede the older1.2.65/roll66 candidate paragraph below, not its historical
+evidence. Next: close parameter delivery; continue stream accounting, HTTP2
+diagnosis, concentrated onboarding and equivalent Probe sharing. No new model
+expansion or old-writer retirement. 经验文件无需变化.
+
 
 ## Current development/test evidence and rollout recovery candidate — 2026-09-07
 

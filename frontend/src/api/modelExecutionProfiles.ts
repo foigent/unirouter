@@ -1,6 +1,47 @@
 import { request } from './transport';
 
+export type ParameterControl = {
+  object?: string;
+  field: string;
+  wire_type: 'string' | 'boolean';
+  values: string[];
+  provider_default?: string;
+  disabled_values?: string[];
+  aliases?: Record<string, string>;
+};
+
+export type ParameterControls = {
+  version: 'unirouter.parameter-controls.v1';
+  output?: {
+    field: string;
+    accepted_fields: string[];
+    minimum: number;
+    maximum: number;
+    field_maximums?: Record<string, number>;
+    mutually_exclusive: boolean;
+  };
+  reasoning?: {
+    profile_id: string;
+    mode: 'toggle' | 'required' | 'always_on';
+    default_authority: string;
+    toggle?: ParameterControl;
+    effort?: ParameterControl;
+    budget?: {
+      field: string;
+      minimum: number;
+      maximum: number;
+      provider_default: number;
+      requires_active_reasoning: boolean;
+      mutually_exclusive_with_effort: boolean;
+    };
+    active_output_field_maximums?: Record<string, number>;
+    thinking_clear_supported: boolean;
+    toggle_and_effort_mutually_exclusive: boolean;
+  };
+};
+
 export type ModelExecutionProfile = {
+  parameter_controls?: ParameterControls;
   id: string;
   version: string;
   label: string;

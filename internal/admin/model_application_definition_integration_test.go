@@ -113,6 +113,18 @@ SELECT operation_id,capability_id,$2,$1,protocol_profile_id,protocol_profile_ver
 	require.Equal(t, http.StatusOK, catalog.Code, catalog.Body.String())
 	require.Contains(t, catalog.Body.String(), d.Digest())
 	require.Contains(t, catalog.Body.String(), "99.0.0")
+	var described struct {
+		Data []profileDefinitionCatalogEntry `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(catalog.Body.Bytes(), &described))
+	foundDescription := false
+	for _, item := range described.Data {
+		if item.DefinitionDigest == d.Digest() {
+			foundDescription = true
+			require.Equal(t, modelprofile.DescribeParameterControls(p), item.ParameterControls)
+		}
+	}
+	require.True(t, foundDescription, "the unpublished-in-binary revision has its own exact controls")
 	if dataFirst {
 		// Replaying omitted defaults cannot admit a changed explicit zero. No
 		// mutation/receipt may be added on any rejected first-model command.

@@ -11,10 +11,19 @@ import (
 	"github.com/uniroute/unirouter/internal/schemaauthority"
 )
 
-type profileDefinitionCatalogEntry struct {
+type profileParameterCatalogEntry struct {
 	modelprofile.Profile
+	ParameterControls modelprofile.ParameterControls `json:"parameter_controls"`
+}
+
+type profileDefinitionCatalogEntry struct {
+	profileParameterCatalogEntry
 	DefinitionDigest string `json:"profile_definition_digest"`
 	Lineage          string `json:"product_lineage_id"`
+}
+
+func describeDefinitionCatalogEntry(p modelprofile.Profile, digest, lineage string) profileDefinitionCatalogEntry {
+	return profileDefinitionCatalogEntry{profileParameterCatalogEntry{p, modelprofile.DescribeParameterControls(p)}, digest, lineage}
 }
 
 // Publication is the only writer. Discovery exposes exact candidate revisions,
@@ -90,7 +99,7 @@ AND ($2='' OR (convert_from(canonical_bytes,'UTF8')::jsonb#>'{profile,upstream_m
 			writeCanonicalApplicationError(w, err)
 			return
 		}
-		result = append(result, profileDefinitionCatalogEntry{d.Profile(), d.Digest(), d.ProductLineageID()})
+		result = append(result, describeDefinitionCatalogEntry(d.Profile(), d.Digest(), d.ProductLineageID()))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"contract_version": "unirouter.model-execution-profiles.v1", "data": result, "page": page, "page_size": size, "total": total})
 }
@@ -168,7 +177,7 @@ func (h *Handler) listProductProfileDefinitions(w http.ResponseWriter, r *http.R
 				return
 			}
 			if modelprofile.SameStableProductSurface(legacy, d.Profile()) {
-				result = append(result, profileDefinitionCatalogEntry{d.Profile(), d.Digest(), d.ProductLineageID()})
+				result = append(result, describeDefinitionCatalogEntry(d.Profile(), d.Digest(), d.ProductLineageID()))
 			}
 		}
 	}

@@ -1274,6 +1274,15 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
         default_context_window: 1_000_000,
         default_output_limit: 131_072,
         aliases: ['Qwen3.8-Max', 'qwen3.8-max'],
+        parameter_controls: {
+          version: 'unirouter.parameter-controls.v1',
+          reasoning: {
+            profile_id: 'reasoning.qwen3.8-max-hybrid.v2', mode: 'toggle', default_authority: 'provider',
+            budget: { field: 'thinking_budget', minimum: 0, maximum: 262144, provider_default: 131072,
+              requires_active_reasoning: true, mutually_exclusive_with_effort: true },
+            thinking_clear_supported: false, toggle_and_effort_mutually_exclusive: false,
+          },
+        },
       })],
     });
     renderPage();
@@ -1289,6 +1298,8 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     expect(screen.getByText(/官方价格已记录（cn-beijing \/ CNY）/)).toBeTruthy();
     expect(screen.getByLabelText('Base URL')).not.toBeDisabled();
     expect(screen.getByLabelText('Base URL')).toHaveValue('');
+    expect(screen.getByRole('region', { name: '所选模型的参数说明' })).toHaveTextContent('0–262,144');
+    expect(screen.getByLabelText('公共模型单次输出上限（Token）')).toHaveValue('131072');
     await pasteValue(
       user,
       screen.getByLabelText('Base URL'),

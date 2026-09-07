@@ -12,19 +12,21 @@ import (
 const publicModelExecutionProfileInclude = "execution_profile"
 
 type publicModelExecutionProfile struct {
-	ProfileDefinitionDigest    string   `json:"profile_definition_digest,omitempty"`
-	Status                     string   `json:"status"`
-	Source                     string   `json:"source,omitempty"`
-	DisplayName                string   `json:"display_name"`
-	ProfileID                  string   `json:"profile_id,omitempty"`
-	ProfileVersion             string   `json:"profile_version,omitempty"`
-	ProtocolProfile            string   `json:"protocol_profile,omitempty"`
-	ContextWindow              int      `json:"context_window,omitempty"`
-	MaxOutputTokens            int      `json:"max_output_tokens,omitempty"`
-	RequestDefaultOutputTokens int      `json:"request_default_output_tokens,omitempty"`
-	Capabilities               []string `json:"capabilities,omitempty"`
-	ReasoningMode              string   `json:"reasoning_mode,omitempty"`
-	ReasoningEffortValues      []string `json:"reasoning_effort_values,omitempty"`
+	ParameterControls          *modelprofile.ParameterControls `json:"parameter_controls,omitempty"`
+	StreamOutputAccounting     string                          `json:"stream_output_accounting,omitempty"`
+	ProfileDefinitionDigest    string                          `json:"profile_definition_digest,omitempty"`
+	Status                     string                          `json:"status"`
+	Source                     string                          `json:"source,omitempty"`
+	DisplayName                string                          `json:"display_name"`
+	ProfileID                  string                          `json:"profile_id,omitempty"`
+	ProfileVersion             string                          `json:"profile_version,omitempty"`
+	ProtocolProfile            string                          `json:"protocol_profile,omitempty"`
+	ContextWindow              int                             `json:"context_window,omitempty"`
+	MaxOutputTokens            int                             `json:"max_output_tokens,omitempty"`
+	RequestDefaultOutputTokens int                             `json:"request_default_output_tokens,omitempty"`
+	Capabilities               []string                        `json:"capabilities,omitempty"`
+	ReasoningMode              string                          `json:"reasoning_mode,omitempty"`
+	ReasoningEffortValues      []string                        `json:"reasoning_effort_values,omitempty"`
 }
 
 func requestIncludesModelExecutionProfiles(includeValues []string) bool {
@@ -152,6 +154,11 @@ ORDER BY resolved.ordinality`, orgID, models)
 			metadata.RequestDefaultOutputTokens = modelprofile.DefaultRequestOutputLimit(profile, outputLimit)
 		}
 		metadata.Capabilities = slices.Clone(profile.Capabilities)
+		controls := modelprofile.DescribeParameterControls(profile)
+		metadata.ParameterControls = &controls
+		if profile.APISurface == "openai_chat_completions" {
+			metadata.StreamOutputAccounting = "utf8_byte_upper_bound"
+		}
 		if reasoning, ok := modelprofile.ResolveReasoningContract(profile.ReasoningProfile); ok {
 			metadata.ReasoningMode = reasoning.Mode
 			metadata.ReasoningEffortValues = slices.Clone(reasoning.EffortControl.AllowedValues)

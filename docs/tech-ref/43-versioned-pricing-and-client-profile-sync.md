@@ -209,8 +209,49 @@ overrides. A missing request default is written via supported `params.maxTokens`
 not by replacing the `maxTokens` capability ceiling. Invalid/conflicting aliases
 and values outside the retained/effective limits stop before any write. A server
 without stable/default provenance is reported, never guessed from its maximum.
-Dry-run reports only model, source, selected limits/default and retained-override
-status; unrelated params and credentials are not printed.
+Dry-run reports model, source, selected limits/default, retained-override status
+and exact thinking-control projection; unrelated params and credentials are not
+printed. `parameter_controls` describes the selected immutable Profile's existing
+implementation references without changing Definition bytes or Release identity.
+Admin catalogs expose the same description for an explicitly selected candidate.
+It distinguishes output limit, on/off shape, native effort, aliases and independent
+thinking budget. A 262144 thinking budget does not replace a 131072 public output
+ceiling. `stream_output_accounting=utf8_byte_upper_bound` describes the current
+conservative stream guard, not provider-reported tokens; a request may reach that
+guard before its declared token maximum.
+
+The normal installed OpenClaw host and its selected Chat transport are the
+supported client path. Qwen's boolean-only contract offers off and one low menu
+choice meaning enabled, not native low effort. Independently valid root effort
+contracts project exact native values and explicit aliases. Their enabled toggle
+default stays omitted. This projection does not configure thinking budgets;
+raw body overrides need separate validation. Sync refuses explicit reasoning or
+output fields in `params.extra_body`/`extraBody` that could overwrite its verified
+projection. Unrelated body fields remain untouched.
+The installed normal host has an ID-triggered DeepSeek V4 wrapper. For those
+client IDs, matching typed contracts use its deepseek format with verified
+off/high only, preserving active reasoning history through tool continuation.
+Other stable aliases use the generic root-effort path without an inferred toggle.
+An incompatible typed contract stops sync; model routing is never inferred by ID.
+Aliases targeting native max are withheld alongside the max menu: advertising max
+also introduces ultra in this host, while omitting max from its accepted set would
+silently downgrade the wire value. Both are unsuitable for a verified projection.
+
+When no faithful control path exists, no thinking menu is advertised and the
+request retains provider defaults. This host can label its empty-menu fallback
+off even though it sends no disabling field; that label does not disable required
+or provider-default thinking. Unsupported controls remain visible in the report.
+The report lists provider defaults by exact field and marks the client default
+`host_selected_not_measured_by_sync`; an offline projection cannot measure the
+installed host's chosen level. Version-bound transport tests do measure it. Static
+control projection does not prove tools/thinking/stream request qualification.
+
+Previously supplied thinking maps or formats that conflict with the exact
+projection stop synchronization before any config write. New-to-invalid and
+new-to-old-server transitions also stop rather than leave stale explicit controls
+or guess ownership. Nullable menus constrain normal host selection; they cannot
+recover an unknown original SDK label after a standalone SDK has transformed it.
+Gateway validation continues to reject invalid parameters it actually receives.
 
 The command never accepts a key on argv and never prints it. It performs an
 OpenClaw schema dry-run first; only explicit `--write` changes the config:
@@ -224,15 +265,19 @@ go run ./cmd/uniroute-openclaw-sync --provider unirouter --write
 ```
 
 This is a client projection, not a second execution authority. Runtime routing
-continues to use legacy `candidate.v1` while compatibility mode is selected;
-M82 canonical Release pins remain unchanged until a separately authorized
-canonical cutover.
+retains exact Release pins and current safety checks; sync does not activate a
+Release or change historical execution identity.
 
 Client-specific transport checks are optional local regressions. Select the
 installed version's `OPENCLAW_TRANSPORT_MODULE`, `OPENCLAW_RUNTIME_HOST_MODULE`
 and, if needed, `OPENCLAW_NODE_BINARY`, then run the sync package's
 `TestInstalledOpenClawTransportConsumesProjectedDefaults`. It calls the actual
 payload builder with synthetic input and a no-network guard, not a live Agent.
+Set `OPENCLAW_THINKING_MODULE` and `OPENCLAW_EXTRA_PARAMS_MODULE` from the same installation to run
+`TestInstalledOpenClawThinkingControlsReachActualTransport`: it checks the actual
+host menu/default, normal extra-parameter wrapper and captures first and tool-result turns at onPayload before
+dispatch, with fetch/undici network guards. This is client-contract evidence, not
+a paid Provider observation or full Agent success.
 
 ## 5.1 Optional request-level preflight
 

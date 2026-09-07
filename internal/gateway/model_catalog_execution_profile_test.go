@@ -212,6 +212,14 @@ INSERT INTO runtime_change_releases VALUES (11,1,'glm-canonical','unirouter.runt
 	require.Equal(t, 128000, metadata.ContextWindow)
 	require.Equal(t, 65536, metadata.MaxOutputTokens)
 	require.Equal(t, 65536, metadata.RequestDefaultOutputTokens)
+	require.NotNil(t, metadata.ParameterControls)
+	pinnedControls := metadata.ParameterControls
+	require.Equal(t, "utf8_byte_upper_bound", metadata.StreamOutputAccounting)
+	_, err = pool.Exec(ctx, `UPDATE model_registry SET execution_profile_id='qwen.3.8-max.api', execution_profile_version='missing'`)
+	require.NoError(t, err)
+	require.Equal(t, pinnedControls, check().ParameterControls, "mutable registry cannot reinterpret exact Release controls")
+	_, err = pool.Exec(ctx, `UPDATE model_registry SET execution_profile_id='glm.5.3.api', execution_profile_version='1.8.0'`)
+	require.NoError(t, err)
 	reset := func() {
 		t.Helper()
 		_, err := pool.Exec(ctx, `UPDATE runtime_change_slots SET public_model_id=1,stable_release_id=11;
@@ -236,6 +244,7 @@ UPDATE runtime_change_releases SET stage='active',public_model_id=1,model_name='
 		require.Equal(t, "invalid", metadata.Status, statement)
 		require.Equal(t, "stable_release", metadata.Source)
 		require.Zero(t, metadata.RequestDefaultOutputTokens)
+		require.Nil(t, metadata.ParameterControls, "invalid pins must not fall back to registry controls")
 	}
 	reset()
 	_, err = pool.Exec(ctx, `UPDATE runtime_change_slots SET stable_release_id=NULL`)
