@@ -90,6 +90,38 @@ VALUES($1,$6,$2,$3,$4,'1.0.0',$5,'1.0.0')`, modelprofile.OperationOpenAIChat, p.
 			candidate := createCanonicalApplicationForTest(t, h, authorized, request, http.StatusCreated)
 			require.Equal(t, d.Digest(), candidate.Application.Operations[0].ProfileDefinitionDigest)
 			calls := 0
+			if p.Provider == "dashscope" {
+				_, compiled := modelprofile.Lookup(p.ID, p.Version)
+				require.False(t, compiled)
+				require.True(t, candidate.Application.Operations[0].ProbeAvailable)
+				h.SetModelDeploymentProbeHTTPDoer(canonicalOperationProbeDoerFunc(func(r *http.Request) (*http.Response, error) {
+					calls++
+					body, err := io.ReadAll(r.Body)
+					require.NoError(t, err)
+					require.Equal(t, "/compatible-mode/v1/chat/completions", r.URL.Path)
+					require.JSONEq(t, `{"model":"qwen3.7-flash","stream":false,"max_completion_tokens":64,"enable_thinking":false,"messages":[{"role":"user","content":"UniRouter connectivity probe"}]}`, string(body))
+					return canonicalProbeHTTPResponse(200, `{"model":"qwen3.7-flash","choices":[{"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}`), nil
+				}))
+				probe := serveCanonicalOperationProbeForTest(t, h, authorized, candidate.Application.Deployment.ID, modelprofile.OperationOpenAIChat, request.Credential.BindingID, "", http.StatusOK)
+				require.True(t, probe.Success)
+				require.Equal(t, 1, calls)
+				var summary map[string]any
+				require.NoError(t, pool.QueryRow(ctx, `SELECT request_summary FROM model_deployment_probes WHERE probe_id=$1`, probe.ProbeID).Scan(&summary))
+				require.Equal(t, d.Digest(), summary["profile_definition_digest"])
+				require.Equal(t, p.ID, summary["execution_profile_id"])
+				require.Equal(t, p.Version, summary["execution_profile_version"])
+				require.Equal(t, tc.protocol, summary["protocol_profile_id"])
+				require.Equal(t, false, summary["enable_thinking"])
+				require.Equal(t, float64(64), summary["max_completion_tokens"])
+				require.NotContains(t, summary, "messages")
+				var oldDigest, oldState string
+				var oldRevision int64
+				require.NoError(t, pool.QueryRow(ctx, `SELECT COALESCE(profile_definition_digest,''),evidence_state,revision FROM model_deployment_operations WHERE deployment_id=$1 AND operation_id=$2`, legacy.Application.Deployment.ID, modelprofile.OperationOpenAIChat).Scan(&oldDigest, &oldState, &oldRevision))
+				require.Empty(t, oldDigest)
+				require.Equal(t, legacy.Application.Operations[0].EvidenceState, oldState)
+				require.Equal(t, legacy.Application.Operations[0].Revision, oldRevision)
+			}
+			operationCalls := calls
 			for _, valid := range []bool{false, true} {
 				h.SetModelDeploymentProbeHTTPDoer(canonicalOperationProbeDoerFunc(func(r *http.Request) (*http.Response, error) {
 					calls++
@@ -162,7 +194,7 @@ VALUES($1,$6,$2,$3,$4,'1.0.0',$5,'1.0.0')`, modelprofile.OperationOpenAIChat, p.
 				}
 
 			}
-			require.Equal(t, 2, calls, "one fake Provider dispatch per explicit Probe")
+			require.Equal(t, operationCalls+2, calls, "one fake Provider dispatch per explicit Probe")
 		})
 	}
 }

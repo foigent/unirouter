@@ -796,6 +796,7 @@ func canonicalOperationProbeRequestSummary(snapshot canonicalOperationProbeSnaps
 		Stream              *bool `json:"stream"`
 		MaxTokens           *int  `json:"max_tokens"`
 		MaxCompletionTokens *int  `json:"max_completion_tokens"`
+		EnableThinking      *bool `json:"enable_thinking"`
 		Thinking            *struct {
 			Type string `json:"type"`
 		} `json:"thinking"`
@@ -811,6 +812,9 @@ func canonicalOperationProbeRequestSummary(snapshot canonicalOperationProbeSnaps
 	}
 	if controls.MaxCompletionTokens != nil {
 		summary["max_completion_tokens"] = *controls.MaxCompletionTokens
+	}
+	if controls.EnableThinking != nil {
+		summary["enable_thinking"] = *controls.EnableThinking
 	}
 	if controls.Thinking != nil && controls.Thinking.Type != "" {
 		summary["thinking_type"] = controls.Thinking.Type

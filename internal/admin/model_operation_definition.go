@@ -43,6 +43,15 @@ func canonicalOperationProbePayloadForSnapshot(s canonicalOperationProbeSnapshot
 		return nil, errCanonicalOperationProbeUnsupported
 	}
 	if reasoning.ToggleControl.Field != "" {
+		if reasoning.ToggleControl.WireType == modelprofile.ReasoningControlWireBoolean {
+			// Only the installed top-level boolean contract can take this path.
+			// Disable reasoning explicitly for this bounded connectivity request.
+			if reasoning.ToggleControl.Field != "enable_thinking" || reasoning.ToggleRequestObjectField() != "" || !slices.Contains(reasoning.ToggleControl.AllowedValues, "disabled") {
+				return nil, errCanonicalOperationProbeUnsupported
+			}
+			payload["enable_thinking"] = false
+			return json.Marshal(payload)
+		}
 		// Current supported Chat contracts encode this control as thinking.type.
 		// A new wire shape needs a typed implementation, never a JSON policy.
 		if reasoning.ToggleControl.Field != "thinking" || reasoning.ToggleRequestObjectField() != "" {
