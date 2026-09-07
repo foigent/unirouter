@@ -92,6 +92,23 @@ class MembershipTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 ingress.check_configuration(base + extra)
 
+    def test_overlay_replacement_preserves_explicit_private_mode(self):
+        self.path.chmod(0o600)
+        ingress.replace(self.path, b"private runtime", 0o600)
+        self.assertEqual(self.path.read_bytes(), b"private runtime")
+        self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
+
+    def test_owner_diagnostic_is_closed_sqlstate_and_preserves_held_locks(self):
+        response = SimpleNamespace(returncode=1, stderr=b"secret=value; detail SQLSTATE 40001\nprivate query", stdout=b"")
+        with self.path.open("rb") as lock, patch.object(ingress, "LOCK_FDS", [lock.fileno()]), \
+                patch.object(ingress.subprocess, "run", return_value=response) as command:
+            with self.assertRaises(RuntimeError) as error:
+                ingress.owner_command("exact", "prepare", {"change_id": "same"})
+            self.assertIn("SQLSTATE 40001", str(error.exception))
+            self.assertNotIn("secret", str(error.exception))
+            self.assertNotIn("private", str(error.exception))
+            self.assertEqual(command.call_args.kwargs["pass_fds"], (lock.fileno(),))
+
 
 class CoordinatedMembershipTests(unittest.TestCase):
     def setUp(self):

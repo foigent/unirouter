@@ -1,5 +1,36 @@
 # UniRouter Current Status
 
+
+## Current development/test evidence and rollout recovery candidate — 2026-09-07
+
+Qwen3.7-Max completed the first genuinely uncompiled model path on fixed
+1.2.65/M114 images: independent CI Bundle, first PublicModel/Deployment creation,
+7 qualification calls, Release58/Slot1 and a real two-round OpenClaw tool loop.
+There was no Go Catalog/parser/DDL/backend rebuild or rollout in that model batch.
+Each request has one settled ProviderAttempt, final provider usage and completed
+delivery; the three tool results match source files exactly. Answer quality
+failed its CI conclusion independently. Cumulative Max calls9/30 and conservative
+reserve CNY2.626116/5 are not a supplier invoice. See [Max evidence](evidence/QWEN37-MAX-FIRST-DATA-MODEL-20260907.md).
+
+Target backend image remains `sha256:8966709abee4bfeebc2728443439c18b9efaad6e3da3eb89d4b73495eadef993`
+(source437497de). Both65 backends and frontend are healthy; the roll65 acceptance
+remains failed. The retained Flash stream crossed proxy reload while its backend
+remained a receiver, then finished before that backend's withdrawal. It does not
+prove the loaded-backend withdrawal/drain/stop joint criterion. Cancellation and
+the original HTTP2 curl16 cause remain open. A subsequent no-credential diagnostic
+saw160 expected401 responses, but prepare failed before intent/reload; that is no
+additional reload-continuity evidence.
+
+Local1.2.66/M114 is the reviewed-design rollout/recovery candidate. It does not
+add models. Known-abort database recovery, a fixed existing-target rollout tool
+and separate deployment/observation results are under validation. No66 Artifact,
+CI, Target delivery, full continuity or old-writer retirement claim is made.
+Next: finish formal rollout recovery and loaded-backend/cancellation verification,
+then reduce onboarding actions and equivalent paid Probe duplication. No horizontal
+model expansion. 经验文件无需变化.
+
+The entries below retain their historical verification cutoffs.
+
 ## Data-first model onboarding candidate — 2026-09-07
 
 Local1.2.65/M114 removes compiled Catalog membership from first PublicModel

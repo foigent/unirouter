@@ -4,6 +4,24 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.66] - 2026-09-07
+
+### Fixed
+
+- Recover complete ingress database transactions after PostgreSQL serialization
+  aborts, with exact command identity and bounded revalidation. Connection loss,
+  ambiguous commit results and external operations are never blindly replayed.
+- Retain a safe SQLSTATE in ingress owner failures for precise diagnosis.
+
+### Added
+
+- A fixed development/test rollout tool with read-only planning and inspection,
+  exact runtime configuration checks, shared ingress locking through backend
+  replacement, and durable recovery evidence. Existing ingress, compatibility,
+  schema, model activation and settlement authorities remain unchanged.
+- Preserve short-request failures and observation gaps through recovery. Healthy
+  deployment readback does not establish long-stream or cancellation acceptance.
+
 ## [1.2.65] - 2026-09-07
 
 ### Added

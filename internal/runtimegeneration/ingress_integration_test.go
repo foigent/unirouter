@@ -4,15 +4,175 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
+
+// The pool tracer intercepts the real owner's SQL after its RR snapshot exists.
+// It commits a genuine unchanged-identity heartbeat through another connection,
+// without adding a production hook or mocking transaction outcomes.
+type heartbeatIngressTracer struct {
+	beforeLock func(context.Context, pgx.TraceQueryStartData)
+	failures   int
+}
+
+func (h *heartbeatIngressTracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, d pgx.TraceQueryStartData) context.Context {
+	if strings.Contains(d.SQL, "FOR UPDATE OF g") && h.beforeLock != nil {
+		h.beforeLock(ctx, d)
+	}
+	return ctx
+}
+
+func (h *heartbeatIngressTracer) TraceQueryEnd(_ context.Context, _ *pgx.Conn, d pgx.TraceQueryEndData) {
+	var e *pgconn.PgError
+	if errors.As(d.Err, &e) && e.Code == "40001" {
+		h.failures++
+	}
+}
+
+func TestIngressOwnerRecoversRealHeartbeatSerializationIntegration(t *testing.T) {
+	for _, phase := range []string{"prepare", "complete"} {
+		t.Run(phase, func(t *testing.T) {
+			pool := testutil.SetupMigratedTestDB(t)
+			ctx := t.Context()
+			ledger, err := schemaauthority.ExpectedLedger("../../migrations")
+			require.NoError(t, err)
+			manifest := CurrentManifest([]string{schemaauthority.LegacyCapabilityHead, schemaauthority.CapabilityExpandHead})
+			members := []Identity{{"uri_" + strings.Repeat("e", 32), "sha256:" + strings.Repeat("e", 64)}, {"uri_" + strings.Repeat("f", 32), "sha256:" + strings.Repeat("f", 64)}}
+			for _, i := range members {
+				_, _, err = Renew(ctx, pool, i, manifest, ledger, false)
+				require.NoError(t, err)
+			}
+			wire := []byte("real heartbeat serialization fixture")
+			plan := IngressPlan{ChangeID: "heartbeat-" + phase, ExpectedConfigDigest: strings.Repeat("0", 64), DesiredConfigBytes: wire, DesiredConfigDigest: fmt.Sprintf("%x", sha256.Sum256(wire)), Before: []Identity{}, After: members}
+			if phase == "complete" {
+				_, err = PrepareIngress(ctx, pool, plan)
+				require.NoError(t, err)
+			}
+			tracer := &heartbeatIngressTracer{}
+			injected := false
+			tracer.beforeLock = func(ctx context.Context, d pgx.TraceQueryStartData) {
+				if injected || d.Args[0] != members[1].Instance {
+					return
+				}
+				injected = true
+				// Member one has already been updated in this owner's transaction;
+				// member two remains unlocked and its heartbeat commits independently.
+				_, _, err := Renew(ctx, pool, members[1], manifest, ledger, false)
+				require.NoError(t, err)
+			}
+			config := pool.Config().Copy()
+			config.ConnConfig.Tracer = tracer
+			owner, err := pgxpool.NewWithConfig(ctx, config)
+			require.NoError(t, err)
+			defer owner.Close()
+			var status string
+			if phase == "prepare" {
+				status, err = PrepareIngress(ctx, owner, plan)
+				require.Equal(t, "pending", status)
+			} else {
+				status, err = CompleteIngress(ctx, owner, plan.ChangeID, plan.DesiredConfigDigest, true, json.RawMessage(`{"fixture":"one observed reload, old workers gone"}`))
+				require.Equal(t, "applied", status)
+			}
+			require.NoError(t, err)
+			require.True(t, injected)
+			require.Equal(t, 1, tracer.failures, "actual server must have rejected one full transaction")
+			actual, savedStatus, err := ReadIngress(ctx, pool, plan.ChangeID)
+			require.NoError(t, err)
+			require.Equal(t, plan, actual)
+			require.Equal(t, status, savedStatus)
+			var count int
+			require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM runtime_ingress_changes`).Scan(&count))
+			require.Equal(t, 1, count)
+			for _, member := range members {
+				var revision int64
+				var state string
+				require.NoError(t, pool.QueryRow(ctx, `SELECT revision,ingress_state FROM runtime_generations WHERE instance_id=$1`, member.Instance).Scan(&revision, &state))
+				// Initial insert revision1, one change per committed owner phase,
+				// plus the actual heartbeat only for member two. Failed updates vanish.
+				want := int64(2)
+				wantState := "pending_join"
+				if phase == "complete" {
+					want++
+					wantState = "receiving"
+				}
+				if member == members[1] {
+					want++
+				}
+				require.Equal(t, want, revision)
+				require.Equal(t, wantState, state)
+			}
+		})
+	}
+}
+
+func TestIngressSerializationRecoveryRechecksLeaseIntegration(t *testing.T) {
+	for _, phase := range []string{"prepare", "complete"} {
+		t.Run(phase, func(t *testing.T) {
+			pool := testutil.SetupMigratedTestDB(t)
+			ctx := t.Context()
+			ledger, err := schemaauthority.ExpectedLedger("../../migrations")
+			require.NoError(t, err)
+			manifest := CurrentManifest([]string{schemaauthority.LegacyCapabilityHead, schemaauthority.CapabilityExpandHead})
+			i := Identity{"uri_" + strings.Repeat("e", 32), "sha256:" + strings.Repeat("e", 64)}
+			_, _, err = Renew(ctx, pool, i, manifest, ledger, false)
+			require.NoError(t, err)
+			wire := []byte("expired receiver must not join after recovery")
+			plan := IngressPlan{ChangeID: "expired-" + phase, ExpectedConfigDigest: strings.Repeat("0", 64), DesiredConfigBytes: wire, DesiredConfigDigest: fmt.Sprintf("%x", sha256.Sum256(wire)), Before: []Identity{}, After: []Identity{i}}
+			if phase == "complete" {
+				_, err = PrepareIngress(ctx, pool, plan)
+				require.NoError(t, err)
+			}
+			tracer := &heartbeatIngressTracer{}
+			injected := false
+			tracer.beforeLock = func(ctx context.Context, _ pgx.TraceQueryStartData) {
+				if injected {
+					return
+				}
+				injected = true
+				// The heartbeat trigger permits a live expiry renewal without the
+				// compatibility lock. Let that short lease expire naturally before
+				// the conflicting owner read and its new transaction.
+				_, err := pool.Exec(ctx, `UPDATE runtime_generations SET lease_expires_at=clock_timestamp()+interval '50 milliseconds' WHERE instance_id=$1`, i.Instance)
+				require.NoError(t, err)
+				time.Sleep(100 * time.Millisecond)
+			}
+			config := pool.Config().Copy()
+			config.ConnConfig.Tracer = tracer
+			owner, err := pgxpool.NewWithConfig(ctx, config)
+			require.NoError(t, err)
+			defer owner.Close()
+			if phase == "prepare" {
+				_, err = PrepareIngress(ctx, owner, plan)
+			} else {
+				_, err = CompleteIngress(ctx, owner, plan.ChangeID, plan.DesiredConfigDigest, true, json.RawMessage(`{"fixture":"observed old workers gone"}`))
+			}
+			require.ErrorContains(t, err, "not a live exact instance")
+			require.Equal(t, 1, tracer.failures)
+			var membership string
+			require.NoError(t, pool.QueryRow(ctx, `SELECT ingress_state FROM runtime_generations WHERE instance_id=$1`, i.Instance).Scan(&membership))
+			_, status, readErr := ReadIngress(ctx, pool, plan.ChangeID)
+			if phase == "prepare" {
+				require.ErrorIs(t, readErr, pgx.ErrNoRows)
+				require.Equal(t, "absent", membership)
+			} else {
+				require.NoError(t, readErr)
+				require.Equal(t, "pending", status)
+				require.Equal(t, "pending_join", membership)
+			}
+		})
+	}
+}
 
 func TestIngressIntentRetainsPotentialReceiversThroughAmbiguity(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
