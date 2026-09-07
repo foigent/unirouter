@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/uniroute/unirouter/internal/metering"
 	publication "github.com/uniroute/unirouter/internal/modelcapabilitypublication"
 	"github.com/uniroute/unirouter/internal/modelcapabilityqualification"
 	"github.com/uniroute/unirouter/internal/modelprofile"
@@ -36,6 +37,8 @@ func CurrentManifest(schemaHeads []string) Manifest {
 	implementations := modelprofile.Implementations()
 	implementations = append(implementations, modelcapabilityqualification.ProbeImplementations()...)
 	implementations = append(implementations,
+		modelprofile.ImplementationReference{Kind: "stream_counter", ID: metering.GatewayCounterEstimateVersionV2},
+		modelprofile.ImplementationReference{Kind: "stream_counter", ID: metering.GatewayCounterEstimateVersionV3},
 		modelprofile.ImplementationReference{Kind: "capability_projection", ID: publication.ProjectionSchemaV2},
 		modelprofile.ImplementationReference{Kind: "capability_materializer", ID: publication.MaterializerContractV2},
 		modelprofile.ImplementationReference{Kind: "runtime_release", ID: releaseexecution.SnapshotSchema},

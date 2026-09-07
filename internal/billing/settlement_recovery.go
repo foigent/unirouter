@@ -190,6 +190,9 @@ func (b *Billing) PersistSettlementUsage(ctx context.Context, req SettleRequest)
 		return fmt.Errorf("lock settlement payload: %w", err)
 	}
 	record = canonicalizeLegacyReservationUsage(record)
+	if err := requireSettlementCounterVersionTx(ctx, tx, req); err != nil {
+		return err
+	}
 	if req.AttemptID != "" {
 		if err := bindDeliveryAttemptTx(ctx, tx, &record, req.OrgID, req.RequestID, req.AttemptID); err != nil {
 			return err
@@ -385,6 +388,9 @@ func (b *Billing) RecoverPendingSettlements(ctx context.Context, limit int) (Set
 }
 
 func (b *Billing) claimPendingSettlements(ctx context.Context, limit int) ([]pendingSettlement, error) {
+	if !b.canClaimRecovery() {
+		return nil, nil
+	}
 	rows, err := b.db.Query(ctx,
 		`WITH candidates AS (
 		    SELECT org_id, request_id

@@ -44,7 +44,7 @@ func verifyFirstDataGateway(t *testing.T, h *Handler, actor func(string, string,
 	require.True(t, ok)
 	org, err := resolveActorOrganization(actor(http.MethodGet, "/", "").Context(), 0)
 	require.NoError(t, err)
-	manifest := runtimegeneration.CurrentManifest([]string{schemaauthority.LegacyCapabilityHead, schemaauthority.CapabilityExpandHead})
+	manifest := runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads())
 	wire, err := manifest.CanonicalBytes()
 	require.NoError(t, err)
 	digest, err := manifest.Digest()
@@ -52,7 +52,7 @@ func verifyFirstDataGateway(t *testing.T, h *Handler, actor func(string, string,
 	identity := runtimegeneration.Identity{Instance: "uri_" + strings.Repeat("d", 32), Artifact: "sha256:" + strings.Repeat("d", 64)}
 	_, err = pool.Exec(ctx, `INSERT INTO runtime_support_manifests(artifact_digest,manifest_digest,canonical_bytes) VALUES($1,$2,$3)`, identity.Artifact, digest, wire)
 	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `INSERT INTO runtime_generations(instance_id,artifact_digest,compatibility_epoch,schema_head,state,ingress_state,lease_expires_at) VALUES($1,$2,$3,$4,'serving','receiving',clock_timestamp()+interval '1 hour')`, identity.Instance, identity.Artifact, runtimegeneration.CompatibilityEpoch, schemaauthority.CapabilityExpandHead)
+	_, err = pool.Exec(ctx, `INSERT INTO runtime_generations(instance_id,artifact_digest,compatibility_epoch,schema_head,state,ingress_state,lease_expires_at) VALUES($1,$2,$3,$4,'serving','receiving',clock_timestamp()+interval '1 hour')`, identity.Instance, identity.Artifact, runtimegeneration.CompatibilityEpoch, schemaauthority.LatestSupportedMigration)
 	require.NoError(t, err)
 	_, _ = serveCanonicalLifecycleMutation(t, h, actor, release.ReleaseRef, "activate-initial", fmt.Sprintf(`{"expected_release_version":%d,"reason":"uncompiled data first activation fixture"}`, release.Version), "data-first-activate", h.ActivateInitialCanonicalDeploymentLifecycle, http.StatusOK)
 	var keyID int64

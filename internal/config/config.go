@@ -16,6 +16,7 @@ import (
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/guardrail"
+	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/payloadpolicy"
@@ -203,6 +204,7 @@ type Config struct {
 	RoutingMaxSnapshots        int
 
 	// Streaming transport
+	StreamCounterVersion       string
 	StreamMaxSSELineBytes      int
 	StreamWriteIdleTimeoutSecs int
 	StreamHeartbeatSecs        int
@@ -467,6 +469,9 @@ func (c *Config) Validate() error {
 		if err := policy.Validate(); err != nil {
 			return fmt.Errorf("invalid routing configuration: %w", err)
 		}
+	}
+	if _, err := metering.CounterSource(c.EffectiveStreamCounterVersion()); err != nil {
+		return fmt.Errorf("STREAM_COUNTER_VERSION: %w", err)
 	}
 	streamPolicy := c.StreamPolicyConfig()
 	if streamPolicy != (streampolicy.Config{}) {
@@ -835,6 +840,7 @@ func Load() (*Config, error) {
 		RoutingMaxCandidates:       getEnvInt("ROUTING_MAX_CANDIDATES", 32),
 		RoutingMaxSnapshots:        getEnvInt("ROUTING_MAX_SNAPSHOTS", 1024),
 
+		StreamCounterVersion:       getEnvStr("STREAM_COUNTER_VERSION", metering.GatewayCounterEstimateVersionV2),
 		StreamMaxSSELineBytes:      getEnvInt("STREAM_MAX_SSE_LINE_BYTES", 2*1024*1024),
 		StreamWriteIdleTimeoutSecs: getEnvInt("STREAM_WRITE_IDLE_TIMEOUT_SECONDS", 30),
 		StreamHeartbeatSecs:        getEnvInt("STREAM_HEARTBEAT_SECONDS", 15),
@@ -1148,4 +1154,12 @@ func getEnvBool(key string, fallback bool) bool {
 		}
 	}
 	return fallback
+}
+
+// EffectiveStreamCounterVersion preserves the prior internal zero-value config.
+func (c *Config) EffectiveStreamCounterVersion() string {
+	if c.StreamCounterVersion == "" {
+		return metering.GatewayCounterEstimateVersionV2
+	}
+	return c.StreamCounterVersion
 }

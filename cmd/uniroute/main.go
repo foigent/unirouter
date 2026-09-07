@@ -475,10 +475,6 @@ func main() {
 	settlementRecoveryCtx, stopSettlementRecovery := context.WithCancel(context.Background())
 	defer stopSettlementRecovery()
 	settlementRecoveryDone := make(chan struct{})
-	go func() {
-		defer close(settlementRecoveryDone)
-		billingSvc.RunSettlementRecoveryLoop(settlementRecoveryCtx, 10*time.Second, 100)
-	}()
 	admissionCtrl := middleware.NewDefaultAdmissionController()
 	initialFilterCtx, cancelInitialFilterLoad := context.WithTimeout(context.Background(), 10*time.Second)
 	initialSensitiveWords, initialSensitiveVersion, err := loadSensitiveWords(initialFilterCtx, postgres.Pool)
@@ -501,6 +497,9 @@ func main() {
 		log.Fatalf("Invalid payload safety configuration: %v", err)
 	}
 	relay := gateway.NewRelay(postgres.Pool, redisClient.Client, router, sharedPolicyBilling, sensitiveFilter, encKey)
+	if err := relay.SetStreamCounterVersion(cfg.EffectiveStreamCounterVersion()); err != nil {
+		log.Fatalf("Stream counter configuration: %v", err)
+	}
 	relay.SetBillingAdmissionReadinessInspector(billingSvc)
 	sharedPolicyBilling.SetEarlyRateAdmissionEvidenceSink(relay)
 	if err := relay.SetModelExecutionRuntime(
@@ -1296,12 +1295,21 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 		IdleTimeout:  120 * time.Second,
 	}
 
+	if err := validateStreamCounterSchema(cfg.EffectiveStreamCounterVersion(), actualSchemaLedger); err != nil {
+		log.Fatalf("Stream counter schema: %v", err)
+	}
 	// Start server in goroutine
 	stopRuntimeGeneration, runtimeGenerationDone, err := startRuntimeGeneration(context.Background(), postgres.Pool, httpRuntime, expectedSchemaLedger, actualSchemaLedger)
 	if err != nil {
 		log.Fatalf("Runtime generation authority failed: %v", err)
 	}
 	defer stopRuntimeGeneration()
+	billingSvc.SetRecoveryAdmission(httpRuntime.canClaimRecovery)
+	go func() {
+		defer close(settlementRecoveryDone)
+		billingSvc.RunSettlementRecoveryLoop(settlementRecoveryCtx, 10*time.Second, 100)
+	}()
+
 	runtimeStatus := httpRuntime.status()
 	log.Printf("HTTP runtime instance=%s request_lifetime_seconds=%d drain_timeout_seconds=%d",
 		runtimeStatus.Instance, runtimeStatus.RequestLifetimeSeconds, runtimeStatus.DrainTimeoutSeconds)

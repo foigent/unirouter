@@ -33,6 +33,92 @@ def fixture():
     return service, container, image
 
 
+class CounterTransitionTests(unittest.TestCase):
+    def test_named_transition_is_finite_and_strict(self):
+        rollout.validate_transition(None)
+        rollout.validate_transition({"kind":"stream_counter_expand_carrier", "up_sha256":"a"*64, "down_sha256":"b"*64})
+        for before, after in ((rollout.COUNTER_V2,rollout.COUNTER_V3),(rollout.COUNTER_V3,rollout.COUNTER_V2)):
+            rollout.validate_transition({"kind":"stream_counter_writer","from":before,"to":after})
+        for value in ({"kind":"any_schema"}, {"kind":"stream_counter_expand_carrier","up_sha256":"a"*64},
+                      {"kind":"stream_counter_writer","from":rollout.COUNTER_V2,"to":"future"},
+                      {"kind":"stream_counter_writer","from":rollout.COUNTER_V2,"to":rollout.COUNTER_V2},
+                      {"kind":"stream_counter_writer","from":rollout.COUNTER_V2,"to":rollout.COUNTER_V3,"skip_checks":True}):
+            with self.subTest(value=value), self.assertRaises(RuntimeError):
+                rollout.validate_transition(value)
+
+    def test_writer_overlay_changes_one_shared_key_only(self):
+        before=b"x-runtime: &runtime\n  RUNTIME_IMAGE_DIGEST: sha256:abc\n  RUNTIME_ENVIRONMENT: development\n"
+        change={"kind":"stream_counter_writer","from":rollout.COUNTER_V2,"to":rollout.COUNTER_V3}
+        expected=before.replace(b"  RUNTIME_ENVIRONMENT:", b"  STREAM_COUNTER_VERSION: unirouter.stream-counter.v3\n  RUNTIME_ENVIRONMENT:")
+        self.assertEqual(expected,rollout.writer_overlay(before,change))
+        self.assertEqual(expected.replace(b"stream-counter.v3", b"stream-counter.v2"),
+                         rollout.writer_overlay(expected,dict(change,**{"from":rollout.COUNTER_V3,"to":rollout.COUNTER_V2})))
+        for invalid in (before+before, before.replace(b"RUNTIME_IMAGE_DIGEST",b"OTHER_KEY"),
+                        expected.replace(b"stream-counter.v3",b"future")):
+            with self.assertRaises(RuntimeError): rollout.writer_overlay(invalid,change)
+
+    def test_pending_expand_rejects_existing_migration_rewrite(self):
+        transition={"kind":"stream_counter_expand_carrier","up_sha256":"a"*64,"down_sha256":"b"*64}
+        old=["000113_glm_stream_function_tools_qualification",rollout.CAPABILITY_HEAD]
+        tree="\n".join("migrations/"+name+".up.sql" for name in old).encode()
+        for changes in (b"M\tmigrations/000114_capability_delivery_expand.up.sql\n", b"A\tmigrations/000116_other.up.sql\n", b""):
+            with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes]):
+                with self.assertRaisesRegex(RuntimeError,"only add"):
+                    rollout.validate_pending_counter_carrier(Path("/old"),Path("/new"),transition,old)
+        with patch.object(rollout,"run",return_value=tree), self.assertRaisesRegex(RuntimeError,"complete exact"):
+            rollout.validate_pending_counter_carrier(Path("/old"),Path("/new"),transition,old[:1])
+
+    def test_pending_expand_verifies_both_exact_bytes(self):
+        old=["000113_glm_stream_function_tools_qualification", rollout.CAPABILITY_HEAD]
+        tree="\n".join("migrations/"+name+".up.sql" for name in old).encode()
+        changes="\n".join("A\tmigrations/"+rollout.COUNTER_HEAD+"."+direction+".sql" for direction in ("up","down")).encode()
+        with tempfile.TemporaryDirectory() as directory:
+            new=Path(directory).resolve(); (new/"migrations").mkdir()
+            transition={"kind":"stream_counter_expand_carrier"}
+            for direction in ("up","down"):
+                wire=(direction+" exact fixture").encode()
+                (new/"migrations"/(rollout.COUNTER_HEAD+"."+direction+".sql")).write_bytes(wire)
+                transition[direction+"_sha256"]=rollout.digest(wire)
+            with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes]):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+            (new/"migrations"/(rollout.COUNTER_HEAD+".down.sql")).write_text("unreviewed replacement")
+            with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes]), self.assertRaisesRegex(RuntimeError,"bytes differ"):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+
+
+class CounterBridgeTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        spec=importlib.util.spec_from_file_location("counter_expand_test",Path(__file__).with_name("compatible-expand.py"))
+        cls.expand=importlib.util.module_from_spec(spec); spec.loader.exec_module(cls.expand)
+
+    def test_missing_counter_support_or_public_port_rejects_expand(self):
+        e=self.expand
+        manifest={"schema_heads":e.HEADS,"implementations":e.COUNTERS}
+        wire=json.dumps(manifest,sort_keys=True,separators=(",",":")).encode()
+        backend={"Image":"sha256:"+"a"*64,"HostConfig":{"PortBindings":{"8080/tcp":[{"HostIp":"127.0.0.1"}]}}}
+        runtime={"artifact_digest":backend["Image"],"supported_schema_heads":e.HEADS,"compatibility_epoch":"unirouter.runtime-compatibility.v1","support_manifest_digest":rollout.digest(wire)}
+        e.verify_bridge(runtime,backend,wire,e.HEADS[2])
+        for refs in (e.COUNTERS[:1],e.COUNTERS[1:]):
+            bad=json.dumps(dict(manifest,implementations=refs),sort_keys=True,separators=(",",":")).encode()
+            with self.assertRaises(RuntimeError): e.verify_bridge(dict(runtime,support_manifest_digest=rollout.digest(bad)),backend,bad,e.HEADS[2])
+        backend["HostConfig"]["PortBindings"]["8080/tcp"][0]["HostIp"]="0.0.0.0"
+        with self.assertRaises(RuntimeError): e.verify_bridge(runtime,backend,wire,e.HEADS[2])
+
+    def test_actual_process_inventory_includes_absent_or_expired_actors(self):
+        e=self.expand
+        backends={"stable":{"Id":"a"*64,"State":{"Pid":10}},"canary":{"Id":"b"*64,"State":{"Pid":20}}}
+        def membership(path,*args,**kwargs):
+            return "0::/system.slice/docker-"+{"10":"a"*64,"20":"b"*64,"30":"c"*64}[path.parent.name]+".scope"
+        with patch.object(e.ingress,"run",return_value=b"10 uniroute\n20 uniroute\n90 postgres\n"),patch.object(Path,"read_text",membership):
+            e.verify_recovery_process_inventory(backends)
+        for process in (b"10 uniroute\n20 uniroute\n30 uniroute\n",b"10 uniroute\n"):
+            with patch.object(e.ingress,"run",return_value=process),patch.object(Path,"read_text",membership),self.assertRaises(RuntimeError):
+                e.verify_recovery_process_inventory(backends)
+        with patch.object(e.ingress,"run",return_value=b"10 uniroute\n20 uniroute\n"),patch.object(Path,"read_text",side_effect=FileNotFoundError),self.assertRaisesRegex(RuntimeError,"changed"):
+            e.verify_recovery_process_inventory(backends)
+
+
 class RuntimeConfigurationTests(unittest.TestCase):
     def test_image_defaults_and_compose_null_are_checked_against_actual_runtime(self):
         rollout.check_service(*fixture(), "unirouter", "development")

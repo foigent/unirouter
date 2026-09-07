@@ -9,7 +9,7 @@
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
 `cmd/uniroute/http_runtime.go` owns process-local admission and bounded request
-Drain. On M114, `runtimegeneration` renews an exact Artifact/support lease; failure
+Drain. On M114/M115, `runtimegeneration` renews an exact Artifact/support lease; failure
 fences new requests without canceling accepted handlers. Ingress membership is
 separate: the directory controller commits pending/withdrawing intent, reloads
 Nginx and observes all old worker identities before confirming withdrawal. Slot
@@ -41,8 +41,15 @@ distinct. Opt-in client metadata projects a stable Release's sealed Profile and
 hard limits separately from its Profile-owned request default; local experiment
 limits are client configuration, never another server parameter authority.
 
-Repository source candidate is version 1.2.53 with an explicit finite bridge
-between exact M113 and M114 ledgers, not an arbitrary future-version ceiling.
+Repository source candidate 1.2.73 extends the finite bridge to exact complete
+M113/M114/M115 ledgers, not an arbitrary future-version ceiling. M115 pins one
+immutable counter version per stream lease. Checkpoints inherit that identity;
+both recovery owners preserve persisted v2/v3 counts independently of current
+writer configuration. A bridge defaults to v2; selecting v3 requires M115.
+The cumulative v3 estimate removes text-partition rounding differences without
+changing final supplier usage, rates or historical bills. The existing schema
+owner verifies serving/recovery compatibility before expansion, and the existing
+rollout owner carries the finite same-image writer transition.
 M114 is structural and never a daily capability migration. Historical M113 appends six GLM
 streaming Function Tools Profile successors and 30 static bindings. It shares
 bounded SSE/tool assembly with M111 while retaining GLM reasoning_content/DONE

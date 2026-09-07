@@ -83,7 +83,8 @@ export const requestStatusOptions: SelectOption[] = [
 const usageSourceLabels: Record<string, string> = {
   upstream: '上游回传',
   api: '上游回传',
-  counter_v2: '流式计数',
+  counter_v2: '流式估算（v2）',
+  counter_v3: '流式估算（v3）',
   stream_estimate: '流式计数',
   adapter_estimated: '适配器估算',
   estimated: '本地估算',
@@ -94,7 +95,8 @@ const usageSourceLabels: Record<string, string> = {
 export const usageSourceOptions: SelectOption[] = [
   { label: '全部来源', value: '' },
   { label: '上游回传', value: 'upstream' },
-  { label: '流式计数', value: 'counter_v2' },
+  { label: '流式估算（v2）', value: 'counter_v2' },
+  { label: '流式估算（v3）', value: 'counter_v3' },
   { label: '适配器估算', value: 'adapter_estimated' },
   { label: '本地估算', value: 'estimated' },
   { label: '无可用通道', value: 'no_route' },

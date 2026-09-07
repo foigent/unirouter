@@ -1,6 +1,22 @@
 # UniRouter Current Status
 
 
+## Cumulative interruption estimate candidate — 2026-09-08
+
+PR410 is merged as ab586b53 (1.2.72/M114), with all five required CI checks green.
+Its exact source bundle is prepared; official upload is blocked by the Aliyun UI.
+No Target72 or shared-Probe Provider result is claimed. Last verified Target remains
+1.2.71/M114 with 39 Releases,17 Slots,13 Publications and Flash59/Max60 unchanged.
+
+Local1.2.73 adds the reviewed counter-v3 estimate, immutable lease version, recovery
+and finite M115 bridge. It is a platform correction, not model data delivery.
+Default writer is still v2; no Target M115 or new paid request has occurred. See
+[design and review boundaries](../analysis/STREAM-COUNTER-V3-20260908.md) and
+[formal bridge sequence](RUNTIME-CONTINUITY.md#versioned-stream-counter-finite-m115-bridge).
+Historical bills, rates, final supplier usage, budgets and answer-quality results
+remain unchanged. Local evidence cannot replace CI/Artifact/Target acceptance.
+经验文件无需变化. Earlier entries retain their original cutoff.
+
 ## Concentrated qualification candidate and client migration Target — 2026-09-08
 
 Development/test now runs exact main PR409/07761d73, version1.2.71/M114.

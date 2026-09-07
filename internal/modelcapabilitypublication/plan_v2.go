@@ -128,7 +128,7 @@ func BuildPlanV2(ctx context.Context, tx pgx.Tx, a AuthorityV2, r PlanRequestV2)
 	if err := schemaauthority.VerifyRuntimeLedger(a.ArtifactMigrationLedger, ledger); err != nil {
 		return p, err
 	}
-	if ledger[len(ledger)-1] != schemaauthority.CapabilityExpandHead {
+	if ledger[len(ledger)-1] != schemaauthority.CapabilityExpandHead && ledger[len(ledger)-1] != schemaauthority.StreamCounterExpandHead {
 		return p, fmt.Errorf("explicit additive expand must precede capability authoring")
 	}
 	target, err := readTargetIdentity(ctx, tx, a.Environment)
@@ -155,7 +155,12 @@ func BuildPlanV2(ctx context.Context, tx pgx.Tx, a AuthorityV2, r PlanRequestV2)
 		if head.PublicationID != "" || len(r.BundleBytes) != 0 || r.CompensatesPublicationID != "" || len(before.Definitions) != 0 {
 			return p, fmt.Errorf("%w: legacy import is not an empty initial authoring transition", ErrPlanConflict)
 		}
-		legacyLedger := ledger[:len(ledger)-1]
+		// Named schema-only expansions are not legacy capability publications.
+		legacyEnd := slices.Index(ledger, schemaauthority.CapabilityExpandHead)
+		if legacyEnd <= 0 {
+			return p, fmt.Errorf("legacy capability boundary is absent")
+		}
+		legacyLedger := ledger[:legacyEnd]
 		folded, err := FoldedProjectionForLedger(legacyLedger)
 		if err != nil {
 			return p, err

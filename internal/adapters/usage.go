@@ -166,11 +166,11 @@ func NewCacheAwareUsage(
 		usage.Authority = metering.UsageAuthorityProviderReported
 		usage.Purpose = metering.UsagePurposeProviderEvidence
 		usage.Finality = metering.UsageFinalityFinal
-	case metering.UsageSourceCounterV2:
+	case metering.UsageSourceCounterV2, metering.UsageSourceCounterV3:
 		usage.Authority = metering.UsageAuthorityGatewayCounter
 		usage.Purpose = metering.UsagePurposeCustomerCharge
 		usage.Finality = metering.UsageFinalityEstimated
-		usage.EstimateVersion = metering.GatewayCounterEstimateVersionV2
+		usage.EstimateVersion, _ = metering.CounterVersion(metering.NormalizeUsageSource(source))
 	case metering.UsageSourceEstimated, metering.UsageSourceAdapterEstimated:
 		usage.Authority = metering.UsageAuthorityConservativeEstimate
 		usage.Purpose = metering.UsagePurposeCustomerCharge
@@ -261,7 +261,7 @@ func (u Usage) ValidateContract() error {
 			return fmt.Errorf("provider-reported usage contract is inconsistent")
 		}
 	case metering.UsageAuthorityGatewayCounter:
-		if u.Source != metering.UsageSourceCounterV2 || u.Finality != metering.UsageFinalityEstimated || u.EstimateVersion != metering.GatewayCounterEstimateVersionV2 {
+		if !metering.ValidCounterPair(u.Source, u.EstimateVersion) || u.Finality != metering.UsageFinalityEstimated {
 			return fmt.Errorf("gateway-counter usage contract is inconsistent")
 		}
 	case metering.UsageAuthorityConservativeEstimate:

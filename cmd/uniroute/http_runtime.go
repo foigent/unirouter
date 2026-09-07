@@ -22,6 +22,7 @@ const runtimeCleanupGrace = 120 * time.Second
 // httpRuntime owns only this process's accepted HTTP handlers. Ingress
 // withdrawal and fleet compatibility are separate orchestration authorities.
 type httpRuntime struct {
+	streamCounterVersion string
 	mu                   sync.Mutex
 	instance             string
 	draining             bool
@@ -63,13 +64,14 @@ func newHTTPRuntime(cfg *config.Config) (*httpRuntime, error) {
 	// currently implemented long reasoning/processing-tier contract.
 	providerSeconds := max(modelprofile.MaximumImplementedRequestTimeoutSeconds(), cfg.StreamMaxDurationSecs)
 	requestLifetime := time.Duration(providerSeconds)*time.Second + runtimeCleanupGrace
-	supportDigest, err := runtimegeneration.CurrentManifest([]string{schemaauthority.LegacyCapabilityHead, schemaauthority.CapabilityExpandHead}).Digest()
+	supportDigest, err := runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads()).Digest()
 	if err != nil {
 		return nil, err
 	}
 	return &httpRuntime{
-		instance: "uri_" + hex.EncodeToString(identity[:]),
-		requests: make(map[uint64]context.CancelFunc), drained: make(chan struct{}),
+		instance:             "uri_" + hex.EncodeToString(identity[:]),
+		streamCounterVersion: cfg.EffectiveStreamCounterVersion(),
+		requests:             make(map[uint64]context.CancelFunc), drained: make(chan struct{}),
 		requestLifetime: requestLifetime,
 		drainTimeout:    max(requestLifetime+runtimeCleanupGrace, time.Duration(cfg.ShutdownTimeoutSecs)*time.Second),
 		supportDigest:   supportDigest,
@@ -94,7 +96,7 @@ func (runtime *httpRuntime) status() httpRuntimeStatus {
 		SchemaLedgerDigest:     runtime.schemaDigest,
 		SupportManifestDigest:  runtime.supportDigest,
 		CompatibilityEpoch:     runtimegeneration.CompatibilityEpoch,
-		SupportedSchemaHeads:   []string{schemaauthority.LegacyCapabilityHead, schemaauthority.CapabilityExpandHead},
+		SupportedSchemaHeads:   schemaauthority.SupportedSchemaHeads(),
 	}
 }
 
@@ -210,4 +212,11 @@ func writeRuntimeHealth(w http.ResponseWriter, status int, state, reason string,
 		body["db"], body["redis"] = "ok", "ok"
 	}
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+// Recovery is unavailable on M113 or after lease loss, including while draining.
+func (runtime *httpRuntime) canClaimRecovery() bool {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	return runtime.leaseRequired && !runtime.authorityUnavailable && time.Now().Before(runtime.leaseUntil)
 }

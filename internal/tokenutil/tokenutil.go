@@ -1,25 +1,40 @@
 package tokenutil
 
 import (
+	"fmt"
 	"math"
 	"strings"
+	"unicode/utf8"
+
+	"github.com/uniroute/unirouter/internal/metering"
 )
 
 // StreamTokenCounter tracks token counts during SSE streaming.
 // It separates upstream-provided usage from delta-based estimation,
 // and provides a checkpoint-based balance check trigger.
 type StreamTokenCounter struct {
-	totalOutputTokens  int
-	totalInputTokens   int
-	estimatedInput     int
-	checkpointTokens   int
-	upstreamUsageSet   bool
+	totalOutputTokens int
+	totalInputTokens  int
+	estimatedInput    int
+	checkpointTokens  int
+	upstreamUsageSet  bool
+	version           string
+	outputUnits       uint64
 }
 
 // NewStreamTokenCounter creates a new counter with default settings.
 func NewStreamTokenCounter() *StreamTokenCounter {
-	return &StreamTokenCounter{}
+	return &StreamTokenCounter{version: metering.GatewayCounterEstimateVersionV2}
 }
+
+func NewStreamTokenCounterWithVersion(version string) (*StreamTokenCounter, error) {
+	if _, err := metering.CounterSource(version); err != nil {
+		return nil, err
+	}
+	return &StreamTokenCounter{version: version}, nil
+}
+
+func (c *StreamTokenCounter) Version() string { return c.version }
 
 // SetUpstreamUsage records the token counts provided by the upstream API.
 func (c *StreamTokenCounter) SetUpstreamUsage(promptTokens, completionTokens int) {
@@ -34,8 +49,31 @@ func (c *StreamTokenCounter) SetEstimatedInputTokens(tokens int) {
 }
 
 // AddOutputDelta estimates tokens from a content delta and accumulates them.
-func (c *StreamTokenCounter) AddOutputDelta(content string) {
-	c.totalOutputTokens += EstimateTokens(content)
+func (c *StreamTokenCounter) AddOutputDelta(content string) error {
+	if c.version != metering.GatewayCounterEstimateVersionV3 {
+		c.totalOutputTokens += EstimateTokens(content)
+		return nil
+	}
+	// Inputs are decoded text from a complete validated SSE frame, not raw
+	// transport fragments. Keep no response content or floating-point residue.
+	if c.upstreamUsageSet || !utf8.ValidString(content) {
+		return fmt.Errorf("stream counter delta is not valid decoded output")
+	}
+	units := c.outputUnits
+	const maxUnits = uint64(metering.MaxPersistedTokenCount) * 12
+	for _, r := range content {
+		weight := uint64(3)
+		if isCJK(r) {
+			weight = 8
+		}
+		if units > maxUnits-weight {
+			return fmt.Errorf("stream counter exceeds persisted token range")
+		}
+		units += weight
+	}
+	c.outputUnits = units
+	c.totalOutputTokens = int((units + 11) / 12)
+	return nil
 }
 
 // ShouldCheckBalance returns true if 100+ new output tokens have accumulated

@@ -20,7 +20,7 @@ import (
 // the database owner serializes membership intent with Model Slot activation.
 func runRuntimeGenerationCLI(ctx context.Context, args []string, cfg *config.Config) error {
 	if len(args) == 1 && args[0] == "support" {
-		m := runtimegeneration.CurrentManifest([]string{schemaauthority.LegacyCapabilityHead, schemaauthority.CapabilityExpandHead})
+		m := runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads())
 		wire, err := m.CanonicalBytes()
 		if err != nil {
 			return err

@@ -96,7 +96,7 @@ VALUES($1,$2,$3,$4,$5,$6,'data-release-fixture')`, d.Digest(), p.ID, p.Version, 
 	require.Error(t, err, "no potential compatible ingress fleet has been proved")
 	// The fixture joins a compatible generation before the formal Slot owner
 	// activates; raw SQL is not used to bypass Release lifecycle receipts.
-	manifest := runtimegeneration.CurrentManifest([]string{schemaauthority.LegacyCapabilityHead, schemaauthority.CapabilityExpandHead})
+	manifest := runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads())
 	manifestBytes, err := manifest.CanonicalBytes()
 	require.NoError(t, err)
 	manifestDigest, err := manifest.Digest()
@@ -105,7 +105,7 @@ VALUES($1,$2,$3,$4,$5,$6,'data-release-fixture')`, d.Digest(), p.ID, p.Version, 
 	_, err = pool.Exec(ctx, `INSERT INTO runtime_support_manifests(artifact_digest,manifest_digest,canonical_bytes) VALUES($1,$2,$3)`, artifact, manifestDigest, manifestBytes)
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, `INSERT INTO runtime_generations(instance_id,artifact_digest,compatibility_epoch,schema_head,state,ingress_state,lease_expires_at)
-VALUES($1,$2,$3,$4,'serving','receiving',clock_timestamp()+interval '1 hour')`, "uri_"+strings.Repeat("e", 32), artifact, runtimegeneration.CompatibilityEpoch, schemaauthority.CapabilityExpandHead)
+VALUES($1,$2,$3,$4,'serving','receiving',clock_timestamp()+interval '1 hour')`, "uri_"+strings.Repeat("e", 32), artifact, runtimegeneration.CompatibilityEpoch, schemaauthority.LatestSupportedMigration)
 	require.NoError(t, err)
 	// A second live receiver lacking one execution implementation must block
 	// activation, even though its schema/compatibility epoch is identical.
@@ -124,7 +124,7 @@ VALUES($1,$2,$3,$4,'serving','receiving',clock_timestamp()+interval '1 hour')`, 
 	limitedInstance := "uri_" + strings.Repeat("f", 32)
 	_, err = pool.Exec(ctx, `INSERT INTO runtime_support_manifests(artifact_digest,manifest_digest,canonical_bytes) VALUES($1,$2,$3)`, limitedArtifact, limitedDigest, limitedBytes)
 	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `INSERT INTO runtime_generations(instance_id,artifact_digest,compatibility_epoch,schema_head,state,ingress_state,lease_expires_at) VALUES($1,$2,$3,$4,'serving','pending_join',clock_timestamp()+interval '1 hour')`, limitedInstance, limitedArtifact, runtimegeneration.CompatibilityEpoch, schemaauthority.CapabilityExpandHead)
+	_, err = pool.Exec(ctx, `INSERT INTO runtime_generations(instance_id,artifact_digest,compatibility_epoch,schema_head,state,ingress_state,lease_expires_at) VALUES($1,$2,$3,$4,'serving','pending_join',clock_timestamp()+interval '1 hour')`, limitedInstance, limitedArtifact, runtimegeneration.CompatibilityEpoch, schemaauthority.LatestSupportedMigration)
 	require.NoError(t, err)
 	_, err = manager.ApplyDeploymentLifecycle(ctx, deploymentLifecycleReceiptCommand(f, runtimechange.DeploymentLifecycleActivateInitial, result.Release, 0, 0, 'd', 'e', "op_data_activate"))
 	require.Error(t, err, "pending ingress receiver must also block incompatible activation")

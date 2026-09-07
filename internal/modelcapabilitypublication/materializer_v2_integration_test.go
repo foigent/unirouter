@@ -61,7 +61,7 @@ func TestOnlineMaterializerUsesDeltaLedgerAndExactImmutableData(t *testing.T) {
 	require.Equal(t, int64(0), count("capability_publications"))
 	// Explicit isolated fleet fixture. It proves DB coordination semantics only,
 	// never a live Nginx or Target generation.
-	manifest := runtimegeneration.CurrentManifest([]string{schemaauthority.LegacyCapabilityHead, schemaauthority.CapabilityExpandHead})
+	manifest := runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads())
 	wire, err := manifest.CanonicalBytes()
 	require.NoError(t, err)
 	digest, err := manifest.Digest()
@@ -71,7 +71,7 @@ func TestOnlineMaterializerUsesDeltaLedgerAndExactImmutableData(t *testing.T) {
 	_, err = pool.Exec(ctx, `INSERT INTO runtime_support_manifests(artifact_digest,manifest_digest,canonical_bytes) VALUES($1,$2,$3)`, artifact, digest, wire)
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, `INSERT INTO runtime_generations(instance_id,artifact_digest,compatibility_epoch,schema_head,state,ingress_state,lease_expires_at)
- VALUES($1,$2,$3,$4,'serving','receiving',clock_timestamp()+interval '1 hour')`, instance, artifact, runtimegeneration.CompatibilityEpoch, schemaauthority.CapabilityExpandHead)
+ VALUES($1,$2,$3,$4,'serving','receiving',clock_timestamp()+interval '1 hour')`, instance, artifact, runtimegeneration.CompatibilityEpoch, schemaauthority.LatestSupportedMigration)
 	require.NoError(t, err)
 	result, err := publication.ApplyV2(ctx, pool, authority, importRequest, importPlan)
 	require.NoError(t, err)

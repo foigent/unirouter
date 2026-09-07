@@ -12,6 +12,7 @@ const (
 	UsageSourceEstimated        = "estimated"
 	UsageSourceAdapterEstimated = "adapter_estimated"
 	UsageSourceCounterV2        = "counter_v2"
+	UsageSourceCounterV3        = "counter_v3"
 	UsageSourceResponseCache    = "response_cache"
 	UsageSourceMissing          = "missing"
 	UsageSourceNoRoute          = "no_route"
@@ -87,6 +88,7 @@ const (
 	UsageContractVersionV2          = "unirouter.usage.v2"
 	ConservativeEstimateVersionV1   = "unirouter.token-ceiling.v1"
 	GatewayCounterEstimateVersionV2 = "unirouter.stream-counter.v2"
+	GatewayCounterEstimateVersionV3 = "unirouter.stream-counter.v3"
 
 	// MaxPersistedTokenCount is the common upper bound for every final usage
 	// contract that can be materialized by billing's INTEGER-backed receipts.
@@ -100,7 +102,7 @@ func NormalizeUsageSource(source string) string {
 		return UsageSourceUpstream
 	case "stream_estimate":
 		return UsageSourceCounterV2
-	case UsageSourceUpstream, UsageSourceEstimated, UsageSourceAdapterEstimated, UsageSourceCounterV2, UsageSourceResponseCache, UsageSourceMissing, UsageSourceNoRoute, UsageSourceUpstreamFailed:
+	case UsageSourceUpstream, UsageSourceEstimated, UsageSourceAdapterEstimated, UsageSourceCounterV2, UsageSourceCounterV3, UsageSourceResponseCache, UsageSourceMissing, UsageSourceNoRoute, UsageSourceUpstreamFailed:
 		return strings.TrimSpace(source)
 	default:
 		return strings.TrimSpace(source)
@@ -117,6 +119,8 @@ func LegacyUsageContract(source string, customerCharge bool) (UsageAuthority, Us
 		return UsageAuthorityProviderReported, purpose, UsageFinalityFinal, ""
 	case UsageSourceCounterV2:
 		return UsageAuthorityGatewayCounter, purpose, UsageFinalityEstimated, GatewayCounterEstimateVersionV2
+	case UsageSourceCounterV3:
+		return UsageAuthorityGatewayCounter, purpose, UsageFinalityEstimated, GatewayCounterEstimateVersionV3
 	case UsageSourceEstimated, UsageSourceAdapterEstimated:
 		return UsageAuthorityConservativeEstimate, purpose, UsageFinalityEstimated, ConservativeEstimateVersionV1
 	default:
@@ -126,7 +130,7 @@ func LegacyUsageContract(source string, customerCharge bool) (UsageAuthority, Us
 
 func IsNonUpstreamUsage(source string) bool {
 	switch NormalizeUsageSource(source) {
-	case UsageSourceEstimated, UsageSourceAdapterEstimated, UsageSourceCounterV2, UsageSourceResponseCache:
+	case UsageSourceEstimated, UsageSourceAdapterEstimated, UsageSourceCounterV2, UsageSourceCounterV3, UsageSourceResponseCache:
 		return true
 	default:
 		return false
@@ -141,13 +145,42 @@ func SourceConfidence(source string) float64 {
 		return 1.0
 	case UsageSourceAdapterEstimated:
 		return 0.75
-	case UsageSourceCounterV2:
+	case UsageSourceCounterV2, UsageSourceCounterV3:
 		return 0.65
 	case UsageSourceEstimated:
 		return 0.50
 	default:
 		return 0.0
 	}
+}
+
+// CounterSource and CounterVersion preserve the exact finite estimator identity.
+// They never infer a current version from an unknown or empty value.
+func CounterSource(version string) (string, error) {
+	switch version {
+	case GatewayCounterEstimateVersionV2:
+		return UsageSourceCounterV2, nil
+	case GatewayCounterEstimateVersionV3:
+		return UsageSourceCounterV3, nil
+	default:
+		return "", fmt.Errorf("unsupported stream counter version %q", version)
+	}
+}
+
+func CounterVersion(source string) (string, error) {
+	switch source {
+	case UsageSourceCounterV2:
+		return GatewayCounterEstimateVersionV2, nil
+	case UsageSourceCounterV3:
+		return GatewayCounterEstimateVersionV3, nil
+	default:
+		return "", fmt.Errorf("unsupported stream counter source %q", source)
+	}
+}
+
+func ValidCounterPair(source, version string) bool {
+	expected, err := CounterSource(version)
+	return err == nil && source == expected
 }
 
 func VarianceTokens(estimatedTokens, actualTokens int) int {

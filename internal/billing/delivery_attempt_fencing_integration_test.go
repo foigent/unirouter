@@ -167,160 +167,167 @@ func TestV1CheckpointCannotReviveLeaseExpiredAfterInitialFenceCheck(t *testing.T
 }
 
 func TestV1StreamGenerationFencesStaleOwnerAcrossRecoveryRace(t *testing.T) {
-	const requestID = "v1-stream-generation-race"
-	b, orgID, _, attemptID := newP6F41DeliveryFixture(t, requestID)
-	start := StreamDeliveryStart{
-		RequestID: requestID, AttemptID: attemptID, OwnerID: "live-owner-generation-one",
-		OrgID: orgID, Generation: 1, LeaseTTL: time.Minute,
-	}
-	require.NoError(t, b.BeginStreamDelivery(t.Context(), start))
-	require.NoError(t, b.RenewStreamDelivery(t.Context(), start))
-	var generation int64
-	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT generation FROM stream_delivery_leases
+	for _, version := range []string{metering.GatewayCounterEstimateVersionV2, metering.GatewayCounterEstimateVersionV3} {
+		t.Run(version, func(t *testing.T) {
+			source, err := metering.CounterSource(version)
+			require.NoError(t, err)
+			const requestID = "v1-stream-generation-race"
+			b, orgID, _, attemptID := newP6F41DeliveryFixture(t, requestID)
+			start := StreamDeliveryStart{
+				RequestID: requestID, AttemptID: attemptID, OwnerID: "live-owner-generation-one",
+				OrgID: orgID, Generation: 1, LeaseTTL: time.Minute, CounterVersion: version,
+			}
+			require.NoError(t, b.BeginStreamDelivery(t.Context(), start))
+			require.NoError(t, b.RenewStreamDelivery(t.Context(), start))
+			var generation int64
+			require.NoError(t, b.db.QueryRow(t.Context(), `SELECT generation FROM stream_delivery_leases
 		WHERE org_id=$1 AND request_id=$2`, orgID, requestID).Scan(&generation))
-	require.Equal(t, int64(1), generation, "renewal must not mint a new generation")
-	require.NoError(t, b.RecordDelivery(t.Context(), DeliveryEvent{
-		RequestID: requestID, AttemptID: attemptID, OrgID: orgID,
-		Mode: DeliveryModeStream, Outcome: DeliveryOutcomePartial,
-		DeliveredBytes: 128, DeliveredChunks: 1, HTTPStatus: 200,
-		StreamFence: testStreamFence(start),
-	}))
-	_, err := b.CheckpointStreamDelivery(t.Context(), StreamDeliveryCheckpoint{
-		RequestID: requestID, AttemptID: attemptID, OwnerID: start.OwnerID,
-		OrgID: orgID, Generation: start.Generation,
-		DeliveredBytes: 128, DeliveredChunks: 1, PromptTokens: 12, CompletionTokens: 2,
-		PolicySetVersion: "stream-fence-test-v1", LeaseTTL: time.Minute,
-	})
-	require.NoError(t, err)
-	usage := SettleRequest{
-		RequestID: requestID, AttemptID: attemptID, OrgID: orgID,
-		StreamFence:  testStreamFence(start),
-		PromptTokens: 12, UncachedPromptTokens: 12, CompletionTokens: 2,
-		UsageSource:          metering.UsageSourceCounterV2,
-		UsageAuthority:       metering.UsageAuthorityGatewayCounter,
-		UsagePurpose:         metering.UsagePurposeCustomerCharge,
-		UsageFinality:        metering.UsageFinalityEstimated,
-		UsageContractVersion: metering.UsageContractVersion,
-		UsageEstimateVersion: metering.GatewayCounterEstimateVersionV2,
-	}
-	require.NoError(t, b.PersistSettlementUsage(t.Context(), usage))
-	require.NoError(t, func() error {
-		_, execErr := b.db.Exec(t.Context(), `UPDATE stream_delivery_leases
+			require.Equal(t, int64(1), generation, "renewal must not mint a new generation")
+			require.NoError(t, b.RecordDelivery(t.Context(), DeliveryEvent{
+				RequestID: requestID, AttemptID: attemptID, OrgID: orgID,
+				Mode: DeliveryModeStream, Outcome: DeliveryOutcomePartial,
+				DeliveredBytes: 128, DeliveredChunks: 1, HTTPStatus: 200,
+				StreamFence: testStreamFence(start),
+			}))
+			_, err = b.CheckpointStreamDelivery(t.Context(), StreamDeliveryCheckpoint{
+				RequestID: requestID, AttemptID: attemptID, OwnerID: start.OwnerID,
+				OrgID: orgID, Generation: start.Generation,
+				DeliveredBytes: 128, DeliveredChunks: 1, PromptTokens: 12, CompletionTokens: 2,
+				PolicySetVersion: "stream-fence-test-v1", LeaseTTL: time.Minute, CounterVersion: version,
+			})
+			require.NoError(t, err)
+			usage := SettleRequest{
+				RequestID: requestID, AttemptID: attemptID, OrgID: orgID,
+				StreamFence:  testStreamFence(start),
+				PromptTokens: 12, UncachedPromptTokens: 12, CompletionTokens: 2,
+				UsageSource:          source,
+				UsageAuthority:       metering.UsageAuthorityGatewayCounter,
+				UsagePurpose:         metering.UsagePurposeCustomerCharge,
+				UsageFinality:        metering.UsageFinalityEstimated,
+				UsageContractVersion: metering.UsageContractVersion,
+				UsageEstimateVersion: version,
+			}
+			require.NoError(t, b.PersistSettlementUsage(t.Context(), usage))
+			require.NoError(t, func() error {
+				_, execErr := b.db.Exec(t.Context(), `UPDATE stream_delivery_leases
 			SET lease_expires_at=NOW()-INTERVAL '1 second'
 			WHERE org_id=$1 AND request_id=$2`, orgID, requestID)
-		return execErr
-	}())
+				return execErr
+			}())
 
-	// Hold the reservation row so the live writer begins a real PostgreSQL race
-	// but cannot reach the lease check until recovery has atomically claimed it.
-	blocker, err := b.db.Begin(t.Context())
-	require.NoError(t, err)
-	defer blocker.Rollback(t.Context())
-	var locked string
-	require.NoError(t, blocker.QueryRow(t.Context(), `SELECT request_id FROM freeze_idempotency
+			// Hold the reservation row so the live writer begins a real PostgreSQL race
+			// but cannot reach the lease check until recovery has atomically claimed it.
+			blocker, err := b.db.Begin(t.Context())
+			require.NoError(t, err)
+			defer blocker.Rollback(t.Context())
+			var locked string
+			require.NoError(t, blocker.QueryRow(t.Context(), `SELECT request_id FROM freeze_idempotency
 		WHERE org_id=$1 AND request_id=$2 FOR UPDATE`, orgID, requestID).Scan(&locked))
 
-	staleStarted := make(chan struct{})
-	staleResult := make(chan error, 1)
-	go func() {
-		close(staleStarted)
-		staleResult <- b.RecordDelivery(context.Background(), DeliveryEvent{
-			RequestID: requestID, AttemptID: attemptID, OrgID: orgID,
-			Mode: DeliveryModeStream, Outcome: DeliveryOutcomeInterrupted,
-			DeliveredBytes: 128, DeliveredChunks: 1, HTTPStatus: 200,
-			ErrorCode: "stale-live-writer", StreamFence: testStreamFence(start),
-		})
-	}()
-	<-staleStarted
-	claimed, err := b.claimExpiredStreams(t.Context(), 1, "recovery-owner-generation-two", time.Minute)
-	require.NoError(t, err)
-	require.Len(t, claimed, 1)
-	require.Equal(t, int64(2), claimed[0].Generation, "recovery claim, not renew, must increment generation")
-	require.NoError(t, blocker.Commit(t.Context()))
-	require.ErrorIs(t, <-staleResult, ErrStreamLeaseConflict)
+			staleStarted := make(chan struct{})
+			staleResult := make(chan error, 1)
+			go func() {
+				close(staleStarted)
+				staleResult <- b.RecordDelivery(context.Background(), DeliveryEvent{
+					RequestID: requestID, AttemptID: attemptID, OrgID: orgID,
+					Mode: DeliveryModeStream, Outcome: DeliveryOutcomeInterrupted,
+					DeliveredBytes: 128, DeliveredChunks: 1, HTTPStatus: 200,
+					ErrorCode: "stale-live-writer", StreamFence: testStreamFence(start),
+				})
+			}()
+			<-staleStarted
+			claimed, err := b.claimExpiredStreams(t.Context(), 1, "recovery-owner-generation-two", time.Minute)
+			require.NoError(t, err)
+			require.Len(t, claimed, 1)
+			require.Equal(t, int64(2), claimed[0].Generation, "recovery claim, not renew, must increment generation")
+			require.NoError(t, blocker.Commit(t.Context()))
+			require.ErrorIs(t, <-staleResult, ErrStreamLeaseConflict)
 
-	require.ErrorIs(t, b.PersistSettlementUsage(t.Context(), usage), ErrStreamLeaseConflict)
-	_, err = b.Settle(t.Context(), usage)
-	require.ErrorIs(t, err, ErrStreamLeaseConflict, "a stale owner cannot turn its earlier payload into a terminal charge")
-	noFence := usage
-	noFence.StreamFence = nil
-	_, err = b.Settle(t.Context(), noFence)
-	require.ErrorIs(t, err, ErrStreamLeaseConflict, "omitting the fence is not a live-path bypass")
+			require.ErrorIs(t, b.PersistSettlementUsage(t.Context(), usage), ErrStreamLeaseConflict)
+			_, err = b.Settle(t.Context(), usage)
+			require.ErrorIs(t, err, ErrStreamLeaseConflict, "a stale owner cannot turn its earlier payload into a terminal charge")
+			noFence := usage
+			noFence.StreamFence = nil
+			_, err = b.Settle(t.Context(), noFence)
+			require.ErrorIs(t, err, ErrStreamLeaseConflict, "omitting the fence is not a live-path bypass")
 
-	var receiptCount int
-	var payloadCount int
-	var terminals int
-	var storedOwner string
-	var storedGeneration int64
-	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT COUNT(*) FROM request_delivery_receipts
+			var receiptCount int
+			var payloadCount int
+			var terminals int
+			var storedOwner string
+			var storedGeneration int64
+			require.NoError(t, b.db.QueryRow(t.Context(), `SELECT COUNT(*) FROM request_delivery_receipts
 		WHERE org_id=$1 AND request_id=$2`, orgID, requestID).Scan(&receiptCount))
-	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT COUNT(*) FROM freeze_idempotency
+			require.NoError(t, b.db.QueryRow(t.Context(), `SELECT COUNT(*) FROM freeze_idempotency
 		WHERE org_id=$1 AND request_id=$2 AND settlement_payload_ready_at IS NOT NULL`, orgID, requestID).Scan(&payloadCount))
-	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT settlement_stream_owner_id,settlement_stream_generation
+			require.NoError(t, b.db.QueryRow(t.Context(), `SELECT settlement_stream_owner_id,settlement_stream_generation
 		FROM freeze_idempotency WHERE org_id=$1 AND request_id=$2`, orgID, requestID).Scan(&storedOwner, &storedGeneration))
-	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT COUNT(*) FROM transactions
+			require.NoError(t, b.db.QueryRow(t.Context(), `SELECT COUNT(*) FROM transactions
 		WHERE org_id=$1 AND request_id=$2 AND type='settle'`, orgID, requestID).Scan(&terminals))
-	require.Equal(t, 2, receiptCount, "stale terminal delivery must have zero effects")
-	require.Equal(t, 1, payloadCount, "stale usage replay must not replace the immutable payload")
-	require.Equal(t, start.OwnerID, storedOwner)
-	require.Equal(t, start.Generation, storedGeneration)
-	require.Zero(t, terminals, "stale settlement must have zero financial effects")
+			require.Equal(t, 2, receiptCount, "stale terminal delivery must have zero effects")
+			require.Equal(t, 1, payloadCount, "stale usage replay must not replace the immutable payload")
+			require.Equal(t, start.OwnerID, storedOwner)
+			require.Equal(t, start.Generation, storedGeneration)
+			require.Zero(t, terminals, "stale settlement must have zero financial effects")
 
-	current := StreamDeliveryStart{
-		RequestID: requestID, AttemptID: attemptID, OwnerID: claimed[0].OwnerID,
-		OrgID: orgID, Generation: claimed[0].Generation, LeaseTTL: time.Minute,
-	}
-	require.NoError(t, b.RecordDelivery(t.Context(), DeliveryEvent{
-		RequestID: requestID, AttemptID: attemptID, OrgID: orgID,
-		Mode: DeliveryModeStream, Outcome: DeliveryOutcomeInterrupted,
-		DeliveredBytes: 128, DeliveredChunks: 1, HTTPStatus: 200,
-		ErrorCode: "recovered", StreamFence: testStreamFence(current),
-	}))
-	currentUsage := usage
-	currentUsage.StreamFence = testStreamFence(current)
-	require.NoError(t, b.PersistSettlementUsage(t.Context(), currentUsage), "the current owner may reuse the immutable prior-generation payload")
-	require.ErrorIs(t, b.markExpiredStreamReadback(t.Context(), start.Fence()), ErrStreamLeaseConflict)
-	var idempotencyState string
-	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT state FROM request_idempotency
+			current := StreamDeliveryStart{
+				RequestID: requestID, AttemptID: attemptID, OwnerID: claimed[0].OwnerID,
+				OrgID: orgID, Generation: claimed[0].Generation, LeaseTTL: time.Minute, CounterVersion: version,
+			}
+			require.NoError(t, b.RecordDelivery(t.Context(), DeliveryEvent{
+				RequestID: requestID, AttemptID: attemptID, OrgID: orgID,
+				Mode: DeliveryModeStream, Outcome: DeliveryOutcomeInterrupted,
+				DeliveredBytes: 128, DeliveredChunks: 1, HTTPStatus: 200,
+				ErrorCode: "recovered", StreamFence: testStreamFence(current),
+			}))
+			currentUsage := usage
+			currentUsage.StreamFence = testStreamFence(current)
+			require.NoError(t, b.PersistSettlementUsage(t.Context(), currentUsage), "the current owner may reuse the immutable prior-generation payload")
+			require.ErrorIs(t, b.markExpiredStreamReadback(t.Context(), start.Fence()), ErrStreamLeaseConflict)
+			var idempotencyState string
+			require.NoError(t, b.db.QueryRow(t.Context(), `SELECT state FROM request_idempotency
 		WHERE org_id=$1 AND operation_id=$2`, orgID, requestID).Scan(&idempotencyState))
-	require.Equal(t, "in_progress", idempotencyState, "stale readback finalization must have zero effects")
-	require.NoError(t, b.markExpiredStreamReadback(t.Context(), current.Fence()))
-	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT state FROM request_idempotency
+			require.Equal(t, "in_progress", idempotencyState, "stale readback finalization must have zero effects")
+			require.NoError(t, b.markExpiredStreamReadback(t.Context(), current.Fence()))
+			require.NoError(t, b.db.QueryRow(t.Context(), `SELECT state FROM request_idempotency
 		WHERE org_id=$1 AND operation_id=$2`, orgID, requestID).Scan(&idempotencyState))
-	require.Equal(t, "failed", idempotencyState)
+			require.Equal(t, "failed", idempotencyState)
 
-	require.NoError(t, func() error {
-		_, execErr := b.db.Exec(t.Context(), `UPDATE stream_delivery_leases
+			require.NoError(t, func() error {
+				_, execErr := b.db.Exec(t.Context(), `UPDATE stream_delivery_leases
 			SET lease_expires_at=NOW()-INTERVAL '1 second'
 			WHERE org_id=$1 AND request_id=$2`, orgID, requestID)
-		return execErr
-	}())
-	_, err = b.Settle(t.Context(), currentUsage)
-	require.ErrorIs(t, err, ErrStreamLeaseConflict, "even the current generation must not author a terminal after expiry")
-	_, err = b.Settle(t.Context(), noFence)
-	require.ErrorIs(t, err, ErrStreamLeaseConflict)
-	forgedRecovery := noFence
-	forgedRecovery.settlementRecovery = &settlementRecoveryAuthority{
-		ClaimAttempt: 1, StreamOwnerID: storedOwner, StreamGeneration: storedGeneration,
-	}
-	_, err = b.Settle(t.Context(), forgedRecovery)
-	require.ErrorIs(t, err, ErrStreamLeaseConflict,
-		"even package-internal recovery authority must be backed by the current durable claim")
-	recovered, err := b.RecoverPendingSettlements(t.Context(), 1)
-	require.NoError(t, err)
-	require.Equal(t, SettlementRecoveryResult{Claimed: 1, Settled: 1}, recovered,
-		"only generic recovery may settle an immutable fenced payload after lease expiry")
-	require.ErrorIs(t, b.FinishStreamDelivery(t.Context(), start, StreamLeaseStateInterrupted, "stale-finish"), ErrStreamLeaseConflict)
-	var leaseOwner, leaseState string
-	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT owner_id,generation,state FROM stream_delivery_leases
+				return execErr
+			}())
+			_, err = b.Settle(t.Context(), currentUsage)
+			require.ErrorIs(t, err, ErrStreamLeaseConflict, "even the current generation must not author a terminal after expiry")
+			_, err = b.Settle(t.Context(), noFence)
+			require.ErrorIs(t, err, ErrStreamLeaseConflict)
+			forgedRecovery := noFence
+			forgedRecovery.settlementRecovery = &settlementRecoveryAuthority{
+				ClaimAttempt: 1, StreamOwnerID: storedOwner, StreamGeneration: storedGeneration,
+			}
+			_, err = b.Settle(t.Context(), forgedRecovery)
+			require.ErrorIs(t, err, ErrStreamLeaseConflict,
+				"even package-internal recovery authority must be backed by the current durable claim")
+			recovered, err := b.RecoverPendingSettlements(t.Context(), 1)
+			require.NoError(t, err)
+			require.Equal(t, SettlementRecoveryResult{Claimed: 1, Settled: 1}, recovered,
+				"only generic recovery may settle an immutable fenced payload after lease expiry")
+			require.ErrorIs(t, b.FinishStreamDelivery(t.Context(), start, StreamLeaseStateInterrupted, "stale-finish"), ErrStreamLeaseConflict)
+			var leaseOwner, leaseState string
+			require.NoError(t, b.db.QueryRow(t.Context(), `SELECT owner_id,generation,state FROM stream_delivery_leases
 		WHERE org_id=$1 AND request_id=$2`, orgID, requestID).Scan(&leaseOwner, &generation, &leaseState))
-	require.Equal(t, current.OwnerID, leaseOwner)
-	require.Equal(t, current.Generation, generation)
-	require.Equal(t, "active", leaseState, "stale terminal-state publication must have zero effects")
+			require.Equal(t, current.OwnerID, leaseOwner)
+			require.Equal(t, current.Generation, generation)
+			require.Equal(t, "active", leaseState, "stale terminal-state publication must have zero effects")
 
-	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT COUNT(*) FROM transactions
+			require.NoError(t, b.db.QueryRow(t.Context(), `SELECT COUNT(*) FROM transactions
 		WHERE org_id=$1 AND request_id=$2 AND type='settle'`, orgID, requestID).Scan(&terminals))
-	require.Equal(t, 1, terminals)
+			require.Equal(t, 1, terminals)
+
+		})
+	}
 }
 
 func TestV1GenericRecoveryRejectsHistoricalUnfencedStreamPayload(t *testing.T) {
