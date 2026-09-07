@@ -1,5 +1,22 @@
 # UniRouter Current Status
 
+## Qwen data Operation Probe correction — 2026-09-07
+
+Local1.2.64/M114 fixes the data connectivity request's missing support for the
+already installed top-level boolean reasoning contract. The request uses
+max_completion_tokens64 and enable_thinking=false; its immutable safe summary
+retains the explicit false. No Definition, Bundle, parser or schema is added.
+See [bounded fix and acceptance](../analysis/QWEN-DATA-OPERATION-PROBE-20260907.md).
+
+Latest verified development/test is1.2.63/M114. Qwen CI Bundle34073791557 is
+committed through the independent carrier without changing images/schema or
+existing35Releases/15Slots. CandidateDeployment41 reusesPublicModel3159,
+Connection14 and binding14 with Profile1.8.0. Its Operation Probe rejected before
+Provider I/O; paid calls remain zero at this source cutoff. This platform fix
+still requires an Artifact rollout, so the batch is not end-to-end no-rebuild
+proof. Real Qwen qualification/Release/OpenClaw and genuinely uncompiled model
+first-creation acceptance remain open. 经验文件无需变化.
+
 ## Platform onboarding and Qwen streamed-tools candidate — 2026-09-07
 
 Local 1.2.63/M114 introduces a single onboarding entry with platform grouping,

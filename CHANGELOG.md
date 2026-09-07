@@ -4,6 +4,16 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.64] - 2026-09-07
+
+### Fixed
+
+- Generate bounded data Operation Probes from the installed boolean reasoning
+  contract. Qwen candidates now explicitly disable thinking and preserve the
+  protocol-owned total output limit; immutable summaries retain the false value.
+  Legacy probes and published Definitions are unchanged. Candidate creation,
+  actual probe dispatch and persisted evidence are covered together.
+
 ## [1.2.63] - 2026-09-07
 
 ### Added
