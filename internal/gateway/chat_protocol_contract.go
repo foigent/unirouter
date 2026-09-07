@@ -134,7 +134,7 @@ func validateAdvancedChatProtocolRequestWithAuthority(
 				continue
 			}
 			if !slices.Contains(acceptedFields, field) {
-				return advancedChatProtocolValidation{}, fmt.Errorf("%s is not supported by protocol profile %s", field, contract.ProfileID)
+				return advancedChatProtocolValidation{}, &unsupportedOutputParameterError{parameter: field, accepted: slices.Clone(acceptedFields), profile: contract.ProfileID}
 			}
 			if isJSONNull(rawLimit) {
 				return advancedChatProtocolValidation{}, fmt.Errorf("%s must be an integer", field)

@@ -1,5 +1,30 @@
 # UniRouter Current Status
 
+## Qwen completion contract Target results — 2026-09-08 05:05 CST
+
+Exact main PR408/ac3e7600 (1.2.70/M114) is deployed to development/test. Flash
+Profile1.9/Release59/Slot3 and Max Profile1.1/Release60/Slot3 completed real
+OpenClaw two-round streamed read-tool tasks. Both bounded answers are correct;
+older failed quality results retain their original tasks. Each request has one
+Provider attempt, final usage, completed delivery and settled cost-observation
+receipt279–282. New-v8 Flash cancellation has one interrupted terminal and one
+marked estimated receipt283. No retry/fallback or Production claim. See
+[exact evidence and limits](evidence/QWEN-COMPLETION-CONTRACT-20260908.md).
+
+Both immutable Bundles were published on unchanged70 images/M114 before new
+qualification/Release activation. This platform release added typed v8 behavior;
+it is not itself a no-build batch. The earlier65 first-uncompiled-Max proof remains.
+Cumulative experiment reserves: Flash28/30,CNY4.856140/5; Max18/30,CNY4.689972/5,
+not invoices. No repeat paid Agent test is needed for the diagnostic follow-up.
+
+The earlier69 loaded-backend withdrawal/drain/stop trial and44 qualified H1/H2
+samples passed;70 rollout has short-request evidence only. Exact client migration
+works in isolated OpenClaw configs. Public legacy-field rejection is still generic;
+local1.2.71 adds safe migration details through the same validator, with no contract,
+route or billing change. It is not yet CI/Artifact/Target71. Concentrated onboarding,
+equivalent Probe sharing and the versioned interruption-estimator correction remain
+open authorized work. 经验文件无需变化. Earlier entries retain historical cutoffs.
+
 ## Qwen complete-output contract candidate — 2026-09-08
 
 Local1.2.70/M114 introduces opt-in protocolv8 and Probev2, plus immutable Flash1.9

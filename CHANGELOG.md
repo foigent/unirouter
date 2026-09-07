@@ -4,6 +4,15 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.71] - 2026-09-08
+
+### Fixed
+
+- Explain rejected Chat output-parameter spelling through the existing exact
+  validator. Preflight adds safe field migration details; normal Chat retains
+  its status/code and identifies the accepted field. Admission, model contracts,
+  limits, routing and billing remain unchanged.
+
 ## [1.2.70] - 2026-09-08
 
 ### Added
