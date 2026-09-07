@@ -1,5 +1,29 @@
 # UniRouter Current Status
 
+## Pinned ingress observer candidate — 2026-09-08
+
+Local1.2.69/M114 changes only the formal development/test rollout observer to
+reuse the existing pinned ingress image's qualified curl. It records bounded
+complete response/client evidence and keeps legacy failures intact. No CI,
+Artifact or Target1.2.69 success is claimed by this candidate.
+
+The prior1.2.68 exact-main rollout is complete atd0365cdb/tree4aa4d51. Development
+readback confirms both backends1.2.68/M114;37Releases,17Slots and11Publications
+unchanged. Formal rollout34short samples passed,17perprotocol. Systemdisk is now
+60GiB with root filesystem extended online; post-build available17.52GiB/69percent.
+Parameter UI and isolated OpenClaw sync/preflight pass with no Provider calls.
+Source/build/upload/Target evidence is retained under
+`/opt/unirouter/deployment-evidence/20260908-rollout68` and the existing task log.
+Earlier status entries below retain their original cutoffs.
+
+Isolated same-image reload diagnosis separates complete200+END_STREAM followed
+by oldcurl92 from GOAWAYlastsid0 before processing. Existingcurl8.19 completed100
+reload-period requests, including an unprocessed-stream reconnect with no duplicate
+server request. This does not retrospectively pass old failed windows or close
+joint loaded-stream/cancellation/settlement continuity. See the
+[exact observer design](../analysis/INGRESS-OBSERVER-CLIENT-20260908.md).
+
+
 ## Stream checkpoint counter repair candidate — 2026-09-07
 
 Local1.2.68/M114 aligns newly emitted checkpoint completion counts and their

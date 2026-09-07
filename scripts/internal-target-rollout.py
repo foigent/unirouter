@@ -657,7 +657,7 @@ class Rollout:
         else:
             require(self.evidence.has("apply-started.json"), "operation has not started; use apply")
         self.storage()
-        observer = Observer(self.evidence, self.target["public_url"])
+        observer = Observer(self.evidence, self.target["public_url"], self.target["nginx_container_id"])
         observer.start()
         try:
             if not self.evidence.has("apply-started.json"):
@@ -694,9 +694,40 @@ def utcnow():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
+OBSERVER_CONTRACT = "unirouter.ingress-observer.v2"
+OBSERVER_BODY_LIMIT = 64 * 1024
+LEGACY_SAMPLE_FIELDS = {"at", "completed_at", "protocol", "exit", "result", "ok"}
+OBSERVER_SAMPLE_FIELDS = LEGACY_SAMPLE_FIELDS | {"client_digest", "body_bytes", "body_sha256", "json_error", "num_connects"}
+
+
+def qualified_observer_client(client):
+    require(set(client) == {"container_id", "image_digest", "curl_version", "vantage"}, "invalid observer client")
+    require(re.fullmatch(r"[0-9a-f]{64}", client["container_id"]) and
+            re.fullmatch(r"sha256:[0-9a-f]{64}", client["image_digest"]), "invalid observer client identity")
+    require(client["vantage"] == "pinned_ingress_container_public_https", "unknown observer vantage")
+    version = client["curl_version"]
+    match = re.match(r"curl ([0-9]+)\.([0-9]+)\.([0-9]+) ", version)
+    require(match and tuple(map(int, match.groups())) >= (8, 19, 0), "observer requires qualified curl 8.19 or newer")
+    features = next((line.split()[1:] for line in version.splitlines() if line.startswith("Features:")), [])
+    protocols = next((line.split()[1:] for line in version.splitlines() if line.startswith("Protocols:")), [])
+    require("HTTP2" in features and "https" in protocols, "observer client lacks HTTPS/HTTP2")
+
+
+def observer_sample_ok(row):
+    return (type(row["exit"]) is int and row["exit"] == 0 and
+            row["result"] == ("401 2" if row["protocol"] == "--http2" else "401 1.1") and
+            type(row["body_bytes"]) is int and 0 < row["body_bytes"] <= OBSERVER_BODY_LIMIT and
+            row["json_error"] is True and type(row["num_connects"]) is int and row["num_connects"] >= 1)
+
+
 class Observer:
-    def __init__(self, evidence, origin):
+    def __init__(self, evidence, origin, container_id):
         self.evidence, self.origin = evidence, origin.rstrip("/")
+        require(re.fullmatch(r"[0-9a-f]{64}", container_id), "observer requires exact ingress container")
+        parsed = urlsplit(self.origin)
+        require(parsed.scheme == "https" and parsed.hostname and not parsed.username and not parsed.password and
+                parsed.path == "" and not parsed.query and not parsed.fragment, "observer requires credential-free HTTPS origin")
+        self.container_id, self.client = container_id, None
         index = 1
         while evidence.has(f"observer-{index}-start.json"):
             index += 1
@@ -705,12 +736,51 @@ class Observer:
         self.count, self.failed, self.error = 0, False, None
         self.thread = threading.Thread(target=self.observe)
 
+    def read_client(self):
+        container = inspect(self.container_id)
+        require(container["Id"] == self.container_id and container["State"]["Running"], "observer ingress identity unavailable")
+        version = run(["docker", "exec", self.container_id, "curl", "-q", "-V"], timeout=7).decode().strip()
+        client = {"container_id": self.container_id, "image_digest": container["Image"],
+                  "curl_version": version, "vantage": "pinned_ingress_container_public_https"}
+        qualified_observer_client(client)
+        return client
+
     def start(self):
-        self.evidence.write(self.name + "-start.json", {"at": utcnow()})
+        # Runs before overlay replacement, ingress mutation or container stop.
+        # No fallback to an unqualified host client or new tool installation.
+        self.client = self.read_client()
+        self.evidence.write(self.name + "-start.json", {"at": utcnow(), "contract_version": OBSERVER_CONTRACT,
+                                                       "origin": self.origin, "client": self.client})
         self.thread.start()
         if not self.first.wait(15) or self.error or self.failed:
             self.stop()
             raise RuntimeError("observer did not establish initial coverage")
+
+    def sample(self, protocol):
+        require(protocol in ("--http1.1", "--http2"), "unknown observer protocol")
+        started = utcnow()
+        wire_protocol = "--http2-prior-knowledge" if protocol == "--http2" else protocol
+        result = subprocess.run(["docker", "exec", self.container_id, "curl", "-q", "--noproxy", "*", wire_protocol,
+                                 "--retry", "0", "-sS", "--max-time", "5", "--max-filesize", str(OBSERVER_BODY_LIMIT),
+                                 "-w", "\n%{http_code} %{http_version} %{num_connects}", "-X", "POST",
+                                 "-H", "Content-Type: application/json", "--data", "{}",
+                                 self.origin + "/v1/chat/completions"], capture_output=True, timeout=7, env=ENV)
+        body, separator, summary = result.stdout.rpartition(b"\n")
+        parts = summary.decode(errors="replace").split() if separator else []
+        value = " ".join(parts[:2]) if len(parts) == 3 else "invalid_metadata"
+        connects = int(parts[2]) if len(parts) == 3 and parts[2].isdigit() and len(parts[2]) <= 9 else 0
+        json_error = False
+        if 0 < len(body) <= OBSERVER_BODY_LIMIT:
+            try:
+                parsed = load(body)
+                json_error = isinstance(parsed, dict) and isinstance(parsed.get("error"), dict) and bool(parsed["error"])
+            except (RuntimeError, ValueError, UnicodeError):
+                pass
+        row = {"at": started, "completed_at": utcnow(), "protocol": protocol, "exit": result.returncode,
+               "result": value, "client_digest": digest(canonical(self.client)), "body_bytes": len(body),
+               "body_sha256": digest(body), "json_error": json_error, "num_connects": connects}
+        row["ok"] = observer_sample_ok(row)
+        return row
 
     def observe(self):
         path = self.evidence.root / (self.name + "-samples.jsonl")
@@ -718,18 +788,12 @@ class Observer:
             with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), "wb") as file:
                 while not self.stop_event.is_set():
                     for protocol in ("--http1.1", "--http2"):
-                        started = utcnow()
-                        result = subprocess.run(["curl", "--noproxy", "*", protocol, "--retry", "0", "-sS", "--max-time", "5", "-o", "/dev/null",
-                                                 "-w", "%{http_code} %{http_version}", "-X", "POST", "-H", "Content-Type: application/json", "--data", "{}",
-                                                 self.origin + "/v1/chat/completions"], capture_output=True, timeout=7, env=ENV)
-                        value = result.stdout.decode().strip()
-                        valid = result.returncode == 0 and value == ("401 2" if protocol == "--http2" else "401 1.1")
-                        row = {"at": started, "completed_at": utcnow(), "protocol": protocol, "exit": result.returncode, "result": value, "ok": valid}
+                        row = self.sample(protocol)
                         file.write(canonical(row) + b"\n")
                         file.flush()
                         os.fsync(file.fileno())
                         self.count += 1
-                        self.failed = self.failed or not valid
+                        self.failed = self.failed or not row["ok"]
                     self.first.set()
                     self.stop_event.wait(1)
         except BaseException as error:
@@ -743,6 +807,10 @@ class Observer:
         self.stop_event.set()
         self.thread.join(16)
         require(not self.thread.is_alive(), "observer shutdown incomplete; coverage gap retained")
+        try:
+            require(self.read_client() == self.client, "observer client changed during rollout")
+        except (RuntimeError, ValueError, OSError, KeyError, TypeError, subprocess.TimeoutExpired) as error:
+            self.error = type(error).__name__
         self.evidence.write(self.name + "-end.json", {"at": utcnow(), "samples": self.count, "failed": self.failed, "error": self.error})
 
 
@@ -752,19 +820,37 @@ def observation_acceptance(evidence):
         windows += 1
         name = start.name.removesuffix("-start.json")
         try:
-            evidence.read(start.name)
+            beginning = evidence.read(start.name)
+            # Only the exact old shape is legacy. Removing a new version field
+            # or mixing new fields cannot downgrade a V2 receipt to old rules.
+            legacy = set(beginning) == {"at"}
+            if not legacy:
+                require(set(beginning) == {"at", "contract_version", "origin", "client"} and
+                        beginning["contract_version"] == OBSERVER_CONTRACT, "unknown observer contract")
+                qualified_observer_client(beginning["client"])
             end = evidence.read(name + "-end.json")
+            require(set(end) == {"at", "samples", "failed", "error"}, "invalid observer end")
             wire = regular(evidence.root / (name + "-samples.jsonl")).read_bytes()
             require(wire.endswith(b"\n"), "truncated sample record")
             samples = [load(line) for line in wire.splitlines()]
-            require(len(samples) == end["samples"] and len(samples) >= 2 and not end["error"], "observer sample gap")
-            for row in samples:
-                require(set(row) == {"at", "completed_at", "protocol", "exit", "result", "ok"}, "invalid sample record")
+            require(type(end["samples"]) is int and len(samples) == end["samples"] and len(samples) >= 2 and
+                    type(end["failed"]) is bool and not end["error"], "observer sample gap")
+            if not legacy:
+                require(len(samples) % 2 == 0, "incomplete protocol pair")
+            for index, row in enumerate(samples):
+                if not legacy:
+                    require(row["protocol"] == ("--http1.1", "--http2")[index % 2], "protocol coverage gap")
+                require(set(row) == (LEGACY_SAMPLE_FIELDS if legacy else OBSERVER_SAMPLE_FIELDS), "invalid sample record")
                 require(row["protocol"] in ("--http1.1", "--http2"), "unrecognized sampled protocol")
-                actual_ok = row["exit"] == 0 and row["result"] == ("401 2" if row["protocol"] == "--http2" else "401 1.1")
+                if legacy:
+                    actual_ok = row["exit"] == 0 and row["result"] == ("401 2" if row["protocol"] == "--http2" else "401 1.1")
+                else:
+                    require(row["client_digest"] == digest(canonical(beginning["client"])) and
+                            re.fullmatch(r"[0-9a-f]{64}", row["body_sha256"]), "invalid observer proof identity")
+                    actual_ok = observer_sample_ok(row)
                 require(row["ok"] is actual_ok, "sample verdict does not match the recorded response")
             failed = failed or end["failed"] or any(not row["ok"] for row in samples) or evidence.has(name + "-operation-failed.json")
-        except (RuntimeError, ValueError, OSError, KeyError):
+        except (RuntimeError, ValueError, OSError, KeyError, TypeError):
             gap = True
     if not windows:
         return "not_started"
