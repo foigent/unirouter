@@ -94,6 +94,10 @@ func (p *fakeProvider) HoldNonStreamOutput(context.Context, billing.SettleReques
 	return nil
 }
 
+func (p *fakeProvider) HoldStreamOutput(context.Context, billing.SettleRequest, int64, int) error {
+	return nil
+}
+
 func (p *fakeProvider) RecordDelivery(context.Context, billing.DeliveryEvent) error { return nil }
 
 func (p *fakeProvider) RecordResponseCacheDelivery(context.Context, billing.ResponseCacheDeliveryEvent) error {

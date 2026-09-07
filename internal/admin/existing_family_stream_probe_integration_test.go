@@ -25,6 +25,7 @@ func TestExistingFamilyDataProbeDispatchAndPersistenceIntegration(t *testing.T) 
 		{"kimi.k3.api", "1.9.0", "protocol.kimi-openai-chat.k3.v6", qualification.KimiStreamFunctionToolsProbeContractID, "https://api.moonshot.cn/v1"},
 		{"minimax.m3.payg", "1.2.0", "protocol.minimax-m3-openai-chat.v10", qualification.MiniMaxM3StreamFunctionToolsProbeContractID, "https://api.minimax.cn/v1"},
 		{"qwen.3.7-flash.api", "1.7.0", "protocol.qwen-openai-chat.flash.v7", qualification.QwenStreamFunctionToolsProbeContractID, "https://dashscope.aliyuncs.com/compatible-mode/v1"},
+		{"qwen.3.7-flash.api", "1.7.0", "protocol.qwen-openai-chat.flash.v8", qualification.QwenProviderCompletionProbeContractID, "https://dashscope.aliyuncs.com/compatible-mode/v1"},
 	} {
 		t.Run(tc.id, func(t *testing.T) {
 			pool := testutil.SetupMigratedTestDB(t)
@@ -132,7 +133,11 @@ VALUES($1,$6,$2,$3,$4,'1.0.0',$5,'1.0.0')`, modelprofile.OperationOpenAIChat, p.
 					require.Equal(t, map[string]any{"include_usage": true}, body["stream_options"])
 					contract, _ := modelprofile.ResolveChatProtocolContract(tc.protocol)
 					if p.Provider == "dashscope" {
-						require.Equal(t, float64(2048), body[contract.OutputLimitField])
+						expected := 2048
+						if tc.protocol == "protocol.qwen-openai-chat.flash.v8" {
+							expected -= 10
+						}
+						require.Equal(t, float64(expected), body[contract.OutputLimitField])
 						require.Equal(t, true, body["enable_thinking"])
 						require.Equal(t, float64(1024), body["thinking_budget"])
 					} else {

@@ -48,6 +48,7 @@ type ChatProtocolContract struct {
 	StreamingModeled                   bool
 	Streaming                          bool
 	StreamContract                     ChatStreamContract
+	OutputEnforcement                  string
 	OutputLimitModeled                 bool
 	OutputLimitField                   string
 	OutputLimitAcceptedFields          []string
@@ -1220,6 +1221,7 @@ var chatProtocolContracts = map[string]ChatProtocolContract{
 	"protocol.qwen-openai-chat.flash.v5":            qwenChatMultimodalContract("protocol.qwen-openai-chat.flash.v5", false),
 	"protocol.qwen-openai-chat.flash.v6":            qwenChatSearchContract("protocol.qwen-openai-chat.flash.v6", false),
 	"protocol.qwen-openai-chat.flash.v7":            qwenFlashStreamFunctionToolsContract("protocol.qwen-openai-chat.flash.v7"),
+	"protocol.qwen-openai-chat.flash.v8":            qwenProviderCompletionContract("protocol.qwen-openai-chat.flash.v8"),
 	"protocol.gemini-openai-chat.v1":                geminiChatBaseContract("protocol.gemini-openai-chat.v1"),
 	"protocol.gemini-openai-chat.v2":                geminiChatToolsContract("protocol.gemini-openai-chat.v2"),
 	"protocol.gemini-openai-chat.v3":                geminiChatStructuredOutputContract("protocol.gemini-openai-chat.v3"),
@@ -1447,6 +1449,14 @@ func ResolveChatProtocolContract(profileID string) (ChatProtocolContract, bool) 
 }
 
 func validateChatProtocolContractShape(contract ChatProtocolContract) error {
+	if contract.OutputEnforcement != "" {
+		if contract.OutputEnforcement != OutputEnforcementProviderCompletionV1 ||
+			!contract.OutputLimitModeled || contract.OutputLimitField != "max_completion_tokens" ||
+			len(contract.OutputLimitAcceptedFields) != 1 || contract.OutputLimitAcceptedFields[0] != "max_completion_tokens" ||
+			contract.OutputLimitMin != 11 {
+			return fmt.Errorf("unsupported output enforcement contract")
+		}
+	}
 	if contract.FunctionToolProviderDefaultChoice != "" {
 		if !contract.FunctionToolsModeled || !contract.FunctionTools {
 			return fmt.Errorf("function-tool provider default requires modeled function tools")

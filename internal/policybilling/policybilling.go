@@ -43,6 +43,7 @@ type Provider interface {
 	PrepareNonStreamDelivery(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error)
 	PrepareResponseCacheDelivery(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error)
 	HoldNonStreamOutput(ctx context.Context, req billing.SettleRequest, reason string) error
+	HoldStreamOutput(ctx context.Context, req billing.SettleRequest, deliveredBytes int64, deliveredChunks int) error
 	RecordDelivery(ctx context.Context, event billing.DeliveryEvent) error
 	RecordResponseCacheDelivery(ctx context.Context, event billing.ResponseCacheDeliveryEvent) error
 	MarkBillableOutput(ctx context.Context, requestID string, orgID int64) error
@@ -264,6 +265,10 @@ func (b *Billing) PrepareResponseCacheDelivery(ctx context.Context, req billing.
 
 func (b *Billing) HoldNonStreamOutput(ctx context.Context, req billing.SettleRequest, reason string) error {
 	return b.inner.HoldNonStreamOutput(ctx, req, reason)
+}
+
+func (b *Billing) HoldStreamOutput(ctx context.Context, req billing.SettleRequest, deliveredBytes int64, deliveredChunks int) error {
+	return b.inner.HoldStreamOutput(ctx, req, deliveredBytes, deliveredChunks)
 }
 
 func (b *Billing) RecordDelivery(ctx context.Context, event billing.DeliveryEvent) error {

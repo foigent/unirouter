@@ -767,7 +767,7 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 		}
 	case modelcapabilityqualification.MiniMaxM27StreamFunctionToolsProbeContractID, modelcapabilityqualification.GLMStreamFunctionToolsProbeContractID,
 		modelcapabilityqualification.DeepSeekStreamFunctionToolsProbeContractID, modelcapabilityqualification.KimiStreamFunctionToolsProbeContractID,
-		modelcapabilityqualification.MiniMaxM3StreamFunctionToolsProbeContractID, modelcapabilityqualification.QwenStreamFunctionToolsProbeContractID:
+		modelcapabilityqualification.MiniMaxM3StreamFunctionToolsProbeContractID, modelcapabilityqualification.QwenStreamFunctionToolsProbeContractID, modelcapabilityqualification.QwenProviderCompletionProbeContractID:
 		observation, validationErr := modelcapabilityqualification.ValidateOpenAIChatStreamFunctionToolsForBinding(modelCapabilityProbeBindingFromSnapshot(snapshot), response.Header.Get("Content-Type"), response.Body)
 		outcome.ReportedModel = observation.ReportedModel
 		outcome.FinishReason = observation.FinishReason
@@ -980,7 +980,7 @@ func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]b
 		)
 	case modelcapabilityqualification.MiniMaxM27StreamFunctionToolsProbeContractID:
 		return modelcapabilityqualification.BuildMiniMaxM27StreamFunctionToolsProbeRequest(modelCapabilityProbeBindingFromSnapshot(snapshot))
-	case modelcapabilityqualification.QwenStreamFunctionToolsProbeContractID:
+	case modelcapabilityqualification.QwenStreamFunctionToolsProbeContractID, modelcapabilityqualification.QwenProviderCompletionProbeContractID:
 		return modelcapabilityqualification.BuildQwenStreamFunctionToolsProbeRequest(modelCapabilityProbeBindingFromSnapshot(snapshot))
 	case modelcapabilityqualification.GLMStreamFunctionToolsProbeContractID:
 		return modelcapabilityqualification.BuildGLMStreamFunctionToolsProbeRequest(modelCapabilityProbeBindingFromSnapshot(snapshot))
