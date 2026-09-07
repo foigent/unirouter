@@ -140,6 +140,10 @@ function LocationProbe() {
 async function chooseWorkbenchOption(label: string, option: RegExp) {
   const user = userEvent.setup({ skipHover: true });
   const combobox = screen.getByRole('combobox', { name: label });
+  await chooseWorkbenchControl(user, combobox, option, label);
+}
+
+async function chooseWorkbenchControl(user: ReturnType<typeof userEvent.setup>, combobox: HTMLElement, option: RegExp, label = 'workbench control') {
   await user.click(combobox);
   await waitFor(() => expect(combobox).toHaveAttribute('aria-expanded', 'true'));
   const controlledID = combobox.getAttribute('aria-controls');
@@ -316,14 +320,7 @@ describe('DeveloperConsolePage', () => {
       fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
       const mode = screen.getAllByRole('combobox').find(node => node.getAttribute('style')?.includes('width: 120px'));
       expect(mode).toBeTruthy();
-      await userEvent.click(mode!);
-      await waitFor(() => expect(mode).toHaveAttribute('aria-expanded', 'true'));
-      const controlledID = mode!.getAttribute('aria-controls');
-      expect(controlledID).toBeTruthy();
-      const options = Array.from(document.querySelectorAll<HTMLElement>(`[id="${controlledID}"]`)).flatMap(list => within(list).queryAllByRole('option'));
-      const streamOption = options.find(option => option.textContent === '流式');
-      expect(streamOption).toBeTruthy();
-      await userEvent.click(streamOption!);
+      await chooseWorkbenchControl(userEvent.setup(), mode!, /^流式$/);
       await userEvent.click(screen.getByRole('button', { name: /运行$/ }));
 
       await screen.findByText('STREAM_OK');
@@ -360,17 +357,11 @@ describe('DeveloperConsolePage', () => {
       fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
       const mode = screen.getAllByRole('combobox').find(node => node.getAttribute('style')?.includes('width: 120px'));
       expect(mode).toBeTruthy();
-      await userEvent.click(mode!);
-      await waitFor(() => expect(mode).toHaveAttribute('aria-expanded', 'true'));
-      const controlledID = mode!.getAttribute('aria-controls');
-      expect(controlledID).toBeTruthy();
-      const options = Array.from(document.querySelectorAll<HTMLElement>(`[id="${controlledID}"]`)).flatMap(list => within(list).queryAllByRole('option'));
-      const streamOption = options.find(option => option.textContent === '流式');
-      expect(streamOption).toBeTruthy();
-      await userEvent.click(streamOption!);
+      await chooseWorkbenchControl(userEvent.setup(), mode!, /^流式$/);
       await userEvent.click(screen.getByRole('button', { name: /运行$/ }));
 
       expect(await screen.findByText('response_error')).toBeTruthy();
+      expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).stream).toBe(true);
       expect(screen.getByText('HTTP 200')).toBeTruthy();
       expect(screen.getByText('op-stream-limit')).toBeTruthy();
       expect(screen.getByText('billing_status：settled_partial_stream')).toBeTruthy();
