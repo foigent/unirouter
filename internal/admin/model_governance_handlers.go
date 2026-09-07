@@ -104,6 +104,14 @@ func (state modelRegistryAuditState) auditMap(id int64) map[string]interface{} {
 }
 
 func (h *Handler) ListModelExecutionProfiles(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Has("source") {
+		if r.URL.Query().Get("source") != "published" || r.URL.Query().Has("public_model_id") {
+			writeCanonicalApplicationError(w, errCanonicalApplicationInvalid)
+			return
+		}
+		h.listPublishedProfileDefinitions(w, r)
+		return
+	}
 	if r.URL.Query().Has("public_model_id") {
 		h.listProductProfileDefinitions(w, r)
 		return

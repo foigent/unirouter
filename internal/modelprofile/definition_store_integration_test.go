@@ -43,6 +43,18 @@ VALUES('fixture-import','legacy_import','000113_glm_stream_function_tools_qualif
 	resolved, err := modelprofile.ResolvePinned(ctx, pool, p.ID, p.Version, d.Digest())
 	require.NoError(t, err)
 	require.Equal(t, d.Profile(), resolved)
+	bootstrap, err := modelprofile.ResolveAuthoringBootstrap(ctx, pool, p.ID, p.Version, d.ProductLineageID())
+	require.NoError(t, err)
+	require.Equal(t, d.Profile(), bootstrap)
+	for _, address := range [][3]string{
+		{p.ID, p.Version, ""},
+		{p.ID, p.Version, "different-lineage"},
+		{p.ID, "99.0.1", d.ProductLineageID()},
+		{"missing-profile", p.Version, d.ProductLineageID()},
+	} {
+		_, err = modelprofile.ResolveAuthoringBootstrap(ctx, pool, address[0], address[1], address[2])
+		require.Error(t, err, "unpublished addresses and lineage mismatches cannot choose another revision")
+	}
 	_, ok = modelprofile.Lookup(p.ID, p.Version)
 	require.False(t, ok)
 	_, err = modelprofile.ResolvePinned(ctx, pool, p.ID, "1.9.0", d.Digest())

@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   cutoverLegacy: vi.fn(),
   rollbackLegacy: vi.fn(),
   profileList: vi.fn(),
+  publishedProfiles: vi.fn(),
   importOfficialRateCardDraft: vi.fn(),
   getRateCards: vi.fn(),
 }));
@@ -81,7 +82,7 @@ vi.mock('../../api/modelExecutionProfiles', async importOriginal => {
   const actual = await importOriginal<typeof import('../../api/modelExecutionProfiles')>();
   return {
     ...actual,
-    modelExecutionProfileApi: { list: mocks.profileList },
+    modelExecutionProfileApi: { list: mocks.profileList, published: mocks.publishedProfiles },
   };
 });
 
@@ -1201,6 +1202,57 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     expect(mocks.probe).not.toHaveBeenCalled();
     expect(mocks.authorRelease).not.toHaveBeenCalled();
     expect(await screen.findByLabelText('批量创建结果')).toHaveTextContent('已保存 #41');
+  });
+
+  it('creates a first model from a selected published Definition in the detailed form', async () => {
+    const user = userEvent.setup({ skipHover: true, delay: null });
+    const digest = 'a'.repeat(64);
+    mocks.publishedProfiles.mockResolvedValue({ contract_version: 'unirouter.model-execution-profiles.v1', page: 1, page_size: 100, total: 1,
+      data: [executionProfile({ id: 'fixture.first-data', version: '1.0.0', current: false, label: 'Published first model',
+        profile_definition_digest: digest, product_lineage_id: 'fixture/first', upstream_model_ids: ['first-model'], aliases: ['first-model'] })] });
+    mocks.create.mockResolvedValue({ application: application(), reused: {} });
+    renderPage();
+    await user.click((await screen.findByText('接入模型')).closest('button')!);
+    await user.click(await screen.findByRole('button', { name: '新建平台连接' }));
+    await screen.findByText(/deepseek\.v4-flash\.api@1\.5\.0/);
+    await chooseSelectOption('模型合同来源', '已发布模型合同', user);
+    await waitFor(() => expect(mocks.publishedProfiles).toHaveBeenCalledWith(1));
+    expect(screen.queryByText(/fixture\.first-data@1\.0\.0/)).toBeNull();
+    await chooseSelectOption('模型模板', /Published first model/, user);
+    await screen.findByText(/fixture\.first-data@1\.0\.0/);
+    await pasteValue(user, screen.getByLabelText('供应商 API Key'), 'sk-test-only');
+    await user.click(screen.getByRole('button', { name: '创建模型接入' }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    expect(mocks.create.mock.calls[0][0]).toMatchObject({ public_model: { model_name: 'first-model', execution_profile_id: 'fixture.first-data', execution_profile_version: '1.0.0' },
+      deployment: { upstream_model: 'first-model', profile_definition_digest: digest } });
+    expect(mocks.probe).not.toHaveBeenCalled(); expect(mocks.authorRelease).not.toHaveBeenCalled();
+  });
+
+  it('requires an exact published version in batch creation and retains its digest with one saved connection/key', async () => {
+    const user = userEvent.setup({ skipHover: true, delay: null });
+    const a = application(); a.connection = { ...a.connection, id: 13, name: '北京工作空间', provider: 'dashscope', adapter_type: 'openai_compatible',
+      base_url: 'https://llm-workspace.cn-beijing.maas.aliyuncs.com/compatible-mode/v1', adapter_config: { endpoint_path_mode: 'canonical_v1' } };
+    mocks.list.mockResolvedValue(projection([a]));
+    const digest = 'b'.repeat(64);
+    mocks.publishedProfiles.mockResolvedValue({ contract_version: 'unirouter.model-execution-profiles.v1', page: 1, page_size: 100, total: 1,
+      data: [executionProfile({ id: 'fixture.first-data', version: '1.0.0', current: false, label: 'Published batch model', provider: 'dashscope', region: 'cn-beijing',
+        endpoint_classes: ['dashscope_cn_beijing_workspace_payg'], profile_definition_digest: digest, product_lineage_id: 'fixture/first', upstream_model_ids: ['first-model'], aliases: ['first-model'] })] });
+    mocks.create.mockResolvedValue({ application: a, reused: {} });
+    renderPage();
+    await user.click((await screen.findByText('接入模型')).closest('button')!);
+    await user.click(await screen.findByRole('button', { name: '向已有连接添加模型' }));
+    await chooseSelectOption('批量现有连接', '北京工作空间 · dashscope · #13', user);
+    await chooseSelectOption('批量现有凭证', '凭证 #91 · active', user);
+    await chooseSelectOption('批量模型合同来源', '已发布模型合同', user);
+    const row = (await screen.findByText('Published batch model')).closest('tr')!;
+    expect(within(row).getByRole('checkbox')).toBeDisabled();
+    await chooseSelectOption('合同版本 first-model', /1\.0\.0 · bbbbbbbbbbbb/, user);
+    await user.click(within(row).getByRole('checkbox'));
+    await user.click(screen.getByRole('button', { name: '保存 1 个模型' }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    expect(mocks.create.mock.calls[0][0]).toMatchObject({ connection: { id: 13 }, credential: { binding_id: 91 },
+      public_model: { model_name: 'first-model', execution_profile_id: 'fixture.first-data' }, deployment: { upstream_model: 'first-model', profile_definition_digest: digest } });
+    expect(mocks.probe).not.toHaveBeenCalled(); expect(mocks.authorRelease).not.toHaveBeenCalled();
   });
 
   it('requires an explicit Beijing workspace Host for the recommended Qwen preset', async () => {

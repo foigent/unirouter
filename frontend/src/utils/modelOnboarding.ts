@@ -76,10 +76,15 @@ export function reviewedModelOptions(
   if (preset.adapterType !== expectedAdapter) return [];
   const expectedEndpointClass = preset.endpointClass || 'provider_https';
   const current = new Map<string, ModelExecutionProfile>();
+  const published: ModelExecutionProfile[] = [];
   const ambiguous = new Set<string>();
   for (const profile of profiles) {
     if (profile.provider !== preset.provider || profile.region !== preset.region || profile.api_surface !== preset.apiSurface ||
       !profile.endpoint_classes?.includes(expectedEndpointClass)) continue;
+    if (profile.profile_definition_digest && /^[a-f0-9]{64}$/.test(profile.profile_definition_digest) && profile.product_lineage_id) {
+      published.push(profile);
+      continue;
+    }
     if (profile.current !== true) continue;
     if (current.has(profile.id)) {
       ambiguous.add(profile.id);
@@ -88,13 +93,13 @@ export function reviewedModelOptions(
     }
     if (!ambiguous.has(profile.id)) current.set(profile.id, profile);
   }
-  return Array.from(current.values()).map(profile => {
+  return [...current.values(), ...published].map(profile => {
     const publicIDs = publicModelIDs(profile);
     const upstreamIDs = upstreamModelIDs(profile);
     const operations = operationIDs(profile);
     const recommendedPublicModelID = publicIDs[0] || '';
     return {
-      key: `${profile.id}@${profile.version}`,
+      key: `${profile.id}@${profile.version}${profile.profile_definition_digest ? `#${profile.profile_definition_digest}` : ''}`,
       profile,
       publicModelIDs: publicIDs,
       upstreamModelIDs: upstreamIDs,

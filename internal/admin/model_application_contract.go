@@ -644,9 +644,33 @@ func (h *Handler) createCanonicalModelApplicationWithReadbackAndIdempotency(
 	if err != nil {
 		return canonicalModelApplicationCreateResult{}, err
 	}
+	var firstDefinition modelprofile.Definition
+	if request.PublicModel.ID == 0 && request.Deployment.ProfileDefinitionDigest != "" {
+		firstDefinition, err = modelprofile.ReadDefinition(ctx, tx, request.Deployment.ProfileDefinitionDigest)
+		if err != nil {
+			return canonicalModelApplicationCreateResult{}, fmt.Errorf("read first model definition: %w", errCanonicalApplicationInvalid)
+		}
+		p := firstDefinition.Profile()
+		if (request.PublicModel.ExecutionProfileID != "" && request.PublicModel.ExecutionProfileID != p.ID) ||
+			(request.PublicModel.ExecutionProfileVersion != "" && request.PublicModel.ExecutionProfileVersion != p.Version) {
+			return canonicalModelApplicationCreateResult{}, errCanonicalApplicationConflict
+		}
+		request.PublicModel.ExecutionProfileID, request.PublicModel.ExecutionProfileVersion = p.ID, p.Version
+		request, err = resolveCanonicalProfileCreateLimits(request, p)
+		if err != nil {
+			return canonicalModelApplicationCreateResult{}, err
+		}
+	}
 	publicModel, publicModelReused, err := ensureCanonicalPublicModel(ctx, tx, orgID, request.PublicModel, connection.Provider)
 	if err != nil {
 		return canonicalModelApplicationCreateResult{}, err
+	}
+	if firstDefinition.Digest() != "" && !publicModelReused {
+		// The newly inserted identity and its immutable data baseline are committed
+		// atomically with Deployment and receipt; existing identities are assertions.
+		if _, err := tx.Exec(ctx, `UPDATE model_registry SET product_lineage_id=$2 WHERE id=$1 AND product_lineage_id IS NULL`, publicModel.ID, firstDefinition.ProductLineageID()); err != nil {
+			return canonicalModelApplicationCreateResult{}, err
+		}
 	}
 	if request.Deployment.ProfileDefinitionDigest != "" {
 		publicModel, err = resolveCanonicalDataDefinition(ctx, tx, publicModel, request.Deployment)
@@ -730,6 +754,43 @@ func (h *Handler) createCanonicalModelApplicationWithReadbackAndIdempotency(
 	return result, nil
 }
 
+// Shared limits owner for compiled and immutable data-first creation. The latter
+// calls this only after its exact Definition is loaded inside the create transaction.
+func resolveCanonicalProfileCreateLimits(request canonicalModelApplicationCreateRequest, profile modelprofile.Profile) (canonicalModelApplicationCreateRequest, error) {
+	defaultPublicContextLimit := modelprofile.DefaultPublicContextLimit(profile)
+	defaultPublicOutputLimit := modelprofile.DefaultPublicOutputLimit(profile)
+	if request.PublicModel.ContextLength == nil && defaultPublicContextLimit > 0 {
+		request.PublicModel.ContextLength = canonicalApplicationIntPointer(defaultPublicContextLimit)
+	}
+	if request.PublicModel.OutputLimit == nil && defaultPublicOutputLimit > 0 {
+		request.PublicModel.OutputLimit = canonicalApplicationIntPointer(defaultPublicOutputLimit)
+	}
+	if request.PublicModel.ContextLength == nil || request.PublicModel.OutputLimit == nil ||
+		modelprofile.ValidateEffectiveLimits(profile, *request.PublicModel.ContextLength, *request.PublicModel.OutputLimit) != nil {
+		return request, errCanonicalApplicationInvalid
+	}
+	if request.Deployment.MaxContext == nil {
+		request.Deployment.MaxContext = canonicalApplicationIntPointer(*request.PublicModel.ContextLength)
+	}
+	expectedRequestDefault := modelprofile.DefaultRequestOutputLimit(profile, *request.PublicModel.OutputLimit)
+	if request.Deployment.DefaultMaxOutput == nil {
+		request.Deployment.DefaultMaxOutput = canonicalApplicationIntPointer(expectedRequestDefault)
+	}
+	if *request.Deployment.MaxContext > *request.PublicModel.ContextLength ||
+		*request.Deployment.DefaultMaxOutput > *request.PublicModel.OutputLimit ||
+		// Canonical request default is model-level because one request can
+		// fan out across multiple routes. Until the planner owns a distinct
+		// per-deployment default-selection contract, this stored field is a
+		// projection/evidence value and must not advertise an inert override.
+		*request.Deployment.DefaultMaxOutput != expectedRequestDefault ||
+		modelprofile.ValidateEffectiveLimits(
+			profile, *request.Deployment.MaxContext, *request.Deployment.DefaultMaxOutput,
+		) != nil {
+		return request, errCanonicalApplicationInvalid
+	}
+	return request, nil
+}
+
 func normalizeCanonicalApplicationCreate(request canonicalModelApplicationCreateRequest) (canonicalModelApplicationCreateRequest, error) {
 	request.PublicModel.ModelName = strings.TrimSpace(request.PublicModel.ModelName)
 	request.PublicModel.DisplayName = strings.TrimSpace(request.PublicModel.DisplayName)
@@ -738,7 +799,7 @@ func normalizeCanonicalApplicationCreate(request canonicalModelApplicationCreate
 	request.PublicModel.ExecutionProfileID = strings.TrimSpace(request.PublicModel.ExecutionProfileID)
 	request.PublicModel.ExecutionProfileVersion = strings.TrimSpace(request.PublicModel.ExecutionProfileVersion)
 	request.Deployment.UpstreamModel = strings.TrimSpace(request.Deployment.UpstreamModel)
-	if request.Deployment.ProfileDefinitionDigest != "" && (request.PublicModel.ID <= 0 || !modelprofile.IsDefinitionDigest(request.Deployment.ProfileDefinitionDigest) || request.Operation.OperationID != modelprofile.OperationOpenAIChat) {
+	if request.Deployment.ProfileDefinitionDigest != "" && (!modelprofile.IsDefinitionDigest(request.Deployment.ProfileDefinitionDigest) || request.Operation.OperationID != modelprofile.OperationOpenAIChat) {
 		return request, errCanonicalApplicationInvalid
 	}
 	request.Credential.APIKey = strings.TrimSpace(request.Credential.APIKey)
@@ -756,7 +817,7 @@ func normalizeCanonicalApplicationCreate(request canonicalModelApplicationCreate
 		if request.PublicModel.Lifecycle == "" {
 			request.PublicModel.Lifecycle = "staging"
 		}
-		if request.PublicModel.ExecutionProfileID == "" && request.PublicModel.ExecutionProfileVersion == "" {
+		if request.PublicModel.ExecutionProfileID == "" && request.PublicModel.ExecutionProfileVersion == "" && request.Deployment.ProfileDefinitionDigest == "" {
 			if modelprofile.HasAmbiguousCurrentAlias(request.PublicModel.ModelName) {
 				return request, errCanonicalApplicationInvalid
 			}
@@ -785,42 +846,16 @@ func normalizeCanonicalApplicationCreate(request canonicalModelApplicationCreate
 	if (request.PublicModel.ExecutionProfileID == "") != (request.PublicModel.ExecutionProfileVersion == "") {
 		return request, errCanonicalApplicationInvalid
 	}
-	if request.PublicModel.ExecutionProfileID != "" {
+	if request.PublicModel.ExecutionProfileID != "" && request.Deployment.ProfileDefinitionDigest == "" {
 		profile, ok := modelprofile.Lookup(request.PublicModel.ExecutionProfileID, request.PublicModel.ExecutionProfileVersion)
 		if !ok {
 			return request, errCanonicalApplicationInvalid
 		}
 		if request.PublicModel.ID == 0 && profile.ID != modelprofile.UnverifiedProfileID {
-			defaultPublicContextLimit := modelprofile.DefaultPublicContextLimit(profile)
-			defaultPublicOutputLimit := modelprofile.DefaultPublicOutputLimit(profile)
-			if request.PublicModel.ContextLength == nil && defaultPublicContextLimit > 0 {
-				request.PublicModel.ContextLength = canonicalApplicationIntPointer(defaultPublicContextLimit)
-			}
-			if request.PublicModel.OutputLimit == nil && defaultPublicOutputLimit > 0 {
-				request.PublicModel.OutputLimit = canonicalApplicationIntPointer(defaultPublicOutputLimit)
-			}
-			if request.PublicModel.ContextLength == nil || request.PublicModel.OutputLimit == nil ||
-				modelprofile.ValidateEffectiveLimits(profile, *request.PublicModel.ContextLength, *request.PublicModel.OutputLimit) != nil {
-				return request, errCanonicalApplicationInvalid
-			}
-			if request.Deployment.MaxContext == nil {
-				request.Deployment.MaxContext = canonicalApplicationIntPointer(*request.PublicModel.ContextLength)
-			}
-			expectedRequestDefault := modelprofile.DefaultRequestOutputLimit(profile, *request.PublicModel.OutputLimit)
-			if request.Deployment.DefaultMaxOutput == nil {
-				request.Deployment.DefaultMaxOutput = canonicalApplicationIntPointer(expectedRequestDefault)
-			}
-			if *request.Deployment.MaxContext > *request.PublicModel.ContextLength ||
-				*request.Deployment.DefaultMaxOutput > *request.PublicModel.OutputLimit ||
-				// Canonical request default is model-level because one request can
-				// fan out across multiple routes. Until the planner owns a distinct
-				// per-deployment default-selection contract, this stored field is a
-				// projection/evidence value and must not advertise an inert override.
-				*request.Deployment.DefaultMaxOutput != expectedRequestDefault ||
-				modelprofile.ValidateEffectiveLimits(
-					profile, *request.Deployment.MaxContext, *request.Deployment.DefaultMaxOutput,
-				) != nil {
-				return request, errCanonicalApplicationInvalid
+			var err error
+			request, err = resolveCanonicalProfileCreateLimits(request, profile)
+			if err != nil {
+				return request, err
 			}
 		}
 	}

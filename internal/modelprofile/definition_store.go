@@ -2,6 +2,7 @@ package modelprofile
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -12,6 +13,36 @@ import (
 // the same snapshot. Publication is the only definition writer.
 type DefinitionReader interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
+// ResolveAuthoringBootstrap reads the immutable product baseline, never a
+// current revision. Compiled addresses retain their legacy source: attaching
+// data can assign lineage without changing that bootstrap. A later, unactivated
+// same-address Publication must not change its authoring interpretation.
+// Unknown addresses require an exact published Definition and recorded lineage.
+// This is not a runtime fallback; Release execution still uses ResolvePinned.
+func ResolveAuthoringBootstrap(ctx context.Context, q DefinitionReader, id, version, lineage string) (Profile, error) {
+	if p, ok := Lookup(id, version); ok {
+		return p, nil
+	}
+	if q == nil || lineage == "" {
+		return Profile{}, fmt.Errorf("data bootstrap requires recorded product lineage")
+	}
+	var digest string
+	if err := q.QueryRow(ctx, `SELECT definition_digest FROM model_profile_definitions WHERE profile_id=$1 AND profile_version=$2`, id, version).Scan(&digest); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Profile{}, fmt.Errorf("exact data bootstrap is unavailable: %w", err)
+		}
+		return Profile{}, fmt.Errorf("read data bootstrap address: %w", err)
+	}
+	d, err := ReadDefinition(ctx, q, digest)
+	if err != nil {
+		return Profile{}, err
+	}
+	if d.profile.ID != id || d.profile.Version != version || d.lineage != lineage {
+		return Profile{}, fmt.Errorf("data bootstrap address or lineage differs")
+	}
+	return d.Profile(), nil
 }
 
 func ReadDefinition(ctx context.Context, q DefinitionReader, digest string) (Definition, error) {

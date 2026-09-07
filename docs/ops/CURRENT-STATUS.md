@@ -1,5 +1,26 @@
 # UniRouter Current Status
 
+## Data-first model onboarding candidate — 2026-09-07
+
+Local1.2.65/M114 removes compiled Catalog membership from first PublicModel
+creation using an exact formally published Definition. Detailed and batch UI
+retain explicit revision selection and the existing connection/key/create owner.
+Attachment, catalog and Release authoring read immutable data bootstrap identity;
+compiled legacy behavior, historical receipts and sealed execution remain intact.
+See the [exact design and review](../analysis/DATA-FIRST-MODEL-ONBOARDING-20260907.md).
+
+Latest verified development/test remains1.2.64/M114, main `ce3b6f2c`.
+Qwen3.7-Flash completed two real OpenClaw HTTP200 streamed rounds, three reads and
+final stop, with one settled attempt and completed delivery per request. Answer
+quality failed independently; recommendation length passed. Its cumulative
+reservation is9/30 calls and CNY0.805295/5, not an invoice. See the
+[request evidence](evidence/QWEN37-OPENCLAW-20260907.md). Flash is compiled, so this
+does not prove genuinely new model onboarding. The uncompiled first-create
+fixture reaches qualification, sealed Release/Slot, Gateway preflight/stream and
+unique settlement locally; real same-image first-model validation is still open.
+No 1.2.65 Target, joint rollout continuity or old-writer retirement claim.
+经验文件无需变化.
+
 ## Qwen data Operation Probe correction — 2026-09-07
 
 Local1.2.64/M114 fixes the data connectivity request's missing support for the

@@ -106,14 +106,15 @@ func canonicalModelApplicationFingerprint(request canonicalModelApplicationCreat
 	// effective defaults. Optional assertions on an existing connection/model
 	// remain distinguishable because omitting an assertion is not equivalent to
 	// supplying one.
+	dataFirst := request.PublicModel.ID == 0 && request.Deployment.ProfileDefinitionDigest != ""
 	if request.PublicModel.ID == 0 {
 		if request.PublicModel.ProviderFamily == "" {
 			request.PublicModel.ProviderFamily = request.Connection.Provider
 		}
-		if request.PublicModel.ContextLength == nil {
+		if request.PublicModel.ContextLength == nil && !dataFirst {
 			request.PublicModel.ContextLength = canonicalApplicationIntPointer(0)
 		}
-		if request.PublicModel.OutputLimit == nil {
+		if request.PublicModel.OutputLimit == nil && !dataFirst {
 			request.PublicModel.OutputLimit = canonicalApplicationIntPointer(0)
 		}
 		if request.PublicModel.ApprovedCatalog == nil {
@@ -126,10 +127,10 @@ func canonicalModelApplicationFingerprint(request canonicalModelApplicationCreat
 	if request.Deployment.RoutingWeight == nil {
 		request.Deployment.RoutingWeight = canonicalApplicationIntPointer(100)
 	}
-	if request.Deployment.MaxContext == nil {
+	if request.Deployment.MaxContext == nil && !dataFirst {
 		request.Deployment.MaxContext = canonicalApplicationIntPointer(0)
 	}
-	if request.Deployment.DefaultMaxOutput == nil {
+	if request.Deployment.DefaultMaxOutput == nil && !dataFirst {
 		request.Deployment.DefaultMaxOutput = canonicalApplicationIntPointer(0)
 	}
 	if request.Deployment.DegradationThreshold == nil {

@@ -43,9 +43,40 @@ type CanonicalModelOperationID = 'openai.chat_completions.v1' | 'openai.response
 export type ModelExecutionProfileCatalog = {
   contract_version: 'unirouter.model-execution-profiles.v1';
   data: ModelExecutionProfile[];
+  page?: number;
+  page_size?: number;
+  total?: number;
 };
+
+export type ProfileCatalogSource = 'compiled' | 'published';
 
 export const modelExecutionProfileApi = {
   list: () => request<ModelExecutionProfileCatalog>('/model-execution-profiles'),
   forStableModel: (id: number) => request<ModelExecutionProfileCatalog>(`/model-execution-profiles?public_model_id=${id}`),
+  published: (page: number) => request<ModelExecutionProfileCatalog>(`/model-execution-profiles?source=published&page=${page}&page_size=100`),
 };
+
+export async function loadOnboardingProfiles(source: ProfileCatalogSource, api = modelExecutionProfileApi): Promise<ModelExecutionProfileCatalog> {
+  if (source === 'compiled') return api.list();
+  const data: ModelExecutionProfile[] = [];
+  const seen = new Set<string>();
+  let total: number | undefined;
+  for (let page = 1; ; page++) {
+    const result = await api.published(page);
+    if (result.contract_version !== 'unirouter.model-execution-profiles.v1' || result.page !== page || result.page_size !== 100 ||
+      !Number.isSafeInteger(result.total) || result.total! < 0 || (total !== undefined && total !== result.total) ||
+      !Array.isArray(result.data) || result.data.length !== Math.min(100, Math.max(0, result.total! - data.length))) {
+      throw new Error('已发布合同目录发生变化，请重新加载');
+    }
+    total = result.total!;
+    for (const profile of result.data) {
+      const digest = profile.profile_definition_digest;
+      if (!digest || !/^[a-f0-9]{64}$/.test(digest) || !profile.product_lineage_id || seen.has(digest)) {
+        throw new Error('已发布合同身份不完整，请重新加载');
+      }
+      seen.add(digest);
+      data.push(profile);
+    }
+    if (data.length === total) return { contract_version: result.contract_version, data };
+  }
+}
