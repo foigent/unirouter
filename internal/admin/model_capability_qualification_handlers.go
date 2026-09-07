@@ -181,6 +181,8 @@ type modelCapabilitySnapshot struct {
 }
 
 type modelCapabilityProbeOutcome struct {
+	DispatchState            string
+	OutcomeAmbiguous         bool
 	NormalizationDiagnostic  *modelCapabilityNormalizationDiagnostic
 	ProviderSuccess          bool
 	ContractSuccess          bool
@@ -569,7 +571,7 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 	if err != nil {
 		return modelCapabilityProbeOutcome{ReasonCode: "request_build_failed"}
 	}
-	outcome := modelCapabilityProbeOutcome{RequestSummary: requestSummary}
+	outcome := modelCapabilityProbeOutcome{RequestSummary: requestSummary, DispatchState: "not_started"}
 	secret, err := auth.DecryptKey(snapshot.EncryptedSecret, h.encKey)
 	if err != nil || strings.TrimSpace(secret) == "" {
 		outcome.ReasonCode = "credential_unavailable"
@@ -596,10 +598,15 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 		return outcome
 	}
 	started := time.Now()
+	outcome.DispatchState = "started"
 	response, err := h.canonicalOperationProbeDoer().Do(request)
+	if response != nil {
+		outcome.DispatchState = "response_received"
+	}
 	if err != nil {
 		outcome.LatencyMS = time.Since(started).Milliseconds()
 		outcome.ReasonCode = "provider_request_failed"
+		outcome.OutcomeAmbiguous = true
 		return outcome
 	}
 	if response == nil || response.Body == nil {
@@ -1116,6 +1123,20 @@ func (h *Handler) persistModelCapabilityProbe(ctx context.Context, actorID int64
 	if _, err := tx.Exec(ctx, `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`); err != nil {
 		return modelCapabilityProbeResult{}, fmt.Errorf("configure capability probe persist: %w", err)
 	}
+	result, err := h.persistModelCapabilityProbeTx(ctx, tx, actorID, snapshot, outcome, sourceRef, audit, nil, true)
+	if err != nil {
+		return modelCapabilityProbeResult{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return modelCapabilityProbeResult{}, fmt.Errorf("commit model capability probe: %w", err)
+	}
+	if result.Success && h.routingController != nil {
+		h.routingController.Invalidate()
+	}
+	return result, nil
+}
+
+func (h *Handler) persistModelCapabilityProbeTx(ctx context.Context, tx pgx.Tx, actorID int64, snapshot modelCapabilitySnapshot, outcome modelCapabilityProbeOutcome, sourceRef string, audit auditMeta, shared *sharedProbeMetadata, groupCurrent bool) (modelCapabilityProbeResult, error) {
 	rootCurrent, err := lockCanonicalOperationProbeRootCurrent(ctx, tx, snapshot.CustomerOrgID)
 	if err != nil {
 		return modelCapabilityProbeResult{}, err
@@ -1131,7 +1152,7 @@ func (h *Handler) persistModelCapabilityProbe(ctx context.Context, actorID int64
 	}
 	actorCurrent := present && active && canonicalOperationProbeActorAllowed(actor, snapshot.CustomerOrgID) && canonicalOperationProbeActorMatches(snapshot.Actor, actor)
 	inputsCurrent := currentRows && sameModelCapabilitySnapshot(snapshot, current) && validateModelCapabilitySnapshot(current) == nil
-	currentProof := rootCurrent && actorCurrent && inputsCurrent
+	currentProof := groupCurrent && rootCurrent && actorCurrent && inputsCurrent
 	success := outcome.ContractSuccess && currentProof
 	reasonCode := outcome.ReasonCode
 	if !currentProof {
@@ -1164,6 +1185,9 @@ func (h *Handler) persistModelCapabilityProbe(ctx context.Context, actorID int64
 	}
 	if outcome.NormalizationDiagnostic != nil && !outcome.ContractSuccess {
 		responseSummaryFields["normalization_diagnostic"] = outcome.NormalizationDiagnostic
+	}
+	if shared != nil {
+		responseSummaryFields["shared_observation"] = shared
 	}
 	responseSummary, _ := json.Marshal(responseSummaryFields)
 	fingerprint := modelCapabilityProbeFingerprint(snapshot, outcome, sourceRef)
@@ -1250,12 +1274,6 @@ UPDATE model_deployment_capabilities
 		},
 	}, audit); err != nil {
 		return modelCapabilityProbeResult{}, fmt.Errorf("audit model capability probe: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return modelCapabilityProbeResult{}, fmt.Errorf("commit model capability probe: %w", err)
-	}
-	if success && h.routingController != nil {
-		h.routingController.Invalidate()
 	}
 	return result, nil
 }

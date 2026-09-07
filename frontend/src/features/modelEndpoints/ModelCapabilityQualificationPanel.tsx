@@ -106,6 +106,10 @@ const capabilityPresentation: Record<QualifiedCapabilityID, {
   },
 };
 
+export function capabilityShortName(value: string): string {
+  return isQualifiedCapabilityID(value) ? capabilityPresentation[value].shortName : value;
+}
+
 export function isQualifiedCapabilityID(value: string): value is QualifiedCapabilityID {
   return Object.prototype.hasOwnProperty.call(capabilityPresentation, value);
 }

@@ -448,12 +448,12 @@ export default function ModelEndpointsPage() {
           />}
     </Surface>
 
-    <ModelReleaseWorkspace
+    <div id="model-release-workspace"><ModelReleaseWorkspace
       canManage={canManage}
       selectedReleaseRef={selectedReleaseRef || undefined}
       onSelectRelease={selectRelease}
       onCanonicalStateChanged={refreshCanonicalState}
-    />
+    /></div>
 
     <ModelEndpointDetailsSheet
       selected={entryOpen || createOpen || batchOpen ? undefined : exactDetail}
@@ -466,6 +466,7 @@ export default function ModelEndpointsPage() {
       onClose={closeDetail}
       onProbe={confirmProbe}
       onInspectRelease={inspectReleaseFromDetail}
+      onOpenReleaseWorkspace={() => { closeDetail(); document.getElementById('model-release-workspace')?.scrollIntoView({ behavior: 'smooth' }); }}
     />
     {detailLoading && deploymentID > 0 && operationID && !detail && <Text type="tertiary">正在读取精确 deployment 详情…</Text>}
     {canManage && entryOpen && <SideSheet title="接入模型" visible onCancel={() => setEntryOpen(false)} width="min(680px, 100vw)">
@@ -485,6 +486,7 @@ export default function ModelEndpointsPage() {
       initialBindingID={batchInitial.bindingID}
       onClose={() => setBatchOpen(false)}
       onChanged={load}
+      onContinue={application => { setBatchOpen(false); selectExactIdentity(application.deployment.id, application.operations[0].operation_id); }}
     />}
     {canManage && <ModelEndpointCreateSheet
       open={createOpen}

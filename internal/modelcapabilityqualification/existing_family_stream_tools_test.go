@@ -36,6 +36,27 @@ func TestExistingFamilyDataProbeCompositions(t *testing.T) {
 			require.NoError(t, err)
 			body, err := BuildOpenAIChatFunctionToolsProbeRequest(b)
 			require.NoError(t, err)
+			groupKey, e := SharedStreamProbeContract(b)
+			require.NoError(t, e)
+			require.Equal(t, b.ProbeContractID+"@"+b.ProbeContractVersion, groupKey)
+			streaming := b
+			streaming.CapabilityID = modelprofile.CapabilityStreaming
+			otherKey, e := SharedStreamProbeContract(streaming)
+			require.NoError(t, e)
+			require.Equal(t, groupKey, otherKey)
+			otherBody, e := BuildOpenAIChatFunctionToolsProbeRequest(streaming)
+			require.NoError(t, e)
+			require.Equal(t, body, otherBody)
+			if tc.id == "kimi.k3.api" {
+				effort := b
+				effort.ProbeContractVersion = KimiStreamReasoningEffortProbeVersion
+				effort.CapabilityID = modelprofile.CapabilityReasoningEffort
+				effort, e = BindDefinition(effort, d)
+				require.NoError(t, e)
+				key, e := SharedStreamProbeContract(effort)
+				require.NoError(t, e)
+				require.NotEqual(t, groupKey, key)
+			}
 			var payload map[string]interface{}
 			require.NoError(t, json.Unmarshal(body, &payload))
 			require.Equal(t, true, payload["stream"])

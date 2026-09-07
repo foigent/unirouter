@@ -1273,6 +1273,91 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
 
+  /api/v1/model-deployments/{deploymentID}/operations/{operationID}/capability-probe-plan:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, org_viewer]
+    get:
+      tags: [Admin]
+      summary: Plan exact shared capability probes
+      description: "No Provider I/O or execution writes. The server checks the current actor and binding and returns reviewed request-equivalence groups. No approval or activation. Organization viewers cannot author a probe plan."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: operationID, in: path, required: true, schema: { type: string, enum: [openai.chat_completions.v1] } }
+        - { name: credential_binding_id, in: query, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+      responses:
+        "200":
+          description: Exact scoped result.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CapabilityProbePlan" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /api/v1/model-deployments/{deploymentID}/operations/{operationID}/capability-probe-groups:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    post:
+      tags: [Admin]
+      summary: Run one reviewed shared capability observation
+      description: "Requires Gateway License. Rebuilds the plan and rejects drift before dispatch. Exactly one transport dispatch attempt for the selected group; no automatic retry. Atomically records individual facts with one physical source_ref, but does not approve or activate. Transport failures can be ambiguous; row count is not paid request count."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: operationID, in: path, required: true, schema: { type: string, enum: [openai.chat_completions.v1] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [credential_binding_id, plan_digest, capability_ids]
+              properties:
+                credential_binding_id: { type: integer, format: int64, minimum: 1 }
+                plan_digest: { type: string, pattern: '^[0-9a-f]{64}$' }
+                capability_ids: { type: array, minItems: 1, maxItems: 50, uniqueItems: true, description: "Exact sorted capability IDs from the plan.", items: { type: string, maxLength: 80 } }
+      responses:
+        "200":
+          description: Exact scoped result.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CapabilityProbeGroupResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "503":
+          description: "Unconfirmed persistence after a physical observation was created. error.code is capability_probe_group_unconfirmed; error.source_ref and error.dispatch_state allow exact readback, never automatic resend."
+
+  /api/v1/model-deployments/{deploymentID}/operations/{operationID}/capability-probe-groups/{sourceRef}:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, org_viewer]
+    get:
+      tags: [Admin]
+      summary: Read one complete shared observation
+      description: "License-independent read by exact org/deployment/operation/source_ref. Verifies the complete immutable group and returns current qualifications separately. Never substitutes a latest success and never dispatches. Absent rows do not prove that no Provider request occurred."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: operationID, in: path, required: true, schema: { type: string, enum: [openai.chat_completions.v1] } }
+        - { name: sourceRef, in: path, required: true, schema: { type: string, pattern: '^op_[0-9a-f]{32}$' } }
+      responses:
+        "200":
+          description: Exact scoped result.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CapabilityProbeGroupReadback" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
   /api/v1/model-deployments/{deploymentID}/operations/{operationID}/capabilities/{capabilityID}:
     x-unirouter-rbac:
       get: [platform_admin, org_admin, org_viewer]
@@ -4719,6 +4804,60 @@ components:
             $ref: "#/components/schemas/CompletedExecutionFeedError"
 
   schemas:
+    CapabilityProbeGroup:
+      type: object
+      required: [plan_digest, request_digest, capability_ids, probe_contract, planned_provider_requests]
+      properties:
+        plan_digest: { type: string, pattern: '^[0-9a-f]{64}$' }
+        request_digest: { type: string, pattern: '^[0-9a-f]{64}$' }
+        capability_ids: { type: array, items: { type: string } }
+        probe_contract: { type: string }
+        planned_provider_requests: { type: integer, enum: [1] }
+    CapabilityProbePlan:
+      type: object
+      required: [deployment_id, operation_id, credential_binding_id, groups, separate_capabilities]
+      properties:
+        deployment_id: { type: integer, format: int64 }
+        operation_id: { type: string }
+        credential_binding_id: { type: integer, format: int64 }
+        groups: { type: array, items: { $ref: '#/components/schemas/CapabilityProbeGroup' } }
+        separate_capabilities: { type: array, items: { type: string } }
+    SharedCapabilityObservation:
+      type: object
+      required: [version, source_ref, plan_digest, request_digest, capability_ids, anchor_capability_id, dispatch_state, outcome_ambiguous]
+      properties:
+        version: { type: string, enum: [unirouter.shared-capability-observation.v1] }
+        source_ref: { type: string, pattern: '^op_[0-9a-f]{32}$' }
+        plan_digest: { type: string, pattern: '^[0-9a-f]{64}$' }
+        request_digest: { type: string, pattern: '^[0-9a-f]{64}$' }
+        capability_ids: { type: array, items: { type: string } }
+        anchor_capability_id: { type: string }
+        dispatch_state: { type: string, enum: [not_started, started, response_received] }
+        outcome_ambiguous: { type: boolean }
+    CapabilityProbeGroupResult:
+      type: object
+      required: [observation, results]
+      properties:
+        observation: { $ref: '#/components/schemas/SharedCapabilityObservation' }
+        results: { type: array, items: { $ref: '#/components/schemas/ModelCapabilityProbeResult' } }
+    CapabilityProbeGroupReadback:
+      type: object
+      required: [observation, facts, response_summary, current_qualifications]
+      properties:
+        observation: { $ref: '#/components/schemas/SharedCapabilityObservation' }
+        facts:
+          type: array
+          items:
+            type: object
+            required: [capability_probe_id, capability_id, success_at_observation, status_code]
+            properties:
+              capability_probe_id: { type: integer, format: int64 }
+              capability_id: { type: string }
+              success_at_observation: { type: boolean }
+              status_code: { type: integer }
+              error_summary: { type: string }
+        response_summary: { type: object, description: One physical response summary. Shared usage must not be summed per capability. }
+        current_qualifications: { type: array, items: { $ref: '#/components/schemas/ModelCapabilityQualification' } }
     ModelDeploymentReleaseBaseline:
       type: object
       additionalProperties: false
