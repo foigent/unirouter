@@ -1,12 +1,34 @@
 package modelprofile
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestCompiledBootstrapStaysUsableWithoutDefinitionStorage(t *testing.T) {
+	p, ok := Lookup("glm.5.3.api", "1.9.0")
+	require.True(t, ok)
+	for _, lineage := range []string{"", "attached-candidate-lineage"} {
+		resolved, err := ResolveAuthoringBootstrap(context.Background(), nil, p.ID, p.Version, lineage)
+		require.NoError(t, err, "compiled M113 bootstrap must not query M114 storage")
+		require.Equal(t, p, resolved)
+	}
+	_, err := ResolveAuthoringBootstrap(context.Background(), nil, "uncompiled", "1.0.0", "lineage")
+	require.Error(t, err)
+	// The same address may later be present in both carriers, but its data
+	// bytes cannot reinterpret the implementation's compiled contract.
+	d, err := NewDefinition(p, "same-address-lineage", "")
+	require.NoError(t, err)
+	_, err = VerifyDefinition(d.CanonicalBytes(), d.Digest())
+	require.NoError(t, err)
+	p.DefaultOutputLimit--
+	_, err = NewDefinition(p, "same-address-lineage", "")
+	require.ErrorContains(t, err, "reinterprets a compiled Profile address")
+}
 
 func TestDataDefinitionPreservesExistingSeriesAndDoesNotPublishItself(t *testing.T) {
 	ids := []string{"deepseek.v4-flash.api", "deepseek.v4-pro.api", "kimi.k2.6.api", "kimi.k2.7-code.api", "kimi.k3.api",

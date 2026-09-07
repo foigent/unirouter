@@ -8,7 +8,7 @@ import {
   type CanonicalOperationID,
 } from '../../api/modelDeployments';
 import { enterpriseFinanceApi, type RateCardRecord } from '../../api/enterpriseFinance';
-import { modelExecutionProfileApi, type ModelExecutionProfile } from '../../api/modelExecutionProfiles';
+import { loadOnboardingProfiles, modelExecutionProfileApi, type ProfileCatalogSource, type ModelExecutionProfile } from '../../api/modelExecutionProfiles';
 import { useAuthStore } from '../../store/auth';
 import { modelBatchRetryWindowMS } from '../../utils/modelOnboardingBatch';
 import { ApiError } from '../../api/transport';
@@ -405,6 +405,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
   const [operationID, setOperationID] = useState<CanonicalOperationID>('openai.chat_completions.v1');
   const [newConnectionBaseURL, setNewConnectionBaseURL] = useState('');
   const [selectedConnectionID, setSelectedConnectionID] = useState(0);
+  const [catalogSource, setCatalogSource] = useState<ProfileCatalogSource>('compiled');
   const [executionProfiles, setExecutionProfiles] = useState<ModelExecutionProfile[]>([]);
   const [executionProfilesLoading, setExecutionProfilesLoading] = useState(false);
   const [executionProfilesError, setExecutionProfilesError] = useState('');
@@ -452,10 +453,10 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     let current = true;
     setExecutionProfilesLoading(true);
     setExecutionProfilesError('');
-    void modelExecutionProfileApi.list().then(response => {
+    void loadOnboardingProfiles(catalogSource, modelExecutionProfileApi).then(response => {
       if (!current) return;
       const profiles = Array.isArray(response?.data) ? response.data : [];
-      if (profiles.length === 0) throw new Error('empty execution profile catalog');
+      if (profiles.length === 0 && catalogSource === 'compiled') throw new Error('empty execution profile catalog');
       setExecutionProfiles(profiles);
     }).catch(() => {
       if (!current) return;
@@ -465,7 +466,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
       if (current) setExecutionProfilesLoading(false);
     });
     return () => { current = false; };
-  }, [open]);
+  }, [open, catalogSource]);
 
   useEffect(() => {
     if (!open) return;
@@ -484,7 +485,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
   }, [open]);
 
   useEffect(() => {
-    if (!open || !formApi || executionProfilesLoading || reviewedModels.length === 0) return;
+    if (!open || !formApi || catalogSource === 'published' || executionProfilesLoading || reviewedModels.length === 0) return;
     if (selectedExecutionProfileKey && reviewedModels.some(option => option.key === selectedExecutionProfileKey)) return;
     const option = reviewedModels[0];
     const preset = providerPreset(selectedPreset);
@@ -523,7 +524,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
       operation_id: operation,
       pricing_draft_enabled: pricingDraftEnabledByDefault(pricingDraft),
     });
-  }, [connectionMode, executionProfilesLoading, formApi, open, reviewedModels, selectedExecutionProfileKey, selectedPreset]);
+  }, [catalogSource, connectionMode, executionProfilesLoading, formApi, open, reviewedModels, selectedExecutionProfileKey, selectedPreset]);
 
   const adapterOperations = (operationOptionsByAdapter[adapterType] || [])
     .filter(option => !activeReviewedModel || activeReviewedModel.operationIDs.includes(option.value));
@@ -693,8 +694,12 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     const credential = credentialMode === 'existing'
       ? { binding_id: Number(values.binding_id) }
       : { api_key: String(values.api_key || '').trim() };
-    const definitionDigest = publicModelMode === 'existing' ? String(values.profile_definition_digest || '') : '';
-    if (definitionDigest && !dataProfiles.some(profile => profile.profile_definition_digest === definitionDigest)) {
+    if (publicModelMode === 'new' && catalogSource === 'published' && (!activeReviewedModel || executionProfilesLoading || executionProfilesError)) {
+      Toast.error('请从已加载的正式合同中选择精确版本');
+      return;
+    }
+    const definitionDigest = publicModelMode === 'existing' ? String(values.profile_definition_digest || '') : activeReviewedModel?.profile.profile_definition_digest || '';
+    if (publicModelMode === 'existing' && definitionDigest && !dataProfiles.some(profile => profile.profile_definition_digest === definitionDigest)) {
       Toast.error('执行合同不属于当前公共模型，请重新选择');
       return;
     }
@@ -899,6 +904,12 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
         {adapterType === 'azure_openai' && <Form.Input field="azure_api_version" label="Azure API Version" placeholder="2024-10-21" rules={[{ required: true, message: '必填' }]} />}
       </>}
 
+      {publicModelMode === 'new' && <Form.Select
+        field="profile_catalog_source" label="模型合同来源" initValue="compiled"
+        optionList={[{ value: 'compiled', label: '内置模型合同' }, { value: 'published', label: '已发布模型合同' }]}
+        onChange={value => { clearReviewedModelDraft(); setExecutionProfiles([]); setCatalogSource(value as ProfileCatalogSource); }}
+        extraText="已发布合同可以创建新模型；验证与发布到运行时仍单独进行。"
+      />}
       {executionProfilesLoading && <Banner
         type="info"
         closeIcon={null}
@@ -918,7 +929,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
           aria-labelledby="reviewed-model-template-label"
           optionList={reviewedModels.map(option => ({
             value: option.key,
-            label: `${option.profile.label} · v${option.profile.version}`,
+            label: `${option.profile.label} · v${option.profile.version}${option.profile.profile_definition_digest ? ` · ${option.profile.profile_definition_digest.slice(0, 12)}` : ''}`,
           }))}
           rules={[{ required: true, message: '请选择模型模板' }]}
           onChange={selectReviewedModel}

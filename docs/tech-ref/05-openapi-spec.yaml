@@ -1057,7 +1057,7 @@ paths:
                   required: [upstream_model]
                   properties:
                     upstream_model: { type: string, maxLength: 200 }
-                    profile_definition_digest: { type: string, pattern: '^[a-f0-9]{64}$', description: "Published immutable revision for an existing stable model. Requires explicit positive limits; creates a separate candidate Deployment and does not activate it." }
+                    profile_definition_digest: { type: string, pattern: '^[a-f0-9]{64}$', description: "Exact formally published Definition. With public_model.id absent/zero, it supplies the first model Profile and omitted limits; explicit Profile fields assert that address. Existing model IDs retain product-lineage checks and require explicit positive deployment limits. Creates a candidate Deployment only, without Probe, Approval, Release or activation." }
                     priority: { type: integer, minimum: 1, maximum: 10000, default: 100 }
                     routing_weight: { type: integer, minimum: 1, maximum: 1000, default: 100 }
                     max_context: { type: integer, minimum: 0, default: 0, description: "Deployment context execution limit. The ordinary create UI requires a positive value; API zero records non-authorable staging state." }
@@ -2742,8 +2742,10 @@ paths:
     x-unirouter-rbac:
       get: [platform_admin, org_admin, org_viewer]
     description: |
-      Returns immutable execution Profile data. Without public_model_id, returns the
-      compiled bootstrap catalog. With public_model_id, returns published data revisions
+      Returns immutable execution Profile data. Without query selectors, returns the
+      compiled bootstrap catalog. source=published returns paginated formally published
+      Definitions for first-model authoring; it is exclusive with public_model_id.
+      With public_model_id, returns published data revisions
       for that customer-owned stable product. provider_capabilities are upstream claims;
       capabilities describe the static contract and do not prove live qualification.
       Customer context_length and output_limit remain explicit policy and may only narrow
@@ -2758,6 +2760,26 @@ paths:
           required: false
           schema: { type: integer, format: int64, minimum: 1 }
           description: Exact customer-owned stable product whose published data revisions are requested.
+        - in: query
+          name: source
+          schema: { type: string, enum: [published] }
+          description: Read published candidate Definitions; never selects or activates a current revision.
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, maximum: 1000000, default: 1 }
+          description: Applies only to source=published.
+        - in: query
+          name: page_size
+          schema: { type: integer, minimum: 1, maximum: 200, default: 100 }
+          description: Applies only to source=published.
+        - in: query
+          name: provider
+          schema: { type: string, maxLength: 50 }
+          description: Exact Definition provider filter for source=published.
+        - in: query
+          name: upstream_model
+          schema: { type: string, maxLength: 200 }
+          description: Exact declared upstream ID filter for source=published.
       responses:
         "200":
           description: Immutable execution profile catalog.
@@ -7082,6 +7104,9 @@ components:
       properties:
         contract_version: { type: string, enum: [unirouter.model-execution-profiles.v1] }
         data: { type: array, items: { $ref: "#/components/schemas/ModelExecutionProfile" } }
+        page: { type: integer, minimum: 1, description: Present for source=published. }
+        page_size: { type: integer, minimum: 1, maximum: 200, description: Present for source=published. }
+        total: { type: integer, minimum: 0, description: Matching immutable rows in this read snapshot; clients must reject changing totals or duplicate identities across pages. }
     ModelPriceMutation:
       type: object
       properties:

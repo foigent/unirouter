@@ -4,6 +4,19 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.65] - 2026-09-07
+
+### Added
+
+- Create a previously uncompiled PublicModel from an exact formally published
+  Profile Definition through the existing transactional onboarding owner. Reuse
+  a connection and key, choose an explicit contract revision in detailed or batch
+  onboarding, and retain independent qualification, Release and activation steps.
+- Read immutable data bootstrap identities throughout candidate attachment,
+  contract browsing and Release authoring. Compiled bootstrap and historical
+  idempotency behavior remain stable; missing or mismatched definitions fail
+  closed. No new Catalog entry, schema migration or provider parser is required.
+
 ## [1.2.64] - 2026-09-07
 
 ### Fixed

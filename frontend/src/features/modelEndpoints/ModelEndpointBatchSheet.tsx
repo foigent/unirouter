@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Banner, Button, Input, Select, SideSheet, Space, Table, Typography } from '@douyinfe/semi-ui';
 import { modelDeploymentApi, type CanonicalModelApplication, type CanonicalModelApplicationCreateRequest, type ModelDiscoveryResult } from '../../api/modelDeployments';
-import { modelExecutionProfileApi, type ModelExecutionProfile } from '../../api/modelExecutionProfiles';
+import { loadOnboardingProfiles, modelExecutionProfileApi, type ProfileCatalogSource, type ModelExecutionProfile } from '../../api/modelExecutionProfiles';
 import { useAuthStore } from '../../store/auth';
 import { providerPresets, providerPresetAdapterConfigMatches } from '../../utils/providerEndpoints';
 import { reviewedModelOnboardingLimits, reviewedModelOptions, type ReviewedModelOnboardingOption } from '../../utils/modelOnboarding';
@@ -18,6 +18,7 @@ type Row = {
   id: string;
   name: string;
   option?: ReviewedModelOnboardingOption;
+  choices: ReviewedModelOnboardingOption[];
   configured: boolean;
 };
 function actorIdentity() {
@@ -27,6 +28,9 @@ function actorIdentity() {
 export default function ModelEndpointBatchSheet({ applications, initialConnectionID = 0, initialBindingID = 0, onClose, onChanged }: Props) {
   const user = useAuthStore(s => s.user);
   const [connectionID, setConnectionID] = useState(initialConnectionID), [bindingID, setBindingID] = useState(initialBindingID);
+  const [catalogSource, setCatalogSource] = useState<ProfileCatalogSource>('compiled');
+  const [profileChoices, setProfileChoices] = useState<Record<string, string>>({});
+  const [catalogLoading, setCatalogLoading] = useState(true);
   const [profiles, setProfiles] = useState<ModelExecutionProfile[]>([]);
   const [discovery, setDiscovery] = useState<ModelDiscoveryResult | null>(null);
   const discoveryQuery = useRef('');
@@ -38,12 +42,17 @@ export default function ModelEndpointBatchSheet({ applications, initialConnectio
   const generation = useRef(0), batch = useRef<ModelBatch | null>(null), inFlight = useRef(false), mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
-    void modelExecutionProfileApi.list().then(r => { if (mounted.current)
-      setProfiles(Array.isArray(r.data) ? r.data : []); })
-      .catch(() => { if (mounted.current)
-      setError('模型合同目录读取失败，请关闭后重试。'); });
     return () => { mounted.current = false; generation.current++; batch.current = null; };
   }, []);
+  useEffect(() => {
+    let current = true;
+    setProfiles([]); setCatalogLoading(true);
+    void loadOnboardingProfiles(catalogSource, modelExecutionProfileApi).then(r => {
+      if (current) setProfiles(r.data);
+    }).catch(() => { if (current) setError('模型合同目录读取失败，请重新选择来源或关闭后重试。'); })
+      .finally(() => { if (current) setCatalogLoading(false); });
+    return () => { current = false; };
+  }, [catalogSource, user]);
   useEffect(() => {
     const actor = actorIdentity();
     if (actor === lastActor.current)
@@ -65,10 +74,14 @@ export default function ModelEndpointBatchSheet({ applications, initialConnectio
     && p.apiSurface === 'openai_chat_completions' && !providerPresetBaseURLError(p.value, 'openai.chat_completions.v1', connection?.base_url));
   const options = preset ? reviewedModelOptions(profiles, preset) : [];
   const configured = (id: string) => applications.some(a => a.connection.id === connectionID && a.deployment.upstream_model === id && !a.deployment.retired_at && a.operations.some(o => o.operation_id === 'openai.chat_completions.v1'));
-  const rows: Row[] = discovery ? discovery.models.map(m => {
-    const matches = options.filter(o => o.upstreamModelIDs.includes(m.id));
-    return { id: m.id, name: m.name || m.id, option: matches.length === 1 ? matches[0] : undefined, configured: configured(m.id) };
-  }) : options.map(o => ({ id: o.recommendedUpstreamModelID, name: o.profile.label, option: o, configured: configured(o.recommendedUpstreamModelID) }));
+  const available = discovery ? discovery.models.map(m => ({ id: m.id, name: m.name || m.id }))
+    : Array.from(new Map(options.map(o => [o.recommendedUpstreamModelID, { id: o.recommendedUpstreamModelID, name: o.profile.label }])).values());
+  const rows: Row[] = available.map(m => {
+    const choices = options.filter(o => o.upstreamModelIDs.includes(m.id));
+    const option = profileChoices[m.id] ? choices.find(o => o.key === profileChoices[m.id])
+      : catalogSource === 'compiled' && choices.length === 1 ? choices[0] : undefined;
+    return { ...m, choices, option, configured: configured(m.id) };
+  });
   const search = query.trim().toLocaleLowerCase();
   const visibleRows = discovery || !search ? rows : rows.filter(r => `${r.id} ${r.name}`.toLocaleLowerCase().includes(search));
   const previewErrors = new Map<string, string>();
@@ -95,7 +108,7 @@ export default function ModelEndpointBatchSheet({ applications, initialConnectio
     newNames.set(name, id);
   }
   const canDiscover = preset?.endpointClass === 'dashscope_cn_beijing_workspace_payg' && !!anchor && binding?.eligible;
-  const locked = busy || !!batch.current;
+  const locked = busy || catalogLoading || !!batch.current;
   const discover = async (page: number) => {
     if (!canDiscover || !connection || !binding || !anchor || inFlight.current)
       return;
@@ -141,7 +154,7 @@ export default function ModelEndpointBatchSheet({ applications, initialConnectio
           const payload: CanonicalModelApplicationCreateRequest = {
             connection: { id: connection.id }, credential: { binding_id: binding.id },
             public_model: publicModelID ? { id: publicModelID } : { model_name: name, display_name: row.name, provider_family: o.profile.provider, lifecycle: 'staging', execution_profile_id: o.profile.id, execution_profile_version: o.profile.version, context_length: limits.publicContextLength, output_limit: limits.publicOutputLimit },
-            deployment: { upstream_model: id, priority: 100, routing_weight: 100, max_context: limits.deploymentMaxContext, default_max_output: limits.deploymentDefaultMaxOutput },
+            deployment: { ...(o.profile.profile_definition_digest ? { profile_definition_digest: o.profile.profile_definition_digest } : {}), upstream_model: id, priority: 100, routing_weight: 100, max_context: limits.deploymentMaxContext, default_max_output: limits.deploymentDefaultMaxOutput },
             operation: { operation_id: 'openai.chat_completions.v1' },
           };
           return { model: id, payload };
@@ -169,6 +182,10 @@ export default function ModelEndpointBatchSheet({ applications, initialConnectio
   const compatibleModels = (r: Row) => Array.from(new Map(applications.filter(a => a.public_model.lifecycle !== 'retired' && a.public_model.execution_profile_id === r.option?.profile.id && a.public_model.execution_profile_version === r.option?.profile.version).map(a => [a.public_model.id, a.public_model])).values());
   return <SideSheet title="批量添加模型" visible onCancel={close} width="min(920px, 100vw)">
   <Banner type="info" closeIcon={null} description="选择已保存的连接和凭证，一次勾选多个模型。创建仅保存配置；验证与发布分别进行。首次创建后的连接已保存，可继续添加模型；关闭后可进入模型详情完成验证和发布。"/>
+  <span id="batch-profile-source-label">批量模型合同来源</span>
+  <Select aria-labelledby="batch-profile-source-label" value={catalogSource} disabled={busy || !!batch.current}
+    optionList={[{ value: 'compiled', label: '内置模型合同' }, { value: 'published', label: '已发布模型合同' }]}
+    onChange={value => { setCatalogSource(value as ProfileCatalogSource); setSelected([]); setProfileChoices({}); setError(''); }} />
   <Space vertical align="start" style={{ width: '100%', margin: '16px 0' }}>
       <span id="batch-connection-label">批量现有连接</span>
       <Select aria-labelledby="batch-connection-label" filter placeholder="选择平台连接 / 业务空间" disabled={locked} value={connectionID || undefined} style={{ width: 550 }} optionList={connections.map(c => ({ value: c.id, label: `${c.name} · ${c.provider} · #${c.id}`, disabled: c.admin_state !== 'enabled' }))} onChange={v => { generation.current++; setConnectionID(Number(v)); setBindingID(0); setDiscovery(null); setSelected([]); setError(''); }}/>
@@ -181,7 +198,8 @@ export default function ModelEndpointBatchSheet({ applications, initialConnectio
   {error && <Banner type="warning" closeIcon={null} description={error}/>}
   <Table rowKey="id" dataSource={visibleRows} pagination={false} rowSelection={{ selectedRowKeys: selected, onChange: keys => setSelected((keys || []).map(String)), getCheckboxProps: (row: Row) => ({ disabled: locked || !row.option || row.configured }) }} columns={[
       { title: '模型', dataIndex: 'name', render: (_: unknown, r: Row) => <><strong>{r.name}</strong><br /><Typography.Text type="tertiary">{r.id}</Typography.Text></> },
-      { title: '接入状态', render: (_: unknown, r: Row) => r.configured ? '已配置' : previewErrors.get(r.id) || (r.option ? '合同已建模 · 待验证' : '待支持 · 不可直接配置') },
+      { title: '合同版本', render: (_: unknown, r: Row) => r.choices.length ? <><span id={`profile-version-${encodeURIComponent(r.id)}`} hidden>合同版本 {r.id}</span><Select aria-labelledby={`profile-version-${encodeURIComponent(r.id)}`} disabled={locked || r.configured} value={r.option?.key} placeholder="选择精确合同版本" optionList={r.choices.map(o => ({ value: o.key, label: `${o.profile.version}${o.profile.profile_definition_digest ? ` · ${o.profile.profile_definition_digest.slice(0, 12)}` : ''}` }))} onChange={value => { setProfileChoices(old => ({ ...old, [r.id]: String(value) })); setSelected(old => old.filter(id => id !== r.id)); setModelIDs(old => ({ ...old, [r.id]: 0 })); }} /></> : '—' },
+      { title: '接入状态', render: (_: unknown, r: Row) => r.configured ? '已配置' : previewErrors.get(r.id) || (r.option ? '合同已建模 · 待验证' : r.choices.length ? '请选择合同版本' : '待支持 · 不可直接配置') },
       { title: '公共模型', render: (_: unknown, r: Row) => r.option && !r.configured && selected.includes(r.id) ? <Space vertical align="start">
     <span id={`batch-public-${r.id}`}>公共模型选择 {r.id}</span>
     <Select aria-labelledby={`batch-public-${r.id}`} value={modelIDs[r.id] || 0} disabled={locked} style={{ width: 250 }} optionList={[{ value: 0, label: '新建稳定模型名' }, ...compatibleModels(r).map(m => ({ value: m.id, label: `${m.model_name} · #${m.id}` }))]} onChange={v => setModelIDs(old => ({ ...old, [r.id]: Number(v) }))}/>
@@ -194,6 +212,6 @@ export default function ModelEndpointBatchSheet({ applications, initialConnectio
       已选 {selected.length} 个模型：复用 {selected.filter(id => !!modelIDs[id]).length} 个公共模型，新建 {selected.filter(id => !modelIDs[id]).length} 个名称。
       {previewErrors.size > 0 ? ` ${previewErrors.size} 项需处理。` : ' 仅保存配置，不会调用模型或切换流量。'}
   </Typography.Paragraph>}
-  <Space style={{ marginTop: 20 }}><Button type="primary" loading={busy} disabled={!binding?.eligible || selected.length === 0 || (!batch.current && previewErrors.size > 0) || batch.current?.items.every(i => i.state === 'succeeded')} onClick={() => void submit()}>{batch.current ? '重试未确认项并继续' : `保存 ${selected.length} 个模型`}</Button><Button disabled={busy} onClick={close}>关闭</Button></Space>
+  <Space style={{ marginTop: 20 }}><Button type="primary" loading={busy} disabled={catalogLoading || !binding?.eligible || selected.length === 0 || (!batch.current && previewErrors.size > 0) || batch.current?.items.every(i => i.state === 'succeeded')} onClick={() => void submit()}>{batch.current ? '重试未确认项并继续' : `保存 ${selected.length} 个模型`}</Button><Button disabled={busy} onClick={close}>关闭</Button></Space>
   </SideSheet>;
 }

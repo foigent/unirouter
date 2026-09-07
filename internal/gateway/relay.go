@@ -158,6 +158,13 @@ func (relay *Relay) SetGuardrail(service *guardrail.Service) {
 	}
 }
 
+// SetProviderHTTPDoer configures the transport before the Relay starts serving.
+// It lets integration callers exercise real admission/dispatch/settlement with
+// an isolated upstream fixture. It does not bypass any execution authority.
+func (relay *Relay) SetProviderHTTPDoer(doer adapters.HTTPDoer) {
+	relay.providerHTTPDoer = doer
+}
+
 func (relay *Relay) currentPayloadBudget() *payloadpolicy.Budget {
 	if relay == nil || relay.payloadBudget == nil {
 		return payloadpolicy.MustNewBudget(payloadpolicy.DefaultLimits())

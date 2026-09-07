@@ -26,6 +26,14 @@ import (
 )
 
 func TestDataCandidateUsesSameStableProductAndConnectionWithoutMutatingLegacyIntegration(t *testing.T) {
+	testDataDefinitionOnboarding(t, false)
+}
+
+func TestUncompiledDataFirstModelCreationThroughQualificationAndReleaseIntegration(t *testing.T) {
+	testDataDefinitionOnboarding(t, true)
+}
+
+func testDataDefinitionOnboarding(t *testing.T, dataFirst bool) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := t.Context()
 	var org, actor int64
@@ -43,6 +51,11 @@ func TestDataCandidateUsesSameStableProductAndConnectionWithoutMutatingLegacyInt
 	p, ok := modelprofile.Lookup("glm.5.3.api", "1.9.0")
 	require.True(t, ok)
 	p.Version = "99.0.0"
+	if dataFirst {
+		p.ID = "fixture.uncompiled.first-chat"
+	}
+	_, compiled := modelprofile.Lookup(p.ID, p.Version)
+	require.False(t, compiled)
 	d, err := modelprofile.NewDefinition(p, "glm/glm-5.3", "")
 	require.NoError(t, err)
 	// Isolated immutable storage fixture, never a Target publication receipt.
@@ -59,11 +72,11 @@ VALUES('candidate-fixture','legacy_import','000113_glm_stream_function_tools_qua
 	_, err = tx.Exec(ctx, `INSERT INTO model_profile_definitions(definition_digest,profile_id,profile_version,product_lineage_id,schema_version,canonical_bytes,publication_id) VALUES($1,$2,$3,$4,$5,$6,'candidate-fixture')`, d.Digest(), p.ID, p.Version, d.ProductLineageID(), modelprofile.DefinitionSchemaV1, d.CanonicalBytes())
 	require.NoError(t, err)
 	_, err = tx.Exec(ctx, `INSERT INTO model_capability_probe_contract_bindings(operation_id,capability_id,execution_profile_id,execution_profile_version,protocol_profile_id,protocol_profile_version,probe_contract_id,probe_contract_version,expected_provider,expected_upstream_model,public_path,introduced_publication_id,profile_definition_digest)
-SELECT operation_id,capability_id,execution_profile_id,$1,protocol_profile_id,protocol_profile_version,probe_contract_id,probe_contract_version,expected_provider,expected_upstream_model,public_path,'candidate-fixture',$2
-FROM model_capability_probe_contract_bindings WHERE execution_profile_id=$3 AND execution_profile_version='1.9.0'`, p.Version, d.Digest(), p.ID)
+SELECT operation_id,capability_id,$3,$1,protocol_profile_id,protocol_profile_version,probe_contract_id,probe_contract_version,expected_provider,expected_upstream_model,public_path,'candidate-fixture',$2
+FROM model_capability_probe_contract_bindings WHERE execution_profile_id='glm.5.3.api' AND execution_profile_version='1.9.0'`, p.Version, d.Digest(), p.ID)
 	require.NoError(t, err)
 	_, err = tx.Exec(ctx, `INSERT INTO model_capability_current_probe_contracts(operation_id,capability_id,execution_profile_id,execution_profile_version,protocol_profile_id,protocol_profile_version,probe_contract_id,probe_contract_version)
-SELECT operation_id,capability_id,execution_profile_id,$1,protocol_profile_id,protocol_profile_version,probe_contract_id,probe_contract_version FROM model_capability_current_probe_contracts WHERE execution_profile_id=$2 AND execution_profile_version='1.9.0'`, p.Version, p.ID)
+SELECT operation_id,capability_id,$2,$1,protocol_profile_id,protocol_profile_version,probe_contract_id,probe_contract_version FROM model_capability_current_probe_contracts WHERE execution_profile_id='glm.5.3.api' AND execution_profile_version='1.9.0'`, p.Version, p.ID)
 	require.NoError(t, err)
 	require.NoError(t, tx.Commit(ctx))
 	request.Connection = canonicalConnectionInput{ID: legacy.Application.Connection.ID}
@@ -72,11 +85,21 @@ SELECT operation_id,capability_id,execution_profile_id,$1,protocol_profile_id,pr
 	request.Deployment.ProfileDefinitionDigest = d.Digest()
 	request.Deployment.MaxContext = canonicalTestPtr(128000)
 	request.Deployment.DefaultMaxOutput = canonicalTestPtr(4096)
+	if dataFirst {
+		request.PublicModel = canonicalPublicModelInput{ModelName: "first-uncompiled-model"}
+		request.Deployment.MaxContext, request.Deployment.DefaultMaxOutput = nil, nil
+	}
 	candidate := createCanonicalApplicationForTest(t, h, actorRequest, request, http.StatusCreated)
 	require.NotEqual(t, legacy.Application.Deployment.ID, candidate.Application.Deployment.ID)
 	require.Equal(t, legacy.Application.Connection.ID, candidate.Application.Connection.ID)
-	require.Equal(t, legacy.Application.PublicModel.ID, candidate.Application.PublicModel.ID)
-	require.Equal(t, "1.9.0", candidate.Application.PublicModel.ExecutionProfileVersion)
+	if dataFirst {
+		require.NotEqual(t, legacy.Application.PublicModel.ID, candidate.Application.PublicModel.ID)
+		require.Equal(t, p.ID, candidate.Application.PublicModel.ExecutionProfileID)
+		require.Equal(t, p.Version, candidate.Application.PublicModel.ExecutionProfileVersion)
+	} else {
+		require.Equal(t, legacy.Application.PublicModel.ID, candidate.Application.PublicModel.ID)
+		require.Equal(t, "1.9.0", candidate.Application.PublicModel.ExecutionProfileVersion)
+	}
 	require.Equal(t, d.Digest(), candidate.Application.Operations[0].ProfileDefinitionDigest)
 	require.Equal(t, "99.0.0", candidate.Application.Operations[0].ExecutionProfileVersion)
 	require.Len(t, candidate.Application.Operations[0].CapabilityProbeContracts, 5)
@@ -84,12 +107,90 @@ SELECT operation_id,capability_id,execution_profile_id,$1,protocol_profile_id,pr
 	replayed := createCanonicalApplicationForTest(t, h, actorRequest, request, http.StatusCreated)
 	require.Equal(t, candidate.Application.Deployment.ID, replayed.Application.Deployment.ID)
 	require.True(t, replayed.Reused.Deployment)
-	catalogRequest := actorRequest(http.MethodGet, fmt.Sprintf("/api/v1/model-execution-profiles?public_model_id=%d", legacy.Application.PublicModel.ID), "")
+	catalogRequest := actorRequest(http.MethodGet, fmt.Sprintf("/api/v1/model-execution-profiles?public_model_id=%d", candidate.Application.PublicModel.ID), "")
 	catalog := httptest.NewRecorder()
 	h.ListModelExecutionProfiles(catalog, catalogRequest)
 	require.Equal(t, http.StatusOK, catalog.Code, catalog.Body.String())
 	require.Contains(t, catalog.Body.String(), d.Digest())
 	require.Contains(t, catalog.Body.String(), "99.0.0")
+	if dataFirst {
+		// Replaying omitted defaults cannot admit a changed explicit zero. No
+		// mutation/receipt may be added on any rejected first-model command.
+		send := func(input canonicalModelApplicationCreateRequest, key string, status int) canonicalModelApplicationCreateResult {
+			wire, err := json.Marshal(input)
+			require.NoError(t, err)
+			w := httptest.NewRecorder()
+			serveCanonicalApplicationCreateForTest(t, h, w, actorRequest(http.MethodPost, "/api/v1/model-deployments", string(wire)), key)
+			require.Equal(t, status, w.Code, w.Body.String())
+			var result canonicalModelApplicationCreateResult
+			if status == http.StatusCreated || status == http.StatusOK {
+				require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
+			}
+			return result
+		}
+		send(request, "first-data-defaults", http.StatusCreated)
+		require.True(t, send(request, "first-data-defaults", http.StatusOK).IdempotencyReplay)
+		for _, field := range []string{"context", "output", "deployment_context", "deployment_output"} {
+			bad := request
+			switch field {
+			case "context":
+				bad.PublicModel.ContextLength = canonicalTestPtr(0)
+			case "output":
+				bad.PublicModel.OutputLimit = canonicalTestPtr(0)
+			case "deployment_context":
+				bad.Deployment.MaxContext = canonicalTestPtr(0)
+			case "deployment_output":
+				bad.Deployment.DefaultMaxOutput = canonicalTestPtr(0)
+			}
+			send(bad, "first-data-defaults", http.StatusConflict)
+			send(bad, "first-data-invalid-"+field, http.StatusBadRequest)
+		}
+		bad := request
+		bad.PublicModel.ExecutionProfileID, bad.PublicModel.ExecutionProfileVersion = p.ID, "98.0.0"
+		send(bad, "first-data-address", http.StatusConflict)
+		bad = request
+		bad.Deployment.ProfileDefinitionDigest = strings.Repeat("f", 64)
+		send(bad, "first-data-unpublished", http.StatusBadRequest)
+		var count int
+		require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM model_registry WHERE org_id=$1 AND model_name='first-uncompiled-model'`, org).Scan(&count))
+		require.Equal(t, 1, count)
+		for query, expected := range map[string]string{
+			"source=published&page=1&page_size=1":                  d.Digest(),
+			"source=published&page=2&page_size=1":                  `"data":[]`,
+			"source=published&provider=glm&upstream_model=glm-5.3": d.Digest(),
+			"source=published&provider=not-glm":                    `"data":[]`,
+		} {
+			w := httptest.NewRecorder()
+			h.ListModelExecutionProfiles(w, actorRequest(http.MethodGet, "/api/v1/model-execution-profiles?"+query, ""))
+			require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+			require.Contains(t, w.Body.String(), expected)
+		}
+	} else {
+		// DF-02: a later same compiled address with lineage B must not replace
+		// the established compiled bootstrap of a model attached to lineage A.
+		compiledProfile, ok := modelprofile.Lookup("glm.5.3.api", "1.9.0")
+		require.True(t, ok)
+		b, err := modelprofile.NewDefinition(compiledProfile, "fixture/unrelated-lineage", "")
+		require.NoError(t, err)
+		tx, err := pool.Begin(ctx)
+		require.NoError(t, err)
+		defer tx.Rollback(ctx)
+		wire := []byte(`{"fixture":"later same-address publication"}`)
+		_, err = tx.Exec(ctx, `INSERT INTO capability_publications(publication_id,predecessor_id,kind,expected_projection_digest,result_projection_digest,plan_digest,plan_bytes,bundle_digest,bundle_bytes,materializer_contract,target_identity,publisher_identity)
+VALUES('later-fixture','candidate-fixture','delta',$1,$1,$2,$3,$2,$3,'fixture','{}','{}')`, strings.Repeat("0", 64), fmt.Sprintf("%x", sha256.Sum256(wire)), wire)
+		require.NoError(t, err)
+		_, err = tx.Exec(ctx, `SELECT set_config('unirouter.capability_publication_id','later-fixture',true)`)
+		require.NoError(t, err)
+		_, err = tx.Exec(ctx, `INSERT INTO model_profile_definitions(definition_digest,profile_id,profile_version,product_lineage_id,schema_version,canonical_bytes,publication_id) VALUES($1,$2,$3,$4,$5,$6,'later-fixture')`, b.Digest(), compiledProfile.ID, compiledProfile.Version, b.ProductLineageID(), modelprofile.DefinitionSchemaV1, b.CanonicalBytes())
+		require.NoError(t, err)
+		require.NoError(t, tx.Commit(ctx))
+		createCanonicalApplicationForTest(t, h, actorRequest, request, http.StatusCreated)
+		w := httptest.NewRecorder()
+		h.ListModelExecutionProfiles(w, catalogRequest.Clone(catalogRequest.Context()))
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		require.Contains(t, w.Body.String(), d.Digest())
+		require.NotContains(t, w.Body.String(), b.Digest())
+	}
 	// A revision for a different stable product cannot create a candidate or
 	// assign lineage as a side effect of a rejected application.
 	otherRequest := request
@@ -205,6 +306,30 @@ SELECT operation_id,capability_id,execution_profile_id,$1,protocol_profile_id,pr
 	// with a real nonempty capability decision, not a writer stub or plain Chat.
 	var approval modelCapabilityApprovalResult
 	require.NoError(t, json.Unmarshal(approvalResponse.Body.Bytes(), &approval))
+	approvalIDs := []int64{approval.ApprovalID}
+	if dataFirst {
+		for _, capability := range []string{"reasoning", "streaming", "tool_choice_auto", "tools"} {
+			r := actorRequest(http.MethodPost, capabilityPath+"/probes", fmt.Sprintf(`{"credential_binding_id":%d}`, legacy.Application.Credential.Bindings[0].ID))
+			setPath(r)
+			r.SetPathValue("capabilityID", capability)
+			w := httptest.NewRecorder()
+			h.ProbeCanonicalModelCapability(w, r)
+			require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+			var observed modelCapabilityProbeResult
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &observed))
+			require.True(t, observed.Success)
+			r = canonicalOperationProbeAuthorizedRequest(operatorOrg, org, approver, auth.RolePlatformAdmin)(http.MethodPost, capabilityPath+"/routing-approvals", fmt.Sprintf(`{"capability_probe_id":%d,"reason":"exact uncompiled data contract fixture"}`, observed.CapabilityProbeID))
+			setPath(r)
+			r.SetPathValue("capabilityID", capability)
+			w = httptest.NewRecorder()
+			h.ApproveCanonicalModelCapabilityRouting(w, r)
+			require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+			var a modelCapabilityApprovalResult
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &a))
+			approvalIDs = append(approvalIDs, a.ApprovalID)
+		}
+	}
+	probeCalls := calls
 	policy := routingpolicy.Default()
 	router, err := gateway.NewRouterWithPolicy(pool, policy)
 	require.NoError(t, err)
@@ -216,7 +341,23 @@ SELECT operation_id,capability_id,execution_profile_id,$1,protocol_profile_id,pr
 		Baseline:                runtimechange.DeploymentReleaseBaseline{Kind: runtimechange.DeploymentReleaseBaselineInitial},
 		Selections:              []runtimechange.DeploymentReleaseSelection{{DeploymentID: candidate.Application.Deployment.ID, OperationID: string(modeloperation.IDChatCompletions)}},
 		ProfileDefinitionDigest: d.Digest(), PublicContextLimit: 64000, PublicOutputLimit: 4096,
-		CapabilityApprovalIDs: []int64{approval.ApprovalID}, Reason: "seal exact data capability evidence through HTTP",
+		CapabilityApprovalIDs: approvalIDs, Reason: "seal exact data capability evidence through HTTP",
+	}
+	{
+		// Data operations require pins even when the stable bootstrap is compiled.
+		withoutPins := authorBody
+		withoutPins.ProfileDefinitionDigest = ""
+		withoutPins.PublicContextLimit, withoutPins.PublicOutputLimit = 0, 0
+		withoutPins.CapabilityApprovalIDs = nil
+		var beforeReleases, beforeReceipts int
+		require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM runtime_change_releases`).Scan(&beforeReleases))
+		require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM model_deployment_release_authoring_receipts`).Scan(&beforeReceipts))
+		serveCanonicalDeploymentReleaseAuthoring(t, h, actorRequest, withoutPins, "data-http-missing-pins", http.StatusConflict)
+		var afterReleases, afterReceipts int
+		require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM runtime_change_releases`).Scan(&afterReleases))
+		require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM model_deployment_release_authoring_receipts`).Scan(&afterReceipts))
+		require.Equal(t, beforeReleases, afterReleases)
+		require.Equal(t, beforeReceipts, afterReceipts)
 	}
 	sealedReceipt, _ := serveCanonicalDeploymentReleaseAuthoring(t, h, actorRequest, authorBody, "data-http-author", http.StatusCreated)
 	sealed, err := releaseexecution.ReadSnapshot(ctx, pool, sealedReceipt.Release.ID)
@@ -226,7 +367,7 @@ SELECT operation_id,capability_id,execution_profile_id,$1,protocol_profile_id,pr
 	require.Equal(t, d.Digest(), sealed.ProfileDefinitionDigest)
 	require.Equal(t, 64000, sealed.PublicContextLimit)
 	require.Equal(t, 4096, sealed.PublicOutputLimit)
-	require.Len(t, sealed.CapabilityPins, 1)
+	require.Len(t, sealed.CapabilityPins, len(approvalIDs))
 	pin := sealed.CapabilityPins[0]
 	require.Equal(t, candidate.Application.Deployment.ID, pin.DeploymentID)
 	require.Equal(t, approval.ApprovalID, pin.ApprovalID)
@@ -239,6 +380,9 @@ SELECT operation_id,capability_id,execution_profile_id,$1,protocol_profile_id,pr
 	require.NotEmpty(t, pin.BindingDigest)
 	require.NotEmpty(t, pin.EvidenceDigest)
 	require.NotEmpty(t, pin.SelectorDigest)
+	if dataFirst {
+		verifyFirstDataGateway(t, h, actorRequest, sealedReceipt.Release, candidate.Application, d, stream)
+	}
 	replayedRelease, _ := serveCanonicalDeploymentReleaseAuthoring(t, h, actorRequest, authorBody, "data-http-author", http.StatusOK)
 	require.True(t, replayedRelease.IdempotencyReplay)
 	require.Equal(t, sealedReceipt.Release.ID, replayedRelease.Release.ID)
@@ -252,7 +396,7 @@ SELECT operation_id,capability_id,execution_profile_id,$1,protocol_profile_id,pr
 	require.NoError(t, err)
 	stale = read()
 	require.False(t, stale.Qualified)
-	require.Equal(t, 3, calls)
+	require.Equal(t, probeCalls, calls)
 	// A new command cannot seal stale qualification; a rejected transaction
 	// leaves neither another Release nor an authoring receipt.
 	var releaseCount, receiptCount int
@@ -267,7 +411,7 @@ SELECT operation_id,capability_id,execution_profile_id,$1,protocol_profile_id,pr
 	retained, err := releaseexecution.ReadSnapshot(ctx, pool, sealedReceipt.Release.ID)
 	require.NoError(t, err)
 	require.Equal(t, sealed, retained, "mutable safety rejection cannot rewrite the sealed interpretation")
-	require.Equal(t, 3, calls, "Release authoring and rejection make no Provider request")
+	require.Equal(t, probeCalls, calls, "Release authoring and rejection make no Provider request")
 	_, err = pool.Exec(ctx, `UPDATE model_deployments SET profile_definition_digest=$2 WHERE id=$1`, legacy.Application.Deployment.ID, d.Digest())
 	require.Error(t, err, "cannot retrofit an existing Deployment identity")
 }

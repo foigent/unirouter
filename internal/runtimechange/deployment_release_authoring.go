@@ -223,16 +223,16 @@ func (m *Manager) authorSealedDeploymentReleaseInTx(
 	); err != nil {
 		return DeploymentRelease{}, err
 	}
-	var modelName, lifecycle, executionProfileID, executionProfileVersion string
+	var modelName, lifecycle, executionProfileID, executionProfileVersion, productLineageID string
 	var publicContextLimit, publicOutputLimit int
 	if err := tx.QueryRow(ctx, `
 SELECT model_name,lifecycle,context_length,output_limit,
-	   execution_profile_id,execution_profile_version
+	   execution_profile_id,execution_profile_version,COALESCE(to_jsonb(model_registry)->>'product_lineage_id','')
   FROM model_registry
  WHERE id=$1 AND org_id=$2
  FOR SHARE`, command.Mutation.PublicModelID, command.CustomerOrgID).Scan(
 		&modelName, &lifecycle, &publicContextLimit, &publicOutputLimit,
-		&executionProfileID, &executionProfileVersion,
+		&executionProfileID, &executionProfileVersion, &productLineageID,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return DeploymentRelease{}, fmt.Errorf("%w: public model ownership", ErrConflict)
@@ -242,9 +242,14 @@ SELECT model_name,lifecycle,context_length,output_limit,
 	if lifecycle == "retired" {
 		return DeploymentRelease{}, fmt.Errorf("%w: public model is retired", ErrConflict)
 	}
-	profile, ok := modelprofile.Lookup(executionProfileID, executionProfileVersion)
-	if !ok {
+	profile, err := modelprofile.ResolveAuthoringBootstrap(ctx, tx, executionProfileID, executionProfileVersion, productLineageID)
+	if err != nil {
 		return DeploymentRelease{}, fmt.Errorf("%w: unknown model execution profile", ErrConflict)
+	}
+	if command.Mutation.ProfileDefinitionDigest == "" {
+		if _, compiled := modelprofile.Lookup(executionProfileID, executionProfileVersion); !compiled {
+			return DeploymentRelease{}, fmt.Errorf("%w: data model requires an exact execution snapshot", ErrConflict)
+		}
 	}
 	var definition modelprofile.Definition
 	if command.Mutation.ProfileDefinitionDigest != "" {
@@ -270,7 +275,7 @@ SELECT model_name,lifecycle,context_length,output_limit,
 	}
 	routes, err := projectDeploymentReleaseRoutes(
 		ctx, tx, command.CustomerOrgID, command.Mutation.PublicModelID,
-		command.Mutation.Selections,
+		command.Mutation.Selections, command.Mutation.ProfileDefinitionDigest,
 	)
 	if err != nil {
 		return DeploymentRelease{}, err
@@ -532,11 +537,12 @@ func projectDeploymentReleaseRoutes(
 	tx pgx.Tx,
 	customerOrgID, publicModelID int64,
 	selections []DeploymentReleaseSelection,
+	definitionDigest string,
 ) ([]DeploymentRoute, error) {
 	routes := make([]DeploymentRoute, 0, len(selections))
 	for _, selection := range selections {
 		var route DeploymentRoute
-		var connectionState, deploymentState, supportState string
+		var connectionState, deploymentState, supportState, operationDefinition string
 		var qualified bool
 		var publicPath, executor, delivery, charge, idempotency sql.NullString
 		err := tx.QueryRow(ctx, `
@@ -546,7 +552,8 @@ SELECT deployment.id,operation.operation_id,connection.config_revision,
        connection.admin_state,deployment.admin_state,operation.support_state,
        COALESCE(qualification.qualified,FALSE),qualification.public_path,
        qualification.executor_contract_version,contract.delivery_contract_version,
-       contract.charge_contract_version,contract.idempotency_contract_version
+       contract.charge_contract_version,contract.idempotency_contract_version,
+       COALESCE(to_jsonb(operation)->>'profile_definition_digest','')
   FROM model_deployments deployment
   JOIN provider_connections connection ON connection.id=deployment.connection_id
   JOIN model_deployment_operations operation
@@ -570,13 +577,16 @@ SELECT deployment.id,operation.operation_id,connection.config_revision,
 			&route.ExpectedOperationRevision, &route.ProtocolProfileID,
 			&route.ProtocolProfileVersion, &connectionState, &deploymentState,
 			&supportState, &qualified, &publicPath, &executor, &delivery, &charge,
-			&idempotency,
+			&idempotency, &operationDefinition,
 		)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("%w: deployment route selection %d/%s", ErrInvalid, selection.DeploymentID, selection.OperationID)
 		}
 		if err != nil {
 			return nil, lifecycleWriteError("project server-owned deployment route", err)
+		}
+		if operationDefinition != "" && operationDefinition != definitionDigest {
+			return nil, fmt.Errorf("%w: data operation requires its exact execution snapshot", ErrConflict)
 		}
 		if connectionState != "enabled" || deploymentState != "enabled" || supportState != "enabled" {
 			return nil, fmt.Errorf("%w: selected deployment route is disabled", ErrConflict)

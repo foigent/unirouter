@@ -36,6 +36,19 @@ function profile(overrides: Partial<ModelExecutionProfile>): ModelExecutionProfi
 }
 
 describe('model onboarding profile composition', () => {
+  it('keeps each formally published candidate selectable by exact digest without declaring it current', () => {
+    const options = reviewedModelOptions([
+      profile({ current: false, version: '1.10.0', profile_definition_digest: 'a'.repeat(64), product_lineage_id: 'deepseek/flash' }),
+      profile({ current: false, version: '1.11.0', profile_definition_digest: 'b'.repeat(64), product_lineage_id: 'deepseek/flash' }),
+      profile({ current: false, profile_definition_digest: 'invalid', product_lineage_id: 'deepseek/flash' }),
+    ], providerPreset('deepseek'));
+    expect(options).toHaveLength(2);
+    expect(options.map(o => o.key)).toEqual([
+      `deepseek.v4-flash.api@1.10.0#${'a'.repeat(64)}`,
+      `deepseek.v4-flash.api@1.11.0#${'b'.repeat(64)}`,
+    ]);
+    expect(options.every(o => o.profile.current === false)).toBe(true);
+  });
   it('uses only the backend-declared current profile for the selected official provider', () => {
     const options = reviewedModelOptions([
       profile({ version: '1.0.0', current: false }),

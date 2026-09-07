@@ -86,6 +86,14 @@ successful Agent answer are different evidence.
 
 ## Qualification and activation
 
+From1.2.65, onboarding may select the published-contract source and an exact
+Definition to create a previously absent PublicModel. No compiled Catalog entry
+is needed when all referenced implementations are installed. Detailed or batch
+creation can reuse one existing Connection and credential binding; each model
+keeps its own create receipt, Deployment and subsequent qualification. Choose a
+specific revision explicitly. Catalog/discovery results are candidates, not
+execution approval; a failed catalog load cannot select an unverified fallback.
+
 Use the existing model endpoint form to select the stable model and published
 execution revision. It creates a separate candidate Deployment on the existing
 Connection and credential without changing the active operation or model name.
@@ -122,6 +130,10 @@ HTTP round may select a newer Release: this is per-request consistency.
   withdrawal from Compose health, config-on-disk alone or a missing heartbeat.
 - Slot rollback changes only subsequent, not already-authorized requests.
   Binary rollback requires the full current schema and active Release support.
+  First-data-model authoring requires1.2.65 or later;1.2.64 cannot create/author
+  that control-plane identity. Its runtime rollback is a separate acceptance:
+  verify exact old-image startup and sealed data execution before introducing
+  the first live identity. M114 compatibility alone is insufficient evidence.
   A 1.2.52 binary cannot serve M114. M114 down refuses retained definitions,
   Publications, generation/attempt identities or new Release evidence; it is not
   a history-erasing operational rollback procedure.

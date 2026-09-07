@@ -17,14 +17,14 @@ func resolveCanonicalDataDefinition(ctx context.Context, tx pgx.Tx, model canoni
 	if err != nil {
 		return model, fmt.Errorf("read candidate definition: %w", err)
 	}
-	legacy, ok := modelprofile.Lookup(model.ExecutionProfileID, model.ExecutionProfileVersion)
-	if !ok || !modelprofile.SameStableProductSurface(legacy, d.Profile()) || input.MaxContext == nil || input.DefaultMaxOutput == nil ||
-		modelprofile.ValidateEffectiveLimits(d.Profile(), *input.MaxContext, *input.DefaultMaxOutput) != nil {
-		return model, errCanonicalApplicationInvalid
-	}
 	var lineage string
 	if err := tx.QueryRow(ctx, `SELECT COALESCE(product_lineage_id,'') FROM model_registry WHERE id=$1 FOR UPDATE`, model.ID).Scan(&lineage); err != nil {
 		return model, err
+	}
+	bootstrap, err := modelprofile.ResolveAuthoringBootstrap(ctx, tx, model.ExecutionProfileID, model.ExecutionProfileVersion, lineage)
+	if err != nil || !modelprofile.SameStableProductSurface(bootstrap, d.Profile()) || input.MaxContext == nil || input.DefaultMaxOutput == nil ||
+		modelprofile.ValidateEffectiveLimits(d.Profile(), *input.MaxContext, *input.DefaultMaxOutput) != nil {
+		return model, errCanonicalApplicationInvalid
 	}
 	if lineage != "" && lineage != d.ProductLineageID() {
 		return model, errCanonicalApplicationConflict
