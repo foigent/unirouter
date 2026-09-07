@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/releaseexecution"
@@ -53,6 +55,12 @@ func PrepareIngress(ctx context.Context, pool *pgxpool.Pool, p IngressPlan) (str
 	if err := p.validate(); err != nil {
 		return "", err
 	}
+	return recoverIngressSerialization(ctx, func(ctx context.Context) (string, error) {
+		return prepareIngressTransaction(ctx, pool, p)
+	})
+}
+
+func prepareIngressTransaction(ctx context.Context, pool *pgxpool.Pool, p IngressPlan) (string, error) {
 	tx, err := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
 	if err != nil {
 		return "", err
@@ -207,6 +215,12 @@ func CompleteIngress(ctx context.Context, pool *pgxpool.Pool, id, observedDigest
 	if len(observation) == 0 || len(observation) > 64<<10 || !json.Valid(observation) {
 		return "", fmt.Errorf("bounded ingress observation required")
 	}
+	return recoverIngressSerialization(ctx, func(ctx context.Context) (string, error) {
+		return completeIngressTransaction(ctx, pool, id, observedDigest, oldWorkersGone, observation)
+	})
+}
+
+func completeIngressTransaction(ctx context.Context, pool *pgxpool.Pool, id, observedDigest string, oldWorkersGone bool, observation json.RawMessage) (string, error) {
 	tx, err := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
 	if err != nil {
 		return "", err
@@ -255,4 +269,29 @@ func CompleteIngress(ctx context.Context, pool *pgxpool.Pool, id, observedDigest
 		return "", fmt.Errorf("ingress completion commit ambiguous: %w", err)
 	}
 	return status, nil
+}
+
+// Heartbeats may commit after this owner's Repeatable Read snapshot. A 40001
+// explicitly aborts the transaction, including when PostgreSQL rejects COMMIT;
+// only that known outcome permits restarting the entire database operation.
+// The five-second budget fits inside the ingress controller's 30-second owner
+// command deadline. No external reload or Provider operation is in this closure.
+// Connection errors, cancellation and unknown commits return without replay.
+func recoverIngressSerialization(ctx context.Context, operation func(context.Context) (string, error)) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	for {
+		status, err := operation(ctx)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "40001" {
+			return status, err
+		}
+		timer := time.NewTimer(10 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return "", fmt.Errorf("ingress serialization recovery deadline: %w", ctx.Err())
+		case <-timer.C:
+		}
+	}
 }

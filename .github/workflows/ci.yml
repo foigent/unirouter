@@ -256,6 +256,7 @@ jobs:
       - name: Check runtime ingress failure recovery
         run: |
           PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-runtime-ingress.py
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-internal-target-rollout.py
           PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-capability-carrier.py
 
       - name: Validate tracked capability Bundle sources

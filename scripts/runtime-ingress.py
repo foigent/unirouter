@@ -19,6 +19,7 @@ import time
 
 MOUNT = "/etc/nginx/runtime-membership"
 HOSTS = {"stable": "uniroute-api", "canary": "uniroute-api-canary"}
+LOCK_FDS = []  # Retain the caller's held locks in a still-running child.
 
 
 def digest(data):
@@ -35,7 +36,7 @@ def membership(state):
 
 
 def run(args, timeout=15):
-    result = subprocess.run(args, capture_output=True, timeout=timeout, check=False)
+    result = subprocess.run(args, capture_output=True, timeout=timeout, check=False, pass_fds=tuple(LOCK_FDS))
     if result.returncode:
         # Do not emit arbitrary configuration/environment or credentials.
         raise RuntimeError(f"command failed ({result.returncode}): {args[0]}")
@@ -118,11 +119,11 @@ def snapshot(args):
             "configuration_sha256": digest(configuration), "workers": workers(args.container), "health": health}
 
 
-def replace(path, contents):
+def replace(path, contents, mode=0o644):
     fd, temporary = tempfile.mkstemp(prefix=".membership-", dir=path.parent)
     try:
         with os.fdopen(fd, "wb") as output:
-            os.fchmod(output.fileno(), 0o644)
+            os.fchmod(output.fileno(), mode)
             output.write(contents)
             output.flush()
             os.fsync(output.fileno())
@@ -172,9 +173,12 @@ def apply(args, before):
 def owner_command(container, command, document=None):
     payload = b"" if document is None else json.dumps(document, sort_keys=True).encode()
     result = subprocess.run(["docker", "exec", "-i", container, "./uniroute", "runtime-generation", command],
-                            input=payload, capture_output=True, timeout=30, check=False)
+                            input=payload, capture_output=True, timeout=30, check=False, pass_fds=tuple(LOCK_FDS))
     if result.returncode:
-        raise RuntimeError(f"runtime generation owner refused {command}; inspect retained intent before continuing")
+        # Retain only the closed database code, never arbitrary SQL/config text.
+        code = re.search(rb"SQLSTATE ([0-9A-Z]{5})", result.stderr[:16384])
+        suffix = f" (SQLSTATE {code.group(1).decode()})" if code else ""
+        raise RuntimeError(f"runtime generation owner refused {command}{suffix}; inspect retained intent before continuing")
     return json.loads(result.stdout)
 
 
@@ -265,8 +269,12 @@ def main():
     if args.apply:
         with (args.directory / ".ingress.lock").open("a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            before = snapshot(args)
-            outcome = coordinated_apply(args, before)
+            LOCK_FDS.append(lock.fileno())
+            try:
+                before = snapshot(args)
+                outcome = coordinated_apply(args, before)
+            finally:
+                LOCK_FDS.clear()
     else:
         before, outcome = snapshot(args), "read_only"
     print(json.dumps({"outcome": outcome, "container_id": args.expected_container_id,

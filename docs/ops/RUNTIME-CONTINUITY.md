@@ -72,6 +72,78 @@ first is healthy. Preserve image and source identity and restore only compatible
 artifacts. The helper deliberately does not derive or execute a Compose command
 from an untrusted filename or guessed project.
 
+## Existing development/test rollout and recovery
+
+For an already bootstrapped development/test Target with both components on one
+exact source and the formal five-file backend/frontend Compose chain, use
+`scripts/internal-target-rollout.py` from the **new exact clean source**. This
+bounded Artifact-only procedure replaces version-specific rollout/resume wrappers.
+The original `runtime-ingress.py` remains the sole ingress writer and retains its
+standalone membership operation. Its lock is held throughout backend stop/create;
+child commands inherit the held descriptors if the controller exits unexpectedly.
+
+Build and verify local images through `internal-target-build-images.sh` first.
+The rollout tool does not fetch/pull/build, migrate, activate models, clean disk,
+bootstrap Nginx or handle a frontend-only mixed-source change. It requires:
+
+- `format`: `unirouter.internal-target-rollout.v1`; unique `operation_id`.
+- `target`: exact `hostname`, `database_system_id`, `environment` (development or
+  test), `project`, `env_file`, `overlay`, `tls_overlay`, `ingress_directory`,
+  `nginx_container_id`, and credential-free HTTPS `public_url`.
+- `source`: absolute `directory`, full `commit`, `tree`, and `version`.
+- `images`: `backend` and `frontend`, each with exact local `tag` and `digest`.
+- `evidence_directory`: a new absolute directory under an existing private parent.
+
+The first three Compose files are `docker-compose.yml`,
+`docker-compose.canary.yml`, and `deploy/internal-target-images.override.yml`
+under the source; the final two are the explicit TLS and formal runtime overlays.
+The existing Nginx container and its distinct retained Compose chain stay intact.
+The tool compares actual container configuration with rendered Compose, independent
+of labels; it ignores inherited host interpolation. The only permitted changes
+are image/runtime metadata and source paths for unchanged schema/monitoring mounts.
+Environment values are compared in memory and never printed into the Plan.
+
+With a reviewed non-secret input file, run each action using the same file:
+
+```bash
+python3 scripts/internal-target-rollout.py plan --input /absolute/rollout-input.json
+python3 scripts/internal-target-rollout.py prepare --input /absolute/rollout-input.json
+python3 scripts/internal-target-rollout.py apply --input /absolute/rollout-input.json
+```
+
+`plan` and `inspect` are read-only. `prepare` records exclusive exact Plan and
+private overlay bytes plus a verified database backup, without changing runtime.
+If `apply` fails, preserve its output and all evidence, then use:
+
+```bash
+python3 scripts/internal-target-rollout.py inspect --input /absolute/rollout-input.json
+python3 scripts/internal-target-rollout.py resume --input /absolute/rollout-input.json
+```
+
+Resume verifies actual container/image/source/configuration, protected ledger
+projections and the existing ingress receipt. It keeps the original operation ID
+and never recreates an already verified replacement. A different ingress head,
+changed execution state or uncertain stop/create prevents further mutation. Docker
+may continue a daemon operation after its CLI times out: an existing command
+marker with old/absent state is unconfirmed and is never automatically reissued.
+Readback may close an exact finished post-state; it cannot infer that no command
+was sent merely because the old container still runs.
+A preparation failure has no runtime side effect; retain that incomplete candidate
+and use a new operation identity after correcting the prerequisite.
+
+Result fields distinguish `deployment` from `observer_acceptance`. Exit3 means
+component delivery completed while a failed/missing observation still prevents
+acceptance. Every unauthenticated HTTP1/HTTP2 sample and observation window is
+retained through resume; an interrupted window cannot become green on recovery.
+`passed_short_requests_only` proves only sampled short requests. Real loaded
+backend withdrawal/drain/stop, cancellation, Provider attempts and settlement
+remain separate acceptance requirements; the tool does not claim them by health.
+
+See the [exact recovery design](../analysis/INTERNAL-TARGET-ROLLOUT-RECOVERY-20260907.md).
+Old version-specific wrappers and failed runs remain historical evidence, not
+supported authoring paths after this procedure's Target acceptance. No legacy
+capability writer, released Artifact, rollback promise or history reader retires.
+
 ## Deadlines and shutdown evidence
 
 Readiness reports process `instance`, serving/draining `state`, active handler
