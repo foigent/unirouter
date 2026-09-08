@@ -82,7 +82,8 @@ def run(args, timeout=30, data=None, env=None):
 def inspect(name, missing_ok=False):
     result = subprocess.run(["docker", "inspect", name], capture_output=True, timeout=30, env=ENV, pass_fds=tuple(HELD_LOCK_FDS))
     if missing_ok and result.returncode == 1 and result.stdout.strip() == b"[]":
-        messages = {f"Error: No such object: {name}".encode(), f"Error response from daemon: No such container: {name}".encode()}
+        messages = {f"Error: No such object: {name}".encode(), f"Error response from daemon: No such container: {name}".encode(),
+                    f"error: no such object: {name}".encode()}
         if result.stderr.strip() in messages:
             return None
     require(result.returncode == 0, "Docker inspection failed; absence is unproven")

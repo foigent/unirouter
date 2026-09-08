@@ -433,11 +433,21 @@ class RecoveryBoundaryTests(unittest.TestCase):
 
     def test_missing_container_is_not_inferred_from_docker_failure(self):
         for failed in (SimpleNamespace(returncode=1, stdout=b"[]", stderr=b"Cannot connect to Docker daemon"),
-                       SimpleNamespace(returncode=1, stdout=b"", stderr=b"Error: No such object: exact")):
+                       SimpleNamespace(returncode=1, stdout=b"[]", stderr=b"permission denied"),
+                       SimpleNamespace(returncode=1, stdout=b"", stderr=b"Error: No such object: exact"),
+                       SimpleNamespace(returncode=1, stdout=b"", stderr=b"error: no such object: exact"),
+                       SimpleNamespace(returncode=2, stdout=b"[]", stderr=b"error: no such object: exact"),
+                       SimpleNamespace(returncode=1, stdout=b"[]", stderr=b"error: no such object: another"),
+                       SimpleNamespace(returncode=1, stdout=b"[]", stderr=b"error: no such object: EXACT"),
+                       SimpleNamespace(returncode=1, stdout=b"[]", stderr=b"error: no such object: exact\npermission denied")):
             with patch.object(rollout.subprocess, "run", return_value=failed), self.assertRaisesRegex(RuntimeError, "absence is unproven"):
                 rollout.inspect("exact", missing_ok=True)
-        with patch.object(rollout.subprocess, "run", return_value=SimpleNamespace(returncode=1, stdout=b"[]", stderr=b"Error: No such object: exact")):
-            self.assertIsNone(rollout.inspect("exact", missing_ok=True))
+        for message in (b"Error: No such object: exact", b"Error response from daemon: No such container: exact",
+                        b"error: no such object: exact\n"):
+            with patch.object(rollout.subprocess, "run", return_value=SimpleNamespace(returncode=1, stdout=b"[]\n", stderr=message)):
+                self.assertIsNone(rollout.inspect("exact", missing_ok=True))
+                with self.assertRaisesRegex(RuntimeError, "absence is unproven"):
+                    rollout.inspect("exact")
 
     def test_child_mutation_inherits_real_locks_if_parent_exits(self):
         with patch.object(rollout, "LIFECYCLE_LOCK", self.root / "lifecycle.lock"):
