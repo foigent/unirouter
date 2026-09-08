@@ -1,5 +1,17 @@
 # Current Execution Record
 
+## Current resumed delivery — counter v3 Target closure / GUI pending
+
+The authorized development/test counter correction is Target verified on exact
+1.2.76/M115/6a89eef6,including same-image v3 selection and one real Flash
+cancellation with one terminal settlement. Source/CI/Artifact/Target and marked
+estimated usage remain separate; no Production, price change or history rewrite.
+[Exact evidence and remaining scope](../ops/evidence/STREAM-COUNTER-V3-TARGET-20260908.md).
+Remaining current acceptance: user login to the connected UniRouter console,
+then one bounded shared Flash Probe/six facts and GUI result/refresh verification.
+Flash29/30 andCNY4.92284/5 reserved; Max18/30 andCNY4.689972/5 reserved. Keep the
+existing cumulative guards; no new model or repeated Agent task to fill this gap.
+
 ## Completed Repository And Target Execution — PRD8 Cost Optimization CO-0 / CO-1
 
 **Work item:** `UR-PRD8-COST-OPTIMIZATION-V1`

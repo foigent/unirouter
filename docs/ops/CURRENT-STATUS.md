@@ -1,5 +1,19 @@
 # UniRouter Current Status
 
+## Counter v3 Target verified; concentrated GUI login pending — 2026-09-08
+
+Development Target now runs exact1.2.76/M115,commit6a89eef6,with both counter-v3
+writers. PR414 five checks and exact-main protocol passed. Formal73→76 rollout
+and separate same-image76 v2→v3 transition completed with314 passing bounded
+HTTP/1.1+HTTP/2 short-request observations. This is not new long-stream/Agent evidence.
+One real Flash cancellation has one ProviderAttempt and terminal receipt284;
+lease/checkpoint/settlement pinv3,usage remains explicitly estimated. Historical
+v2 receipt283 is unchanged. Flash29/30,CNY4.92284 reserved; Max18/30,CNY4.689972.
+Concentrated shared-Probe GUI acceptance still waits for UniRouter console login;
+no shared paid Probe or new model/Release was created. Existing v2 reader/recovery
+remains required. Details: [Target evidence](evidence/STREAM-COUNTER-V3-TARGET-20260908.md).
+Earlier entries retain their original cutoff. 经验文件无需变化.
+
 ## Python3.10 rollout correction candidate — 2026-09-08
 
 Exact75 PR413, all five CI checks, exact-main protocol and Artifact build passed.
