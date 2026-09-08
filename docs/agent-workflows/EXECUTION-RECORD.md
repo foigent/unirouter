@@ -1,5 +1,20 @@
 # Current Execution Record
 
+## Current resumed delivery — concentrated GUI result / next optimization
+
+2026-09-09: login restored; one paid Flash shared Probe produced six validated
+facts, and GUI refresh made no new call. Existing independent Approval references
+and Release/Slot remain unchanged on exact1.2.76/M115/v3. The bounded
+Probe/results/refresh path is verified; new-Approval UI and the broader approved
+onboarding experience are not declared complete.
+[Evidence, cumulative budget and prioritized follow-up](../ops/evidence/CONCENTRATED-QUALIFICATION-GUI-20260909.md).
+Next: frontload existing rollout-tool compatibility checks before the next
+affected Artifact build; improve the current onboarding flow and latest versus
+approved evidence presentation; only then adjust CI routing after dependency
+proof. No new architecture, all-model retest or old-writer retirement.
+The user's additional30 calls/CNY5 is recorded conservatively as one shared
+pool, unused; retained original pools are Flash30/CNY4.95651 andMax18/CNY4.689972.
+
 ## Current resumed delivery — counter v3 Target closure / GUI pending
 
 The authorized development/test counter correction is Target verified on exact
