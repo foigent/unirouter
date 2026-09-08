@@ -13,6 +13,9 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import sys
+
+sys.dont_write_bytecode = True
 
 spec = importlib.util.spec_from_file_location("runtime_ingress", Path(__file__).with_name("runtime-ingress.py"))
 ingress = importlib.util.module_from_spec(spec)

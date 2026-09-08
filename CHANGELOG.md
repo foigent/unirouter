@@ -4,6 +4,16 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.74] - 2026-09-08
+
+### Fixed
+- Keep the formal runtime-generation CLI usable on both exact M114 and M115 ledgers. Unknown, incomplete and legacy-only ledgers still reject; control commands have a bounded execution deadline.
+- Prevent compatible-expand checks from creating Python import caches in immutable source worktrees.
+
+### Changed
+- Add explicit `artifact_cli` control-command carriage to the existing development/test rollout. It uses the exact candidate backend image and the same typed ingress owner, with operation locks, a short-lived private container, verified identity/configuration, bounded stop and ambiguity readback. This allows a healthy M115 service with the old M114-only CLI to roll forward without raw database repair or stopping both backends.
+- In this explicit mode, plan/inspect create and remove a temporary CLI container; they do not mutate database state, ingress membership or serving processes. Default read-only behavior and the existing model, financial and schema authorities are unchanged.
+
 ## [1.2.73] - 2026-09-08
 
 ### Fixed
