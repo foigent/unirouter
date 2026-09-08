@@ -5458,9 +5458,10 @@ components:
     ModelCapabilityProbeView:
       type: object
       additionalProperties: false
-      required: [capability_probe_id, success, provider_success, current, status_code, latency_ms, cache_read_counter_observed, cached_tokens, tested_at]
+      required: [capability_probe_id, approval_id, success, provider_success, current, status_code, latency_ms, cache_read_counter_observed, cached_tokens, tested_at]
       properties:
         capability_probe_id: { type: integer, format: int64, minimum: 1 }
+        approval_id: { type: integer, format: int64, minimum: 0, description: "Immutable Approval for this exact Probe; zero means no Approval exists. This is not the preferred/current qualification decision." }
         credential_binding_id: { type: integer, format: int64, minimum: 1 }
         success: { type: boolean }
         provider_success: { type: boolean }

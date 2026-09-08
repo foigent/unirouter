@@ -48,7 +48,12 @@ if [[ $# -gt 0 ]]; then
   esac
 fi
 
-for command_name in docker git flock; do
+# The preflight and all subsequent image operations share this local daemon.
+# DOCKER_CONTEXT overrides DOCKER_HOST; inherited TLS/API choices also alter it.
+unset DOCKER_CONTEXT DOCKER_TLS DOCKER_TLS_VERIFY DOCKER_CERT_PATH DOCKER_API_VERSION BUILDX_BUILDER BUILDKIT_HOST
+export DOCKER_HOST=unix:///var/run/docker.sock
+
+for command_name in docker git flock python3; do
   if ! command -v "${command_name}" >/dev/null 2>&1; then
     echo "internal target image build: ${command_name} is required" >&2
     exit 2
@@ -101,6 +106,9 @@ if ! flock -n 9; then
   echo "internal target image build: another build or maintenance run holds the lifecycle lock" >&2
   exit 1
 fi
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+python3 -B "${script_dir}/internal-target-rollout.py" environment-check
 
 release_tag="${runtime_commit:0:12}"
 backend_image="${UNIROUTER_BACKEND_IMAGE:-unirouter-release/backend:${release_tag}}"
@@ -184,7 +192,6 @@ elif docker image inspect "${frontend_image}" >/dev/null 2>&1; then
   echo "REUSE_EXISTING component=frontend image=${frontend_image}"
 fi
 
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ "${backend_needs_build}" == true || "${frontend_needs_build}" == true ]]; then
   "${script_dir}/docker-storage-preflight.sh" \
     --path /var/lib/docker \

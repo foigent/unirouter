@@ -35,6 +35,59 @@ def fixture():
     return service, container, image
 
 
+class EnvironmentCheckTests(unittest.TestCase):
+    def run_check(self, *, client='29.0.1', server='28.0.4', compose=b'2.39.2', container=True,
+                  started='2026-09-09T01:02:03.123456789Z', absence=True):
+        self.commands = []
+        def invoke(args, **kwargs):
+            self.commands.append(args)
+            self.assertEqual(kwargs['env'], rollout.ENV)
+            self.assertNotIn('DOCKER_CONTEXT', kwargs['env'])
+            if args[1] == 'version':
+                wire = json.dumps({'Client': {'Version': client}, 'Server': {'Version': server}}).encode()
+            elif args[1:3] == ['compose', 'version']:
+                wire = compose
+            elif args[1] == 'ps':
+                wire = b'a' * 64 if container else b''
+            elif args[1] == 'inspect' and args[2].startswith('ur-environment-check-'):
+                self.assertRegex(args[2], r'^ur-environment-check-[a-f0-9]{24}$')
+                return SimpleNamespace(returncode=1, stdout=b'[]', stderr=(
+                    f'error: no such object: {args[2]}'.encode() if absence else b'daemon unavailable'))
+            elif args[1:] == ['inspect', 'a' * 64]:
+                wire = json.dumps([{'Id': 'a'*64, 'State': {'Running': True, 'StartedAt': started}}]).encode()
+            else:
+                self.fail(f'Unexpected or mutating command: {args}')
+            return SimpleNamespace(returncode=0, stdout=wire, stderr=b'')
+        with patch.object(rollout.subprocess, 'run', side_effect=invoke):
+            return rollout.environment_check()
+
+    def test_supported_installed_environment_is_read_only_and_redacted(self):
+        result = self.run_check()
+        self.assertEqual(result['environment_check'], 'passed')
+        self.assertTrue(result['timestamp_observed'])
+        self.assertEqual(result['running_timestamp']['container_id'], 'a'*64)
+        self.assertNotIn('Config', json.dumps(result))
+
+    def test_fresh_host_reports_missing_timestamp_scope(self):
+        self.assertFalse(self.run_check(container=False)['timestamp_observed'])
+
+    def test_unsupported_or_malformed_versions_stop_before_inspection(self):
+        for values in ({'client':'27.1.1'}, {'server':'30.0.0'}, {'server':'29.0.0-rc1'},
+                       {'server':None}, {'compose':b'2.24.3'}, {'compose':b'2.24.4-rc1'}, {'compose':b'unknown'}):
+            with self.subTest(values=values), self.assertRaises(RuntimeError):
+                self.run_check(**values)
+            self.assertFalse(any(c[1] == 'inspect' for c in self.commands))
+
+    def test_absence_and_timestamp_fail_closed(self):
+        for values in ({'absence':False}, {'started':'2026-09-09T01:02:03+24:00'}, {'started':'unknown'}):
+            with self.subTest(values=values), self.assertRaises(RuntimeError):
+                self.run_check(**values)
+
+    def test_duplicate_version_json_and_wrong_container_cannot_pass(self):
+        with patch.object(rollout, 'run', return_value=b'{"Client":{},"Client":{}}'), self.assertRaisesRegex(RuntimeError, 'duplicate'):
+            rollout.environment_check()
+
+
 class CounterTransitionTests(unittest.TestCase):
     def test_named_transition_is_finite_and_strict(self):
         rollout.validate_transition(None)

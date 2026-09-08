@@ -486,7 +486,7 @@ export default function ModelEndpointsPage() {
       initialBindingID={batchInitial.bindingID}
       onClose={() => setBatchOpen(false)}
       onChanged={load}
-      onContinue={application => { setBatchOpen(false); selectExactIdentity(application.deployment.id, application.operations[0].operation_id); }}
+      onContinue={application => { const chat = application.operations.find(o => o.operation_id === 'openai.chat_completions.v1'); if (chat) { setBatchOpen(false); selectExactIdentity(application.deployment.id, chat.operation_id); } }}
     />}
     {canManage && <ModelEndpointCreateSheet
       open={createOpen}

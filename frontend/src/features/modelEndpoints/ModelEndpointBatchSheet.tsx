@@ -21,6 +21,7 @@ type Row = {
   option?: ReviewedModelOnboardingOption;
   choices: ReviewedModelOnboardingOption[];
   configured: boolean;
+  applications: CanonicalModelApplication[];
 };
 function actorIdentity() {
   const s = useAuthStore.getState(), u = s.user;
@@ -74,14 +75,15 @@ export default function ModelEndpointBatchSheet({ applications, initialConnectio
   const preset = providerPresets.find(p => p.provider === connection?.provider && p.adapterType === connection?.adapter_type && providerPresetAdapterConfigMatches(p, connection?.adapter_config)
     && p.apiSurface === 'openai_chat_completions' && !providerPresetBaseURLError(p.value, 'openai.chat_completions.v1', connection?.base_url));
   const options = preset ? reviewedModelOptions(profiles, preset) : [];
-  const configured = (id: string) => applications.some(a => a.connection.id === connectionID && a.deployment.upstream_model === id && !a.deployment.retired_at && a.operations.some(o => o.operation_id === 'openai.chat_completions.v1'));
+  const configured = (id: string) => applications.filter(a => a.connection.id === connectionID && a.deployment.upstream_model === id && !a.deployment.retired_at && a.operations.some(o => o.operation_id === 'openai.chat_completions.v1'));
   const available = discovery ? discovery.models.map(m => ({ id: m.id, name: m.name || m.id }))
     : Array.from(new Map(options.map(o => [o.recommendedUpstreamModelID, { id: o.recommendedUpstreamModelID, name: o.profile.label }])).values());
   const rows: Row[] = available.map(m => {
     const choices = options.filter(o => o.upstreamModelIDs.includes(m.id));
     const option = profileChoices[m.id] ? choices.find(o => o.key === profileChoices[m.id])
       : catalogSource === 'compiled' && choices.length === 1 ? choices[0] : undefined;
-    return { ...m, choices, option, configured: configured(m.id) };
+    const existing = configured(m.id);
+    return { ...m, choices, option, configured: existing.length > 0, applications: existing };
   });
   const search = query.trim().toLocaleLowerCase();
   const visibleRows = discovery || !search ? rows : rows.filter(r => `${r.id} ${r.name}`.toLocaleLowerCase().includes(search));
@@ -200,7 +202,7 @@ export default function ModelEndpointBatchSheet({ applications, initialConnectio
   <Table rowKey="id" dataSource={visibleRows} pagination={false} rowSelection={{ selectedRowKeys: selected, onChange: keys => setSelected((keys || []).map(String)), getCheckboxProps: (row: Row) => ({ disabled: locked || !row.option || row.configured }) }} columns={[
       { title: '模型', dataIndex: 'name', render: (_: unknown, r: Row) => <><strong>{r.name}</strong><br /><Typography.Text type="tertiary">{r.id}</Typography.Text></> },
       { title: '合同版本', render: (_: unknown, r: Row) => r.choices.length ? <><span id={`profile-version-${encodeURIComponent(r.id)}`} hidden>合同版本 {r.id}</span><Select aria-labelledby={`profile-version-${encodeURIComponent(r.id)}`} disabled={locked || r.configured} value={r.option?.key} placeholder="选择精确合同版本" optionList={r.choices.map(o => ({ value: o.key, label: `${o.profile.version}${o.profile.profile_definition_digest ? ` · ${o.profile.profile_definition_digest.slice(0, 12)}` : ''}` }))} onChange={value => { setProfileChoices(old => ({ ...old, [r.id]: String(value) })); setSelected(old => old.filter(id => id !== r.id)); setModelIDs(old => ({ ...old, [r.id]: 0 })); }} /></> : '—' },
-      { title: '接入状态', render: (_: unknown, r: Row) => r.configured ? '已配置' : previewErrors.get(r.id) || (r.option ? '合同已建模 · 待验证' : r.choices.length ? '请选择合同版本' : '待支持 · 不可直接配置') },
+      { title: '接入状态', render: (_: unknown, r: Row) => r.configured ? <Space vertical align="start">{r.applications.map(a => <div key={a.deployment.id}>已配置 · {a.public_model.model_name} · {a.deployment.admin_state === 'enabled' ? '配置启用' : '配置停用'}<Button disabled={busy} onClick={() => onContinue(a)}>查看模型 #{a.deployment.id}</Button></div>)}</Space> : previewErrors.get(r.id) || (r.option ? '合同已建模 · 待验证' : r.choices.length ? '请选择合同版本' : '待支持 · 不可直接配置') },
       { title: '公共模型', render: (_: unknown, r: Row) => r.option && !r.configured && selected.includes(r.id) ? <Space vertical align="start">
     <span id={`batch-public-${r.id}`}>公共模型选择 {r.id}</span>
     <Select aria-labelledby={`batch-public-${r.id}`} value={modelIDs[r.id] || 0} disabled={locked} style={{ width: 250 }} optionList={[{ value: 0, label: '新建稳定模型名' }, ...compatibleModels(r).map(m => ({ value: m.id, label: `${m.model_name} · #${m.id}` }))]} onChange={v => setModelIDs(old => ({ ...old, [r.id]: Number(v) }))}/>

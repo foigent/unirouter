@@ -1175,6 +1175,29 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     expect(mocks.probe).not.toHaveBeenCalled();
   });
 
+  it('continues to an exact configured deployment without recreating it or calling the provider', async () => {
+    const user = userEvent.setup({ skipHover: true, delay: null });
+    const a = application();
+    a.deployment.upstream_model = 'deepseek-v4-flash';
+    a.connection.adapter_config = { endpoint_path_mode: 'base_relative' };
+    a.operations.push({ ...a.operations[0], operation_id: 'openai.chat_completions.v1' });
+    const b = { ...a, deployment: { ...a.deployment, id: 42 } };
+    mocks.list.mockResolvedValue(projection([a, b]));
+    mocks.get.mockImplementation((id: number) => Promise.resolve(id === 42 ? b : a));
+    renderPage();
+    await user.click((await screen.findByText('接入模型')).closest('button')!);
+    await user.click(await screen.findByRole('button', { name: '向已有连接添加模型' }));
+    await chooseSelectOption('批量现有连接', 'DeepSeek official · deepseek · #13', user);
+    const exact = await screen.findByRole('button', { name: '查看模型 #42' });
+    expect(screen.getByRole('button', { name: '查看模型 #41' })).toBeInTheDocument();
+    expect(within(exact.closest('tr')!).getByRole('checkbox')).toBeDisabled();
+    await user.click(exact);
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith(42, 'openai.chat_completions.v1'));
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.probe).not.toHaveBeenCalled();
+    expect(mocks.authorRelease).not.toHaveBeenCalled();
+  });
+
   it('discovers metadata with an explicit binding and only batches modeled rows', async () => {
     useAuthStore.setState({ isAuthenticated: true });
     const user = userEvent.setup({ skipHover: true, delay: null });

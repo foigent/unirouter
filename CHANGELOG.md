@@ -4,6 +4,13 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.77] - 2026-09-09
+
+- 在正式 development/test 构建前检查本地 Docker 28/29、Compose 合并语法支持和 Python 时间戳/缺失对象行为；构建与检查固定同一本地 daemon，失败不创建镜像。
+- 将轻量发布兼容检查前置到 Change Routing，保留原有必需回归和构建证据；只有明确预检失败才阻止昂贵后续任务。
+- 模型集中验证分别展示最新 Probe 与有效 Approval，精确读取每条 Probe 的批准记录；刷新替换事实及批准响应不明时停止继续提交，不自动调用模型或切换 Release。
+- 已配置模型可从批量接入直接进入精确 Deployment；OpenClaw 配置生成使用与同步 CLI 一致的 Provider 名称约束。
+
 ## [1.2.76] - 2026-09-08
 
 ### Fixed

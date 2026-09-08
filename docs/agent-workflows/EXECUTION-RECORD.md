@@ -1,5 +1,10 @@
 # Current Execution Record
 
+## Active delivery — compatibility and onboarding closeout
+
+The user authorized bounded closure before the separately planned X-Insight integration and full test campaign. Implement environment preflight, precise latest/approved evidence UI, existing-connection continuation and CI frontloading. Current Target remains 1.2.76/M115/v3; no schema/model/price/Release/Slot changes are planned. Original budgets remain, additional shared 30/CNY5 pool unused. Complete required CI/exact-main, official development build/rollout and one GUI Approval using existing facts259–264 without a paid Probe.
+[Exact scope and acceptance](../analysis/DELIVERY-ONBOARDING-CLOSEOUT-20260909.md).
+
 ## Current resumed delivery — concentrated GUI result / next optimization
 
 2026-09-09: login restored; one paid Flash shared Probe produced six validated

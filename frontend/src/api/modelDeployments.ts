@@ -309,6 +309,8 @@ export type CanonicalOperationProbeResult = {
 
 export type CanonicalCapabilityProbeView = {
   capability_probe_id: number;
+  // Missing on older backends; only explicit zero proves no Approval exists.
+  approval_id?: number;
   credential_binding_id?: number;
   success: boolean;
   provider_success: boolean;
