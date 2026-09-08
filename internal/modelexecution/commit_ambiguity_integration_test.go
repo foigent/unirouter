@@ -79,12 +79,17 @@ func (tx *ambiguousCommitTx) Commit(ctx context.Context) error {
 func TestAuthorizeOwnerSurvivesCommitAmbiguityAcrossCompatibleExpandIntegration(t *testing.T) {
 	fixture := newExecutionFixture(t, true, false)
 	dir := "../../migrations"
+	counterDown, err := os.ReadFile(filepath.Join(dir, schemaauthority.StreamCounterExpandHead+".down.sql"))
+	require.NoError(t, err)
+	_, err = fixture.pool.Exec(t.Context(), string(counterDown))
+	require.NoError(t, err)
 	down, err := os.ReadFile(filepath.Join(dir, schemaauthority.CapabilityExpandHead+".down.sql"))
 	require.NoError(t, err)
 	_, err = fixture.pool.Exec(t.Context(), string(down))
 	require.NoError(t, err)
 	ledger, err := schemaauthority.ExpectedLedger(dir)
 	require.NoError(t, err)
+	ledger = ledger[:len(ledger)-1] // Preserve this historical M113→M114 commit-ambiguity fixture.
 	wire, err := os.ReadFile(filepath.Join(dir, schemaauthority.CapabilityExpandHead+".up.sql"))
 	require.NoError(t, err)
 	process := runtimegeneration.Identity{Instance: "uri_" + strings.Repeat("a", 32), Artifact: "sha256:" + strings.Repeat("b", 64)}

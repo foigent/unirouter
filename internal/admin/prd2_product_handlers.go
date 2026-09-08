@@ -262,7 +262,7 @@ func (h *Handler) usageAnalyticsSummary(r *http.Request, where string, args []in
 			COALESCE(SUM(total_tokens), 0),
 			COALESCE(SUM(cost_micros), 0),
 			COALESCE(AVG(NULLIF(latency_ms, 0)), 0)::float8,
-			COALESCE(SUM(CASE WHEN usage_source IN ('estimated', 'adapter_estimated', 'counter_v2') THEN total_tokens ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN usage_source IN ('estimated', 'adapter_estimated', 'counter_v2', 'counter_v3') THEN total_tokens ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN %s THEN total_tokens ELSE 0 END), 0)
 		 FROM call_logs%s`,
 		usageAnalyticsUpstreamSourceSQL(),
@@ -300,7 +300,7 @@ func (h *Handler) usageAnalyticsGroups(r *http.Request, groupKey, groupExpr, whe
 			COALESCE(SUM(total_tokens), 0),
 			COALESCE(SUM(cost_micros), 0),
 			COALESCE(AVG(NULLIF(latency_ms, 0)), 0)::float8,
-			COALESCE(SUM(CASE WHEN usage_source IN ('estimated', 'adapter_estimated', 'counter_v2') THEN total_tokens ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN usage_source IN ('estimated', 'adapter_estimated', 'counter_v2', 'counter_v3') THEN total_tokens ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN %s THEN total_tokens ELSE 0 END), 0)
 		 FROM call_logs%s
 		 GROUP BY 1

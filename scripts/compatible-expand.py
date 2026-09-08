@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Exact M113/M114 dev/test bridge owner; does not roll containers or publish data.
+"""Finite M113/M114/M115 dev/test bridge owner; does not roll containers or publish data.
 
 Run on the verified Target after storage/backup and both bridge rollouts. The
 installed ingress lock excludes the ordinary controller for the whole check/apply.
 """
 import argparse
+import contextlib
 import fcntl
 import hashlib
 import importlib.util
@@ -16,20 +17,49 @@ import subprocess
 spec = importlib.util.spec_from_file_location("runtime_ingress", Path(__file__).with_name("runtime-ingress.py"))
 ingress = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ingress)
-HEADS = ["000113_glm_stream_function_tools_qualification", "000114_capability_delivery_expand"]
+HEADS = ["000113_glm_stream_function_tools_qualification", "000114_capability_delivery_expand", "000115_stream_counter_version"]
+COUNTERS = [{"kind": "stream_counter", "id": "unirouter.stream-counter.v2"}, {"kind": "stream_counter", "id": "unirouter.stream-counter.v3"}]
 
 
-def verify_bridge(runtime, backend, manifest_wire):
+def verify_bridge(runtime, backend, manifest_wire, target_version=HEADS[1]):
     manifest = json.loads(manifest_wire)
     canonical = json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
     if (canonical != manifest_wire.strip() or hashlib.sha256(canonical).hexdigest() != runtime.get("support_manifest_digest")
-            or manifest.get("schema_heads") != HEADS or runtime.get("supported_schema_heads") != HEADS
+            or manifest.get("schema_heads") not in (HEADS[:2], HEADS) or runtime.get("supported_schema_heads") != manifest.get("schema_heads")
+            or target_version not in manifest.get("schema_heads", [])
+            or (target_version == HEADS[2] and any(ref not in manifest.get("implementations", []) for ref in COUNTERS))
             or runtime.get("compatibility_epoch") != "unirouter.runtime-compatibility.v1"
             or runtime.get("artifact_digest") != backend["Image"]):
         raise RuntimeError("running image/support manifest does not match the exact bridge")
     for bindings in (backend["HostConfig"].get("PortBindings") or {}).values():
         if any(b.get("HostIp") not in ("127.0.0.1", "::1") for b in (bindings or [])):
             raise RuntimeError("public backend port bypasses the verified ingress")
+
+
+def verify_recovery_process_inventory(backends):
+    """Single-host proof complements DB leases, including expired/absent actors.
+
+    The lifecycle lock prevents another formal rollout starting while inspecting.
+    Never treat a missing/unknown host process as a supported recovery binary.
+    """
+    ids = {value["Id"] for value in backends.values()}
+    pids = {str(value["State"]["Pid"]) for value in backends.values()}
+    observed = set()
+    for line in ingress.run(["ps", "-eo", "pid=,comm="]).decode().splitlines():
+        pieces = line.split(None, 1)
+        if len(pieces) != 2 or Path(pieces[1]).name != "uniroute":
+            continue
+        pid = pieces[0]
+        cgroup = Path("/proc") / pid / "cgroup"
+        try:
+            membership = cgroup.read_text()
+        except OSError as error:
+            raise RuntimeError("runtime process inventory changed during preflight") from error
+        if not any(container in membership for container in ids):
+            raise RuntimeError("unaccounted host/container recovery process")
+        observed.add(pid)
+    if not pids.issubset(observed):
+        raise RuntimeError("both exact backend process identities must be observable")
 
 
 def main():
@@ -41,6 +71,7 @@ def main():
     parser.add_argument("--expected-system-identifier", required=True)
     parser.add_argument("--environment", required=True, choices=("development", "test", "integration"))
     parser.add_argument("--migration-digest", required=True)
+    parser.add_argument("--target-version", choices=HEADS[1:], default=HEADS[1])
     parser.add_argument("--expected-config-sha256", required=True)
     parser.add_argument("--expected-nginx-sha256", required=True)
     parser.add_argument("--apply", action="store_true")
@@ -54,7 +85,10 @@ def main():
         raise ValueError("exact reviewed migration digest is required")
     if ingress.run(["hostname"]).decode().strip() != args.expected_hostname:
         raise RuntimeError("Target hostname changed")
-    with (args.directory / ".ingress.lock").open("a") as lock:
+    with contextlib.ExitStack() as stack:
+        lifecycle = stack.enter_context(Path("/run/lock/unirouter-docker-lifecycle.lock").open("a"))
+        fcntl.flock(lifecycle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        lock = stack.enter_context((args.directory / ".ingress.lock").open("a"))
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         before = ingress.snapshot(args)
         if (ingress.digest(before["before"]) != args.expected_config_sha256
@@ -67,13 +101,17 @@ def main():
             raise RuntimeError("old proxy generation still exists; finish its withdrawal before expansion")
         fleet = {}
         manifests = {}
+        backends = {}
         for role, host in ingress.HOSTS.items():
             backend = json.loads(ingress.run(["docker", "inspect", host]))[0]
             manifest = ingress.docker_exec(host, "./uniroute", "runtime-generation", "support")
-            verify_bridge(before["health"][role], backend, manifest)
+            verify_bridge(before["health"][role], backend, manifest, args.target_version)
+            backends[host] = backend
             fleet[host] = before["health"][role]
             manifests[host] = json.loads(manifest)
-        document = {"environment": args.environment, "system_identifier": args.expected_system_identifier,
+        if args.target_version == HEADS[2]:
+            verify_recovery_process_inventory(backends)
+        document = {"target_version": args.target_version, "environment": args.environment, "system_identifier": args.expected_system_identifier,
                     "migration_digest": args.migration_digest, "fleet": fleet, "support_manifests": manifests}
         action = "apply" if args.apply else "check"
         result = subprocess.run(["docker", "exec", "-i", ingress.HOSTS["stable"], "./uniroute", "compatible-expand", action],

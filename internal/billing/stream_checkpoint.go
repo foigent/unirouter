@@ -22,30 +22,33 @@ const (
 var ErrStreamLeaseConflict = errors.New("stream delivery lease authority changed")
 
 type StreamDeliveryStart struct {
-	RequestID  string
-	AttemptID  string
-	OwnerID    string
-	OrgID      int64
-	Generation int64
-	LeaseTTL   time.Duration
+	CounterVersion string
+	RequestID      string
+	AttemptID      string
+	OwnerID        string
+	OrgID          int64
+	Generation     int64
+	LeaseTTL       time.Duration
 }
 
 type StreamLeaseFence struct {
-	RequestID  string
-	AttemptID  string
-	OwnerID    string
-	OrgID      int64
-	Generation int64
+	CounterVersion string
+	RequestID      string
+	AttemptID      string
+	OwnerID        string
+	OrgID          int64
+	Generation     int64
 }
 
 func (start StreamDeliveryStart) Fence() StreamLeaseFence {
 	return StreamLeaseFence{
 		RequestID: start.RequestID, AttemptID: start.AttemptID, OwnerID: start.OwnerID,
-		OrgID: start.OrgID, Generation: start.Generation,
+		OrgID: start.OrgID, Generation: start.Generation, CounterVersion: start.CounterVersion,
 	}
 }
 
 type StreamDeliveryCheckpoint struct {
+	CounterVersion   string
 	RequestID        string
 	AttemptID        string
 	OwnerID          string
@@ -76,6 +79,11 @@ type StreamRecoveryResult struct {
 // initial local-write receipt and the process lease. No response content may
 // be written before this transaction succeeds.
 func (b *Billing) BeginStreamDelivery(ctx context.Context, start StreamDeliveryStart) error {
+	var versionErr error
+	start.CounterVersion, versionErr = normalizeStreamCounterVersion(start.CounterVersion)
+	if versionErr != nil {
+		return versionErr
+	}
 	start.RequestID = strings.TrimSpace(start.RequestID)
 	start.AttemptID = strings.TrimSpace(start.AttemptID)
 	start.OwnerID = strings.TrimSpace(start.OwnerID)
@@ -93,16 +101,24 @@ func (b *Billing) BeginStreamDelivery(ctx context.Context, start StreamDeliveryS
 	if err != nil {
 		return fmt.Errorf("lock stream delivery reservation: %w", err)
 	}
+	counterColumn, expanded, err := streamCounterColumnTx(ctx, tx, "")
+	if err != nil {
+		return err
+	}
+	if !expanded && start.CounterVersion != metering.GatewayCounterEstimateVersionV2 {
+		return ErrStreamLeaseConflict
+	}
+	var existingVersion string
 	var existingAttempt, existingOwner, existingState string
 	var existingGeneration int64
 	var existingAlive bool
 	err = tx.QueryRow(ctx, `
-		SELECT attempt_id,owner_id,generation,state,lease_expires_at>clock_timestamp()
+		SELECT `+counterColumn+`,attempt_id,owner_id,generation,state,lease_expires_at>clock_timestamp()
 		FROM stream_delivery_leases
 		WHERE org_id=$1 AND request_id=$2 FOR UPDATE`, start.OrgID, start.RequestID,
-	).Scan(&existingAttempt, &existingOwner, &existingGeneration, &existingState, &existingAlive)
+	).Scan(&existingVersion, &existingAttempt, &existingOwner, &existingGeneration, &existingState, &existingAlive)
 	if err == nil {
-		if record.Status != "settlement_pending" ||
+		if existingVersion != start.CounterVersion || record.Status != "settlement_pending" ||
 			(record.SettlementPendingReason != "billable_output" && record.SettlementPendingReason != "delivery_prepared") ||
 			existingAttempt != start.AttemptID || existingOwner != start.OwnerID || existingGeneration != start.Generation ||
 			existingState != "active" || !existingAlive {
@@ -170,11 +186,16 @@ func (b *Billing) BeginStreamDelivery(ctx context.Context, start StreamDeliveryS
 		WHERE org_id=$1 AND operation_id=$2`, start.OrgID, start.RequestID); err != nil {
 		return fmt.Errorf("persist stream write-start idempotency state: %w", err)
 	}
+	columns, values := "", ""
+	args := []any{start.OrgID, start.RequestID, start.AttemptID, start.OwnerID, start.Generation, ceilDurationMilliseconds(start.LeaseTTL)}
+	if expanded {
+		columns, values = ",counter_version", ",$7"
+		args = append(args, start.CounterVersion)
+	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO stream_delivery_leases (
-			org_id,request_id,attempt_id,owner_id,generation,state,lease_expires_at
-		) VALUES ($1,$2,$3,$4,$5,'active',clock_timestamp()+($6*INTERVAL '1 millisecond'))`,
-		start.OrgID, start.RequestID, start.AttemptID, start.OwnerID, start.Generation, ceilDurationMilliseconds(start.LeaseTTL)); err != nil {
+  INSERT INTO stream_delivery_leases (
+   org_id,request_id,attempt_id,owner_id,generation,state,lease_expires_at`+columns+`
+  ) VALUES ($1,$2,$3,$4,$5,'active',clock_timestamp()+($6*INTERVAL '1 millisecond')`+values+`)`, args...); err != nil {
 		return fmt.Errorf("create stream delivery lease: %w", err)
 	}
 	return tx.Commit(ctx)
@@ -185,7 +206,15 @@ func (b *Billing) RenewStreamDelivery(ctx context.Context, start StreamDeliveryS
 		strings.TrimSpace(start.AttemptID) == "" || strings.TrimSpace(start.OwnerID) == "" || start.Generation <= 0 || start.LeaseTTL <= 0 {
 		return fmt.Errorf("stream lease renewal is invalid")
 	}
-	result, err := b.db.Exec(ctx, `
+	tx, err := b.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := requireCurrentStreamFenceTx(ctx, tx, start.Fence()); err != nil {
+		return err
+	}
+	result, err := tx.Exec(ctx, `
 		UPDATE stream_delivery_leases
 		SET lease_expires_at=clock_timestamp()+($5*INTERVAL '1 millisecond'), updated_at=NOW()
 		WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3 AND owner_id=$4 AND generation=$6 AND state='active'
@@ -197,10 +226,15 @@ func (b *Billing) RenewStreamDelivery(ctx context.Context, start StreamDeliveryS
 	if result.RowsAffected() != 1 {
 		return ErrStreamLeaseConflict
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 func (b *Billing) CheckpointStreamDelivery(ctx context.Context, checkpoint StreamDeliveryCheckpoint) (*StreamCheckpointResult, error) {
+	var versionErr error
+	checkpoint.CounterVersion, versionErr = normalizeStreamCounterVersion(checkpoint.CounterVersion)
+	if versionErr != nil {
+		return nil, versionErr
+	}
 	checkpoint.RequestID = strings.TrimSpace(checkpoint.RequestID)
 	checkpoint.AttemptID = strings.TrimSpace(checkpoint.AttemptID)
 	checkpoint.OwnerID = strings.TrimSpace(checkpoint.OwnerID)
@@ -217,17 +251,22 @@ func (b *Billing) CheckpointStreamDelivery(ctx context.Context, checkpoint Strea
 		return nil, fmt.Errorf("begin stream checkpoint: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	counterColumn, _, err := streamCounterColumnTx(ctx, tx, "")
+	if err != nil {
+		return nil, err
+	}
+	var counterVersion string
 	var attemptID, ownerID, state string
 	var generation int64
 	var leaseAlive bool
 	if err := tx.QueryRow(ctx, `
-		SELECT attempt_id,owner_id,generation,state,lease_expires_at>clock_timestamp()
+		SELECT `+counterColumn+`,attempt_id,owner_id,generation,state,lease_expires_at>clock_timestamp()
 		FROM stream_delivery_leases
 		WHERE org_id=$1 AND request_id=$2 FOR UPDATE`, checkpoint.OrgID, checkpoint.RequestID,
-	).Scan(&attemptID, &ownerID, &generation, &state, &leaseAlive); err != nil {
+	).Scan(&counterVersion, &attemptID, &ownerID, &generation, &state, &leaseAlive); err != nil {
 		return nil, fmt.Errorf("lock stream checkpoint lease: %w", err)
 	}
-	if attemptID != checkpoint.AttemptID || ownerID != checkpoint.OwnerID || generation != checkpoint.Generation || state != "active" || !leaseAlive {
+	if counterVersion != checkpoint.CounterVersion || attemptID != checkpoint.AttemptID || ownerID != checkpoint.OwnerID || generation != checkpoint.Generation || state != "active" || !leaseAlive {
 		return nil, ErrStreamLeaseConflict
 	}
 
@@ -302,25 +341,38 @@ func (b *Billing) FinishStreamDelivery(ctx context.Context, start StreamDelivery
 		start.Generation <= 0 || (state != StreamLeaseStateCompleted && state != StreamLeaseStateInterrupted) || reason == "" || len(reason) > 80 {
 		return fmt.Errorf("stream lease terminal state is invalid")
 	}
-	result, err := b.db.Exec(ctx, `
+	version, err := normalizeStreamCounterVersion(start.CounterVersion)
+	if err != nil {
+		return err
+	}
+	tx, err := b.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	column, _, err := streamCounterColumnTx(ctx, tx, "")
+	if err != nil {
+		return err
+	}
+	result, err := tx.Exec(ctx, `
 		UPDATE stream_delivery_leases
 		SET state=$6,terminal_reason=$7,updated_at=NOW()
 		WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3 AND owner_id=$4
-		  AND generation=$5
+		  AND generation=$5 AND `+column+`=$8
 		  AND state='active' AND lease_expires_at>clock_timestamp()`,
-		start.OrgID, start.RequestID, start.AttemptID, start.OwnerID, start.Generation, state, reason)
+		start.OrgID, start.RequestID, start.AttemptID, start.OwnerID, start.Generation, state, reason, version)
 	if err != nil {
 		return fmt.Errorf("finish stream delivery lease: %w", err)
 	}
 	if result.RowsAffected() == 1 {
-		return nil
+		return tx.Commit(ctx)
 	}
 	var existingState, existingReason string
-	if err := b.db.QueryRow(ctx, `SELECT state,terminal_reason FROM stream_delivery_leases
-		WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3 AND owner_id=$4 AND generation=$5`,
-		start.OrgID, start.RequestID, start.AttemptID, start.OwnerID, start.Generation).Scan(&existingState, &existingReason); err == nil &&
+	if err := tx.QueryRow(ctx, `SELECT state,terminal_reason FROM stream_delivery_leases
+		WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3 AND owner_id=$4 AND generation=$5 AND `+column+`=$6`,
+		start.OrgID, start.RequestID, start.AttemptID, start.OwnerID, start.Generation, version).Scan(&existingState, &existingReason); err == nil &&
 		existingState == state && existingReason == reason {
-		return nil
+		return tx.Commit(ctx)
 	}
 	return ErrStreamLeaseConflict
 }
@@ -354,7 +406,7 @@ func (b *Billing) RecoverExpiredStreamDeliveries(ctx context.Context, limit int)
 	for _, item := range items {
 		lease := StreamDeliveryStart{
 			RequestID: item.RequestID, AttemptID: item.AttemptID,
-			OwnerID: item.OwnerID, OrgID: item.OrgID, Generation: item.Generation, LeaseTTL: streamRecoveryClaimTTL,
+			OwnerID: item.OwnerID, OrgID: item.OrgID, Generation: item.Generation, LeaseTTL: streamRecoveryClaimTTL, CounterVersion: item.CounterVersion,
 		}
 		if err := b.RenewStreamDelivery(ctx, lease); err != nil {
 			result.Failed++
@@ -364,7 +416,7 @@ func (b *Billing) RecoverExpiredStreamDeliveries(ctx context.Context, limit int)
 		finish := func(state, reason string) error {
 			return b.FinishStreamDelivery(ctx, StreamDeliveryStart{
 				RequestID: item.RequestID, AttemptID: item.AttemptID,
-				OwnerID: item.OwnerID, OrgID: item.OrgID, Generation: item.Generation,
+				OwnerID: item.OwnerID, OrgID: item.OrgID, Generation: item.Generation, CounterVersion: item.CounterVersion,
 			}, state, reason)
 		}
 		if item.LatestDeliveryOutcome != DeliveryOutcomeCompleted &&
@@ -405,17 +457,23 @@ func (b *Billing) RecoverExpiredStreamDeliveries(ctx context.Context, limit int)
 			result.ProviderCostHeld++
 			continue
 		}
+		source, versionErr := metering.CounterSource(item.CounterVersion)
+		if versionErr != nil {
+			result.Failed++
+			recoveryErrors = append(recoveryErrors, versionErr)
+			continue
+		}
 		settle := SettleRequest{
 			RequestID: item.RequestID, AttemptID: item.AttemptID, OrgID: item.OrgID,
 			StreamFence:  streamFencePointer(lease.Fence()),
 			PromptTokens: item.PromptTokens, UncachedPromptTokens: item.PromptTokens,
 			CompletionTokens:     item.CompletionTokens,
-			UsageSource:          metering.UsageSourceCounterV2,
+			UsageSource:          source,
 			UsageAuthority:       metering.UsageAuthorityGatewayCounter,
 			UsagePurpose:         metering.UsagePurposeCustomerCharge,
 			UsageFinality:        metering.UsageFinalityEstimated,
 			UsageContractVersion: metering.UsageContractVersion,
-			UsageEstimateVersion: metering.GatewayCounterEstimateVersionV2,
+			UsageEstimateVersion: item.CounterVersion,
 		}
 		if err := b.PersistSettlementUsage(ctx, settle); err != nil {
 			if errors.Is(err, ErrProviderFinalUsageRequired) {
@@ -453,11 +511,23 @@ func (b *Billing) RecoverExpiredStreamDeliveries(ctx context.Context, limit int)
 }
 
 func (b *Billing) claimExpiredStreams(ctx context.Context, limit int, ownerID string, leaseTTL time.Duration) ([]expiredStream, error) {
+	if !b.canClaimRecovery() {
+		return nil, nil
+	}
 	ownerID = strings.TrimSpace(ownerID)
 	if ownerID == "" || len(ownerID) > 80 || leaseTTL <= 0 {
 		return nil, fmt.Errorf("expired stream recovery claim is invalid")
 	}
-	rows, err := b.db.Query(ctx, `
+	tx, err := b.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	column, _, err := streamCounterColumnTx(ctx, tx, "l.")
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tx.Query(ctx, `
 		WITH candidates AS (
 			SELECT org_id,request_id FROM stream_delivery_leases
 			WHERE state='active' AND lease_expires_at<=clock_timestamp()
@@ -467,9 +537,9 @@ func (b *Billing) claimExpiredStreams(ctx context.Context, limit int, ownerID st
 			SET owner_id=$2,generation=l.generation+1,
 			    lease_expires_at=clock_timestamp()+($3*INTERVAL '1 millisecond'),updated_at=NOW()
 			FROM candidates c WHERE l.org_id=c.org_id AND l.request_id=c.request_id
-			RETURNING l.org_id,l.request_id,l.attempt_id,l.owner_id,l.generation
+			RETURNING l.org_id,l.request_id,l.attempt_id,l.owner_id,l.generation,`+column+` AS counter_version
 		)
-		SELECT c.org_id,c.request_id,c.attempt_id,c.owner_id,c.generation,
+		SELECT c.org_id,c.request_id,c.attempt_id,c.owner_id,c.generation,c.counter_version,
 		       COALESCE(cp.delivered_bytes,0),COALESCE(cp.delivered_chunks,0),
 		       COALESCE(cp.prompt_tokens,0),COALESCE(cp.completion_tokens,0),
 		       COALESCE(cp.policy_set_version,''),cp.sequence IS NOT NULL,
@@ -492,14 +562,21 @@ func (b *Billing) claimExpiredStreams(ctx context.Context, limit int, ownerID st
 	items := make([]expiredStream, 0, limit)
 	for rows.Next() {
 		var item expiredStream
-		if err := rows.Scan(&item.OrgID, &item.RequestID, &item.AttemptID, &item.OwnerID, &item.Generation,
+		if err := rows.Scan(&item.OrgID, &item.RequestID, &item.AttemptID, &item.OwnerID, &item.Generation, &item.CounterVersion,
 			&item.DeliveredBytes, &item.DeliveredChunks, &item.PromptTokens, &item.CompletionTokens,
 			&item.PolicySetVersion, &item.HasCheckpoint, &item.LatestDeliveryOutcome); err != nil {
 			return nil, fmt.Errorf("scan expired stream lease: %w", err)
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 func newStreamRecoveryOwner() (string, error) {
@@ -515,6 +592,11 @@ func ceilDurationMilliseconds(value time.Duration) int64 {
 }
 
 func normalizeStreamLeaseFence(fence StreamLeaseFence) (StreamLeaseFence, error) {
+	var versionErr error
+	fence.CounterVersion, versionErr = normalizeStreamCounterVersion(fence.CounterVersion)
+	if versionErr != nil {
+		return StreamLeaseFence{}, versionErr
+	}
 	fence.RequestID = strings.TrimSpace(fence.RequestID)
 	fence.AttemptID = strings.TrimSpace(fence.AttemptID)
 	fence.OwnerID = strings.TrimSpace(fence.OwnerID)
@@ -531,15 +613,19 @@ func requireCurrentStreamFenceTx(ctx context.Context, tx pgx.Tx, fence StreamLea
 	if err != nil {
 		return err
 	}
+	column, _, err := streamCounterColumnTx(ctx, tx, "")
+	if err != nil {
+		return err
+	}
 	var current int
 	err = tx.QueryRow(ctx, `
 		SELECT 1
 		FROM stream_delivery_leases
 		WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3
-		  AND owner_id=$4 AND generation=$5
+		  AND owner_id=$4 AND generation=$5 AND `+column+`=$6
 		  AND state='active' AND lease_expires_at>clock_timestamp()
 		FOR UPDATE`,
-		fence.OrgID, fence.RequestID, fence.AttemptID, fence.OwnerID, fence.Generation,
+		fence.OrgID, fence.RequestID, fence.AttemptID, fence.OwnerID, fence.Generation, fence.CounterVersion,
 	).Scan(&current)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrStreamLeaseConflict

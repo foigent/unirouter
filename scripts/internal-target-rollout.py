@@ -170,9 +170,60 @@ def check_service(service, container, image, project, runtime_environment=None):
         require((actual.get("IPAMConfig") or {}).get("IPv4Address") == (options or {}).get("ipv4_address"), "actual static network assignment differs")
 
 
+COUNTER_V2 = "unirouter.stream-counter.v2"
+COUNTER_V3 = "unirouter.stream-counter.v3"
+COUNTER_HEAD = "000115_stream_counter_version"
+CAPABILITY_HEAD = "000114_capability_delivery_expand"
+
+
+def validate_transition(transition):
+    if transition is None:
+        return
+    require(isinstance(transition, dict), "invalid named transition")
+    if transition.get("kind") == "stream_counter_expand_carrier":
+        require(set(transition) == {"kind", "up_sha256", "down_sha256"} and
+                all(re.fullmatch(r"[a-f0-9]{64}", transition[key]) for key in ("up_sha256", "down_sha256")),
+                "exact reviewed M115 bytes required")
+    elif transition.get("kind") == "stream_counter_writer":
+        require(set(transition) == {"kind", "from", "to"} and
+                {transition["from"], transition["to"]} == {COUNTER_V2, COUNTER_V3},
+                "only the two exact writer directions are supported")
+    else:
+        raise RuntimeError("unsupported named rollout transition")
+
+
+def writer_overlay(overlay, transition):
+    """Edit one explicit shared environment anchor; effective config verifies scope."""
+    pattern = rb"(?m)^( +)STREAM_COUNTER_VERSION: *[\"']?([^\"'\n ]+)[\"']? *$"
+    matches = list(re.finditer(pattern, overlay))
+    if matches:
+        require(len(matches) == 1 and matches[0].group(2).decode() == transition["from"], "writer overlay predecessor differs")
+        match = matches[0]
+        return overlay[:match.start()] + match.group(1) + b"STREAM_COUNTER_VERSION: " + transition["to"].encode() + overlay[match.end():]
+    require(transition["from"] == COUNTER_V2, "missing writer key is legacy v2 only")
+    anchors = list(re.finditer(rb"(?m)^( +)RUNTIME_IMAGE_DIGEST:.*$", overlay))
+    require(len(anchors) == 1, "shared runtime environment anchor is ambiguous")
+    anchor = anchors[0]
+    return overlay[:anchor.end()] + b"\n" + anchor.group(1) + b"STREAM_COUNTER_VERSION: " + transition["to"].encode() + overlay[anchor.end():]
+
+
+def validate_pending_counter_carrier(old_source, new_source, transition, actual_ledger):
+    require(transition and transition["kind"] == "stream_counter_expand_carrier", "bound schema source differs")
+    old_paths = run(["git", "-C", str(old_source), "ls-tree", "-r", "--name-only", "HEAD", "migrations"]).decode().splitlines()
+    old_ledger = sorted(Path(path).name[:-7] for path in old_paths if path.endswith(".up.sql"))
+    require(old_ledger and old_ledger[-1] == CAPABILITY_HEAD and actual_ledger == old_ledger, "pending M115 carrier requires the complete exact M114 predecessor")
+    changes = run(["git", "-C", str(new_source), "diff", "--no-renames", "--name-status",
+                   run(["git", "-C", str(old_source), "rev-parse", "HEAD"]).decode().strip(), "HEAD", "--", "migrations"]).decode().splitlines()
+    expected = sorted("A\tmigrations/" + COUNTER_HEAD + suffix for suffix in (".up.sql", ".down.sql"))
+    require(sorted(changes) == expected, "M115 carrier may only add its exact migration pair")
+    for direction in ("up", "down"):
+        require(digest(regular(new_source / "migrations" / (COUNTER_HEAD + "." + direction + ".sql")).read_bytes()) == transition[direction + "_sha256"], "reviewed M115 carrier bytes differ")
+
+
 def document(path):
     value = load(regular(path).read_bytes())
-    require(set(value) == {"format", "operation_id", "target", "source", "images", "evidence_directory"}, "unknown rollout input fields")
+    require(set(value) in ({"format", "operation_id", "target", "source", "images", "evidence_directory"}, {"format", "operation_id", "target", "source", "images", "evidence_directory", "transition"}), "unknown rollout input fields")
+    validate_transition(value.get("transition"))
     require(value["format"] == "unirouter.internal-target-rollout.v1", "unsupported rollout input")
     require(re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,100}", value["operation_id"]), "invalid operation identity")
     target, source = value["target"], value["source"]
@@ -337,6 +388,18 @@ class Rollout:
             before = old_runtime[key].encode()
             require(before and overlay.count(before) == 1, "runtime metadata occurrence is ambiguous")
             overlay = overlay.replace(before, value.encode())
+        transition = self.spec.get("transition")
+        if transition and transition["kind"] == "stream_counter_writer":
+            require(old_identity["commit"] == self.source["commit"] and old_identity["tree"] == self.source["tree"] and
+                    all(containers[role]["Image"] == self.spec["images"]["frontend" if role == "frontend" else "backend"]["digest"] for role in CONTAINERS),
+                    "writer transition requires the same exact Artifact")
+            require(self.sql("SELECT max(version) FROM schema_migrations") == COUNTER_HEAD, "writer transition requires M115")
+            for role in ("stable", "canary"):
+                require(environment(containers[role]["Config"]["Env"]).get("STREAM_COUNTER_VERSION", COUNTER_V2) == transition["from"], "mixed writer predecessor")
+                manifest = load(run(["docker", "exec", CONTAINERS[role], "./uniroute", "runtime-generation", "support"]))
+                require(COUNTER_HEAD in manifest.get("schema_heads", []) and
+                        all({"kind": "stream_counter", "id": version} in manifest.get("implementations", []) for version in (COUNTER_V2, COUNTER_V3)), "writer bridge lacks both recovery implementations")
+            overlay = writer_overlay(overlay, transition)
         new_tags = {k: v["tag"] for k, v in self.spec["images"].items()}
         new_config = self.config(self.chain(self.new_source, "-"), new_tags, overlay)
         expected = copy.deepcopy(old_config)
@@ -344,16 +407,23 @@ class Rollout:
             expected["services"][service]["image"] = new_tags["frontend" if role == "frontend" else "backend"]
             if role != "frontend":
                 expected["services"][service]["environment"].update(replacements)
+                if transition and transition["kind"] == "stream_counter_writer":
+                    expected["services"][service]["environment"]["STREAM_COUNTER_VERSION"] = transition["to"]
         for service, target, relative in (("backend", "/app/migrations", "migrations"), ("backend-canary", "/app/migrations", "migrations"),
                                           ("prometheus", "/etc/prometheus/prometheus.yml", "infra/prometheus/prometheus.yml"),
                                           ("grafana", "/etc/grafana/provisioning", "infra/grafana/provisioning"),
                                           ("grafana", "/var/lib/grafana/dashboards", "infra/grafana/dashboards")):
-            require(run(["git", "-C", str(old_source), "rev-parse", "HEAD:" + relative]) == run(["git", "-C", str(self.new_source), "rev-parse", "HEAD:" + relative]), "bound schema/monitoring source differs")
+            same_tree = run(["git", "-C", str(old_source), "rev-parse", "HEAD:" + relative]) == run(["git", "-C", str(self.new_source), "rev-parse", "HEAD:" + relative])
+            if not same_tree and relative == "migrations":
+                actual = load(self.sql("SELECT jsonb_agg(version ORDER BY version) FROM schema_migrations"))
+                validate_pending_counter_carrier(old_source, self.new_source, transition, actual)
+            else:
+                require(same_tree, "bound schema/monitoring source differs")
             if service in expected["services"]:
                 matches = [v for v in expected["services"][service].get("volumes", []) if v["target"] == target]
                 require(len(matches) == 1 and matches[0]["source"] == str(old_source / relative), "unexpected source mount")
                 matches[0]["source"] = str(self.new_source / relative)
-        require(new_config == expected, "effective configuration delta exceeds Artifact-only scope")
+        require(new_config == expected, "effective configuration delta exceeds the exact Artifact/named-transition scope")
         before = self.ingress.snapshot(self.ingress_args("both"))
         require(before["before_state"] == "both", "initial rollout requires both healthy receivers")
         ingress_state = self.ingress.owner_command("uniroute-api", "inspect")

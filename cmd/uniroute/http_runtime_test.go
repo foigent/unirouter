@@ -14,7 +14,9 @@ import (
 	"time"
 
 	"github.com/uniroute/unirouter/internal/config"
+	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/runtimegeneration"
+	"github.com/uniroute/unirouter/internal/schemaauthority"
 )
 
 func testHTTPRuntime(t *testing.T) *httpRuntime {
@@ -249,5 +251,47 @@ func TestHTTPRuntimeRequestDeadlineAndForcedDrainAreExplicit(t *testing.T) {
 	case <-finished:
 	default:
 		t.Fatal("forced drain did not cancel/wait for owned handler")
+	}
+}
+
+func TestCounterWriterSchemaAndRecoveryAdmission(t *testing.T) {
+	for _, head := range []string{schemaauthority.LegacyCapabilityHead, schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead} {
+		if err := validateStreamCounterSchema(metering.GatewayCounterEstimateVersionV2, []string{head}); err != nil {
+			t.Fatal(err)
+		}
+		err := validateStreamCounterSchema(metering.GatewayCounterEstimateVersionV3, []string{head})
+		if (err == nil) != (head == schemaauthority.StreamCounterExpandHead) {
+			t.Fatalf("v3 schema acceptance differs: %s %v", head, err)
+		}
+	}
+	for _, version := range []string{"", "future"} {
+		if validateStreamCounterSchema(version, []string{schemaauthority.StreamCounterExpandHead}) == nil {
+			t.Fatal("unknown counter accepted")
+		}
+	}
+	if validateStreamCounterSchema(metering.GatewayCounterEstimateVersionV3, []string{"000116_future"}) == nil {
+		t.Fatal("future head accepted")
+	}
+	runtime := testHTTPRuntime(t)
+	if runtime.canClaimRecovery() {
+		t.Fatal("M113 unregistered actor claimed recovery")
+	}
+	runtime.leaseRequired = true
+	runtime.leaseUntil = time.Now().Add(time.Minute)
+	if !runtime.canClaimRecovery() {
+		t.Fatal("verified actor could not recover")
+	}
+	runtime.draining = true
+	if !runtime.canClaimRecovery() {
+		t.Fatal("draining actor cannot close its settlement responsibility")
+	}
+	runtime.authorityUnavailable = true
+	if runtime.canClaimRecovery() {
+		t.Fatal("incompatible actor claimed recovery")
+	}
+	runtime.authorityUnavailable = false
+	runtime.leaseUntil = time.Now().Add(-time.Second)
+	if runtime.canClaimRecovery() {
+		t.Fatal("expired actor claimed recovery")
 	}
 }

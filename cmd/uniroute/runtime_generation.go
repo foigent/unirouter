@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/runtimegeneration"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
 )
@@ -21,7 +22,7 @@ func startRuntimeGeneration(ctx context.Context, pool *pgxpool.Pool, runtime *ht
 	ctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	head := initialLedger[len(initialLedger)-1]
-	manifest := runtimegeneration.CurrentManifest([]string{schemaauthority.LegacyCapabilityHead, schemaauthority.CapabilityExpandHead})
+	manifest := runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads())
 	refresh := func() error {
 		leaseCtx, stop := context.WithTimeout(ctx, 5*time.Second)
 		defer stop()
@@ -52,11 +53,31 @@ func startRuntimeGeneration(ctx context.Context, pool *pgxpool.Pool, runtime *ht
 		draining := runtime.draining
 		runtime.leaseRequired = true
 		runtime.mu.Unlock()
-		until, _, err := runtimegeneration.Renew(leaseCtx, pool, identity, manifest, artifactLedger, draining)
+		until, renewedHead, err := runtimegeneration.Renew(leaseCtx, pool, identity, manifest, artifactLedger, draining)
 		runtime.mu.Lock()
 		defer runtime.mu.Unlock()
 		if err != nil {
 			return err
+		}
+		if renewedHead != head {
+			ledgers, err := schemaauthority.RuntimeLedgers(artifactLedger)
+			if err != nil {
+				return err
+			}
+			for _, ledger := range ledgers {
+				if ledger[len(ledger)-1] == renewedHead {
+					wire, _ := json.Marshal(ledger)
+					runtime.schemaDigest = fmt.Sprintf("%x", sha256.Sum256(wire))
+					head = renewedHead
+					break
+				}
+			}
+			if head != renewedHead {
+				return runtimegeneration.ErrIncompatible
+			}
+		}
+		if err := validateStreamCounterSchema(runtime.streamCounterVersion, []string{renewedHead}); err != nil {
+			return fmt.Errorf("%w: %v", runtimegeneration.ErrIncompatible, err)
 		}
 		runtime.leaseUntil = until
 		runtime.authorityUnavailable = false
@@ -101,4 +122,14 @@ func startRuntimeGeneration(ctx context.Context, pool *pgxpool.Pool, runtime *ht
 		}
 	}()
 	return cancel, done, nil
+}
+
+func validateStreamCounterSchema(version string, ledger []string) error {
+	if _, err := metering.CounterSource(version); err != nil {
+		return err
+	}
+	if version == metering.GatewayCounterEstimateVersionV3 && (len(ledger) == 0 || ledger[len(ledger)-1] != schemaauthority.StreamCounterExpandHead) {
+		return fmt.Errorf("stream counter v3 requires exact M115")
+	}
+	return nil
 }

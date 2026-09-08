@@ -47,7 +47,7 @@ func TestIngressOwnerRecoversRealHeartbeatSerializationIntegration(t *testing.T)
 			ctx := t.Context()
 			ledger, err := schemaauthority.ExpectedLedger("../../migrations")
 			require.NoError(t, err)
-			manifest := CurrentManifest([]string{schemaauthority.LegacyCapabilityHead, schemaauthority.CapabilityExpandHead})
+			manifest := CurrentManifest(schemaauthority.SupportedSchemaHeads())
 			members := []Identity{{"uri_" + strings.Repeat("e", 32), "sha256:" + strings.Repeat("e", 64)}, {"uri_" + strings.Repeat("f", 32), "sha256:" + strings.Repeat("f", 64)}}
 			for _, i := range members {
 				_, _, err = Renew(ctx, pool, i, manifest, ledger, false)
@@ -123,7 +123,7 @@ func TestIngressSerializationRecoveryRechecksLeaseIntegration(t *testing.T) {
 			ctx := t.Context()
 			ledger, err := schemaauthority.ExpectedLedger("../../migrations")
 			require.NoError(t, err)
-			manifest := CurrentManifest([]string{schemaauthority.LegacyCapabilityHead, schemaauthority.CapabilityExpandHead})
+			manifest := CurrentManifest(schemaauthority.SupportedSchemaHeads())
 			i := Identity{"uri_" + strings.Repeat("e", 32), "sha256:" + strings.Repeat("e", 64)}
 			_, _, err = Renew(ctx, pool, i, manifest, ledger, false)
 			require.NoError(t, err)
@@ -179,13 +179,13 @@ func TestIngressIntentRetainsPotentialReceiversThroughAmbiguity(t *testing.T) {
 	ctx := t.Context()
 	ledger, err := schemaauthority.ExpectedLedger("../../migrations")
 	require.NoError(t, err)
-	manifest := CurrentManifest([]string{schemaauthority.LegacyCapabilityHead, schemaauthority.CapabilityExpandHead})
+	manifest := CurrentManifest(schemaauthority.SupportedSchemaHeads())
 	first := Identity{"uri_" + strings.Repeat("a", 32), "sha256:" + strings.Repeat("a", 64)}
 	second := Identity{"uri_" + strings.Repeat("b", 32), "sha256:" + strings.Repeat("b", 64)}
 	for _, i := range []Identity{first, second} {
 		until, head, err := Renew(ctx, pool, i, manifest, ledger, false)
 		require.NoError(t, err)
-		require.Equal(t, schemaauthority.CapabilityExpandHead, head)
+		require.Equal(t, schemaauthority.LatestSupportedMigration, head)
 		require.True(t, until.After(time.Now()))
 	}
 	wire := []byte("isolated config both")
@@ -261,7 +261,7 @@ func TestHeartbeatPreservesLeaseWithoutGrantingAuthorityWhilePublicationLockedIn
 	ctx := t.Context()
 	ledger, err := schemaauthority.ExpectedLedger("../../migrations")
 	require.NoError(t, err)
-	manifest := CurrentManifest([]string{schemaauthority.LegacyCapabilityHead, schemaauthority.CapabilityExpandHead})
+	manifest := CurrentManifest(schemaauthority.SupportedSchemaHeads())
 	identity := Identity{"uri_" + strings.Repeat("c", 32), "sha256:" + strings.Repeat("c", 64)}
 	_, _, err = Renew(ctx, pool, identity, manifest, ledger, false)
 	require.NoError(t, err)
@@ -275,7 +275,7 @@ func TestHeartbeatPreservesLeaseWithoutGrantingAuthorityWhilePublicationLockedIn
 	defer cancel()
 	until, head, err := Renew(bounded, pool, identity, manifest, ledger, false)
 	require.NoError(t, err)
-	require.Equal(t, schemaauthority.CapabilityExpandHead, head)
+	require.Equal(t, schemaauthority.LatestSupportedMigration, head)
 	require.True(t, until.After(time.Now()))
 	var membership string
 	require.NoError(t, pool.QueryRow(ctx, `SELECT ingress_state FROM runtime_generations WHERE instance_id=$1`, identity.Instance).Scan(&membership))

@@ -104,6 +104,7 @@ type Relay struct {
 	payloadCaptureMode         string
 	evidenceContextTrustSecret string
 	streamPolicy               streampolicy.Config
+	streamCounterVersion       string
 	payloadBudget              *payloadpolicy.Budget
 	guardrail                  *guardrail.Service
 	freezeSafetyFactor         string
@@ -116,6 +117,22 @@ type Relay struct {
 	runtimeEnvironment         string
 	modelExecution             *modelExecutionRuntime
 	providerHTTPDoer           adapters.HTTPDoer
+}
+
+// SetStreamCounterVersion is a startup-only selection. Schema compatibility is
+// verified before serving; each stream persists this version in its lease.
+func (relay *Relay) SetStreamCounterVersion(version string) error {
+	if _, err := metering.CounterSource(version); err != nil {
+		return err
+	}
+	relay.streamCounterVersion = version
+	return nil
+}
+func (relay *Relay) counterVersion() string {
+	if relay.streamCounterVersion == "" {
+		return metering.GatewayCounterEstimateVersionV2
+	}
+	return relay.streamCounterVersion
 }
 
 func (relay *Relay) SetModelAuthorization(evaluator *modelauthz.Evaluator) {
@@ -1791,8 +1808,11 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	billableOutputMarked := false
 	var deliveryStarted atomic.Bool
 	preOutputBillingFailure := false
+	counterVersion := relay.counterVersion()
+	counterSource, _ := metering.CounterSource(counterVersion)
 	leaseStart := billing.StreamDeliveryStart{
-		RequestID: requestID, AttemptID: attemptIDFromContext(ctx), OwnerID: processStreamLeaseOwner,
+		CounterVersion: counterVersion,
+		RequestID:      requestID, AttemptID: attemptIDFromContext(ctx), OwnerID: processStreamLeaseOwner,
 		OrgID: orgID, Generation: streampolicy.InitialLeaseGeneration, LeaseTTL: streampolicy.CheckpointLeaseDuration,
 	}
 	streamFence := leaseStart.Fence()
@@ -1926,7 +1946,11 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		}
 	}()
 
-	deliveredCounter := tokenutil.NewStreamTokenCounter()
+	deliveredCounter, counterErr := tokenutil.NewStreamTokenCounterWithVersion(counterVersion)
+	if counterErr != nil {
+		reqLog.Error("Invalid stream counter: %v", counterErr)
+		return
+	}
 	if admittedInput, exists := admissionInputEstimateFromContext(ctx); exists {
 		deliveredCounter.SetEstimatedInputTokens(admittedInput)
 	} else {
@@ -1937,11 +1961,12 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	// admission and the explicit/public output cap.
 	admittedOutputTokens := 0
 	usedUpstreamUsage := false
-	streamUsage, _ := adapters.NewUsage(0, 0, 0, metering.UsageSourceCounterV2)
+	streamUsage, _ := adapters.NewUsage(0, 0, 0, counterSource)
 	var deliveredBytes int64
 	deliveredChunks := 0
 	deliveryPartialRecorded := false
 	deliveryReceiptFailure := false
+	counterInvalid := false
 	streamTerminationCode := ""
 	pinnedStreamGuardrail := guardrailPinFromContext(ctx)
 	streamGuardrailProfile := guardrail.StreamProfile{PolicySetVersion: "none"}
@@ -2011,6 +2036,9 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	var checkpointBytes int64
 	checkpointTokens := 0
 	checkpointDelivery := func(force bool) bool {
+		if counterInvalid {
+			return false
+		}
 		if !deliveryStarted.Load() || deliveredBytes <= 0 || deliveredChunks <= 0 {
 			return true
 		}
@@ -2025,7 +2053,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		checkpointCtx, checkpointCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		_, err := relay.billing.CheckpointStreamDelivery(checkpointCtx, billing.StreamDeliveryCheckpoint{
 			RequestID: requestID, AttemptID: leaseStart.AttemptID, OwnerID: leaseStart.OwnerID, OrgID: orgID,
-			Generation:     leaseStart.Generation,
+			Generation: leaseStart.Generation, CounterVersion: counterVersion,
 			DeliveredBytes: deliveredBytes, DeliveredChunks: deliveredChunks,
 			PromptTokens: deliveredCounter.InputTokens(), CompletionTokens: completionTokens,
 			PolicySetVersion: streamGuardrailProfile.PolicySetVersion,
@@ -2234,7 +2262,13 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 				deliveredChunks++
 				if frame.Text != "" {
 					admittedOutputTokens += len([]byte(frame.Text))
-					deliveredCounter.AddOutputDelta(frame.Text)
+					if err := deliveredCounter.AddOutputDelta(frame.Text); err != nil {
+						reqLog.Error("Delivered stream estimate failed: %v", err)
+						streamTerminationCode = "stream_counter_invalid"
+						counterInvalid = true
+						leaveLeaseForRecovery = true
+						return false
+					}
 				}
 				if !checkpointDelivery(!deliveryPartialRecorded) {
 					return false
@@ -2901,7 +2935,7 @@ streamLoop:
 			writeSSE("data: {\"error\":{\"type\":\"stream_error\",\"code\":\"stream_error.resource_limit_exceeded\",\"message\":\"Stream exceeded a transport resource limit\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
 		case "stream_output_limit_exceeded":
 			writeSSE("data: {\"error\":{\"type\":\"stream_error\",\"code\":\"stream_error.output_limit_exceeded\",\"message\":\"Stream exceeded its explicit output limit\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
-		case "stream_lease_lost", "stream_checkpoint_unpersisted":
+		case "stream_lease_lost", "stream_checkpoint_unpersisted", "stream_counter_invalid":
 			writeSSE("data: {\"error\":{\"type\":\"stream_error\",\"code\":\"stream_error.delivery_state_unavailable\",\"message\":\"Durable stream delivery state is unavailable\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
 		case "routing_health_transition_failed":
 			writeSSE("data: {\"error\":{\"type\":\"stream_error\",\"code\":\"stream_error.routing_health_unavailable\",\"message\":\"Routing health authority is temporarily unavailable\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
@@ -2950,6 +2984,14 @@ streamLoop:
 		return
 	}
 
+	if counterInvalid {
+		leaveLeaseForRecovery = true
+		recordTerminalDelivery(billing.DeliveryOutcomeInterrupted, "stream_counter_invalid")
+		recordStreamMetrics(adapters.NewMissingUsage(), 0, nil)
+		recordStreamTermination("stream_counter_invalid", "checkpoint_recovery_pending")
+		writeTerminationFrame("stream_counter_invalid", "checkpoint_recovery_pending")
+		return
+	}
 	if deliveryReceiptFailure {
 		leaveLeaseForRecovery = true
 		evidenceUsage := adapters.NewMissingUsage()
@@ -2969,7 +3011,7 @@ streamLoop:
 		deliveredCounter.InputTokens(),
 		deliveredCounter.OutputTokens(),
 		deliveredCounter.InputTokens()+deliveredCounter.OutputTokens(),
-		metering.UsageSourceCounterV2,
+		counterSource,
 	)
 	if streamTerminationCode == "" && usedUpstreamUsage {
 		customerUsage, usageErr = providerUsage.ForCustomerCharge()

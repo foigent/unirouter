@@ -16,8 +16,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/uniroute/unirouter/internal/config"
 	"github.com/uniroute/unirouter/internal/db"
+	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/migrate"
 	publication "github.com/uniroute/unirouter/internal/modelcapabilitypublication"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/runtimegeneration"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
 )
@@ -26,6 +28,7 @@ import (
 // prior proxy workers have exited. This owner repeats live binary checks under
 // the existing migration lock. Neither authorizes arbitrary future schemas.
 type compatibleExpandInput struct {
+	TargetVersion    string                       `json:"target_version"`
 	Environment      string                       `json:"environment"`
 	SystemIdentifier string                       `json:"system_identifier"`
 	MigrationDigest  string                       `json:"migration_digest"`
@@ -57,6 +60,12 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 	if input.Environment != cfg.RuntimeEnvironment || (input.Environment != "development" && input.Environment != "test" && input.Environment != "integration") || input.SystemIdentifier == "" || len(input.Fleet) != 2 || len(input.SupportManifests) != 2 {
 		return fmt.Errorf("exact development/test Target and both receiving instances are required")
 	}
+	if input.TargetVersion == "" {
+		input.TargetVersion = schemaauthority.CapabilityExpandHead
+	}
+	if input.TargetVersion != schemaauthority.CapabilityExpandHead && input.TargetVersion != schemaauthority.StreamCounterExpandHead {
+		return fmt.Errorf("unknown exact expansion target")
+	}
 	dir := configuredMigrationsDir(cfg)
 	ledger, err := schemaauthority.ExpectedLedger(dir)
 	if err != nil {
@@ -65,7 +74,7 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 	if _, err = schemaauthority.RuntimeLedgers(ledger); err != nil {
 		return err
 	}
-	wire, err := os.ReadFile(filepath.Join(dir, schemaauthority.CapabilityExpandHead+".up.sql"))
+	wire, err := os.ReadFile(filepath.Join(dir, input.TargetVersion+".up.sql"))
 	if err != nil {
 		return err
 	}
@@ -91,6 +100,14 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 		if err != nil {
 			return fmt.Errorf("%s support manifest: %w", host, err)
 		}
+		if input.TargetVersion == schemaauthority.StreamCounterExpandHead {
+			if err := manifest.Require(input.TargetVersion, []modelprofile.ImplementationReference{{Kind: "stream_counter", ID: metering.GatewayCounterEstimateVersionV2}, {Kind: "stream_counter", ID: metering.GatewayCounterEstimateVersionV3}}); err != nil {
+				return err
+			}
+			if !slices.Contains(health.SupportedSchemaHeads, input.TargetVersion) {
+				return fmt.Errorf("runtime does not support requested expansion")
+			}
+		}
 		manifests[host] = manifest
 	}
 	preflight := func(ctx context.Context, conn *pgxpool.Conn) error {
@@ -104,6 +121,35 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 		actual, err := readCompatibleRuntimeSchema(ctx, conn, ledger)
 		if err != nil {
 			return err
+		}
+		predecessor := schemaauthority.LegacyCapabilityHead
+		if input.TargetVersion == schemaauthority.StreamCounterExpandHead {
+			predecessor = schemaauthority.CapabilityExpandHead
+		}
+		if actual[len(actual)-1] != predecessor && actual[len(actual)-1] != input.TargetVersion {
+			return fmt.Errorf("expansion predecessor differs")
+		}
+		if input.TargetVersion == schemaauthority.StreamCounterExpandHead {
+			rows, err := conn.Query(ctx, `SELECT instance_id FROM runtime_generations WHERE state<>'stopped' AND (ingress_state<>'absent' OR lease_expires_at>clock_timestamp())`)
+			if err != nil {
+				return err
+			}
+			for rows.Next() {
+				var instance string
+				if err := rows.Scan(&instance); err != nil {
+					rows.Close()
+					return err
+				}
+				if !instances[instance] {
+					rows.Close()
+					return fmt.Errorf("unaccounted serving or recovery generation")
+				}
+			}
+			err = rows.Err()
+			rows.Close()
+			if err != nil {
+				return err
+			}
 		}
 		if err = publication.VerifyRuntimeStaticProjection(ctx, conn, actual); err != nil {
 			return err
@@ -141,8 +187,11 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 	// writing; the first check also covers an already-committed recovery read.
 	err = migrate.WithSessionLock(ctx, postgres.Pool, func(conn *pgxpool.Conn) error { return preflight(ctx, conn) })
 	if err == nil && args[0] == "apply" {
-		err = migrate.RunCompatibleExpand(ctx, postgres.Pool, dir, migrate.CompatibleExpandHooks{ExpectedSHA256: input.MigrationDigest, Before: preflight,
+		err = migrate.RunCompatibleExpand(ctx, postgres.Pool, dir, migrate.CompatibleExpandHooks{Version: input.TargetVersion, ExpectedSHA256: input.MigrationDigest, Before: preflight,
 			After: func(ctx context.Context, tx pgx.Tx) error {
+				if input.TargetVersion == schemaauthority.StreamCounterExpandHead {
+					return nil
+				} // Existing actors renew against the new head; never re-bootstrap M114.
 				for _, host := range []string{"uniroute-api", "uniroute-api-canary"} {
 					health := input.Fleet[host]
 					if err := runtimegeneration.BootstrapVerifiedBridge(ctx, tx, runtimegeneration.Identity{Instance: health.Instance, Artifact: health.Artifact}, manifests[host], ledger); err != nil {

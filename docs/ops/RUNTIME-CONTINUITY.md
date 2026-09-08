@@ -77,7 +77,7 @@ from an untrusted filename or guessed project.
 For an already bootstrapped development/test Target with both components on one
 exact source and the formal five-file backend/frontend Compose chain, use
 `scripts/internal-target-rollout.py` from the **new exact clean source**. This
-bounded Artifact-only procedure replaces version-specific rollout/resume wrappers.
+bounded Artifact procedure, with the finite counter transitions below, replaces version-specific rollout/resume wrappers.
 The original `runtime-ingress.py` remains the sole ingress writer and retains its
 standalone membership operation. Its lock is held throughout backend stop/create;
 child commands inherit the held descriptors if the controller exits unexpectedly.
@@ -100,7 +100,8 @@ under the source; the final two are the explicit TLS and formal runtime overlays
 The existing Nginx container and its distinct retained Compose chain stay intact.
 The tool compares actual container configuration with rendered Compose, independent
 of labels; it ignores inherited host interpolation. The only permitted changes
-are image/runtime metadata and source paths for unchanged schema/monitoring mounts.
+are image/runtime metadata and source paths for unchanged schema/monitoring mounts,
+except for the explicitly selected counter transitions below.
 Environment values are compared in memory and never printed into the Plan.
 
 With a reviewed non-secret input file, run each action using the same file:
@@ -198,3 +199,70 @@ HTTP/SSE flush, admission races, finalization waiting and explicit cancellation.
 stale plans, all-upstream withdrawal, validation failure, reload ambiguity,
 old-worker delays and unsafe proxy settings. These local tests do not substitute
 for a real Target Nginx rollout or Provider/usage/settlement evidence.
+
+
+## Versioned stream counter: finite M115 bridge
+
+`counter_v3` is a marked estimate of successfully delivered extracted text, not a
+supplier tokenizer or a bill cap. Cumulative integer rounding removes dependence
+on valid text frame partitioning. Input estimation and current rates are unchanged.
+A stream lease fixes its estimator version; its checkpoints inherit that identity.
+Both recovery owners use retained totals and the immutable pin, never current
+writer settings or re-estimated historical text. Provider-final usage and output
+holds retain their existing authority. Retain the v2 implementation while historical
+leases/receipts and supported rollback require it.
+
+The bridge Artifact supports the complete named M113/M114/M115 ledger matrix and
+both counter/recovery implementations. `STREAM_COUNTER_VERSION` defaults to
+`unirouter.stream-counter.v2`; the only other value is
+`unirouter.stream-counter.v3`, which requires M115 before serving. A bridge on
+M113 cannot claim background financial recovery until M114 registration succeeds.
+After lease loss no new recovery claim is allowed; already-owned work is fenced.
+
+For an authorized development/test Target already on M114:
+
+1. Build and verify one exact bridge Artifact with both implementations. Add
+   `transition: {"kind":"stream_counter_expand_carrier","up_sha256":"<exact 64-hex>","down_sha256":"<exact 64-hex>"}`
+   to the normal rollout input. The owner requires the complete real M114 ledger,
+   identical historical migration bytes and precisely the two reviewed M115 files.
+   Run its normal plan/prepare/apply sequence; it does not execute DDL. Keep v2.
+2. Confirm both receivers use that bridge and all old backend processes stopped.
+   Use `compatible-expand.py` with `--target-version 000115_stream_counter_version`
+   and the existing exact hostname, database ID, ingress/config/container and
+   `--migration-digest sha256:<up-file-sha256>` flags. Without `--apply` it checks
+   only. The same Docker lifecycle and ingress locks protect host process inventory;
+   every actual `uniroute` process must belong to the two exact bridge containers.
+   Unknown/unreadable actors and old proxy workers reject the change. Database
+   checks cover all ingress-associated or unexpired recovery actors under the
+   compatibility lock. Expired rows alone are not proof that a process stopped.
+3. After the verified backup/storage gate and successful check, run that exact
+   command with `--apply`. The existing schema owner atomically commits M115 and
+   its ledger; it does not repeat the M114 generation bootstrap. On timeout, read
+   the complete ledger and immutable result before any retry. Release, Slot,
+   capability projection and existing checkpoint values must be unchanged.
+   M115 takes its control/financial DDL locks without waiting; SQLSTATE `55P03`
+   means the migration yielded to an existing owner and rolled back. Read back
+   the unchanged schema before another explicit attempt after contention ends.
+   Do not retry automatically or stop in-flight settlement to force the expand.
+   A successful expand still briefly holds exclusive locks; no zero-wait promise
+   follows from this safety gate.
+4. Re-read both healthy bridge actors on M115. Use a new ordinary rollout input
+   with identical source/images and
+   `transition: {"kind":"stream_counter_writer","from":"unirouter.stream-counter.v2","to":"unirouter.stream-counter.v3"}`.
+   Only the shared writer environment key may change. Run normal
+   plan/prepare/apply, including storage, backup, explicit withdrawal, old proxy
+   wait, drain and qualified-client observer. Existing in-flight v2 remains v2.
+
+Configuration rollback uses the same Artifact and reverse writer transition. It
+only changes new requests; that bridge continues recovering retained v3 leases.
+Do not roll back to 1.2.72 or an Artifact lacking M115/v3 recovery. Guarded M115
+`down` is maintenance-only and refuses potential live actors, future schema heads
+or any v3 lease/usage history; it never deletes or rewrites that history. Ordinary
+rollout cannot apply schema down. Preserve original failed observer/recovery
+records and use the existing inspect/resume commands, not an alternate writer.
+
+Report Artifact rollout, schema expansion, writer activation and bounded real
+cancellation separately. A successful short-request observer does not re-prove
+loaded-stream continuity or arbitrary client support. Paid tests use remaining
+cumulative model budgets; local injected crash/commit ambiguity tests are distinct
+from supplier evidence.

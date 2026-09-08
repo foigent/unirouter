@@ -181,7 +181,7 @@ describe('ReconciliationPage', () => {
     expect(await screen.findByText('req-recon-001')).toBeTruthy();
     expect(screen.getByText('80.0%')).toBeTruthy();
     expect(screen.getByText(/当前筛选口径/)).toBeTruthy();
-    expect(screen.getAllByText('流式计数').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('流式估算（v2）').length).toBeGreaterThan(0);
     expect(screen.getByText('缓存读取 Token')).toBeTruthy();
     expect(screen.getByText('缓存写入 Token')).toBeTruthy();
     expect(screen.getByText(/读 30.*写 10/)).toBeTruthy();

@@ -222,7 +222,7 @@ func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) reconciliationSummary(ctx context.Context, where string, args []interface{}) (reconciliationSummary, error) {
 	query := fmt.Sprintf(
 		`SELECT
-		    COALESCE(SUM(CASE WHEN status_code < 400 AND usage_source IN ('estimated', 'adapter_estimated', 'counter_v2') THEN total_tokens ELSE 0 END), 0),
+		    COALESCE(SUM(CASE WHEN status_code < 400 AND usage_source IN ('estimated', 'adapter_estimated', 'counter_v2', 'counter_v3') THEN total_tokens ELSE 0 END), 0),
 		    COALESCE(SUM(CASE WHEN status_code < 400 AND usage_source IN ('upstream', 'api', '') THEN total_tokens ELSE 0 END), 0),
 		    COALESCE(SUM(CASE WHEN status_code < 400 THEN COALESCE(NULLIF(estimated_tokens, 0), prompt_tokens + completion_tokens) ELSE 0 END), 0),
 		    COALESCE(SUM(CASE WHEN status_code < 400 THEN total_tokens ELSE 0 END), 0),

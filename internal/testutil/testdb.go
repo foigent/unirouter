@@ -308,14 +308,23 @@ func runStrictTestArtifactInstall(ctx context.Context, pool *pgxpool.Pool, migra
 	}
 	// This test-only caller owns an isolated database with no serving fleet.
 	// Exercise the same explicit expand owner; ordinary startup cannot apply it.
-	if artifactLedger[len(artifactLedger)-1] == schemaauthority.CapabilityExpandHead {
-		wire, err := os.ReadFile(filepath.Join(migrationsDir, schemaauthority.CapabilityExpandHead+".up.sql"))
+	for _, expandVersion := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead} {
+		present := false
+		for _, version := range artifactLedger {
+			if version == expandVersion {
+				present = true
+			}
+		}
+		if !present {
+			continue
+		}
+		wire, err := os.ReadFile(filepath.Join(migrationsDir, expandVersion+".up.sql"))
 		if err != nil {
 			return err
 		}
 		err = migrate.RunCompatibleExpand(ctx, pool, migrationsDir, migrate.CompatibleExpandHooks{
-			ExpectedSHA256: fmt.Sprintf("sha256:%x", sha256.Sum256(wire)),
-			After:          func(context.Context, pgx.Tx) error { return nil }, // isolated test DB has no receiving process
+			Version: expandVersion, ExpectedSHA256: fmt.Sprintf("sha256:%x", sha256.Sum256(wire)),
+			After: func(context.Context, pgx.Tx) error { return nil }, // isolated test DB has no receiving process
 			Before: func(ctx context.Context, conn *pgxpool.Conn) error {
 				var name string
 				if err := conn.QueryRow(ctx, `SELECT current_database()`).Scan(&name); err != nil {
@@ -357,6 +366,7 @@ func RewindCapabilityPublicationsForLegacyMigrationTest(ctx context.Context, poo
 		migrationID string
 		kind        string
 	}{
+		{migrationID: "000115_stream_counter_version", kind: "empty stream counter expand test artifact"},
 		{migrationID: "000114_capability_delivery_expand", kind: "empty compatible expand test artifact"},
 		{migrationID: "000113_glm_stream_function_tools_qualification", kind: "capability publication test artifact"},
 		{migrationID: "000112_repeat_model_successor_cutover", kind: "repeat model successor lifecycle test artifact"},

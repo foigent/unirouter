@@ -33,6 +33,7 @@ const CompatibleExpandMarker = "-- unirouter:explicit-compatible-expand-v1"
 // After installs the verified initial leases in the same transaction as DDL.
 // Installation into an isolated empty test DB supplies its own explicit proof.
 type CompatibleExpandHooks struct {
+	Version        string
 	ExpectedSHA256 string
 	Before         func(context.Context, *pgxpool.Conn) error
 	After          func(context.Context, pgx.Tx) error
@@ -89,7 +90,13 @@ func RunCompatibleExpand(ctx context.Context, pool *pgxpool.Pool, dir string, ho
 	if hooks.Before == nil || hooks.After == nil || len(hooks.ExpectedSHA256) != 71 || !strings.HasPrefix(hooks.ExpectedSHA256, "sha256:") {
 		return fmt.Errorf("compatible expand requires exact bytes and a fleet preflight")
 	}
-	return run(ctx, pool, dir, runOptions{expand: &hooks, ceiling: schemaauthority.CapabilityExpandHead, requireExactPrefix: true})
+	if hooks.Version == "" {
+		hooks.Version = schemaauthority.CapabilityExpandHead
+	}
+	if hooks.Version != schemaauthority.CapabilityExpandHead && hooks.Version != schemaauthority.StreamCounterExpandHead {
+		return fmt.Errorf("unknown exact expand target")
+	}
+	return run(ctx, pool, dir, runOptions{expand: &hooks, ceiling: hooks.Version, requireExactPrefix: true})
 }
 
 // RunThrough is an explicit install/restore primitive. It applies exactly the
@@ -277,7 +284,7 @@ func run(ctx context.Context, pool *pgxpool.Pool, dir string, options runOptions
 		options.scopeSet = true
 		for _, version := range pending {
 			if expandFiles[version] {
-				if version != schemaauthority.CapabilityExpandHead {
+				if version != schemaauthority.CapabilityExpandHead && version != schemaauthority.StreamCounterExpandHead {
 					return fmt.Errorf("unknown runtime expand boundary %s", version)
 				}
 				break
@@ -305,13 +312,13 @@ func run(ctx context.Context, pool *pgxpool.Pool, dir string, options runOptions
 		return err
 	}
 	for _, version := range allowed {
-		if expandFiles[version] && (options.expand == nil || version != schemaauthority.CapabilityExpandHead) {
+		if expandFiles[version] && (options.expand == nil || version != options.expand.Version) {
 			return fmt.Errorf("pending compatible expansion %s requires explicit fleet preflight", version)
 		}
 	}
 	if options.expand != nil {
-		if len(allowed) != 1 || allowed[0] != schemaauthority.CapabilityExpandHead || !expandFiles[allowed[0]] {
-			return fmt.Errorf("compatible expand requires the exact pending M114 transition")
+		if len(allowed) != 1 || allowed[0] != options.expand.Version || !expandFiles[allowed[0]] {
+			return fmt.Errorf("compatible expand requires the exact pending named transition")
 		}
 		wire, err := os.ReadFile(filepath.Join(dir, allowed[0]+".up.sql"))
 		if err != nil {

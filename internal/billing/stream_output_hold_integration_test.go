@@ -14,13 +14,16 @@ import (
 	"github.com/uniroute/unirouter/internal/metering"
 )
 
-func newStreamOutputHoldFixture(t *testing.T, requestID string) (*Billing, SettleRequest, StreamDeliveryStart) {
+func newStreamOutputHoldFixture(t *testing.T, requestID string, versions ...string) (*Billing, SettleRequest, StreamDeliveryStart) {
 	t.Helper()
 	b, orgID, _, attemptID := newP6F41DeliveryFixture(t, requestID)
 	// This fixture freezes the accepted cap before any local stream disclosure.
 	_, err := b.db.Exec(t.Context(), `UPDATE freeze_idempotency SET reserved_completion_tokens=100 WHERE org_id=$1 AND request_id=$2`, orgID, requestID)
 	require.NoError(t, err)
 	start := StreamDeliveryStart{OrgID: orgID, RequestID: requestID, AttemptID: attemptID, OwnerID: "output-hold-test", Generation: 1, LeaseTTL: time.Minute}
+	if len(versions) > 0 {
+		start.CounterVersion = versions[0]
+	}
 	require.NoError(t, b.BeginStreamDelivery(t.Context(), start))
 	req := p6f41ProviderUsage(requestID, attemptID, orgID)
 	req.CompletionTokens = 101
@@ -134,26 +137,31 @@ func (tx streamOutputHoldLostAck) Commit(ctx context.Context) error {
 }
 
 func TestStreamOutputHoldRollbackAndCommitReadbackIntegration(t *testing.T) {
-	for _, commit := range []bool{false, true} {
-		t.Run(map[bool]string{false: "rollback", true: "acknowledgement_lost"}[commit], func(t *testing.T) {
-			b, req, _ := newStreamOutputHoldFixture(t, "op_stream_hold_commit")
-			tx, err := b.db.Begin(t.Context())
-			require.NoError(t, err)
-			require.NoError(t, b.holdStreamOutputTx(t.Context(), tx, req, 128, 1))
-			if commit {
-				require.NoError(t, b.commitStreamOutputHold(t.Context(), streamOutputHoldLostAck{Tx: tx, committed: true}, req, 128, 1))
-				require.NoError(t, b.readStreamOutputHold(t.Context(), req, 128, 1), "exact readback proves the committed state independently of its acknowledgement")
-			} else {
-				require.ErrorContains(t, b.commitStreamOutputHold(t.Context(), streamOutputHoldLostAck{Tx: tx}, req, 128, 1), "injected lost commit acknowledgement")
-				require.Error(t, b.readStreamOutputHold(t.Context(), req, 128, 1), "rolled-back usage is not durable provider evidence")
-				var state string
-				var payloadReady bool
-				require.NoError(t, b.db.QueryRow(t.Context(), `SELECT state FROM stream_delivery_leases WHERE org_id=$1 AND request_id=$2`, req.OrgID, req.RequestID).Scan(&state))
-				require.Equal(t, "active", state)
-				require.NoError(t, b.db.QueryRow(t.Context(), `SELECT settlement_payload_ready_at IS NOT NULL FROM freeze_idempotency WHERE org_id=$1 AND request_id=$2`, req.OrgID, req.RequestID).Scan(&payloadReady))
-				require.False(t, payloadReady)
-				require.NoError(t, b.HoldStreamOutput(t.Context(), req, 128, 1), "retrying the same local transaction is safe")
+	for _, version := range []string{metering.GatewayCounterEstimateVersionV2, metering.GatewayCounterEstimateVersionV3} {
+		t.Run(version, func(t *testing.T) {
+			for _, commit := range []bool{false, true} {
+				t.Run(map[bool]string{false: "rollback", true: "acknowledgement_lost"}[commit], func(t *testing.T) {
+					b, req, _ := newStreamOutputHoldFixture(t, "op_stream_hold_commit", version)
+					tx, err := b.db.Begin(t.Context())
+					require.NoError(t, err)
+					require.NoError(t, b.holdStreamOutputTx(t.Context(), tx, req, 128, 1))
+					if commit {
+						require.NoError(t, b.commitStreamOutputHold(t.Context(), streamOutputHoldLostAck{Tx: tx, committed: true}, req, 128, 1))
+						require.NoError(t, b.readStreamOutputHold(t.Context(), req, 128, 1), "exact readback proves the committed state independently of its acknowledgement")
+					} else {
+						require.ErrorContains(t, b.commitStreamOutputHold(t.Context(), streamOutputHoldLostAck{Tx: tx}, req, 128, 1), "injected lost commit acknowledgement")
+						require.Error(t, b.readStreamOutputHold(t.Context(), req, 128, 1), "rolled-back usage is not durable provider evidence")
+						var state string
+						var payloadReady bool
+						require.NoError(t, b.db.QueryRow(t.Context(), `SELECT state FROM stream_delivery_leases WHERE org_id=$1 AND request_id=$2`, req.OrgID, req.RequestID).Scan(&state))
+						require.Equal(t, "active", state)
+						require.NoError(t, b.db.QueryRow(t.Context(), `SELECT settlement_payload_ready_at IS NOT NULL FROM freeze_idempotency WHERE org_id=$1 AND request_id=$2`, req.OrgID, req.RequestID).Scan(&payloadReady))
+						require.False(t, payloadReady)
+						require.NoError(t, b.HoldStreamOutput(t.Context(), req, 128, 1), "retrying the same local transaction is safe")
+					}
+				})
 			}
+
 		})
 	}
 }

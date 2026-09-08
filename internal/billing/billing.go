@@ -208,6 +208,7 @@ const (
 
 // Billing handles the freeze/settle/cancel state machine.
 type Billing struct {
+	recoveryAllowed         func() bool
 	db                      *pgxpool.Pool
 	rdb                     *redis.Client
 	mode                    BillingMode
@@ -1086,10 +1087,10 @@ func normalizeSettlementUsageContract(req SettleRequest) (SettleRequest, error) 
 		case metering.UsageSourceUpstream:
 			req.UsageAuthority = metering.UsageAuthorityProviderReported
 			req.UsageFinality = metering.UsageFinalityFinal
-		case metering.UsageSourceCounterV2:
+		case metering.UsageSourceCounterV2, metering.UsageSourceCounterV3:
 			req.UsageAuthority = metering.UsageAuthorityGatewayCounter
 			req.UsageFinality = metering.UsageFinalityEstimated
-			req.UsageEstimateVersion = metering.GatewayCounterEstimateVersionV2
+			req.UsageEstimateVersion, _ = metering.CounterVersion(req.UsageSource)
 		case metering.UsageSourceEstimated, metering.UsageSourceAdapterEstimated:
 			req.UsageAuthority = metering.UsageAuthorityConservativeEstimate
 			req.UsageFinality = metering.UsageFinalityEstimated
@@ -1114,7 +1115,7 @@ func normalizeSettlementUsageContract(req SettleRequest) (SettleRequest, error) 
 			return req, fmt.Errorf("billing provider-reported usage contract is inconsistent")
 		}
 	case metering.UsageAuthorityGatewayCounter:
-		if req.UsageSource != metering.UsageSourceCounterV2 || req.UsageFinality != metering.UsageFinalityEstimated || req.UsageEstimateVersion != metering.GatewayCounterEstimateVersionV2 {
+		if !metering.ValidCounterPair(req.UsageSource, req.UsageEstimateVersion) || req.UsageFinality != metering.UsageFinalityEstimated {
 			return req, fmt.Errorf("billing gateway-counter usage contract is inconsistent")
 		}
 	case metering.UsageAuthorityConservativeEstimate:
@@ -1160,9 +1161,17 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		return nil, fmt.Errorf("lock reservation: %w", err)
 	}
 	record = canonicalizeLegacyReservationUsage(record)
+	if err := requireSettlementCounterVersionTx(ctx, tx, req); err != nil {
+		return nil, err
+	}
 
 	switch record.Status {
 	case "settled":
+		if (record.UsageAuthority == metering.UsageAuthorityGatewayCounter || req.UsageAuthority == metering.UsageAuthorityGatewayCounter) &&
+			(record.UsageSource != req.UsageSource || record.UsageEstimateVersion != req.UsageEstimateVersion ||
+				(req.UsageSource == metering.UsageSourceCounterV3 && !settlementUsageMatches(record, req))) {
+			return nil, ErrSettlementUsageConflict
+		}
 		if err := requireSettlementAttempt(record, req); err != nil {
 			return nil, err
 		}
@@ -2264,3 +2273,8 @@ func cancelObservationReservationTx(
 	}
 	return nil
 }
+
+// SetRecoveryAdmission is configured before workers start. The callback must
+// verify the registered runtime lease; nil retains isolated/internal usage.
+func (b *Billing) SetRecoveryAdmission(allowed func() bool) { b.recoveryAllowed = allowed }
+func (b *Billing) canClaimRecovery() bool                   { return b.recoveryAllowed == nil || b.recoveryAllowed() }

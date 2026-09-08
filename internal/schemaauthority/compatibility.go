@@ -8,14 +8,19 @@ import (
 // RuntimeLedgers is a finite, named bridge. The entire predecessor ledger is
 // retained; matching a maximum migration number alone is never sufficient.
 func RuntimeLedgers(artifact []string) ([][]string, error) {
-	if err := validateLedger("migration artifact", artifact, true); err != nil {
+	if err := validateLedger("migration artifact", artifact, false); err != nil {
 		return nil, err
 	}
-	if len(artifact) < 2 || artifact[len(artifact)-1] != CapabilityExpandHead ||
-		artifact[len(artifact)-2] != LegacyCapabilityHead {
-		return nil, fmt.Errorf("artifact does not contain the exact capability compatibility bridge")
+	end := len(artifact)
+	if end >= 3 && artifact[end-1] == StreamCounterExpandHead && artifact[end-2] == CapabilityExpandHead && artifact[end-3] == LegacyCapabilityHead {
+		return [][]string{slices.Clone(artifact[:end-2]), slices.Clone(artifact[:end-1]), slices.Clone(artifact)}, nil
 	}
-	return [][]string{slices.Clone(artifact[:len(artifact)-1]), slices.Clone(artifact)}, nil
+	// Retained immutable Artifact records may contain the original bridge.
+	// Startup still derives ExpectedLedger using this binary's exact ceiling.
+	if end >= 2 && artifact[end-1] == CapabilityExpandHead && artifact[end-2] == LegacyCapabilityHead {
+		return [][]string{slices.Clone(artifact[:end-1]), slices.Clone(artifact)}, nil
+	}
+	return nil, fmt.Errorf("artifact does not contain a known exact compatibility bridge")
 }
 
 func VerifyRuntimeLedger(artifact, actual []string) error {
@@ -31,5 +36,5 @@ func VerifyRuntimeLedger(artifact, actual []string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("database ledger is outside the exact M113/M114 runtime compatibility bridge")
+	return fmt.Errorf("database ledger is outside the exact M113/M114/M115 runtime compatibility bridge")
 }
