@@ -4,6 +4,17 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.75] - 2026-09-08
+
+### Fixed
+
+- Recognize the exact Docker 29 lower-case missing-object diagnostic in the formal
+  development/test rollout. Exit status, empty JSON, requested identity and all
+  non-absence failures remain strictly checked. Preserve earlier refused74
+  artifacts and plans; no schema, model, financial or Provider behavior changes.
+- Cover old/new diagnostics and wrong-name, permission, daemon and mixed-error
+  negatives; record the real Docker version in the existing carrier CI evidence.
+
 ## [1.2.74] - 2026-09-08
 
 ### Fixed

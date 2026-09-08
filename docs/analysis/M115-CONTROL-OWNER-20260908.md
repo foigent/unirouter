@@ -135,3 +135,25 @@ An exploratory full tagged cmd suite finds two old PRD2 503 failures; the
 unchanged exact 1.2.73 base reproduces both. They remain deferred and no existing
 required CI selector was removed. No Target74, counter-v3 writer, or paid-call
 success is claimed by these Local results. 经验文件无需变化.
+
+
+## Docker29 Target format correction — 1.2.75
+
+The exact74 PR and real Docker CI passed, and its Artifact was built once. Target
+plan74 then refused before helper creation: Docker client/server29.6.0 returned
+exit1, stdout `[]`, and `error: no such object: <exact helper name>`. The old
+closed set recognized only older diagnostics. Target remains73/M115/v2 with
+unchanged backend IDs/images/health; failed74 Artifact and input are retained.
+
+Independent pre-code review of exact proposal SHA256
+`7bff19d8422338435db48321b067ea0ce2f435d5844841ae32bc2a5dbca1d66f`
+reproduced the refusal from original Target bytes and accepted one precise
+closed-set addition. No case folding, substring match, daemon-error inference or
+carrier/owner change is allowed. The tests retain old formats and reject wrong
+name/case, extra error text, empty stdout, wrong exit, permission and daemon
+failures. Existing real Docker CI remains required and now records its version.
+
+This is a shipped rollout-contract repair, version1.2.75. Deliver exact75 from
+73 once; then perform the same-image75 counter transition and pending acceptance.
+No remote source patch, migration, model pin, price or Provider change. Local/CI/
+Artifact/Target results remain separate. 经验文件无需变化.

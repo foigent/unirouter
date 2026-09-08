@@ -1,5 +1,16 @@
 # UniRouter Current Status
 
+## Docker29 rollout correction candidate — 2026-09-08
+
+Exact74 PR412, five CI checks, exact-main protocol and Artifact build passed.
+Target plan refused the Docker29.6 lower-case missing-object diagnostic before
+creating a helper or changing traffic. Target remains73/M115/v2; all model pins
+and budgets are unchanged. Local75 adds only that exact diagnostic and negative
+regressions after independent pre-code review. Its CI/Artifact/Target acceptance,
+v3 cancellation and concentrated GUI acceptance remain pending. Failed74
+Artifact/input are retained; no on-server source patch. Earlier entries retain
+their original cutoff. 经验文件无需变化.
+
 ## M115 control CLI repair candidate — 2026-09-08
 
 Exact1.2.73 main4a273b82 is deployed to the existing development Target. M115
