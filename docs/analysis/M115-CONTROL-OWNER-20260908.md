@@ -157,3 +157,37 @@ This is a shipped rollout-contract repair, version1.2.75. Deliver exact75 from
 73 once; then perform the same-image75 counter transition and pending acceptance.
 No remote source patch, migration, model pin, price or Provider change. Local/CI/
 Artifact/Target results remain separate. 经验文件无需变化.
+
+
+## Python3.10 carrier timestamp correction — 1.2.76
+
+Exact75 PR413 passed five checks and exact-main protocol; its Artifact built.
+Target plan75 refused Docker's valid nanosecond StartedAt because Python3.10.12
+cannot parse it directly with fromisoformat. This occurred after carrier identity
+verification but before any CLI owner command; finally cleaned the exact carrier.
+Readback confirms it absent and live73/M115/v2,123 ProviderAttempts,39 Releases,
+17 Slots and both backend IDs/images/health unchanged. No paid call/reservation.
+
+Independent pre-code object SHA256
+`6ba0fcec6c67f8c77db138380474f4a0ab08431e07e560081e651854dab8fd77`
+reproduced the failure on Python3.9.6 and accepted a finite RFC3339Nano parser.
+One required finding is accepted: offset hours/minutes must explicitly fit
+00..23/00..59 because fromisoformat normalizes invalid +00:60. Regression cases
+cover both offset signs, invalid dates/timezones/text and fractional precision.
+Truncating submicroseconds makes the start at most1microsecond older and does not
+extend lifetime;0<=age<45 and all identity/config/cleanup/owner gates remain.
+No Target Python upgrade, extra parser dependency or lifecycle redesign.
+
+The existing Docker job now selects official setup-python v7/Python3.10 and runs
+rollout/ingress plus the same real carrier check, recording Python/Docker versions.
+All existing required checks and runner selections remain. Failed74/75 Artifacts
+are retained; deliver exact76 from live73 once, then same-image76 counter-v3
+transition. CI/Artifact/Target/cancellation/concentrated UI evidence remains
+separate. 经验文件无需变化.
+
+Local76 validation:60 rollout and13 ingress tests pass on both system Python3.9.6
+and current Python3.14;12 release metadata tests, metadata check and diff pass.
+The old75 timestamp parser independently reproduces ValueError on the exact
+Target nanosecond input. Real Python3.10 Docker CI and Target remain pending.
+
+First76 CI34225310227 passed Backend, Frontend and PR4, and all60+13 Python3.10.21 checks. The real Docker fixture failed at initial psql setup (exit2), before the carrier. The official postgres entrypoint initializes a socket-only temporary server and then stops it. The socket pg_isready probe could race this stop. The fixture now waits on127.0.0.1 for the final TCP server, with the same deadline and assertions; no product/Target change. Original failure log is retained. Local Docker is unavailable; real fixture acceptance still requires CI.

@@ -4,6 +4,16 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.76] - 2026-09-08
+
+### Fixed
+- Parse Docker RFC3339Nano carrier timestamps on the development Target's
+  Python 3.10, preserving the exact identity and remaining-lifetime gates.
+  Reject malformed timestamps and invalid timezone offsets; retain failed
+  1.2.75 evidence and existing model, schema and financial behavior.
+- Run the existing real Docker carrier and rollout/ingress regressions on
+  Python 3.10 in CI and record the actual Python/Docker versions.
+
 ## [1.2.75] - 2026-09-08
 
 ### Fixed

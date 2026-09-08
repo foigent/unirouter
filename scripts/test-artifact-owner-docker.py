@@ -8,6 +8,7 @@ import argparse
 import importlib.util
 import json
 import os
+import platform
 from pathlib import Path
 import subprocess
 import tempfile
@@ -54,7 +55,9 @@ def main():
             pg = r.run(compose+["ps","-q","db"]).decode().strip()
             deadline = time.monotonic()+30
             while True:
-                ready=subprocess.run(["docker","exec",pg,"pg_isready","-U","postgres"],capture_output=True)
+                # The image's initialization server exposes only a Unix socket.
+                # Wait for the final TCP server before installing the fixture.
+                ready=subprocess.run(["docker","exec",pg,"pg_isready","-h","127.0.0.1","-U","postgres"],capture_output=True)
                 if ready.returncode==0: break
                 if time.monotonic()>deadline: raise RuntimeError("isolated fixture database did not start")
                 time.sleep(.2)
@@ -103,7 +106,7 @@ CREATE TABLE runtime_generations(instance_id text, artifact_digest text, schema_
                 row=r.run(["docker","exec",pg,"psql","-U","postgres","-Atc","SELECT count(*) FROM runtime_ingress_changes"]).strip()
                 assert row==b"0"
                 docker_version=r.run(["docker","version","--format","{{.Client.Version}} / {{.Server.Version}}"]).decode().strip()
-                print(json.dumps({"docker_carrier":"passed","docker_client_server":docker_version,"cli_head":"M115","lost_response_cleanup":"passed","ingress_writes":0,"provider_calls":0}))
+                print(json.dumps({"docker_carrier":"passed","docker_client_server":docker_version,"python_version":platform.python_version(),"cli_head":"M115","lost_response_cleanup":"passed","ingress_writes":0,"provider_calls":0}))
             finally:
                 r.HELD_LOCK_FDS.clear();os.close(fd)
         finally:

@@ -824,10 +824,21 @@ def utcnow():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
+def docker_started_at(value):
+    require(isinstance(value, str), "Artifact owner start timestamp is invalid")
+    match = re.fullmatch(r"([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(?:\.([0-9]{1,9}))?(Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])", value)
+    require(match is not None, "Artifact owner start timestamp is invalid")
+    # Docker emits RFC3339Nano; Python <=3.10 only accepts 3/6 fractional
+    # digits. Truncation to microseconds never extends remaining lifetime.
+    fraction = (match.group(2) or "").ljust(6, "0")[:6]
+    zone = "+00:00" if match.group(3) == "Z" else match.group(3)
+    return datetime.datetime.fromisoformat(match.group(1) + "." + fraction + zone)
+
+
 def verify_owner_carrier(service, carrier, image, project, runtime_environment, metadata):
     require(carrier["State"]["Running"] and carrier["HostConfig"].get("AutoRemove") is True,
             "Artifact owner is not a self-removing live container")
-    started = datetime.datetime.fromisoformat(carrier["State"]["StartedAt"].replace("Z", "+00:00"))
+    started = docker_started_at(carrier["State"]["StartedAt"])
     age = (datetime.datetime.now(datetime.timezone.utc) - started).total_seconds()
     require(0 <= age < 45, "Artifact owner lacks remaining command and stop lifetime")
     expected, normalized = copy.deepcopy(service), copy.deepcopy(carrier)
