@@ -147,6 +147,32 @@ UPDATE provider_credential_bindings
 	require.Equal(t, int64(1), providerCalls.Load())
 
 	approvalTarget := strings.TrimSuffix(probeTarget, "/probes") + "/routing-approvals"
+	// Approve a newer observation first, then the older (still current) one.
+	// Preferred approval order must not be mistaken for latest-Probe approval.
+	newerRequest := authorized(http.MethodPost, probeTarget,
+		fmt.Sprintf(`{"credential_binding_id":%d}`, fixture.BindingID))
+	newerRequest.SetPathValue("deploymentID", strconv.FormatInt(fixture.DeploymentID, 10))
+	newerRequest.SetPathValue("operationID", "openai.chat_completions.v1")
+	newerRequest.SetPathValue("capabilityID", "streaming")
+	newerResponse := httptest.NewRecorder()
+	handler.ProbeCanonicalModelCapability(newerResponse, newerRequest)
+	require.Equal(t, http.StatusOK, newerResponse.Code, newerResponse.Body.String())
+	var newer modelCapabilityProbeResult
+	require.NoError(t, json.Unmarshal(newerResponse.Body.Bytes(), &newer))
+	beforeApproval, err := handler.loadModelCapabilityQualificationView(t.Context(), fixture.OrgID, fixture.DeploymentID, "openai.chat_completions.v1", "streaming")
+	require.NoError(t, err)
+	require.Equal(t, newer.CapabilityProbeID, beforeApproval.LatestProbe.CapabilityProbeID)
+	require.Zero(t, beforeApproval.LatestProbe.ApprovalID)
+	newerApprovalRequest := authorized(http.MethodPost, approvalTarget,
+		fmt.Sprintf(`{"capability_probe_id":%d,"reason":"reviewed newer observation"}`, newer.CapabilityProbeID))
+	newerApprovalRequest.SetPathValue("deploymentID", strconv.FormatInt(fixture.DeploymentID, 10))
+	newerApprovalRequest.SetPathValue("operationID", "openai.chat_completions.v1")
+	newerApprovalRequest.SetPathValue("capabilityID", "streaming")
+	newerApprovalResponse := httptest.NewRecorder()
+	handler.ApproveCanonicalModelCapabilityRouting(newerApprovalResponse, newerApprovalRequest)
+	require.Equal(t, http.StatusCreated, newerApprovalResponse.Code, newerApprovalResponse.Body.String())
+	var newerApproval modelCapabilityApprovalResult
+	require.NoError(t, json.Unmarshal(newerApprovalResponse.Body.Bytes(), &newerApproval))
 	approvalBody := fmt.Sprintf(`{"capability_probe_id":%d,"reason":"reviewed exact streaming evidence"}`, probe.CapabilityProbeID)
 	approvalRequest := authorized(http.MethodPost, approvalTarget, approvalBody)
 	approvalRequest.SetPathValue("deploymentID", strconv.FormatInt(fixture.DeploymentID, 10))
@@ -159,7 +185,7 @@ UPDATE provider_credential_bindings
 	require.NoError(t, json.Unmarshal(approvalResponse.Body.Bytes(), &approval))
 	require.True(t, approval.Qualified)
 	require.Equal(t, "qualified", approval.QualificationState)
-	require.Equal(t, int64(1), providerCalls.Load(), "approval must not make another provider call")
+	require.Equal(t, int64(2), providerCalls.Load(), "approval must not make another provider call")
 	var storedCustomerOrgID, storedActorOrgID int64
 	require.NoError(t, pool.QueryRow(t.Context(), `
 SELECT customer_org_id,approved_by_org_id
@@ -203,6 +229,9 @@ SELECT customer_org_id,approved_by_org_id
 	require.NoError(t, json.Unmarshal(getResponse.Body.Bytes(), &view))
 	require.Equal(t, "approved_current", view.State)
 	require.Equal(t, approval.ApprovalID, view.PreferredApprovalID)
+	require.Equal(t, probe.CapabilityProbeID, view.PreferredCapabilityProbeID)
+	require.Equal(t, newer.CapabilityProbeID, view.LatestProbe.CapabilityProbeID)
+	require.Equal(t, newerApproval.ApprovalID, view.LatestProbe.ApprovalID)
 
 	const rawProviderMarker = "PRIVATE_PROVIDER_STREAM_MARKER_MUST_NOT_PERSIST"
 	handler.SetModelDeploymentProbeHTTPDoer(canonicalOperationProbeDoerFunc(func(request *http.Request) (*http.Response, error) {
@@ -233,7 +262,7 @@ SELECT customer_org_id,approved_by_org_id
 	require.True(t, failed.ProviderSuccess)
 	require.Equal(t, "provider_stream_contract_invalid", failed.ProviderReasonCode)
 	require.Equal(t, "unsupported_field", failed.ContractErrorCode)
-	require.Equal(t, int64(2), providerCalls.Load())
+	require.Equal(t, int64(3), providerCalls.Load())
 
 	var storedSummary, storedError string
 	require.NoError(t, pool.QueryRow(t.Context(), `

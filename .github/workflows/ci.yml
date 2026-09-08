@@ -17,6 +17,7 @@ jobs:
       backend: ${{ steps.classify.outputs.backend }}
       frontend: ${{ steps.classify.outputs.frontend }}
       docker: ${{ steps.classify.outputs.docker }}
+      delivery_preflight_failed: ${{ steps.delivery_python.outcome == 'failure' || steps.delivery_preflight.outcome == 'failure' }}
 
     steps:
       - name: Checkout code
@@ -106,11 +107,27 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: scripts/check-release-metadata.sh
 
+      - name: Set up delivery preflight Python
+        id: delivery_python
+        if: steps.classify.outputs.docker == 'true'
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+
+      - name: Check delivery compatibility before expensive jobs
+        id: delivery_preflight
+        if: steps.classify.outputs.docker == 'true'
+        run: |
+          python3 -B scripts/test-internal-target-rollout.py
+          python3 -B scripts/test-runtime-ingress.py
+          python3 -B scripts/test-internal-target-build-images.py
+          python3 -B scripts/internal-target-rollout.py environment-check
+
   backend:
     name: Backend Tests
     needs: changes
     if: >-
-      always() &&
+      always() && needs.changes.outputs.delivery_preflight_failed != 'true' &&
       (needs.changes.result != 'success' || needs.changes.outputs.backend == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -392,7 +409,7 @@ jobs:
     name: Frontend Build
     needs: changes
     if: >-
-      always() &&
+      always() && needs.changes.outputs.delivery_preflight_failed != 'true' &&
       (needs.changes.result != 'success' || needs.changes.outputs.frontend == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -441,7 +458,7 @@ jobs:
     name: PR4 Browser E2E
     needs: changes
     if: >-
-      always() &&
+      always() && needs.changes.outputs.delivery_preflight_failed != 'true' &&
       (needs.changes.result != 'success' ||
        needs.changes.outputs.backend == 'true' ||
        needs.changes.outputs.frontend == 'true')
@@ -528,7 +545,7 @@ jobs:
   docker:
     name: Docker Build
     if: >-
-      always() &&
+      always() && needs.changes.outputs.delivery_preflight_failed != 'true' &&
       (needs.changes.result != 'success' ||
        needs.changes.outputs.backend == 'true' ||
        needs.changes.outputs.frontend == 'true' ||

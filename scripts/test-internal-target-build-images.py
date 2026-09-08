@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -24,7 +25,8 @@ class ComponentBuildTest(unittest.TestCase):
         (self.root / 'scripts/build.sh').write_text(SOURCE.replace(
             '/run/lock/unirouter-docker-lifecycle.lock', str(self.root / 'lock')))
         self.env = {**os.environ, 'PATH': str(self.root / 'bin') + ':' + os.environ['PATH'],
-                    'TEST_ROOT': str(self.root), 'RUNTIME_VERSION': '1.2.58', 'RUNTIME_COMMIT': COMMIT}
+                    'TEST_ROOT': str(self.root), 'RUNTIME_VERSION': '1.2.58', 'RUNTIME_COMMIT': COMMIT,
+                    'TEST_PYTHON': sys.executable}
         for key in ('UNIROUTER_BACKEND_IMAGE', 'UNIROUTER_FRONTEND_IMAGE', 'UNIROUTER_FRONTEND_REUSE_FROM'):
             self.env.pop(key, None)
         self.script('bin/git', '''#!/bin/sh
@@ -37,10 +39,19 @@ case "$1 $2" in
 esac
 ''')
         self.script('bin/flock', '#!/bin/sh\nexit 0\n')
+        self.script('bin/python3', '''#!/bin/sh
+if [ "$1" = '-B' ] && [ "$3" = 'environment-check' ]; then
+  printf '["environment-check"]\\n' >> "$TEST_ROOT/calls"
+  exit "${TEST_ENVIRONMENT_EXIT:-0}"
+fi
+exec "$TEST_PYTHON" "$@"
+''')
         self.script('scripts/docker-storage-preflight.sh', '#!/bin/sh\nexit "${TEST_STORAGE_EXIT:-0}"\n')
         self.script('bin/docker', '''#!/usr/bin/env python3
 import json, os, pathlib, sys
 r = pathlib.Path(os.environ['TEST_ROOT']); a = sys.argv[1:]
+assert os.environ['DOCKER_HOST'] == 'unix:///var/run/docker.sock'
+assert not any(k in os.environ for k in ('DOCKER_CONTEXT', 'DOCKER_TLS', 'DOCKER_TLS_VERIFY', 'DOCKER_CERT_PATH', 'DOCKER_API_VERSION', 'BUILDX_BUILDER', 'BUILDKIT_HOST'))
 with (r/'calls').open('a') as f: f.write(json.dumps(a)+'\\n')
 if a == ['info']: sys.exit(0)
 if a[0] == 'build':
@@ -86,6 +97,21 @@ sys.exit(93)
         self.assertEqual(sum(c[0] == 'build' for c in calls), 2)
         self.assertIn('SELECTED UNIROUTER_BACKEND_IMAGE=', result.stdout)
         self.assertIn('SELECTED UNIROUTER_FRONTEND_IMAGE=', result.stdout)
+        self.assertLess(calls.index(['environment-check']), next(i for i, c in enumerate(calls) if c[0] == 'image'))
+
+    def test_environment_failure_precedes_any_image_selection_or_build(self):
+        for args in ((), ('--frontend-only',)):
+            with self.subTest(args=args):
+                result, calls = self.run_build(*args, TEST_ENVIRONMENT_EXIT='1')
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(any(c[0] in ('image', 'build') for c in calls))
+
+    def test_caller_cannot_redirect_daemon_or_builder(self):
+        result, calls = self.run_build(DOCKER_HOST='tcp://unexpected:2376', DOCKER_CONTEXT='remote',
+                                      DOCKER_TLS='1', DOCKER_TLS_VERIFY='1', DOCKER_CERT_PATH='/wrong',
+                                      DOCKER_API_VERSION='1.1', BUILDX_BUILDER='remote', BUILDKIT_HOST='tcp://wrong')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(sum(c[0] == 'build' for c in calls), 2)
 
     def test_matching_immutable_frontend_is_reused(self):
         result, calls = self.run_build('--frontend-only', TEST_EXISTING='1')

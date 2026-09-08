@@ -9,6 +9,7 @@ import { endpointError } from './presentation';
 
 type Props = { selected: CanonicalModelApplication; operation: CanonicalOperation; canManage: boolean; canApprove: boolean; gatewayLicensed: boolean };
 type Run = { state: 'sending' | 'complete' | 'unconfirmed'; sourceRef?: string; observation?: SharedProbeObservation; message?: string };
+function approvable(v: CanonicalCapabilityQualification) { return v.latest_probe?.current && v.latest_probe.success && v.latest_probe.approval_id === 0; }
 function actor() { const s = useAuthStore.getState(), u = s.user; return s.isAuthenticated && u ? JSON.stringify([u.id, u.org_id, u.customer_context, u.organization_role, u.role]) : ''; }
 function safeSourceRef(e: unknown) {
   if (!(e instanceof ApiError) || !e.payload || typeof e.payload !== 'object') return undefined;
@@ -22,7 +23,9 @@ export default function ModelQualificationWorkspace({ selected, operation, canMa
   const [views, setViews] = useState<CanonicalCapabilityQualification[]>([]);
   const [plan, setPlan] = useState<CapabilityProbePlan | null>(null);
   const [runs, setRuns] = useState<Record<string, Run>>({});
-  const [checked, setChecked] = useState<string[]>([]);
+  const [checked, setChecked] = useState<Record<string, number>>({});
+  const [approvalUnconfirmed, setApprovalUnconfirmed] = useState(false);
+  const currentViews = useRef<CanonicalCapabilityQualification[]>([]);
   const [reason, setReason] = useState('已审阅当前模型的逐项验证事实');
   const [costAccepted, setCostAccepted] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const generation = useRef(0), inFlight = useRef(false), mounted = useRef(true);
@@ -31,12 +34,15 @@ export default function ModelQualificationWorkspace({ selected, operation, canMa
     operation.capability_probe_contracts, selected.credential.bindings.map(b => [b.id, b.state_revision, b.eligible])]);
   const load = async (stamp: number, who: string) => {
     const rows = await Promise.all(operation.capability_probe_contracts.map(c => modelDeploymentApi.getCapabilityQualification(selected.deployment.id, operation.operation_id, c.capability_id)));
-    if (mounted.current && stamp === generation.current && who === actor()) setViews(rows);
+    if (mounted.current && stamp === generation.current && who === actor()) {
+      currentViews.current = rows; setViews(rows);
+      setChecked(old => Object.fromEntries(Object.entries(old).filter(([id, probe]) => rows.some(v => v.capability_id === id && v.latest_probe?.capability_probe_id === probe && approvable(v)))));
+    }
   };
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; generation.current++; }; }, []);
   useEffect(() => {
     const stamp = ++generation.current, who = actor();
-    setViews([]); setPlan(null); setChecked([]); setRuns({}); setError(''); setCostAccepted(false);
+    currentViews.current = []; setViews([]); setPlan(null); setChecked({}); setApprovalUnconfirmed(false); setRuns({}); setError(''); setCostAccepted(false);
     void load(stamp, who).catch(e => { if (stamp === generation.current) setError(endpointError(e, '验证状态读取失败')); });
     if (canManage && bindingID && bindings.some(b => b.id === bindingID)) {
       void modelDeploymentApi.getCapabilityProbePlan(selected.deployment.id, operation.operation_id, bindingID).then(p => {
@@ -44,12 +50,13 @@ export default function ModelQualificationWorkspace({ selected, operation, canMa
       }).catch(e => { if (stamp === generation.current) setError(endpointError(e, '验证计划读取失败')); });
     }
     return () => { generation.current++; };
-  }, [target, bindingID, user, canManage]);
+  }, [target, bindingID, user, canManage, canApprove, gatewayLicensed]);
   const valid = (stamp: number, who: string) => mounted.current && stamp === generation.current && who === actor();
   const refresh = async () => {
     if (inFlight.current) return;
-    const stamp = generation.current, who = actor(); setError('');
-    try { await load(stamp, who); if (canManage && bindingID) { const p = await modelDeploymentApi.getCapabilityProbePlan(selected.deployment.id, operation.operation_id, bindingID); if (valid(stamp, who)) { setPlan(p); setCostAccepted(false); } } } catch (e) { if (valid(stamp, who)) setError(endpointError(e, '读取失败')); }
+    const stamp = generation.current, who = actor(); setError(''); inFlight.current = true; setBusy(true);
+    try { await load(stamp, who); if (valid(stamp, who)) setApprovalUnconfirmed(false); if (canManage && bindingID) { const p = await modelDeploymentApi.getCapabilityProbePlan(selected.deployment.id, operation.operation_id, bindingID); if (valid(stamp, who)) { setPlan(p); setCostAccepted(false); } } } catch (e) { if (valid(stamp, who)) setError(endpointError(e, '读取失败')); }
+    finally { inFlight.current = false; if (mounted.current) setBusy(false); }
   };
   const verify = async () => {
     if (inFlight.current || !plan || !costAccepted || !canManage || !gatewayLicensed || !actor() || Object.values(runs).some(r => r.state === 'unconfirmed')) return;
@@ -87,18 +94,28 @@ export default function ModelQualificationWorkspace({ selected, operation, canMa
     } catch (e) { if (valid(stamp, who)) setError(`结果仍未确认：${endpointError(e, '没有完整观察记录')}。不会重新调用模型。`); }
   };
   const approve = async () => {
-    if (inFlight.current || !canApprove || !gatewayLicensed || !reason.trim() || !actor()) return;
+    if (inFlight.current || !canApprove || !gatewayLicensed || !reason.trim() || !actor() || approvalUnconfirmed) return;
     const stamp = generation.current, who = actor();
-    const items = views.filter(v => checked.includes(v.capability_id) && !v.qualified && v.latest_probe?.success && v.latest_probe.current);
+    const items = Object.entries(checked), frozenReason = reason.trim();
     inFlight.current = true; setBusy(true); setError('');
     try {
-      for (const v of items) {
+      for (const [id, probeID] of items) {
         if (!valid(stamp, who)) break;
-        await modelDeploymentApi.approveCapability(selected.deployment.id, operation.operation_id, v.capability_id, { capability_probe_id: v.latest_probe!.capability_probe_id, reason: reason.trim() });
+        if (!currentViews.current.some(v => v.capability_id === id && v.latest_probe?.capability_probe_id === probeID && approvable(v))) {
+          setError('所选验证事实已变化，请刷新后重新选择。'); break;
+        }
+        const receipt = await modelDeploymentApi.approveCapability(selected.deployment.id, operation.operation_id, id, { capability_probe_id: probeID, reason: frozenReason });
         if (!valid(stamp, who)) break;
-        setChecked(old => old.filter(c => c !== v.capability_id)); await load(stamp, who);
+        if (!receipt || !Number.isSafeInteger(receipt.approval_id) || receipt.approval_id <= 0 ||
+            receipt.deployment_id !== selected.deployment.id || receipt.operation_id !== operation.operation_id ||
+            receipt.capability_id !== id || receipt.capability_probe_id !== probeID ||
+            receipt.qualified !== true || receipt.qualification_state !== 'qualified' ||
+            receipt.evidence_ref !== `capability_approval:${receipt.approval_id}`) {
+          throw new Error('批准回执不完整、身份不匹配或资格未确认');
+        }
+        setChecked(old => Object.fromEntries(Object.entries(old).filter(([c]) => c !== id))); await load(stamp, who);
       }
-    } catch (e) { if (valid(stamp, who)) setError(`批准未全部确认，请先刷新逐项状态：${endpointError(e, '批准失败')}`); }
+    } catch (e) { if (valid(stamp, who)) { setApprovalUnconfirmed(true); setChecked({}); setError(`批准未全部确认，请先刷新逐项状态：${endpointError(e, '批准失败')}`); } }
     finally { inFlight.current = false; if (mounted.current) setBusy(false); }
   };
   const unresolved = Object.values(runs).some(r => r.state === 'unconfirmed');
@@ -107,11 +124,15 @@ export default function ModelQualificationWorkspace({ selected, operation, canMa
     <Space vertical align="start" style={{ width: '100%' }}>
       {canManage && <><span id="qualification-binding-label">验证使用的凭证</span><Select aria-labelledby="qualification-binding-label" style={{ minWidth: 260 }} value={bindingID || undefined} disabled={busy} placeholder="选择已保存的凭证" optionList={bindings.map(b => ({ value: b.id, label: `凭证 #${b.id} · ${b.status}` }))} onChange={v => setBindingID(Number(v))}/></>}
       {error && <Banner type="warning" closeIcon={null} description={error}/>}
-      <Table rowKey="capability_id" dataSource={views} pagination={false} style={{ width: '100%' }} rowSelection={canApprove ? { selectedRowKeys: checked, onChange: ids => setChecked((ids || []).map(String)), getCheckboxProps: (v: CanonicalCapabilityQualification) => ({ disabled: busy || v.qualified || !v.latest_probe?.success || !v.latest_probe.current }) } : undefined} columns={[
+      <Table rowKey="capability_id" dataSource={views} pagination={false} style={{ width: '100%' }} rowSelection={canApprove ? { selectedRowKeys: Object.keys(checked), onChange: ids => setChecked(Object.fromEntries(views.filter(v => ids?.includes(v.capability_id) && approvable(v)).map(v => [v.capability_id, v.latest_probe!.capability_probe_id]))), getCheckboxProps: (v: CanonicalCapabilityQualification) => ({ disabled: busy || approvalUnconfirmed || !gatewayLicensed || !approvable(v) }) } : undefined} columns={[
         { title: '能力', dataIndex: 'capability_id', render: (id: string) => capabilityShortName(id) },
-        { title: '当前状态', render: (_: unknown, v: CanonicalCapabilityQualification) => v.qualified ? '已批准' : v.latest_probe?.current && v.latest_probe.success ? '验证通过 · 待批准' : v.latest_probe ? (v.latest_probe.current ? '验证未通过' : '证据已失效') : '待验证' },
-        { title: '观察记录', render: (_: unknown, v: CanonicalCapabilityQualification) => v.latest_probe ? `#${v.latest_probe.capability_probe_id} · HTTP ${v.latest_probe.status_code || '未收到响应'}` : '—' },
+        { title: '最新验证', render: (_: unknown, v: CanonicalCapabilityQualification) => v.latest_probe ? <>
+          <div>{!v.latest_probe.current ? '证据已失效' : !v.latest_probe.success ? '验证未通过' : v.latest_probe.approval_id ? '验证通过 · 此记录已批准' : v.latest_probe.approval_id === 0 ? '验证通过 · 待批准' : '验证通过 · 批准状态待回读'}</div>
+          <Typography.Text type="tertiary">Probe #{v.latest_probe.capability_probe_id} · HTTP {v.latest_probe.status_code || '未收到响应'}{v.latest_probe.approval_id ? ` · Approval #${v.latest_probe.approval_id}` : ''}</Typography.Text>
+        </> : '待验证' },
+        { title: '有效批准', render: (_: unknown, v: CanonicalCapabilityQualification) => v.qualified ? `Approval #${v.preferred_approval_id} · Probe #${v.preferred_capability_probe_id}` : '暂无有效批准' },
       ]}/>
+      <Typography.Text type="tertiary">新验证和批准不会自动更新活动 Release。逐项批准所选事实后，可到发布工作台核对并启用新的发布。</Typography.Text>
       {plan && <>
         <Typography.Text>本轮合并验证预计 {count} 次上游请求，覆盖 {plan.groups.flatMap(g => g.capability_ids).length} 项能力；费用按供应商实际处理计入。</Typography.Text>
         {plan.groups.map(g => { const run = runs[g.plan_digest]; return <div key={g.plan_digest}>
@@ -124,7 +145,7 @@ export default function ModelQualificationWorkspace({ selected, operation, canMa
         <Checkbox checked={costAccepted} disabled={busy || unresolved || !gatewayLicensed} onChange={e => setCostAccepted(Boolean(e.target.checked))}>确认发起本轮 {count} 次付费验证</Checkbox>
         <Button type="primary" loading={busy} disabled={!count || !costAccepted || unresolved || !gatewayLicensed} onClick={() => void verify()}>验证这些能力</Button>
       </>}
-      {canApprove && <><Input aria-label="集中批准理由" value={reason} onChange={setReason} disabled={busy} maxLength={512}/><Button disabled={busy || !gatewayLicensed || !checked.length || !reason.trim()} onClick={() => void approve()}>批准已选 {checked.length} 项</Button></>}
+      {canApprove && <><Input aria-label="集中批准理由" value={reason} onChange={setReason} disabled={busy} maxLength={512}/><Button disabled={busy || !gatewayLicensed || approvalUnconfirmed || !Object.keys(checked).length || !reason.trim()} onClick={() => void approve()}>批准已选 {Object.keys(checked).length} 项</Button></>}
       <Button disabled={busy} onClick={() => void refresh()}>刷新逐项状态</Button>
     </Space>
   </Surface>;

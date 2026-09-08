@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -202,7 +203,8 @@ class ReleasePolicyTests(unittest.TestCase):
     def test_actual_ci_routing_preserves_coverage(self):
         for path, expected in (
             ('docs/architecture/wording.md', ('false', 'false', 'false')),
-            ('capability-bundles/model.json', ('true', None, None)),
+            ('capability-bundles/model.json', ('true', 'false', 'false')),
+            ('deploy/customer/preflight.sh', ('false', 'false', 'true')),
             ('internal/runtime_test.go', ('true', 'false', 'true')),
             ('frontend/src/pages/Page.test.tsx', ('false', 'true', 'true')),
             ('scripts/check-release-metadata.sh', ('true', 'true', 'true')),
@@ -235,6 +237,48 @@ class ReleasePolicyTests(unittest.TestCase):
         result, routed = self.route()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(routed, {'backend': 'true', 'frontend': 'false', 'docker': 'true'})
+
+    def test_actual_router_deletions_and_cross_surface_renames(self):
+        for destination, expected in ((None, ('true', 'false', 'true')),
+                                      ('frontend/retired.txt', ('true', 'true', 'true'))):
+            with self.subTest(destination=destination):
+                self.git('reset', '--hard', self.base)
+                source = self.repo / 'internal/runtime.go'
+                if destination:
+                    target = self.repo / destination
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    source.rename(target)
+                else:
+                    source.unlink()
+                self.commit()
+                result, routed = self.route()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(tuple(routed[k] for k in ('backend', 'frontend', 'docker')), expected)
+
+    def test_actual_job_conditions_only_suppress_explicit_preflight_failure(self):
+        workflow = WORKFLOW.read_text()
+        output = re.search(r'delivery_preflight_failed: \$\{\{ (.+) \}\}', workflow).group(1)
+        def evaluate(expression, values):
+            # Evaluate this repository's finite boolean job expressions, not a
+            # reimplementation of their routing policy or a general YAML engine.
+            expression = re.sub(r'(?:steps|needs)\.[a-zA-Z0-9_.-]+',
+                                lambda match: repr(values.get(match.group(), '')), expression)
+            expression = expression.replace('always()', 'True').replace('&&', ' and ').replace('||', ' or ')
+            return eval(' '.join(expression.split()), {'__builtins__': {}}, {})
+        for first in ('success', 'failure', 'skipped', 'cancelled', ''):
+            for second in ('success', 'failure', 'skipped', 'cancelled', ''):
+                explicit_failure = first == 'failure' or second == 'failure'
+                self.assertEqual(evaluate(output, {'steps.delivery_python.outcome': first,
+                                                  'steps.delivery_preflight.outcome': second}), explicit_failure)
+        for job in ('backend', 'frontend', 'pr4-browser', 'docker'):
+            section = workflow.split(f'\n  {job}:\n', 1)[1]
+            condition = re.search(r'    if: >-\n((?:      .+\n)+)', section).group(1)
+            for flag in ('', 'false', 'true'):
+                values = {'needs.changes.result': 'failure', 'needs.changes.outputs.delivery_preflight_failed': flag}
+                self.assertEqual(evaluate(condition, values), flag != 'true', (job, flag))
+            values = {'needs.changes.result':'success', 'needs.changes.outputs.delivery_preflight_failed':'false',
+                      'needs.changes.outputs.backend':'true', 'needs.changes.outputs.frontend':'true', 'needs.changes.outputs.docker':'true'}
+            self.assertTrue(evaluate(condition, values), job)
 
 
 if __name__ == '__main__':

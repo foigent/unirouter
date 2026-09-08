@@ -18,6 +18,10 @@ const observation = { version: 'unirouter.shared-capability-observation.v1', sou
 const result = { observation, results: ids.map(capability_id => ({ capability_id, success: true })) };
 function view(_: number, __: string, id: string) { return Promise.resolve({ capability_id: id, qualified: false, state: 'not_probed' }); }
 const props = { selected, operation, canManage: true, canApprove: true, gatewayLicensed: true };
+function approvalReceipt(deployment_id: number, operation_id: string, capability_id: string, body: { capability_probe_id: number }) {
+  return { deployment_id, operation_id, capability_id, capability_probe_id: body.capability_probe_id, approval_id: 501,
+    qualified: true, qualification_state: 'qualified', evidence_ref: 'capability_approval:501' };
+}
 async function click(element: HTMLElement) {
   await act(async () => { fireEvent.click(element); });
 }
@@ -30,7 +34,7 @@ describe('concentrated qualification', () => {
   beforeEach(() => {
     vi.clearAllMocks(); useAuthStore.setState({ isAuthenticated: true, user: { id: 1, username: 'test', org_id: 2, role: 'platform_admin', organization_role: 'platform_admin' } });
     mocks.view.mockImplementation(view); mocks.plan.mockResolvedValue(plan); mocks.probe.mockResolvedValue(result);
-    mocks.read.mockResolvedValue({ observation, facts: [], current_qualifications: [] }); mocks.approve.mockResolvedValue({ qualified: true });
+    mocks.read.mockResolvedValue({ observation, facts: [], current_qualifications: [] }); mocks.approve.mockImplementation((...args: Parameters<typeof approvalReceipt>) => Promise.resolve(approvalReceipt(...args)));
   });
   it('loads without paid calls and dispatches once for multiple facts only after consent', async () => {
     render(<ModelQualificationWorkspace {...props}/>);
@@ -79,7 +83,7 @@ describe('concentrated qualification', () => {
     expect(mocks.probe).toHaveBeenCalledTimes(1); expect(screen.getByRole('button', { name: '验证这些能力' })).toBeDisabled();
   });
   it('approves only explicit successful current selections through independent commands', async () => {
-    mocks.view.mockImplementation((_: number, __: string, id: string) => Promise.resolve({ capability_id: id, qualified: false, latest_probe: { current: true, success: true, capability_probe_id: ids.indexOf(id) + 101 } }));
+    mocks.view.mockImplementation((_: number, __: string, id: string) => Promise.resolve({ capability_id: id, qualified: false, latest_probe: { current: true, success: true, approval_id: 0, capability_probe_id: ids.indexOf(id) + 101 } }));
     render(<ModelQualificationWorkspace {...props}/>); await screen.findAllByText('验证通过 · 待批准');
     expect(mocks.approve).not.toHaveBeenCalled();
     // First checkbox belongs to table's select-all; consent remains separate.
@@ -96,8 +100,80 @@ describe('concentrated qualification', () => {
     await act(async () => { ui.rerender(<ModelQualificationWorkspace {...props} canManage={false} canApprove={false} gatewayLicensed={false}/>); });
     expect(mocks.probe).not.toHaveBeenCalled(); expect(mocks.approve).not.toHaveBeenCalled();
   });
+  it('separates the newer observation from an older effective approval and approves only its exact selection', async () => {
+    mocks.view.mockImplementation((_: number, __: string, id: string) => Promise.resolve({ capability_id: id, qualified: true, preferred_approval_id: 80, preferred_capability_probe_id: 90, latest_probe: { current: true, success: true, approval_id: 0, capability_probe_id: ids.indexOf(id) + 101 } }));
+    render(<ModelQualificationWorkspace {...props}/>); await screen.findAllByText('验证通过 · 待批准');
+    expect(screen.getAllByText('Approval #80 · Probe #90')).toHaveLength(2);
+    await click(screen.getAllByRole('checkbox')[1]);
+    await click(screen.getByRole('button', { name: '批准已选 1 项' }));
+    expect(mocks.approve).toHaveBeenCalledTimes(1);
+    expect(mocks.approve.mock.calls[0].slice(2)).toEqual(['function_tools', { capability_probe_id: 101, reason: '已审阅当前模型的逐项验证事实' }]);
+    expect(mocks.probe).not.toHaveBeenCalled();
+  });
+  it('never treats a nonpreferred approved, failed, stale or unknown-approval latest Probe as approvable', async () => {
+    for (const changes of [{ approval_id: 70 }, { success: false }, { current: false }, { approval_id: undefined }]) {
+      mocks.view.mockImplementation((_: number, __: string, id: string) => Promise.resolve({ capability_id: id, qualified: true, preferred_approval_id: 80, preferred_capability_probe_id: 90, latest_probe: { current: true, success: true, approval_id: 0, capability_probe_id: 101, ...changes } }));
+      const ui = render(<ModelQualificationWorkspace {...props}/>); await screen.findAllByText('Approval #80 · Probe #90');
+      expect(screen.getAllByRole('checkbox').slice(1, 3).every(c => (c as HTMLInputElement).disabled)).toBe(true);
+      ui.unmount();
+    }
+    expect(mocks.approve).not.toHaveBeenCalled();
+  });
+  it('clears a selection when refresh replaces the selected Probe', async () => {
+    let probe = 101;
+    mocks.view.mockImplementation((_: number, __: string, id: string) => Promise.resolve({ capability_id: id, latest_probe: { current: true, success: true, approval_id: 0, capability_probe_id: probe } }));
+    render(<ModelQualificationWorkspace {...props}/>); await screen.findAllByText('验证通过 · 待批准');
+    await click(screen.getAllByRole('checkbox')[1]); probe = 201;
+    await click(screen.getByRole('button', { name: '刷新逐项状态' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '批准已选 0 项' })).toBeDisabled());
+    expect(mocks.approve).not.toHaveBeenCalled(); expect(mocks.probe).not.toHaveBeenCalled();
+  });
+  it('stops remaining approvals on ambiguous response and requires a fresh read before selecting again', async () => {
+    mocks.view.mockImplementation((_: number, __: string, id: string) => Promise.resolve({ capability_id: id, latest_probe: { current: true, success: true, approval_id: 0, capability_probe_id: ids.indexOf(id) + 101 } }));
+    mocks.approve.mockRejectedValueOnce(new TypeError('response lost'));
+    render(<ModelQualificationWorkspace {...props}/>); await screen.findAllByText('验证通过 · 待批准');
+    await click(screen.getAllByRole('checkbox')[0]); await click(screen.getByRole('button', { name: '批准已选 2 项' }));
+    await screen.findByText(/批准未全部确认/);
+    expect(mocks.approve).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByRole('checkbox')[1]).toBeDisabled();
+    await click(screen.getByRole('button', { name: '刷新逐项状态' }));
+    await waitFor(() => expect(screen.getAllByRole('checkbox')[1]).not.toBeDisabled());
+    expect(mocks.approve).toHaveBeenCalledTimes(1);
+  });
+  it.each([null, 'unexpected text', { qualified: true },
+    { ...approvalReceipt(41, operation.operation_id, ids[0], { capability_probe_id: 101 }), capability_probe_id: 999 },
+    { ...approvalReceipt(41, operation.operation_id, ids[0], { capability_probe_id: 101 }), qualified: false },
+  ])('does not continue after an incomplete or mismatched 2xx Approval receipt: %j', async receipt => {
+    mocks.view.mockImplementation((_: number, __: string, id: string) => Promise.resolve({ capability_id: id, latest_probe: { current: true, success: true, approval_id: 0, capability_probe_id: ids.indexOf(id) + 101 } }));
+    mocks.approve.mockResolvedValueOnce(receipt);
+    render(<ModelQualificationWorkspace {...props}/>); await screen.findAllByText('验证通过 · 待批准');
+    await click(screen.getAllByRole('checkbox')[0]); await click(screen.getByRole('button', { name: '批准已选 2 项' }));
+    await screen.findByText(/批准回执不完整/);
+    expect(mocks.approve).toHaveBeenCalledTimes(1); expect(screen.getAllByRole('checkbox')[1]).toBeDisabled();
+  });
+  it('retains the confirmed first Approval and never sends a third after the second response is lost', async () => {
+    const capabilities = [...ids, 'reasoning'];
+    mocks.view.mockImplementation((_: number, __: string, id: string) => Promise.resolve({ capability_id: id, latest_probe: { current: true, success: true, approval_id: 0, capability_probe_id: capabilities.indexOf(id) + 101 } }));
+    mocks.approve.mockImplementationOnce((...args: Parameters<typeof approvalReceipt>) => Promise.resolve(approvalReceipt(...args))).mockRejectedValueOnce(new TypeError('response lost'));
+    render(<ModelQualificationWorkspace {...props} operation={{ ...operation, capability_probe_contracts: capabilities.map(capability_id => ({ capability_id })) } as CanonicalOperation}/>);
+    await screen.findAllByText('验证通过 · 待批准');
+    await click(screen.getAllByRole('checkbox')[0]); await click(screen.getByRole('button', { name: '批准已选 3 项' }));
+    await screen.findByText(/批准未全部确认/);
+    expect(mocks.approve.mock.calls.map(c => c[2])).toEqual(ids);
+    expect(mocks.probe).not.toHaveBeenCalled();
+  });
 });
 describe('client setup', () => {
+  it('matches the existing sync CLI provider grammar and trims input', () => {
+    render(<ModelClientSetup model="qwen3.7-flash" active chat/>);
+    for (const value of ['Uppercase', '1invalid', 'a'.repeat(65), '-prefix']) {
+      fireEvent.change(screen.getByLabelText('已有 OpenClaw Provider 名称'), { target: { value } });
+      expect(screen.queryByText(/^uniroute-openclaw-sync/)).not.toBeInTheDocument();
+      expect(screen.getByText(/Provider 名称须以小写/)).toBeInTheDocument();
+    }
+    fireEvent.change(screen.getByLabelText('已有 OpenClaw Provider 名称'), { target: { value: ' valid-name_1 ' } });
+    expect(screen.getByText(/^uniroute-openclaw-sync/).textContent).toContain("--provider 'valid-name_1'");
+  });
   it('uses only the gateway origin, stable name and placeholder; sync remains dry-run', () => {
     render(<ModelClientSetup model="qwen3.7-flash" active={false} chat/>);
     expect(screen.getByText(/尚未启用稳定发布/)).toBeInTheDocument();

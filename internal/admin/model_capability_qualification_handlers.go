@@ -117,6 +117,7 @@ type modelCapabilityQualificationView struct {
 
 type modelCapabilityProbeView struct {
 	CapabilityProbeID        int64     `json:"capability_probe_id"`
+	ApprovalID               int64     `json:"approval_id"`
 	CredentialBindingID      int64     `json:"credential_binding_id,omitempty"`
 	Success                  bool      `json:"success"`
 	ProviderSuccess          bool      `json:"provider_success"`
@@ -1624,6 +1625,8 @@ SELECT approval_id,capability_probe_id,qualification_state,qualified
 SELECT probe.capability_probe_id,probe.credential_binding_id,probe.success,
        probe.provider_success,probe.status_code,probe.latency_ms,probe.reported_model,
        probe.error_summary,probe.response_summary,probe.tested_at,
+       COALESCE((SELECT approval.approval_id FROM model_capability_routing_approvals approval
+                  WHERE approval.capability_probe_id=probe.capability_probe_id),0),
        probe.connection_revision=connection.config_revision
        AND probe.provider=connection.provider AND probe.base_url=connection.base_url
        AND probe.adapter_type=connection.adapter_type
@@ -1676,7 +1679,7 @@ SELECT probe.capability_probe_id,probe.credential_binding_id,probe.success,
 		deploymentID, operationID, capabilityID, view.ExecutionProfileID, view.ExecutionProfileVersion).Scan(
 		&latest.CapabilityProbeID, &latest.CredentialBindingID, &latest.Success,
 		&latest.ProviderSuccess, &latest.StatusCode, &latest.LatencyMS, &latest.ReportedModel,
-		&latest.ErrorSummary, &responseSummary, &latest.TestedAt, &latestCurrent,
+		&latest.ErrorSummary, &responseSummary, &latest.TestedAt, &latest.ApprovalID, &latestCurrent,
 	)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return modelCapabilityQualificationView{}, fmt.Errorf("read latest capability probe: %w", err)

@@ -1,5 +1,10 @@
 # UniRouter Current Status
 
+## Delivery/onboarding 1.2.77 candidate — 2026-09-09
+
+Local candidate adds mandatory host-tool preflight before image builds, conservative early CI checks, exact latest-Probe Approval readback, configured-model continuation and client-name parity. No Target change or new paid call yet. Required CI, exact Artifact/Target and representative Approval GUI remain pending.
+[Exact scope and acceptance](../analysis/DELIVERY-ONBOARDING-CLOSEOUT-20260909.md).
+
 ## Shared-Probe GUI verified; broader onboarding work remains — 2026-09-09
 
 At01:50 China time, the restored console completed one physical Flash Probe for

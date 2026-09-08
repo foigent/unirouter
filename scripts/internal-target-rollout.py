@@ -18,6 +18,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import socket
 import stat
 import subprocess
@@ -90,6 +91,46 @@ def inspect(name, missing_ok=False):
     rows = load(result.stdout)
     require(len(rows) == 1, "Docker identity is ambiguous")
     return rows[0]
+
+
+def environment_check():
+    """Read installed host behavior before building; never create a carrier."""
+    require(sys.version_info >= (3, 10), "Python 3.10 or newer is required")
+    versions = load(run(["docker", "version", "--format", "{{json .}}"] ))
+    docker_versions = {}
+    for component in ("Client", "Server"):
+        value = versions[component]["Version"]
+        require(isinstance(value, str) and re.fullmatch(r"(?:28|29)\.\d+\.\d+", value),
+                "supported Docker client/server versions are stable 28.x/29.x")
+        docker_versions[component.lower()] = value
+    compose = run(["docker", "compose", "version", "--short"]).decode().strip()
+    match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", compose)
+    require(match is not None and tuple(map(int, match.groups())) >= (2, 24, 4),
+            "stable Docker Compose 2.24.4 or newer is required for !override")
+    sample = "2026-09-09T01:02:03.123456789Z"
+    require(docker_started_at(sample).microsecond == 123456, "Docker timestamp parser self-check failed")
+    try:
+        docker_started_at("2026-09-09T01:02:03+24:00")
+    except RuntimeError:
+        pass
+    else:
+        raise RuntimeError("Docker timestamp parser accepted an invalid offset")
+    absent = "ur-environment-check-" + secrets.token_hex(12)
+    require(inspect(absent, missing_ok=True) is None, "environment-check name unexpectedly exists")
+    ids = run(["docker", "ps", "--no-trunc", "--filter", "label=com.docker.compose.project=unirouter",
+               "--format", "{{.ID}}"]).decode().splitlines()
+    require(all(re.fullmatch(r"[0-9a-f]{64}", value) for value in ids), "invalid running container identity")
+    timestamp = None
+    if ids:
+        row = inspect(ids[0])
+        require(row["Id"] == ids[0] and row["State"]["Running"] is True, "running container changed during inspection")
+        started = row["State"]["StartedAt"]
+        docker_started_at(started)
+        timestamp = {"container_id": ids[0], "started_at": started}
+    return {"environment_check": "passed", "python": ".".join(map(str, sys.version_info[:3])),
+            "docker": docker_versions, "compose": compose, "local_daemon": ENV["DOCKER_HOST"],
+            "running_timestamp": timestamp, "timestamp_observed": timestamp is not None,
+            "scope": "host tools only; candidate carrier lifetime remains a post-build check"}
 
 
 def environment(values):
@@ -1053,9 +1094,15 @@ def operation_locks(target):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("plan", "prepare", "apply", "inspect", "resume"))
-    parser.add_argument("--input", required=True, type=Path)
+    parser.add_argument("action", choices=("plan", "prepare", "apply", "inspect", "resume", "environment-check"))
+    parser.add_argument("--input", type=Path)
     args = parser.parse_args()
+    if args.action == "environment-check":
+        require(args.input is None, "environment-check does not accept rollout input")
+        print(json.dumps(environment_check(), sort_keys=True))
+        return 0
+    if args.input is None:
+        parser.error("--input is required for rollout actions")
     spec = document(args.input)
     # No host interpolation or alternate Docker daemon reaches either helper.
     os.environ.clear()
