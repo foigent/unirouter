@@ -240,6 +240,12 @@ For an authorized development/test Target already on M114:
    its ledger; it does not repeat the M114 generation bootstrap. On timeout, read
    the complete ledger and immutable result before any retry. Release, Slot,
    capability projection and existing checkpoint values must be unchanged.
+   M115 takes its control/financial DDL locks without waiting; SQLSTATE `55P03`
+   means the migration yielded to an existing owner and rolled back. Read back
+   the unchanged schema before another explicit attempt after contention ends.
+   Do not retry automatically or stop in-flight settlement to force the expand.
+   A successful expand still briefly holds exclusive locks; no zero-wait promise
+   follows from this safety gate.
 4. Re-read both healthy bridge actors on M115. Use a new ordinary rollout input
    with identical source/images and
    `transition: {"kind":"stream_counter_writer","from":"unirouter.stream-counter.v2","to":"unirouter.stream-counter.v3"}`.

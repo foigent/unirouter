@@ -1,8 +1,15 @@
 -- unirouter:explicit-compatible-expand-v1
 BEGIN;
-LOCK TABLE runtime_change_releases IN ROW EXCLUSIVE MODE;
-LOCK TABLE runtime_change_slots IN SHARE ROW EXCLUSIVE MODE;
-SELECT pg_advisory_xact_lock(86420517831702492);
+-- Yield this migration when a control/financial owner is busy. Waiting after
+-- taking one DDL lock can invert Settle's reservation -> stream lock order and
+-- let PostgreSQL abort an accepted runtime transaction as the deadlock victim.
+LOCK TABLE runtime_change_releases IN ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE runtime_change_slots IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+DO $$ BEGIN
+ IF NOT pg_try_advisory_xact_lock(86420517831702492) THEN
+  RAISE EXCEPTION 'stream counter expand compatibility owner is busy' USING ERRCODE='55P03';
+ END IF;
+END $$;
 DO $$ BEGIN
  IF EXISTS (SELECT 1 FROM runtime_generations g LEFT JOIN runtime_support_manifests m USING(artifact_digest)
    WHERE g.state <> 'stopped' AND (g.ingress_state <> 'absent' OR g.lease_expires_at > clock_timestamp()) AND (m.artifact_digest IS NULL OR NOT (
@@ -11,6 +18,8 @@ DO $$ BEGIN
   RAISE EXCEPTION 'all serving and recovery generations must support stream counter v3';
  END IF;
 END $$;
+LOCK TABLE freeze_idempotency, stream_delivery_leases, call_logs,
+ usage_finalization_journal, request_idempotency IN ACCESS EXCLUSIVE MODE NOWAIT;
 ALTER TABLE stream_delivery_leases ADD COLUMN counter_version VARCHAR(80) NOT NULL DEFAULT 'unirouter.stream-counter.v2',
  ADD CONSTRAINT stream_delivery_counter_version_check CHECK (counter_version IN ('unirouter.stream-counter.v2','unirouter.stream-counter.v3'));
 CREATE FUNCTION preserve_stream_counter_version() RETURNS TRIGGER LANGUAGE plpgsql AS $$

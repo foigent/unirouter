@@ -11,7 +11,7 @@ those build identities do not replace the product version.
 - Persist one immutable estimator version per stream and carry it through checkpoints, both recovery owners, replay and settlement. Reject unknown or mismatched versions before financial effects; retain provider-only output holds.
 
 ### Changed
-- Add the finite M115 schema bridge. Roll the bridge with the v2 writer first, explicitly expand through the existing schema owner after verifying all serving/recovery actors, then select v3 through the same-image formal rollout. Default writer remains v2; M114 plus v3 is rejected before serving.
+- Add the finite M115 schema bridge. Roll the bridge with the v2 writer first, explicitly expand through the existing schema owner after verifying all serving/recovery actors, then select v3 through the same-image formal rollout. Busy control/financial locks reject the migration without waiting for a deadlock victim. Default writer remains v2; M114 plus v3 is rejected before serving.
 - Formal development/test rollout supports only the exact M115 migration-pair carrier and same-image v2/v3 writer transitions. Existing ingress, backup, predecessor, drain and recovery checks remain. M115/v3 history prevents rollback to a pre-bridge binary; no historical bills or prices change.
 
 ## [1.2.72] - 2026-09-08

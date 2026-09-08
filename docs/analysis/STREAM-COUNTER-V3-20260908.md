@@ -239,3 +239,22 @@ relay→Postgres v3 fixture is valid deferred coverage, not a current blocker;
 actual relay and database recovery/version paths are separately verified here.
 This closing record is documentation added after the reviewed patch; it changes
 no implementation. CI, exact Artifact and Target acceptance remain separate.
+
+Subsequent deployment preparation exposed a concrete online-M115 lock inversion
+in initial commit7044411e: Settle locks its reservation before the stream relation,
+whereas M115 altered the stream table before the reservation table. The isolated
+concurrent test reproduced SQLSTATE40P01; its original failure is retained. This
+corrects the prior no-blocker conclusion for the online expand boundary. The
+same independent closing review validated the blocker and the minimal correction:
+preserve Release→Slot→compatibility order but use NOWAIT/transaction try-lock,
+then acquire all five financial DDL table locks with one NOWAIT command before
+any ALTER. Busy state aborts only the migration through its existing transaction
+owner. No Billing lock change, new writer, automatic retry or product decision.
+Tests require the accepted runtime transaction to survive, unchanged schema and
+ledger on refusal, all eight busy-owner cases, and successful explicit expansion
+after contention ends. Target is still71/M114; no73 Artifact has been created or
+sent, so no installed migration bytes are rewritten. The superseded first CI run
+34171413688 was cancelled; the corrected commit requires fresh complete CI.
+The corrected contention test passes, and the affected full real-DB race suites
+pass: migrate31.394s, billing101.226s, publication40.669s, runtimegeneration28.473s.
+No Target change or paid call was used to reproduce or correct this issue.

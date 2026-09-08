@@ -4,7 +4,9 @@
 ## Cumulative interruption estimate candidate — 2026-09-08
 
 PR410 is merged as ab586b53 (1.2.72/M114), with all five required CI checks green.
-Its exact source bundle is prepared; official upload is blocked by the Aliyun UI.
+Its exact source bundle is retained unsent; official upload is blocked by the Aliyun UI.
+Deliver the72 UI and73 platform changes together in one reviewed exact73 Artifact,
+avoiding an otherwise redundant72 build/rollout. Their acceptance stays separate.
 No Target72 or shared-Probe Provider result is claimed. Last verified Target remains
 1.2.71/M114 with 39 Releases,17 Slots,13 Publications and Flash59/Max60 unchanged.
 
