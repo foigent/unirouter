@@ -1,5 +1,18 @@
 # Current Execution Record
 
+## Completed delivery — 1.2.77 compatibility and onboarding closeout
+
+The authorized bounded delivery is complete through review, CI/exact-main,
+Artifact, formal development rollout/inspect and representative GUI. Runtime is
+1.2.77/M115/v3 at cd9f354b. The user-approved exact compiler-cache cleanup restored
+the unchanged80%/8GiB gate; no image/data/backup/evidence cleanup occurred.
+Approval236 pins existing Function Tools Probe259; refresh and saved-connection
+continuation created no new Probe, ProviderAttempt, Release or Slot. All other
+approval pins remain; safe client configuration was verified. No paid model calls,
+new credentials, Production, old-writer retirement or X-Insight work. Preserve
+historical evidence/budgets and start the next integration/full-test task separately.
+[Exact Target/GUI evidence and next-task baseline](../ops/evidence/DELIVERY-ONBOARDING-177-20260909.md).
+
 ## Active delivery — compatibility and onboarding closeout
 
 The user authorized bounded closure before the separately planned X-Insight integration and full test campaign. Implement environment preflight, precise latest/approved evidence UI, existing-connection continuation and CI frontloading. Current Target remains 1.2.76/M115/v3; no schema/model/price/Release/Slot changes are planned. Original budgets remain, additional shared 30/CNY5 pool unused. Complete required CI/exact-main, official development build/rollout and one GUI Approval using existing facts259–264 without a paid Probe.
