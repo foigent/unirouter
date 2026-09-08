@@ -105,8 +105,8 @@ func TestRepeatedModelSuccessorContinuousHistoryIntegration(t *testing.T) {
 	ctx := context.Background()
 	// This round-trip exercises M112 against its supported schema ceiling.
 	// Remove later, unattached test artifacts through their guarded downs in
-	// reverse order. M114's guard must remain authoritative above M113/M112.
-	for _, migration := range []string{"000114_capability_delivery_expand", "000113_glm_stream_function_tools_qualification"} {
+	// reverse order. M115/M114 guards remain authoritative above M113/M112.
+	for _, migration := range []string{"000115_stream_counter_version", "000114_capability_delivery_expand", "000113_glm_stream_function_tools_qualification"} {
 		body, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), migration+".down.sql"))
 		require.NoError(t, err)
 		_, err = pool.Exec(ctx, string(body))

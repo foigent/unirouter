@@ -258,3 +258,12 @@ sent, so no installed migration bytes are rewritten. The superseded first CI run
 The corrected contention test passes, and the affected full real-DB race suites
 pass: migrate31.394s, billing101.226s, publication40.669s, runtimegeneration28.473s.
 No Target change or paid call was used to reproduce or correct this issue.
+
+CI34171988300 then passed the full Go/race, admin, frontend and browser checks,
+but the final integration step exposed two historical successor fixtures that
+attempted M114 down while M115 was still installed. The later-schema guard
+correctly refused both; no production guard is relaxed. Both explicit rewind
+lists now execute guarded M115 down first. The full tagged runtimechange race
+suite passes (21.131s), not just the two failed test names. This is a test-prestate
+coverage omission, not a supplier or Target failure; its failed CI remains
+retained and the corrected head must complete the required CI again.
