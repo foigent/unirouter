@@ -1,5 +1,21 @@
 # UniRouter Current Status
 
+## M115 control CLI repair candidate — 2026-09-08
+
+Exact1.2.73 main4a273b82 is deployed to the existing development Target. M115
+was applied once through the formal owner after verified backup;13 protected
+historical/control/financial projections are unchanged. Both instances are
+healthy, remain on counter v2, and retain Flash59/Max60 Slot3. The short-request
+rollout observer passed; this does not re-prove long-stream continuity.
+
+Post-M115 writer planning exposed a real CLI omission: the deployed control owner
+still requires M114. No writer change or new paid call occurred. Local1.2.74
+repairs that finite boundary and adds an explicitly selected, bounded candidate
+Artifact carrier for the same existing owner. See [exact design/review](../analysis/M115-CONTROL-OWNER-20260908.md).
+Its real CLI and Docker lifecycle checks, CI, Artifact and Target results must be
+recorded separately. Concentrated qualification UI awaits user login; the shared
+Probe and counter-v3 cancellation are still pending. Historical v2 bills and model
+execution pins remain unchanged. Earlier entries retain their original cutoff.
 
 ## Cumulative interruption estimate candidate — 2026-09-08
 

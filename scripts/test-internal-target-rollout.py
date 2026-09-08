@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Bounded rollout authority/recovery regressions; no Docker or paid calls."""
 import copy
+import contextlib
+import datetime
 import importlib.util
 import json
 import os
@@ -84,6 +86,110 @@ class CounterTransitionTests(unittest.TestCase):
             (new/"migrations"/(rollout.COUNTER_HEAD+".down.sql")).write_text("unreviewed replacement")
             with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes]), self.assertRaisesRegex(RuntimeError,"bytes differ"):
                 rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+
+
+class ArtifactOwnerTests(unittest.TestCase):
+    def carrier(self):
+        service, container, image = fixture()
+        metadata = {"RUNTIME_VERSION":"1.2.74", "RUNTIME_COMMIT":"a"*40,
+                    "RUNTIME_TREE":"b"*40, "RUNTIME_IMAGE_DIGEST":image["Id"]}
+        container["Id"] = "c"*64
+        container["State"].update(Running=True, StartedAt=datetime.datetime.now(datetime.timezone.utc).isoformat())
+        container["Config"]["Cmd"] = ["sleep", "90"]
+        container["Config"]["Env"] += [k+"="+v for k,v in metadata.items()]
+        container["HostConfig"].update(PortBindings={}, AutoRemove=True)
+        return service, container, image, metadata
+
+    def test_exact_configuration_lifetime_and_no_serving_alias(self):
+        service, container, image, metadata = self.carrier()
+        rollout.verify_owner_carrier(service,container,image,"unirouter","development",metadata)
+        for change in (
+            lambda c:c["Config"].update(Cmd=["./uniroute"]),
+            lambda c:c["HostConfig"].update(AutoRemove=False),
+            lambda c:c["HostConfig"].update(PortBindings={"8080/tcp":[{"HostIp":"127.0.0.1","HostPort":"8080"}]}),
+            lambda c:c["State"].update(StartedAt=(datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(seconds=46)).isoformat()),
+            lambda c:c["NetworkSettings"]["Networks"]["unirouter_default"].update(Aliases=["backend"]),
+            lambda c:c["Config"]["Env"].append("UNREVIEWED=must-not-be-printed"),
+        ):
+            bad=copy.deepcopy(container);change(bad)
+            with self.assertRaises(RuntimeError) as error:
+                rollout.verify_owner_carrier(service,bad,image,"unirouter","development",metadata)
+            self.assertNotIn("must-not-be-printed",str(error.exception))
+
+    def test_cleanup_is_exact_bounded_and_confirms_exit(self):
+        _,c,_,_=self.carrier()
+        with patch.object(rollout,"inspect",side_effect=[c,None]),patch.object(rollout.subprocess,"run",return_value=SimpleNamespace(returncode=0)) as execute:
+            rollout.stop_owner_carrier(c["Id"])
+        self.assertEqual(["docker","stop","--time","5",c["Id"]],execute.call_args.args[0])
+        self.assertEqual(10,execute.call_args.kwargs["timeout"])
+        with patch.object(rollout,"inspect",side_effect=[c,c]),patch.object(rollout.subprocess,"run",return_value=SimpleNamespace(returncode=0)),self.assertRaisesRegex(RuntimeError,"exit remains unconfirmed"):
+            rollout.stop_owner_carrier(c["Id"])
+
+    def test_carrier_refuses_without_original_operation_locks(self):
+        owner=object.__new__(rollout.Rollout)
+        for cmd in ("inspect","read","prepare","complete"):
+            with self.assertRaisesRegex(RuntimeError,"requires operation locks"):
+                owner.artifact_owner_command("ignored",cmd)
+        with self.assertRaisesRegex(RuntimeError,"unsupported"):
+            owner.artifact_owner_command("ignored","migrate")
+
+    def owner(self):
+        service,c,image,metadata=self.carrier()
+        o=object.__new__(rollout.Rollout)
+        o.spec={"operation_id":"fixture","images":{"backend":{"tag":"fixture:exact","digest":image["Id"]}}}
+        o.target={"overlay":"/fixture/runtime.yml","project":"unirouter","environment":"development"}
+        o.source={"version":metadata["RUNTIME_VERSION"],"commit":metadata["RUNTIME_COMMIT"],"tree":metadata["RUNTIME_TREE"]}
+        o.new_source=Path("/fixture/source")
+        o.identity=lambda:None;o.sources=lambda:None;o.images=lambda:{"backend":image}
+        o.evidence=SimpleNamespace(has=lambda name:False)
+        o.chain=lambda path:["/one","/two","/three","/four","/fixture/runtime.yml"]
+        o.compose=lambda chain:["docker","compose"]
+        o.config=lambda chain,tags:{"services":{"backend":service}}
+        o.compose_env=lambda tags:rollout.ENV
+        label=rollout.digest(rollout.canonical(o.spec))
+        c["Name"]="/unirouter-owner-"+label[:24]
+        c["Config"]["Labels"]={"io.unirouter.control-owner":label}
+        return o,c
+
+    def test_exact_command_payload_and_cleanup_for_success_failure_and_timeout(self):
+        for outcome in ("success","failed","lost"):
+            o,c=self.owner()
+            result=SimpleNamespace(returncode=0 if outcome=="success" else 1,stdout=b'{"head":"fixture"}',stderr=b"secret-dsn-must-not-leak")
+            effect=subprocess.TimeoutExpired(["docker","exec",c["Id"]],30) if outcome=="lost" else None
+            with patch.object(rollout,"HELD_LOCK_FDS",[123]),patch.object(rollout,"inspect",side_effect=[None,c]),patch.object(rollout,"run",return_value=c["Id"].encode()) as create,patch.object(rollout.subprocess,"run",return_value=result,side_effect=effect) as execute,patch.object(rollout,"stop_owner_carrier") as stop:
+                if outcome=="success": self.assertEqual({"head":"fixture"},o.artifact_owner_command("old","read",{"change_id":"exact"}))
+                else:
+                    with self.assertRaises((RuntimeError,subprocess.TimeoutExpired)) as e:o.artifact_owner_command("old","read",{"change_id":"exact"})
+                    self.assertNotIn("secret-dsn",str(e.exception))
+                stop.assert_called_once_with(c["Id"])
+                self.assertEqual(["docker","exec","-i",c["Id"],"./uniroute","runtime-generation","read"],execute.call_args.args[0])
+                self.assertEqual({"change_id":"exact"},json.loads(execute.call_args.kwargs["input"]))
+                self.assertEqual((123,),execute.call_args.kwargs["pass_fds"])
+                argv=create.call_args.args[0]
+                self.assertEqual(["backend","sleep","90"],argv[-3:])
+                self.assertIn("--no-deps",argv);self.assertIn("--rm",argv)
+                self.assertEqual("never",argv[argv.index("--pull")+1])
+                self.assertNotIn("--service-ports",argv);self.assertNotIn("--use-aliases",argv)
+                self.assertFalse(any("DB_DSN" in value for value in argv))
+                self.assertEqual(4,argv.count("-e"))
+
+    def test_unknown_creation_and_existing_name_never_send_or_take_over(self):
+        for exists in (True,False):
+            o,c=self.owner()
+            with patch.object(rollout,"HELD_LOCK_FDS",[123]),patch.object(rollout,"inspect",return_value=c if exists else None),patch.object(rollout,"run",side_effect=subprocess.TimeoutExpired(["docker","compose"],30)) as create,patch.object(rollout.subprocess,"run") as execute,patch.object(rollout,"stop_owner_carrier") as stop:
+                with self.assertRaisesRegex(RuntimeError,"already exists" if exists else "creation unconfirmed"):o.artifact_owner_command("old","inspect")
+                execute.assert_not_called();stop.assert_not_called()
+                if exists:create.assert_not_called()
+
+    def test_only_explicit_carrier_read_commands_take_lifecycle_locks(self):
+        for action in ("plan","inspect"):
+            for carrier in (False,True):
+                document={"target":{}}
+                if carrier:document["runtime_owner"]="artifact_cli"
+                owner=SimpleNamespace(plan=lambda:({},None,None),progress=lambda:({},{}))
+                with patch.object(sys,"argv",["rollout",action,"--input","/fixture"]),patch.object(rollout,"document",return_value=document),patch.object(rollout,"Rollout",return_value=owner),patch.object(rollout,"operation_locks",return_value=contextlib.nullcontext()) as lock,patch.dict(os.environ,{},clear=True),patch("builtins.print"):
+                    self.assertEqual(0,rollout.main())
+                    self.assertEqual(1 if carrier else 0,lock.call_count)
 
 
 class CounterBridgeTests(unittest.TestCase):

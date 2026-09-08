@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/uniroute/unirouter/internal/config"
 	"github.com/uniroute/unirouter/internal/db"
@@ -53,6 +54,9 @@ func runRuntimeGenerationCLI(ctx context.Context, args []string, cfg *config.Con
 			return err
 		}
 	}
+	// A one-off control command must not outlive its bounded Artifact carrier.
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
 	postgres, err := db.NewPostgres(cfg.DB_DSN, cfg.DBMaxConnections, cfg.DBMaxIdleConns)
 	if err != nil {
 		return err
@@ -66,7 +70,8 @@ func runRuntimeGenerationCLI(ctx context.Context, args []string, cfg *config.Con
 	if err != nil {
 		return err
 	}
-	if actual[len(actual)-1] != schemaauthority.CapabilityExpandHead {
+	head := actual[len(actual)-1]
+	if head != schemaauthority.CapabilityExpandHead && head != schemaauthority.StreamCounterExpandHead {
 		return fmt.Errorf("runtime generation owner requires the exact expanded schema")
 	}
 	var result any

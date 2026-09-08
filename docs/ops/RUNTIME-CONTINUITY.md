@@ -203,6 +203,31 @@ for a real Target Nginx rollout or Provider/usage/settlement evidence.
 
 ## Versioned stream counter: finite M115 bridge
 
+The1.2.73 HTTP bridge supports M115, but its runtime-generation CLI incorrectly
+required M114. Use the corrected1.2.74 owner before any post-M115 ingress change.
+For this forward recovery, the ordinary rollout input may explicitly add
+`"runtime_owner":"artifact_cli"`. Keep the default v2 writer for the Artifact
+rollout, then use the ordinary same-image writer transition. Do not combine these
+actions or downgrade M115 to escape the old control guard.
+
+The selected carrier uses the exact candidate backend image and the same
+runtime-generation inspect/read/prepare/complete owner. It takes the existing
+lifecycle/ingress locks, including for plan/inspect. Those commands remain
+data-neutral but create/remove a private, bounded CLI container in this mode;
+default plan/inspect remain fully read-only. The five installed configuration
+files supply connection settings without copying/printing credentials. Only four
+Artifact metadata fields are overridden; typed JSON is the CLI's sole stdin.
+
+Each helper starts `sleep 90` with no service ports, aliases, dependency startup
+or image pulls. Before a database command, its exact ID, image, effective config
+and remaining lifetime are verified. The CLI has a20-second context deadline;
+the host uses30seconds and an explicit five-second helper stop, followed by exit
+confirmation. No existing helper name is adopted. On an unknown creation/command
+result, preserve the failed invocation, inspect its exact container and the
+existing ingress receipt, and continue only through the formal inspection/resume
+path. A missing container never proves that an ingress commit did not occur.
+No persistent operator, second writer, schema change or Provider call is added.
+
 `counter_v3` is a marked estimate of successfully delivered extracted text, not a
 supplier tokenizer or a bill cap. Cumulative integer rounding removes dependence
 on valid text frame partitioning. Input estimation and current rates are unchanged.

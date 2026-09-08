@@ -2,7 +2,9 @@
 """Fixed existing-target Compose rollout; uses the sole runtime-ingress writer.
 
 No image build/pull, schema apply, model activation, automatic rollback or cleanup.
-Plan/inspect are read-only. Operational completion and continuity are separate.
+Default plan/inspect are read-only. Explicit artifact_cli owner mode creates and
+removes a bounded CLI carrier even for reads, without changing serving processes.
+Operational completion and continuity are separate.
 """
 import argparse
 import base64
@@ -222,7 +224,9 @@ def validate_pending_counter_carrier(old_source, new_source, transition, actual_
 
 def document(path):
     value = load(regular(path).read_bytes())
-    require(set(value) in ({"format", "operation_id", "target", "source", "images", "evidence_directory"}, {"format", "operation_id", "target", "source", "images", "evidence_directory", "transition"}), "unknown rollout input fields")
+    required = {"format", "operation_id", "target", "source", "images", "evidence_directory"}
+    require(required <= set(value) <= required | {"transition", "runtime_owner"}, "unknown rollout input fields")
+    require("runtime_owner" not in value or value["runtime_owner"] == "artifact_cli", "unknown runtime owner carrier")
     validate_transition(value.get("transition"))
     require(value["format"] == "unirouter.internal-target-rollout.v1", "unsupported rollout input")
     require(re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,100}", value["operation_id"]), "invalid operation identity")
@@ -290,6 +294,61 @@ class Rollout:
         self.ingress = importlib.util.module_from_spec(module)
         module.loader.exec_module(self.ingress)
         self.ingress.LOCK_FDS = HELD_LOCK_FDS
+        if spec.get("runtime_owner") == "artifact_cli":
+            self.ingress.owner_command = self.artifact_owner_command
+
+    def artifact_owner_command(self, _receiver, command, document=None):
+        """Same typed owner, independent of the old serving binary's CLI guard."""
+        require(command in ("inspect", "read", "prepare", "complete"), "unsupported Artifact owner command")
+        require(bool(HELD_LOCK_FDS), "Artifact owner carrier requires operation locks")
+        self.identity()
+        image = self.images()["backend"]
+        self.sources()
+        if self.evidence.has("prepared.json"):
+            plan = self.retained_plan()
+            require(digest(regular(self.target["overlay"]).read_bytes()) in
+                    {plan["old_overlay_digest"], plan["new_overlay_digest"]}, "owner overlay drifted")
+        chain = self.chain(self.new_source)  # Real overlay file; stdin is only CLI JSON.
+        tags = {k: v["tag"] for k, v in self.spec["images"].items()}
+        service = copy.deepcopy(self.config(chain, tags)["services"]["backend"])
+        metadata = {"RUNTIME_VERSION": self.source["version"], "RUNTIME_COMMIT": self.source["commit"],
+                    "RUNTIME_TREE": self.source["tree"], "RUNTIME_IMAGE_DIGEST": image["Id"]}
+        label = digest(canonical(self.spec))
+        name = "unirouter-owner-" + label[:24]
+        require(inspect(name, missing_ok=True) is None, "Artifact owner name already exists; inspect it before continuing")
+        args = self.compose(chain) + ["run", "--detach", "--rm", "--no-deps", "--pull", "never", "-T",
+                                      "--name", name, "--label", "io.unirouter.control-owner=" + label]
+        for key, value in metadata.items():
+            args += ["-e", key + "=" + value]
+        args += ["backend", "sleep", "90"]
+        # No DB command runs before this exact identity and its configuration are
+        # verified. Lost create response leaves only a self-expiring sleep, never
+        # an unknown financial or ingress writer. Existing names are not adopted.
+        try:
+            container_id = run(args, timeout=30, env=self.compose_env(tags)).decode().strip()
+        except (RuntimeError, subprocess.TimeoutExpired) as error:
+            raise RuntimeError("Artifact owner creation unconfirmed: " + name + "; inspect before another command") from error
+        require(re.fullmatch(r"[a-f0-9]{64}", container_id), "Artifact owner identity unconfirmed: " + name)
+        owned = False
+        try:
+            carrier = inspect(container_id)
+            require(carrier["Name"] == "/" + name and carrier["Image"] == image["Id"] and
+                    carrier["Config"].get("Labels", {}).get("io.unirouter.control-owner") == label,
+                    "Artifact owner identity changed")
+            owned = True
+            verify_owner_carrier(service, carrier, image, self.target["project"], self.target["environment"], metadata)
+            payload = b"" if document is None else json.dumps(document, sort_keys=True).encode()
+            require(len(payload) <= 2 << 20, "Artifact owner document is too large")
+            result = subprocess.run(["docker", "exec", "-i", container_id, "./uniroute", "runtime-generation", command],
+                                    input=payload, capture_output=True, timeout=30, env=ENV, pass_fds=tuple(HELD_LOCK_FDS))
+            if result.returncode:
+                code = re.search(rb"SQLSTATE ([0-9A-Z]{5})", result.stderr[:16384])
+                suffix = " (SQLSTATE " + code.group(1).decode() + ")" if code else ""
+                raise RuntimeError("Artifact owner refused " + command + suffix + "; inspect retained receipt before continuing")
+            return load(result.stdout)
+        finally:
+            if owned:
+                stop_owner_carrier(container_id)
 
     def sql(self, query):
         return run(["docker", "exec", "uniroute-postgres", "psql", "-X", "-U", "uniroute", "-d", "uniroute", "-At", "-v", "ON_ERROR_STOP=1", "-c", query]).decode().strip()
@@ -764,6 +823,40 @@ def utcnow():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
+def verify_owner_carrier(service, carrier, image, project, runtime_environment, metadata):
+    require(carrier["State"]["Running"] and carrier["HostConfig"].get("AutoRemove") is True,
+            "Artifact owner is not a self-removing live container")
+    started = datetime.datetime.fromisoformat(carrier["State"]["StartedAt"].replace("Z", "+00:00"))
+    age = (datetime.datetime.now(datetime.timezone.utc) - started).total_seconds()
+    require(0 <= age < 45, "Artifact owner lacks remaining command and stop lifetime")
+    expected, normalized = copy.deepcopy(service), copy.deepcopy(carrier)
+    expected.update(command=["sleep", "90"], ports=[], restart="no")
+    expected.setdefault("environment", {}).update(metadata)
+    normalized["HostConfig"]["AutoRemove"] = False  # Explicitly verified above.
+    check_service(expected, normalized, image, project, runtime_environment)
+    require(not carrier["HostConfig"].get("PortBindings"), "Artifact owner must have no published ports")
+    for network in carrier["NetworkSettings"]["Networks"].values():
+        aliases = set(network.get("Aliases") or [])
+        require(not aliases.intersection({"backend", "backend-canary", "uniroute-api", "uniroute-api-canary"}),
+                "Artifact owner must not claim serving aliases")
+
+
+def stop_owner_carrier(container_id):
+    current = inspect(container_id, missing_ok=True)
+    if current is None:
+        return  # --rm already completed this exact task-created container.
+    require(current["Id"] == container_id, "Artifact owner stop identity differs")
+    if current["State"]["Running"]:
+        # Never inherit the service's 35-minute drain grace for this CLI helper.
+        result = subprocess.run(["docker", "stop", "--time", "5", container_id], capture_output=True,
+                                timeout=10, env=ENV, pass_fds=tuple(HELD_LOCK_FDS))
+        after = inspect(container_id, missing_ok=True)
+        require(after is None or not after["State"]["Running"], "Artifact owner exit remains unconfirmed")
+        require(result.returncode == 0 or after is None, "Artifact owner stop refused; inspect exact identity")
+    else:
+        require(not current["State"]["Running"], "Artifact owner did not exit")
+
+
 OBSERVER_CONTRACT = "unirouter.ingress-observer.v2"
 OBSERVER_BODY_LIMIT = 64 * 1024
 LEGACY_SAMPLE_FIELDS = {"at", "completed_at", "protocol", "exit", "result", "ok"}
@@ -956,13 +1049,19 @@ def main():
     os.environ.clear()
     os.environ.update(ENV)
     rollout = Rollout(spec)
-    if args.action == "plan":
+    carrier = spec.get("runtime_owner") == "artifact_cli"
+    if args.action == "plan" and not carrier:
         result = rollout.plan()[0]
-    elif args.action == "inspect":
+    elif args.action == "inspect" and not carrier:
         result = rollout.progress()[1]
     else:
         with operation_locks(spec["target"]):
-            result = rollout.prepare() if args.action == "prepare" else rollout.apply(args.action == "resume")
+            if args.action == "plan":
+                result = rollout.plan()[0]
+            elif args.action == "inspect":
+                result = rollout.progress()[1]
+            else:
+                result = rollout.prepare() if args.action == "prepare" else rollout.apply(args.action == "resume")
     print(json.dumps(result, sort_keys=True))
     if result.get("deployment") == "complete" and result.get("observer_acceptance") != "passed_short_requests_only":
         return 3  # Deployment recovered; failed/missing acceptance is preserved.
