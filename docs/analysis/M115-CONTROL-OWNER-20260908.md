@@ -189,3 +189,5 @@ Local76 validation:60 rollout and13 ingress tests pass on both system Python3.9.
 and current Python3.14;12 release metadata tests, metadata check and diff pass.
 The old75 timestamp parser independently reproduces ValueError on the exact
 Target nanosecond input. Real Python3.10 Docker CI and Target remain pending.
+
+First76 CI34225310227 passed Backend, Frontend and PR4, and all60+13 Python3.10.21 checks. The real Docker fixture failed at initial psql setup (exit2), before the carrier. The official postgres entrypoint initializes a socket-only temporary server and then stops it. The socket pg_isready probe could race this stop. The fixture now waits on127.0.0.1 for the final TCP server, with the same deadline and assertions; no product/Target change. Original failure log is retained. Local Docker is unavailable; real fixture acceptance still requires CI.

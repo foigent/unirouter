@@ -55,7 +55,9 @@ def main():
             pg = r.run(compose+["ps","-q","db"]).decode().strip()
             deadline = time.monotonic()+30
             while True:
-                ready=subprocess.run(["docker","exec",pg,"pg_isready","-U","postgres"],capture_output=True)
+                # The image's initialization server exposes only a Unix socket.
+                # Wait for the final TCP server before installing the fixture.
+                ready=subprocess.run(["docker","exec",pg,"pg_isready","-h","127.0.0.1","-U","postgres"],capture_output=True)
                 if ready.returncode==0: break
                 if time.monotonic()>deadline: raise RuntimeError("isolated fixture database did not start")
                 time.sleep(.2)
