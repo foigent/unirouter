@@ -1,5 +1,18 @@
 # UniRouter Current Status
 
+## Python3.10 rollout correction candidate — 2026-09-08
+
+Exact75 PR413, all five CI checks, exact-main protocol and Artifact build passed.
+Target plan75 then rejected Docker's nanosecond StartedAt on Python3.10.12 before
+any CLI owner command or traffic mutation. The exact carrier was cleaned and
+confirmed absent. Target remains73/M115/v2, both backends healthy,123 attempts,
+39 Releases and17 Slots unchanged. Local76 implements the independently reviewed
+finite parser and tests the existing real Docker carrier on Python3.10 in CI.
+No server Python upgrade or source patch; no new paid calls/reservations.76 CI,
+Artifact/Target, v3 cancellation and concentrated GUI acceptance remain pending.
+User UniRouter login is still pending. Earlier entries retain their cutoff.
+
+
 ## Docker29 rollout correction candidate — 2026-09-08
 
 Exact74 PR412, five CI checks, exact-main protocol and Artifact build passed.

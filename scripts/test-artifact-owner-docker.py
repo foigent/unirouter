@@ -8,6 +8,7 @@ import argparse
 import importlib.util
 import json
 import os
+import platform
 from pathlib import Path
 import subprocess
 import tempfile
@@ -103,7 +104,7 @@ CREATE TABLE runtime_generations(instance_id text, artifact_digest text, schema_
                 row=r.run(["docker","exec",pg,"psql","-U","postgres","-Atc","SELECT count(*) FROM runtime_ingress_changes"]).strip()
                 assert row==b"0"
                 docker_version=r.run(["docker","version","--format","{{.Client.Version}} / {{.Server.Version}}"]).decode().strip()
-                print(json.dumps({"docker_carrier":"passed","docker_client_server":docker_version,"cli_head":"M115","lost_response_cleanup":"passed","ingress_writes":0,"provider_calls":0}))
+                print(json.dumps({"docker_carrier":"passed","docker_client_server":docker_version,"python_version":platform.python_version(),"cli_head":"M115","lost_response_cleanup":"passed","ingress_writes":0,"provider_calls":0}))
             finally:
                 r.HELD_LOCK_FDS.clear();os.close(fd)
         finally:

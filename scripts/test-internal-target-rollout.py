@@ -89,6 +89,30 @@ class CounterTransitionTests(unittest.TestCase):
 
 
 class ArtifactOwnerTests(unittest.TestCase):
+    def test_docker_timestamp_fraction_and_timezone(self):
+        for wire, microsecond, offset in (
+            ("2026-09-08T12:05:50Z", 0, 0),
+            ("2026-09-08T12:05:50.4Z", 400000, 0),
+            ("2026-09-08T12:05:50.449Z", 449000, 0),
+            ("2026-09-08T12:05:50.449763+00:00", 449763, 0),
+            ("2026-09-08T12:05:50.449763833Z", 449763, 0),
+            ("2026-09-08T12:05:50.449763833+02:30", 449763, 150),
+            ("2026-09-08T12:05:50.449763833-02:30", 449763, -150),
+        ):
+            with self.subTest(wire=wire):
+                expected = datetime.datetime(2026, 9, 8, 12, 5, 50, microsecond,
+                    datetime.timezone(datetime.timedelta(minutes=offset)))
+                self.assertEqual(expected, rollout.docker_started_at(wire))
+
+    def test_docker_timestamp_rejects_invalid_or_ambiguous_input(self):
+        for wire in (None, "", "2026-09-08T12:05:50", "2026-09-08T12:05:50.Z",
+                     "2026-09-08T12:05:50.4497638330Z", "2026-09-08T12:05:50Z extra",
+                     "2026-09-08T12:05:50+00:60", "2026-09-08T12:05:50+24:00",
+                     "2026-09-08T12:05:50-00:60", "2026-09-08T12:05:50-24:00",
+                     "2026-02-30T12:05:50Z", "2026-09-08T25:05:50Z"):
+            with self.subTest(wire=wire), self.assertRaises((RuntimeError, ValueError)):
+                rollout.docker_started_at(wire)
+
     def carrier(self):
         service, container, image = fixture()
         metadata = {"RUNTIME_VERSION":"1.2.74", "RUNTIME_COMMIT":"a"*40,
@@ -108,6 +132,7 @@ class ArtifactOwnerTests(unittest.TestCase):
             lambda c:c["HostConfig"].update(AutoRemove=False),
             lambda c:c["HostConfig"].update(PortBindings={"8080/tcp":[{"HostIp":"127.0.0.1","HostPort":"8080"}]}),
             lambda c:c["State"].update(StartedAt=(datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(seconds=46)).isoformat()),
+            lambda c:c["State"].update(StartedAt=(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(seconds=2)).isoformat()),
             lambda c:c["NetworkSettings"]["Networks"]["unirouter_default"].update(Aliases=["backend"]),
             lambda c:c["Config"]["Env"].append("UNREVIEWED=must-not-be-printed"),
         ):

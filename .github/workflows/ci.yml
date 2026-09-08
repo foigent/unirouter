@@ -871,6 +871,16 @@ jobs:
       - name: Verify image
         run: docker images unirouter:test
 
+      - name: Set up Target-compatible Python
+        if: needs.changes.outputs.docker == 'true'
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+
       - name: Verify bounded Artifact control owner
         if: needs.changes.outputs.docker == 'true'
-        run: python3 -B scripts/test-artifact-owner-docker.py --image unirouter:test
+        run: |
+          python3 -c 'import sys; assert sys.version_info[:2] == (3, 10)'
+          python3 -B scripts/test-internal-target-rollout.py
+          python3 -B scripts/test-runtime-ingress.py
+          python3 -B scripts/test-artifact-owner-docker.py --image unirouter:test
