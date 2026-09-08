@@ -1,5 +1,20 @@
 # UniRouter Current Status
 
+## Shared-Probe GUI verified; broader onboarding work remains — 2026-09-09
+
+At01:50 China time, the restored console completed one physical Flash Probe for
+six successful capability facts259–264, with one source_ref and provider usage.
+Refresh did not resend. Existing Approvals still pin247–252; Release59/Slot3,
+M115 and exact1.2.76/counter-v3 images are unchanged. This closes the bounded
+shared-Probe/results/refresh GUI path, not a new Approval action, Agent task or
+the whole product plan. Flash30/30,CNY4.95651 reserved; Max18/30,CNY4.689972.
+User added30 calls/CNY5; conservatively one shared additional pool, unused so far,
+with original history retained. Next work: pre-build tool compatibility checks,
+onboarding next-action clarity and separate latest/approved evidence display,
+then dependency-based CI cost work. No new model expansion or full retest.
+[Exact GUI evidence and advisor assessment](evidence/CONCENTRATED-QUALIFICATION-GUI-20260909.md).
+MAR-008 is revised only for existing executable compatibility/recovery checks.
+
 ## Counter v3 Target verified; concentrated GUI login pending — 2026-09-08
 
 Development Target now runs exact1.2.76/M115,commit6a89eef6,with both counter-v3
