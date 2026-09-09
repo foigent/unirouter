@@ -18,6 +18,24 @@ def check(path):
     require(fixture.get("fixture_only") is True, "synthetic fixture required")
     pages, records = fixture["pages"], fixture["i01"]
     identities = {e["identity"]["idempotency_key"] for v in pages for e in validate_page(v)["events"]}
+    if "media_jobs" in fixture:
+        require(not records, "media fixture must not manufacture text I-01 records")
+        terminal_costs = [e["payload"]
+                          for v in pages for e in validate_page(v)["events"]]
+        terminal_costs = [p for p in terminal_costs if "cost" in p]
+        for job in fixture["media_jobs"]:
+            matches = [p for p in terminal_costs if p["request_id"] == job["request_id"]]
+            require(len(matches) == 1, "one media terminal cost explanation per original job")
+            cost = matches[0]["cost"]
+            ref = cost["economic_reference"]
+            require(ref["source"] == "async_media_charge_fact", "media original economic authority")
+            require(ref["org_id"] == str(job["scope"]["org_id"]) and ref["project_id"] == str(job["scope"]["project_id"]), "media charge scope")
+            require(ref["publication_status"] == "not_applicable", "media is not an I-01 publication")
+            require(not ref.get("snapshot_sha256") and not ref.get("calculated_amount_path") and not ref.get("charged_amount_path"), "media cannot claim text amount paths")
+            charge = job.get("charge_fact")
+            require(ref.get("charge_fact_ref", "") == (charge["fact_id"] if charge else ""), "exact original media charge fact")
+            require(cost["media_amount_state"] == (charge["amount_state"] if charge else "not_eligible"), "media amount state")
+            require(not charge or charge.get("amount_micros") is None, "pending media pricing is not an invented amount")
     calculated = sum(int(r["snapshot"]["money"]["calculated_cost_micros"]) for r in records)
     charged = sum(int(r["snapshot"]["money"]["charged_cost_micros"]) for r in records)
     require(charged == 0, "local observation fixture must not charge")

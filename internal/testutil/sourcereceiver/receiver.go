@@ -31,10 +31,10 @@ import (
 // All receiver credentials below originate through the production admin routes
 // and live synthetic administrator sessions. The optional evidence directory
 // receives only HTTP source pages and synthetic I-01 snapshots, never tokens.
-func Observe(t *testing.T, pool *pgxpool.Pool, source *sourcefacts.Service, secret, jwtSecret string, org, project int64, register func(*http.ServeMux, *admin.Handler, func(http.HandlerFunc) http.Handler)) func() {
+func Observe(t *testing.T, pool *pgxpool.Pool, source *sourcefacts.Service, secret, jwtSecret string, org, project int64, register func(*http.ServeMux, *admin.Handler, func(http.HandlerFunc) http.Handler), credentialChecks ...func(string)) func() {
 	t.Helper()
 	var actor int64
-	require.NoError(t, pool.QueryRow(t.Context(), `INSERT INTO users(org_id,username,password_hash,role,status) VALUES($1,'source-synthetic-admin','synthetic-hash','platform_admin','active') RETURNING id`, org).Scan(&actor))
+	require.NoError(t, pool.QueryRow(t.Context(), `INSERT INTO users(org_id,username,password_hash,organization_role,role,status) VALUES($1,'source-synthetic-admin','synthetic-hash','platform_admin','platform_admin','active') RETURNING id`, org).Scan(&actor))
 	jwt := testutil.MustAdminSessionJWT(t, t.Context(), pool, actor, org, auth.RolePlatformAdmin, jwtSecret)
 	h := admin.NewHandlerWithAPIKeyHashSecret(pool, jwtSecret, secret, []byte("0123456789abcdef01234567"), nil)
 	h.SetSourceFactsController(source)
@@ -75,6 +75,9 @@ func Observe(t *testing.T, pool *pgxpool.Pool, source *sourcefacts.Service, secr
 	key := control("prepare", map[string]any{"allowed_ip": "127.0.0.1/32", "registration": registration})
 	control("activate", map[string]any{"credential_id": key["credential_id"]})
 	control("resume", map[string]any{})
+	for _, check := range credentialChecks {
+		check(token) // In-memory only; never export the receiver credential.
+	}
 	read := func(profile, cursor string) map[string]any {
 		path := "/api/v1/integrations/xinsight/source-facts?profile=" + profile + "&limit=2"
 		if cursor != "" {

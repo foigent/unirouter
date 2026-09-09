@@ -546,6 +546,58 @@ No push, PR, merge, release, real credential or service action was performed.
 B/D implementation remains gated on complete A delivery and coordinator acceptance.
 经验文件无需变化：本次来源控制与本地验证未产生符合模型适配经验准入门槛的新条目。
 
+### Media HTTP evidence follow-up after independent acceptance review
+
+The coordinator classified the missing legacy async-media HTTP-to-consumer chain
+as validated_required and accepted section 2 of
+`/private/tmp/ur-workfacts-test.RDgTyF/source-media-and-container-verification-proposal.md`
+(SHA-256 `e17b38c7bcb2f4a75c7b8c8091baa0f9c18143281057b4cec278ba90eb849063`).
+The earlier claim that only Docker remained was a self-review cutoff; this
+independent finding supplements it. The aa119e12 candidate and its evidence are
+retained, not rewritten or reclassified as a full acceptance.
+
+The follow-up mechanically extracts main's two media authorizers; their bodies
+and error mappings are unchanged apart from the passed pool reference. Eight real
+media HTTP cases now cover legacy/explicit-grant success and replay, key/grant
+revocation before dispatch, queued and in-flight cancellation, real Agent/source
+credential rejection, original identity snapshots and non-I-01 charge facts.
+Real PG, Redis, model authorization, limit policy, Worker and source control/page
+handlers are used. Provider/object storage remain synthetic. The independent
+consumer compares original job charge metadata and preserves zero additional
+money; media's 80 facts / 48 pages contain zero text I-01 records.
+
+The first complete bounded regression passes the eight media and 21 original text
+HTTP cases plus original media writer/re-authorization tests. Their 455 facts /
+267 pages / 33 original I-01 records pass independent consumer and general Schema
+validation. Subsequent explicit dual-role initialization of the synthetic receiver
+admin passes full cmd race unit tests and a focused rerun of all eight media plus
+seven selected text cases. Unchanged frontend, N1 and unrelated product evidence
+are reused; no CI, Provider/S3 or container pass is inferred.
+
+Retained unsuccessful runs distinguish fixture setup errors, a sandbox socket
+restriction and a redundant overlapping Redis RPM-limit regression from product
+failures. No assertion or rate-limit budget was relaxed. The exact passing logs,
+failed diagnostics, extraction proof, successor commit/tree and changed-file
+hashes are bound in
+`/private/tmp/ur-workfacts-test.RDgTyF/source-media-delivery-evidence.json`.
+
+The carrier read fixture actually derived all current migration names; its old
+fixed M115 report did not identify its real input. It now separately selects the
+M115 bridge and M116 current ledgers, checks actual CLI inspect and unchanged
+read-fixture state, and reports both exact heads/digests. Two offline selection
+regressions pass; actual Docker execution remains unperformed. Its four read
+tables are explicitly not a complete M116 migration/install proof.
+
+The concrete runtime proposal is
+`/private/tmp/ur-workfacts-test.RDgTyF/a11-runtime-approval-proposal.md`, with pinned
+Lima/Ubuntu/Engine/Compose identities, official hashes/licenses, bounded local
+paths/permissions/downloads and stop conditions. Host capacity is a timed sample,
+not a fixed fact; current free space is below the planned 32 GiB VM plus host
+reserve. No data was cleaned, runtime installed, image pulled or VM started.
+User approval and the stated resource prerequisites remain necessary for A11.
+Full A awaits the coordinator's independent acceptance; B/D remain design-only.
+经验文件无需变化：该续作修补媒体验证链与合成夹具，不新增模型适配合同。
+
 ## Active delivery — compatibility and onboarding closeout
 
 The user authorized bounded closure before the separately planned X-Insight integration and full test campaign. Implement environment preflight, precise latest/approved evidence UI, existing-connection continuation and CI frontloading. Current Target remains 1.2.76/M115/v3; no schema/model/price/Release/Slot changes are planned. Original budgets remain, additional shared 30/CNY5 pool unused. Complete required CI/exact-main, official development build/rollout and one GUI Approval using existing facts259–264 without a paid Probe.

@@ -348,18 +348,30 @@ func (w *sourceHTTPStreamCancelWriter) Write(p []byte) (int, error) {
 }
 
 func sourceHTTPWorkloadGrant(t *testing.T, pool *pgxpool.Pool, org, project, sponsor int64, raw string) (app, key int64) {
+	return sourceHTTPWorkloadGrantWithScope(t, pool, org, project, sponsor, raw, prd2E2EJWTSecret, "/v1/chat/completions,/v1/embeddings,/v1/models")
+}
+
+func sourceHTTPWorkloadGrantWithScope(t *testing.T, pool *pgxpool.Pool, org, project, sponsor int64, raw, hashSecret, endpoints string) (app, key int64) {
 	t.Helper()
+	mode, modelsJSON, endpointsJSON := "project_default", "[]", "[]"
+	if endpoints != "/v1/chat/completions,/v1/embeddings,/v1/models" {
+		mode = "explicit"
+		modelsJSON = `["company-chat"]`
+		wire, err := json.Marshal(strings.Split(endpoints, ","))
+		require.NoError(t, err)
+		endpointsJSON = string(wire)
+	}
 	ctx := t.Context()
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO workload_applications(contract_version,identity_contract_version,org_id,project_id,application_ref,logical_ref,display_name,kind,environment,identity_mode,owner_team,status,environment_locked_at,created_by,updated_by)
 	 VALUES('unirouter.workload-application.v2','unirouter.workload-identity.v2',$1,$2,'app_source_grant','workload_source_grant','Synthetic source grant','service','development','service_credential','test','active',NOW(),$3,$3) RETURNING id`, org, project, sponsor).Scan(&app))
 	var request, grant, credential int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO access_requests(request_ref,client_request_id,semantic_hash,org_id,project_id,subject_type,subject_workload_application_id,request_kind,requested_project_role,requested_scope_mode,requested_models,requested_endpoints,environment,requested_valid_until,submission_mode,sponsor_user_id,status,decision_mode,policy_reason_codes,decision_reason_codes,policy_version,submitted_by,decided_by,decided_at)
-	 VALUES('req_source_app_000001','source-app',repeat('a',64),$1,$2,'workload_application',$3,'workload_service','project_user','project_default','[]','[]','development',NOW()+INTERVAL '1 hour','direct_grant',$4,'approved','direct',ARRAY['project_default_scope'],ARRAY['direct_grant_authorized_nonproduction'],'unirouter.enterprise-access-policy.v1',$4,$4,NOW()) RETURNING id`, org, project, app, sponsor).Scan(&request))
+	 VALUES('req_source_app_000001','source-app',repeat('a',64),$1,$2,'workload_application',$3,'workload_service','project_user',$5,$6::jsonb,$7::jsonb,'development',NOW()+INTERVAL '1 hour','direct_grant',$4,'approved','direct',ARRAY['project_default_scope'],ARRAY['direct_grant_authorized_nonproduction'],'unirouter.enterprise-access-policy.v1',$4,$4,NOW()) RETURNING id`, org, project, app, sponsor, mode, modelsJSON, endpointsJSON).Scan(&request))
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO access_grants(grant_ref,access_request_id,org_id,project_id,subject_type,subject_workload_application_id,sponsor_user_id,project_role_snapshot,scope_mode,allowed_models,allowed_endpoints,environment,status,valid_from,valid_until,decision_mode,policy_reason_codes,decision_reason_codes,policy_version,semantic_hash,created_by,updated_by)
-	 VALUES('grant_source_app_0001',$1,$2,$3,'workload_application',$4,$5,'project_user','project_default','[]','[]','development','active',NOW()-INTERVAL '1 hour',(SELECT requested_valid_until FROM access_requests WHERE id=$1),'direct',ARRAY['project_default_scope'],ARRAY['direct_grant_authorized_nonproduction'],'unirouter.enterprise-access-policy.v1',repeat('a',64),$5,$5) RETURNING id`, request, org, project, app, sponsor).Scan(&grant))
+	 VALUES('grant_source_app_0001',$1,$2,$3,'workload_application',$4,$5,'project_user',$6,$7::jsonb,$8::jsonb,'development','active',NOW()-INTERVAL '1 hour',(SELECT requested_valid_until FROM access_requests WHERE id=$1),'direct',ARRAY['project_default_scope'],ARRAY['direct_grant_authorized_nonproduction'],'unirouter.enterprise-access-policy.v1',repeat('a',64),$5,$5) RETURNING id`, request, org, project, app, sponsor, mode, modelsJSON, endpointsJSON).Scan(&grant))
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO access_credentials(credential_ref,access_grant_id,org_id,project_id,name,allowed_ips,allowed_models,allowed_endpoints,policy_labels,rpm_limit,rps_limit,created_by)
-	 VALUES('cred_source_app_0001',$1,$2,$3,'synthetic-source','','company-chat','/v1/chat/completions,/v1/embeddings,/v1/models','',60,10,$4) RETURNING id`, grant, org, project, sponsor).Scan(&credential))
+	 VALUES('cred_source_app_0001',$1,$2,$3,'synthetic-source','','company-chat',$5,'',60,10,$4) RETURNING id`, grant, org, project, sponsor, endpoints).Scan(&credential))
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO api_keys(org_id,project_id,key_type,name,key_hash,key_prefix,status,allowed_ips,allowed_models,allowed_endpoints,purpose,workload_application_id,access_grant_id,access_credential_id,credential_ref)
-	 VALUES($1,$2,'service','synthetic-source',$3,'ur-source-app','active','','company-chat','/v1/chat/completions,/v1/embeddings,/v1/models','',$4,$5,$6,'cred_source_app_0001') RETURNING id`, org, project, auth.HashAPIKey(raw, prd2E2EJWTSecret), app, grant, credential).Scan(&key))
+	 VALUES($1,$2,'service','synthetic-source',$3,'ur-source-app','active','','company-chat',$7,'',$4,$5,$6,'cred_source_app_0001') RETURNING id`, org, project, auth.HashAPIKey(raw, hashSecret), app, grant, credential, endpoints).Scan(&key))
 	return app, key
 }

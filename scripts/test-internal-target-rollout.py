@@ -899,5 +899,32 @@ class PinnedObserverTests(unittest.TestCase):
                 self.evidence = old
 
 
+class ArtifactOwnerReadFixtureTests(unittest.TestCase):
+    def load_carrier(self):
+        path=Path(__file__).with_name("test-artifact-owner-docker.py")
+        spec=importlib.util.spec_from_file_location("carrier_read_fixture",path)
+        module=importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_exact_current_artifact_and_bridge_are_reported_separately(self):
+        migrations=Path(__file__).resolve().parent.parent/"migrations"
+        bridge,current=self.load_carrier().carrier_read_ledgers(migrations)
+        self.assertEqual(bridge[0],"bridge")
+        self.assertEqual(current[0],"current")
+        self.assertEqual(bridge[1][-1],"000115_stream_counter_version")
+        self.assertEqual(current[1][-1],"000116_execution_source_facts")
+        self.assertEqual(current[1],sorted(p.name[:-7] for p in migrations.glob("*.up.sql")))
+        self.assertEqual(bridge[1],current[1][:-1])
+
+    def test_unknown_future_head_cannot_keep_a_stale_success_label(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="ur-carrier-ledger-") as root:
+            for name in ["000115_stream_counter_version","000116_execution_source_facts","000117_unknown"]:
+                (Path(root)/(name+".up.sql")).write_text("")
+            with self.assertRaisesRegex(RuntimeError,"exact M115/M116"):
+                self.load_carrier().carrier_read_ledgers(Path(root))
+
+
 if __name__ == "__main__":
     unittest.main()

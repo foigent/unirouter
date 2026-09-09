@@ -21,6 +21,15 @@ r = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(r)
 
 
+
+def carrier_read_ledgers(migrations):
+    versions=sorted(p.name[:-7] for p in migrations.glob("*.up.sql"))
+    expected=["000115_stream_counter_version","000116_execution_source_facts"]
+    if versions[-2:] != expected:
+        raise RuntimeError("carrier read fixture requires exact M115/M116 artifact heads")
+    return [("bridge",versions[:-1]),("current",versions)]
+
+
 def main():
     if os.environ.get("CI") != "true":
         raise RuntimeError("this isolated Docker fixture is CI-only")
@@ -61,14 +70,14 @@ def main():
                 if ready.returncode==0: break
                 if time.monotonic()>deadline: raise RuntimeError("isolated fixture database did not start")
                 time.sleep(.2)
-            versions=sorted(p.name[:-7] for p in (repo/"migrations").glob("*.up.sql"))
+            ledgers=carrier_read_ledgers(repo/"migrations")
             # Only the read fixture's tables are created; not a fake installation
             # claim. The migrated Go suite separately proves the full DB states.
             sql="""CREATE TABLE schema_migrations(version text);
 CREATE TABLE runtime_ingress_changes(change_id text, predecessor_id text, status text);
 CREATE TABLE runtime_support_manifests(artifact_digest text, manifest_digest text);
 CREATE TABLE runtime_generations(instance_id text, artifact_digest text, schema_head text, state text, ingress_state text, lease_expires_at timestamptz);
-"""+"INSERT INTO schema_migrations VALUES "+",".join("('"+v+"')" for v in versions)+";"
+"""
             r.run(["docker","exec","-i",pg,"psql","-U","postgres","-v","ON_ERROR_STOP=1"],data=sql.encode())
             source={"directory":str(repo),"version":"1.0.0-ci","commit":"a"*40,"tree":"b"*40}
             desired={"tag":args.image,"digest":image["Id"]}
@@ -84,12 +93,23 @@ CREATE TABLE runtime_generations(instance_id text, artifact_digest text, schema_
             fd=os.open(root/"fixture.lock",os.O_RDWR|os.O_CREAT,0o600)
             r.HELD_LOCK_FDS.append(fd)
             try:
-                result=owner.artifact_owner_command("ignored","inspect")
-                assert result=={"head":"","head_status":"","generations":[]},result
+                reports=[]
                 name="unirouter-owner-"+r.digest(r.canonical(document))[:24]
-                assert r.inspect(name,missing_ok=True) is None
-                # The actual command completed, but its host response is lost.
-                # The same finally path must still stop the real exact carrier.
+                readback="SELECT jsonb_build_object('ledger',(SELECT jsonb_agg(version ORDER BY version) FROM schema_migrations),'ingress',(SELECT count(*) FROM runtime_ingress_changes),'manifests',(SELECT count(*) FROM runtime_support_manifests),'generations',(SELECT count(*) FROM runtime_generations))::text;"
+                def state():
+                    return r.load(r.run(["docker","exec",pg,"psql","-U","postgres","-Atc",readback]))
+                for label,versions in ledgers:
+                    sql="BEGIN; TRUNCATE schema_migrations; INSERT INTO schema_migrations VALUES "+",".join("('"+v+"')" for v in versions)+"; COMMIT;"
+                    r.run(["docker","exec","-i",pg,"psql","-U","postgres","-v","ON_ERROR_STOP=1"],data=sql.encode())
+                    before=state()
+                    assert before=={"ledger":versions,"ingress":0,"manifests":0,"generations":0},before
+                    result=owner.artifact_owner_command("ignored","inspect")
+                    assert result=={"head":"","head_status":"","generations":[]},result
+                    assert state()==before,"inspect changed the read fixture"
+                    assert r.inspect(name,missing_ok=True) is None
+                    reports.append({"role":label,"head":versions[-1],"ledger_count":len(versions),"ledger_sha256":r.digest(r.canonical(versions)),"inspect":"passed","unchanged":"passed"})
+                # Lose the current-head command response after actual completion.
+                # The same finally path must still stop the exact real carrier.
                 original=subprocess.run
                 def lost(args,**kw):
                     result=original(args,**kw)
@@ -103,10 +123,9 @@ CREATE TABLE runtime_generations(instance_id text, artifact_digest text, schema_
                 except subprocess.TimeoutExpired:
                     pass
                 assert r.inspect(name,missing_ok=True) is None
-                row=r.run(["docker","exec",pg,"psql","-U","postgres","-Atc","SELECT count(*) FROM runtime_ingress_changes"]).strip()
-                assert row==b"0"
+                assert state()==before,"lost response changed the read fixture"
                 docker_version=r.run(["docker","version","--format","{{.Client.Version}} / {{.Server.Version}}"]).decode().strip()
-                print(json.dumps({"docker_carrier":"passed","docker_client_server":docker_version,"python_version":platform.python_version(),"cli_head":"M115","lost_response_cleanup":"passed","ingress_writes":0,"provider_calls":0}))
+                print(json.dumps({"docker_carrier":"passed","docker_client_server":docker_version,"python_version":platform.python_version(),"tested_ledgers":reports,"fixture_schema_scope":"four read tables only; not a full migration or installation","lost_response_cleanup":"passed","ingress_writes":0,"provider_calls":0}))
             finally:
                 r.HELD_LOCK_FDS.clear();os.close(fd)
         finally:

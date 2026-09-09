@@ -40,7 +40,6 @@ import (
 	"github.com/uniroute/unirouter/internal/modelauthz"
 	"github.com/uniroute/unirouter/internal/modelcapabilitypublication"
 	"github.com/uniroute/unirouter/internal/modelexecution"
-	"github.com/uniroute/unirouter/internal/modelgov"
 	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/modelrouteauthority"
 	"github.com/uniroute/unirouter/internal/modelrouting"
@@ -238,42 +237,7 @@ func main() {
 		log.Fatalf("Failed to initialize runtime change control: %v", err)
 	}
 	router.SetRuntimeResolver(runtimeChangeManager)
-	mediaExecutionAuthorizer := mediajob.ExecutionModelAuthorizerFunc(func(
-		ctx context.Context,
-		q db.DBQuerier,
-		input mediajob.ExecutionAuthorization,
-	) error {
-		access, accessErr := modelgov.CheckAccess(
-			ctx, q, input.Scope.OrgID, input.Scope.ProjectID, input.RequestedModel,
-		)
-		if accessErr != nil {
-			if errors.Is(accessErr, modelgov.ErrModelRetired) || errors.Is(accessErr, modelgov.ErrModelDenied) ||
-				errors.Is(accessErr, modelgov.ErrModelRequired) {
-				return mediajob.ErrForbidden
-			}
-			return mediajob.ErrUnavailable
-		}
-		routingModel := strings.TrimSpace(access.ResolvedModel)
-		if routingModel == "" {
-			routingModel = input.RequestedModel
-		}
-		if routingModel != input.RoutingModel {
-			return mediajob.ErrForbidden
-		}
-		decision, decisionErr := modelAuthorizationEvaluator.EvaluateWithQuerier(ctx, q, modelauthz.Input{
-			OrgID: input.Scope.OrgID, ProjectID: input.Scope.ProjectID,
-			APIKeyID: input.APIKeyID, AccessCredentialID: input.AccessCredentialID,
-			OwnerUserID: input.OwnerUserID, Endpoint: "/v1/media/jobs",
-			RequestedModel: input.RequestedModel, ResolvedModel: routingModel,
-		})
-		if decisionErr != nil {
-			return mediajob.ErrUnavailable
-		}
-		if !decision.Allowed {
-			return mediajob.ErrForbidden
-		}
-		return nil
-	})
+	mediaExecutionAuthorizer := newMediaExecutionAuthorizer(modelAuthorizationEvaluator)
 	mediaStore, err := mediajob.NewPostgresStore(postgres.Pool, mediaExecutionAuthorizer)
 	if err != nil {
 		log.Fatalf("Failed to initialize async-media store: %v", err)
@@ -295,50 +259,7 @@ func main() {
 			log.Fatalf("Failed to initialize async-media object store: %v", err)
 		}
 	}
-	mediaAuthorizer := mediajob.ModelAuthorizerFunc(func(
-		ctx context.Context,
-		scope mediajob.Scope,
-		requestedModel string,
-	) (mediajob.ModelAuthorization, error) {
-		access, accessErr := modelgov.CheckAccess(
-			ctx, postgres.Pool, scope.OrgID, scope.ProjectID, requestedModel,
-		)
-		switch {
-		case errors.Is(accessErr, modelgov.ErrModelRetired),
-			errors.Is(accessErr, modelgov.ErrModelDenied),
-			errors.Is(accessErr, modelgov.ErrModelRequired):
-			return mediajob.ModelAuthorization{}, mediajob.ErrForbidden
-		case accessErr != nil:
-			return mediajob.ModelAuthorization{}, mediajob.ErrUnavailable
-		default:
-			routingModel := access.ResolvedModel
-			if routingModel == "" {
-				routingModel = requestedModel
-			}
-			apiKey := middleware.GetAPIKeyFromContext(ctx)
-			if apiKey == nil {
-				return mediajob.ModelAuthorization{}, mediajob.ErrForbidden
-			}
-			input := modelauthz.Input{
-				OrgID: scope.OrgID, ProjectID: scope.ProjectID, APIKeyID: apiKey.ID,
-				Endpoint: "/v1/media/jobs", RequestedModel: requestedModel, ResolvedModel: routingModel,
-			}
-			if apiKey.AccessCredentialID != nil {
-				input.AccessCredentialID = *apiKey.AccessCredentialID
-			}
-			if apiKey.OwnerUserID != nil {
-				input.OwnerUserID = *apiKey.OwnerUserID
-			}
-			decision, decisionErr := modelAuthorizationEvaluator.Evaluate(ctx, input)
-			if decisionErr != nil {
-				return mediajob.ModelAuthorization{}, mediajob.ErrUnavailable
-			}
-			if !decision.Allowed {
-				return mediajob.ModelAuthorization{}, mediajob.ErrForbidden
-			}
-			return mediajob.ModelAuthorization{RoutingModel: routingModel}, nil
-		}
-	})
+	mediaAuthorizer := newMediaSubmissionAuthorizer(postgres.Pool, modelAuthorizationEvaluator)
 	mediaService, err := mediajob.NewService(
 		mediaStore, mediaObjects, mediaCipher, mediaAuthorizer,
 		mediaIdentitySecret[:],

@@ -307,3 +307,30 @@ Local migration and gateway tests are recorded in the execution record. Docker
 runtime, exact Neutral N1 artifact qualification, CI, Target, real Provider and
 real XI integration are separate evidence requirements, not inferred from this
 document or the local candidate.
+
+### Authenticated legacy async-media verification
+
+`TestSourceFactsMediaHTTPIntegration` uses actual media HTTP routes, production
+modelgov/modelauthz callbacks shared with main, real limit-policy/PG services and
+Worker.RunOnce. Only the Provider and object-store interfaces are synthetic; this
+is not real Provider/S3 interoperability evidence. Legacy and explicit media-grant
+roots cover success/replay, revoke-before-dispatch, queued cancellation and
+in-flight cancellation. Actual Agent/source-purpose credentials are denied at the
+media auth boundary. Canonical mode still rejects async media via Config.Validate.
+
+The eight media cases export 80 authenticated facts / 48 pages with zero I-01
+records. Original job charge facts are independently compared with cost references;
+pending media pricing stays unknown, and the SQLite consumer does not add money.
+The same consumer preserves partial-page/checkpoint recovery and adapter replay.
+Media cancellation after Provider dispatch is a request, not proof that work
+stopped: a subsequently successful synthetic Provider result retains the original
+successful charge fact and too-late cancellation state. Queued cancellation has no
+Provider attempt or charge. Revocation permits the original worker's
+execution_authority_changed failure terminal while prohibiting dispatch.
+
+These tests supplement the original store writer/failure/expiry tests, whose
+stubbed model authorizer never proved this full HTTP/auth/consumer chain. The
+conformance fixtures contain synthetic job/charge metadata only; receiver Bearers
+are never exported. An empty I-01 list for media is intentional, not missing text
+settlement evidence. The source receiver fixture writes both current organization
+role and compatibility role explicitly, following the existing user-role contract.
