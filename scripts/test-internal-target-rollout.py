@@ -92,6 +92,7 @@ class CounterTransitionTests(unittest.TestCase):
     def test_named_transition_is_finite_and_strict(self):
         rollout.validate_transition(None)
         rollout.validate_transition({"kind":"stream_counter_expand_carrier", "up_sha256":"a"*64, "down_sha256":"b"*64})
+        rollout.validate_transition({"kind":"source_facts_expand_carrier", "up_sha256":"a"*64, "down_sha256":"b"*64})
         for before, after in ((rollout.COUNTER_V2,rollout.COUNTER_V3),(rollout.COUNTER_V3,rollout.COUNTER_V2)):
             rollout.validate_transition({"kind":"stream_counter_writer","from":before,"to":after})
         for value in ({"kind":"any_schema"}, {"kind":"stream_counter_expand_carrier","up_sha256":"a"*64},
@@ -137,6 +138,28 @@ class CounterTransitionTests(unittest.TestCase):
             with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes]):
                 rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
             (new/"migrations"/(rollout.COUNTER_HEAD+".down.sql")).write_text("unreviewed replacement")
+            with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes]), self.assertRaisesRegex(RuntimeError,"bytes differ"):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+
+
+    def test_source_expand_requires_exact_m115_ledger_and_reviewed_pair(self):
+        old=["000113_glm_stream_function_tools_qualification", rollout.CAPABILITY_HEAD, rollout.COUNTER_HEAD]
+        tree="\n".join("migrations/"+name+".up.sql" for name in old).encode()
+        changes="\n".join("A\tmigrations/"+rollout.SOURCE_HEAD+"."+direction+".sql" for direction in ("up","down")).encode()
+        with tempfile.TemporaryDirectory() as directory:
+            new=Path(directory).resolve(); (new/"migrations").mkdir()
+            transition={"kind":"source_facts_expand_carrier"}
+            for direction in ("up","down"):
+                wire=(direction+" exact M116 fixture").encode()
+                (new/"migrations"/(rollout.SOURCE_HEAD+"."+direction+".sql")).write_bytes(wire)
+                transition[direction+"_sha256"]=rollout.digest(wire)
+            with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes]):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+            with patch.object(rollout,"run",return_value=tree), self.assertRaisesRegex(RuntimeError,"predecessor"):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old[:-1])
+            with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes+b"\nM\tmigrations/000001_init_schema.up.sql"]), self.assertRaisesRegex(RuntimeError,"migration pair"):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+            (new/"migrations"/(rollout.SOURCE_HEAD+".down.sql")).write_text("changed")
             with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes]), self.assertRaisesRegex(RuntimeError,"bytes differ"):
                 rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
 

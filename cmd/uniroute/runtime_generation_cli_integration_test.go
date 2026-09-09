@@ -45,10 +45,13 @@ func invokeGenerationCLI(t *testing.T, cfg *config.Config, action string, input 
 }
 
 func TestRuntimeGenerationCLIExpandedLedgerLifecycleIntegration(t *testing.T) {
-	for _, head := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead} {
+	for _, head := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead} {
 		t.Run(head, func(t *testing.T) {
 			pool := testutil.SetupMigratedTestDB(t)
 			dir := testutil.MigrationsDir(t)
+			if head != schemaauthority.SourceFactsExpandHead {
+				require.NoError(t, testutil.RewindEmptySourceFactsForLegacyTest(t.Context(), pool, dir))
+			}
 			if head == schemaauthority.CapabilityExpandHead {
 				wire, err := os.ReadFile(filepath.Join(dir, schemaauthority.StreamCounterExpandHead+".down.sql"))
 				require.NoError(t, err)
@@ -60,9 +63,6 @@ func TestRuntimeGenerationCLIExpandedLedgerLifecycleIntegration(t *testing.T) {
 			cfg := &config.Config{DB_DSN: pool.Config().ConnString(), DBMaxConnections: 3, MigrationsDir: dir}
 			ledger, err := schemaauthority.ExpectedLedger(dir)
 			require.NoError(t, err)
-			if head == schemaauthority.CapabilityExpandHead {
-				ledger = ledger[:len(ledger)-1]
-			}
 			member := runtimegeneration.Identity{Instance: "uri_" + strings.Repeat("a", 32), Artifact: "sha256:" + strings.Repeat("b", 64)}
 			_, _, err = runtimegeneration.Renew(t.Context(), pool, member, runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads()), ledger, false)
 			require.NoError(t, err)
@@ -98,11 +98,11 @@ func TestRuntimeGenerationCLIRejectsUnapprovedLedgersIntegration(t *testing.T) {
 			var query string
 			switch kind {
 			case "legacy":
-				query = `DELETE FROM schema_migrations WHERE version IN ('000114_capability_delivery_expand','000115_stream_counter_version')`
+				query = `DELETE FROM schema_migrations WHERE version IN ('000114_capability_delivery_expand','000115_stream_counter_version','000116_execution_source_facts')`
 			case "gap":
 				query = `DELETE FROM schema_migrations WHERE version='000114_capability_delivery_expand'`
 			case "future":
-				query = `INSERT INTO schema_migrations(version) VALUES ('000116_unapproved_future')`
+				query = `INSERT INTO schema_migrations(version) VALUES ('000117_unapproved_future')`
 			}
 			_, err := pool.Exec(t.Context(), query)
 			require.NoError(t, err)

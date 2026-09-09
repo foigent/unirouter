@@ -217,6 +217,7 @@ def check_service(service, container, image, project, runtime_environment=None):
 COUNTER_V2 = "unirouter.stream-counter.v2"
 COUNTER_V3 = "unirouter.stream-counter.v3"
 COUNTER_HEAD = "000115_stream_counter_version"
+SOURCE_HEAD = "000116_execution_source_facts"
 CAPABILITY_HEAD = "000114_capability_delivery_expand"
 
 
@@ -224,10 +225,10 @@ def validate_transition(transition):
     if transition is None:
         return
     require(isinstance(transition, dict), "invalid named transition")
-    if transition.get("kind") == "stream_counter_expand_carrier":
+    if transition.get("kind") in ("stream_counter_expand_carrier", "source_facts_expand_carrier"):
         require(set(transition) == {"kind", "up_sha256", "down_sha256"} and
                 all(re.fullmatch(r"[a-f0-9]{64}", transition[key]) for key in ("up_sha256", "down_sha256")),
-                "exact reviewed M115 bytes required")
+                "exact reviewed expansion bytes required")
     elif transition.get("kind") == "stream_counter_writer":
         require(set(transition) == {"kind", "from", "to"} and
                 {transition["from"], transition["to"]} == {COUNTER_V2, COUNTER_V3},
@@ -252,16 +253,18 @@ def writer_overlay(overlay, transition):
 
 
 def validate_pending_counter_carrier(old_source, new_source, transition, actual_ledger):
-    require(transition and transition["kind"] == "stream_counter_expand_carrier", "bound schema source differs")
+    require(transition and transition["kind"] in ("stream_counter_expand_carrier", "source_facts_expand_carrier"), "bound schema source differs")
+    source_expansion = transition["kind"] == "source_facts_expand_carrier"
+    predecessor, target = (COUNTER_HEAD, SOURCE_HEAD) if source_expansion else (CAPABILITY_HEAD, COUNTER_HEAD)
     old_paths = run(["git", "-C", str(old_source), "ls-tree", "-r", "--name-only", "HEAD", "migrations"]).decode().splitlines()
     old_ledger = sorted(Path(path).name[:-7] for path in old_paths if path.endswith(".up.sql"))
-    require(old_ledger and old_ledger[-1] == CAPABILITY_HEAD and actual_ledger == old_ledger, "pending M115 carrier requires the complete exact M114 predecessor")
+    require(old_ledger and old_ledger[-1] == predecessor and actual_ledger == old_ledger, "pending expansion carrier requires the complete exact predecessor")
     changes = run(["git", "-C", str(new_source), "diff", "--no-renames", "--name-status",
                    run(["git", "-C", str(old_source), "rev-parse", "HEAD"]).decode().strip(), "HEAD", "--", "migrations"]).decode().splitlines()
-    expected = sorted("A\tmigrations/" + COUNTER_HEAD + suffix for suffix in (".up.sql", ".down.sql"))
-    require(sorted(changes) == expected, "M115 carrier may only add its exact migration pair")
+    expected = sorted("A\tmigrations/" + target + suffix for suffix in (".up.sql", ".down.sql"))
+    require(sorted(changes) == expected, "expansion carrier may only add its exact migration pair")
     for direction in ("up", "down"):
-        require(digest(regular(new_source / "migrations" / (COUNTER_HEAD + "." + direction + ".sql")).read_bytes()) == transition[direction + "_sha256"], "reviewed M115 carrier bytes differ")
+        require(digest(regular(new_source / "migrations" / (target + "." + direction + ".sql")).read_bytes()) == transition[direction + "_sha256"], "reviewed expansion carrier bytes differ")
 
 
 def document(path):
@@ -494,11 +497,12 @@ class Rollout:
             require(old_identity["commit"] == self.source["commit"] and old_identity["tree"] == self.source["tree"] and
                     all(containers[role]["Image"] == self.spec["images"]["frontend" if role == "frontend" else "backend"]["digest"] for role in CONTAINERS),
                     "writer transition requires the same exact Artifact")
-            require(self.sql("SELECT max(version) FROM schema_migrations") == COUNTER_HEAD, "writer transition requires M115")
+            writer_head = self.sql("SELECT max(version) FROM schema_migrations")
+            require(writer_head in (COUNTER_HEAD, SOURCE_HEAD), "writer transition requires M115 or M116")
             for role in ("stable", "canary"):
                 require(environment(containers[role]["Config"]["Env"]).get("STREAM_COUNTER_VERSION", COUNTER_V2) == transition["from"], "mixed writer predecessor")
                 manifest = load(run(["docker", "exec", CONTAINERS[role], "./uniroute", "runtime-generation", "support"]))
-                require(COUNTER_HEAD in manifest.get("schema_heads", []) and
+                require(writer_head in manifest.get("schema_heads", []) and
                         all({"kind": "stream_counter", "id": version} in manifest.get("implementations", []) for version in (COUNTER_V2, COUNTER_V3)), "writer bridge lacks both recovery implementations")
             overlay = writer_overlay(overlay, transition)
         new_tags = {k: v["tag"] for k, v in self.spec["images"].items()}
@@ -510,6 +514,9 @@ class Rollout:
                 expected["services"][service]["environment"].update(replacements)
                 if transition and transition["kind"] == "stream_counter_writer":
                     expected["services"][service]["environment"]["STREAM_COUNTER_VERSION"] = transition["to"]
+                if transition and transition["kind"] == "source_facts_expand_carrier":
+                    require(environment(containers[role]["Config"]["Env"]).get("SOURCE_FACTS_ENABLED", "false") == "false", "source expansion bridge requires capture disabled")
+                    expected["services"][service]["environment"]["SOURCE_FACTS_ENABLED"] = "false"
         for service, target, relative in (("backend", "/app/migrations", "migrations"), ("backend-canary", "/app/migrations", "migrations"),
                                           ("prometheus", "/etc/prometheus/prometheus.yml", "infra/prometheus/prometheus.yml"),
                                           ("grafana", "/etc/grafana/provisioning", "infra/grafana/provisioning"),

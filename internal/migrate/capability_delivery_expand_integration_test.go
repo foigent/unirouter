@@ -25,6 +25,7 @@ func TestCapabilityExpandRequiresExplicitBridgeAndPreservesLegacy(t *testing.T) 
 	ctx := t.Context()
 	dir := testdb.MigrationsDir(t)
 	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, dir))
+	require.NoError(t, testutil.RewindEmptySourceFactsForLegacyTest(ctx, pool, dir))
 	counterDown, err := os.ReadFile(filepath.Join(dir, schemaauthority.StreamCounterExpandHead+".down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(counterDown))
@@ -35,7 +36,7 @@ func TestCapabilityExpandRequiresExplicitBridgeAndPreservesLegacy(t *testing.T) 
 	require.NoError(t, err)
 	ledger, err := schemaauthority.ExpectedLedger(dir)
 	require.NoError(t, err)
-	ledger = ledger[:len(ledger)-1] // This test owns the historical M113/M114 transition.
+	ledger = ledger[:len(ledger)-2] // This test owns the historical M113/M114 transition.
 	legacy := ledger[:len(ledger)-1]
 	require.NoError(t, publication.VerifyRuntimeStaticProjection(ctx, pool, legacy))
 	// Both owner and migration-skipping runtime remain on the exact legacy DB.
@@ -80,6 +81,7 @@ func TestCapabilityExpandPublishesVerifiedLeasesAtomically(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := t.Context()
 	dir := testdb.MigrationsDir(t)
+	require.NoError(t, testutil.RewindEmptySourceFactsForLegacyTest(ctx, pool, dir))
 	counterDown, err := os.ReadFile(filepath.Join(dir, schemaauthority.StreamCounterExpandHead+".down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(counterDown))
@@ -90,7 +92,7 @@ func TestCapabilityExpandPublishesVerifiedLeasesAtomically(t *testing.T) {
 	require.NoError(t, err)
 	ledger, err := schemaauthority.ExpectedLedger(dir)
 	require.NoError(t, err)
-	ledger = ledger[:len(ledger)-1]
+	ledger = ledger[:len(ledger)-2]
 	wire, err := os.ReadFile(filepath.Join(dir, schemaauthority.CapabilityExpandHead+".up.sql"))
 	require.NoError(t, err)
 	manifest := runtimegeneration.CurrentManifest([]string{schemaauthority.LegacyCapabilityHead, schemaauthority.CapabilityExpandHead})

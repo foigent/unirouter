@@ -470,6 +470,7 @@ SELECT COUNT(*) FROM information_schema.columns
 func rewindSuccessorLaterMigrations(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	for _, migration := range []string{
+		"000116_execution_source_facts",
 		"000115_stream_counter_version",
 		"000114_capability_delivery_expand",
 		"000113_glm_stream_function_tools_qualification",

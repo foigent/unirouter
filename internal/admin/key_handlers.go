@@ -981,7 +981,7 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if currentPurpose == middleware.APIKeyPurposeXInsightFeedRead {
+	if currentPurpose == middleware.APIKeyPurposeXInsightFeedRead || currentPurpose == middleware.APIKeyPurposeXInsightSourceRead {
 		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Feed credentials are managed only from X-Insight Data Exchange control"})
 		return
 	}
@@ -1189,7 +1189,7 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-		if beforeAuditState.Purpose == middleware.APIKeyPurposeXInsightFeedRead {
+		if beforeAuditState.Purpose == middleware.APIKeyPurposeXInsightFeedRead || beforeAuditState.Purpose == middleware.APIKeyPurposeXInsightSourceRead {
 			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Feed credentials are managed only from X-Insight Data Exchange control"})
 			return
 		}
@@ -1362,7 +1362,7 @@ func (h *Handler) DisableAPIKey(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if currentPurpose == middleware.APIKeyPurposeXInsightFeedRead {
+	if currentPurpose == middleware.APIKeyPurposeXInsightFeedRead || currentPurpose == middleware.APIKeyPurposeXInsightSourceRead {
 		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Feed credentials are managed only from X-Insight Data Exchange control"})
 		return
 	}
@@ -1429,7 +1429,7 @@ func (h *Handler) DisableAPIKey(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-		if lockedPurpose == middleware.APIKeyPurposeXInsightFeedRead {
+		if lockedPurpose == middleware.APIKeyPurposeXInsightFeedRead || lockedPurpose == middleware.APIKeyPurposeXInsightSourceRead {
 			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Feed credentials are managed only from X-Insight Data Exchange control"})
 			return
 		}

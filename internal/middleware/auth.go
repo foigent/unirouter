@@ -271,6 +271,7 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 	var apiKey models.ApiKey
 	var orgStatus string
 	var projectID int64
+	var workloadApplicationID int64
 	var ownerUserID int64
 	var accessGrantID sql.NullInt64
 	err := q.QueryRow(ctx,
@@ -279,7 +280,7 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 		        COALESCE(ak.owner_user_id, 0), COALESCE(NULLIF(ak.key_type, ''), 'shared'),
 		        COALESCE(ak.purpose, ''), ak.auth_epoch,
 		        o.status,
-		        COALESCE(ak.allowed_endpoints,''),ak.access_grant_id
+		        COALESCE(ak.allowed_endpoints,''),ak.access_grant_id,COALESCE(ak.workload_application_id,0)
 		 FROM api_keys ak
 		 JOIN orgs o ON o.id = ak.org_id
 		  LEFT JOIN projects p ON p.id = ak.project_id AND p.org_id = ak.org_id
@@ -306,7 +307,7 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 		&apiKey.ID, &apiKey.OrgID, &projectID, &apiKey.Status, &apiKey.IPWhitelist,
 		&apiKey.AllowedModels, &apiKey.RPMLimit, &apiKey.QPSLimit,
 		&apiKey.BudgetLimit, &apiKey.KeyPrefix, &apiKey.Name, &ownerUserID, &apiKey.KeyType, &apiKey.Purpose, &apiKey.AuthEpoch, &orgStatus,
-		&apiKey.AllowedEndpoints, &accessGrantID,
+		&apiKey.AllowedEndpoints, &accessGrantID, &workloadApplicationID,
 	)
 	if err != nil {
 		return nil, "", err
@@ -316,6 +317,9 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 	}
 	if ownerUserID > 0 {
 		apiKey.OwnerUserID = &ownerUserID
+	}
+	if workloadApplicationID > 0 {
+		apiKey.WorkloadApplicationID = &workloadApplicationID
 	}
 	if accessGrantID.Valid {
 		apiKey.GrantBound = true

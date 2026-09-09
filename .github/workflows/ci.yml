@@ -273,6 +273,16 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
+      - name: Check independent source page and consumer fixtures
+        run: |
+          python3 -m pip --isolated --disable-pip-version-check install \
+            --only-binary=:all: --require-hashes --index-url https://pypi.org/simple \
+            --target "$RUNNER_TEMP/source-schema-validator" \
+            -r contracts/source-facts/v1/requirements-schema.txt
+          PYTHONPATH="$RUNNER_TEMP/source-schema-validator" PYTHONDONTWRITEBYTECODE=1 \
+            python3 contracts/source-facts/v1/check_schema.py
+          PYTHONDONTWRITEBYTECODE=1 python3 contracts/source-facts/v1/check_pages.py
+
       - name: Check runtime ingress failure recovery
         run: |
           PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-runtime-ingress.py
@@ -357,6 +367,7 @@ jobs:
           test_pattern+='|TestPublicModelExecutionAuthority.*Integration'
           test_pattern+='|TestPublicResponsesExactProfile.*Integration|TestPublicClaude.*Integration'
           test_pattern+='|TestPublicCoordinator.*Integration'
+          test_pattern+='|TestSourceFacts.*Integration|TestSourceFacts(Expand|Down).*'
           test_pattern+='|TestLegacyReleaseAdmissionAllowExecutesStagedChannelIntegration'
           test_pattern+='|TestOwnedProviderAttemptAndTerminalHealthFenceAreReplaySafe'
           test_pattern+='|TestFreezeReplayRejectsChangedExecutionSnapshot|TestStreamOutputHold.*Integration|TestProviderCompletionRelayHoldSurvivesRecoveryIntegration'
@@ -369,9 +380,15 @@ jobs:
             ./internal/orgdirectory ./internal/enterprisefinance ./internal/runtimechange \
             ./internal/customercontext ./internal/modelrouteauthority \
             ./internal/billing ./internal/modelexecution ./internal/modelrouting ./internal/middleware ./internal/completedfeed \
-            ./internal/gateway ./internal/outbox ./internal/terminalhook \
+            ./internal/gateway ./internal/admin ./internal/outbox ./internal/terminalhook \
             ./internal/modelcapabilitypublication \
             -run "$test_pattern" -count=1 -timeout=20m
+
+          # New fixed-profile source and original media writers require their
+          # real transaction/retention tests; the untagged race suite does not
+          # select these files. Keep the pre-existing integration group intact.
+          go test -tags=integration -race ./internal/sourcefacts ./internal/mediajob \
+            -count=1 -timeout=20m
 
           # These packages intentionally share and reset the dedicated Redis
           # test database, so package-level parallelism would corrupt their

@@ -181,6 +181,21 @@ if [[ ! "${docker_log_max_files}" =~ ^[1-9][0-9]*$ ]] || (( docker_log_max_files
   exit 1
 fi
 
+load_effective_value SOURCE_FACTS_ENABLED true
+source_facts_enabled="${effective_value:-false}"
+case "${source_facts_enabled}" in
+  false) ;;
+  true)
+    load_effective_value COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE true
+    if [[ ! "${effective_value}" =~ ^[a-zA-Z0-9._:-]{1,128}$ ]]; then
+      echo "customer preflight: source facts require a stable COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE" >&2
+      exit 1
+    fi
+    echo "customer preflight: source capture requires M116 and preserves the existing producer identity; config validation does not prove database readiness" >&2
+    ;;
+  *) echo "customer preflight: SOURCE_FACTS_ENABLED must be true or false" >&2; exit 1 ;;
+esac
+
 load_effective_value XINSIGHT_CONNECTOR_AGENT_ENABLED true
 connector_agent_enabled="${effective_value:-false}"
 case "${connector_agent_enabled}" in

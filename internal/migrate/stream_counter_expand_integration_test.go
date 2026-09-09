@@ -25,6 +25,7 @@ func TestCounterExpandBusySettlementPreservesRuntimeTransaction(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 12*time.Second)
 	defer cancel()
 	dir := testutil.MigrationsDir(t)
+	require.NoError(t, testutil.RewindEmptySourceFactsForLegacyTest(ctx, pool, dir))
 	down, err := os.ReadFile(filepath.Join(dir, schemaauthority.StreamCounterExpandHead+".down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
@@ -89,6 +90,7 @@ func TestCounterExpandBusySettlementPreservesRuntimeTransaction(t *testing.T) {
 func TestCounterExpandBusyOwnersLeaveSchemaUntouched(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	dir := testutil.MigrationsDir(t)
+	require.NoError(t, testutil.RewindEmptySourceFactsForLegacyTest(t.Context(), pool, dir))
 	down, err := os.ReadFile(filepath.Join(dir, schemaauthority.StreamCounterExpandHead+".down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(t.Context(), string(down))
@@ -137,6 +139,7 @@ func TestCounterExpandRejectsIncompatibleRecoveryActorAtomically(t *testing.T) {
 			pool := testutil.SetupMigratedTestDB(t)
 			ctx := t.Context()
 			dir := testutil.MigrationsDir(t)
+			require.NoError(t, testutil.RewindEmptySourceFactsForLegacyTest(ctx, pool, dir))
 			down, err := os.ReadFile(filepath.Join(dir, schemaauthority.StreamCounterExpandHead+".down.sql"))
 			require.NoError(t, err)
 			_, err = pool.Exec(ctx, string(down))
@@ -172,7 +175,7 @@ func TestCounterExpandRejectsIncompatibleRecoveryActorAtomically(t *testing.T) {
 			_, err = pool.Exec(ctx, `UPDATE runtime_generations SET state='stopped' WHERE instance_id=$1`, id.Instance)
 			require.NoError(t, err)
 			require.NoError(t, migrate.RunCompatibleExpand(ctx, pool, dir, hooks))
-			_, _, err = runtimegeneration.Renew(ctx, pool, id, manifest, artifact[:len(artifact)-1], true)
+			_, _, err = runtimegeneration.Renew(ctx, pool, id, manifest, artifact[:len(artifact)-2], true)
 			require.Error(t, err, "old binary cannot resume recovery on the new schema")
 		})
 	}

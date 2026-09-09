@@ -54,6 +54,7 @@ import (
 	"github.com/uniroute/unirouter/internal/runtimechange"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
+	"github.com/uniroute/unirouter/internal/sourcefacts"
 	"github.com/uniroute/unirouter/internal/telemetryexport"
 	"github.com/uniroute/unirouter/internal/xinsightconnector"
 )
@@ -458,7 +459,20 @@ func main() {
 		completedfeed.ReferenceProtocolVersionV1,
 		completedfeed.ReferenceConnectorIDV1,
 	)
-	billingSvc.SetTerminalMaterializer(completedFeedSvc)
+	// Local source capture remains disabled unless SOURCE_FACTS_ENABLED is
+	// explicitly enabled after the separately authorized M116 installation.
+	sourceFactsSvc, err := sourcefacts.New(postgres.Pool, sourcefacts.Options{Enabled: cfg.SourceFactsEnabled, SourceInstance: cfg.CompletedExecutionFeedSourceInstance, CursorSecret: cfg.APIKeyHashSecret, I01Enabled: cfg.CompletedExecutionFeedEnabled})
+	if err != nil {
+		log.Fatalf("Failed to initialize source facts: %v", err)
+	}
+	if err = sourceFactsSvc.CheckReady(context.Background()); err != nil {
+		log.Fatalf("Source facts preflight refused: %v", err)
+	}
+	billingSvc.SetTerminalMaterializer(billing.TerminalMaterializers{completedFeedSvc, sourceFactsSvc})
+	billingSvc.SetReservationMaterializer(sourceFactsSvc)
+	if cfg.SourceFactsEnabled {
+		mediaStore.SetSourceMaterializer(sourceFactsSvc)
+	}
 	outboxSvc, err := outbox.New(postgres.Pool, outbox.DefaultOptions())
 	if err != nil {
 		log.Fatalf("Failed to initialize internal outbox: %v", err)
@@ -554,6 +568,7 @@ func main() {
 	adminHandler.SetModelRoutePlanner(executionPlanner)
 	adminHandler.SetOutbox(outboxSvc)
 	adminHandler.SetCompletedFeedController(completedFeedSvc)
+	adminHandler.SetSourceFactsController(sourceFactsSvc)
 	xInsightConnectorManager, err := xinsightconnector.NewManager(
 		postgres.Pool,
 		xinsightconnector.CommitAuthorizerFunc(adminHandler.AuthorizeXInsightConnectorControl),
@@ -654,6 +669,8 @@ func main() {
 		}
 	}
 	outboxCtx, stopOutbox := context.WithCancel(context.Background())
+	sourceFactsRetentionDone := make(chan struct{})
+	go func() { defer close(sourceFactsRetentionDone); sourceFactsSvc.RunRetention(outboxCtx) }()
 	outboxDone := make(chan struct{})
 	go func() {
 		defer close(outboxDone)
@@ -759,6 +776,11 @@ func main() {
 	gatewayAuth := middleware.GatewayAuthWithAgentCapabilitiesAndClientIP(postgres.Pool, cfg.APIKeyHashSecret, agentCapabilityService, clientIPResolver)
 	mediaAuth := middleware.GatewayAuthWithAgentCapabilitiesAndClientIP(postgres.Pool, cfg.APIKeyHashSecret, nil, clientIPResolver)
 	completedFeedAuth := middleware.CompletedExecutionFeedAuth(postgres.Pool, cfg.APIKeyHashSecret, clientIPResolver)
+	var sourceCapturer middleware.ExecutionContextCapturer
+	if cfg.SourceFactsEnabled {
+		sourceCapturer = sourceFactsSvc
+	}
+	captureExecutionContext := middleware.CaptureExecutionContext(sourceCapturer)
 	gatewayLicenseGate := licenseRuntime.Gate(licensing.FeatureGateway)
 	agentLicenseGate := licenseRuntime.GateAll(licensing.FeatureGateway, licensing.FeatureAgentCapabilities)
 	rateLimiter := middleware.RateLimit(redisClient.Client)
@@ -780,13 +802,13 @@ func main() {
 	// Repeat live authentication after the complete body is retained. A slow
 	// upload cannot carry a pre-revocation Grant, Credential, membership,
 	// capability, endpoint, or provider-liability snapshot into paid admission.
-	mux.Handle("POST /v1/chat/completions", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(gatewayLicenseGate(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(chatHandler))))))
+	mux.Handle("POST /v1/chat/completions", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(captureExecutionContext(gatewayLicenseGate(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(chatHandler)))))))
 	mux.Handle("POST /v1/chat/completions/preflight", chatPreflightOperation(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(gatewayLicenseGate(middleware.StrictJSONIngress(newGatewayChatPreflightHandler(postgres.Pool, relay))))))
-	mux.Handle("POST /v1/embeddings", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, embeddingsPayloadGuard)(gatewayLicenseGate(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(embeddingsHandler))))))
-	mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(gatewayLicenseGate(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(responsesHandler))))))
-	mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(gatewayLicenseGate(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(messagesHandler))))))
+	mux.Handle("POST /v1/embeddings", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, embeddingsPayloadGuard)(captureExecutionContext(gatewayLicenseGate(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(embeddingsHandler)))))))
+	mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(gatewayLicenseGate(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(responsesHandler)))))))
+	mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(gatewayLicenseGate(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(messagesHandler)))))))
 	mux.Handle("GET /v1/models", gatewayAuth(gatewayLicenseGate(admissionMiddleware(http.HandlerFunc(relay.HandleModels)))))
-	mux.Handle("POST /v1/media/jobs", middleware.GatewayAuthAcrossBufferedBody(mediaAuth, mediaPayloadGuard)(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Submit))))
+	mux.Handle("POST /v1/media/jobs", middleware.GatewayAuthAcrossBufferedBody(mediaAuth, mediaPayloadGuard)(captureExecutionContext(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Submit)))))
 	mux.Handle("GET /v1/media/jobs/{id}", mediaAuth(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Get))))
 	mux.Handle("POST /v1/media/jobs/{id}/cancel", mediaAuth(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Cancel))))
 	mux.Handle("GET /v1/media/jobs/{id}/content", mediaAuth(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Content))))
@@ -794,6 +816,8 @@ func main() {
 		"GET /api/v1/integrations/xinsight/completed-executions",
 		completedFeedAuth(completedFeedSvc.Handler()),
 	)
+	mux.Handle("GET /api/v1/integrations/xinsight/source-facts", sourceFactsSvc.Handler(clientIPResolver))
+	mux.Handle("GET /api/v1/integrations/xinsight/source-facts/capabilities", sourceFactsSvc.Handler(clientIPResolver))
 	registerAgentCapabilityRoutes(mux, agentCapabilityHandler, agentCapabilityRouteGuards{
 		authorize:    agentLicenseGate,
 		authenticate: gatewayAuth,
@@ -920,6 +944,8 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">POST</td><td><code>/v1/agent-capabilities/refresh</code></td><td>Refresh a five-minute Agent capability</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/agent-capabilities/revoke</code></td><td>Revoke a workflow for new admissions</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/integrations/xinsight/completed-executions</code></td><td>Private final completed-execution metadata feed for X-Insight</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/integrations/xinsight/source-facts</code></td><td>Immutable fixed-profile execution context, identity or cost basis</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/integrations/xinsight/source-facts/capabilities</code></td><td>Authorized source profiles and explicit coverage boundaries</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/auth/login</code></td><td>Admin login</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/auth/logout</code></td><td>Revoke current admin session</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/auth/oidc/config</code></td><td>OIDC login configuration</td></tr>
@@ -1273,6 +1299,10 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 		safety:    platformRoute,
 		expansion: dataExchangeRoute,
 	})
+	registerXInsightSourceControlRoutes(mux, adminHandler, xInsightFeedControlRouteGuards{
+		safety:    platformRoute,
+		expansion: dataExchangeRoute,
+	})
 
 	registerGlobalControlRoutes(mux, adminHandler, platformRoute, licensedRoute(licensing.FeatureGuardrails, platformRoute))
 	mux.Handle("POST /api/v1/channels/{id}/test", platformRoute(legacyModelMutationRetired))
@@ -1378,6 +1408,11 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 		)
 	}
 	stopOutbox()
+	select {
+	case <-sourceFactsRetentionDone:
+	case <-ctx.Done():
+		log.Printf("Source facts retention shutdown timed out")
+	}
 	select {
 	case <-outboxDone:
 	case <-ctx.Done():

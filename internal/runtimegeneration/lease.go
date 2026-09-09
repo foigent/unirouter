@@ -130,7 +130,7 @@ func readLeaseLedger(ctx context.Context, q interface {
 		return nil, "", fmt.Errorf("%w: %v", ErrIncompatible, err)
 	}
 	head := ledger[len(ledger)-1]
-	if head != schemaauthority.CapabilityExpandHead && head != schemaauthority.StreamCounterExpandHead {
+	if head != schemaauthority.CapabilityExpandHead && head != schemaauthority.StreamCounterExpandHead && head != schemaauthority.SourceFactsExpandHead {
 		return nil, head, fmt.Errorf("%w: runtime lease requires explicit expand", ErrIncompatible)
 	}
 	return ledger, head, nil

@@ -4,6 +4,16 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.3.0] - 2026-09-09
+
+- 新增默认关闭的执行上下文、身份与费用依据源事实 profile，在认证、原冻结及终态事务中保存当时的事实；费用依据引用原 I-01 金额，不另建金额账本。
+- 异步媒体保留提交与首次调度快照，终态引用其独立 charge fact；取消、失败及过期恢复与源事实在同一事务提交。
+- 新增 M116 显式扩展及 M113—M116 有限兼容支持，保留旧 Feed 字节合同和 counter v2/v3 恢复能力；源数据、凭据或运行依赖存在时拒绝降级删除。
+- 已记录的微金额账本安全标记不再随每次财务写入重复更新单例行，保留首次标记、事务回滚和原降级保护；减少这一已确认的并发冲突来源。
+- 健康结果在原行锁、版本校验和 attempt fence 保护下读取当前状态，投影统一记录取得锁后的数据库时刻，避免普通并发成功因旧事务快照进入异常 hold；派发授权、金额及未决责任保护保持原合同。
+- 新源按固定字段 profile 授权，提供独立的前向游标和七日保留边界。启用采集需要显式配置稳定来源身份；采集写入失败会阻止受影响请求继续分发。
+- 新增来源连接管理：注册、激活、暂停、轮换、取消、撤销与字段授权；管理写入重新核对当前管理员权限，权限变更使旧凭据及游标失效，接收端 Bearer 不进入注册接口或管理响应。
+
 ## [1.2.77] - 2026-09-09
 
 - 在正式 development/test 构建前检查本地 Docker 28/29、Compose 合并语法支持和 Python 时间戳/缺失对象行为；构建与检查固定同一本地 daemon，失败不创建镜像。

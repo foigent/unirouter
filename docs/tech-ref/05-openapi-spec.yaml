@@ -795,6 +795,349 @@ paths:
         "503":
           $ref: "#/components/responses/CompletedExecutionFeedError"
 
+  /api/v1/data-exchange/xinsight/source-connections/{project_id}:
+    x-unirouter-rbac:
+      get: [platform_admin]
+    get:
+      tags: [Data Exchange]
+      summary: Inspect the source connection
+      description: Available for existing inactive projects and without the current Data Exchange entitlement; platform-admin authorization still applies.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      responses:
+        "200":
+          description: Non-secret connection or control result; Cache-Control is no-store. Registration may return replayed true.
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
+        "401": {description: Invalid administrator session}
+        "403": {description: "Role, live authorization or entitlement denied"}
+        "404": {description: Project or connection not found}
+        "409": {description: "Lifecycle, operation replay or credential identity conflict"}
+        "503": {description: Source capture is disabled}
+
+  /api/v1/data-exchange/xinsight/source-connections/{project_id}/prepare:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    post:
+      tags: [Data Exchange]
+      summary: Register a separate staged source credential
+      description: Requires an active project, current Data Exchange entitlement and live platform-admin commit authorization. Registration accepts only a receiver-generated SHA-256 verifier, never a bearer. Exact operation replay preserves the original binding; conflicting replay returns 409. Rotation inherits the original exact-host IP.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SourcePrepareRequest"}
+      responses:
+        "200":
+          description: Non-secret connection or control result; Cache-Control is no-store. Registration may return replayed true.
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
+        "401": {description: Invalid administrator session}
+        "403": {description: "Role, live authorization or entitlement denied"}
+        "404": {description: Project or connection not found}
+        "409": {description: "Lifecycle, operation replay or credential identity conflict"}
+        "503": {description: Source capture is disabled}
+
+  /api/v1/data-exchange/xinsight/source-connections/{project_id}/rotate:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    post:
+      tags: [Data Exchange]
+      summary: Prepare a replacement source credential
+      description: Requires an active project, current Data Exchange entitlement and live platform-admin commit authorization. Registration accepts only a receiver-generated SHA-256 verifier, never a bearer. Exact operation replay preserves the original binding; conflicting replay returns 409. Rotation inherits the original exact-host IP.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SourceRotateRequest"}
+      responses:
+        "200":
+          description: Non-secret connection or control result; Cache-Control is no-store. Registration may return replayed true.
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
+        "401": {description: Invalid administrator session}
+        "403": {description: "Role, live authorization or entitlement denied"}
+        "404": {description: Project or connection not found}
+        "409": {description: "Lifecycle, operation replay or credential identity conflict"}
+        "503": {description: Source capture is disabled}
+
+  /api/v1/data-exchange/xinsight/source-connections/{project_id}/activate:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    post:
+      tags: [Data Exchange]
+      summary: Activate the exact staged source credential
+      description: Requires an active project, current Data Exchange entitlement and live platform-admin commit authorization. Revokes the prior active credential atomically. The connection remains paused until a separate resume.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SourceCredentialTarget"}
+      responses:
+        "200":
+          description: Non-secret connection or control result; Cache-Control is no-store. Registration may return replayed true.
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
+        "401": {description: Invalid administrator session}
+        "403": {description: "Role, live authorization or entitlement denied"}
+        "404": {description: Project or connection not found}
+        "409": {description: "Lifecycle, operation replay or credential identity conflict"}
+        "503": {description: Source capture is disabled}
+
+  /api/v1/data-exchange/xinsight/source-connections/{project_id}/cancel:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    post:
+      tags: [Data Exchange]
+      summary: Revoke the exact staged source credential
+      description: Available for existing inactive projects and without the current Data Exchange entitlement; platform-admin authorization still applies.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SourceCredentialTarget"}
+      responses:
+        "200":
+          description: Non-secret connection or control result; Cache-Control is no-store. Registration may return replayed true.
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
+        "401": {description: Invalid administrator session}
+        "403": {description: "Role, live authorization or entitlement denied"}
+        "404": {description: Project or connection not found}
+        "409": {description: "Lifecycle, operation replay or credential identity conflict"}
+        "503": {description: Source capture is disabled}
+
+  /api/v1/data-exchange/xinsight/source-connections/{project_id}/pause:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    post:
+      tags: [Data Exchange]
+      summary: Pause source reads
+      description: Available for existing inactive projects and without the current Data Exchange entitlement; platform-admin authorization still applies.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SourceEmptyRequest"}
+      responses:
+        "200":
+          description: Non-secret connection or control result; Cache-Control is no-store. Registration may return replayed true.
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
+        "401": {description: Invalid administrator session}
+        "403": {description: "Role, live authorization or entitlement denied"}
+        "404": {description: Project or connection not found}
+        "409": {description: "Lifecycle, operation replay or credential identity conflict"}
+        "503": {description: Source capture is disabled}
+
+  /api/v1/data-exchange/xinsight/source-connections/{project_id}/resume:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    post:
+      tags: [Data Exchange]
+      summary: Resume source reads
+      description: Requires an active project, current Data Exchange entitlement and live platform-admin commit authorization.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SourceEmptyRequest"}
+      responses:
+        "200":
+          description: Non-secret connection or control result; Cache-Control is no-store. Registration may return replayed true.
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
+        "401": {description: Invalid administrator session}
+        "403": {description: "Role, live authorization or entitlement denied"}
+        "404": {description: Project or connection not found}
+        "409": {description: "Lifecycle, operation replay or credential identity conflict"}
+        "503": {description: Source capture is disabled}
+
+  /api/v1/data-exchange/xinsight/source-connections/{project_id}/revoke:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    post:
+      tags: [Data Exchange]
+      summary: Permanently revoke the source connection
+      description: Available for existing inactive projects and without the current Data Exchange entitlement; platform-admin authorization still applies. Revokes active and staged credentials and invalidates cursors. This connection cannot be resumed.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SourceEmptyRequest"}
+      responses:
+        "200":
+          description: Non-secret connection or control result; Cache-Control is no-store. Registration may return replayed true.
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
+        "401": {description: Invalid administrator session}
+        "403": {description: "Role, live authorization or entitlement denied"}
+        "404": {description: Project or connection not found}
+        "409": {description: "Lifecycle, operation replay or credential identity conflict"}
+        "503": {description: Source capture is disabled}
+
+  /api/v1/data-exchange/xinsight/source-connections/{project_id}/profiles:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    post:
+      tags: [Data Exchange]
+      summary: Replace fixed source profile permissions
+      description: Requires an active project, current Data Exchange entitlement and live platform-admin commit authorization. Requires pause. Revokes all credentials and advances scope generation; old cursors fail and new registration must explicitly bootstrap forward.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SourceProfilesRequest"}
+      responses:
+        "200":
+          description: Non-secret connection or control result; Cache-Control is no-store. Registration may return replayed true.
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
+        "401": {description: Invalid administrator session}
+        "403": {description: "Role, live authorization or entitlement denied"}
+        "404": {description: Project or connection not found}
+        "409": {description: "Lifecycle, operation replay or credential identity conflict"}
+        "503": {description: Source capture is disabled}
+
+  /api/v1/integrations/xinsight/source-facts:
+    get:
+      tags: [Private Integration]
+      summary: Pull one fixed source-fact profile
+      description: |
+        Requires a separate xinsight.source.read receiver credential and its
+        exact project, network and profile authorization. Empty cursor returns
+        no events and establishes the current high watermark. Each later page
+        is an immutable foigent.event-batch.v1 snapshot, at most 50 events and
+        smaller than 8 MiB. Retention is seven days from publication. An expired
+        cursor returns 410; an ahead cursor returns 409. Neither is auto-reset.
+        Cost basis references I-01 amounts or the separate media charge fact;
+        it is not another summable cost. Identity fields use a separate profile.
+        No complete timeline or consumer queryability is implied by a pull.
+      security:
+        - sourceFactsKey: []
+      parameters:
+        - name: profile
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [unirouter.execution-context.v1, unirouter.execution-identity.v1, unirouter.cost-basis.v1]
+        - name: cursor
+          in: query
+          schema: {type: string, maxLength: 512}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 50, default: 50}
+      responses:
+        "200":
+          description: Fixed-profile Event Batch
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SourceFactEventBatch"}
+        "400": {$ref: "#/components/responses/SourceFactError"}
+        "401": {$ref: "#/components/responses/SourceFactError"}
+        "403": {$ref: "#/components/responses/SourceFactError"}
+        "409": {$ref: "#/components/responses/SourceFactError"}
+        "410": {$ref: "#/components/responses/SourceFactError"}
+        "503": {$ref: "#/components/responses/SourceFactError"}
+
+  /api/v1/integrations/xinsight/source-facts/capabilities:
+    get:
+      tags: [Private Integration]
+      summary: Read the credential's authorized source profiles
+      description: Staged credentials can inspect capabilities only while the connection is paused. This endpoint accepts no query parameters and does not activate a credential or consume data.
+      security:
+        - sourceFactsKey: []
+      responses:
+        "200":
+          description: Authorized profiles and explicit coverage boundaries
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SourceFactCapabilities"}
+        "400": {$ref: "#/components/responses/SourceFactError"}
+        "401": {$ref: "#/components/responses/SourceFactError"}
+        "409": {$ref: "#/components/responses/SourceFactError"}
+        "503": {$ref: "#/components/responses/SourceFactError"}
+
   /api/v1/auth/login:
     post:
       tags: [Auth]
@@ -4404,6 +4747,10 @@ paths:
 
 components:
   securitySchemes:
+    sourceFactsKey:
+      type: http
+      scheme: bearer
+      description: Independent project/network/profile-bound receiver credential with exact purpose xinsight.source.read. Cannot call models or the completed-execution V1 feed.
     bearerAuth:
       type: http
       scheme: bearer
@@ -4803,7 +5150,124 @@ components:
           schema:
             $ref: "#/components/schemas/CompletedExecutionFeedError"
 
+    SourceFactError:
+      description: Bounded foigent.connector-error.v1 error; an expired or ahead cursor requires explicit operator recovery.
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [error]
+            properties:
+              error: {$ref: "#/components/schemas/SourceFactConnectorError"}
+
   schemas:
+    SourceProfileSet:
+      type: array
+      minItems: 1
+      maxItems: 3
+      uniqueItems: true
+      description: Exact fixed profiles, sorted in ascending byte order; identity is an explicit additional grant.
+      items:
+        type: string
+        enum: [unirouter.cost-basis.v1, unirouter.execution-context.v1, unirouter.execution-identity.v1]
+    SourceRegistration:
+      type: object
+      additionalProperties: false
+      required: [schema_version, token_format, verifier_scheme, key_prefix, verifier_sha256, operation_id, source_instance, org_id, project_id, profiles]
+      properties:
+        schema_version: {type: string, enum: [unirouter.xinsight.source-credential-registration.v1]}
+        token_format: {type: string, enum: [ur-xf1-hex256.v1]}
+        verifier_scheme: {type: string, enum: [receiver_sha256_v1]}
+        key_prefix: {type: string, pattern: '^ur-xf1-[0-9a-f]{13}$'}
+        verifier_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        operation_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+        source_instance: {type: string, minLength: 1, maxLength: 128}
+        org_id: {type: string, pattern: '^[1-9][0-9]{0,18}$'}
+        project_id: {type: string, pattern: '^[1-9][0-9]{0,18}$'}
+        profiles: {$ref: "#/components/schemas/SourceProfileSet"}
+    SourcePrepareRequest:
+      type: object
+      additionalProperties: false
+      required: [allowed_ip, registration]
+      properties:
+        allowed_ip: {type: string, description: An exact IPv4 /32 or IPv6 /128 receiver binding}
+        registration: {$ref: "#/components/schemas/SourceRegistration"}
+    SourceRotateRequest:
+      type: object
+      additionalProperties: false
+      required: [registration]
+      properties:
+        registration: {$ref: "#/components/schemas/SourceRegistration"}
+    SourceCredentialTarget:
+      type: object
+      additionalProperties: false
+      required: [credential_id]
+      properties:
+        credential_id: {type: string, pattern: '^[1-9][0-9]{0,18}$', description: Exact currently staged credential ID}
+    SourceProfilesRequest:
+      type: object
+      additionalProperties: false
+      required: [profiles]
+      properties:
+        profiles: {$ref: "#/components/schemas/SourceProfileSet"}
+    SourceEmptyRequest:
+      type: object
+      additionalProperties: false
+    SourceFactConnectorError:
+      type: object
+      additionalProperties: false
+      required: [error_version, category, code, phase, operation, retryable, safe_message, recovery]
+      properties:
+        error_version: {type: string, enum: [foigent.connector-error.v1]}
+        category: {type: string, enum: [configuration, authentication, authorization, transport, source, contract, privacy, cursor, conflict, persistence, internal]}
+        code: {type: string, pattern: '^[a-z][a-z0-9_.-]*$', maxLength: 160}
+        phase: {type: string, enum: [configure, activate, fetch, decode, validate, normalize, commit, checkpoint, status, shutdown]}
+        operation: {type: string, pattern: '^[a-z][a-z0-9_.-]*$', maxLength: 128}
+        retryable: {type: boolean}
+        retry_after_seconds: {type: integer, minimum: 0, maximum: 300}
+        safe_message: {type: string, minLength: 1, maxLength: 512}
+        recovery: {type: string, enum: [automatic_retry, restart, reauthorize, operator_repair, explicit_resync, none]}
+    SourceFactEventBatch:
+      type: object
+      additionalProperties: false
+      required: [batch_version, connector_id, connector_version, producer_instance, generated_at, events, next_cursor, high_watermark, has_more]
+      properties:
+        batch_version: {type: string, enum: [foigent.event-batch.v1]}
+        connector_id: {type: string, enum: [unirouter.workfacts]}
+        connector_version: {type: string, enum: [1.0.0]}
+        producer_instance: {type: string, minLength: 1, maxLength: 128}
+        generated_at: {type: string, format: date-time}
+        events:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            description: Foigent 2.0.2 immutable Event Envelope; payload is validated against the bundled contracts/source-facts/v1/source-fact.schema.json and its fixed profile. IDs and quantities in the source document are decimal strings.
+        next_cursor: {type: string, maxLength: 512}
+        high_watermark: {type: string, maxLength: 512}
+        has_more: {type: boolean}
+    SourceFactCapabilities:
+      type: object
+      additionalProperties: false
+      required: [schema_version, source_instance, profiles, profile_version, status, credential_status, scope_generation, retention_seconds, bootstrap, timeline_complete, field_authorization]
+      properties:
+        schema_version: {type: string, enum: [unirouter.source-capabilities.v1]}
+        source_instance: {type: string, maxLength: 128}
+        profiles:
+          type: array
+          maxItems: 3
+          items:
+            type: string
+            enum: [unirouter.execution-context.v1, unirouter.execution-identity.v1, unirouter.cost-basis.v1]
+        profile_version: {type: string, enum: [1.0.0]}
+        status: {type: string, enum: [paused, active]}
+        credential_status: {type: string, enum: [feed_staged, feed_active]}
+        scope_generation: {type: string, pattern: '^[1-9][0-9]*$'}
+        retention_seconds: {type: integer, enum: [604800]}
+        bootstrap: {type: string, enum: [forward_only]}
+        timeline_complete: {type: boolean, enum: [false]}
+        field_authorization: {type: string, enum: [fixed_profiles]}
     CapabilityProbeGroup:
       type: object
       required: [plan_digest, request_digest, capability_ids, probe_contract, planned_provider_requests]

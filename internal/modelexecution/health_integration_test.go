@@ -563,14 +563,15 @@ SELECT status FROM freeze_idempotency WHERE org_id=$1 AND request_id=$2`,
 
 func TestHalfOpenReleaseTerminalizesReceiptAcrossRouteDrift(t *testing.T) {
 	tests := []struct {
-		name   string
-		mutate func(*testing.T, *executionFixture)
+		name       string
+		mutate     func(*testing.T, *executionFixture)
+		shortLease bool
 	}{
 		{
 			name: "administrative disable",
 			mutate: func(t *testing.T, fixture *executionFixture) {
 				_, err := fixture.pool.Exec(t.Context(), `
-UPDATE model_deployments SET admin_state='disabled' WHERE id=$1`, fixture.deploymentID)
+UPDATE model_deployments SET admin_state='disabled',half_open_probe_until=NULL,half_open_probe_token=NULL WHERE id=$1`, fixture.deploymentID)
 				require.NoError(t, err)
 			},
 		},
@@ -591,19 +592,33 @@ UPDATE model_deployments SET circuit_revision=circuit_revision+1 WHERE id=$1`, f
 			},
 		},
 		{
-			name: "lease expiry",
+			name:       "lease expiry",
+			shortLease: true,
 			mutate: func(t *testing.T, fixture *executionFixture) {
-				_, err := fixture.pool.Exec(t.Context(), `
-UPDATE model_deployments SET half_open_probe_until=clock_timestamp()-INTERVAL '1 second'
- WHERE id=$1`, fixture.deploymentID)
-				require.NoError(t, err)
+				// M70 rejects shortening an owned lease or writing an expired
+				// timestamp. Wait for a real supported one-second lease.
+				require.Eventually(t, func() bool {
+					var expired bool
+					err := fixture.pool.QueryRow(t.Context(), `SELECT half_open_probe_until<=clock_timestamp() FROM model_deployments WHERE id=$1`, fixture.deploymentID).Scan(&expired)
+					return err == nil && expired
+				}, 3*time.Second, 10*time.Millisecond)
 			},
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			fixture := newExecutionFixture(t, true, true)
-			coordinator, decision := fixture.authorizedDecision(t, modelrouting.ModeCanonical, "release-drift-"+test.name)
+			plan, route := fixture.plan(t, modelrouting.ModeCanonical, "release-drift-"+test.name)
+			identity := fixture.freeze(t, "release-drift-"+test.name)
+			config := DefaultConfig()
+			if test.shortLease {
+				config.HalfOpenLease = time.Second
+			}
+			coordinator, err := New(fixture.pool, fixture.billing, config)
+			require.NoError(t, err)
+			decision, err := coordinator.Authorize(t.Context(), plan, route, identity)
+			require.NoError(t, err)
+			require.Equal(t, Applied, decision.Status)
 			test.mutate(t, fixture)
 			before := fixture.breaker(t, fixture.deploymentID, false)
 
@@ -633,7 +648,7 @@ func TestVerifyReleaseTreatsAnyProjectionDriftAsAGroupNoop(t *testing.T) {
 			name: "canonical deployment disabled",
 			mutate: func(t *testing.T, fixture *executionFixture, _ int64) {
 				_, err := fixture.pool.Exec(t.Context(), `
-UPDATE model_deployments SET admin_state='disabled' WHERE id=$1`, fixture.deploymentID)
+UPDATE model_deployments SET admin_state='disabled',half_open_probe_until=NULL,half_open_probe_token=NULL WHERE id=$1`, fixture.deploymentID)
 				require.NoError(t, err)
 			},
 		},

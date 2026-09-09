@@ -216,6 +216,7 @@ type Billing struct {
 	prices                  PriceProvider
 	outbox                  *outbox.Service
 	terminalMaterializer    TerminalMaterializer
+	reservationMaterializer ReservationMaterializer
 }
 
 // NewBilling creates a new Billing instance.
@@ -576,7 +577,7 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 		return nil, fmt.Errorf("check reservation: %w", err)
 	}
 	if mode == BillingModeCostObservation {
-		if err := insertFreezeReservationTx(
+		if err := b.insertFreezeReservationTx(
 			ctx, tx, req, quote, mode, minFreezeMicros, freezeAmount, 0, 0, 0,
 		); err != nil {
 			if isUniqueViolation(err) {
@@ -664,7 +665,7 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	}
 
 	// Insert the self-contained reservation and its immutable price/mode snapshot.
-	err = insertFreezeReservationTx(
+	err = b.insertFreezeReservationTx(
 		ctx, tx, req, quote, mode, minFreezeMicros, freezeAmount,
 		freezeAmount, reservedBalance, reservedGranted,
 	)
@@ -755,7 +756,7 @@ func (b *Billing) replayFreeze(ctx context.Context, req FreezeRequest) (*FreezeR
 	}, true, nil
 }
 
-func insertFreezeReservationTx(
+func (b *Billing) insertFreezeReservationTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	req FreezeRequest,
@@ -799,7 +800,10 @@ func insertFreezeReservationTx(
 		quote.OutputPriceMicrosPerMillion, quote.CacheReadRatio, quote.CacheCreationRatio,
 		quote.Multiplier, quote.Version, string(unitRatesJSON), string(reservedMeterUsageJSON), req.ExecutionSnapshotHash,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	return b.materializeSourceReservation(ctx, tx, req, quote, mode)
 }
 
 func nullableID(value sql.NullInt64) int64 {

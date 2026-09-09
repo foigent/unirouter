@@ -50,6 +50,11 @@ var (
 	identifierPattern     = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 
 	protectedTables = map[string]string{
+		"execution_source_acknowledgements":                    "source receiver position is outside the existing reset erasure contract",
+		"execution_source_connections":                         "source connection and permission generation need a separately reviewed reset lifecycle",
+		"execution_source_credentials":                         "source credential bindings are not erased by the existing reset contract",
+		"execution_source_facts":                               "immutable source facts are preserved until their reset lifecycle is reviewed",
+		"execution_source_streams":                             "source identity, epoch and retention floor cannot be silently reset",
 		"capability_publications":                              "append-only capability publication authority and retained provenance survive product reset",
 		"model_profile_definitions":                            "immutable capability definitions remain addressable with their publication history",
 		"runtime_support_manifests":                            "immutable installed Artifact implementation support is host-operability evidence",
@@ -448,6 +453,13 @@ func Build(snapshot Snapshot, target TargetIdentity, currentSourceInstance, next
 		}
 		seen[name] = struct{}{}
 		scope, action, reason := ClassifyTable(name)
+		// M116 with capture unused retains the existing reset path. Source data
+		// makes this older reset scope incomplete; never authorize deleting its
+		// referenced project/key while retaining an incoherent source history.
+		if isSourceFactsTable(name) && table.RowCount > 0 {
+			scope = ScopeReviewRequired
+			reason = "source data requires a separately reviewed reset lifecycle; this preview preserves it and cannot authorize apply"
+		}
 		entry := TablePlan{Name: name, RowCount: table.RowCount, Scope: scope, Action: action, Reason: reason}
 		switch action {
 		case ActionDeleteAll:
@@ -581,6 +593,15 @@ func ClassifyTable(name string) (scope, action, reason string) {
 		return ScopeResetCandidate, ActionDeleteAll, "pre-reset product, control-plane, evidence, Feed, Outbox, checkpoint, credential, or business data"
 	}
 	return ScopeReviewRequired, "", "unclassified table blocks reset until the product contract is updated"
+}
+
+func isSourceFactsTable(name string) bool {
+	switch name {
+	case "execution_source_acknowledgements", "execution_source_connections", "execution_source_credentials", "execution_source_facts", "execution_source_streams":
+		return true
+	default:
+		return false
+	}
 }
 
 // ProtectedTableNames is shared by preview and apply inventory. Retaining one

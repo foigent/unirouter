@@ -12,6 +12,9 @@ func RuntimeLedgers(artifact []string) ([][]string, error) {
 		return nil, err
 	}
 	end := len(artifact)
+	if end >= 4 && artifact[end-1] == SourceFactsExpandHead && artifact[end-2] == StreamCounterExpandHead && artifact[end-3] == CapabilityExpandHead && artifact[end-4] == LegacyCapabilityHead {
+		return [][]string{slices.Clone(artifact[:end-3]), slices.Clone(artifact[:end-2]), slices.Clone(artifact[:end-1]), slices.Clone(artifact)}, nil
+	}
 	if end >= 3 && artifact[end-1] == StreamCounterExpandHead && artifact[end-2] == CapabilityExpandHead && artifact[end-3] == LegacyCapabilityHead {
 		return [][]string{slices.Clone(artifact[:end-2]), slices.Clone(artifact[:end-1]), slices.Clone(artifact)}, nil
 	}
@@ -36,5 +39,5 @@ func VerifyRuntimeLedger(artifact, actual []string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("database ledger is outside the exact M113/M114/M115 runtime compatibility bridge")
+	return fmt.Errorf("database ledger is outside the exact M113/M114/M115/M116 runtime compatibility bridge")
 }

@@ -144,7 +144,9 @@ func (b *Billing) ProcessUsageJournalEvent(ctx context.Context, event outbox.Eve
 	if payload.OrgID <= 0 || payload.RequestID == "" || payload.EventType == "" {
 		return fmt.Errorf("usage journal event identity is invalid")
 	}
+	billingModeSource := "journal_payload"
 	if payload.BillingMode == "" {
+		billingModeSource = "legacy_interpretation.v1"
 		payload.BillingMode = BillingModePrepaidEnforced
 	}
 	if err := validateReservationBillingMode(payload.BillingMode); err != nil {
@@ -238,6 +240,8 @@ func (b *Billing) ProcessUsageJournalEvent(ctx context.Context, event outbox.Eve
 	if created && b.terminalMaterializer != nil &&
 		(payload.EventType == "settled" || payload.EventType == "cancelled") {
 		if err := b.terminalMaterializer.MaterializeTerminalTx(ctx, tx, TerminalRecord{
+			BillingMode:          string(payload.BillingMode),
+			BillingModeSource:    billingModeSource,
 			EventKey:             event.Key,
 			RequestID:            payload.RequestID,
 			OrgID:                payload.OrgID,

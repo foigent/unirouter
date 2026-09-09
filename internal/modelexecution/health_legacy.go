@@ -172,7 +172,7 @@ func updateLegacyBreaker(
 UPDATE channels
    SET fail_count=$5,circuit_state=$6,half_open_until=$7,
        half_open_probe_until=$8,half_open_probe_token=NULLIF($9,''),
-       circuit_epoch=$10,updated_at=NOW()
+       circuit_epoch=$10,updated_at=$17
  WHERE id=$1 AND (status='active' OR ($16 AND status='staged'))
    AND routing_epoch=$2 AND circuit_epoch=$3
    AND circuit_state=$4 AND fail_count=$11 AND degradation_threshold=$12
@@ -183,7 +183,7 @@ UPDATE channels
 		request.evidence.LegacyCircuitRevision, current.circuitState,
 		next.failCount, next.circuitState, next.halfOpenUntil, next.probeUntil, next.probeToken,
 		next.circuitRevision, current.failCount, current.degradationThreshold, current.halfOpenUntil,
-		current.probeUntil, current.probeToken, legacyHealthAllowsStaged(request.evidence),
+		current.probeUntil, current.probeToken, legacyHealthAllowsStaged(request.evidence), request.databaseTime,
 	)
 	if err != nil {
 		return "", err
@@ -231,7 +231,7 @@ func (c *Coordinator) renewLegacyLease(
 	}
 	tag, err := tx.Exec(ctx, `
 UPDATE channels
-   SET half_open_probe_until=$6,updated_at=NOW()
+   SET half_open_probe_until=$6,updated_at=$4
  WHERE id=$1 AND (status='active' OR ($8 AND status='staged'))
    AND routing_epoch=$2 AND circuit_epoch=$3
    AND circuit_state='half_open' AND half_open_until<=$4
@@ -273,15 +273,14 @@ func (c *Coordinator) releaseLegacyLease(
 	arguments := []any{
 		request.evidence.LegacyChannelID, request.evidence.LegacyRoutingRevision,
 		request.evidence.LegacyCircuitRevision, request.token, current.probeUntil,
-		legacyHealthAllowsStaged(request.evidence),
+		legacyHealthAllowsStaged(request.evidence), request.databaseTime,
 	}
 	if requireLive {
 		predicate = " AND half_open_probe_until>$7"
-		arguments = append(arguments, request.databaseTime)
 	}
 	tag, err := tx.Exec(ctx, `
 UPDATE channels
-   SET half_open_probe_until=NULL,half_open_probe_token=NULL,updated_at=NOW()
+   SET half_open_probe_until=NULL,half_open_probe_token=NULL,updated_at=$7
  WHERE id=$1 AND (status='active' OR ($6 AND status='staged'))
    AND routing_epoch=$2 AND circuit_epoch=$3
    AND circuit_state='half_open' AND half_open_probe_token=$4
@@ -337,7 +336,7 @@ func (c *Coordinator) updateLegacyCredential(
 	}
 	tag, err := tx.Exec(ctx, `
 UPDATE channel_keys AS key
-   SET fail_count=$5,last_used_at=$6,cooldown_until=$7,state_epoch=$8,updated_at=NOW()
+   SET fail_count=$5,last_used_at=$6,cooldown_until=$7,state_epoch=$8,updated_at=$14
   FROM channels AS channel
  WHERE key.id=$1 AND key.channel_id=$2 AND key.status='active' AND key.state_epoch=$3
    AND key.fail_count=$4 AND key.last_used_at IS NOT DISTINCT FROM $9
@@ -349,7 +348,7 @@ UPDATE channel_keys AS key
 		request.evidence.LegacyCredentialStateRevision, current.failCount,
 		nextFailCount, nextLastUsed, nextCooldown, nextRevision, current.lastUsedAt, current.cooldownUntil,
 		request.evidence.LegacyRoutingRevision, channelCircuitRevision,
-		legacyHealthAllowsStaged(request.evidence),
+		legacyHealthAllowsStaged(request.evidence), dbNow,
 	)
 	if err != nil {
 		return "", err

@@ -22,6 +22,7 @@ import (
 type PostgresStore struct {
 	db                  db.DBQuerier
 	executionAuthorizer ExecutionModelAuthorizer
+	sourceMaterializer  SourceMaterializer
 }
 
 const (
@@ -369,6 +370,9 @@ func (s *PostgresStore) AttachExecutionReservation(
 			 WHERE job_id=$2 AND lease_fence=$3`, now.UTC(), lease.JobID, lease.Fence); err != nil {
 			return ExecutionReservation{}, false, fmt.Errorf("mediajob: accept pre-dispatch cancellation: %w", err)
 		}
+		if err := s.sourceTerminalTx(ctx, tx, lease.Scope, lease.JobID); err != nil {
+			return ExecutionReservation{}, false, err
+		}
 		if err := tx.Commit(ctx); err != nil {
 			return ExecutionReservation{}, false, fmt.Errorf("mediajob: commit cancelled dispatch: %w", err)
 		}
@@ -394,6 +398,12 @@ func (s *PostgresStore) AttachExecutionReservation(
 	}
 	if err != nil {
 		return ExecutionReservation{}, false, fmt.Errorf("mediajob: mark admitted execution running: %w", err)
+	}
+	if s.sourceMaterializer != nil {
+		captured := mediaSourceSnapshot(lease.Job, live, now)
+		if err := s.sourceStageTx(ctx, tx, lease.Job, "dispatch", &captured); err != nil {
+			return ExecutionReservation{}, false, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return ExecutionReservation{}, false, fmt.Errorf("mediajob: commit execution admission: %w", err)
@@ -677,6 +687,12 @@ func (s *PostgresStore) CreateOrGet(
 	stored, err := scanJobExact(row)
 	if err != nil {
 		return Job{}, false, fmt.Errorf("mediajob: read after create: %w", err)
+	}
+	if !reused && s.sourceMaterializer != nil {
+		captured := mediaSourceSnapshot(stored, live, stored.CreatedAt)
+		if err := s.sourceStageTx(ctx, tx, stored, "admission", &captured); err != nil {
+			return Job{}, false, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Job{}, false, fmt.Errorf("mediajob: commit create: %w", err)

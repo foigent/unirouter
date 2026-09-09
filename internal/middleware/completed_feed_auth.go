@@ -14,10 +14,11 @@ import (
 )
 
 const (
-	APIKeyPurposeXInsightFeedRead = "xinsight.feed.read"
-	APIKeyStatusFeedActive        = "feed_active"
-	APIKeyStatusFeedStaged        = "feed_staged"
-	APIKeyStatusFeedRevoked       = "feed_revoked"
+	APIKeyPurposeXInsightFeedRead   = "xinsight.feed.read"
+	APIKeyPurposeXInsightSourceRead = "xinsight.source.read"
+	APIKeyStatusFeedActive          = "feed_active"
+	APIKeyStatusFeedStaged          = "feed_staged"
+	APIKeyStatusFeedRevoked         = "feed_revoked"
 )
 
 var completedFeedAuthDenials = prometheus.NewCounterVec(prometheus.CounterOpts{

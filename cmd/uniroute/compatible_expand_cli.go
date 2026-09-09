@@ -63,7 +63,7 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 	if input.TargetVersion == "" {
 		input.TargetVersion = schemaauthority.CapabilityExpandHead
 	}
-	if input.TargetVersion != schemaauthority.CapabilityExpandHead && input.TargetVersion != schemaauthority.StreamCounterExpandHead {
+	if input.TargetVersion != schemaauthority.CapabilityExpandHead && input.TargetVersion != schemaauthority.StreamCounterExpandHead && input.TargetVersion != schemaauthority.SourceFactsExpandHead {
 		return fmt.Errorf("unknown exact expansion target")
 	}
 	dir := configuredMigrationsDir(cfg)
@@ -100,7 +100,7 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 		if err != nil {
 			return fmt.Errorf("%s support manifest: %w", host, err)
 		}
-		if input.TargetVersion == schemaauthority.StreamCounterExpandHead {
+		if input.TargetVersion == schemaauthority.StreamCounterExpandHead || input.TargetVersion == schemaauthority.SourceFactsExpandHead {
 			if err := manifest.Require(input.TargetVersion, []modelprofile.ImplementationReference{{Kind: "stream_counter", ID: metering.GatewayCounterEstimateVersionV2}, {Kind: "stream_counter", ID: metering.GatewayCounterEstimateVersionV3}}); err != nil {
 				return err
 			}
@@ -109,6 +109,11 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 			}
 		}
 		manifests[host] = manifest
+		if input.TargetVersion == schemaauthority.SourceFactsExpandHead {
+			if err := manifest.Require(input.TargetVersion, []modelprofile.ImplementationReference{{Kind: "source_facts", ID: "unirouter.source-fact.v1"}}); err != nil {
+				return err
+			}
+		}
 	}
 	preflight := func(ctx context.Context, conn *pgxpool.Conn) error {
 		var system string
@@ -123,13 +128,16 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 			return err
 		}
 		predecessor := schemaauthority.LegacyCapabilityHead
-		if input.TargetVersion == schemaauthority.StreamCounterExpandHead {
+		if input.TargetVersion == schemaauthority.StreamCounterExpandHead || input.TargetVersion == schemaauthority.SourceFactsExpandHead {
 			predecessor = schemaauthority.CapabilityExpandHead
+		}
+		if input.TargetVersion == schemaauthority.SourceFactsExpandHead {
+			predecessor = schemaauthority.StreamCounterExpandHead
 		}
 		if actual[len(actual)-1] != predecessor && actual[len(actual)-1] != input.TargetVersion {
 			return fmt.Errorf("expansion predecessor differs")
 		}
-		if input.TargetVersion == schemaauthority.StreamCounterExpandHead {
+		if input.TargetVersion == schemaauthority.StreamCounterExpandHead || input.TargetVersion == schemaauthority.SourceFactsExpandHead {
 			rows, err := conn.Query(ctx, `SELECT instance_id FROM runtime_generations WHERE state<>'stopped' AND (ingress_state<>'absent' OR lease_expires_at>clock_timestamp())`)
 			if err != nil {
 				return err
@@ -189,7 +197,7 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 	if err == nil && args[0] == "apply" {
 		err = migrate.RunCompatibleExpand(ctx, postgres.Pool, dir, migrate.CompatibleExpandHooks{Version: input.TargetVersion, ExpectedSHA256: input.MigrationDigest, Before: preflight,
 			After: func(ctx context.Context, tx pgx.Tx) error {
-				if input.TargetVersion == schemaauthority.StreamCounterExpandHead {
+				if input.TargetVersion == schemaauthority.StreamCounterExpandHead || input.TargetVersion == schemaauthority.SourceFactsExpandHead {
 					return nil
 				} // Existing actors renew against the new head; never re-bootstrap M114.
 				for _, host := range []string{"uniroute-api", "uniroute-api-canary"} {

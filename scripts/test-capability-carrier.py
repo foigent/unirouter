@@ -105,6 +105,29 @@ class CarrierTrustTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "public"):
             bridge.verify_bridge(runtime, backend, wire)
 
+    def test_source_bridge_requires_exact_head_and_each_runtime_implementation(self):
+        required = bridge.COUNTERS + [bridge.SOURCE_FACTS]
+        for missing in [None, *required, "head", "future"]:
+            with self.subTest(missing=missing):
+                manifest = {"schema_heads": list(bridge.HEADS), "implementations": list(required)}
+                if missing == "head":
+                    manifest["schema_heads"].pop()
+                elif missing == "future":
+                    manifest["schema_heads"].append("000117_unapproved")
+                elif missing is not None:
+                    manifest["implementations"].remove(missing)
+                wire = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
+                runtime = {"support_manifest_digest": hashlib.sha256(wire).hexdigest(),
+                           "supported_schema_heads": manifest["schema_heads"],
+                           "compatibility_epoch": "unirouter.runtime-compatibility.v1",
+                           "artifact_digest": "sha256:"+"a"*64}
+                backend = {"Image": runtime["artifact_digest"], "HostConfig": {"PortBindings": {}}}
+                if missing is None:
+                    bridge.verify_bridge(runtime, backend, wire, bridge.HEADS[3])
+                else:
+                    with self.assertRaises(RuntimeError):
+                        bridge.verify_bridge(runtime, backend, wire, bridge.HEADS[3])
+
 
 if __name__ == "__main__":
     unittest.main()

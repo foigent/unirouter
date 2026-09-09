@@ -47,8 +47,8 @@ func TestBuildHasStableSemanticScopeAndVariableArtifactIdentity(t *testing.T) {
 	if first.Summary.ReviewRequiredCount != 0 || first.Summary.ProtectedCount != len(protectedTables) {
 		t.Fatalf("unexpected classification summary: %+v", first.Summary)
 	}
-	if first.Summary.TableCount != 130 || first.Summary.ResetCandidateCount != 113 ||
-		first.Summary.ProtectedCount != 15 || first.Summary.ProtectedPartialCount != 1 ||
+	if first.Summary.TableCount != 135 || first.Summary.ResetCandidateCount != 113 ||
+		first.Summary.ProtectedCount != 20 || first.Summary.ProtectedPartialCount != 1 ||
 		first.Summary.SchemaLedgerCount != 1 {
 		t.Fatalf("reset classification cardinality drifted: %+v", first.Summary)
 	}
@@ -93,7 +93,7 @@ func TestBuildSupportsExactCurrentSchemaAndRejectsPreviousOrFutureMax(t *testing
 	if got := plan.Schema.MigrationVersions[len(plan.Schema.MigrationVersions)-1]; got != schemaauthority.LatestSupportedMigration {
 		t.Fatalf("latest migration = %q, want %q", got, schemaauthority.LatestSupportedMigration)
 	}
-	if plan.Summary.TableCount != 130 || plan.Summary.ResetCandidateCount != 113 || plan.Summary.ReviewRequiredCount != 0 {
+	if plan.Summary.TableCount != 135 || plan.Summary.ResetCandidateCount != 113 || plan.Summary.ReviewRequiredCount != 0 {
 		t.Fatalf("current schema changed reviewed table classification: %+v", plan.Summary)
 	}
 	if plan.Schema.TriggerCount != len(resetDeleteTriggers)+6 {
@@ -357,6 +357,39 @@ func TestEveryCurrentMigrationTableHasAnExplicitResetClassification(t *testing.T
 	sort.Strings(unknown)
 	if len(unknown) != 0 {
 		t.Fatalf("migration tables missing explicit reset classification: %v", unknown)
+	}
+}
+
+func TestSourceFactsDataCannotEnterTheExistingResetErasureScope(t *testing.T) {
+	for _, name := range []string{"execution_source_acknowledgements", "execution_source_connections", "execution_source_credentials", "execution_source_facts", "execution_source_streams"} {
+		t.Run(name, func(t *testing.T) {
+			snapshot := completeSnapshot()
+			for index := range snapshot.Tables {
+				if snapshot.Tables[index].Name == name {
+					snapshot.Tables[index].RowCount = 1
+				}
+			}
+			for index := range snapshot.Protected.Tables {
+				if snapshot.Protected.Tables[index].Name == name {
+					snapshot.Protected.Tables[index].RowCount = 1
+				}
+			}
+			plan, err := Build(snapshot, testTarget(), "source-a", "source-b", time.Unix(0, 0))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if plan.ScopeComplete || plan.Summary.ReviewRequiredCount != 1 || plan.ActionAuthorized || plan.MutationPerformed {
+				t.Fatalf("source data entered reset authority: %+v", plan.Summary)
+			}
+			for _, table := range plan.Tables {
+				if table.Name == name && (table.Action != ActionPreserveAll || table.ExpectedDeletedRows != 0 || table.ExpectedRetainedRows != 1) {
+					t.Fatalf("source evidence not retained: %+v", table)
+				}
+			}
+			if err := Validate(plan); err == nil {
+				t.Fatal("incomplete source reset scope passed apply validation")
+			}
+		})
 	}
 }
 

@@ -1046,6 +1046,40 @@ func TestLoad_InvalidGuardrailPolicyQuotaFailsClosed(t *testing.T) {
 	}
 }
 
+func TestLoadSourceFactsRequiresOwnEnablementAndStableProducer(t *testing.T) {
+	for _, tc := range []struct {
+		enabled, source string
+		valid           bool
+	}{
+		{"false", "", true}, {"true", "", false}, {"true", "contains whitespace", false},
+		{"true", "synthetic.unirouter:stable-1", true},
+		{"yes", "synthetic.unirouter:stable-1", false},
+		{"TRUE", "synthetic.unirouter:stable-1", false},
+	} {
+		t.Run(tc.enabled+"/"+tc.source, func(t *testing.T) {
+			t.Setenv("JWT_SECRET", "jwt-secret")
+			t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
+			t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+			t.Setenv("COMPLETED_EXECUTION_FEED_ENABLED", "false")
+			t.Setenv("SOURCE_FACTS_ENABLED", tc.enabled)
+			t.Setenv("COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE", tc.source)
+			cfg, err := Load()
+			if !tc.valid {
+				if err == nil {
+					t.Fatal("invalid source identity was accepted")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.SourceFactsEnabled != (tc.enabled == "true") || cfg.CompletedExecutionFeedEnabled {
+				t.Fatal("source and I-01 enablement were conflated")
+			}
+		})
+	}
+}
+
 func TestLoadCompletedExecutionFeedRequiresStableSourceIdentity(t *testing.T) {
 	for _, test := range []struct {
 		name   string
@@ -1341,7 +1375,7 @@ func TestLoad_Defaults(t *testing.T) {
 		"GUARDRAIL_ORG_ACTIVE_POLICY_LIMIT", "GUARDRAIL_PLATFORM_ACTIVE_POLICY_LIMIT", "GUARDRAIL_CACHED_POLICY_LIMIT", "GUARDRAIL_CACHED_TENANT_LIMIT",
 		"RUNTIME_ENVIRONMENT", "RUNTIME_DEPLOYMENT_MODE", "MODEL_ROUTE_AUTHORITY", "MODEL_ROUTE_COMPATIBILITY_ENABLED", "TRUSTED_PROXY_CIDRS",
 		"RUNTIME_DEPLOYMENT_ROLE", "RUNTIME_VERSION", "RUNTIME_COMMIT", "PROMETHEUS_URL", "GRAFANA_URL",
-		"COMPLETED_EXECUTION_FEED_ENABLED", "COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE", "COMPLETED_EXECUTION_FEED_REFERENCE_MODE",
+		"COMPLETED_EXECUTION_FEED_ENABLED", "COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE", "COMPLETED_EXECUTION_FEED_REFERENCE_MODE", "SOURCE_FACTS_ENABLED",
 		"XINSIGHT_CONNECTOR_AGENT_ENABLED", "XINSIGHT_CONNECTOR_CONTROL_ORIGIN", "XINSIGHT_CONNECTOR_POLL_MILLISECONDS",
 		"XINSIGHT_CONNECTOR_REQUEST_TIMEOUT_MILLISECONDS", "XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON",
 		"LICENSE_PUBLIC_KEY", "LICENSE_PUBLIC_KEYS", "LICENSE_DEPLOYMENT_ID", "LICENSE_EXPIRY_WARNING_DAYS", "LICENSE_REFRESH_SECONDS", "UPGRADE_PUBLIC_KEYS", "BILLING_MODE", "REQUEST_PRICING_AUTHORITY", "MIN_FREEZE_AMOUNT", "FREEZE_SAFETY_FACTOR", "DEFAULT_KEY_RPM", "DEFAULT_KEY_QPS",

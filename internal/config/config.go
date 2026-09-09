@@ -89,6 +89,7 @@ type Config struct {
 	PrometheusURL                        string
 	GrafanaURL                           string
 	CompletedExecutionFeedEnabled        bool
+	SourceFactsEnabled                   bool
 	CompletedExecutionFeedSourceInstance string
 	CompletedExecutionFeedReferenceMode  string
 	// The Connector agent is an optional product-local control-plane client.
@@ -517,7 +518,7 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("OIDC_DEFAULT_ORG_ID must be set when OIDC auto provisioning is enabled")
 		}
 	}
-	if c.CompletedExecutionFeedEnabled {
+	if c.CompletedExecutionFeedEnabled || c.SourceFactsEnabled {
 		if !completedExecutionSourceInstancePattern.MatchString(c.CompletedExecutionFeedSourceInstance) {
 			return fmt.Errorf("COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE must use 1-128 letters, numbers, dot, underscore, colon, or dash")
 		}
@@ -672,6 +673,10 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	sourceFactsEnabled, err := getEnvBoolStrict("SOURCE_FACTS_ENABLED", false)
+	if err != nil {
+		return nil, err
+	}
 	xInsightConnectorPollMilliseconds, err := getEnvIntStrict(
 		"XINSIGHT_CONNECTOR_POLL_MILLISECONDS", XInsightConnectorDefaultPollMilliseconds,
 	)
@@ -739,6 +744,7 @@ func Load() (*Config, error) {
 		PrometheusURL:                        strings.TrimRight(getEnvStr("PROMETHEUS_URL", ""), "/"),
 		GrafanaURL:                           strings.TrimRight(getEnvStr("GRAFANA_URL", ""), "/"),
 		CompletedExecutionFeedEnabled:        getEnvBool("COMPLETED_EXECUTION_FEED_ENABLED", false),
+		SourceFactsEnabled:                   sourceFactsEnabled,
 		CompletedExecutionFeedSourceInstance: strings.TrimSpace(getEnvStr("COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE", "")),
 		CompletedExecutionFeedReferenceMode: getEnvStr(
 			"COMPLETED_EXECUTION_FEED_REFERENCE_MODE",

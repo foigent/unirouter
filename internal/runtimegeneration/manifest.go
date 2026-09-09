@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	sourceassets "github.com/uniroute/unirouter/contracts/source-facts/v1"
 	"slices"
 	"strings"
 
@@ -37,6 +38,7 @@ func CurrentManifest(schemaHeads []string) Manifest {
 	implementations := modelprofile.Implementations()
 	implementations = append(implementations, modelcapabilityqualification.ProbeImplementations()...)
 	implementations = append(implementations,
+		modelprofile.ImplementationReference{Kind: "source_facts", ID: sourceassets.SchemaVersion},
 		modelprofile.ImplementationReference{Kind: "stream_counter", ID: metering.GatewayCounterEstimateVersionV2},
 		modelprofile.ImplementationReference{Kind: "stream_counter", ID: metering.GatewayCounterEstimateVersionV3},
 		modelprofile.ImplementationReference{Kind: "capability_projection", ID: publication.ProjectionSchemaV2},

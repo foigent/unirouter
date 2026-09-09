@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Finite M113/M114/M115 dev/test bridge owner; does not roll containers or publish data.
+"""Finite M113/M114/M115/M116 dev/test bridge owner; does not roll containers or publish data.
 
 Run on the verified Target after storage/backup and both bridge rollouts. The
 installed ingress lock excludes the ordinary controller for the whole check/apply.
@@ -20,17 +20,19 @@ sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location("runtime_ingress", Path(__file__).with_name("runtime-ingress.py"))
 ingress = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ingress)
-HEADS = ["000113_glm_stream_function_tools_qualification", "000114_capability_delivery_expand", "000115_stream_counter_version"]
+HEADS = ["000113_glm_stream_function_tools_qualification", "000114_capability_delivery_expand", "000115_stream_counter_version", "000116_execution_source_facts"]
 COUNTERS = [{"kind": "stream_counter", "id": "unirouter.stream-counter.v2"}, {"kind": "stream_counter", "id": "unirouter.stream-counter.v3"}]
+SOURCE_FACTS = {"kind": "source_facts", "id": "unirouter.source-fact.v1"}
 
 
 def verify_bridge(runtime, backend, manifest_wire, target_version=HEADS[1]):
     manifest = json.loads(manifest_wire)
     canonical = json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
     if (canonical != manifest_wire.strip() or hashlib.sha256(canonical).hexdigest() != runtime.get("support_manifest_digest")
-            or manifest.get("schema_heads") not in (HEADS[:2], HEADS) or runtime.get("supported_schema_heads") != manifest.get("schema_heads")
+            or manifest.get("schema_heads") not in (HEADS[:2], HEADS[:3], HEADS) or runtime.get("supported_schema_heads") != manifest.get("schema_heads")
             or target_version not in manifest.get("schema_heads", [])
-            or (target_version == HEADS[2] and any(ref not in manifest.get("implementations", []) for ref in COUNTERS))
+            or (target_version in HEADS[2:] and any(ref not in manifest.get("implementations", []) for ref in COUNTERS))
+            or (target_version == HEADS[3] and SOURCE_FACTS not in manifest.get("implementations", []))
             or runtime.get("compatibility_epoch") != "unirouter.runtime-compatibility.v1"
             or runtime.get("artifact_digest") != backend["Image"]):
         raise RuntimeError("running image/support manifest does not match the exact bridge")
@@ -112,7 +114,7 @@ def main():
             backends[host] = backend
             fleet[host] = before["health"][role]
             manifests[host] = json.loads(manifest)
-        if args.target_version == HEADS[2]:
+        if args.target_version in HEADS[2:]:
             verify_recovery_process_inventory(backends)
         document = {"target_version": args.target_version, "environment": args.environment, "system_identifier": args.expected_system_identifier,
                     "migration_digest": args.migration_digest, "fleet": fleet, "support_manifests": manifests}

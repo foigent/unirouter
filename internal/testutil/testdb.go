@@ -308,7 +308,7 @@ func runStrictTestArtifactInstall(ctx context.Context, pool *pgxpool.Pool, migra
 	}
 	// This test-only caller owns an isolated database with no serving fleet.
 	// Exercise the same explicit expand owner; ordinary startup cannot apply it.
-	for _, expandVersion := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead} {
+	for _, expandVersion := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead} {
 		present := false
 		for _, version := range artifactLedger {
 			if version == expandVersion {
@@ -361,11 +361,28 @@ func InstallExactTestArtifact(ctx context.Context, pool *pgxpool.Pool, migration
 // M100 schema ceiling. Every guarded down migration runs only when that exact
 // ledger entry is present; production recovery continues to require the
 // supported migration or Publication V1 owner path.
+// RewindEmptySourceFactsForLegacyTest restores the real M115 predecessor using
+// the guarded product rollback. A data-bearing test cannot erase source evidence.
+func RewindEmptySourceFactsForLegacyTest(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
+	const version = "000116_execution_source_facts"
+	var applied bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, version).Scan(&applied); err != nil || !applied {
+		return err
+	}
+	wire, err := os.ReadFile(filepath.Join(migrationsDir, version+".down.sql"))
+	if err != nil {
+		return err
+	}
+	_, err = pool.Exec(ctx, string(wire))
+	return err
+}
+
 func RewindCapabilityPublicationsForLegacyMigrationTest(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
 	for _, rollback := range []struct {
 		migrationID string
 		kind        string
 	}{
+		{migrationID: "000116_execution_source_facts", kind: "empty source facts expand test artifact"},
 		{migrationID: "000115_stream_counter_version", kind: "empty stream counter expand test artifact"},
 		{migrationID: "000114_capability_delivery_expand", kind: "empty compatible expand test artifact"},
 		{migrationID: "000113_glm_stream_function_tools_qualification", kind: "capability publication test artifact"},
