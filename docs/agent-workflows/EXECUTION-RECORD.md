@@ -19,7 +19,7 @@ original boundaries; no repeated user approval is required for covered actions.
 No XI contact, real Provider/credential/traffic, push, merge, release or deployment.
 
 B's implemented core and bounded cross-package regression have passed. D is
-now implemented in a first uncommitted candidate: M118 transactional coverage
+implemented in the local candidate: M118 transactional coverage
 certification, project budget revision history, independent D scopes, explicit
 enterprise project bindings, and catalog/current/alert snapshot readers. This
 is ongoing implementation, not complete B/D/X acceptance. The A relative 5%
@@ -82,7 +82,28 @@ those attempts were never recorded as delivered. The exact prior user approval
 of network actions plus bidirectional reporting was then verified in this task's
 original record; same-channel re-review passed and reporting resumed. Covered
 actions continue under that authorization, without another user approval.
-Code review, reviewed-source ASUS validation and overall acceptance remain.
+The one source closing review of `d60b833d95beccc4ee7fd1081a0906654f40079c`
+found one product blocker, BD-CLOSE-01: an empty enterprise project allocation
+slice incorrectly skipped the original run's currency/scale check. The repair
+always checks run units and only conditions per-row checks on row presence.
+The original admin Draft/Approve/AllocationRun and actual source read reproduce
+both wrong-scale and wrong-currency zero cases on the preserved original code;
+the repair passes both and the matching-unit exact-zero control. Evidence:
+`bd-close-01-before-v4-race.log`, `bd-close-01-fixed-v1-race.log`, and
+`bd-close-01-source-full-race.log`. Earlier test-input failures are retained.
+
+The CI group count is 17 initially passing packages plus the two repaired reset
+packages, not 18 initially passing. The three separately selected Redis gates
+now pass against the current M118 candidate in `dispatch-agentcap-ci-v1-race.log`,
+`dispatch-limitpolicy-ci-v1-race.log`, and
+`dispatch-workloadadmission-ci-v1-race.log`. The performance executable is
+byte-identical to exact d60 plus its original two test overlays; the binding is
+in `perf-d60b833d-source-binding.json`, without rerunning the benchmark.
+The closing review accepts the bounded dispatch-contention repair while keeping
+mixed-error groups as FAIL. Further latency and optional-capture optimization
+is deferred; this is not a performance pass or an ASUS/overall-acceptance waiver.
+Only the repair delta review, reviewed-source ASUS validation and overall
+acceptance remain. The d60 archive is preserved and must not be transferred.
 The model-adaptation lesson admission criteria were checked; no applicable new
 model/provider invariant was introduced, so the experience file needs no change.
 

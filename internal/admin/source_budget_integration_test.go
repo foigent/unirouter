@@ -407,6 +407,81 @@ func TestSourceBudgetOriginalEnterpriseFlowAndDRevocationPreserveABIntegration(t
 	require.Zero(t, charges, "D never creates a second financial charge")
 }
 
+func TestSourceBudgetOriginalEnterpriseEmptyProjectSlicePreservesRunUnitsIntegration(t *testing.T) {
+	f := newSourceControlFixture(t)
+	ctx := t.Context()
+	enableSourceBudgetFixture(t, &f)
+	profiles := sourcefacts.BudgetProfiles()
+	slices.Sort(profiles)
+	reg, token := f.registration(t, "D-empty-project-units", profiles)
+	key := f.control(t, "prepare", map[string]any{"allowed_ip": "127.0.0.1/32", "registration": reg}, 200)
+	f.control(t, "activate", map[string]any{"credential_id": key["credential_id"]}, 200)
+	f.control(t, "resume", map[string]any{}, 200)
+	post := func(t *testing.T, handler http.HandlerFunc, body any, actor int64, role string, pathValues map[string]string, status int) {
+		t.Helper()
+		wire, err := json.Marshal(body)
+		require.NoError(t, err)
+		r := apiKeyIntegrationRequest(t, f.pool, "POST", "/api/v1/enterprise-finance/synthetic", string(wire), actor, f.orgID, role, "D-empty-project-operation")
+		for k, v := range pathValues {
+			r.SetPathValue(k, v)
+		}
+		w := httptest.NewRecorder()
+		handler(w, r)
+		require.Equal(t, status, w.Code, w.Body.String())
+	}
+	var checker int64
+	require.NoError(t, f.pool.QueryRow(ctx, `INSERT INTO users(org_id,username,password_hash,role,status) VALUES($1,'D-empty-project-checker','synthetic-hash','billing_admin','active') RETURNING id`, f.orgID).Scan(&checker))
+	now := time.Now().UTC()
+	start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	post(t, f.handler.CreateEnterpriseFiscalPeriod, map[string]any{"org_id": f.orgID, "period_ref": "D-empty-period", "start_at": start, "end_at": start.AddDate(0, 1, 0)}, f.actorID, auth.RolePlatformAdmin, nil, 201)
+	// A nonempty, fully allocated original run whose only result belongs to
+	// another target provides an actual empty project slice, not a fake run.
+	_, err := f.pool.Exec(ctx, `INSERT INTO call_logs(request_id,org_id,project_id,cost_micros,created_at) VALUES('D-empty-other-source',$1,$2,1000000,$3)`, f.orgID, f.projectID, now)
+	require.NoError(t, err)
+	post(t, f.handler.CreateEnterpriseAllocationRun, map[string]any{"org_id": f.orgID, "allocation_run_ref": "D-empty-original-run", "fiscal_period_ref": "D-empty-period", "source_revision": "synthetic-empty-source-revision", "rule_set_ref": "D-empty-rules", "rule_set_revision": "1", "results": []any{
+		map[string]any{"request_ref": "D-empty-other-source", "target": map[string]any{"kind": "cost_center", "ref": "other-private-scope"}, "state": "direct", "amount": map[string]any{"value_minor": "1000000", "currency": "CNY", "scale": 1000000}},
+	}}, checker, auth.RoleBillingAdmin, nil, 201)
+	var currency string
+	var scale, projectRows int64
+	require.NoError(t, f.pool.QueryRow(ctx, `SELECT currency,amount_scale FROM enterprise_finance_allocation_runs WHERE org_id=$1 AND allocation_run_ref='D-empty-original-run'`, f.orgID).Scan(&currency, &scale))
+	require.Equal(t, "CNY", currency)
+	require.EqualValues(t, 1000000, scale)
+	require.NoError(t, f.pool.QueryRow(ctx, `SELECT count(*) FROM enterprise_finance_allocation_results WHERE org_id=$1 AND target_kind='project'`, f.orgID).Scan(&projectRows))
+	require.Zero(t, projectRows)
+	for _, tc := range []struct {
+		name, currency string
+		scale          int64
+		mismatch       bool
+	}{
+		{"matching-zero", "CNY", 1000000, false},
+		{"scale-mismatch-zero", "CNY", 100, true},
+		{"currency-mismatch-zero", "USD", 1000000, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ref := "D-empty-" + tc.name
+			scope := "empty-project-" + tc.name
+			post(t, f.handler.CreateEnterpriseBudgetDraft, map[string]any{"org_id": f.orgID, "budget_ref": ref, "scope": map[string]any{"kind": "project", "ref": scope}, "fiscal_period_ref": "D-empty-period", "amount": map[string]any{"value_minor": "1000", "currency": tc.currency, "scale": tc.scale}}, f.actorID, auth.RolePlatformAdmin, nil, 201)
+			post(t, f.handler.ApproveEnterpriseBudget, map[string]any{"org_id": f.orgID, "expected_version": 1}, checker, auth.RoleBillingAdmin, map[string]string{"budget_ref": ref}, 200)
+			post(t, f.handler.SetSourceBudgetBinding, map[string]any{"org_id": f.orgID, "project_id": f.projectID, "scope_kind": "project", "scope_ref": scope, "expected_revision": "0", "status": "active"}, checker, auth.RoleBillingAdmin, nil, 200)
+			wire := f.read(t, token, sourceBudgetPath+"/current?budget_ref=enterprise-budget:"+ref, "127.0.0.1:2000", 200)
+			summary := sourceBudgetBody(t, wire, sourcefacts.BudgetSummaryProfile)
+			comparison := summary["comparison"].(map[string]any)
+			if tc.mismatch {
+				require.Equal(t, "unit_mismatch", summary["coverage"].(map[string]any)["state"])
+				require.Equal(t, "unit_mismatch", comparison["state"])
+				require.NotContains(t, summary, "known_subtotal")
+				require.NotContains(t, comparison, "remaining")
+			} else {
+				require.Equal(t, "exact", summary["coverage"].(map[string]any)["state"])
+				require.Equal(t, "comparable", comparison["state"])
+				require.Equal(t, map[string]any{"value_minor": "0", "currency": "CNY", "scale": "1000000"}, summary["known_subtotal"])
+				require.Equal(t, map[string]any{"value_minor": "1000", "currency": "CNY", "scale": "1000000"}, comparison["remaining"])
+			}
+			require.NotContains(t, wire.Body.String(), "other-private-scope")
+		})
+	}
+}
+
 func exportSourceBudgetSample(t *testing.T, wire []byte) {
 	t.Helper()
 	directory := os.Getenv("SOURCE_BUDGET_EXPORT_DIR")

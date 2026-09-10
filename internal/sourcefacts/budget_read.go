@@ -157,7 +157,10 @@ func enterpriseBudgetSummaryTx(ctx context.Context, tx pgx.Tx, a budgetAccess, r
 	if err != nil {
 		return result, err
 	}
-	if count > 0 && (minCurrency != maxCurrency || minScale != maxScale || minCurrency != d.Amount.Currency || strconv.FormatInt(minScale, 10) != d.Amount.Scale || currency != d.Amount.Currency || strconv.FormatInt(scale, 10) != d.Amount.Scale) {
+	// An empty project slice is still denominated in the allocation run's
+	// unit. Only the per-row checks require at least one project result.
+	if currency != d.Amount.Currency || strconv.FormatInt(scale, 10) != d.Amount.Scale ||
+		(count > 0 && (minCurrency != maxCurrency || minScale != maxScale || minCurrency != d.Amount.Currency || strconv.FormatInt(minScale, 10) != d.Amount.Scale)) {
 		result.Coverage.State = "unit_mismatch"
 		result.Coverage.Reasons = []string{"unit_mismatch"}
 		result.Comparison = BudgetComparison{State: "unit_mismatch"}
