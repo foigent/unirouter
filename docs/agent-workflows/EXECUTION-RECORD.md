@@ -1,5 +1,38 @@
 # Current Execution Record
 
+## Test preparation and handoff optimization — 2026-09-11
+
+User authorized implementation of the execution-efficiency improvements. Isolated
+worktree: `/private/tmp/unirouter-test-preparation-20260911`, based on accepted
+product `59f7712d09653034756b846b15b8d69a16782791`. Original source and evidence
+remain unchanged. UR A/B/D/X Local independent acceptance is complete; the
+September 10 pending entries below are historical checkpoints.
+
+Scope: reuse the five original backend integration selector groups between CI
+and local execution, retain compact structured evidence, absorb the accepted
+Docker logging fixture correction, and consolidate exact dependencies and reuse
+boundaries in [LOCAL-TEST-REUSE.md](LOCAL-TEST-REUSE.md). No runtime/migration,
+required-test reduction, new environment operation or product version change.
+Validation: 71 existing rollout/carrier regressions pass, including the added
+logging/2100-second-grace negative cases; 7 offline runner tests and 4 summary
+tests pass. Exact old/new Go argv comparison against 59 preserves all five groups
+(19/2/1/1/1 packages), selectors and flags. Proof:
+`/private/tmp/ur-test-preparation-selector-parity.json`.
+Logs: `/private/tmp/ur-test-preparation-rollout.log`,
+`/private/tmp/ur-test-preparation-runner-final.log`,
+`/private/tmp/ur-test-preparation-summary-final.log`.
+Real Go 1.25.12 JSON smoke evidence in `/private/tmp/ur-go-summary-real-979ckeqf`
+correctly counts pass/skip and propagates an intentional failure. An initial
+tool-only smoke selected base Go 1.24.3 under `GOTOOLCHAIN=local` and refused
+go.mod before execution; retained at
+`/var/folders/48/r2my3shx3yqb_v8ngzvygg8m0000gn/T/ur-go-summary-real-sfy19fg3`.
+The runner now checks go.mod/toolchain compatibility offline before tests.
+Actual local configuration-only preflight and Python/jsonschema dependency
+readback passed; shell syntax and whitespace checks passed. The original final
+acceptance SHA and referenced indices were verified. No full product/ASUS suite
+or remote CI was rerun for this internal-tool change; original product acceptance
+retains its exact 59 identity and limitations. Experience file: no change needed.
+
 ## Active local delivery — UR B/D/X after accepted A — 2026-09-10
 
 The coordinator independently accepted complete UR-A Local at

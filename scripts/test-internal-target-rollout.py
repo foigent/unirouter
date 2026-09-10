@@ -970,6 +970,22 @@ class ArtifactOwnerReadFixtureTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,"exact M117/M118"):
                 self.load_carrier().carrier_read_ledgers(Path(root))
 
+    def test_carrier_logging_and_grace_match_actual_daemon_configuration(self):
+        backend=self.load_carrier().carrier_compose("synthetic-image",Path("/release"))["services"]["backend"]
+        service,container,image=fixture()
+        service["logging"]=backend["logging"]
+        service["stop_grace_period"]=backend["stop_grace_period"]
+        container["HostConfig"]["LogConfig"]={"Type":"local","Config":{"max-size":"10m","max-file":"3"}}
+        rollout.check_service(service,container,image,"unirouter")
+        # Reproduce both setup regressions against the unchanged product checker.
+        container["Config"]["StopTimeout"]=40
+        with self.assertRaisesRegex(RuntimeError,"stop grace"):
+            rollout.check_service(service,container,image,"unirouter")
+        container["Config"]["StopTimeout"]=2100
+        del service["logging"]
+        with self.assertRaisesRegex(RuntimeError,"logging"):
+            rollout.check_service(service,container,image,"unirouter")
+
 
 if __name__ == "__main__":
     unittest.main()

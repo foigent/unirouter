@@ -30,6 +30,21 @@ def carrier_read_ledgers(migrations):
     return [("bridge",versions[:-1]),("current",versions)]
 
 
+def carrier_compose(image, repo):
+    return {"services": {
+        "db": {"image":"postgres:16-alpine", "environment":{"POSTGRES_PASSWORD":"owner-fixture-only"},
+               "tmpfs":["/var/lib/postgresql/data"]},
+        "backend": {"image":image, "command":["./uniroute"], "restart":"always", "stop_grace_period":"35m",
+            "logging":{"driver":"local","options":{"max-size":"10m","max-file":"3"}},
+            "ports":[{"target":8080,"published":"18080","host_ip":"127.0.0.1"}],
+            "volumes":[{"type":"bind","source":str(repo / "migrations"),"target":"/app/migrations","read_only":True}],
+            "environment":{"RUNTIME_ENVIRONMENT":"test", "DB_DSN":"postgres://postgres:owner-fixture-only@db:5432/postgres?sslmode=disable",
+                "JWT_SECRET":"ci-jwt-secret-0123456789abcdef0123456789abcdef",
+                "API_KEY_HASH_SECRET":"ci-api-key-hash-0123456789abcdef0123456789abcdef",
+                "ENCRYPTION_KEY":"0123456789abcdef0123456789abcdef",
+                "UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET":"0123456789abcdef0123456789abcdef"}}}}
+
+
 def main():
     if os.environ.get("CI") != "true":
         raise RuntimeError("this isolated Docker fixture is CI-only")
@@ -43,17 +58,7 @@ def main():
         root = Path(tmp).resolve()
         env = root / "fixture.env"
         env.write_text("")
-        base = {"services": {
-            "db": {"image":"postgres:16-alpine", "environment":{"POSTGRES_PASSWORD":"owner-fixture-only"},
-                   "tmpfs":["/var/lib/postgresql/data"]},
-            "backend": {"image":args.image, "command":["./uniroute"], "restart":"always", "stop_grace_period":"35m",
-                "ports":[{"target":8080,"published":"18080","host_ip":"127.0.0.1"}],
-                "volumes":[{"type":"bind","source":str(repo / "migrations"),"target":"/app/migrations","read_only":True}],
-                "environment":{"RUNTIME_ENVIRONMENT":"test", "DB_DSN":"postgres://postgres:owner-fixture-only@db:5432/postgres?sslmode=disable",
-                    "JWT_SECRET":"ci-jwt-secret-0123456789abcdef0123456789abcdef",
-                    "API_KEY_HASH_SECRET":"ci-api-key-hash-0123456789abcdef0123456789abcdef",
-                    "ENCRYPTION_KEY":"0123456789abcdef0123456789abcdef",
-                    "UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET":"0123456789abcdef0123456789abcdef"}}}}
+        base = carrier_compose(args.image, repo)
         paths = [root / ("compose-"+str(i)+".json") for i in range(5)]
         for i,p in enumerate(paths): p.write_text(json.dumps(base if i==0 else {"services":{}}))
         compose = ["docker","compose","--project-name",project,"--env-file",str(env)]

@@ -1,5 +1,16 @@
 # UniRouter Current Status
 
+## UR A/B/D/X Local accepted; internal test workflow optimization — 2026-09-11
+
+Independent overall Local acceptance is complete for product commit
+`59f7712d09653034756b846b15b8d69a16782791`, tree
+`ab09c48939539a10dbb039814489d764c0b53ca5`, version 1.4.0.
+The September 10 active/pending entries below are historical checkpoints.
+Performance/optional-observation gaps and unsupported successful M118 reset remain;
+no release, remote CI/exact-main, real XI or parent-platform acceptance is claimed.
+The separately authorized September 11 work changes internal tests and handoff only.
+[Current evidence, dependencies and reusable entrypoints](../agent-workflows/LOCAL-TEST-REUSE.md).
+
 ## UR-A Local accepted; B/D/X implementation active — 2026-09-10
 
 The isolated work-facts candidate 1.3.0 at `25f5c1fdfb6b` received complete

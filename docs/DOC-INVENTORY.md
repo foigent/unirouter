@@ -280,6 +280,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | File | Role |
 |------|------|
 | `docs/agent-workflows/README.md` | Agent workflow index |
+| `docs/agent-workflows/LOCAL-TEST-REUSE.md` | Shared local/CI test entrypoint, concrete fixture preparation, exact dependencies and evidence reuse |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Current Agent Protocol v2.3; apply root AGENTS.md review triggers |
 | `docs/agent-workflows/EXECUTION-RECORD.md` | Active delivery scope and authority, followed by dated historical records; do not infer current scope from an old checkpoint |
 | `docs/agent-workflows/reviews/README.md` | Independent review naming, contents and severity rules |
