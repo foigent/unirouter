@@ -107,6 +107,39 @@ acceptance remain. The d60 archive is preserved and must not be transferred.
 The model-adaptation lesson admission criteria were checked; no applicable new
 model/provider invariant was introduced, so the experience file needs no change.
 
+### ASUS compatibility repair after source release — 2026-09-11
+
+The coordinator accepted the exact 8e4af934 repair and released its source to
+ASUS. The original Linux build helper produced backend image `sha256:9a04691bf81f8a09a2726ce0adce7f09f0f1e09298ffda103cfb944cf68acd98`.
+Full M116 and M118 installations, source/media/admin/main race selections,
+canonical lifecycle and actual PostgreSQL 16 backup/restore passed. The original
+Docker-context CI body and rollout/ingress tests passed locally; the real owner
+carrier used the same previously reviewed one-line explicit logging fixture.
+It proves M117/M118 read carriers only; complete installation has separate proof.
+
+The original M117 controller check then exposed a real blocker on the retained
+M116 database: supported expired/absent identities left after a process restart
+were required to match the two current receivers. Batch 08 proves the actual
+CLI refusal with exact compact JSON, unchanged database/schema/sequences and
+only two current host processes. Earlier stop-grace and diagnostic-serialization
+fixture mistakes are preserved separately. No historical identity was rewritten
+to force success. Every completed N1 batch restored task networking and stopped
+containers, PostgreSQL and the dedicated WSL normally.
+
+The coordinator's `BD-compatible-upgrade-review-8e4af934.json` accepted the
+bounded repair before coding. Live or ingress-associated extra identities still
+refuse; only expired/absent historical identities may use their own verified
+canonical manifest and complete target requirements, including both counters,
+source facts/observations/dispatch and M118 budget/journal. The migration bytes,
+locks, Renew/bootstrap and host process inventory remain unchanged. This is not
+retirement of unsupported identities or a new general upgrade lifecycle.
+The fix and read-only/negative tests pass locally in
+`compatible-recovery-fixed-v1-race.log`. New exact source/image validation and
+retained-database M116→M117→M118 completion remain required before full delivery.
+ASUS evidence is under `/private/tmp/ur-asus-a11-20260910`; the original performance
+HTTP files now have a compact measurement index in
+`dispatch-consumer-measurements-extracted-v1.json`, without rerunning benchmarks.
+
 New D evidence in `/private/tmp/ur-bd-workfacts-20260910`:
 - `source-d-m118-certificate-v2-race.log`: M118 fails/rolls back without a
   support certificate; exact ledger proof, atomic revisions, no-op/rollback,

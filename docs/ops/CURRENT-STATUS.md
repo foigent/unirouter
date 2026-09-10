@@ -5,7 +5,7 @@
 The isolated work-facts candidate 1.3.0 at `25f5c1fdfb6b` received complete
 independent UR-A Local acceptance, including actual ASUS-hosted Linux/amd64
 Docker/Compose, migrations, permissions and recovery. The accepted B/D v2 design
-is now implemented as an uncommitted 1.4.0 candidate in
+is now implemented as a 1.4.0 local candidate in
 `/private/tmp/unirouter-workfacts-20260909`; local contract, authorization,
 actual backup/restore, source/budget management browser and broad regressions
 have passed after fixes. Concurrent testing found a validated B/BD blocker:
@@ -19,7 +19,12 @@ original concurrency failures and optional observation gaps remain explicit.
 M118 has no successful reset lifecycle: read-only diagnostics remain available,
 but incomplete plans cannot be loaded for execution or applied. Historical
 A/M116 reset evidence and current M118 refusal evidence are separate.
-Packaging, reviewed ASUS and overall acceptance remain active.
+The reviewed 8e4af934 source passed Linux image builds, complete M116/M118
+installation, actual PostgreSQL restore and local Docker-context checks. A real
+ASUS M117 preflight then rejected supported historical instances after restart.
+The independently reviewed bounded repair preserves live fleet and full manifest
+gates; new exact image and retained-database upgrade checks remain active.
+Overall B/D/X acceptance is still pending.
 No B/D acceptance, GitHub CI, XI integration, Target or Production success is
 claimed. The accepted A performance limitations remain in force.
 [Current scope, exact evidence and continuation](../agent-workflows/EXECUTION-RECORD.md).

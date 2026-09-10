@@ -154,28 +154,7 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 			return fmt.Errorf("expansion predecessor differs")
 		}
 		if input.TargetVersion == schemaauthority.StreamCounterExpandHead || (input.TargetVersion == schemaauthority.SourceFactsExpandHead || (input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead)) {
-			inventory := `SELECT instance_id FROM runtime_generations WHERE state<>'stopped' AND (ingress_state<>'absent' OR lease_expires_at>clock_timestamp())`
-			if input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead {
-				inventory = `SELECT instance_id FROM runtime_generations WHERE state<>'stopped'`
-			}
-			rows, err := conn.Query(ctx, inventory)
-			if err != nil {
-				return err
-			}
-			for rows.Next() {
-				var instance string
-				if err := rows.Scan(&instance); err != nil {
-					rows.Close()
-					return err
-				}
-				if !instances[instance] {
-					rows.Close()
-					return fmt.Errorf("unaccounted serving or recovery generation")
-				}
-			}
-			err = rows.Err()
-			rows.Close()
-			if err != nil {
+			if err := verifyCompatibleRecoveryFleet(ctx, conn, input.TargetVersion, instances); err != nil {
 				return err
 			}
 		}
@@ -240,4 +219,57 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 		return err
 	}
 	return json.NewEncoder(os.Stdout).Encode(map[string]any{"status": args[0], "schema_head": actual[len(actual)-1], "system_identifier": input.SystemIdentifier, "migration_digest": input.MigrationDigest})
+}
+
+// Dormant identities remain recovery identities, not retired rows. M117/M118
+// may retain them only when their own immutable manifest supports the complete
+// target contract. The host controller still proves the actual process fleet.
+func verifyCompatibleRecoveryFleet(ctx context.Context, conn *pgxpool.Conn, target string, instances map[string]bool) error {
+	retainedRecovery := target == schemaauthority.ObservationExpandHead || target == schemaauthority.BudgetSnapshotExpandHead
+	inventory := `SELECT g.instance_id,(g.ingress_state<>'absent' OR g.lease_expires_at>clock_timestamp()),COALESCE(m.manifest_digest,''),m.canonical_bytes
+FROM runtime_generations g LEFT JOIN runtime_support_manifests m USING(artifact_digest) WHERE g.state<>'stopped'`
+	if !retainedRecovery {
+		inventory += ` AND (g.ingress_state<>'absent' OR g.lease_expires_at>clock_timestamp())`
+	}
+	rows, err := conn.Query(ctx, inventory)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var instance, digest string
+		var active bool
+		var wire []byte
+		if err := rows.Scan(&instance, &active, &digest, &wire); err != nil {
+			return err
+		}
+		if instances[instance] {
+			continue
+		}
+		if active || !retainedRecovery {
+			return fmt.Errorf("unaccounted serving or recovery generation")
+		}
+		if err := verifyDormantExpansionManifest(wire, digest, target); err != nil {
+			return fmt.Errorf("unsupported dormant recovery generation: %w", err)
+		}
+	}
+	return rows.Err()
+}
+
+func verifyDormantExpansionManifest(wire []byte, digest, target string) error {
+	manifest, err := runtimegeneration.VerifyManifest(wire, digest)
+	if err != nil {
+		return err
+	}
+	refs := []modelprofile.ImplementationReference{
+		{Kind: "stream_counter", ID: metering.GatewayCounterEstimateVersionV2},
+		{Kind: "stream_counter", ID: metering.GatewayCounterEstimateVersionV3},
+		{Kind: "source_facts", ID: "unirouter.source-fact.v1"},
+		{Kind: "source_observations", ID: "unirouter.source-observation.v1"},
+		{Kind: "source_dispatch", ID: "unirouter.source-dispatch-outbox.v1"},
+	}
+	if target == schemaauthority.BudgetSnapshotExpandHead {
+		refs = append(refs, runtimegeneration.BudgetCoverageRequirements()...)
+	}
+	return manifest.Require(target, refs)
 }
