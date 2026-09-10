@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/uniroute/unirouter/internal/executionmeasurement"
+	"github.com/uniroute/unirouter/internal/guardrail"
 	"net/http"
 	"reflect"
 	"slices"
@@ -669,7 +671,7 @@ func (orchestrator *publicNonStreamOrchestrator) execute(
 			continue
 		}
 
-		execution, executionErr := executor.Execute(ctx, candidate.upstream)
+		execution, executionErr := executor.Execute(executionmeasurement.WithAttempt(ctx, attemptID), candidate.upstream)
 		if executionErr != nil {
 			var failure *PublicNonStreamExecutionError
 			if errors.As(executionErr, &failure) && failure.Stage == PublicNonStreamStagePreflight {
@@ -909,6 +911,9 @@ func (orchestrator *publicNonStreamOrchestrator) applyInputGuard(
 	if err != nil {
 		return nil, fmt.Errorf("%w: transformed request", errPublicNonStreamGuardFailed)
 	}
+	if decision.Action == PublicOutputGuardReplace {
+		guardrail.MarkSourceReplacement(ctx, guardrail.StageInput)
+	}
 	return reprepared, nil
 }
 
@@ -1080,6 +1085,7 @@ func (orchestrator *publicNonStreamOrchestrator) deliver(
 			fmt.Errorf("%w: downstream write", errPublicNonStreamDeliveryFailed), recordErr,
 		)}
 	}
+	executionmeasurement.ResponseWritten(ctx)
 	event.Outcome = billing.DeliveryOutcomeCompleted
 	event.DeliveredBytes = int64(written)
 	event.DeliveredChunks = 1

@@ -218,6 +218,8 @@ COUNTER_V2 = "unirouter.stream-counter.v2"
 COUNTER_V3 = "unirouter.stream-counter.v3"
 COUNTER_HEAD = "000115_stream_counter_version"
 SOURCE_HEAD = "000116_execution_source_facts"
+OBSERVATION_HEAD = "000117_execution_observations"
+BUDGET_HEAD = "000118_source_budget_snapshots"
 CAPABILITY_HEAD = "000114_capability_delivery_expand"
 
 
@@ -225,7 +227,7 @@ def validate_transition(transition):
     if transition is None:
         return
     require(isinstance(transition, dict), "invalid named transition")
-    if transition.get("kind") in ("stream_counter_expand_carrier", "source_facts_expand_carrier"):
+    if transition.get("kind") in ("stream_counter_expand_carrier", "source_facts_expand_carrier", "source_observations_expand_carrier", "source_budgets_expand_carrier"):
         require(set(transition) == {"kind", "up_sha256", "down_sha256"} and
                 all(re.fullmatch(r"[a-f0-9]{64}", transition[key]) for key in ("up_sha256", "down_sha256")),
                 "exact reviewed expansion bytes required")
@@ -253,9 +255,12 @@ def writer_overlay(overlay, transition):
 
 
 def validate_pending_counter_carrier(old_source, new_source, transition, actual_ledger):
-    require(transition and transition["kind"] in ("stream_counter_expand_carrier", "source_facts_expand_carrier"), "bound schema source differs")
-    source_expansion = transition["kind"] == "source_facts_expand_carrier"
-    predecessor, target = (COUNTER_HEAD, SOURCE_HEAD) if source_expansion else (CAPABILITY_HEAD, COUNTER_HEAD)
+    transitions = {"stream_counter_expand_carrier": (CAPABILITY_HEAD, COUNTER_HEAD),
+                   "source_facts_expand_carrier": (COUNTER_HEAD, SOURCE_HEAD),
+                   "source_observations_expand_carrier": (SOURCE_HEAD, OBSERVATION_HEAD),
+                   "source_budgets_expand_carrier": (OBSERVATION_HEAD, BUDGET_HEAD)}
+    require(transition and transition["kind"] in transitions, "bound schema source differs")
+    predecessor, target = transitions[transition["kind"]]
     old_paths = run(["git", "-C", str(old_source), "ls-tree", "-r", "--name-only", "HEAD", "migrations"]).decode().splitlines()
     old_ledger = sorted(Path(path).name[:-7] for path in old_paths if path.endswith(".up.sql"))
     require(old_ledger and old_ledger[-1] == predecessor and actual_ledger == old_ledger, "pending expansion carrier requires the complete exact predecessor")
@@ -498,7 +503,7 @@ class Rollout:
                     all(containers[role]["Image"] == self.spec["images"]["frontend" if role == "frontend" else "backend"]["digest"] for role in CONTAINERS),
                     "writer transition requires the same exact Artifact")
             writer_head = self.sql("SELECT max(version) FROM schema_migrations")
-            require(writer_head in (COUNTER_HEAD, SOURCE_HEAD), "writer transition requires M115 or M116")
+            require(writer_head in (COUNTER_HEAD, SOURCE_HEAD, OBSERVATION_HEAD, BUDGET_HEAD), "writer transition requires M115, M116, M117 or M118")
             for role in ("stable", "canary"):
                 require(environment(containers[role]["Config"]["Env"]).get("STREAM_COUNTER_VERSION", COUNTER_V2) == transition["from"], "mixed writer predecessor")
                 manifest = load(run(["docker", "exec", CONTAINERS[role], "./uniroute", "runtime-generation", "support"]))
@@ -517,6 +522,12 @@ class Rollout:
                 if transition and transition["kind"] == "source_facts_expand_carrier":
                     require(environment(containers[role]["Config"]["Env"]).get("SOURCE_FACTS_ENABLED", "false") == "false", "source expansion bridge requires capture disabled")
                     expected["services"][service]["environment"]["SOURCE_FACTS_ENABLED"] = "false"
+                if transition and transition["kind"] == "source_observations_expand_carrier":
+                    require(environment(containers[role]["Config"]["Env"]).get("SOURCE_OBSERVATIONS_ENABLED", "false") == "false", "observation expansion bridge requires B capture disabled")
+                    expected["services"][service]["environment"]["SOURCE_OBSERVATIONS_ENABLED"] = "false"
+                if transition and transition["kind"] == "source_budgets_expand_carrier":
+                    require(environment(containers[role]["Config"]["Env"]).get("SOURCE_BUDGET_SNAPSHOTS_ENABLED", "false") == "false", "budget expansion bridge requires D snapshots disabled")
+                    expected["services"][service]["environment"]["SOURCE_BUDGET_SNAPSHOTS_ENABLED"] = "false"
         for service, target, relative in (("backend", "/app/migrations", "migrations"), ("backend-canary", "/app/migrations", "migrations"),
                                           ("prometheus", "/etc/prometheus/prometheus.yml", "infra/prometheus/prometheus.yml"),
                                           ("grafana", "/etc/grafana/provisioning", "infra/grafana/provisioning"),

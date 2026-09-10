@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -36,7 +37,9 @@ func TestCapabilityExpandRequiresExplicitBridgeAndPreservesLegacy(t *testing.T) 
 	require.NoError(t, err)
 	ledger, err := schemaauthority.ExpectedLedger(dir)
 	require.NoError(t, err)
-	ledger = ledger[:len(ledger)-2] // This test owns the historical M113/M114 transition.
+	capabilityHead := slices.Index(ledger, schemaauthority.CapabilityExpandHead)
+	require.GreaterOrEqual(t, capabilityHead, 1)
+	ledger = ledger[:capabilityHead+1] // This test owns the historical M113/M114 transition.
 	legacy := ledger[:len(ledger)-1]
 	require.NoError(t, publication.VerifyRuntimeStaticProjection(ctx, pool, legacy))
 	// Both owner and migration-skipping runtime remain on the exact legacy DB.

@@ -4,6 +4,15 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.4.0] - 2026-09-10
+
+- 新增默认关闭的执行、attempt、能力、策略和交付观察，以及原执行租约的当前运行快照；派发前必需来源写入与派发后附加观察分别处理，不改变原金额和 hold 权威。
+- 新增默认关闭的项目预算定义、周期摘要及原提醒快照。网关金额只引用原已扣费终态；覆盖缺口和未决经济事实单独显示，企业预算只读取明确绑定的项目分摊切片。
+- 预算字段和范围使用独立访问版本及目录游标，支持当前管理员权限重验和原审计 outbox 原子提交；旧凭据不会自动增加字段，预算撤权保留 A/B 执行进度。
+- 新增 M117/M118 显式有限扩展、原 writer 支持证明和预算覆盖认证；正式数据库恢复在读取启动前重建覆盖边界，保留旧历史并拒绝已使用数据的回退删除。
+- M118 暂无受支持的成功 reset 生命周期：保留预算元数据及原 journal；只读预览报告范围不完整，加载为执行计划和应用均拒绝。关闭 D 采集不解除此限制；A/M116 的历史成功重置证据不代表本版本支持。
+- 同步固定字段合同、独立快照校验器、OpenAPI、接入管理、默认配置和客户恢复说明。本地候选版本不代表签名发布、Target 部署或真实 X-Insight 验收。
+
 ## [1.3.0] - 2026-09-09
 
 - 新增默认关闭的执行上下文、身份与费用依据源事实 profile，在认证、原冻结及终态事务中保存当时的事实；费用依据引用原 I-01 金额，不另建金额账本。

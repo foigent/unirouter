@@ -31,7 +31,7 @@ import (
 // and the supported legacy Chat route. Only the server-generated operation IDs
 // are deterministic test inputs, to select two members of the real 10% Canary
 // assignment without probabilistic retries. Client headers cannot choose them.
-func sourceHTTPCacheCase(t *testing.T, pool *pgxpool.Pool, relay *gateway.Relay, handler http.Handler, journal *outbox.Service, org, owner, project, key int64, raw string, calls *atomic.Int64) {
+func sourceHTTPCacheCase(t *testing.T, pool *pgxpool.Pool, relay *gateway.Relay, handler http.Handler, journal *outbox.Service, org, owner, project, key int64, raw string, calls *atomic.Int64, observations bool) {
 	t.Helper()
 	operationPrefix, err := middleware.NewOperationID()
 	require.NoError(t, err)
@@ -113,11 +113,14 @@ func sourceHTTPCacheCase(t *testing.T, pool *pgxpool.Pool, relay *gateway.Relay,
 	var freezes, attempts, terminals, facts int
 	var snapshot []byte
 	var hash string
-	require.NoError(t, pool.QueryRow(t.Context(), `SELECT (SELECT count(*) FROM freeze_idempotency WHERE request_id=$1),(SELECT count(*) FROM billing_provider_attempts WHERE request_id=$1),(SELECT count(*) FROM completed_execution_feed_items WHERE request_id=$1),(SELECT count(*) FROM execution_source_facts WHERE request_id=$1)`, selected[1]).Scan(&freezes, &attempts, &terminals, &facts))
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT (SELECT count(*) FROM freeze_idempotency WHERE request_id=$1),(SELECT count(*) FROM billing_provider_attempts WHERE request_id=$1),(SELECT count(*) FROM completed_execution_feed_items WHERE request_id=$1),(SELECT count(*) FROM execution_source_facts WHERE request_id=$1 AND profile=ANY($2))`, selected[1], sourcefacts.Profiles()).Scan(&freezes, &attempts, &terminals, &facts))
 	require.Equal(t, 1, freezes, "the existing cache path freezes before cache lookup")
 	require.Zero(t, attempts)
 	require.Equal(t, 1, terminals, "the existing cache delivery has its own zero terminal")
 	require.Equal(t, 7, facts)
+	if observations {
+		sourceHTTPAssertObservations(t, pool, selected[1], "chat_cache", 0)
+	}
 	require.NoError(t, pool.QueryRow(t.Context(), `SELECT snapshot,snapshot_sha256 FROM completed_execution_feed_items WHERE request_id=$1`, selected[1]).Scan(&snapshot, &hash))
 	var economic completedfeed.Snapshot
 	require.NoError(t, json.Unmarshal(snapshot, &economic))

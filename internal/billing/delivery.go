@@ -405,15 +405,26 @@ func (b *Billing) RecordDelivery(ctx context.Context, event DeliveryEvent) error
 		return fmt.Errorf("begin delivery receipt: %w", err)
 	}
 	defer tx.Rollback(ctx)
-	if err := recordDeliveryTx(ctx, tx, event); err != nil {
+	created := false
+	if err := recordDeliveryObservedTx(ctx, tx, event, &created); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	if created && event.Outcome != DeliveryOutcomePartial {
+		b.observeCommitted(ctx, CommittedObservation{Kind: "local_delivery", OrgID: event.OrgID, RequestID: event.RequestID, AttemptID: event.AttemptID, Outcome: event.Outcome})
+	}
+	return nil
 }
 
 // recordDeliveryTx shares the existing delivery authority with atomic financial
 // holds. Callers must normalize the event and own the transaction.
 func recordDeliveryTx(ctx context.Context, tx pgx.Tx, event DeliveryEvent) error {
+	return recordDeliveryObservedTx(ctx, tx, event, nil)
+}
+
+func recordDeliveryObservedTx(ctx context.Context, tx pgx.Tx, event DeliveryEvent, created *bool) error {
 	record, err := reservationForUpdate(ctx, tx, event.RequestID, event.OrgID)
 	if err != nil {
 		return fmt.Errorf("lock delivery receipt: %w", err)
@@ -470,6 +481,9 @@ func recordDeliveryTx(ctx context.Context, tx pgx.Tx, event DeliveryEvent) error
 		streamOwner, streamGeneration,
 	); err != nil {
 		return fmt.Errorf("append delivery receipt: %w", err)
+	}
+	if created != nil {
+		*created = true
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE request_idempotency

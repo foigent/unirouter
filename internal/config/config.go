@@ -90,6 +90,8 @@ type Config struct {
 	GrafanaURL                           string
 	CompletedExecutionFeedEnabled        bool
 	SourceFactsEnabled                   bool
+	SourceObservationsEnabled            bool
+	SourceBudgetSnapshotsEnabled         bool
 	CompletedExecutionFeedSourceInstance string
 	CompletedExecutionFeedReferenceMode  string
 	// The Connector agent is an optional product-local control-plane client.
@@ -518,6 +520,12 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("OIDC_DEFAULT_ORG_ID must be set when OIDC auto provisioning is enabled")
 		}
 	}
+	if c.SourceBudgetSnapshotsEnabled && !c.SourceFactsEnabled {
+		return fmt.Errorf("SOURCE_BUDGET_SNAPSHOTS_ENABLED requires SOURCE_FACTS_ENABLED=true")
+	}
+	if c.SourceObservationsEnabled && !c.SourceFactsEnabled {
+		return fmt.Errorf("SOURCE_OBSERVATIONS_ENABLED requires SOURCE_FACTS_ENABLED=true")
+	}
 	if c.CompletedExecutionFeedEnabled || c.SourceFactsEnabled {
 		if !completedExecutionSourceInstancePattern.MatchString(c.CompletedExecutionFeedSourceInstance) {
 			return fmt.Errorf("COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE must use 1-128 letters, numbers, dot, underscore, colon, or dash")
@@ -677,6 +685,14 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	sourceBudgetSnapshotsEnabled, err := getEnvBoolStrict("SOURCE_BUDGET_SNAPSHOTS_ENABLED", false)
+	if err != nil {
+		return nil, err
+	}
+	sourceObservationsEnabled, err := getEnvBoolStrict("SOURCE_OBSERVATIONS_ENABLED", false)
+	if err != nil {
+		return nil, err
+	}
 	xInsightConnectorPollMilliseconds, err := getEnvIntStrict(
 		"XINSIGHT_CONNECTOR_POLL_MILLISECONDS", XInsightConnectorDefaultPollMilliseconds,
 	)
@@ -745,6 +761,8 @@ func Load() (*Config, error) {
 		GrafanaURL:                           strings.TrimRight(getEnvStr("GRAFANA_URL", ""), "/"),
 		CompletedExecutionFeedEnabled:        getEnvBool("COMPLETED_EXECUTION_FEED_ENABLED", false),
 		SourceFactsEnabled:                   sourceFactsEnabled,
+		SourceObservationsEnabled:            sourceObservationsEnabled,
+		SourceBudgetSnapshotsEnabled:         sourceBudgetSnapshotsEnabled,
 		CompletedExecutionFeedSourceInstance: strings.TrimSpace(getEnvStr("COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE", "")),
 		CompletedExecutionFeedReferenceMode: getEnvStr(
 			"COMPLETED_EXECUTION_FEED_REFERENCE_MODE",

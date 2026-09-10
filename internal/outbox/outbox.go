@@ -29,6 +29,7 @@ const (
 	EventBudgetEvaluate       = "notification.budget.evaluate.v1"
 	EventNotificationDelivery = "notification.delivery.v1"
 	EventRuntimeTerminal      = "runtime.terminal.v2"
+	EventSourceDispatch       = "evidence.source_dispatch.v1"
 
 	EventBillingUsagePreparedV1 = "billing.usage.prepared.v1"
 	EventBillingSettledV1       = "billing.settled.v1"

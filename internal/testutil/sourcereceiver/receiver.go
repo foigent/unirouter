@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -32,6 +33,28 @@ import (
 // and live synthetic administrator sessions. The optional evidence directory
 // receives only HTTP source pages and synthetic I-01 snapshots, never tokens.
 func Observe(t *testing.T, pool *pgxpool.Pool, source *sourcefacts.Service, secret, jwtSecret string, org, project int64, register func(*http.ServeMux, *admin.Handler, func(http.HandlerFunc) http.Handler), credentialChecks ...func(string)) func() {
+	return observe(t, pool, source, secret, jwtSecret, org, project, register, false, false, credentialChecks...)
+}
+
+// ObserveWithObservations explicitly grants both A and B and consumes each
+// profile through its actual authenticated transport. Observe preserves A-only
+// registration, cursor and evidence behavior for the existing acceptance suite.
+func ObserveWithObservations(t *testing.T, pool *pgxpool.Pool, source *sourcefacts.Service, secret, jwtSecret string, org, project int64, register func(*http.ServeMux, *admin.Handler, func(http.HandlerFunc) http.Handler), credentialChecks ...func(string)) func() {
+	t.Helper()
+	require.True(t, source.ObservationsEnabled())
+	return observe(t, pool, source, secret, jwtSecret, org, project, register, true, false, credentialChecks...)
+}
+
+// ObserveWithBudgetSnapshots explicitly registers D grants for combined local
+// verification. Returned observation still consumes only A/B event transports;
+// callers read D snapshots separately using the in-memory credential callback.
+func ObserveWithBudgetSnapshots(t *testing.T, pool *pgxpool.Pool, source *sourcefacts.Service, secret, jwtSecret string, org, project int64, credentialCheck func(string)) func() {
+	t.Helper()
+	require.True(t, source.BudgetsEnabled())
+	return observe(t, pool, source, secret, jwtSecret, org, project, nil, source.ObservationsEnabled(), true, credentialCheck)
+}
+
+func observe(t *testing.T, pool *pgxpool.Pool, source *sourcefacts.Service, secret, jwtSecret string, org, project int64, register func(*http.ServeMux, *admin.Handler, func(http.HandlerFunc) http.Handler), observations, budgets bool, credentialChecks ...func(string)) func() {
 	t.Helper()
 	var actor int64
 	require.NoError(t, pool.QueryRow(t.Context(), `INSERT INTO users(org_id,username,password_hash,organization_role,role,status) VALUES($1,'source-synthetic-admin','synthetic-hash','platform_admin','platform_admin','active') RETURNING id`, org).Scan(&actor))
@@ -52,6 +75,7 @@ func Observe(t *testing.T, pool *pgxpool.Pool, source *sourcefacts.Service, secr
 	resolver, err := middleware.NewClientIPResolver(nil)
 	require.NoError(t, err)
 	reader := source.Handler(resolver)
+	observationReader := source.ObservationHandler(resolver)
 	random := make([]byte, 32)
 	_, err = rand.Read(random)
 	require.NoError(t, err)
@@ -60,6 +84,16 @@ func Observe(t *testing.T, pool *pgxpool.Pool, source *sourcefacts.Service, secr
 	require.NoError(t, err)
 	operation := sha256.Sum256([]byte("source registration:" + token))
 	registration := sourcefacts.Registration{SchemaVersion: sourcefacts.RegistrationVersion, TokenFormat: auth.ReceiverFeedTokenFormat, VerifierScheme: auth.ReceiverFeedVerifierScheme, KeyPrefix: token[:auth.ReceiverFeedCredentialPrefixLength], VerifierSHA256: verifier, OperationID: hex.EncodeToString(operation[:16]), SourceInstance: source.SourceInstance(), OrgID: jsonNumber(org), ProjectID: jsonNumber(project), Profiles: []string{sourcefacts.CostProfile, sourcefacts.ContextProfile, sourcefacts.IdentityProfile}}
+	if observations {
+		registration.Profiles = append(registration.Profiles, sourcefacts.ObservationProfiles()...)
+		slices.Sort(registration.Profiles)
+	}
+	eventProfiles := slices.Clone(registration.Profiles)
+	if budgets {
+		registration.Profiles = append(registration.Profiles, sourcefacts.BudgetProfiles()...)
+		slices.Sort(registration.Profiles)
+	}
+	require.NoError(t, registration.Validate())
 	control := func(action string, body any) map[string]any {
 		wire, e := json.Marshal(body)
 		require.NoError(t, e)
@@ -80,6 +114,11 @@ func Observe(t *testing.T, pool *pgxpool.Pool, source *sourcefacts.Service, secr
 	}
 	read := func(profile, cursor string) map[string]any {
 		path := "/api/v1/integrations/xinsight/source-facts?profile=" + profile + "&limit=2"
+		selectedReader := reader
+		if !sourcefacts.ValidProfile(profile) {
+			path = "/api/v1/integrations/xinsight/source/v2/events?profile=" + profile + "&limit=2"
+			selectedReader = observationReader
+		}
 		if cursor != "" {
 			path += "&cursor=" + url.QueryEscape(cursor)
 		}
@@ -87,7 +126,7 @@ func Observe(t *testing.T, pool *pgxpool.Pool, source *sourcefacts.Service, secr
 		r.RemoteAddr = "127.0.0.1:2000"
 		r.Header.Set("Authorization", "Bearer "+token)
 		w := httptest.NewRecorder()
-		reader.ServeHTTP(w, r)
+		selectedReader.ServeHTTP(w, r)
 		require.Equal(t, 200, w.Code, w.Body.String())
 		require.NotContains(t, w.Body.String(), token)
 		var page map[string]any
@@ -95,7 +134,7 @@ func Observe(t *testing.T, pool *pgxpool.Pool, source *sourcefacts.Service, secr
 		return page
 	}
 	cursors := map[string]string{}
-	for _, profile := range registration.Profiles {
+	for _, profile := range eventProfiles {
 		page := read(profile, "")
 		require.Empty(t, page["events"])
 		cursors[profile] = page["next_cursor"].(string)
@@ -107,7 +146,7 @@ func Observe(t *testing.T, pool *pgxpool.Pool, source *sourcefacts.Service, secr
 		started := time.Now()
 		vectors := []map[string]any{}
 		seen := map[string]bool{}
-		for _, profile := range registration.Profiles {
+		for _, profile := range eventProfiles {
 			cursor := cursors[profile]
 			for {
 				page := read(profile, cursor)
@@ -139,7 +178,7 @@ func Observe(t *testing.T, pool *pgxpool.Pool, source *sourcefacts.Service, secr
 			}
 		}
 		var total int
-		require.NoError(t, pool.QueryRow(t.Context(), `SELECT count(*) FROM execution_source_facts WHERE org_id=$1 AND project_id=$2`, org, project).Scan(&total))
+		require.NoError(t, pool.QueryRow(t.Context(), `SELECT count(*) FROM execution_source_facts WHERE org_id=$1 AND project_id=$2 AND profile=ANY($3::text[])`, org, project, eventProfiles).Scan(&total))
 		require.Equal(t, total, len(seen), "authenticated pages must deliver every published fact after the initial forward-only bootstrap")
 		pullMS := float64(time.Since(started).Microseconds()) / 1000
 		var publicationLag, journalLag *float64
@@ -174,7 +213,11 @@ func Observe(t *testing.T, pool *pgxpool.Pool, source *sourcefacts.Service, secr
 			require.NoError(t, os.WriteFile(path, output, 0600))
 			if os.Getenv("SOURCE_FACTS_VERIFY_CONSUMER") == "1" {
 				consumerStarted := time.Now()
-				command := exec.CommandContext(t.Context(), "python3", "../../contracts/source-facts/v1/check_http_pages.py", path, "--expected-cases", "1")
+				checker := "../../contracts/source-facts/v1/check_http_pages.py"
+				if observations {
+					checker = "../../contracts/source-facts/v2/check_http_pages.py"
+				}
+				command := exec.CommandContext(t.Context(), "python3", checker, path, "--expected-cases", "1")
 				result, err := command.CombinedOutput()
 				require.NoError(t, err, "independent consumer: %s", result)
 				measurements["independent_consumer_verify_ms"] = float64(time.Since(consumerStarted).Microseconds()) / 1000

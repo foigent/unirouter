@@ -191,9 +191,37 @@ case "${source_facts_enabled}" in
       echo "customer preflight: source facts require a stable COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE" >&2
       exit 1
     fi
-    echo "customer preflight: source capture requires M116 and preserves the existing producer identity; config validation does not prove database readiness" >&2
+    echo "customer preflight: source capture requires the supported M116–M118 schema and preserves the existing producer identity; config validation does not prove database readiness" >&2
     ;;
   *) echo "customer preflight: SOURCE_FACTS_ENABLED must be true or false" >&2; exit 1 ;;
+esac
+
+load_effective_value SOURCE_OBSERVATIONS_ENABLED true
+source_observations_enabled="${effective_value:-false}"
+case "${source_observations_enabled}" in
+  false) ;;
+  true)
+    if [[ "${source_facts_enabled}" != "true" ]]; then
+      echo "customer preflight: SOURCE_OBSERVATIONS_ENABLED requires SOURCE_FACTS_ENABLED=true" >&2
+      exit 1
+    fi
+    echo "customer preflight: B observations require M117 and explicit receiver profile grants; runtime verifies database readiness" >&2
+    ;;
+  *) echo "customer preflight: SOURCE_OBSERVATIONS_ENABLED must be true or false" >&2; exit 1 ;;
+esac
+
+load_effective_value SOURCE_BUDGET_SNAPSHOTS_ENABLED true
+source_budget_snapshots_enabled="${effective_value:-false}"
+case "${source_budget_snapshots_enabled}" in
+  false) ;;
+  true)
+    if [[ "${source_facts_enabled}" != "true" ]]; then
+      echo "customer preflight: SOURCE_BUDGET_SNAPSHOTS_ENABLED requires SOURCE_FACTS_ENABLED=true" >&2
+      exit 1
+    fi
+    echo "customer preflight: D snapshots require M118 writer certification and explicit profile grants; runtime verifies restored coverage" >&2
+    ;;
+  *) echo "customer preflight: SOURCE_BUDGET_SNAPSHOTS_ENABLED must be true or false" >&2; exit 1 ;;
 esac
 
 load_effective_value XINSIGHT_CONNECTOR_AGENT_ENABLED true

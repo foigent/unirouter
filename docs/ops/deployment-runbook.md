@@ -1230,9 +1230,14 @@ docker compose cp redis:/data/dump.rdb ./backups/redis_$(date +%Y%m%d_%H%M%S).rd
 
 ### 4.2 恢复
 
+恢复期间必须停止所有 backend 和独立恢复 writer。默认 Compose 的服务名为 `backend`；其他拓扑按其实际服务清单停止全部 writer。M118 预算认证不能沿用备份中的起点，即使备份很新也必须执行下面的固定 rebase SQL，再由新二进制 preflight 验证后恢复服务。跨恢复边界的日/月预算只提供 known subtotal 和 restore gap，下一完整 UTC 周期才可能恢复完整覆盖。该 SQL 仅修改 coverage 历史，不改账、凭据、source instance 或 A/B 游标。无 D schema 的旧备份不补认证；拟启用 D 时先走正常 M118 迁移。
+
 ```bash
+docker compose stop backend
 # 恢复 PostgreSQL
-cat backup.sql | docker compose exec -T postgres psql -U uniroute uniroute
+cat backup.sql | docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U uniroute uniroute
+# 在任何 backend/source reader 重启之前重建预算覆盖边界。
+cat scripts/source-budget-restore-rebase.sql | docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U uniroute uniroute
 
 # 恢复 Redis；必须先停止实例，避免关停保存覆盖待恢复的 RDB
 docker compose stop redis

@@ -12,6 +12,8 @@ type enterpriseFinanceRouteGuards struct {
 }
 
 func registerEnterpriseFinanceRoutes(mux *http.ServeMux, handler *admin.Handler, guards enterpriseFinanceRouteGuards) {
+	mux.Handle("GET /api/v1/enterprise-finance/source-budget-bindings", guards.read(handler.ListSourceBudgetBindings))
+	mux.Handle("POST /api/v1/enterprise-finance/source-budget-bindings", guards.write(handler.SetSourceBudgetBinding))
 	mux.Handle("GET /api/v1/enterprise-finance/fiscal-periods", guards.read(handler.ListEnterpriseFiscalPeriods))
 	mux.Handle("POST /api/v1/enterprise-finance/fiscal-periods", guards.write(handler.CreateEnterpriseFiscalPeriod))
 	mux.Handle("POST /api/v1/enterprise-finance/fiscal-periods/{period_ref}/transition", guards.write(handler.TransitionEnterpriseFiscalPeriod))

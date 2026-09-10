@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,12 +13,13 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/config"
+	"github.com/uniroute/unirouter/internal/resetexec"
 	"github.com/uniroute/unirouter/internal/resetplan"
 	"github.com/uniroute/unirouter/internal/testutil"
 	"golang.org/x/crypto/bcrypt"
 )
 
-func TestResetPreviewCLIInventoriesMigratedDatabaseWithoutMutation(t *testing.T) {
+func TestResetPreviewCLIReportsM118IncompleteScopeWithoutMutation(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte("preview-integration-fixture"), bcrypt.MinCost)
@@ -37,6 +39,9 @@ func TestResetPreviewCLIInventoriesMigratedDatabaseWithoutMutation(t *testing.T)
 		RETURNING id`).Scan(&channelID))
 
 	redisServer := miniredis.RunT(t)
+	require.NoError(t, redisServer.Set("wallet:v2:must-remain", "synthetic"))
+	before, err := resetexec.Inspect(ctx, pool, resetplan.RedisObservation{})
+	require.NoError(t, err)
 	output := filepath.Join(t.TempDir(), "final-preview.json")
 	cfg := &config.Config{
 		DB_DSN: pool.Config().ConnString(), DBMaxConnections: 4, DBMaxIdleConns: 0,
@@ -51,18 +56,26 @@ func TestResetPreviewCLIInventoriesMigratedDatabaseWithoutMutation(t *testing.T)
 		"--preserve-local-login", "admin",
 		"--output", output,
 	}, cfg)
-	require.NoError(t, err)
+	require.NoError(t, err, "read-only diagnostic preview remains available")
 	payload, err := os.ReadFile(output)
 	require.NoError(t, err)
-	plan, err := resetplan.Unmarshal(payload)
-	require.NoError(t, err)
-	require.True(t, plan.ScopeComplete)
-	require.True(t, plan.ApplySupported)
+	var plan resetplan.Plan
+	require.NoError(t, json.Unmarshal(payload, &plan))
+	require.False(t, plan.ScopeComplete)
 	require.False(t, plan.ActionAuthorized)
 	require.False(t, plan.MutationPerformed)
+	_, err = resetplan.Unmarshal(payload)
+	require.ErrorIs(t, err, resetplan.ErrInvalid, "loading this preview as an executable plan is refused")
+	require.ErrorContains(t, err, "contract_or_scope")
 	info, err := os.Stat(output)
 	require.NoError(t, err)
 	require.Zero(t, info.Mode().Perm()&0o077)
+	after, err := resetexec.Inspect(ctx, pool, resetplan.RedisObservation{})
+	require.NoError(t, err)
+	require.Equal(t, before, after)
+	value, err := redisServer.Get("wallet:v2:must-remain")
+	require.NoError(t, err)
+	require.Equal(t, "synthetic", value)
 
 	var rows int
 	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM channels WHERE id=$1`, channelID).Scan(&rows))

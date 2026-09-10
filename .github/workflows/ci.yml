@@ -368,6 +368,7 @@ jobs:
           test_pattern+='|TestPublicResponsesExactProfile.*Integration|TestPublicClaude.*Integration'
           test_pattern+='|TestPublicCoordinator.*Integration'
           test_pattern+='|TestSourceFacts.*Integration|TestSourceFacts(Expand|Down).*'
+          test_pattern+='|TestSource(Observations|Policy|Dispatch).*|TestSourceMediaMainStartupBoundaries|TestSourceBudget.*'
           test_pattern+='|TestLegacyReleaseAdmissionAllowExecutesStagedChannelIntegration'
           test_pattern+='|TestOwnedProviderAttemptAndTerminalHealthFenceAreReplaySafe'
           test_pattern+='|TestFreezeReplayRejectsChangedExecutionSnapshot|TestStreamOutputHold.*Integration|TestProviderCompletionRelayHoldSurvivesRecoveryIntegration'
@@ -556,7 +557,7 @@ jobs:
       - name: Run real-backend browser acceptances
         run: >-
           go test -tags=integration,pr4browser ./cmd/uniroute
-          -run '^(TestPR4AccessUXModelReadinessBrowserE2E|TestModelEndpointOnboardingBrowserE2E)$'
+          -run '^(TestPR4AccessUXModelReadinessBrowserE2E|TestModelEndpointOnboardingBrowserE2E|TestSourceBudgetManagementBrowserE2E)$'
           -count=1 -timeout=20m -v
 
   docker:
@@ -731,6 +732,16 @@ jobs:
             exit 1
           fi
           deploy/customer/preflight.sh /dev/null
+          SOURCE_FACTS_ENABLED=true SOURCE_OBSERVATIONS_ENABLED=true SOURCE_BUDGET_SNAPSHOTS_ENABLED=true \
+            COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE=synthetic-customer-preflight deploy/customer/preflight.sh /dev/null
+          if SOURCE_FACTS_ENABLED=false SOURCE_BUDGET_SNAPSHOTS_ENABLED=true deploy/customer/preflight.sh /dev/null; then
+            echo 'budget snapshots must require source facts' >&2
+            exit 1
+          fi
+          if SOURCE_BUDGET_SNAPSHOTS_ENABLED=yes deploy/customer/preflight.sh /dev/null; then
+            echo 'budget snapshots must reject a non-exact boolean' >&2
+            exit 1
+          fi
           for invalid_runtime_environment in local dev test; do
             if RUNTIME_ENVIRONMENT="${invalid_runtime_environment}" deploy/customer/preflight.sh /dev/null; then
               echo "formal customer preflight must reject RUNTIME_ENVIRONMENT=${invalid_runtime_environment}" >&2

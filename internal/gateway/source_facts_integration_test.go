@@ -251,6 +251,10 @@ func sourceGatewayHandlerWithAuth(t *testing.T, fixture gateway.SourceFactsGatew
 }
 
 func sourceGatewayAttachSource(t *testing.T, fixture gateway.SourceFactsGatewayFixture) (*sourcefacts.Service, *outbox.Service, string) {
+	return sourceGatewayAttachProfiles(t, fixture, false)
+}
+
+func sourceGatewayAttachProfiles(t *testing.T, fixture gateway.SourceFactsGatewayFixture, observations bool) (*sourcefacts.Service, *outbox.Service, string) {
 	t.Helper()
 	pool := fixture.Pool
 	var project int64
@@ -260,17 +264,22 @@ func sourceGatewayAttachSource(t *testing.T, fixture gateway.SourceFactsGatewayF
 	_, err := pool.Exec(t.Context(), `UPDATE api_keys SET project_id=$1,owner_user_id=$2,key_type='shared',key_hash=$3,allowed_endpoints=$5 WHERE id=$4`, project, fixture.UserID, auth.HashAPIKey(raw, sourceGatewaySyntheticSecret), fixture.KeyID, fixture.Path)
 	require.NoError(t, err)
 	sourceGatewayPersonalAccess(t, fixture, project)
-	source, err := sourcefacts.New(pool, sourcefacts.Options{Enabled: true, SourceInstance: "synthetic-gateway", CursorSecret: sourceGatewaySyntheticSecret, I01Enabled: true})
+	source, err := sourcefacts.New(pool, sourcefacts.Options{Enabled: true, ObservationsEnabled: observations, SourceInstance: "synthetic-gateway", CursorSecret: sourceGatewaySyntheticSecret, I01Enabled: true})
 	require.NoError(t, err)
 	require.NoError(t, source.CheckReady(t.Context()))
 	v1, err := completedfeed.NewService(pool, sourceGatewaySyntheticSecret, source.SourceInstance(), true)
 	require.NoError(t, err)
 	fixture.Billing.WithMode(billing.BillingModeCostObservation)
 	fixture.Billing.SetReservationMaterializer(source)
+	if observations {
+		fixture.Billing.SetCommittedObservationSink(source)
+		fixture.SetDispatchMaterializer(t, source)
+	}
 	fixture.Billing.SetTerminalMaterializer(billing.TerminalMaterializers{v1, source})
 	journal, err := outbox.New(pool, outbox.DefaultOptions())
 	require.NoError(t, err)
 	fixture.Billing.SetOutbox(journal)
+	require.NoError(t, journal.RegisterHandler(outbox.EventSourceDispatch, source.ProcessDispatchEvent))
 	for _, typ := range []string{outbox.EventBillingUsagePrepared, outbox.EventBillingSettled, outbox.EventBillingCancelled} {
 		require.NoError(t, journal.RegisterHandler(typ, fixture.Billing.ProcessUsageJournalEvent))
 	}

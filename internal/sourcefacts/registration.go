@@ -29,11 +29,11 @@ var prefixPattern = regexp.MustCompile(`^ur-xf1-[0-9a-f]{13}$`)
 var operationPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 func ValidateProfiles(profiles []string) bool {
-	if len(profiles) < 1 || len(profiles) > 3 || !slices.IsSorted(profiles) {
+	if len(profiles) < 1 || len(profiles) > 11 || !slices.IsSorted(profiles) {
 		return false
 	}
 	for i, p := range profiles {
-		if !ValidProfile(p) || i > 0 && profiles[i-1] == p {
+		if (!ValidProfile(p) && !validObservationProfile(p) && !validBudgetProfile(p)) || i > 0 && profiles[i-1] == p {
 			return false
 		}
 	}
@@ -69,4 +69,36 @@ func (s *Service) SourceInstance() string {
 		return ""
 	}
 	return s.options.SourceInstance
+}
+
+// ProfilesEnabled checks explicit product capture enablement separately from
+// syntactic registration. Upgrading never grants or enables another profile.
+func (s *Service) ProfilesEnabled(profiles []string) bool {
+	if !s.Enabled() || !ValidateProfiles(profiles) {
+		return false
+	}
+	for _, profile := range profiles {
+		if validObservationProfile(profile) && !s.ObservationsEnabled() || validBudgetProfile(profile) && !s.BudgetsEnabled() {
+			return false
+		}
+	}
+	return true
+}
+
+// OnlyBudgetProfilesChanged preserves the immutable registrations and A/B
+// cursor generation when the connection's D visibility alone changes.
+func OnlyBudgetProfilesChanged(before, after []string) bool {
+	if !ValidateProfiles(before) || !ValidateProfiles(after) {
+		return false
+	}
+	events := func(profiles []string) []string {
+		out := []string{}
+		for _, p := range profiles {
+			if !validBudgetProfile(p) {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+	return slices.Equal(events(before), events(after))
 }

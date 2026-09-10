@@ -103,6 +103,12 @@ printf 'psql argv_secret=%s password_scoped=%s secret_inputs_unset=%s internal_p
   "$argv_secret" "$password_scoped" "$secret_inputs_unset" "$internal_passwords_unset" "$dsn_preserved" >> "$UNIROUTE_TEST_STATE_DIR/calls"
 
 case " $* " in
+  *source-budget-restore-rebase.sql*)
+    [[ -f "${@: -1}" ]] || exit 42
+    count="$(wc -l < "$UNIROUTE_TEST_STATE_DIR/calls" | tr -d '[:space:]')"
+    [[ "$count" == 3 ]] || exit 43
+    printf '%s\n' rebase-before-validation > "$UNIROUTE_TEST_STATE_DIR/rebase"
+    ;;
   *schema_migrations*) printf '%s\n' 1 ;;
   *to_regclass*) printf '%s\n' 6 ;;
 esac
@@ -313,8 +319,11 @@ for caller_umask in 022 002 077; do
     record_failure "password-free rehearsal with scoped passwords failed under umask $caller_umask"
   else
     call_count="$(wc -l < "$case_dir/state/calls" | tr -d '[:space:]')"
-    if [[ "$call_count" != 4 ]]; then
-      record_failure "expected four database client calls, got $call_count"
+    if [[ "$call_count" != 5 ]]; then
+      record_failure "expected five database client calls, got $call_count"
+    fi
+    if [[ "$(cat "$case_dir/state/rebase" 2>/dev/null)" != "rebase-before-validation" ]]; then
+      record_failure 'coverage rebase must run after restore and before validation'
     fi
     if grep -Evq 'argv_secret=0 password_scoped=1 secret_inputs_unset=1 internal_passwords_unset=1 dsn_preserved=1$' "$case_dir/state/calls"; then
       record_failure 'database client arguments or environment did not satisfy the password boundary'

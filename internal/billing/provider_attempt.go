@@ -627,7 +627,11 @@ func (b *Billing) CompleteProviderAttempt(ctx context.Context, request ProviderA
 			return fmt.Errorf("hold unresolved provider attempt: %w", err)
 		}
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	b.observeCommitted(ctx, CommittedObservation{Kind: "provider_result", OrgID: req.OrgID, RequestID: req.RequestID, AttemptID: req.AttemptID, Outcome: req.Outcome})
+	return nil
 }
 
 func providerAttemptForUpdate(ctx context.Context, tx pgx.Tx, orgID int64, requestID, attemptID string) (providerAttemptRecord, error) {

@@ -15,7 +15,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
-	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/governancesim"
 	"github.com/uniroute/unirouter/internal/integrationfixture"
 	"github.com/uniroute/unirouter/internal/resetplan"
@@ -26,158 +25,48 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func TestApplyDeterministicResetPreservesExactAdminPlatformStateAndSequences(t *testing.T) {
+// The historical successful reset contract is retained and rerun from exact
+// accepted A/M116 source. M118 preserves its new authority and refuses apply.
+func TestApplyDeterministicResetRefusesM118AndPreservesExactState(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
-	ctx := context.Background()
-	adminID, adminOrgID, passwordHash := seedResetIntegrationFixture(t, pool)
-	authoredReleaseID := seedM78AuthoredResetEvidence(t, pool)
-
+	ctx := t.Context()
+	seedResetIntegrationFixture(t, pool)
+	seedM78AuthoredResetEvidence(t, pool)
 	server := miniredis.RunT(t)
-	redisClient := redis.NewClient(&redis.Options{Addr: server.Addr()})
-	t.Cleanup(func() { _ = redisClient.Close() })
-	for _, key := range []string{"wallet:v2:fixture", "rl:fixture", "unrelated:preserve"} {
-		require.NoError(t, redisClient.Set(ctx, key, "fixture", 0).Err())
-	}
-
-	target := resetplan.TargetIdentity{
-		RuntimeVersion: "v2.0.2",
-		RuntimeCommit:  strings.Repeat("a", 40),
-		SourceTree:     strings.Repeat("b", 40),
-	}
-	expectedSchemaLedger := resetArtifactSchemaLedger(t)
-	plan, err := Preview(ctx, pool, redisClient, expectedSchemaLedger, target, "source-old", "source-new", time.Unix(1, 0))
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	require.NoError(t, client.Set(ctx, "wallet:v2:must-remain", "synthetic", 0).Err())
+	redisBefore, err := ObserveRedis(ctx, client)
 	require.NoError(t, err)
-	require.True(t, plan.ScopeComplete)
-	require.True(t, plan.ApplySupported)
-	require.Equal(t, adminID, plan.SelectedAdmin.UserID)
-	require.Equal(t, adminOrgID, plan.SelectedAdmin.OrganizationID)
-	require.Positive(t, plan.Summary.ExpectedDeletedRows)
+	before, err := Inspect(ctx, pool, redisBefore)
+	require.NoError(t, err)
+	target := resetplan.TargetIdentity{RuntimeVersion: "1.4.0", RuntimeCommit: strings.Repeat("a", 40), SourceTree: strings.Repeat("b", 40)}
+	ledger := resetArtifactSchemaLedger(t)
+	plan, err := Preview(ctx, pool, client, ledger, target, "synthetic-source-old", "synthetic-source-new", time.Unix(1, 0))
+	require.NoError(t, err)
+	require.False(t, plan.ScopeComplete)
 	assertM78ResetDeletionOrder(t, plan)
-
-	result, err := Apply(ctx, pool, redisClient, expectedSchemaLedger, plan, target, "source-new")
-	require.NoError(t, err)
-	require.True(t, result.EmptyBaseline)
-	require.Equal(t, adminID, result.RetainedAdminID)
-	require.Equal(t, adminOrgID, result.RetainedOrgID)
-	require.Equal(t, int64(2), result.RedisKeysDeleted)
-
-	var retainedPassword, retainedUsername, retainedOrganizationRole, retainedCompatibilityRole string
-	var retainedAuthEpoch int64
-	var retainedEmail *string
-	var orgSettings string
-	require.NoError(t, pool.QueryRow(ctx, `SELECT username, password_hash, organization_role, role, auth_epoch, email FROM users WHERE id=$1`, adminID).Scan(&retainedUsername, &retainedPassword, &retainedOrganizationRole, &retainedCompatibilityRole, &retainedAuthEpoch, &retainedEmail))
-	require.NoError(t, pool.QueryRow(ctx, `SELECT settings::text FROM orgs WHERE id=$1`, adminOrgID).Scan(&orgSettings))
-	require.Equal(t, "Admin", retainedUsername)
-	require.Equal(t, passwordHash, retainedPassword)
-	require.Equal(t, auth.RolePlatformAdmin, retainedOrganizationRole)
-	require.Equal(t, auth.RolePlatformAdmin, retainedCompatibilityRole)
-	require.EqualValues(t, 1, retainedAuthEpoch)
-	require.Nil(t, retainedEmail)
-	require.Equal(t, `{}`, orgSettings)
+	require.False(t, plan.ActionAuthorized)
+	require.False(t, plan.MutationPerformed)
+	blocked := map[string]bool{}
 	for _, table := range plan.Tables {
-		var count int64
-		require.NoError(t, pool.QueryRow(ctx, "SELECT COUNT(*) FROM "+quotedTable(table.Name)).Scan(&count))
-		want := table.ExpectedRetainedRows
-		if table.Action == resetplan.ActionPreserveAll {
-			want = table.RowCount
+		if table.Scope == resetplan.ScopeReviewRequired {
+			blocked[table.Name] = true
+			require.Equal(t, resetplan.ActionPreserveAll, table.Action)
+			require.Zero(t, table.ExpectedDeletedRows)
 		}
-		require.Equalf(t, want, count, "post-reset count for %s", table.Name)
 	}
-	value, err := redisClient.Get(ctx, "unrelated:preserve").Result()
+	require.True(t, blocked["execution_source_budget_coverage"])
+	require.True(t, blocked["execution_source_budget_definitions"])
+	_, err = Apply(ctx, pool, client, ledger, plan, target, "synthetic-source-new")
+	require.ErrorIs(t, err, resetplan.ErrInvalid)
+	redisAfter, err := ObserveRedis(ctx, client)
 	require.NoError(t, err)
-	require.Equal(t, "fixture", value)
-
-	post, err := Preview(ctx, pool, redisClient, expectedSchemaLedger, target, "source-old", "source-new", time.Unix(2, 0))
+	after, err := Inspect(ctx, pool, redisAfter)
 	require.NoError(t, err)
-	require.Equal(t, plan.Schema, post.Schema, "schema, trigger, FK, and sequence evidence changed")
-	require.Equal(t, plan.Protected, post.Protected, "protected platform state changed")
-	for _, table := range []string{
-		"async_media_limit_reservations", "async_media_jobs", "api_keys",
-		"access_operations", "access_credentials", "access_grant_revisions", "access_grants", "access_requests",
-		"model_deployment_create_receipts",
-		"model_deployment_lifecycle_receipt_qualifications",
-		"model_deployment_lifecycle_receipt_releases",
-		"model_deployment_lifecycle_receipts",
-		"model_deployment_release_authoring_receipts",
-		"runtime_change_events",
-		"runtime_change_releases",
-	} {
-		var count int
-		require.NoError(t, pool.QueryRow(ctx, "SELECT COUNT(*) FROM "+quotedTable(table)).Scan(&count))
-		require.Zero(t, count, "%s must be empty after reset", table)
-	}
-	var triggerEnabled, deleteAction string
-	var deferrable, initiallyDeferred bool
-	require.NoError(t, pool.QueryRow(ctx, `
-		SELECT t.tgenabled::text
-		FROM pg_trigger t
-		WHERE t.tgrelid='access_grant_revisions'::regclass
-		  AND t.tgname='access_grant_revisions_append_only'`).Scan(&triggerEnabled))
-	require.Equal(t, "O", triggerEnabled)
-	require.NoError(t, pool.QueryRow(ctx, `
-		SELECT t.tgenabled::text
-		FROM pg_trigger t
-		WHERE t.tgrelid='model_deployment_create_receipts'::regclass
-		  AND t.tgname='model_deployment_create_receipts_immutable'`).Scan(&triggerEnabled))
-	require.Equal(t, "O", triggerEnabled)
-	for _, trigger := range []struct {
-		table string
-		name  string
-	}{
-		{"model_deployment_lifecycle_receipt_qualifications", "model_deployment_lifecycle_receipt_qualifications_append_only"},
-		{"model_deployment_lifecycle_receipt_releases", "model_deployment_lifecycle_receipt_releases_append_only"},
-		{"model_deployment_lifecycle_receipts", "model_deployment_lifecycle_receipts_immutable"},
-		{"model_deployment_release_authoring_receipts", "model_deployment_release_authoring_receipts_immutable"},
-		{"model_deployment_release_authoring_receipts", "model_deployment_release_authoring_receipts_terminal"},
-		{"model_deployment_release_authoring_receipts", "model_deployment_release_authoring_receipts_truncate_guard"},
-		{"runtime_change_releases", "runtime_change_releases_authoring_link_guard"},
-		{"runtime_change_events", "runtime_change_events_append_only"},
-		{"runtime_change_events", "runtime_change_events_receipt_link_guard"},
-	} {
-		require.NoError(t, pool.QueryRow(ctx, `
-			SELECT t.tgenabled::text
-			FROM pg_trigger t
-			WHERE t.tgrelid=$1::regclass
-			  AND t.tgname=$2`, trigger.table, trigger.name).Scan(&triggerEnabled))
-		require.Equalf(t, "O", triggerEnabled, "%s.%s must be enabled after reset", trigger.table, trigger.name)
-	}
-	var authoredReleaseCount int
-	require.NoError(t, pool.QueryRow(ctx, `
-SELECT COUNT(*) FROM runtime_change_releases WHERE id=$1`, authoredReleaseID).Scan(&authoredReleaseCount))
-	require.Zero(t, authoredReleaseCount, "the exact M78 authored release must be removed")
-	require.NoError(t, pool.QueryRow(ctx, `
-		SELECT t.tgenabled::text
-		FROM pg_trigger t
-		WHERE t.tgrelid='access_operations'::regclass
-		  AND t.tgname='access_operations_append_only'`).Scan(&triggerEnabled))
-	require.Equal(t, "O", triggerEnabled)
-	require.NoError(t, pool.QueryRow(ctx, `
-		SELECT CASE confdeltype WHEN 'a' THEN 'NO ACTION' ELSE 'OTHER' END,
-		       condeferrable,condeferred
-		FROM pg_constraint WHERE conname='access_requests_target_grant_scope_fk'`).Scan(
-		&deleteAction, &deferrable, &initiallyDeferred))
-	require.Equal(t, "NO ACTION", deleteAction)
-	require.True(t, deferrable)
-	require.False(t, initiallyDeferred)
-	require.NoError(t, pool.QueryRow(ctx, `
-		SELECT t.tgenabled::text
-		FROM pg_trigger t
-		WHERE t.tgrelid='billing_observation_receipts'::regclass
-		  AND t.tgname='billing_observation_receipt_append_only'`).Scan(&triggerEnabled))
-	require.Equal(t, "O", triggerEnabled)
-	for _, constraint := range []string{
-		"billing_observation_receipt_reservation_fk",
-		"freeze_idempotency_observation_receipt_fk",
-	} {
-		require.NoError(t, pool.QueryRow(ctx, `
-			SELECT CASE confdeltype WHEN 'a' THEN 'NO ACTION' ELSE 'OTHER' END,
-			       condeferrable,condeferred
-			FROM pg_constraint WHERE conname=$1`, constraint).Scan(
-			&deleteAction, &deferrable, &initiallyDeferred))
-		require.Equal(t, "NO ACTION", deleteAction)
-		require.True(t, deferrable)
-		require.False(t, initiallyDeferred)
-	}
+	require.Equal(t, before, after, "original inventory, protected digests, identities and sequences survive refusal")
+	require.Equal(t, redisBefore, redisAfter)
+	require.Equal(t, "synthetic", client.Get(ctx, "wallet:v2:must-remain").Val())
 }
 
 func TestResetInspectBuildIncludesM88ProtectedCapabilityContractsIntegration(t *testing.T) {
@@ -344,7 +233,7 @@ func assertM78ResetDeletionOrder(t *testing.T, plan resetplan.Plan) {
 	}
 }
 
-func TestApplyStopsBeforeRedisMutationWhenSemanticScopeDrifts(t *testing.T) {
+func TestApplyStopsBeforeRedisMutationWhenM118ScopeAlreadyRequiresReview(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	seedResetIntegrationFixture(t, pool)
@@ -363,8 +252,17 @@ func TestApplyStopsBeforeRedisMutationWhenSemanticScopeDrifts(t *testing.T) {
 	_, err = pool.Exec(ctx, `INSERT INTO channels (name, provider, base_url, status) VALUES ('drift', 'fixture', 'https://example.invalid', 'disabled')`)
 	require.NoError(t, err)
 
+	require.False(t, plan.ScopeComplete)
+	redisBefore, err := ObserveRedis(ctx, redisClient)
+	require.NoError(t, err)
+	before, err := Inspect(ctx, pool, redisBefore)
+	require.NoError(t, err)
 	_, err = Apply(ctx, pool, redisClient, expectedSchemaLedger, plan, target, "source-new")
-	require.ErrorIs(t, err, ErrPlanDrift)
+	require.ErrorIs(t, err, resetplan.ErrInvalid)
+	require.NotErrorIs(t, err, ErrPlanDrift, "scope refusal precedes the original semantic-drift check")
+	after, err := Inspect(ctx, pool, redisBefore)
+	require.NoError(t, err)
+	require.Equal(t, before, after)
 	require.Equal(t, "fixture", redisClient.Get(ctx, "wallet:v2:must-remain").Val())
 }
 

@@ -143,10 +143,24 @@ type attemptLedger interface {
 type tokenSource func() (string, error)
 
 type Coordinator struct {
-	database txStarter
-	ledger   attemptLedger
-	config   Config
-	newToken tokenSource
+	database             txStarter
+	ledger               attemptLedger
+	config               Config
+	newToken             tokenSource
+	dispatchMaterializer DispatchMaterializer
+}
+
+// DispatchMaterializer records the minimum source proof only after the existing
+// attempt/authority locks and successful revalidation, before the same commit.
+// It does not authorize a dispatch or alter the retry and ownership contracts.
+type DispatchMaterializer interface {
+	MaterializeDispatchTx(context.Context, pgx.Tx, modelrouting.Plan, modelrouting.Route, billing.ProviderAttemptStart, string, time.Time) error
+}
+
+func (c *Coordinator) SetDispatchMaterializer(materializer DispatchMaterializer) {
+	if c != nil {
+		c.dispatchMaterializer = materializer
+	}
 }
 
 func New(database txStarter, ledger attemptLedger, config Config) (*Coordinator, error) {

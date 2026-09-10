@@ -3,13 +3,17 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -28,6 +32,7 @@ import (
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
 	"github.com/uniroute/unirouter/internal/executioncontext"
+	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
 	"github.com/uniroute/unirouter/internal/mediajob"
@@ -46,7 +51,7 @@ func TestSourceFactsMediaHTTPIntegration(t *testing.T) {
 	const mediaHashSecret = "synthetic-media-hash-and-cursor-secret-only"
 	require.NotEmpty(t, os.Getenv("TEST_DATABASE_URL"), "select the isolated PG explicitly")
 	for _, identity := range []string{"legacy", "grant"} {
-		for _, scenario := range []string{"success_replay", "revoke_before_dispatch", "queued_cancel", "inflight_cancel"} {
+		for _, scenario := range []string{"success_replay", "revoke_before_dispatch", "queued_cancel", "inflight_cancel", "success_observations", "observations_required_failure", "observations_optional_failure"} {
 			t.Run(identity+"/"+scenario, func(t *testing.T) {
 				ctx := t.Context()
 				nonce := make([]byte, 16)
@@ -54,6 +59,7 @@ func TestSourceFactsMediaHTTPIntegration(t *testing.T) {
 				require.NoError(t, nonceErr)
 				idempotencyKey := "same-media-" + hex.EncodeToString(nonce)
 				pool := testutil.SetupMigratedTestDB(t)
+				sourceHTTPIsolateRedisIdentities(t, pool)
 				org, owner, project := seedPRD2P0OrgProjectUser(t, pool, auth.RoleDeveloper)
 				seedPRD2P0ModelGovernance(t, pool, org, project)
 				_, err := pool.Exec(ctx, `INSERT INTO model_registry(org_id,model_name,display_name,provider_family,lifecycle,approved_catalog,pricing_model_name) VALUES($1,'gpt-image-1','Synthetic Image','mock','ga',TRUE,'gpt-image-1');`, org)
@@ -75,7 +81,8 @@ func TestSourceFactsMediaHTTPIntegration(t *testing.T) {
 				require.NoError(t, limits.Refresh(ctx))
 				evaluator, err := modelauthz.NewEvaluator(pool, "development")
 				require.NoError(t, err)
-				source, err := sourcefacts.New(pool, sourcefacts.Options{Enabled: true, SourceInstance: "synthetic-media-http", CursorSecret: mediaHashSecret, I01Enabled: true})
+				observations := strings.Contains(scenario, "observations")
+				source, err := sourcefacts.New(pool, sourcefacts.Options{Enabled: true, ObservationsEnabled: observations, SourceInstance: "synthetic-media-http", CursorSecret: mediaHashSecret, I01Enabled: true})
 				require.NoError(t, err)
 				store, err := mediajob.NewPostgresStore(pool, newMediaExecutionAuthorizer(evaluator))
 				require.NoError(t, err)
@@ -88,7 +95,29 @@ func TestSourceFactsMediaHTTPIntegration(t *testing.T) {
 				media, err := mediajob.NewHTTPHandler(service, pool)
 				require.NoError(t, err)
 				provider := &sourceMediaProvider{}
-				worker, err := mediajob.NewWorker(store, objects, provider, cipher, mediajob.WorkerOptions{Owner: "source-media-http", LimitPolicy: limits})
+				var originalProvider mediajob.Provider = provider
+				if observations {
+					var imageBytes bytes.Buffer
+					require.NoError(t, png.Encode(&imageBytes, image.NewRGBA(image.Rect(0, 0, 1, 1))))
+					server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						provider.calls.Add(1)
+						w.Header().Set("Content-Type", "application/json")
+						json.NewEncoder(w).Encode(map[string]any{"created": 1, "data": []any{map[string]any{"b64_json": base64.StdEncoding.EncodeToString(imageBytes.Bytes())}}, "usage": map[string]any{"input_tokens": 3, "input_tokens_details": map[string]int{"text_tokens": 3, "image_tokens": 0}, "output_tokens": 5, "total_tokens": 8}})
+					}))
+					defer server.Close()
+					seedPRD2P0Channel(t, pool, server.URL, "gpt-image-1")
+					imageKey := []byte("0123456789abcdef0123456789abcdef")
+					keyEnc, err := auth.EncryptKey([]byte("upstream-test-key"), imageKey)
+					require.NoError(t, err)
+					_, err = pool.Exec(ctx, `UPDATE channel_keys SET key_enc=$1 WHERE channel_id IN (SELECT id FROM channels WHERE base_url=$2)`, keyEnc, server.URL)
+					require.NoError(t, err)
+					actual, err := mediajob.NewGPTImageProvider(gateway.NewRouter(pool), imageKey, mediajob.GPTImageProviderOptions{HTTPClient: server.Client()})
+					require.NoError(t, err)
+					actual.SetSourceObserver(source)
+					originalProvider = actual
+				}
+
+				worker, err := mediajob.NewWorker(store, objects, originalProvider, cipher, mediajob.WorkerOptions{Owner: "source-media-http", LimitPolicy: limits})
 				require.NoError(t, err)
 				resolver, err := middleware.NewClientIPResolver(nil)
 				require.NoError(t, err)
@@ -114,7 +143,11 @@ func TestSourceFactsMediaHTTPIntegration(t *testing.T) {
 					require.NoError(t, err)
 					return response.StatusCode, wire
 				}
-				observe := sourcereceiver.Observe(t, pool, source, mediaHashSecret, mediaHashSecret, org, project, func(m *http.ServeMux, h *admin.Handler, g func(http.HandlerFunc) http.Handler) {
+				observeSource := sourcereceiver.Observe
+				if observations {
+					observeSource = sourcereceiver.ObserveWithObservations
+				}
+				observe := observeSource(t, pool, source, mediaHashSecret, mediaHashSecret, org, project, func(m *http.ServeMux, h *admin.Handler, g func(http.HandlerFunc) http.Handler) {
 					registerXInsightSourceControlRoutes(m, h, xInsightFeedControlRouteGuards{safety: g, expansion: g})
 				}, func(token string) {
 					code, _ := invoke("/v1/media/jobs", token, "source-purpose-denied")
@@ -161,6 +194,14 @@ func TestSourceFactsMediaHTTPIntegration(t *testing.T) {
 				cancelJob := func() {
 					code, wire := invoke("/v1/media/jobs/"+job.JobID+"/cancel", raw, "cancel")
 					require.Equal(t, http.StatusOK, code, string(wire))
+				}
+				if scenario == "observations_required_failure" || scenario == "observations_optional_failure" {
+					stages := "'attempt_registered'"
+					if scenario == "observations_optional_failure" {
+						stages = "'provider_response_received','round_trip_measurement','dispatch_result','media_provider_succeeded','media_terminal','media_result'"
+					}
+					_, err = pool.Exec(ctx, `CREATE FUNCTION reject_media_http_observation() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN IF NEW.stage IN (`+stages+`) THEN RAISE EXCEPTION 'synthetic media HTTP observation failure'; END IF; RETURN NEW; END$$; CREATE TRIGGER reject_media_http_observation BEFORE INSERT ON execution_source_facts FOR EACH ROW EXECUTE FUNCTION reject_media_http_observation()`)
+					require.NoError(t, err)
 				}
 				switch scenario {
 				case "revoke_before_dispatch":
@@ -211,7 +252,7 @@ func TestSourceFactsMediaHTTPIntegration(t *testing.T) {
 				var currentAdmission, dispatch []byte
 				require.NoError(t, pool.QueryRow(ctx, `SELECT source_context,source_dispatch_context FROM async_media_jobs WHERE job_id=$1`, job.JobID).Scan(&currentAdmission, &dispatch))
 				require.JSONEq(t, string(admission), string(currentAdmission))
-				charged := scenario == "success_replay" || scenario == "inflight_cancel"
+				charged := scenario == "success_replay" || scenario == "inflight_cancel" || scenario == "success_observations" || scenario == "observations_optional_failure"
 				if charged {
 					require.EqualValues(t, 1, provider.calls.Load())
 					require.Equal(t, 1, job.Attempt)
@@ -225,6 +266,12 @@ func TestSourceFactsMediaHTTPIntegration(t *testing.T) {
 					if scenario == "inflight_cancel" {
 						require.Equal(t, mediajob.CancellationTooLate, job.Lifecycle.Cancellation)
 					}
+				} else if scenario == "observations_required_failure" {
+					require.Zero(t, provider.calls.Load(), "mandatory route registration fails before actual Do")
+					require.Equal(t, 1, job.Attempt, "original job dispatch fence was already committed")
+					require.Nil(t, job.ChargeFact)
+					require.NotEmpty(t, dispatch)
+					require.Equal(t, "source_dispatch_unavailable", job.ErrorCode)
 				} else {
 					require.Zero(t, provider.calls.Load())
 					require.Zero(t, job.Attempt)
@@ -250,6 +297,40 @@ func TestSourceFactsMediaHTTPIntegration(t *testing.T) {
 					require.Equal(t, job.ChargeFact.FactID, document.Cost.Reference.ChargeFactRef)
 				} else {
 					require.Empty(t, document.Cost.Reference.ChargeFactRef)
+				}
+				if observations {
+					rows, err := pool.Query(ctx, `SELECT document FROM execution_source_facts WHERE request_id=$1 AND profile=ANY($2) ORDER BY profile,sequence`, job.RequestID, sourcefacts.ObservationProfiles())
+					require.NoError(t, err)
+					observedKinds := map[string]int{}
+					for rows.Next() {
+						var wire []byte
+						require.NoError(t, rows.Scan(&wire))
+						doc, err := sourcefacts.DecodeObservation(wire)
+						require.NoError(t, err)
+						_, err = sourcefacts.ObservationEvent(doc, wire)
+						require.NoError(t, err)
+						observedKinds[doc.Kind]++
+						if doc.Destination != nil {
+							require.Equal(t, "unknown", doc.Destination.InputBindingState)
+							require.NotContains(t, doc.Destination.Origin, "/v1")
+						}
+						if doc.Measurement != nil && doc.Kind == "round_trip_measurement" {
+							require.Equal(t, "observed", doc.Measurement.State)
+							require.NotNil(t, doc.Measurement.Value)
+						}
+					}
+					require.NoError(t, rows.Err())
+					rows.Close()
+					for _, kind := range []string{"media_running", "media_attempt_registered", "attempt_registered", "selection", "dispatch_registered", "provider_response_received", "round_trip_measurement", "dispatch_result", "media_provider_succeeded", "media_terminal", "media_result"} {
+						expected := 1
+						if scenario == "observations_required_failure" && kind != "media_running" && kind != "media_attempt_registered" && kind != "media_terminal" && kind != "media_result" {
+							expected = 0
+						}
+						if scenario == "observations_optional_failure" && kind != "media_running" && kind != "media_attempt_registered" && kind != "attempt_registered" && kind != "selection" && kind != "dispatch_registered" {
+							expected = 0
+						}
+						require.Equal(t, expected, observedKinds[kind], kind)
+					}
 				}
 				observe()
 				if root := os.Getenv("SOURCE_FACTS_PAGE_EVIDENCE_DIR"); root != "" {

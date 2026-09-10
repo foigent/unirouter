@@ -376,6 +376,7 @@ func (s *PostgresStore) AttachExecutionReservation(
 		if err := tx.Commit(ctx); err != nil {
 			return ExecutionReservation{}, false, fmt.Errorf("mediajob: commit cancelled dispatch: %w", err)
 		}
+		s.observeSourceTerminalJobs(ctx, []sourceTerminalJob{{scope: lease.Scope, id: lease.JobID}})
 		return stored, reused, ErrCancelled
 	}
 	if cancellation != CancellationNotRequested {

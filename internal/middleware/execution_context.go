@@ -2,11 +2,14 @@ package middleware
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/uniroute/unirouter/internal/executioncontext"
+	"github.com/uniroute/unirouter/internal/executionmeasurement"
+	"github.com/uniroute/unirouter/internal/guardrail"
 	"github.com/uniroute/unirouter/internal/modeloperation"
 )
 
@@ -69,9 +72,48 @@ func CaptureExecutionContext(capturer ExecutionContextCapturer) func(http.Handle
 				return
 			}
 			ctx := executioncontext.WithSnapshot(r.Context(), snapshot)
+			var measurements *executionmeasurement.Collector
+			measurementSink, enabled := capturer.(interface {
+				ObservationsEnabled() bool
+				CaptureMeasurements(context.Context, executioncontext.Snapshot, []executionmeasurement.Sample) error
+			})
+			if enabled && measurementSink.ObservationsEnabled() {
+				ctx, measurements = executionmeasurement.Start(ctx)
+			}
 			if err := capturer.CaptureAuthenticated(ctx, snapshot); err != nil {
 				writeGatewayRequestError(w, r, http.StatusServiceUnavailable, "source_facts.capture_unavailable", "Execution context is temporarily unavailable")
 				return
+			}
+			if measurements != nil {
+				defer func() {
+					if err := measurementSink.CaptureMeasurements(ctx, snapshot, measurements.Samples()); err != nil {
+						log.Printf("[source-observations] optional request measurements unavailable")
+					}
+				}()
+			}
+			if sink, ok := capturer.(interface {
+				ObservationsEnabled() bool
+				CapturePolicies(context.Context, executioncontext.Snapshot, []guardrail.SourcePolicyObservation, bool) error
+			}); ok && sink.ObservationsEnabled() {
+				var buffer *guardrail.SourcePolicyBuffer
+				ctx, buffer = guardrail.StartSourceObservations(ctx)
+				defer func() {
+					values, overflow := buffer.Close()
+					if err := sink.CapturePolicies(ctx, snapshot, values, overflow); err != nil {
+						log.Printf("[source-observations] optional policy observations unavailable")
+					}
+				}()
+			}
+			if sink, ok := capturer.(interface {
+				ObservationsEnabled() bool
+				CaptureAdmissionRejection(context.Context, executioncontext.Snapshot, int) error
+			}); ok && sink.ObservationsEnabled() {
+				original := w
+				w = wrapSourceAdmissionWriter(original, func(status int) error {
+					return sink.CaptureAdmissionRejection(ctx, snapshot, status)
+				}, func() {
+					writeGatewayRequestError(original, r, http.StatusServiceUnavailable, "source_facts.capture_unavailable", "Execution context is temporarily unavailable")
+				})
 			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

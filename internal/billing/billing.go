@@ -208,15 +208,16 @@ const (
 
 // Billing handles the freeze/settle/cancel state machine.
 type Billing struct {
-	recoveryAllowed         func() bool
-	db                      *pgxpool.Pool
-	rdb                     *redis.Client
-	mode                    BillingMode
-	requestPricingAuthority RequestPricingAuthority
-	prices                  PriceProvider
-	outbox                  *outbox.Service
-	terminalMaterializer    TerminalMaterializer
-	reservationMaterializer ReservationMaterializer
+	recoveryAllowed          func() bool
+	db                       *pgxpool.Pool
+	rdb                      *redis.Client
+	mode                     BillingMode
+	requestPricingAuthority  RequestPricingAuthority
+	prices                   PriceProvider
+	outbox                   *outbox.Service
+	terminalMaterializer     TerminalMaterializer
+	reservationMaterializer  ReservationMaterializer
+	committedObservationSink CommittedObservationSink
 }
 
 // NewBilling creates a new Billing instance.
@@ -238,6 +239,9 @@ func (b *Billing) WithMode(mode BillingMode) *Billing {
 	}
 	return b
 }
+
+// FinancialJournalReady reports the original durable journal attachment, not source profile state.
+func (b *Billing) FinancialJournalReady() bool { return b != nil && b.outbox != nil }
 
 // SetOutbox enables the repository-local P6-F20 durable evidence path. The
 // financial transaction fails closed if its transactional envelope cannot be

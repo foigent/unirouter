@@ -11,21 +11,26 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	budgetassets "github.com/uniroute/unirouter/contracts/source-budgets/v1"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/completedfeed"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/eventconnector"
 	"github.com/uniroute/unirouter/internal/executioncontext"
+	"github.com/uniroute/unirouter/internal/runtimegeneration"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
 )
 
 const RetentionWindow = 7 * 24 * time.Hour
 
 type Options struct {
-	Enabled        bool
-	SourceInstance string
-	CursorSecret   string
-	I01Enabled     bool
+	BudgetSnapshotsEnabled bool
+	FinancialJournalReady  func() bool
+	ObservationsEnabled    bool
+	Enabled                bool
+	SourceInstance         string
+	CursorSecret           string
+	I01Enabled             bool
 }
 
 type Service struct {
@@ -35,6 +40,9 @@ type Service struct {
 }
 
 func New(database db.DBQuerier, options Options) (*Service, error) {
+	if (options.ObservationsEnabled || options.BudgetSnapshotsEnabled) && !options.Enabled {
+		return nil, errors.New("source observations and budgets require source facts enablement")
+	}
 	if options.Enabled {
 		if database == nil || len(options.CursorSecret) < 32 {
 			return nil, errors.New("source facts require database and cursor secret")
@@ -60,8 +68,22 @@ func (s *Service) CheckReady(ctx context.Context) error {
 	if e := s.db.QueryRow(ctx, `SELECT COALESCE(MAX(version),'') FROM schema_migrations`).Scan(&head); e != nil {
 		return e
 	}
-	if head != schemaauthority.SourceFactsExpandHead {
-		return errors.New("source facts capture requires M116")
+	if head != schemaauthority.SourceFactsExpandHead && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead {
+		return errors.New("source facts capture requires M116, M117 or M118")
+	}
+	if s.ObservationsEnabled() && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead {
+		return errors.New("source observations require M117 or M118")
+	}
+	if s.BudgetsEnabled() {
+		if err := budgetassets.Verify(); err != nil {
+			return err
+		}
+		if !s.budgetJournalReady() {
+			return errors.New("budget snapshots require the original durable financial journal")
+		}
+		if _, err := runtimegeneration.ReadBudgetCoverage(ctx, s.db); err != nil {
+			return err
+		}
 	}
 	var mismatch bool
 	if e := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM execution_source_streams WHERE source_instance<>$1 UNION ALL SELECT 1 FROM execution_source_connections WHERE source_instance<>$1)`, s.options.SourceInstance).Scan(&mismatch); e != nil {
@@ -69,6 +91,11 @@ func (s *Service) CheckReady(ctx context.Context) error {
 	}
 	if mismatch {
 		return errors.New("source facts producer instance changed")
+	}
+	if s.ObservationsEnabled() {
+		if _, e := observationDescriptors(); e != nil {
+			return e
+		}
 	}
 	_, e := descriptors()
 	return e
@@ -108,7 +135,16 @@ func (s *Service) CaptureAuthenticated(ctx context.Context, snapshot executionco
 		return e
 	}
 	defer tx.Rollback(ctx)
-	if e = s.PublishTx(ctx, tx, s.contexts(org, project, snapshot.Core.RequestID, "authenticated", snapshot.Core.CapturedAt, snapshot.Core.CapturedAt, &snapshot)); e != nil {
+	var observations []Observation
+	if s.ObservationsEnabled() {
+		at, _ := time.Parse(time.RFC3339Nano, snapshot.Core.CapturedAt)
+		d := s.observation(org, project, snapshot.Core.RequestID, RuntimeProfile, "request", snapshot.Core.RequestID, "request_started", at)
+		d.ContextRef = (Document{SourceInstance: s.options.SourceInstance, OrgID: snapshot.Core.OrgID, ProjectID: snapshot.Core.ProjectID, RequestID: snapshot.Core.RequestID, Profile: ContextProfile, Stage: "authenticated"}).factID()
+		d.CaptureExpected = []string{"request_started", "request_terminal", "delivery_started", "local_delivery", "response_measurement", "first_output_measurement", "stream_measurement"}
+		d.Runtime = &RuntimeObservation{Operation: snapshot.Core.Operation, StreamMode: "not_observed", Admission: "authenticated", Provider: "not_started", LocalDelivery: "not_started", Financial: "not_created", Capture: "observed"}
+		observations = append(observations, d)
+	}
+	if e = s.publishTogetherTx(ctx, tx, s.contexts(org, project, snapshot.Core.RequestID, "authenticated", snapshot.Core.CapturedAt, snapshot.Core.CapturedAt, &snapshot), observations); e != nil {
 		return e
 	}
 	return tx.Commit(ctx)
@@ -151,7 +187,8 @@ func (s *Service) MaterializeTerminalTx(ctx context.Context, tx pgx.Tx, record b
 		return nil
 	}
 	var contextBytes, basisBytes []byte
-	e := tx.QueryRow(ctx, `SELECT source_context,source_cost_basis FROM freeze_idempotency WHERE org_id=$1 AND request_id=$2`, record.OrgID, record.RequestID).Scan(&contextBytes, &basisBytes)
+	var boundAttempt string
+	e := tx.QueryRow(ctx, `SELECT source_context,source_cost_basis,COALESCE(delivery_attempt_id,'') FROM freeze_idempotency WHERE org_id=$1 AND request_id=$2`, record.OrgID, record.RequestID).Scan(&contextBytes, &basisBytes, &boundAttempt)
 	if e != nil && !errors.Is(e, pgx.ErrNoRows) {
 		return e
 	}
@@ -211,34 +248,123 @@ func (s *Service) MaterializeTerminalTx(ctx context.Context, tx pgx.Tx, record b
 	} else if len(basisBytes) == 0 {
 		cost.Cost.BasisStatus = "persisted_legacy"
 	}
-	return s.PublishTx(ctx, tx, append(documents, cost))
+	var observations []Observation
+	if s.ObservationsEnabled() {
+		d := s.observation(record.OrgID, record.ProjectID, record.RequestID, RuntimeProfile, "request", record.RequestID, "request_terminal", record.OccurredAt)
+		operation := "not_available"
+		if snapshot != nil {
+			operation = snapshot.Core.Operation
+			d.ContextRef = documents[0].SourceFactID
+		}
+		// This journal owns the financial outcome only. Delivery and Provider
+		// observations are captured at their original, separate write boundaries.
+		d.Coverage = "partial"
+		d.Runtime = &RuntimeObservation{Operation: operation, StreamMode: "not_observed", Admission: "unknown", Provider: "unknown", LocalDelivery: "unknown", Financial: record.Status, Capture: "partial", EvidenceRef: record.EventKey}
+		observations = append(observations, d)
+		if boundAttempt != "" {
+			// The reservation's original delivery binding identifies the charged
+			// attempt. Never guess from the newest attempt or customer display.
+			var attemptOperation, routeHash string
+			var sequence, total int
+			if e = tx.QueryRow(ctx, `SELECT COALESCE(route_model_operation_id,''),COALESCE(route_evidence_hash,''),route_sequence,route_total FROM billing_provider_attempts WHERE org_id=$1 AND project_id=$2 AND request_id=$3 AND attempt_id=$4`, record.OrgID, record.ProjectID, record.RequestID, boundAttempt).Scan(&attemptOperation, &routeHash, &sequence, &total); e != nil {
+				return e
+			}
+			if attemptOperation == "" {
+				attemptOperation = "not_available"
+			}
+			attempt := s.observation(record.OrgID, record.ProjectID, record.RequestID, AttemptProfile, "provider_attempt", boundAttempt, "financial_result", record.OccurredAt)
+			attempt.ContextRef = d.ContextRef
+			attempt.RouteEvidenceHash = routeHash
+			attempt.Coverage = "partial"
+			attempt.Attempt = &AttemptObservation{AttemptID: boundAttempt, Operation: attemptOperation, RouteSequence: strconv.Itoa(sequence), RouteTotal: strconv.Itoa(total), Provider: "unknown", LocalDelivery: "unknown", Financial: record.Status, EvidenceRef: record.EventKey}
+			observations = append(observations, attempt)
+		}
+	}
+	return s.publishTogetherTx(ctx, tx, append(documents, cost), observations)
 }
 
-// PublishTx is called only after the business/V1 locks. All profile state locks
-// precede sequence allocation, and the caller commits the entire transaction.
+// sourcePublication contains only metadata from a successfully encoded A or B
+// document. Callers cannot supply arbitrary unvalidated source bytes.
+type sourcePublication struct {
+	SourceInstance, OrgID, ProjectID, RequestID, Profile, Stage     string
+	EventID, SourceFactID, Revision, PreviousRevision, PreviousHash string
+	Wire                                                            []byte
+}
+
+func publicationA(d Document) (sourcePublication, error) {
+	wire, e := Encode(d)
+	return sourcePublication{d.SourceInstance, d.OrgID, d.ProjectID, d.RequestID, d.Profile, d.Stage, d.EventID, d.SourceFactID, d.Revision, d.PreviousRevision, d.PreviousHash, wire}, e
+}
+
+func publicationB(d Observation) (sourcePublication, error) {
+	wire, e := EncodeObservation(d)
+	return sourcePublication{d.SourceInstance, d.OrgID, d.ProjectID, d.RequestID, d.Profile, d.Kind, d.EventID, d.SourceFactID, d.Revision, d.PreviousRevision, d.PreviousHash, wire}, e
+}
+
+func (s *Service) ObservationsEnabled() bool { return s.Enabled() && s.options.ObservationsEnabled }
+
+// PublishTx preserves the A-only entrypoint and its original bounds. A and B
+// terminal writers use publishTogetherTx so every source lock is sorted once.
 func (s *Service) PublishTx(ctx context.Context, tx pgx.Tx, documents []Document) error {
+	return s.publishTogetherTx(ctx, tx, documents, nil)
+}
+
+func (s *Service) publishTogetherTx(ctx context.Context, tx pgx.Tx, documents []Document, observations []Observation) error {
 	if !s.Enabled() {
 		return nil
 	}
-	if tx == nil || len(documents) == 0 || len(documents) > 3 {
-		return errors.New("invalid source publication transaction")
+	if len(documents) > 3 {
+		return errors.New("invalid A source publication size")
 	}
-	documents = slices.Clone(documents)
-	slices.SortFunc(documents, func(a, b Document) int { return strings.Compare(a.Profile, b.Profile) })
-	encoded := make([][]byte, len(documents))
-	first := documents[0]
-	for i, d := range documents {
-		if d.SourceInstance != s.options.SourceInstance || d.OrgID != first.OrgID || d.ProjectID != first.ProjectID || d.RequestID != first.RequestID || (i > 0 && d.Profile == documents[i-1].Profile) {
+	records := make([]sourcePublication, 0, len(documents)+len(observations))
+	seen := map[string]bool{}
+	for _, d := range documents {
+		if seen[d.Profile] {
 			return errors.New("mixed source publication scope")
 		}
-		var e error
-		encoded[i], e = Encode(d)
+		seen[d.Profile] = true
+		p, e := publicationA(d)
 		if e != nil {
 			return e
 		}
+		records = append(records, p)
 	}
-	// Pipeline the bounded (at most three profiles) read phase, preserving the
-	// same SQL lock order. All locks precede the shared publication timestamp
+	if s.ObservationsEnabled() {
+		for _, d := range observations {
+			p, e := publicationB(d)
+			if e != nil {
+				return e
+			}
+			records = append(records, p)
+		}
+	}
+	return s.publishRecordsTx(ctx, tx, records)
+}
+
+// publishRecordsTx runs after business/V1 locks and before the existing budget
+// tail. Mixed A/B publications share one total profile order and one transaction.
+func (s *Service) publishRecordsTx(ctx context.Context, tx pgx.Tx, records []sourcePublication) error {
+	if tx == nil || len(records) == 0 {
+		return errors.New("invalid source publication transaction")
+	}
+	documents := slices.Clone(records)
+	slices.SortFunc(documents, func(a, b sourcePublication) int {
+		if n := strings.Compare(a.Profile, b.Profile); n != 0 {
+			return n
+		}
+		return strings.Compare(a.EventID, b.EventID)
+	})
+	encoded := make([][]byte, len(documents))
+	first := documents[0]
+	events := map[string]bool{}
+	for i, d := range documents {
+		if d.SourceInstance != s.options.SourceInstance || d.OrgID != first.OrgID || d.ProjectID != first.ProjectID || d.RequestID != first.RequestID || events[d.EventID] {
+			return errors.New("mixed source publication scope")
+		}
+		events[d.EventID] = true
+		encoded[i] = d.Wire
+	}
+	// Pipeline the finite publication batch, preserving the same SQL lock order. All locks precede the shared publication timestamp
 	// and replay/predecessor reads. No transaction or writer authority changes.
 	readBatch := &pgx.Batch{}
 	eventIDs, predecessorFacts, predecessorRevisions := []string{}, []string{}, []int64{}
@@ -340,4 +466,9 @@ func (s *Service) PublishTx(ctx context.Context, tx pgx.Tx, documents []Document
 		}
 		return nil
 	}()
+}
+
+func (s *Service) BudgetsEnabled() bool { return s.Enabled() && s.options.BudgetSnapshotsEnabled }
+func (s *Service) budgetJournalReady() bool {
+	return s != nil && s.options.FinancialJournalReady != nil && s.options.FinancialJournalReady()
 }

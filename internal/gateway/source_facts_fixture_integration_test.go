@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/uniroute/unirouter/internal/billing"
+	"github.com/uniroute/unirouter/internal/modelexecution"
 	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/testutil"
@@ -28,6 +29,8 @@ type SourceFactsGatewayFixture struct {
 	Relay                *Relay
 	Body                 []byte
 	ProviderCalls        func() int64
+	ConnectionID         int64
+	BeforeProvider       func(func())
 }
 
 // SetBilling attaches an existing billing decorator to this test-only relay.
@@ -80,6 +83,23 @@ func newSourceFactsGatewayFixture(t *testing.T, operation modeloperation.ID, ver
 			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(sse))}, nil
 		})
 	}
+	selectedTransport := transport
+	var before func()
+	transport = publicNonStreamDoerFunc(func(request *http.Request) (*http.Response, error) {
+		if before != nil {
+			before()
+		}
+		return selectedTransport.Do(request)
+	})
 	return SourceFactsGatewayFixture{Pool: pool, Billing: fixture.billing, OrgID: fixture.orgID, UserID: fixture.userID, KeyID: fixture.apiKeyIDs[0], Path: fixture.identity.PublicPath, Model: fixture.model, Operation: operation,
-		Relay: publicGatewayPGRelay(t, fixture, transport), Body: body, ProviderCalls: calls}
+		Relay: publicGatewayPGRelay(t, fixture, transport), Body: body, ProviderCalls: calls, ConnectionID: fixture.connectionID, BeforeProvider: func(hook func()) { before = hook }}
+}
+
+func (f SourceFactsGatewayFixture) SetDispatchMaterializer(t *testing.T, materializer modelexecution.DispatchMaterializer) {
+	t.Helper()
+	coordinator, ok := f.Relay.modelExecution.coordinator.(*modelexecution.Coordinator)
+	if !ok {
+		t.Fatal("fixture requires original execution coordinator")
+	}
+	coordinator.SetDispatchMaterializer(materializer)
 }

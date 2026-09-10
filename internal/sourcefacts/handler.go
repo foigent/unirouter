@@ -75,17 +75,31 @@ func writeError(w http.ResponseWriter, status int, code string, retryable bool) 
 // Handler authenticates and reads within one repeatable-read snapshot; no
 // reader-dependent redaction changes the immutable document or event hash.
 func (s *Service) Handler(resolver middleware.ClientIPResolver) http.Handler {
+	return s.eventHandler(resolver, false)
+}
+
+func (s *Service) ObservationHandler(resolver middleware.ClientIPResolver) http.Handler {
+	return s.eventHandler(resolver, true)
+}
+
+func (s *Service) eventHandler(resolver middleware.ClientIPResolver, observations bool) http.Handler {
+	profiles, validProfile, connectorVersion := Profiles(), ValidProfile, ConnectorVersion
+	encodeCursor, decodeCursor := s.encodeCursor, s.decodeCursor
+	if observations {
+		profiles, validProfile, connectorVersion = ObservationProfiles(), validObservationProfile, ObservationConnectorVersion
+		encodeCursor, decodeCursor = s.encodeObservationCursor, s.decodeObservationCursor
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", "GET")
 			writeError(w, 405, "method_not_allowed", false)
 			return
 		}
-		if !s.Enabled() {
+		capabilities := strings.HasSuffix(r.URL.Path, "/capabilities")
+		if !s.Enabled() || observations && !s.ObservationsEnabled() && !(capabilities && s.BudgetsEnabled()) {
 			writeError(w, 503, "source_disabled", true)
 			return
 		}
-		capabilities := strings.HasSuffix(r.URL.Path, "/capabilities")
 		query := r.URL.Query()
 		limit := pullv1.MaxBatchItems
 		for key, values := range query {
@@ -95,7 +109,7 @@ func (s *Service) Handler(resolver middleware.ClientIPResolver) http.Handler {
 			}
 		}
 		profile := query.Get("profile")
-		if !capabilities && !ValidProfile(profile) {
+		if !capabilities && !validProfile(profile) {
 			writeError(w, 400, "unsupported_profile", false)
 			return
 		}
@@ -135,8 +149,17 @@ func (s *Service) Handler(resolver middleware.ClientIPResolver) http.Handler {
 			}
 			return
 		}
+		requestProfiles := profiles
+		if observations && capabilities && s.BudgetsEnabled() {
+			requestProfiles = slices.Clone(profiles)
+			if !s.ObservationsEnabled() {
+				requestProfiles = nil
+			}
+			requestProfiles = append(requestProfiles, BudgetProfiles()...)
+			slices.Sort(requestProfiles)
+		}
 		allowed := []string{}
-		for _, p := range Profiles() {
+		for _, p := range requestProfiles {
 			if slices.Contains(a.profiles, p) && slices.Contains(a.credentialProfiles, p) {
 				allowed = append(allowed, p)
 			}
@@ -152,7 +175,27 @@ func (s *Service) Handler(resolver middleware.ClientIPResolver) http.Handler {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Cache-Control", "no-store")
-			json.NewEncoder(w).Encode(map[string]any{"schema_version": "unirouter.source-capabilities.v1", "source_instance": s.options.SourceInstance, "profiles": allowed, "profile_version": ConnectorVersion, "status": a.status, "credential_status": a.keyStatus, "scope_generation": strconv.FormatInt(a.generation, 10), "retention_seconds": int64(RetentionWindow / time.Second), "bootstrap": "forward_only", "timeline_complete": false, "field_authorization": "fixed_profiles"})
+			capabilitySchema := "unirouter.source-capabilities.v1"
+			if observations {
+				capabilitySchema = "unirouter.source-capabilities.v2"
+			}
+			result := map[string]any{"schema_version": capabilitySchema, "source_instance": s.options.SourceInstance, "profiles": allowed, "profile_version": connectorVersion, "status": a.status, "credential_status": a.keyStatus, "scope_generation": strconv.FormatInt(a.generation, 10), "retention_seconds": int64(RetentionWindow / time.Second), "bootstrap": "forward_only", "timeline_complete": false, "field_authorization": "fixed_profiles"}
+			if observations {
+				transports := map[string][]string{}
+				for _, p := range allowed {
+					transports[p] = []string{"incremental_events"}
+					if validBudgetProfile(p) {
+						transports[p] = []string{"budget_catalog", "current_budget_snapshot"}
+					}
+					if p == RuntimeProfile {
+						transports[p] = append(transports[p], "current_snapshot")
+					}
+				}
+				result["profile_transports"] = transports
+				result["event_coverage"] = "forward_only"
+				result["current_runtime_coverage"] = "lease_backed_inventory"
+			}
+			json.NewEncoder(w).Encode(result)
 			return
 		}
 		if !slices.Contains(allowed, profile) {
@@ -179,7 +222,7 @@ func (s *Service) Handler(resolver middleware.ClientIPResolver) http.Handler {
 		bootstrap := query.Get("cursor") == ""
 		after := high
 		if !bootstrap {
-			after, e = s.decodeCursor(query.Get("cursor"), scope)
+			after, e = decodeCursor(query.Get("cursor"), scope)
 			if e != nil {
 				writeError(w, 400, "invalid_cursor", false)
 				return
@@ -193,8 +236,8 @@ func (s *Service) Handler(resolver middleware.ClientIPResolver) http.Handler {
 				return
 			}
 		}
-		batch := pullv1.EventBatch{BatchVersion: pullv1.EventBatchVersion, ConnectorID: ConnectorID, ConnectorVersion: ConnectorVersion, ProducerInstance: s.options.SourceInstance, GeneratedAt: executioncontext.Time(time.Now()), Events: []eventconnector.ImmutableEvent{}}
-		batch.HighWatermark, _ = s.encodeCursor(scope, high)
+		batch := pullv1.EventBatch{BatchVersion: pullv1.EventBatchVersion, ConnectorID: ConnectorID, ConnectorVersion: connectorVersion, ProducerInstance: s.options.SourceInstance, GeneratedAt: executioncontext.Time(time.Now()), Events: []eventconnector.ImmutableEvent{}}
+		batch.HighWatermark, _ = encodeCursor(scope, high)
 		next := after
 		if !bootstrap {
 			rows, err := tx.Query(ctx, `SELECT sequence,document,source_hash FROM execution_source_facts WHERE source_instance=$1 AND org_id=$2 AND project_id=$3 AND profile=$4 AND sequence>$5 ORDER BY sequence LIMIT $6`, s.options.SourceInstance, a.org, a.project, profile, after, limit+1)
@@ -217,20 +260,12 @@ func (s *Service) Handler(resolver middleware.ClientIPResolver) http.Handler {
 					err = errors.New("source integrity failure")
 					break
 				}
-				doc, de := Decode(wire)
-				if de != nil {
-					err = de
-					break
-				}
-				if doc.Profile != profile || doc.OrgID != strconv.FormatInt(a.org, 10) || doc.ProjectID != strconv.FormatInt(a.project, 10) || doc.SourceInstance != a.instance {
-					err = errors.New("source row binding failure")
-					break
-				}
-				event, ee := s.event(doc, wire)
+				event, ee := s.boundEvent(wire, a, profile, observations)
 				if ee != nil {
 					err = ee
 					break
 				}
+
 				batch.Events = append(batch.Events, event)
 				next = position
 			}
@@ -250,7 +285,7 @@ func (s *Service) Handler(resolver middleware.ClientIPResolver) http.Handler {
 				return
 			}
 		}
-		batch.NextCursor, _ = s.encodeCursor(scope, next)
+		batch.NextCursor, _ = encodeCursor(scope, next)
 		if e := batch.Validate(); e != nil {
 			writeError(w, 503, "page_contract_failure", false)
 			return
@@ -268,4 +303,25 @@ func (s *Service) Handler(resolver middleware.ClientIPResolver) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Write(wire)
 	})
+}
+
+func (s *Service) boundEvent(wire []byte, a access, profile string, observations bool) (eventconnector.ImmutableEvent, error) {
+	if observations {
+		doc, err := DecodeObservation(wire)
+		if err != nil {
+			return eventconnector.ImmutableEvent{}, err
+		}
+		if doc.Profile != profile || doc.OrgID != strconv.FormatInt(a.org, 10) || doc.ProjectID != strconv.FormatInt(a.project, 10) || doc.SourceInstance != a.instance {
+			return eventconnector.ImmutableEvent{}, errors.New("source row binding failure")
+		}
+		return ObservationEvent(doc, wire)
+	}
+	doc, err := Decode(wire)
+	if err != nil {
+		return eventconnector.ImmutableEvent{}, err
+	}
+	if doc.Profile != profile || doc.OrgID != strconv.FormatInt(a.org, 10) || doc.ProjectID != strconv.FormatInt(a.project, 10) || doc.SourceInstance != a.instance {
+		return eventconnector.ImmutableEvent{}, errors.New("source row binding failure")
+	}
+	return s.event(doc, wire)
 }

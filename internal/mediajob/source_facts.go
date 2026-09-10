@@ -3,6 +3,7 @@ package mediajob
 import (
 	"cmp"
 	"context"
+	"log"
 	"slices"
 	"strconv"
 	"time"
@@ -110,5 +111,62 @@ func (s *PostgresStore) commitSourceTerminal(ctx context.Context, tx pgx.Tx, sco
 	if e = tx.Commit(ctx); e != nil {
 		return Job{}, e
 	}
+	s.observeSourceCommitted(ctx, job, "terminal")
 	return job, nil
+}
+
+// Source-only observations cannot turn a successful original commit into a
+// business failure. No new worker, outbox or retry is installed here.
+func (s *PostgresStore) observeSourceCommitted(ctx context.Context, job Job, stage string) {
+	observer, ok := s.sourceMaterializer.(interface {
+		CaptureMediaCommitted(context.Context, Job, string) error
+		ObservationsEnabled() bool
+	})
+	if !ok || !observer.ObservationsEnabled() {
+		return
+	}
+	if stage == "terminal" && !job.Terminal() {
+		return
+	}
+	observed, cancel := context.WithTimeout(context.WithoutCancel(ctx), 250*time.Millisecond)
+	defer cancel()
+	if err := observer.CaptureMediaCommitted(observed, job, stage); err != nil {
+		log.Printf("[source-observations] optional media observation unavailable stage=%s", stage)
+	}
+}
+func (s *PostgresStore) observeSourceTerminalJobs(ctx context.Context, jobs []sourceTerminalJob) {
+	if observer, ok := s.sourceMaterializer.(interface {
+		CaptureMediaCommitted(context.Context, Job, string) error
+		ObservationsEnabled() bool
+	}); !ok || !observer.ObservationsEnabled() {
+		return
+	}
+	for _, ref := range jobs {
+		observed, cancel := context.WithTimeout(context.WithoutCancel(ctx), 250*time.Millisecond)
+		job, err := s.Get(observed, ref.scope, ref.id)
+		if err == nil {
+			s.observeSourceCommitted(observed, job, "terminal")
+		} else {
+			log.Printf("[source-observations] committed media read unavailable")
+		}
+		cancel()
+	}
+}
+
+func (s *PostgresStore) observeSourceProviderSuccess(ctx context.Context, scope Scope, id string, at time.Time) {
+	observer, ok := s.sourceMaterializer.(interface {
+		CaptureMediaCommitted(context.Context, Job, string) error
+		ObservationsEnabled() bool
+	})
+	if !ok || !observer.ObservationsEnabled() {
+		return
+	}
+	observed, cancel := context.WithTimeout(context.WithoutCancel(ctx), 250*time.Millisecond)
+	defer cancel()
+	job, err := s.Get(observed, scope, id)
+	if err != nil || !job.UpdatedAt.Equal(at.Truncate(time.Microsecond)) || job.Lifecycle.Outcome != OutcomeSucceeded {
+		log.Printf("[source-observations] committed media success observation unavailable")
+		return
+	}
+	s.observeSourceCommitted(observed, job, "provider_succeeded")
 }

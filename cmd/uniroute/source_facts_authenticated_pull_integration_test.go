@@ -12,7 +12,11 @@ import (
 )
 
 func sourceHTTPAuthenticatedPull(t *testing.T, pool *pgxpool.Pool, source *sourcefacts.Service, secret string, org, project int64) func() {
-	return sourcereceiver.Observe(t, pool, source, secret, prd2E2EJWTSecret, org, project,
+	observe := sourcereceiver.Observe
+	if source.ObservationsEnabled() {
+		observe = sourcereceiver.ObserveWithObservations
+	}
+	return observe(t, pool, source, secret, prd2E2EJWTSecret, org, project,
 		func(mux *http.ServeMux, h *admin.Handler, guard func(http.HandlerFunc) http.Handler) {
 			registerXInsightSourceControlRoutes(mux, h, xInsightFeedControlRouteGuards{safety: guard, expansion: guard})
 		})

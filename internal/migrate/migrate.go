@@ -93,7 +93,7 @@ func RunCompatibleExpand(ctx context.Context, pool *pgxpool.Pool, dir string, ho
 	if hooks.Version == "" {
 		hooks.Version = schemaauthority.CapabilityExpandHead
 	}
-	if hooks.Version != schemaauthority.CapabilityExpandHead && hooks.Version != schemaauthority.StreamCounterExpandHead && hooks.Version != schemaauthority.SourceFactsExpandHead {
+	if hooks.Version != schemaauthority.CapabilityExpandHead && hooks.Version != schemaauthority.StreamCounterExpandHead && hooks.Version != schemaauthority.SourceFactsExpandHead && hooks.Version != schemaauthority.ObservationExpandHead && hooks.Version != schemaauthority.BudgetSnapshotExpandHead {
 		return fmt.Errorf("unknown exact expand target")
 	}
 	return run(ctx, pool, dir, runOptions{expand: &hooks, ceiling: hooks.Version, requireExactPrefix: true})
@@ -284,7 +284,7 @@ func run(ctx context.Context, pool *pgxpool.Pool, dir string, options runOptions
 		options.scopeSet = true
 		for _, version := range pending {
 			if expandFiles[version] {
-				if version != schemaauthority.CapabilityExpandHead && version != schemaauthority.StreamCounterExpandHead && version != schemaauthority.SourceFactsExpandHead {
+				if version != schemaauthority.CapabilityExpandHead && version != schemaauthority.StreamCounterExpandHead && version != schemaauthority.SourceFactsExpandHead && version != schemaauthority.ObservationExpandHead && version != schemaauthority.BudgetSnapshotExpandHead {
 					return fmt.Errorf("unknown runtime expand boundary %s", version)
 				}
 				break

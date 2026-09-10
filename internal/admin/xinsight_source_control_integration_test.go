@@ -269,6 +269,7 @@ func TestSourceFactsSafetyControlsRemainAvailableWithoutCaptureIntegration(t *te
 	f.handler.GetXInsightSourceConnection(w, r)
 	require.Equal(t, 200, w.Code, w.Body.String())
 	require.Contains(t, w.Body.String(), `"capture_enabled":false`)
+	require.Contains(t, w.Body.String(), `"available_profiles":[]`)
 	f.control(t, "pause", map[string]any{}, 200)
 	f.control(t, "cancel", map[string]any{"credential_id": key["credential_id"]}, 200)
 	f.control(t, "resume", map[string]any{}, 503)

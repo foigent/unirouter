@@ -47,8 +47,8 @@ func TestBuildHasStableSemanticScopeAndVariableArtifactIdentity(t *testing.T) {
 	if first.Summary.ReviewRequiredCount != 0 || first.Summary.ProtectedCount != len(protectedTables) {
 		t.Fatalf("unexpected classification summary: %+v", first.Summary)
 	}
-	if first.Summary.TableCount != 135 || first.Summary.ResetCandidateCount != 113 ||
-		first.Summary.ProtectedCount != 20 || first.Summary.ProtectedPartialCount != 1 ||
+	if first.Summary.TableCount != 140 || first.Summary.ResetCandidateCount != 112 ||
+		first.Summary.ProtectedCount != 26 || first.Summary.ProtectedPartialCount != 1 ||
 		first.Summary.SchemaLedgerCount != 1 {
 		t.Fatalf("reset classification cardinality drifted: %+v", first.Summary)
 	}
@@ -93,7 +93,7 @@ func TestBuildSupportsExactCurrentSchemaAndRejectsPreviousOrFutureMax(t *testing
 	if got := plan.Schema.MigrationVersions[len(plan.Schema.MigrationVersions)-1]; got != schemaauthority.LatestSupportedMigration {
 		t.Fatalf("latest migration = %q, want %q", got, schemaauthority.LatestSupportedMigration)
 	}
-	if plan.Summary.TableCount != 135 || plan.Summary.ResetCandidateCount != 113 || plan.Summary.ReviewRequiredCount != 0 {
+	if plan.Summary.TableCount != 140 || plan.Summary.ResetCandidateCount != 112 || plan.Summary.ReviewRequiredCount != 0 {
 		t.Fatalf("current schema changed reviewed table classification: %+v", plan.Summary)
 	}
 	if plan.Schema.TriggerCount != len(resetDeleteTriggers)+6 {
@@ -361,7 +361,7 @@ func TestEveryCurrentMigrationTableHasAnExplicitResetClassification(t *testing.T
 }
 
 func TestSourceFactsDataCannotEnterTheExistingResetErasureScope(t *testing.T) {
-	for _, name := range []string{"execution_source_acknowledgements", "execution_source_connections", "execution_source_credentials", "execution_source_facts", "execution_source_streams"} {
+	for _, name := range []string{"execution_source_acknowledgements", "execution_source_connections", "execution_source_credentials", "execution_source_facts", "execution_source_streams", "execution_source_budget_scopes", "execution_source_budget_definitions", "execution_source_budget_bindings", "execution_source_budget_binding_history", "execution_source_budget_coverage", "usage_finalization_journal"} {
 		t.Run(name, func(t *testing.T) {
 			snapshot := completeSnapshot()
 			for index := range snapshot.Tables {

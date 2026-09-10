@@ -1,5 +1,29 @@
 # UniRouter Current Status
 
+## UR-A Local accepted; B/D/X implementation active — 2026-09-10
+
+The isolated work-facts candidate 1.3.0 at `25f5c1fdfb6b` received complete
+independent UR-A Local acceptance, including actual ASUS-hosted Linux/amd64
+Docker/Compose, migrations, permissions and recovery. The accepted B/D v2 design
+is now implemented as an uncommitted 1.4.0 candidate in
+`/private/tmp/unirouter-workfacts-20260909`; local contract, authorization,
+actual backup/restore, source/budget management browser and broad regressions
+have passed after fixes. Concurrent testing found a validated B/BD blocker:
+direct source-stream updates amplify serialization failures in original Authorize
+RR. The independently accepted dispatch-outbox amendment is now implemented;
+transaction, retention, lease, concurrent migration/Renew, snapshot visibility,
+actual main recovery and public fault-path checks passed locally. Symmetric
+serial runs all passed; concurrent successes per 128 requests were A126,
+off125, B126, D123, BD127. Committed dispatch coverage was complete, while
+original concurrency failures and optional observation gaps remain explicit.
+M118 has no successful reset lifecycle: read-only diagnostics remain available,
+but incomplete plans cannot be loaded for execution or applied. Historical
+A/M116 reset evidence and current M118 refusal evidence are separate.
+Packaging, reviewed ASUS and overall acceptance remain active.
+No B/D acceptance, GitHub CI, XI integration, Target or Production success is
+claimed. The accepted A performance limitations remain in force.
+[Current scope, exact evidence and continuation](../agent-workflows/EXECUTION-RECORD.md).
+
 ## Delivery/onboarding 1.2.77 candidate — 2026-09-09
 
 Local candidate adds mandatory host-tool preflight before image builds, conservative early CI checks, exact latest-Probe Approval readback, configured-model continuation and client-name parity. No Target change or new paid call yet. Required CI, exact Artifact/Target and representative Approval GUI remain pending.

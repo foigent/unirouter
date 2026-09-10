@@ -63,7 +63,7 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 	if input.TargetVersion == "" {
 		input.TargetVersion = schemaauthority.CapabilityExpandHead
 	}
-	if input.TargetVersion != schemaauthority.CapabilityExpandHead && input.TargetVersion != schemaauthority.StreamCounterExpandHead && input.TargetVersion != schemaauthority.SourceFactsExpandHead {
+	if input.TargetVersion != schemaauthority.CapabilityExpandHead && input.TargetVersion != schemaauthority.StreamCounterExpandHead && input.TargetVersion != schemaauthority.SourceFactsExpandHead && input.TargetVersion != schemaauthority.ObservationExpandHead && input.TargetVersion != schemaauthority.BudgetSnapshotExpandHead {
 		return fmt.Errorf("unknown exact expansion target")
 	}
 	dir := configuredMigrationsDir(cfg)
@@ -100,7 +100,7 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 		if err != nil {
 			return fmt.Errorf("%s support manifest: %w", host, err)
 		}
-		if input.TargetVersion == schemaauthority.StreamCounterExpandHead || input.TargetVersion == schemaauthority.SourceFactsExpandHead {
+		if input.TargetVersion == schemaauthority.StreamCounterExpandHead || (input.TargetVersion == schemaauthority.SourceFactsExpandHead || (input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead)) {
 			if err := manifest.Require(input.TargetVersion, []modelprofile.ImplementationReference{{Kind: "stream_counter", ID: metering.GatewayCounterEstimateVersionV2}, {Kind: "stream_counter", ID: metering.GatewayCounterEstimateVersionV3}}); err != nil {
 				return err
 			}
@@ -108,8 +108,18 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 				return fmt.Errorf("runtime does not support requested expansion")
 			}
 		}
+		if input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead {
+			if err := manifest.Require(input.TargetVersion, []modelprofile.ImplementationReference{{Kind: "source_observations", ID: "unirouter.source-observation.v1"}, {Kind: "source_dispatch", ID: "unirouter.source-dispatch-outbox.v1"}}); err != nil {
+				return err
+			}
+		}
+		if input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead {
+			if err := manifest.Require(input.TargetVersion, runtimegeneration.BudgetCoverageRequirements()); err != nil {
+				return err
+			}
+		}
 		manifests[host] = manifest
-		if input.TargetVersion == schemaauthority.SourceFactsExpandHead {
+		if input.TargetVersion == schemaauthority.SourceFactsExpandHead || (input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead) {
 			if err := manifest.Require(input.TargetVersion, []modelprofile.ImplementationReference{{Kind: "source_facts", ID: "unirouter.source-fact.v1"}}); err != nil {
 				return err
 			}
@@ -128,17 +138,27 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 			return err
 		}
 		predecessor := schemaauthority.LegacyCapabilityHead
-		if input.TargetVersion == schemaauthority.StreamCounterExpandHead || input.TargetVersion == schemaauthority.SourceFactsExpandHead {
+		if input.TargetVersion == schemaauthority.StreamCounterExpandHead || (input.TargetVersion == schemaauthority.SourceFactsExpandHead || (input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead)) {
 			predecessor = schemaauthority.CapabilityExpandHead
 		}
-		if input.TargetVersion == schemaauthority.SourceFactsExpandHead {
+		if input.TargetVersion == schemaauthority.SourceFactsExpandHead || (input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead) {
 			predecessor = schemaauthority.StreamCounterExpandHead
+		}
+		if input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead {
+			predecessor = schemaauthority.SourceFactsExpandHead
+		}
+		if input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead {
+			predecessor = schemaauthority.ObservationExpandHead
 		}
 		if actual[len(actual)-1] != predecessor && actual[len(actual)-1] != input.TargetVersion {
 			return fmt.Errorf("expansion predecessor differs")
 		}
-		if input.TargetVersion == schemaauthority.StreamCounterExpandHead || input.TargetVersion == schemaauthority.SourceFactsExpandHead {
-			rows, err := conn.Query(ctx, `SELECT instance_id FROM runtime_generations WHERE state<>'stopped' AND (ingress_state<>'absent' OR lease_expires_at>clock_timestamp())`)
+		if input.TargetVersion == schemaauthority.StreamCounterExpandHead || (input.TargetVersion == schemaauthority.SourceFactsExpandHead || (input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead)) {
+			inventory := `SELECT instance_id FROM runtime_generations WHERE state<>'stopped' AND (ingress_state<>'absent' OR lease_expires_at>clock_timestamp())`
+			if input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead {
+				inventory = `SELECT instance_id FROM runtime_generations WHERE state<>'stopped'`
+			}
+			rows, err := conn.Query(ctx, inventory)
 			if err != nil {
 				return err
 			}
@@ -197,7 +217,10 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 	if err == nil && args[0] == "apply" {
 		err = migrate.RunCompatibleExpand(ctx, postgres.Pool, dir, migrate.CompatibleExpandHooks{Version: input.TargetVersion, ExpectedSHA256: input.MigrationDigest, Before: preflight,
 			After: func(ctx context.Context, tx pgx.Tx) error {
-				if input.TargetVersion == schemaauthority.StreamCounterExpandHead || input.TargetVersion == schemaauthority.SourceFactsExpandHead {
+				if input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead {
+					return runtimegeneration.CertifyBudgetCoverageTx(ctx, tx, manifests["uniroute-api"], input.MigrationDigest)
+				}
+				if input.TargetVersion == schemaauthority.StreamCounterExpandHead || (input.TargetVersion == schemaauthority.SourceFactsExpandHead || (input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead)) {
 					return nil
 				} // Existing actors renew against the new head; never re-bootstrap M114.
 				for _, host := range []string{"uniroute-api", "uniroute-api-canary"} {

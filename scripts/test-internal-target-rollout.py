@@ -93,6 +93,7 @@ class CounterTransitionTests(unittest.TestCase):
         rollout.validate_transition(None)
         rollout.validate_transition({"kind":"stream_counter_expand_carrier", "up_sha256":"a"*64, "down_sha256":"b"*64})
         rollout.validate_transition({"kind":"source_facts_expand_carrier", "up_sha256":"a"*64, "down_sha256":"b"*64})
+        rollout.validate_transition({"kind":"source_observations_expand_carrier", "up_sha256":"a"*64, "down_sha256":"b"*64})
         for before, after in ((rollout.COUNTER_V2,rollout.COUNTER_V3),(rollout.COUNTER_V3,rollout.COUNTER_V2)):
             rollout.validate_transition({"kind":"stream_counter_writer","from":before,"to":after})
         for value in ({"kind":"any_schema"}, {"kind":"stream_counter_expand_carrier","up_sha256":"a"*64},
@@ -160,6 +161,50 @@ class CounterTransitionTests(unittest.TestCase):
             with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes+b"\nM\tmigrations/000001_init_schema.up.sql"]), self.assertRaisesRegex(RuntimeError,"migration pair"):
                 rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
             (new/"migrations"/(rollout.SOURCE_HEAD+".down.sql")).write_text("changed")
+            with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes]), self.assertRaisesRegex(RuntimeError,"bytes differ"):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+
+
+    def test_observation_expand_requires_exact_m116_and_preserves_older_bytes(self):
+        old=["000113_glm_stream_function_tools_qualification", rollout.CAPABILITY_HEAD, rollout.COUNTER_HEAD, rollout.SOURCE_HEAD]
+        tree="\n".join("migrations/"+name+".up.sql" for name in old).encode()
+        changes="\n".join("A\tmigrations/"+rollout.OBSERVATION_HEAD+"."+direction+".sql" for direction in ("up","down")).encode()
+        with tempfile.TemporaryDirectory() as directory:
+            new=Path(directory).resolve(); (new/"migrations").mkdir()
+            transition={"kind":"source_observations_expand_carrier"}
+            for direction in ("up","down"):
+                wire=(direction+" exact M117 fixture").encode()
+                (new/"migrations"/(rollout.OBSERVATION_HEAD+"."+direction+".sql")).write_bytes(wire)
+                transition[direction+"_sha256"]=rollout.digest(wire)
+            with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes]):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+            with patch.object(rollout,"run",return_value=tree), self.assertRaisesRegex(RuntimeError,"predecessor"):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old[:-1])
+            with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes+b"\nM\tmigrations/"+rollout.SOURCE_HEAD.encode()+b".up.sql"]), self.assertRaisesRegex(RuntimeError,"migration pair"):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+            (new/"migrations"/(rollout.OBSERVATION_HEAD+".down.sql")).write_text("unreviewed replacement")
+            with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes]), self.assertRaisesRegex(RuntimeError,"bytes differ"):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+
+
+    def test_budget_expand_requires_exact_m117_and_preserves_older_bytes(self):
+        old=["000113_glm_stream_function_tools_qualification", rollout.CAPABILITY_HEAD, rollout.COUNTER_HEAD, rollout.SOURCE_HEAD, rollout.OBSERVATION_HEAD]
+        tree="\n".join("migrations/"+name+".up.sql" for name in old).encode()
+        changes="\n".join("A\tmigrations/"+rollout.BUDGET_HEAD+"."+direction+".sql" for direction in ("up","down")).encode()
+        with tempfile.TemporaryDirectory() as directory:
+            new=Path(directory).resolve(); (new/"migrations").mkdir()
+            transition={"kind":"source_budgets_expand_carrier"}
+            for direction in ("up","down"):
+                wire=(direction+" exact M118 fixture").encode()
+                (new/"migrations"/(rollout.BUDGET_HEAD+"."+direction+".sql")).write_bytes(wire)
+                transition[direction+"_sha256"]=rollout.digest(wire)
+            with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes]):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+            with patch.object(rollout,"run",return_value=tree), self.assertRaisesRegex(RuntimeError,"predecessor"):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old[:-1])
+            with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes+b"\nM\tmigrations/"+rollout.SOURCE_HEAD.encode()+b".up.sql"]), self.assertRaisesRegex(RuntimeError,"migration pair"):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+            (new/"migrations"/(rollout.BUDGET_HEAD+".down.sql")).write_text("unreviewed replacement")
             with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes]), self.assertRaisesRegex(RuntimeError,"bytes differ"):
                 rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
 
@@ -912,17 +957,17 @@ class ArtifactOwnerReadFixtureTests(unittest.TestCase):
         bridge,current=self.load_carrier().carrier_read_ledgers(migrations)
         self.assertEqual(bridge[0],"bridge")
         self.assertEqual(current[0],"current")
-        self.assertEqual(bridge[1][-1],"000115_stream_counter_version")
-        self.assertEqual(current[1][-1],"000116_execution_source_facts")
+        self.assertEqual(bridge[1][-1],"000117_execution_observations")
+        self.assertEqual(current[1][-1],"000118_source_budget_snapshots")
         self.assertEqual(current[1],sorted(p.name[:-7] for p in migrations.glob("*.up.sql")))
         self.assertEqual(bridge[1],current[1][:-1])
 
     def test_unknown_future_head_cannot_keep_a_stale_success_label(self):
         import tempfile
         with tempfile.TemporaryDirectory(prefix="ur-carrier-ledger-") as root:
-            for name in ["000115_stream_counter_version","000116_execution_source_facts","000117_unknown"]:
+            for name in ["000117_execution_observations","000118_source_budget_snapshots","000119_unknown"]:
                 (Path(root)/(name+".up.sql")).write_text("")
-            with self.assertRaisesRegex(RuntimeError,"exact M115/M116"):
+            with self.assertRaisesRegex(RuntimeError,"exact M117/M118"):
                 self.load_carrier().carrier_read_ledgers(Path(root))
 
 

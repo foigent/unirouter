@@ -685,7 +685,7 @@ export default function XInsightLiveConnection({
         </Text>
       </div>
 
-      {projectID && <XInsightSourceConnection key={projectID} projectId={projectID} expansionAllowed={expansionEnabled} />}
+      {projectID && <XInsightSourceConnection key={projectID} projectId={projectID} orgId={selectedProject?.org_id} expansionAllowed={expansionEnabled} budgetReadAllowed={['platform_admin', 'org_admin', 'billing_admin'].includes(user?.organization_role ?? user?.role ?? '')} budgetWriteAllowed={['platform_admin', 'billing_admin'].includes(user?.organization_role ?? user?.role ?? '')} />}
     </div>
   );
 }

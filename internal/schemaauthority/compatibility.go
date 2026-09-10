@@ -12,6 +12,12 @@ func RuntimeLedgers(artifact []string) ([][]string, error) {
 		return nil, err
 	}
 	end := len(artifact)
+	if end >= 6 && artifact[end-1] == BudgetSnapshotExpandHead && artifact[end-2] == ObservationExpandHead && artifact[end-3] == SourceFactsExpandHead && artifact[end-4] == StreamCounterExpandHead && artifact[end-5] == CapabilityExpandHead && artifact[end-6] == LegacyCapabilityHead {
+		return [][]string{slices.Clone(artifact[:end-5]), slices.Clone(artifact[:end-4]), slices.Clone(artifact[:end-3]), slices.Clone(artifact[:end-2]), slices.Clone(artifact[:end-1]), slices.Clone(artifact)}, nil
+	}
+	if end >= 5 && artifact[end-1] == ObservationExpandHead && artifact[end-2] == SourceFactsExpandHead && artifact[end-3] == StreamCounterExpandHead && artifact[end-4] == CapabilityExpandHead && artifact[end-5] == LegacyCapabilityHead {
+		return [][]string{slices.Clone(artifact[:end-4]), slices.Clone(artifact[:end-3]), slices.Clone(artifact[:end-2]), slices.Clone(artifact[:end-1]), slices.Clone(artifact)}, nil
+	}
 	if end >= 4 && artifact[end-1] == SourceFactsExpandHead && artifact[end-2] == StreamCounterExpandHead && artifact[end-3] == CapabilityExpandHead && artifact[end-4] == LegacyCapabilityHead {
 		return [][]string{slices.Clone(artifact[:end-3]), slices.Clone(artifact[:end-2]), slices.Clone(artifact[:end-1]), slices.Clone(artifact)}, nil
 	}
@@ -39,5 +45,5 @@ func VerifyRuntimeLedger(artifact, actual []string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("database ledger is outside the exact M113/M114/M115/M116 runtime compatibility bridge")
+	return fmt.Errorf("database ledger is outside the exact M113/M114/M115/M116/M117/M118 runtime compatibility bridge")
 }

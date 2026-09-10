@@ -225,3 +225,43 @@ by frontend Nginx. The TLS proxy must overwrite an inbound client-supplied
 `X-Forwarded-For` or append its verified network peer; it must not pass the
 header through unchanged. Do not use `0.0.0.0/0` or `::/0` as trusted proxy
 ranges. Login throttling and API-key IP allowlists share this resolver.
+
+## Optional source observations and budget snapshots
+
+M118 currently has no supported successful `reset` lifecycle. Budget definition,
+binding, coverage history and the original journal are preserved; the old reset
+scope is incomplete: the CLI can write a read-only diagnostic preview, but that
+preview cannot be loaded as an executable plan and apply is refused. Disabling D
+capture does not remove this restriction. Historical A/M116 reset evidence
+does not establish support for this version. Do not clear metadata or alter the
+migration ledger to make reset proceed.
+
+`SOURCE_OBSERVATIONS_ENABLED` and `SOURCE_BUDGET_SNAPSHOTS_ENABLED` default to
+`false` and each requires `SOURCE_FACTS_ENABLED=true`. B requires the reviewed
+M117 expansion; D requires M118 and original financial-journal writer support.
+Every non-stopped generation, including recovery-capable generations, must
+advertise the finite schema and writer contracts before expansion. Connection
+and credential profiles are explicit; upgrade never expands old credentials.
+
+D snapshots are report-only. Gateway known subtotals exclude calculated prices,
+reservations and legacy call-log baselines. Enterprise budgets require an explicit
+same-project binding; no organization totals are exposed. M118 initially covers
+only the interval beginning at certification. A missing interval prevents a
+comparable remaining amount, even when the current journal subtotal is zero.
+
+A customer package supporting D must carry the exact helper below as a declared
+artifact with its size and SHA-256 in the signed upgrade manifest, alongside this
+restoration instruction. This source template does not itself sign or release it.
+
+- Repository/package path: `scripts/source-budget-restore-rebase.sql`
+- SHA-256: `e09d8a3897c40c8efc24d81fdba50bab7af179c07c3e8b3ae018305d88a3e6c7`
+- Bytes: `2084`
+
+After every supported SQL restore, while all database readers/writers are still
+stopped, run this helper with `psql -v ON_ERROR_STOP=1 -f` before restart. It retains
+the former coverage epoch and records the database restore boundary; it does not
+change money, credentials, source identity or A/B cursors. Any helper failure
+stops restoration validation. The backend then verifies the exact retained schema
+and writer proof before enabling D. Config preflight alone is not readiness.
+Pre-D backups without M118 keep their original recovery path; D cannot be enabled
+until normal M118 expansion and a fresh certification have completed.

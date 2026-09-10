@@ -1306,6 +1306,7 @@ func profileStreamGuardrailTransformUnsafe(route *RouteResult, result guardrail.
 }
 
 func (relay *Relay) recordGuardrailResult(ctx context.Context, requestID, model, requestedModel, stage string, result guardrail.Result, route *RouteResult, statusCode int, upstreamRequestID string) {
+	guardrail.RecordSourceResult(ctx, stage, result)
 	for _, receipt := range result.Receipts {
 		severity := "info"
 		if receipt.Degraded || result.Decision == guardrail.DecisionBlock {

@@ -30,11 +30,12 @@ type ImageRouter interface {
 }
 
 type GPTImageProvider struct {
-	router     ImageRouter
-	profile    endpointprotocol.Profile
-	httpClient *http.Client
-	encKey     []byte
-	timeout    time.Duration
+	sourceObserver SourceMediaProviderObserver
+	router         ImageRouter
+	profile        endpointprotocol.Profile
+	httpClient     *http.Client
+	encKey         []byte
+	timeout        time.Duration
 }
 
 type GPTImageProviderOptions struct {
@@ -95,12 +96,12 @@ func (p *GPTImageProvider) Generate(
 		return ProviderResult{}, &ProviderError{Code: "route_unavailable", Retryable: true}
 	}
 	var lastErr error
-	for _, route := range routes {
+	for index, route := range routes {
 		if adapters.NormalizeType(route.Channel.AdapterType) != adapters.TypeOpenAICompatible {
 			lastErr = &ProviderError{Code: "endpoint_adapter_unsupported"}
 			continue
 		}
-		result, generateErr := p.generateRoute(callCtx, job, requestBody, route)
+		result, generateErr := p.generateRoute(callCtx, job, requestBody, route, index+1, len(routes))
 		if generateErr == nil {
 			_ = p.router.MarkChannelSuccess(ctx, route.Channel.ID)
 			_ = p.router.MarkKeySuccess(ctx, route.ChannelKey.ID)
@@ -123,6 +124,7 @@ func (p *GPTImageProvider) generateRoute(
 	job Job,
 	requestBody []byte,
 	route gateway.RouteResult,
+	sequence, total int,
 ) (ProviderResult, error) {
 	apiKey, err := auth.DecryptKey(route.ChannelKey.KeyEnc, p.encKey)
 	if err != nil {
@@ -141,7 +143,27 @@ func (p *GPTImageProvider) generateRoute(
 	if err != nil {
 		return ProviderResult{}, &ProviderError{Code: protocolErrorCode(err)}
 	}
+	var observation SourceMediaRoute
+	if p.SourceObservationsEnabled() {
+		descriptor := p.profile.Descriptor()
+		observation = SourceMediaRoute{Sequence: sequence, Total: total, ChannelID: route.Channel.ID, ChannelKeyID: route.ChannelKey.ID, Provider: route.Channel.Provider, Origin: upstreamRequest.URL.Scheme + "://" + upstreamRequest.URL.Host, Model: job.RoutingModel, Operation: job.Operation, ProtocolProfile: descriptor.ProfileID, ProtocolVersion: descriptor.ProfileVersion, Surface: descriptor.UpstreamEndpoint, ExecutionProfile: route.ExecutionProfileID, ExecutionVersion: route.ExecutionProfileVersion, ReleaseRef: route.RuntimeReleaseRef}
+		if err := p.sourceObserver.BeforeMediaRoute(ctx, job, observation); err != nil {
+			return ProviderResult{}, &ProviderError{Code: "source_dispatch_unavailable"}
+		}
+	}
+	var started time.Time
+	if p.SourceObservationsEnabled() {
+		started = time.Now()
+	}
 	response, err := p.httpClient.Do(upstreamRequest)
+	if p.SourceObservationsEnabled() {
+		duration := time.Since(started).Nanoseconds()
+		status := 0
+		if response != nil {
+			status = response.StatusCode
+		}
+		recordSourceMediaHTTP(ctx, SourceMediaHTTP{Route: observation, Status: status, RoundTripNanoseconds: duration, ObservedAt: time.Now()})
+	}
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return ProviderResult{}, &ProviderError{

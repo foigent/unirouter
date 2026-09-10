@@ -87,6 +87,7 @@ type Handler struct {
 	sourceFactsController        interface {
 		Enabled() bool
 		SourceInstance() string
+		ProfilesEnabled([]string) bool
 	}
 	xInsightConnectorManager     *xinsightconnector.Manager
 	xInsightConnectorIntake      xInsightConnectorInvitationIntake
@@ -185,6 +186,7 @@ func (h *Handler) SetCompletedFeedController(controller completedFeedController)
 func (h *Handler) SetSourceFactsController(controller interface {
 	Enabled() bool
 	SourceInstance() string
+	ProfilesEnabled([]string) bool
 }) {
 	h.sourceFactsController = controller
 }

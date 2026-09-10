@@ -301,6 +301,7 @@ func (row successorRecoveryRow) Scan(dest ...any) error {
 
 func TestNeverActivatedStagingModelSuccessorCutoverAtomicIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
+	require.NoError(t, testutil.RewindEmptyBudgetSnapshotsForLegacyTest(t.Context(), pool, testutil.MigrationsDir(t)))
 	manager, err := runtimechange.NewManager(
 		&recordingBeginTxPool{Pool: pool}, unusedDeploymentSnapshotBuilder{}, routingpolicy.Default(),
 	)
@@ -469,7 +470,9 @@ SELECT COUNT(*) FROM information_schema.columns
 // without bypassing any later-migration or durable-evidence guard.
 func rewindSuccessorLaterMigrations(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
+	require.NoError(t, testutil.RewindEmptyBudgetSnapshotsForLegacyTest(t.Context(), pool, testutil.MigrationsDir(t)))
 	for _, migration := range []string{
+		"000117_execution_observations",
 		"000116_execution_source_facts",
 		"000115_stream_counter_version",
 		"000114_capability_delivery_expand",

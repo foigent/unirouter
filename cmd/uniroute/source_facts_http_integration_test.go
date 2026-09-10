@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -41,14 +42,27 @@ import (
 )
 
 func TestSourceFactsChatAndEmbeddingsAuthHistoryAndReplayIntegration(t *testing.T) {
-	for _, operation := range []string{"chat", "chat_stream", "chat_stream_interrupted", "chat_stream_cancel", "embeddings", "chat_cache"} {
+	sourceChatAndEmbeddingsAuthHistoryAndReplay(t, false)
+}
+
+func TestSourceObservationsChatAndEmbeddingsAuthHistoryAndReplayIntegration(t *testing.T) {
+	sourceChatAndEmbeddingsAuthHistoryAndReplay(t, true)
+}
+
+func sourceChatAndEmbeddingsAuthHistoryAndReplay(t *testing.T, observations bool) {
+	operations := []string{"chat", "chat_stream", "chat_stream_interrupted", "chat_stream_cancel", "embeddings", "chat_cache"}
+	if observations {
+		operations = append(operations, "chat_stream_tools", "chat_stream_write_failure", "chat_stream_flush_failure", "chat_fallback", "embeddings_fallback")
+	}
+	for _, operation := range operations {
 		identities := []string{"legacy_shared", "legacy_personal", "legacy_application", "grant_personal", "grant_application", "agent"}
-		if operation == "chat_cache" || operation == "chat_stream_interrupted" || operation == "chat_stream_cancel" {
+		if operation == "chat_cache" || strings.HasPrefix(operation, "chat_stream_") || strings.HasSuffix(operation, "_fallback") {
 			identities = []string{"legacy_shared"}
 		}
 		for _, identity := range identities {
 			t.Run(operation+"/"+identity, func(t *testing.T) {
 				pool := testutil.SetupMigratedTestDB(t)
+				sourceHTTPIsolateRedisIdentities(t, pool)
 				role := "developer"
 				if operation == "chat_cache" {
 					role = auth.RoleOrgAdmin
@@ -59,10 +73,20 @@ func TestSourceFactsChatAndEmbeddingsAuthHistoryAndReplayIntegration(t *testing.
 				seedPRD2P0ModelGovernance(t, pool, org, project)
 				var calls atomic.Int64
 				provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					calls.Add(1)
+					call := calls.Add(1)
+					if strings.HasSuffix(operation, "_fallback") && call == 1 {
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusServiceUnavailable)
+						fmt.Fprint(w, `{"error":{"message":"synthetic retryable rejection","type":"server_error"}}`)
+						return
+					}
 					if strings.HasPrefix(operation, "chat_stream") {
 						w.Header().Set("Content-Type", "text/event-stream")
-						fmt.Fprint(w, "data: {\"id\":\"synthetic-source-chat\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"synthetic answer\"},\"finish_reason\":null}]}\n\n")
+						if operation == "chat_stream_tools" {
+							fmt.Fprint(w, "data: {\"id\":\"synthetic-source-chat\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_synthetic\",\"type\":\"function\",\"function\":{\"name\":\"synthetic_echo\",\"arguments\":\"{}\"}}]},\"finish_reason\":null}]}\n\n")
+						} else {
+							fmt.Fprint(w, "data: {\"id\":\"synthetic-source-chat\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"synthetic answer\"},\"finish_reason\":null}]}\n\n")
+						}
 						if operation == "chat_stream_interrupted" {
 							return
 						}
@@ -71,7 +95,7 @@ func TestSourceFactsChatAndEmbeddingsAuthHistoryAndReplayIntegration(t *testing.
 						return
 					}
 					w.Header().Set("Content-Type", "application/json")
-					if operation == "embeddings" {
+					if strings.HasPrefix(operation, "embeddings") {
 						fmt.Fprint(w, `{"object":"list","model":"gpt-4o","data":[{"object":"embedding","index":0,"embedding":[0.1,0.2]}],"usage":{"prompt_tokens":10,"total_tokens":10}}`)
 					} else {
 						fmt.Fprint(w, `{"id":"synthetic-source-chat","object":"chat.completion","model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"synthetic answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`)
@@ -79,6 +103,9 @@ func TestSourceFactsChatAndEmbeddingsAuthHistoryAndReplayIntegration(t *testing.
 				}))
 				t.Cleanup(provider.Close)
 				seedPRD2P0Channel(t, pool, provider.URL, "gpt-4o")
+				if strings.HasSuffix(operation, "_fallback") {
+					seedPRD2P0Channel(t, pool, provider.URL, "gpt-4o")
+				}
 				raw := "ur-synthetic-source-" + strings.Repeat("a", 32)
 				var key, app int64
 				if identity == "grant_application" {
@@ -111,7 +138,7 @@ func TestSourceFactsChatAndEmbeddingsAuthHistoryAndReplayIntegration(t *testing.
 					}
 				}
 				const sourceSecret = "synthetic-source-http-cursor-secret-only"
-				source, err := sourcefacts.New(pool, sourcefacts.Options{Enabled: true, SourceInstance: "synthetic-http", CursorSecret: sourceSecret, I01Enabled: true})
+				source, err := sourcefacts.New(pool, sourcefacts.Options{Enabled: true, ObservationsEnabled: observations, SourceInstance: "synthetic-http", CursorSecret: sourceSecret, I01Enabled: true})
 				require.NoError(t, err)
 				defer sourceHTTPAuthenticatedPull(t, pool, source, sourceSecret, org, project)()
 				v1, err := completedfeed.NewService(pool, sourceSecret, source.SourceInstance(), true)
@@ -122,6 +149,7 @@ func TestSourceFactsChatAndEmbeddingsAuthHistoryAndReplayIntegration(t *testing.
 				journal, err := outbox.New(pool, outbox.DefaultOptions())
 				require.NoError(t, err)
 				b.SetOutbox(journal)
+				require.NoError(t, journal.RegisterHandler(outbox.EventSourceDispatch, source.ProcessDispatchEvent))
 				for _, kind := range []string{outbox.EventBillingUsagePrepared, outbox.EventBillingSettled, outbox.EventBillingCancelled} {
 					require.NoError(t, journal.RegisterHandler(kind, b.ProcessUsageJournalEvent))
 				}
@@ -151,13 +179,17 @@ func TestSourceFactsChatAndEmbeddingsAuthHistoryAndReplayIntegration(t *testing.
 				require.NoError(t, err)
 				coordinator, err := modelexecution.New(pool, b, executionConfig)
 				require.NoError(t, err)
+				if observations {
+					b.SetCommittedObservationSink(source)
+					coordinator.SetDispatchMaterializer(source)
+				}
 				require.NoError(t, relay.SetModelExecutionRuntime(modelrouting.ModeLegacy, planner, coordinator, policy))
 				path, body := "/v1/chat/completions", `{"model":"company-chat","messages":[{"role":"user","content":"source-private-prompt"}],"stream":false}`
 				final := newGatewayChatHandler(pool, relay)
 				if strings.HasPrefix(operation, "chat_stream") {
 					body = strings.Replace(body, `"stream":false`, `"stream":true,"stream_options":{"include_usage":true}`, 1)
 				}
-				if operation == "embeddings" {
+				if strings.HasPrefix(operation, "embeddings") {
 					path, body = "/v1/embeddings", `{"model":"company-chat","input":"source-private-prompt"}`
 					final = newGatewayEmbeddingsHandler(pool, relay)
 				}
@@ -180,7 +212,7 @@ func TestSourceFactsChatAndEmbeddingsAuthHistoryAndReplayIntegration(t *testing.
 				retained := payloadpolicy.RequestMiddlewareWithMax(payloadpolicy.MustNewBudget(payloadpolicy.DefaultLimits()), 8*payloadpolicy.MiB, middleware.GetOrgIDFromContext)
 				handler := middleware.OperationIdentityWithSecret(prd2E2EJWTSecret)(middleware.GatewayAuthAcrossBufferedBody(middleware.GatewayAuthWithAgentCapabilities(pool, prd2E2EJWTSecret, capabilities), retained)(middleware.CaptureExecutionContext(source)(middleware.StrictJSONIngress(guarded))))
 				if operation == "chat_cache" {
-					sourceHTTPCacheCase(t, pool, relay, handler, journal, org, owner, project, key, raw, &calls)
+					sourceHTTPCacheCase(t, pool, relay, handler, journal, org, owner, project, key, raw, &calls, observations)
 					return
 				}
 				invoke := func(document, token, idem string) *httptest.ResponseRecorder {
@@ -193,6 +225,8 @@ func TestSourceFactsChatAndEmbeddingsAuthHistoryAndReplayIntegration(t *testing.
 						ctx, cancel := context.WithCancel(r.Context())
 						defer cancel()
 						handler.ServeHTTP(&sourceHTTPStreamCancelWriter{ResponseRecorder: w, cancel: cancel}, r.WithContext(ctx))
+					} else if operation == "chat_stream_write_failure" || operation == "chat_stream_flush_failure" {
+						handler.ServeHTTP(&sourceHTTPStreamFailureWriter{ResponseRecorder: w, flush: operation == "chat_stream_flush_failure"}, r)
 					} else {
 						handler.ServeHTTP(w, r)
 					}
@@ -205,18 +239,39 @@ func TestSourceFactsChatAndEmbeddingsAuthHistoryAndReplayIntegration(t *testing.
 					require.Contains(t, first.Body.String(), "synthetic answer")
 				}
 				request := first.Header().Get(middleware.OperationIDHeader)
+				if operation == "chat_stream_write_failure" || operation == "chat_stream_flush_failure" {
+					_, err = journal.DrainOnce(t.Context())
+					require.NoError(t, err)
+					for _, kind := range []string{"first_output_measurement", "stream_measurement"} {
+						var wire []byte
+						require.NoError(t, pool.QueryRow(t.Context(), `SELECT document FROM execution_source_facts WHERE request_id=$1 AND profile=$2 AND stage=$3`, request, sourcefacts.RuntimeProfile, kind).Scan(&wire))
+						d, err := sourcefacts.DecodeObservation(wire)
+						require.NoError(t, err)
+						require.Equal(t, "not_observed", d.Measurement.State)
+						require.Nil(t, d.Measurement.Value)
+					}
+					var outcome, failure string
+					require.NoError(t, pool.QueryRow(t.Context(), `SELECT outcome,error_code FROM request_delivery_receipts WHERE request_id=$1 ORDER BY sequence DESC LIMIT 1`, request).Scan(&outcome, &failure))
+					require.Contains(t, []string{"interrupted", "write_failed"}, outcome)
+					require.Equal(t, "downstream_stream_write_failed", failure)
+					require.EqualValues(t, 1, calls.Load())
+					return
+				}
 				if operation == "chat_stream_interrupted" || operation == "chat_stream_cancel" {
 					_, err = journal.DrainOnce(t.Context())
 					require.NoError(t, err)
 					var state string
 					var facts, economics int
-					require.NoError(t, pool.QueryRow(t.Context(), `SELECT status,(SELECT count(*) FROM execution_source_facts WHERE request_id=$1),(SELECT count(*) FROM completed_execution_feed_items WHERE request_id=$1) FROM freeze_idempotency WHERE request_id=$1`, request).Scan(&state, &facts, &economics))
+					require.NoError(t, pool.QueryRow(t.Context(), `SELECT status,(SELECT count(*) FROM execution_source_facts WHERE request_id=$1 AND profile=ANY($2)),(SELECT count(*) FROM completed_execution_feed_items WHERE request_id=$1) FROM freeze_idempotency WHERE request_id=$1`, request, sourcefacts.Profiles()).Scan(&state, &facts, &economics))
 					// Legacy Chat settles the durable delivered counter on a
 					// partial stream. This differs from the strict public V2
 					// executor; preserve its estimated usage and exact I-01.
 					require.Equal(t, "settled", state)
 					require.Equal(t, 7, facts)
 					require.Equal(t, 1, economics)
+					if observations {
+						sourceHTTPAssertObservations(t, pool, request, operation, 1)
+					}
 					var snapshotWire []byte
 					var snapshotHash, sourceHash string
 					require.NoError(t, pool.QueryRow(t.Context(), `SELECT snapshot,snapshot_sha256 FROM completed_execution_feed_items WHERE request_id=$1`, request).Scan(&snapshotWire, &snapshotHash))
@@ -240,7 +295,7 @@ func TestSourceFactsChatAndEmbeddingsAuthHistoryAndReplayIntegration(t *testing.
 				}
 				_, err = journal.DrainOnce(t.Context())
 				require.NoError(t, err)
-				rows, err := pool.Query(t.Context(), `SELECT document FROM execution_source_facts WHERE request_id=$1 ORDER BY profile,stage`, request)
+				rows, err := pool.Query(t.Context(), `SELECT document FROM execution_source_facts WHERE request_id=$1 AND profile=ANY($2) ORDER BY profile,stage`, request, sourcefacts.Profiles())
 				require.NoError(t, err)
 				count := 0
 				for rows.Next() {
@@ -278,6 +333,21 @@ func TestSourceFactsChatAndEmbeddingsAuthHistoryAndReplayIntegration(t *testing.
 				require.NoError(t, rows.Err())
 				rows.Close()
 				require.Equal(t, 7, count)
+				if observations {
+					attempts := 1
+					if strings.HasSuffix(operation, "_fallback") {
+						attempts = 2
+					}
+					sourceHTTPAssertObservations(t, pool, request, operation, attempts)
+					if attempts == 2 {
+						require.EqualValues(t, 2, calls.Load())
+						var actualAttempts, terminal int
+						require.NoError(t, pool.QueryRow(t.Context(), `SELECT (SELECT count(*) FROM billing_provider_attempts WHERE request_id=$1), (SELECT count(*) FROM completed_execution_feed_items WHERE request_id=$1)`, request).Scan(&actualAttempts, &terminal))
+						require.Equal(t, 2, actualAttempts)
+						require.Equal(t, 1, terminal)
+						return
+					}
+				}
 				replay := invoke(body, raw, "source-same-business-op")
 				require.Equal(t, http.StatusConflict, replay.Code, replay.Body.String())
 				require.Equal(t, request, replay.Header().Get(middleware.OriginalOperationHeader))
@@ -300,10 +370,33 @@ func TestSourceFactsChatAndEmbeddingsAuthHistoryAndReplayIntegration(t *testing.
 				require.Equal(t, http.StatusPaymentRequired, admissionDenied.Code, admissionDenied.Body.String())
 				deniedRequest := admissionDenied.Header().Get(middleware.OperationIDHeader)
 				var deniedFacts, deniedFreezes int
-				require.NoError(t, pool.QueryRow(t.Context(), `SELECT (SELECT count(*) FROM execution_source_facts WHERE request_id=$1),(SELECT count(*) FROM freeze_idempotency WHERE request_id=$1)`, deniedRequest).Scan(&deniedFacts, &deniedFreezes))
+				require.NoError(t, pool.QueryRow(t.Context(), `SELECT (SELECT count(*) FROM execution_source_facts WHERE request_id=$1 AND profile=ANY($2)),(SELECT count(*) FROM freeze_idempotency WHERE request_id=$1)`, deniedRequest, sourcefacts.Profiles()).Scan(&deniedFacts, &deniedFreezes))
 				require.Equal(t, 2, deniedFacts, "authenticated identity exists without an admitted execution")
 				require.Zero(t, deniedFreezes)
 				require.EqualValues(t, 1, calls.Load())
+				if observations {
+					var rejectedWire []byte
+					require.NoError(t, pool.QueryRow(t.Context(), `SELECT document FROM execution_source_facts WHERE request_id=$1 AND profile=$2 AND stage='admission_rejected'`, deniedRequest, sourcefacts.RuntimeProfile).Scan(&rejectedWire))
+					rejected, err := sourcefacts.DecodeObservation(rejectedWire)
+					require.NoError(t, err)
+					require.Equal(t, "rejected", rejected.Runtime.Admission)
+					require.Equal(t, "not_started", rejected.Runtime.Provider)
+					require.Equal(t, "not_created", rejected.Runtime.Financial)
+					if identity == "legacy_shared" {
+						_, err = pool.Exec(t.Context(), `CREATE FUNCTION source_test_refuse_rejection() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.stage='admission_rejected' THEN RAISE EXCEPTION 'synthetic rejection source unavailable'; END IF; RETURN NEW; END $$;
+						CREATE TRIGGER source_test_refuse_rejection BEFORE INSERT ON execution_source_facts FOR EACH ROW EXECUTE FUNCTION source_test_refuse_rejection()`)
+						require.NoError(t, err)
+						failedRejection := invoke(body, raw, "")
+						require.Equal(t, http.StatusServiceUnavailable, failedRejection.Code, failedRejection.Body.String())
+						require.Contains(t, failedRejection.Body.String(), "source_facts.capture_unavailable")
+						var admitted int
+						require.NoError(t, pool.QueryRow(t.Context(), `SELECT count(*) FROM freeze_idempotency WHERE request_id=$1`, failedRejection.Header().Get(middleware.OperationIDHeader)).Scan(&admitted))
+						require.Zero(t, admitted)
+						require.EqualValues(t, 1, calls.Load())
+						_, err = pool.Exec(t.Context(), `DROP TRIGGER source_test_refuse_rejection ON execution_source_facts; DROP FUNCTION source_test_refuse_rejection()`)
+						require.NoError(t, err)
+					}
+				}
 				if identity == "grant_application" {
 					var before, after []byte
 					require.NoError(t, pool.QueryRow(t.Context(), `SELECT document FROM execution_source_facts WHERE request_id=$1 AND profile=$2 AND stage='terminal'`, request, sourcefacts.IdentityProfile).Scan(&before))
@@ -339,6 +432,21 @@ type sourceHTTPStreamCancelWriter struct {
 	*httptest.ResponseRecorder
 	cancel context.CancelFunc
 	once   sync.Once
+}
+
+type sourceHTTPStreamFailureWriter struct {
+	*httptest.ResponseRecorder
+	flush bool
+}
+
+func (w *sourceHTTPStreamFailureWriter) Write(p []byte) (int, error) {
+	if !w.flush {
+		return 0, errors.New("synthetic first write failure")
+	}
+	return w.ResponseRecorder.Write(p)
+}
+func (w *sourceHTTPStreamFailureWriter) FlushError() error {
+	return errors.New("synthetic first flush failure")
 }
 
 func (w *sourceHTTPStreamCancelWriter) Write(p []byte) (int, error) {

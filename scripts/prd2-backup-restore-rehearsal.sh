@@ -137,6 +137,10 @@ test -s "$DUMP_FILE"
 echo "Restoring dump into the rehearsal database"
 run_restore_psql -v ON_ERROR_STOP=1 -f "$DUMP_FILE" >/dev/null
 
+# Same supported rebase used by the operations runbook. No backend starts here.
+rebase_helper="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/source-budget-restore-rebase.sql"
+run_restore_psql -v ON_ERROR_STOP=1 -f "$rebase_helper" >/dev/null
+
 echo "Validating restored schema"
 schema_versions="$(run_restore_psql -v ON_ERROR_STOP=1 -Atc "SELECT COUNT(*) FROM schema_migrations;")"
 core_tables="$(run_restore_psql -v ON_ERROR_STOP=1 -Atc "SELECT COUNT(*) FROM (VALUES ('orgs'), ('projects'), ('api_keys'), ('call_logs'), ('audit_logs'), ('transactions')) AS t(name) WHERE to_regclass('public.' || name) IS NOT NULL;")"

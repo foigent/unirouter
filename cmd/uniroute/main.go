@@ -278,53 +278,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize async-media HTTP boundary: %v", err)
 	}
-	var stopAsyncMedia context.CancelFunc
-	var asyncMediaDone chan struct{}
-	if cfg.AsyncMediaEnabled {
-		mediaProvider, providerErr := mediajob.NewGPTImageProvider(
-			router,
-			[]byte(cfg.EncryptionKey),
-			mediajob.GPTImageProviderOptions{
-				Timeout: time.Duration(cfg.AsyncMediaProviderTimeoutSecs) * time.Second,
-			},
-		)
-		if providerErr != nil {
-			log.Fatalf("Failed to initialize GPT Image provider: %v", providerErr)
-		}
-		mediaWorker, workerErr := mediajob.NewWorker(
-			mediaStore, mediaObjects, mediaProvider, mediaCipher,
-			mediajob.WorkerOptions{
-				Owner:              asyncMediaWorkerID(cfg.AsyncMediaWorkerID),
-				LeaseDuration:      time.Duration(cfg.AsyncMediaLeaseSeconds) * time.Second,
-				PurgeLeaseDuration: time.Duration(cfg.AsyncMediaPurgeLeaseSeconds) * time.Second,
-				PollInterval:       time.Duration(cfg.AsyncMediaPollMilliseconds) * time.Millisecond,
-				OnError: func(workerErr error) {
-					log.Printf("Async-media worker operation failed: %v", workerErr)
-				},
-				LimitPolicy: limitPolicyService,
-			},
-		)
-		if workerErr != nil {
-			log.Fatalf("Failed to initialize async-media worker: %v", workerErr)
-		}
-		asyncMediaCtx, cancelAsyncMedia := context.WithCancel(context.Background())
-		stopAsyncMedia = cancelAsyncMedia
-		asyncMediaDone = make(chan struct{})
-		go func() {
-			defer close(asyncMediaDone)
-			runErr := mediaWorker.Run(asyncMediaCtx)
-			if runErr != nil && !errors.Is(runErr, context.Canceled) {
-				log.Printf("Async-media worker stopped: %v", runErr)
-			}
-		}()
-		log.Printf(
-			"Async-media Image V1 enabled: profile=%s retention=P7D video=false admission=%t",
-			mediajob.Evidence(true, cfg.AsyncMediaAdmissionEnabled).ProfileID,
-			cfg.AsyncMediaAdmissionEnabled,
-		)
-	} else {
-		log.Printf("Async-media Image V1 runtime disabled; contract and existing metadata remain readable")
-	}
 	billingSvc := billing.NewBilling(postgres.Pool, redisClient.Client).
 		WithMode(cfg.BillingMode).
 		WithRequestPricingAuthority(cfg.RequestPricingAuthority)
@@ -380,25 +333,85 @@ func main() {
 		completedfeed.ReferenceProtocolVersionV1,
 		completedfeed.ReferenceConnectorIDV1,
 	)
+	// Attach the original financial writer before read-only source readiness.
+	outboxSvc, err := outbox.New(postgres.Pool, outbox.DefaultOptions())
+	if err != nil {
+		log.Fatalf("Failed to initialize internal outbox: %v", err)
+	}
+	billingSvc.SetOutbox(outboxSvc)
 	// Local source capture remains disabled unless SOURCE_FACTS_ENABLED is
 	// explicitly enabled after the separately authorized M116 installation.
-	sourceFactsSvc, err := sourcefacts.New(postgres.Pool, sourcefacts.Options{Enabled: cfg.SourceFactsEnabled, SourceInstance: cfg.CompletedExecutionFeedSourceInstance, CursorSecret: cfg.APIKeyHashSecret, I01Enabled: cfg.CompletedExecutionFeedEnabled})
+	sourceFactsSvc, err := sourcefacts.New(postgres.Pool, sourcefacts.Options{Enabled: cfg.SourceFactsEnabled, ObservationsEnabled: cfg.SourceObservationsEnabled, BudgetSnapshotsEnabled: cfg.SourceBudgetSnapshotsEnabled, FinancialJournalReady: billingSvc.FinancialJournalReady, SourceInstance: cfg.CompletedExecutionFeedSourceInstance, CursorSecret: cfg.APIKeyHashSecret, I01Enabled: cfg.CompletedExecutionFeedEnabled})
 	if err != nil {
 		log.Fatalf("Failed to initialize source facts: %v", err)
 	}
 	if err = sourceFactsSvc.CheckReady(context.Background()); err != nil {
 		log.Fatalf("Source facts preflight refused: %v", err)
 	}
+	if err = sourceFactsSvc.CheckDispatchRecoveryReady(context.Background()); err != nil {
+		log.Fatalf("Source dispatch recovery preflight refused: %v", err)
+	}
 	billingSvc.SetTerminalMaterializer(billing.TerminalMaterializers{completedFeedSvc, sourceFactsSvc})
 	billingSvc.SetReservationMaterializer(sourceFactsSvc)
+	if cfg.SourceObservationsEnabled {
+		billingSvc.SetCommittedObservationSink(sourceFactsSvc)
+		executionCoordinator.SetDispatchMaterializer(sourceFactsSvc)
+	}
 	if cfg.SourceFactsEnabled {
 		mediaStore.SetSourceMaterializer(sourceFactsSvc)
 	}
-	outboxSvc, err := outbox.New(postgres.Pool, outbox.DefaultOptions())
-	if err != nil {
-		log.Fatalf("Failed to initialize internal outbox: %v", err)
+	// Source readiness and all immutable worker hooks precede Run. Its job
+	// and purge loops both perform work immediately, before waiting for a tick.
+	var stopAsyncMedia context.CancelFunc
+	var asyncMediaDone chan struct{}
+	if cfg.AsyncMediaEnabled {
+		mediaProvider, providerErr := mediajob.NewGPTImageProvider(
+			router,
+			[]byte(cfg.EncryptionKey),
+			mediajob.GPTImageProviderOptions{
+				Timeout: time.Duration(cfg.AsyncMediaProviderTimeoutSecs) * time.Second,
+			},
+		)
+		if providerErr != nil {
+			log.Fatalf("Failed to initialize GPT Image provider: %v", providerErr)
+		}
+		if cfg.SourceObservationsEnabled {
+			mediaProvider.SetSourceObserver(sourceFactsSvc)
+		}
+		mediaWorker, workerErr := mediajob.NewWorker(
+			mediaStore, mediaObjects, mediaProvider, mediaCipher,
+			mediajob.WorkerOptions{
+				Owner:              asyncMediaWorkerID(cfg.AsyncMediaWorkerID),
+				LeaseDuration:      time.Duration(cfg.AsyncMediaLeaseSeconds) * time.Second,
+				PurgeLeaseDuration: time.Duration(cfg.AsyncMediaPurgeLeaseSeconds) * time.Second,
+				PollInterval:       time.Duration(cfg.AsyncMediaPollMilliseconds) * time.Millisecond,
+				OnError: func(workerErr error) {
+					log.Printf("Async-media worker operation failed: %v", workerErr)
+				},
+				LimitPolicy: limitPolicyService,
+			},
+		)
+		if workerErr != nil {
+			log.Fatalf("Failed to initialize async-media worker: %v", workerErr)
+		}
+		asyncMediaCtx, cancelAsyncMedia := context.WithCancel(context.Background())
+		stopAsyncMedia = cancelAsyncMedia
+		asyncMediaDone = make(chan struct{})
+		go func() {
+			defer close(asyncMediaDone)
+			runErr := mediaWorker.Run(asyncMediaCtx)
+			if runErr != nil && !errors.Is(runErr, context.Canceled) {
+				log.Printf("Async-media worker stopped: %v", runErr)
+			}
+		}()
+		log.Printf(
+			"Async-media Image V1 enabled: profile=%s retention=P7D video=false admission=%t",
+			mediajob.Evidence(true, cfg.AsyncMediaAdmissionEnabled).ProfileID,
+			cfg.AsyncMediaAdmissionEnabled,
+		)
+	} else {
+		log.Printf("Async-media Image V1 runtime disabled; contract and existing metadata remain readable")
 	}
-	billingSvc.SetOutbox(outboxSvc)
 	terminalHookSvc, err := newRuntimeTerminalHooks(postgres.Pool, outboxSvc, agentCapabilityService, limitPolicyService)
 	if err != nil {
 		log.Fatalf("Failed to initialize durable runtime terminal hooks: %v", err)
@@ -584,6 +597,7 @@ func main() {
 		{outbox.EventNotificationDelivery, eventSvc.ProcessNotificationDelivery},
 		{outbox.EventRuntimeTerminal, terminalHookSvc.ProcessEvent},
 		{outbox.EventRuntimeTerminalV1, terminalHookSvc.ProcessEvent},
+		{outbox.EventSourceDispatch, sourceFactsSvc.ProcessDispatchEvent},
 	} {
 		if err := outboxSvc.RegisterHandler(registration.eventType, registration.handler); err != nil {
 			log.Fatalf("Failed to register internal outbox handler %s: %v", registration.eventType, err)
@@ -593,10 +607,6 @@ func main() {
 	sourceFactsRetentionDone := make(chan struct{})
 	go func() { defer close(sourceFactsRetentionDone); sourceFactsSvc.RunRetention(outboxCtx) }()
 	outboxDone := make(chan struct{})
-	go func() {
-		defer close(outboxDone)
-		outboxSvc.Run(outboxCtx)
-	}()
 	completedFeedRetentionCtx, stopCompletedFeedRetention := context.WithCancel(context.Background())
 	completedFeedRetentionDone := make(chan struct{})
 	go func() {
@@ -739,6 +749,11 @@ func main() {
 	)
 	mux.Handle("GET /api/v1/integrations/xinsight/source-facts", sourceFactsSvc.Handler(clientIPResolver))
 	mux.Handle("GET /api/v1/integrations/xinsight/source-facts/capabilities", sourceFactsSvc.Handler(clientIPResolver))
+	mux.Handle("GET /api/v1/integrations/xinsight/source/v2/events", sourceFactsSvc.ObservationHandler(clientIPResolver))
+	mux.Handle("GET /api/v1/integrations/xinsight/source/v2/capabilities", sourceFactsSvc.ObservationHandler(clientIPResolver))
+	mux.Handle("GET /api/v1/integrations/xinsight/source/v2/runtime/current", sourceFactsSvc.RuntimeCurrentHandler(clientIPResolver))
+	mux.Handle("GET /api/v1/integrations/xinsight/source/v2/budgets", sourceFactsSvc.BudgetHandler(clientIPResolver))
+	mux.Handle("GET /api/v1/integrations/xinsight/source/v2/budgets/current", sourceFactsSvc.BudgetHandler(clientIPResolver))
 	registerAgentCapabilityRoutes(mux, agentCapabilityHandler, agentCapabilityRouteGuards{
 		authorize:    agentLicenseGate,
 		authenticate: gatewayAuth,
@@ -1255,6 +1270,12 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 		log.Fatalf("Runtime generation authority failed: %v", err)
 	}
 	defer stopRuntimeGeneration()
+	// No worker may claim committed source dispatch events until this binary's
+	// actual generation/support has passed the original startup authority.
+	go func() {
+		defer close(outboxDone)
+		outboxSvc.Run(outboxCtx)
+	}()
 	billingSvc.SetRecoveryAdmission(httpRuntime.canClaimRecovery)
 	go func() {
 		defer close(settlementRecoveryDone)

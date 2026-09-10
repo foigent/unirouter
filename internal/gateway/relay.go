@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/uniroute/unirouter/internal/executionmeasurement"
 	"io"
 	"net/http"
 	"slices"
@@ -903,6 +904,9 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 				return
 			}
 		}
+		if guardrailResult.Transformed {
+			guardrail.MarkSourceReplacement(ctx, guardrail.StageInput)
+		}
 		ctx = contextWithGuardrailPin(ctx, pinnedGuardrail)
 	} else if relay.filter != nil && relay.filter.WordCount() > 0 {
 		inputInspection, inspectionErr := inspectChatInputGuardrail(body)
@@ -966,6 +970,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		compressionReceiptRecorded = relay.recordCompressionReceipt(ctx, optimizationState, route, reqLog)
 	}
 	providerTimeout := 300 * time.Second
+	executionmeasurement.SetStreaming(r.Context(), req.Stream)
 	if req.Stream {
 		providerTimeout = relay.currentStreamPolicy().MaxDuration()
 	}
@@ -1202,7 +1207,13 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		recordCompressionReceipt(route)
 		providerAttempts++
 		upstreamStart := time.Now()
+		finishMeasurement := executionmeasurement.HTTPStart(attemptCtx, attemptIDFromContext(attemptCtx))
 		resp, err := client.Do(upstreamReq)
+		observedHTTPStatus := 0
+		if resp != nil {
+			observedHTTPStatus = resp.StatusCode
+		}
+		finishMeasurement(observedHTTPStatus)
 		upstreamDuration := time.Since(upstreamStart)
 		middleware.RecordUpstreamLatency(route.Channel.Provider, req.Model, upstreamDuration)
 		if err != nil {
@@ -1619,6 +1630,7 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 			return
 		}
 	}
+	guardrail.MarkSourceReplacement(ctx, guardrail.StageNonStreamOutput)
 	basePayload, responseMaxBytes, err := relay.marshalNonStreamResponseBase(responseMap)
 	if err != nil {
 		if errors.Is(err, payloadpolicy.ErrPayloadTooLarge) {
@@ -1710,6 +1722,7 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 		reqLog.Error("Downstream non-stream write failed: wrote=%d expected=%d err=%v", written, len(payload), writeErr)
 		return
 	}
+	executionmeasurement.ResponseWritten(ctx)
 	deliveryEvent.Outcome = billing.DeliveryOutcomeCompleted
 	deliveryEvent.DeliveredBytes = int64(written)
 	deliveryEvent.DeliveredChunks = 1
@@ -2257,6 +2270,12 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			}
 			payload := fmt.Sprintf("data: %s\n\n", frame.Data)
 			written, writeOK := writeSSECount("%s", payload)
+			if writeOK && written == len(payload) && inspection.Result.Transformed {
+				guardrail.MarkSourceReplacement(ctx, guardrail.StageStreamOutput)
+			}
+			if writeOK && written == len(payload) && frame.Text != "" {
+				executionmeasurement.FirstOutputFlushed(ctx)
+			}
 			if written == len(payload) {
 				deliveredBytes += int64(written)
 				deliveredChunks++
@@ -3072,6 +3091,8 @@ streamLoop:
 		finalJSON, _ := json.Marshal(finalChunk)
 		if !writeSSE("data: %s\n\n", finalJSON) || !writeSSE("data: [DONE]\n\n") {
 			recordStreamTermination("downstream_stream_write_failed", billingStatus)
+		} else {
+			executionmeasurement.TerminalFlushed(ctx)
 		}
 		return
 	}
@@ -3183,6 +3204,7 @@ streamLoop:
 		recordStreamTermination("downstream_stream_write_failed", terminalBillingStatus)
 		return
 	}
+	executionmeasurement.TerminalFlushed(ctx)
 	recordTerminalDelivery(billing.DeliveryOutcomeCompleted, "")
 	leaseTerminalState = billing.StreamLeaseStateCompleted
 	leaseTerminalReason = "stream_completed"
@@ -3461,6 +3483,7 @@ type EmbeddingsRequest struct {
 
 // HandleEmbeddings handles POST /v1/embeddings.
 func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
+	executionmeasurement.SetStreaming(r.Context(), false)
 	ctx := contextWithTelemetryOperationKind(
 		relay.contextWithTrustedEvidence(r.Context(), r.Header),
 		telemetryexport.OperationEmbedding,
@@ -3527,6 +3550,9 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.payload_capacity_exceeded", "Payload capacity is temporarily unavailable")
 				return
 			}
+		}
+		if guardrailResult.Transformed {
+			guardrail.MarkSourceReplacement(ctx, guardrail.StageInput)
 		}
 		ctx = contextWithGuardrailPin(ctx, pinnedGuardrail)
 	}
@@ -3676,7 +3702,13 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 
 		providerAttempts++
 		upstreamStart := time.Now()
+		finishMeasurement := executionmeasurement.HTTPStart(attemptCtx, attemptIDFromContext(attemptCtx))
 		resp, err := client.Do(upstreamReq)
+		observedHTTPStatus := 0
+		if resp != nil {
+			observedHTTPStatus = resp.StatusCode
+		}
+		finishMeasurement(observedHTTPStatus)
 		upstreamDuration := time.Since(upstreamStart)
 		middleware.RecordUpstreamLatency(route.Channel.Provider, req.Model, upstreamDuration)
 		if err != nil {
@@ -4057,6 +4089,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 			failureCancel()
 			return
 		}
+		executionmeasurement.ResponseWritten(attemptCtx)
 		deliveryEvent.Outcome = billing.DeliveryOutcomeCompleted
 		deliveryEvent.DeliveredBytes = int64(written)
 		deliveryEvent.DeliveredChunks = 1

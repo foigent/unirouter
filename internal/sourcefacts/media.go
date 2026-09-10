@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/executioncontext"
@@ -20,6 +21,7 @@ func (s *Service) MaterializeMediaStageTx(ctx context.Context, tx pgx.Tx, job me
 	if stage != "admission" && stage != "dispatch" && stage != "terminal" {
 		return errors.New("invalid media source stage")
 	}
+	firstPublication := true
 	instant := executioncontext.Time(job.CreatedAt)
 	if stage == "terminal" {
 		if !job.Terminal() || job.TerminalAt == nil {
@@ -57,7 +59,10 @@ func (s *Service) MaterializeMediaStageTx(ctx context.Context, tx pgx.Tx, job me
 			return e
 		}
 		if tag.RowsAffected() == 0 {
-			return nil
+			firstPublication = false
+			if stage != "dispatch" || !s.ObservationsEnabled() {
+				return nil
+			}
 		}
 	}
 	if snapshot != nil {
@@ -81,5 +86,16 @@ func (s *Service) MaterializeMediaStageTx(ctx context.Context, tx pgx.Tx, job me
 		}
 		docs = append(docs, cost)
 	}
-	return s.PublishTx(ctx, tx, docs)
+	if !firstPublication {
+		docs = nil
+	}
+	at, e := time.Parse("2006-01-02T15:04:05.000000Z", instant)
+	if e != nil {
+		return e
+	}
+	observations, e := s.mediaObservationsTx(ctx, tx, job, stage, at)
+	if e != nil {
+		return e
+	}
+	return s.publishTogetherTx(ctx, tx, docs, observations)
 }

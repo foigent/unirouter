@@ -45,11 +45,23 @@ func invokeGenerationCLI(t *testing.T, cfg *config.Config, action string, input 
 }
 
 func TestRuntimeGenerationCLIExpandedLedgerLifecycleIntegration(t *testing.T) {
-	for _, head := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead} {
+	for _, head := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead} {
 		t.Run(head, func(t *testing.T) {
 			pool := testutil.SetupMigratedTestDB(t)
 			dir := testutil.MigrationsDir(t)
-			if head != schemaauthority.SourceFactsExpandHead {
+			if head != schemaauthority.BudgetSnapshotExpandHead {
+				wire, err := os.ReadFile(filepath.Join(dir, schemaauthority.BudgetSnapshotExpandHead+".down.sql"))
+				require.NoError(t, err)
+				_, err = pool.Exec(t.Context(), string(wire))
+				require.NoError(t, err)
+			}
+			if head < schemaauthority.ObservationExpandHead {
+				wire, err := os.ReadFile(filepath.Join(dir, schemaauthority.ObservationExpandHead+".down.sql"))
+				require.NoError(t, err)
+				_, err = pool.Exec(t.Context(), string(wire))
+				require.NoError(t, err)
+			}
+			if head < schemaauthority.SourceFactsExpandHead {
 				require.NoError(t, testutil.RewindEmptySourceFactsForLegacyTest(t.Context(), pool, dir))
 			}
 			if head == schemaauthority.CapabilityExpandHead {
@@ -60,6 +72,9 @@ func TestRuntimeGenerationCLIExpandedLedgerLifecycleIntegration(t *testing.T) {
 				_, err = pool.Exec(t.Context(), `DELETE FROM schema_migrations WHERE version=$1`, schemaauthority.StreamCounterExpandHead)
 				require.NoError(t, err)
 			}
+			var actualHead string
+			require.NoError(t, pool.QueryRow(t.Context(), `SELECT max(version) FROM schema_migrations`).Scan(&actualHead))
+			require.Equal(t, head, actualHead, "each CLI case must run on its named actual schema")
 			cfg := &config.Config{DB_DSN: pool.Config().ConnString(), DBMaxConnections: 3, MigrationsDir: dir}
 			ledger, err := schemaauthority.ExpectedLedger(dir)
 			require.NoError(t, err)
@@ -98,11 +113,11 @@ func TestRuntimeGenerationCLIRejectsUnapprovedLedgersIntegration(t *testing.T) {
 			var query string
 			switch kind {
 			case "legacy":
-				query = `DELETE FROM schema_migrations WHERE version IN ('000114_capability_delivery_expand','000115_stream_counter_version','000116_execution_source_facts')`
+				query = `DELETE FROM schema_migrations WHERE version IN ('000114_capability_delivery_expand','000115_stream_counter_version','000116_execution_source_facts','000117_execution_observations','000118_source_budget_snapshots')`
 			case "gap":
 				query = `DELETE FROM schema_migrations WHERE version='000114_capability_delivery_expand'`
 			case "future":
-				query = `INSERT INTO schema_migrations(version) VALUES ('000117_unapproved_future')`
+				query = `INSERT INTO schema_migrations(version) VALUES ('000119_unapproved_future')`
 			}
 			_, err := pool.Exec(t.Context(), query)
 			require.NoError(t, err)

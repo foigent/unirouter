@@ -21,7 +21,11 @@ func TestMain(m *testing.M) { testutil.RunWithMigratedTestDBTemplate(m) }
 
 func setupSourceDB(t *testing.T) (*pgxpool.Pool, *Service, int64, int64) {
 	t.Helper()
-	pool := testutil.SetupMigratedTestDB(t)
+	return setupSourceDBWithPool(t, testutil.SetupMigratedTestDB(t))
+}
+
+func setupSourceDBWithPool(t *testing.T, pool *pgxpool.Pool) (*pgxpool.Pool, *Service, int64, int64) {
+	t.Helper()
 	ctx := context.Background()
 	var org, project int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs(name,status,org_type) VALUES('source-test','active','standard') RETURNING id`).Scan(&org))

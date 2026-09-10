@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"github.com/uniroute/unirouter/internal/executionmeasurement"
 	"net/http"
 	"strings"
 	"time"
@@ -159,6 +160,7 @@ func (relay *Relay) HandlePublicNonStream(w http.ResponseWriter, r *http.Request
 			writePublicNonStreamError(w, r, requestID, errPublicNonStreamRequestInvalid)
 			return
 		}
+		executionmeasurement.SetStreaming(r.Context(), streaming)
 		if streaming {
 			streamPolicy := relay.currentStreamPolicy()
 			streamCore := &publicNonStreamOrchestrator{

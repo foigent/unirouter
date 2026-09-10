@@ -1,5 +1,287 @@
 # Current Execution Record
 
+## Active local delivery — UR B/D/X after accepted A — 2026-09-10
+
+The coordinator independently accepted complete UR-A Local at
+`25f5c1fdfb6b5376496c34e9b9cd295efbaf17cd`, tree
+`9444830ae7a12de8aa3087489420709a01735bab` (1.3.0). The acceptance source is
+`/Users/m4/Desktop/projects/About Me/library/reports/企业AI工作事实平台-目标拆解与验收-2026-09-05/supporting/ur-iteration-20260909/independent-A-acceptance.json`;
+the complete delivery and original failures remain in
+`/private/tmp/ur-asus-a11-20260910/A-COMPLETE-DELIVERY.md` and its exact index.
+The coordinator released the ASUS environment hold and the A-to-B/D gate.
+
+Implementation now follows the jointly reviewed
+[B/D v2 design](../analysis/UR-WORKFACTS-BD-DESIGN-V2-20260909.md), SHA-256
+`0065cf2f2c7342fc652b2a4017eaec23666eb1c7755d7368c61776421b9c5ec7`, in the
+same isolated worktree. The direct synthetic credential, local test, ASUS v2/N1,
+source transfer and coordinator-report authorizations continue within their
+original boundaries; no repeated user approval is required for covered actions.
+No XI contact, real Provider/credential/traffic, push, merge, release or deployment.
+
+B's implemented core and bounded cross-package regression have passed. D is
+now implemented in a first uncommitted candidate: M118 transactional coverage
+certification, project budget revision history, independent D scopes, explicit
+enterprise project bindings, and catalog/current/alert snapshot readers. This
+is ongoing implementation, not complete B/D/X acceptance. The A relative 5%
+performance reference remains unmet; accepted A evidence is not B/D evidence.
+
+The accepted dispatch amendment v2 (SHA-256
+`471f360abad6b9b1c901025fe3ad866cf99e43cabe5225a17bd9c74851d5c113`)
+is implemented without changing Authorize's RR, original retry budget or other
+optional observation RR transactions. M117 now guards the original queue and
+runtime-generation fleet; the original worker starts only after source and
+runtime support checks. Local evidence under `/private/tmp/ur-bd-workfacts-20260910`:
+- `dispatch-outbox-boundaries-v3-race.log`: eight transaction, concurrency,
+  migration/Renew, replay/retention, RR visibility, maximum-payload and lease
+  expiry tests pass. The boundary payload was 165055 JSONB bytes pending and
+  165081 marked, below 262144; each source record remains bounded at 65536.
+- `dispatch-main-startup-v1-race.log`: actual race-built main recovers pending
+  events with both capture flags off; wrong source instance refuses before claim.
+- `dispatch-public-recovery-v2-race.log`: original public paths and publication
+  fault recovery pass, including current URL changes and late registration
+  preserving an already observed result. The old health revision fence remains.
+- Symmetric comparison is complete in `dispatch-performance-summary-v1.json`:
+  all ten serial runs pass. Concurrent successes per 128 requests are A126,
+  off125, B126, D123 and BD127. Every committed B/BD attempt has all three
+  dispatch records; queues empty and original terminals/holds reconcile. Failed
+  groups retain FAIL, successful-request latency is separate, and the large
+  optional-observation gaps remain explicit. A diagnostic run identified the
+  original attempt INSERT serialization path; no capacity claim is made.
+- Broader checks exposed an old positional M113/M114 test ledger and stale
+  reset table counts. Fixtures now use the exact head. The accepted D reset
+  protection is also wired into the existing review-required refusal for all
+  five D metadata tables and the journal; no reset ran. Counter v3 now accepts
+  the already-supported M118 head. `dispatch-final-unit-delta-v1.log` passes.
+Earlier failing logs are retained, including the missing sandbox network
+permission in `dispatch-final-unit-race-v1.log`; it is not product-failure proof.
+
+The current full CI integration selection passed in all unchanged packages;
+its three old reset assumptions failed and are retained in
+`dispatch-ci-selected-v1-race.log`. The independent coordinator's
+`D-reset-boundary-review-20260910.json` accepted current M118 refusal and separate
+historical A evidence. `reset-final-ci-delta-v1-race.log` passes the same complete
+selector for the two changed packages. `dispatch-source-media-full-v1-race.log`
+passes both complete source/media packages; vet and rollout tests also pass.
+These are local executions of required checks, not GitHub CI runs.
+
+M118 has no supported successful reset lifecycle, even with D capture disabled.
+The real CLI writes a private read-only diagnostic with `scope_complete=false`;
+`Unmarshal`/`Validate` and `Apply` refuse execution. The existing
+`apply_supported=true` field reports implementation availability and grants no
+authority without complete scope. An initial review incorrectly attributed the
+old test's Unmarshal failure to CLI writing; actual execution corrected that
+claim without changing the CLI. `reset-current-m118-refusal-v2-race.log` proves
+diagnostics, plan/apply refusal and unchanged PostgreSQL/Redis state. The three
+original A tests pass in `reset-accepted-a-exact-v1-race.log`;
+`reset-historical-a-source-proof.json` verifies all 2482 source blobs against
+accepted A and no extra Go files. This does not claim current-binary old-schema
+reset support. Product/customer/contract notes disclose the restriction.
+
+Coordinator communication was twice rejected by automatic approval review, so
+those attempts were never recorded as delivered. The exact prior user approval
+of network actions plus bidirectional reporting was then verified in this task's
+original record; same-channel re-review passed and reporting resumed. Covered
+actions continue under that authorization, without another user approval.
+Code review, reviewed-source ASUS validation and overall acceptance remain.
+The model-adaptation lesson admission criteria were checked; no applicable new
+model/provider invariant was introduced, so the experience file needs no change.
+
+New D evidence in `/private/tmp/ur-bd-workfacts-20260910`:
+- `source-d-m118-certificate-v2-race.log`: M118 fails/rolls back without a
+  support certificate; exact ledger proof, atomic revisions, no-op/rollback,
+  and immutable-history/down guards passed.
+- `source-d-restore-metadata-v1-race.log`: the fixed restore SQL always rebases,
+  retains prior certificates and A bytes, does not write on readiness, and
+  preserves a pre-D restore. This is helper/DB evidence, not a full backup run.
+- `source-d-original-enterprise-ab-v4-race.log`: original Draft/Approve/
+  AllocationRun + explicit binding, scoped 600/1000 => 400, other-target privacy,
+  original budget notification, D revoke and A/B backlog continuation passed.
+- `source-d-financial-queue-v1-race.log`: original Freeze/Settle charged 600,
+  prepared/settled queues with future availability/claim/retry/dead letter,
+  materialized awaiting ack/replay, detail-only 200 exclusion and corrupted
+  scope denial passed. Future UTC coverage cases are explicit synthetic event
+  timestamps, not live future observations. The held-RR check subsequently passed in the boundaries export run.
+- `source-d-ab-control-v1-race.log`: unchanged A/B explicit-grant tests and
+  original enterprise route-role separation passed.
+- One real D canonicalization bug (typed nil assigned to `error`, all valid
+  snapshots rejected) was fixed and protected by exact bytes/money tests.
+  Earlier fixture slug/type/assertion failures remain in their original logs.
+
+D is default-off (`SOURCE_BUDGET_SNAPSHOTS_ENABLED`), requires A, M118 and the
+original attached financial outbox. Main now attaches that original outbox
+before source readiness, without starting another worker. D-only profile
+changes preserve existing immutable key registrations and A/B generation.
+The original SQL restore runbook/rehearsal calls
+`scripts/source-budget-restore-rebase.sql` before any restored reader starts.
+D metadata and the original financial journal are protected from resetplan;
+no reset was executed.
+
+Latest D/X local checks (still uncommitted, product metadata now 1.4.0):
+- `source-d-boundaries-export-v2-race.log`: all D source/admin boundary tests
+  passed, including old-key attenuation, current role/session commit checks,
+  original audit failure rollback and concurrent binding revocation.
+- `source-d-independent-http-v2.json`: 4 actual HTTP samples, 5 positive and
+  8 negative schema/hash/math vectors, immutable SQLite reading retention.
+- `source-d-restore-bootstrap-doc-v2-race.log`: actual pg_dump to a separate
+  empty task DB, lost post-backup original charge, mandatory coverage rebase,
+  preserved A/definition bytes and no false remaining; original first-customer
+  bootstrap and API/route parity passed. Historical definition identity now
+  survives original empty-project removal; current binding FK remains enforced.
+- `source-d-ui-v2.log`: 10 UI tests passed. Full frontend type-check, 90 files /
+  749 tests and production build passed (`source-bd-frontend-*-v1/v2.log`).
+- `source-bd-full-unit-race-v1.log`: full Go race ran; only missing frontend
+  route documentation failed, subsequently fixed and rerun above. `source-bd-vet-v1.log` passed.
+- `source-bd-ci-selected-v1-race.log`: original CI selection completed; three
+  old migration fixtures failed due to new schema predecessors. Guarded fixture
+  ordering was fixed; `source-bd-legacy-fixtures-v2-race.log` passed all affected
+  Feed/successor tests. No production down guard was weakened.
+- `source-bd-source-media-admin-v1-race.log`: all source/media passed; initial
+  bootstrap failures were fixed and rerun in the restore/bootstrap v2 evidence.
+- `source-d-m118-rollout-v2-unit.log`: 70 finite-transition/recovery tests passed.
+  `source-d-restore-script-v2.log`: password-boundary regression passed, including
+  rebase after restore and before validation. VERSION/frontend metadata 1.4.0 match.
+- Ten-thousand-scale assumptions were not used: `budget-scale-v1` contains real
+  EXPLAIN over 100,000 synthetic journal and 100,000 outbox rows. Payload-org
+  mismatch detection scanned unrelated queues; the narrow financial payload-org
+  index passed. `budget-scale-v3` also puts 100 projects in the same organization:
+  the settled subtotal uses the project/period index (0.185ms) and materialization
+  checks use the two financial indexes (0.061ms). This is synthetic query-scale
+  evidence, not original financial-writer or production capacity evidence.
+- `source-d-final-v5-race.log`: final original charged/calculated distinction,
+  actual PG16 backup/restore, boundaries and scale passed. `source-d-runtime-support-v1-race.log`
+  passed missing schema/budget/journal support, including expired recovery writers.
+- `source-d-independent-http-v3.json`: independently checked the later actual
+  HTTP snapshot samples, hashes, arithmetic and retained reading identities.
+- `source-d-browser-v3.log`: built frontend plus real login/control handlers passed
+  A+D registration/activation, restricted source read, binding/revoke/rebind
+  revisions 1/2/3, pause (`503 source_paused`) and resume. No browser page errors or
+  external browser requests. Screenshots/text are under `output/playwright/source-budget-v3`.
+  Earlier ambiguous locator and incorrect pause-status fixture assertions are retained.
+
+**Current B blocker:** ten symmetric sequential groups in `perf-v3-results.json`
+passed, but B median latency is about 10.96ms versus accepted A 7.55ms; this does
+not pass the relative 5% reference. Four-credential concurrent groups in
+`concurrent-v4-results.json` expose 36–42/64 HTTP 503s for B/BD versus 0–2/64 for
+A/off/D. No mixed-failure p95 is accepted. The coordinator independently matched
+all ten logs and classified B/BD as `validated_blocker`.
+
+`concurrent-candidate-diagnostic-v2.log` locates SQLSTATE 40001 at direct B
+source-stream updates inside original Authorize RR (33 failures), and original
+provider-attempt insert (4 failures), after the existing one retry. A narrow
+[dispatch contention amendment](../analysis/UR-WORKFACTS-B-DISPATCH-CONTENTION-20260910.md),
+SHA-256 `ff9ab1f5f33fd93b5ea166fa1047588eff60e647268cc4a84a3e8ce1fe209d8a`,
+was independently reviewed before implementation. Its amended v2 object,
+SHA-256 `471f360abad6b9b1c901025fe3ad866cf99e43cabe5225a17bd9c74851d5c113`,
+is now jointly accepted: durable pre-dispatch recording through the existing
+outbox with later source publication, base64-frozen bytes, monotonic live-event
+marker, capture-off recovery, down guards and exact handler support. The accepted
+original design and amendment identities are retained separately.
+
+The amendment is being implemented, not yet fully verified. Core source tests
+passed in `dispatch-outbox-boundaries-v2-race.log`: original transaction rollback,
+capture-off recovery, exact JSONB/base64 round trip, late first publication,
+lease rejection, immutable marker/body, real retention and non-resurrection,
+original worker ack, and all retained-event down states. Public/stream gateway
+tests passed in `dispatch-outbox-public-v2-race.log`, including durable enqueue
+failure before Provider and destination capture before the queued registration
+is published. Earlier canonical-input error and empty-selector run remain
+recorded and are not counted as passing evidence. Worker Run now follows actual
+runtime-generation startup authority; startup/generation concurrency evidence
+and the new performance comparison remain pending. No B/D source transfer yet.
+
+Remaining: agreed B contention fix and repeated affected concurrency/performance,
+final changed-code checks, customer/contract packaging, reviewed ASUS B/D candidate and Docker/N1,
+one closing independent review and complete coordinator delivery. No B/D archive
+has been transferred or accepted; no GitHub CI/Target/XI/Production claim.
+
+Five B profiles use a new source identity domain; A's three profiles, immutable
+bytes, descriptors and cursors remain separate. The finite observation-kind
+sets and each 64KiB document limit are in `observation_contract.go`; measurement
+boundaries have distinct identities and nanosecond representation is not a clock
+accuracy claim. No per-token/frame/heartbeat publication is introduced. Final
+per-handler row/byte bounds must be tied to the existing retry/policy/media
+limits before the corresponding writers are enabled.
+
+Implemented in the uncommitted B candidate: M117 finite bridge and explicit
+profile expansion, independent v2 event/cursor transport, original coordinator
+pre-dispatch transaction hook, post-commit Provider/delivery observations,
+combined A+B journal terminal publication, and process-local response/stream/HTTP
+measurements. B remains disabled unless SOURCE_OBSERVATIONS_ENABLED=true and A
+capture is enabled. Only explicitly registered B profiles can be read.
+
+Current Local evidence is under `/private/tmp/ur-bd-workfacts-20260910`:
+- `source-dispatch-boundary-m117-race.log`: original coordinator source rollback
+  and both landed/rolled-back ambiguous commit recovery passed.
+- `observation-admin-source-lifecycle-race.log`: original A lifecycle plus new B
+  explicit grant, profile narrowing, independent cursor, pause/revoke tests passed.
+- `observation-monotonic-optional-race.log`: source M117 guarded upgrade/down,
+  Responses/Messages original nonstream and complete/interrupted stream paths,
+  and optional observation failure preserving original money/delivery passed.
+- `observation-bounds-measurement-unit.log`: separate timing boundaries, true
+  zero/missing distinction and 128 requirement/64 evidence entries (supported
+  ASCII capability identifiers, worst escaped evidence states) encode to 46139
+  bytes without truncation. This is not yet the complete per-handler bound.
+- Independent Draft 2020-12 validation: 10 positive and 8 schema-negative vectors;
+  the remaining identity-negative vector is rejected by the Go domain validator.
+- `runtime-current-source-authorization-race.log`: original stream/media leases,
+  expiry/fences/current-only pagination and authenticated profile/lifecycle scope
+  passed. Synchronous requests remain explicitly outside lease inventory.
+- `policy-complete-boundaries-race.log`: actual policy detectors and gateway
+  shadow/enforce, input/output replacement/block, degraded/fail-closed and partial
+  stream termination passed; metadata buffers retain no input or detector findings.
+- `media-b-real-http-worker-v3-race.log`: actual media HTTP/auth/worker/Provider
+  paths passed for legacy and grant identities. Each yielded 31 authenticated A/B
+  facts over 19 pages. Independent v2 Python schema/hash/identity and SQLite
+  restart/checkpoint/replay consumer passed both exported synthetic fixtures.
+- `media-main-startup-matrix-v2-race.log`: the real race-built main binary passed
+  blocked/mismatched source readiness and five media/A/B enablement combinations.
+  Readiness refusal leaves queued/expired jobs, objects and source/money unchanged;
+  successful readiness permits both original loops and original SIGTERM shutdown.
+  This implements the coordinator's `media-worker-startup-review-20260910.json`
+  validated_required decision; it does not promise no side effects before unrelated
+  later startup failures. The same run passed original pre-dispatch cancellation
+  with a B terminal observation and no manufactured provider attempt.
+- `source-b-original-output-holds-race.log`: original nonstream/stream holds,
+  commit ambiguity/rollback/replay and optional source failure preserve the
+  original pending financial state; B records output_held after the commit.
+- `source-b-native-media-http-matrix-v3-race.log`: complete A/B native Chat,
+  Embeddings, cache, six identity kinds, actual two-route fallbacks, stream
+  cancellation/tool output/Write/Flush faults, and media success/fault cases pass.
+  `native-media-http-ab-pages-v3-independent.json` independently validates 61
+  exported authenticated fixtures, including 32 B-containing cases with original
+  A/I-01 joins and durable SQLite restart/checkpoint/replay checks.
+- `source-b-native-admission-policy-v1-race.log`: rejection is now captured before
+  the first 4xx header when no original admission exists; source failure returns
+  503 with zero Provider calls. Original policy and middleware transport tests pass.
+- `source-b-native-fallback-context-v1-race.log`: two actual attempts retain one
+  original I-01 terminal; request_context_done conveys no human-cancel or Provider
+  timeout inference. `source-b-independent-contract-v2.json` verifies both schema
+  pins, source identities and all current observation/runtime positive/negative
+  vectors. T01–T10 semantic vectors are separate from real HTTP observations.
+- `source-b-current-probe-negative-race.log`: an active original routing Probe
+  cannot enter the execution-lease inventory; probe-only sync remains last_known.
+- B profiles are now exposed explicitly in admin/UI and OpenAPI; default-off
+  config, M117 rollout classification and the actual M114/115/116/117 runtime CLI
+  matrix are covered by `source-b-profile-ui-tests.log`,
+  `source-b-available-profiles-admin-race.log`, `source-b-openapi-tests.log`,
+  `source-b-rollout-m117-v2-unit.log` and
+  `source-b-runtime-cli-m114-m117-v2-race.log`.
+
+Retained test corrections: shared Redis originally collided on disposable PG
+org/API-key IDs, and the first isolation attempt exceeded the original Freeze
+int4 API-key field. Source HTTP fixtures now use separate IDs within that supported
+range; no product limit is relaxed and shared Redis is not flushed. The transport
+assertion now selects the last append-only receipt by sequence, rather than its
+first write_started row. These were fixture corrections, not product fixes.
+
+Later edits still require rerunning affected evidence. Conservative B row/raw-byte
+bounds are documented in `contracts/source-facts/v2/README.md`; they exclude
+DB/index/WAL overhead and do not replace benchmarks. Remaining B regression and
+candidate performance review, D budgets and
+coverage/restore, product version/OpenAPI/docs, full X regressions/performance,
+review and fresh ASUS batches remain outstanding. Old failures remain retained.
+No new tool was installed and no accepted A evidence was rewritten.
+
 ## Active local delivery — UR work facts A
 
 2026-09-09: the user directly reaffirmed in the UR task the workflow of independent
