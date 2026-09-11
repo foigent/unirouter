@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/uniroute/unirouter/internal/installstate"
 	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/releaseexecution"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
@@ -66,6 +67,9 @@ func prepareIngressTransaction(ctx context.Context, pool *pgxpool.Pool, p Ingres
 		return "", err
 	}
 	defer tx.Rollback(ctx)
+	if _, err := installstate.RequireOrdinary(ctx, tx); err != nil {
+		return "", err
+	}
 	if err := schemaauthority.LockExecutionCompatibility(ctx, tx); err != nil {
 		return "", err
 	}
@@ -226,6 +230,9 @@ func completeIngressTransaction(ctx context.Context, pool *pgxpool.Pool, id, obs
 		return "", err
 	}
 	defer tx.Rollback(ctx)
+	if _, err := installstate.RequireOrdinary(ctx, tx); err != nil {
+		return "", err
+	}
 	if err := schemaauthority.LockExecutionCompatibility(ctx, tx); err != nil {
 		return "", err
 	}

@@ -1,5 +1,21 @@
 # Current Execution Record
 
+## Fresh installer source candidate — 2026-09-12
+
+Current branch `codex/fresh-install-owner` reuses the existing isolated
+`/private/tmp/unirouter-test-preparation-20260911` worktree from `6676c0c1`.
+The supervisor accepted the bounded installer plan and three corrections before
+source changes. The overall resource clarification permits small text/Git edits;
+native compilation, DB/image work and cache generation remain outside the
+current M4 resource admission. No protected ASUS asset or XI task is operated.
+
+[Design, command contract, executable test matrix and native gaps](../ops/FRESH-INSTALL.md)
+are the current source handoff. Version 1.4.1 is pending native validation, not
+product acceptance. M1–M118 migration files and original publication contracts
+are unchanged. The 1.4.0 product acceptance and 6676 test-tool evidence below
+retain their original scope; neither proves the new installer. Experience file:
+no change needed because the new recovery tests have not yet executed.
+
 ## Test preparation and handoff optimization — 2026-09-11
 
 User authorized implementation of the execution-efficiency improvements. Isolated

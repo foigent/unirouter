@@ -72,7 +72,7 @@ func runCapabilityContractPublicationInstallBaseline(ctx context.Context, args [
 		return fmt.Errorf("connect PostgreSQL: %w", err)
 	}
 	defer postgres.Close()
-	if err := migrate.RunThrough(ctx, postgres.Pool, migrationsDir, publication.BaselineMigrationM100); err != nil {
+	if err := migrate.RunExistingThrough(ctx, postgres.Pool, migrationsDir, publication.BaselineMigrationM100); err != nil {
 		return err
 	}
 	actualLedger, err := readCapabilityPublicationDatabaseLedger(ctx, postgres.Pool)

@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/db"
+	"github.com/uniroute/unirouter/internal/installstate"
 	"github.com/uniroute/unirouter/internal/modeldeployment"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 )
@@ -63,6 +64,9 @@ func (m *Manager) PrepareLegacyCompatibilitySeal(
 		return LegacyCompatibilityManifest{}, fmt.Errorf("%w: begin legacy compatibility seal: %v", ErrUnavailable, err)
 	}
 	defer tx.Rollback(ctx)
+	if _, err := installstate.RequireOrdinary(ctx, tx); err != nil {
+		return LegacyCompatibilityManifest{}, err
+	}
 
 	var releaseID, version int64
 	var modelName, candidateVersion, candidateHash, stage string

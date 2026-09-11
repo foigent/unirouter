@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/uniroute/unirouter/internal/config"
 	"github.com/uniroute/unirouter/internal/db"
+	"github.com/uniroute/unirouter/internal/installstate"
 	"github.com/uniroute/unirouter/internal/signing"
 	"github.com/uniroute/unirouter/internal/upgradebundle"
 )
@@ -165,6 +166,9 @@ func runUpgradeRecordApplied(ctx context.Context, args []string, cfg *config.Con
 		return fmt.Errorf("begin release-state transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	if _, err := installstate.RequireOrdinary(ctx, tx); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('unirouter.release_state', 0))`); err != nil {
 		return fmt.Errorf("lock release state: %w", err)
 	}

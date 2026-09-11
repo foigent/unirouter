@@ -4,6 +4,13 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.4.1] - 2026-09-12
+
+- 新增同一后端制品的 `fresh-install plan/check/apply/resume`，显式接管真实空库，沿用 M1–M118 迁移、独立 Publication Plan 和原 session migration lock。
+- 安装中断保留原 Plan；普通迁移前缀已提交时登记后继 Plan，Publication 提交与原 Plan 引用原子绑定。M118 原预算认证、完整账本和安装完成标记在同一事务提交。
+- 普通启动与正式管理写入拒绝进入活动安装；已完成安装的历史来源不绑定恢复后的数据库身份或新制品，仍校验当前账本、静态投影和有效预算覆盖证明。
+- 当前仅为待原生验证的源码候选；不代表构建、安装、恢复、发布或父平台验收已经通过。
+
 ## [1.4.0] - 2026-09-10
 
 - 新增默认关闭的执行、attempt、能力、策略和交付观察，以及原执行租约的当前运行快照；派发前必需来源写入与派发后附加观察分别处理，不改变原金额和 hold 权威。

@@ -2183,6 +2183,11 @@ bootstrap-only listener。外层 TLS proxy、负载均衡和任何客户 Gateway
 
 ### 10.2 启动、首装登记与读回
 
+1.4.1 的全新数据库先按 [`deploy/customer/README.md`](../../deploy/customer/README.md)
+第 7 步，用同一已验证后端镜像执行 `fresh-install plan/check/apply`，保留原 Plan 与
+Publication 证据；中断时使用原身份 `resume`。只有原子完成 M118 并完成读回后，
+才执行下列普通启动与首装登记。此候选尚待原生验证，本节不构成已发布或部署成功的证据。
+
 ```bash
 : "${UNIROUTER_SIGNED_PACKAGE:?Set the absolute path to the exact verified release package}"
 : "${UNIROUTER_RELEASE_OPERATOR:?Set the approved operator or deployment identity}"

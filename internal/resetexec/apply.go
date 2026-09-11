@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+	"github.com/uniroute/unirouter/internal/installstate"
 	"github.com/uniroute/unirouter/internal/resetplan"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
 )
@@ -114,6 +115,9 @@ func Apply(
 		return result, fmt.Errorf("begin reset transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := installstate.RequireOrdinary(ctx, tx); err != nil {
+		return result, err
+	}
 	if err := prepareLockedTransaction(ctx, tx, plan); err != nil {
 		return result, err
 	}

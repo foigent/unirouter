@@ -1,5 +1,13 @@
 # UniRouter Current Status
 
+## Fresh installer source candidate, native evidence pending — 2026-09-12
+
+Version 1.4.1 adds the reviewed one-off fresh owner in the same backend image,
+using original migrations and Publication Plans. Source/test text is being
+delivered from `codex/fresh-install-owner`; no new compile, database, image,
+restore or runtime result is claimed. [Current contract and evidence gaps](FRESH-INSTALL.md).
+Accepted 1.4.0 and test-workflow 6676 evidence below are unchanged in scope.
+
 ## UR A/B/D/X Local accepted; internal test workflow optimization — 2026-09-11
 
 Independent overall Local acceptance is complete for product commit

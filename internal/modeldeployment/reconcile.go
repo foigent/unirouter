@@ -15,6 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/db"
+	"github.com/uniroute/unirouter/internal/installstate"
 	"github.com/uniroute/unirouter/internal/modelgov"
 	"github.com/uniroute/unirouter/internal/modellist"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
@@ -143,6 +144,9 @@ func ReconcileLegacyProjection(ctx context.Context, database db.DBQuerier, custo
 		return report, fmt.Errorf("modeldeployment: begin reconcile: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	if _, err := installstate.RequireOrdinary(ctx, tx); err != nil {
+		return report, err
+	}
 
 	// Legacy projection is a verify-preparation writer, never a reverse
 	// canonical writer. Deployment lifecycle transactions take the same table

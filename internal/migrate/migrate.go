@@ -14,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/uniroute/unirouter/internal/installstate"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
 )
 
@@ -72,11 +73,20 @@ type runOptions struct {
 	runtimeBridge      bool
 	scopeSet           bool
 	expand             *CompatibleExpandHooks
+	fresh              *FreshOwner
+	freshExpand        string
+	beforeCommit       func(context.Context, pgx.Tx, string) error
+	allowEmptyBaseline bool
 }
 
-// Run applies all .up.sql migration files from dir that haven't been applied yet.
-// It creates a schema_migrations table to track applied versions.
+// Run is the low-level historical/test primitive. It retains empty historical
+// fixtures but refuses an active fresh owner. Formal migrate-up uses RunExisting;
+// ordinary startup uses RunRuntime, and both reject an unclaimed empty DB.
 func Run(ctx context.Context, pool *pgxpool.Pool, dir string) error {
+	return run(ctx, pool, dir, runOptions{allowEmptyBaseline: true})
+}
+
+func RunExisting(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 	return run(ctx, pool, dir, runOptions{})
 }
 
@@ -117,6 +127,12 @@ func RunThrough(ctx context.Context, pool *pgxpool.Pool, dir, ceiling string) er
 	if !found {
 		return fmt.Errorf("migration ceiling %q is not an exact artifact migration", ceiling)
 	}
+	return run(ctx, pool, dir, runOptions{ceiling: ceiling, requireExactPrefix: true, allowEmptyBaseline: true})
+}
+
+// RunExistingThrough is the formal historical restore continuation. It cannot
+// bootstrap an empty DB or enter another active fresh installation.
+func RunExistingThrough(ctx context.Context, pool *pgxpool.Pool, dir, ceiling string) error {
 	return run(ctx, pool, dir, runOptions{ceiling: ceiling, requireExactPrefix: true})
 }
 
@@ -163,6 +179,9 @@ func RunPublicationDown(ctx context.Context, pool *pgxpool.Pool, dir string, hoo
 		return fmt.Errorf("publication down requires complete Plan validation, projection, and verification hooks")
 	}
 	return WithSessionLock(ctx, pool, func(conn *pgxpool.Conn) error {
+		if _, err := installstate.RequireOrdinary(ctx, conn); err != nil {
+			return err
+		}
 		files, err := migrationFiles(dir)
 		if err != nil {
 			return err
@@ -216,6 +235,30 @@ func run(ctx context.Context, pool *pgxpool.Pool, dir string, options runOptions
 		return err
 	}
 	defer release()
+	return runOnConnection(ctx, conn, dir, options)
+}
+
+func runOnConnection(ctx context.Context, conn *pgxpool.Conn, dir string, options runOptions) error {
+	if options.fresh != nil {
+		if options.fresh.conn != conn {
+			return fmt.Errorf("fresh owner connection mismatch")
+		}
+		if _, err := options.fresh.Snapshot(ctx); err != nil {
+			return err
+		}
+	} else if options.allowEmptyBaseline {
+		// Kept for explicit low-level historical/test installers. Formal CLI
+		// admission rejects empty databases before calling this primitive.
+		s, err := installstate.Read(ctx, conn)
+		if err != nil {
+			return err
+		}
+		if s.Record != nil && s.Record.State == "active" {
+			return fmt.Errorf("active fresh installation requires its owner")
+		}
+	} else if _, err := installstate.RequireOrdinary(ctx, conn); err != nil {
+		return err
+	}
 
 	// Ensure tracking table exists
 	if _, err := conn.Exec(ctx, `
@@ -312,7 +355,7 @@ func run(ctx context.Context, pool *pgxpool.Pool, dir string, options runOptions
 		return err
 	}
 	for _, version := range allowed {
-		if expandFiles[version] && (options.expand == nil || version != options.expand.Version) {
+		if expandFiles[version] && (options.expand == nil || version != options.expand.Version) && (options.fresh == nil || version != options.freshExpand) {
 			return fmt.Errorf("pending compatible expansion %s requires explicit fleet preflight", version)
 		}
 	}
@@ -377,6 +420,9 @@ func run(ctx context.Context, pool *pgxpool.Pool, dir string, options runOptions
 		if options.expand != nil && fileDigest(sqlBytes) != options.expand.ExpectedSHA256 {
 			return fmt.Errorf("compatible expand bytes changed after preflight")
 		}
+		if options.fresh != nil && installstate.SHA(sqlBytes) != options.fresh.plan.Artifact.Files[fname] {
+			return fmt.Errorf("fresh migration bytes changed after Plan: %s", fname)
+		}
 		if options.publication != nil {
 			if want, exists := options.publication.ExpectedUpSHA256[version]; !exists || fileDigest(sqlBytes) != want {
 				return fmt.Errorf("migration artifact bytes changed after Plan: %s", fname)
@@ -416,6 +462,12 @@ func run(ctx context.Context, pool *pgxpool.Pool, dir string, options runOptions
 			if err := options.expand.After(ctx, tx); err != nil {
 				_ = tx.Rollback(ctx)
 				return fmt.Errorf("initialize verified bridge fleet %s: %w", fname, err)
+			}
+		}
+		if options.beforeCommit != nil {
+			if err := options.beforeCommit(ctx, tx, version); err != nil {
+				_ = tx.Rollback(ctx)
+				return fmt.Errorf("fresh install transaction proof %s: %w", fname, err)
 			}
 		}
 		if err := tx.Commit(ctx); err != nil {
@@ -523,6 +575,9 @@ func WithAuthorityLock(ctx context.Context, pool *pgxpool.Pool, fn func(*pgxpool
 		return err
 	}
 	defer release()
+	if _, err := installstate.RequireOrdinary(ctx, conn); err != nil {
+		return err
+	}
 	return fn(conn)
 }
 

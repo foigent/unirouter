@@ -16,6 +16,11 @@ build version/commit and vendor License/upgrade public trust roots. Runtime
 environment variables cannot replace those embedded roots. A stable deployment
 identity remains mandatory configuration.
 
+For the 1.4.1 source candidate, schema installation uses the same backend image's
+explicit `fresh-install` owner before any full runtime is started. Native build,
+installation and full first-customer acceptance are still pending for this
+candidate; this template is not evidence of a signed release or successful run.
+
 `MODEL_ROUTE_AUTHORITY` is a process-level cutover gate. The binary and the
 Compose fallback default to `canonical`, with
 `MODEL_ROUTE_COMPATIBILITY_ENABLED=false`. The formal fresh-install
@@ -99,8 +104,39 @@ Before first start:
    substitute for step 1's signed-manifest verification;
 6. make the exact independently verified release package available at an
    approved, readable absolute host path;
-7. with customer Gateway traffic still blocked, start the full legacy
-   compatibility stack and copy that same package into the healthy backend,
+7. with customer Gateway traffic still blocked, start only PostgreSQL and Redis
+   and wait for their existing health checks. On a fresh database, use the
+   exact same verified backend image as a one-off installer. Provide a private,
+   persistent evidence parent and the image digest verified in step 1; this
+   digest is public identity, not a secret. The installer creates its own new
+   `publications` directory and never creates a separate serving generation:
+
+   ```bash
+   : "${UNIROUTER_INSTALL_EVIDENCE:?Set the approved absolute persistent evidence parent}"
+   : "${UNIROUTER_INSTALL_IMAGE_DIGEST:?Set the exact inspected sha256 image digest}"
+   test -d "$UNIROUTER_INSTALL_EVIDENCE"
+   compose=(docker compose --env-file ./.env -f ./docker-compose.yml)
+   "${compose[@]}" up -d postgres redis
+   install=("${compose[@]}" run --rm --no-deps \
+     --volume "$UNIROUTER_INSTALL_EVIDENCE:/evidence" \
+     --env "RUNTIME_IMAGE_DIGEST=$UNIROUTER_INSTALL_IMAGE_DIGEST" backend ./uniroute fresh-install)
+   "${install[@]}" plan --out /evidence/install.json
+   "${install[@]}" check --plan /evidence/install.json
+   "${install[@]}" apply --plan /evidence/install.json --evidence-dir /evidence/publications
+   # After an interruption, retain every Plan and use the SAME image and DB:
+   # "${install[@]}" resume --plan /evidence/install.json --evidence-dir /evidence/publications
+   ```
+
+   `plan/check` do not change the database. An incomplete installation refuses
+   ordinary startup and writers. Never replace an original referenced Plan;
+   a missing or damaged reference must be restored from the original evidence.
+   The existing `install-baseline` command is for nonempty historical restore
+   continuation, not fresh installation. Completed DB restores follow the
+   existing stopped-writer restore/rebase procedure, preserving their historical
+   installation COMMENT; do not rerun fresh certification after restore.
+
+   After the owner reports completed M118 and the retained readback is verified,
+   start the full legacy compatibility stack and copy the same package into the healthy backend,
    re-verify it with the running release binary and record the initial
    installed release:
 
