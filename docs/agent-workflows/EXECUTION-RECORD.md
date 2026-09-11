@@ -2,6 +2,14 @@
 
 ## Fresh installer source candidate — 2026-09-12
 
+The independent source closing review of `b4e1a77c` found that a disabled policy
+or explicit column collation could pass the original-empty-ledger check. The
+bounded follow-up rejects both catalogue differences, exercises formal
+`plan/check` with unchanged-state assertions, and retains the normal original
+empty-ledger positive case. This is a static-source finding and correction;
+database reproduction and new Go tests remain unexecuted under the same resource
+boundary. The follow-up remains part of the pending 1.4.1 candidate.
+
 Current branch `codex/fresh-install-owner` reuses the existing isolated
 `/private/tmp/unirouter-test-preparation-20260911` worktree from `6676c0c1`.
 The supervisor accepted the bounded installer plan and three corrections before

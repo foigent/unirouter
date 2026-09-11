@@ -26,6 +26,8 @@ remain separate contracts; this installer does not make reset supported.
 `schema_migrations` table left by a failed older startup. It checks catalogue
 objects, not just the public-table count. Mixed schemas, unknown ledger entries,
 altered empty ledger tables and existing comments refuse fresh ownership.
+The original empty ledger must also have no policy (even with RLS disabled),
+and each column must retain its type's default collation identity.
 `plan` and `check` do not write to PostgreSQL. Plan output is a new private file.
 
 `apply` rechecks the exact target, artifact and empty shape under migration lock
@@ -165,6 +167,7 @@ end-to-end F acceptance.
 | --- | --- |
 | Canonical metadata, malformed/foreign COMMENT, missing binary identity, immutable files | `TestFreshEnvelope*`, `TestFreshPlanFiles*`; written, unrun |
 | Exact empty DB and original empty ledger; mixed DB refusal; plan/check no DB writes | `TestFreshInstallClaimsOnlyOriginalEmptyLedgerIntegration`, `TestFreshInstallRefusesMixedAndAlteredEmptyDatabasesIntegration`, process/native tests; written, unrun |
+| Disabled policy or explicit column collation on the empty ledger; formal plan/check refusal with unchanged DB and original Plan | `TestFreshInstallPlanCheckRefuseEmptyLedgerPolicyAndCollationDriftIntegration`; written, unrun |
 | Kill before M1, after M100, durable-unadopted and adopted-unexecuted Plan | `TestFreshInstallProcessRecoveryIntegration`; actual SIGKILL observer exists only in Go test invocation; written, unrun |
 | M107→108, M109→110, M112→113 ordinary-prefix successor Plans; missing P0; committed response loss | Same process test; written, unrun |
 | Active M113 refuses runtime; actual migration backend termination; stale Plan; pool size one | Same process test; written, unrun; full native CLI startup/writer cases still required |

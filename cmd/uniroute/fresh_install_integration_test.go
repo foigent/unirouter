@@ -327,9 +327,14 @@ func TestFreshInstallClaimsOnlyOriginalEmptyLedgerIntegration(t *testing.T) {
 	cfg := freshTestConfig(t, pool.Config().ConnConfig.ConnString())
 	_, err := pool.Exec(t.Context(), `CREATE TABLE schema_migrations(version VARCHAR(64) PRIMARY KEY,applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`)
 	require.NoError(t, err)
-	a, err := freshArtifact(cfg)
+	before := freshEmptyLedgerSnapshot(t, pool)
+	planPath := filepath.Join(t.TempDir(), "original.json")
+	require.NoError(t, runFreshInstallCLI(t.Context(), []string{"plan", "--out", planPath}, cfg))
+	require.NoError(t, runFreshInstallCLI(t.Context(), []string{"check", "--plan", planPath}, cfg))
+	require.Equal(t, before, freshEmptyLedgerSnapshot(t, pool), "formal plan/check must leave the original empty ledger unchanged")
+	wire, err := readFreshFile(planPath, installstate.MaximumBytes)
 	require.NoError(t, err)
-	p, err := planFreshInstall(t.Context(), pool, cfg.RuntimeEnvironment, a)
+	p, err := installstate.DecodePlan(wire)
 	require.NoError(t, err)
 	require.Equal(t, "empty_original_ledger", p.FreshShape)
 	_, err = installstate.RequireOrdinary(t.Context(), pool)
@@ -344,6 +349,63 @@ func TestFreshInstallClaimsOnlyOriginalEmptyLedgerIntegration(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
+}
+
+// Capture the state these admission commands could mutate, including the
+// disabled policy and collation details that an empty row count cannot prove.
+func freshEmptyLedgerSnapshot(t *testing.T, pool *pgxpool.Pool) string {
+	t.Helper()
+	var snapshot string
+	err := pool.QueryRow(t.Context(), `SELECT jsonb_build_object(
+ 'ledger',(SELECT COALESCE(jsonb_agg(to_jsonb(m) ORDER BY version),'[]'::jsonb) FROM public.schema_migrations m),
+ 'comment',obj_description('public.schema_migrations'::regclass,'pg_class'),
+ 'class',(SELECT to_jsonb(c) FROM pg_class c WHERE c.oid='public.schema_migrations'::regclass),
+ 'columns',(SELECT jsonb_agg(to_jsonb(a) ORDER BY attnum) FROM pg_attribute a WHERE attrelid='public.schema_migrations'::regclass AND attnum>0),
+ 'policies',(SELECT COALESCE(jsonb_agg(to_jsonb(p) ORDER BY oid),'[]'::jsonb) FROM pg_policy p WHERE polrelid='public.schema_migrations'::regclass),
+ 'constraints',(SELECT jsonb_agg(to_jsonb(c) ORDER BY oid) FROM pg_constraint c WHERE conrelid='public.schema_migrations'::regclass),
+ 'indexes',(SELECT jsonb_agg(to_jsonb(i) ORDER BY indexrelid) FROM pg_index i WHERE indrelid='public.schema_migrations'::regclass),
+ 'public_objects',(SELECT jsonb_agg(to_jsonb(c) ORDER BY oid) FROM pg_class c WHERE relnamespace='public'::regnamespace)
+ )::text`).Scan(&snapshot)
+	require.NoError(t, err)
+	return snapshot
+}
+
+func TestFreshInstallPlanCheckRefuseEmptyLedgerPolicyAndCollationDriftIntegration(t *testing.T) {
+	for _, tc := range []struct{ name, drift string }{
+		{"disabled_policy", `CREATE POLICY retained_policy ON public.schema_migrations USING (true)`},
+		{"explicit_collation", `ALTER TABLE public.schema_migrations ALTER COLUMN version TYPE VARCHAR(64) COLLATE "C"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pool := testutil.SetupIsolatedTestDB(t)
+			cfg := freshTestConfig(t, pool.Config().ConnConfig.ConnString())
+			_, err := pool.Exec(t.Context(), `CREATE TABLE public.schema_migrations(version VARCHAR(64) PRIMARY KEY,applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`)
+			require.NoError(t, err)
+			planPath := filepath.Join(t.TempDir(), "original.json")
+			require.NoError(t, runFreshInstallCLI(t.Context(), []string{"plan", "--out", planPath}, cfg))
+			original, err := readFreshFile(planPath, installstate.MaximumBytes)
+			require.NoError(t, err)
+			// Deliberate negative fixture only, never a positive bootstrap step.
+			_, err = pool.Exec(t.Context(), tc.drift)
+			require.NoError(t, err)
+			var enabled, forced bool
+			require.NoError(t, pool.QueryRow(t.Context(), `SELECT relrowsecurity,relforcerowsecurity FROM pg_class WHERE oid='public.schema_migrations'::regclass`).Scan(&enabled, &forced))
+			require.False(t, enabled)
+			require.False(t, forced)
+			before := freshEmptyLedgerSnapshot(t, pool)
+			rejectedPath := filepath.Join(t.TempDir(), "rejected.json")
+			err = runFreshInstallCLI(t.Context(), []string{"plan", "--out", rejectedPath}, cfg)
+			require.ErrorContains(t, err, "not the original migration-owner table")
+			_, err = os.Stat(rejectedPath)
+			require.True(t, os.IsNotExist(err), "rejected plan must not create output")
+			require.Equal(t, before, freshEmptyLedgerSnapshot(t, pool))
+			err = runFreshInstallCLI(t.Context(), []string{"check", "--plan", planPath}, cfg)
+			require.ErrorContains(t, err, "not the original migration-owner table")
+			require.Equal(t, before, freshEmptyLedgerSnapshot(t, pool))
+			after, err := readFreshFile(planPath, installstate.MaximumBytes)
+			require.NoError(t, err)
+			require.Equal(t, original, after, "check must preserve the original Plan")
+		})
+	}
 }
 
 func TestFreshInstallNativeBinaryIntegration(t *testing.T) {

@@ -23,6 +23,7 @@ func FreshShape(ctx context.Context, tx pgx.Tx) (string, error) {
  AND NOT EXISTS(SELECT 1 FROM pg_inherits WHERE inhrelid=c.oid OR inhparent=c.oid)
  AND (SELECT count(*) FROM pg_attribute WHERE attrelid=c.oid AND attnum>0)=2
  AND (SELECT count(*) FROM pg_attribute WHERE attrelid=c.oid AND NOT attisdropped AND attnotnull AND
+ attcollation=(SELECT typcollation FROM pg_type WHERE oid=atttypid) AND
  ((attnum=1 AND attname='version' AND format_type(atttypid,atttypmod)='character varying(64)') OR
   (attnum=2 AND attname='applied_at' AND format_type(atttypid,atttypmod)='timestamp with time zone')))=2
  AND (SELECT count(*) FROM pg_attrdef WHERE adrelid=c.oid)=1
@@ -30,6 +31,7 @@ func FreshShape(ctx context.Context, tx pgx.Tx) (string, error) {
  AND (SELECT count(*) FROM pg_constraint WHERE conrelid=c.oid)=1
  AND EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid=c.oid AND contype='p' AND conkey=ARRAY[1]::smallint[])
  AND (SELECT count(*) FROM pg_index WHERE indrelid=c.oid)=1
+ AND NOT EXISTS(SELECT 1 FROM pg_policy WHERE polrelid=c.oid)
  AND NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid=c.oid)
  AND NOT EXISTS(SELECT 1 FROM pg_rewrite WHERE ev_class=c.oid)
  AND pg_has_role(current_user,c.relowner,'USAGE')
