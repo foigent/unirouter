@@ -1,5 +1,21 @@
 # UniRouter Current Status
 
+## Durable test handoff and bounded optimization — 2026-09-14
+
+The a84/1.4.1 source is restored at
+`/Users/m4/Desktop/test/ur-regression-20260914/source`. The current working diff
+improves internal runner attribution, early Python checks and evidence navigation;
+14 offline tool tests pass, and original integration selectors/flags are unchanged.
+[Execution and evidence](../agent-workflows/EXECUTION-RECORD.md) distinguish this
+tool validation from product acceptance. Old tmp paths below are historical.
+
+Existing native evidence now supports a84 same-image installation, real M113
+interruption/resume and new-database restore/rebase. The old blanket native-pending
+heading below describes September 12 source delivery only. Original consolidated
+still has two root failures (clone cleanup timeout and replay 503 instead of 409);
+full product acceptance, performance, real successor/old-runtime and formal
+customer/integration delivery remain open. No release or GitHub push is claimed.
+
 ## Fresh installer source candidate, native evidence pending — 2026-09-12
 
 Version 1.4.1 adds the reviewed one-off fresh owner in the same backend image,

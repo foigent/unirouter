@@ -210,7 +210,7 @@ func sourceChatAndEmbeddingsAuthHistoryAndReplay(t *testing.T, observations bool
 				}
 				guarded := middleware.IdempotencyGuard(middleware.NewPostgresIdempotencyStore(pool), prd2E2EJWTSecret, final)
 				retained := payloadpolicy.RequestMiddlewareWithMax(payloadpolicy.MustNewBudget(payloadpolicy.DefaultLimits()), 8*payloadpolicy.MiB, middleware.GetOrgIDFromContext)
-				handler := middleware.OperationIdentityWithSecret(prd2E2EJWTSecret)(middleware.GatewayAuthAcrossBufferedBody(middleware.GatewayAuthWithAgentCapabilities(pool, prd2E2EJWTSecret, capabilities), retained)(middleware.CaptureExecutionContext(source)(middleware.StrictJSONIngress(guarded))))
+				handler := middleware.OperationIdentityWithSecret(prd2E2EJWTSecret)(middleware.GatewayAuthAcrossBufferedBody(middleware.GatewayAuthWithAgentCapabilities(pool, prd2E2EJWTSecret, capabilities), retained)(middleware.CaptureExecutionContext(sourceCaptureDiagnostics{Service: source, t: t})(middleware.StrictJSONIngress(guarded))))
 				if operation == "chat_cache" {
 					sourceHTTPCacheCase(t, pool, relay, handler, journal, org, owner, project, key, raw, &calls, observations)
 					return
@@ -349,7 +349,7 @@ func sourceChatAndEmbeddingsAuthHistoryAndReplay(t *testing.T, observations bool
 					}
 				}
 				replay := invoke(body, raw, "source-same-business-op")
-				require.Equal(t, http.StatusConflict, replay.Code, replay.Body.String())
+				require.Equal(t, http.StatusConflict, replay.Code, "original_operation=%q operation=%q response=%s", replay.Header().Get(middleware.OriginalOperationHeader), replay.Header().Get(middleware.OperationIDHeader), replay.Body.String())
 				require.Equal(t, request, replay.Header().Get(middleware.OriginalOperationHeader))
 				conflict := invoke(strings.Replace(body, "source-private-prompt", "different-private-prompt", 1), raw, "source-same-business-op")
 				require.Equal(t, http.StatusConflict, conflict.Code, conflict.Body.String())

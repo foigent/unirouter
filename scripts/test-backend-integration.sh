@@ -24,6 +24,10 @@ command -v "${compiler[0]}" >/dev/null || {
   echo 'Missing C compiler for race tests; on the approved Alpine fixture run apk update, then apk add --simulate gcc musl-dev before installation.' >&2
   exit 2
 }
+if [[ -n $log_dir ]]; then
+  command -v "${PYTHON:-python3}" >/dev/null
+  "${PYTHON:-python3}" -B scripts/summarize-go-test.py --help >/dev/null
+fi
 if [[ $check_only == true ]]; then
   go version
   echo 'configuration_preflight=PASS groups=consolidated,source-media,agentcap,limitpolicy,workloadadmission'
@@ -31,7 +35,6 @@ if [[ $check_only == true ]]; then
   exit 0
 fi
 if [[ -n $log_dir ]]; then
-  command -v "${PYTHON:-python3}" >/dev/null
   mkdir "$log_dir"  # Never reuse or overwrite an earlier evidence directory.
   log_dir=$(cd "$log_dir" && pwd)
 fi
@@ -45,7 +48,7 @@ run_group() {
   local log="$log_dir/$group.jsonl"
   # Add structured output only in local log mode; preserve every test argument.
   "${@:1:2}" -json "${@:3}" > "$log" 2>&1 || status=$?
-  "${PYTHON:-python3}" -B scripts/summarize-go-test.py "$log" --exit-code "$status" --group "$group" || summary_status=$?
+  "${PYTHON:-python3}" -B scripts/summarize-go-test.py "$log" --exit-code "$status" --group "$group" --runner scripts/test-backend-integration.sh || summary_status=$?
   if ((status != 0)); then return "$status"; fi
   return "$summary_status"
 }

@@ -1,5 +1,81 @@
 # Current Execution Record
 
+## Bounded native-regression diagnosis — 2026-09-14
+
+The supervisor accepted the independent diagnosis plan, including resource-admitted
+M4 synthetic checks. Product deadlines, mandatory source capture, replay identity,
+Provider/freeze/terminal counts and the original F consolidated failure remain intact.
+No product behavior repair is justified by the currently available evidence.
+
+Test-only diagnostics distinguish Drop connection acquisition from execution while
+preserving its caller's original deadline and error chain. Logs contain phase,
+elapsed time, error class and SQLSTATE, not raw PostgreSQL details or DSNs. The
+source HTTP fixture delegates the original capture interfaces and records failed
+capture boundaries after return; replay assertion diagnostics also retain both
+operation headers. No source publication, billing or middleware runtime changed.
+
+M4 uses dedicated synthetic PG16.14 and Redis8.8, Go1.25.12, task-local cache and
+logs under `/Users/m4/Desktop/test/ur-regression-20260914`. The adjacent
+`resource-admission.json` records the 10 GiB incremental disk estimate, 21 GiB
+retained floor and 5 GiB incremental memory estimate. These are M4 diagnosis
+conditions, not verified equivalence to the original F run.
+
+The initial narrow diagnostic run passed. The subsequent related matrix passes
+all 3 packages and 31 tests/subtests, with unchanged source before/after execution:
+the existing complete SourceObservations HTTP matrix, matching AtomicModelRelease
+authoring cases and Drop diagnostic checks. The existing injected admission failure
+returns 503 with SQLSTATE P0001; normal replay and single-effect assertions pass.
+Controlled test-owned connection contention distinguishes acquire/execute timeout;
+this proves the diagnostics, not the cause of the old cleanup failure.
+See [exact run metadata](</Users/m4/Desktop/test/ur-regression-20260914/diagnostic-evidence/related-matrix.result.json>)
+and [diagnosis and F reproduction handoff](</Users/m4/Desktop/test/ur-regression-20260914/DIAGNOSIS.md>).
+
+Original F root causes remain unproven. Static review found no concurrent source
+worker in this fixture and no evidence to blame RR serialization. Historical
+launch/version/resource/server-log inputs were requested through the supervisor;
+UR does not operate or contact XI/F. Original 19-package consolidated plus four
+following groups remain the closure scope. A diagnostic/test-only commit is not
+a real product successor, and does not satisfy same-M118 successor, old-runtime,
+formal customer package or parent integration acceptance.
+
+## Internal test and handoff follow-up — 2026-09-14
+
+The user requested execution of the efficiency improvements; the supervisor
+accepted this bounded follow-up. Work is in the persistent isolated checkout
+`/Users/m4/Desktop/test/ur-regression-20260914/source`, branch
+`codex/fresh-regression-20260914`, based on a84ac272. The previous tmp checkout
+is gone. This entry supersedes historical path availability and native-pending
+statements below, while retaining their original evidence and scope.
+
+The existing five-group runner and six preparation lessons are reused. This
+follow-up fixes the summarizer's hardcoded backend attribution: both callers
+declare their actual runner, invalid group/runner pairs fail, and evidence records
+runner path/hash plus summarizer hash. Logged backend and fresh checks now execute
+the summarizer's `--help` before tests to verify Python, syntax and dependencies
+without creating logs or contacting services. Independent precode review requested
+this actual-script check instead of a guessed Python version or imports alone;
+the correction is incorporated. No product runtime or test selector changes.
+
+Validation: 9 offline runner and 5 summary regressions pass. Missing/broken Python,
+missing/wrong runner, no-test/no-directory preflight, fail-stop exit propagation,
+all-skipped/incomplete failure and package/subtest counts are covered. The complete
+backend selector/execution suffix is byte-identical to a84, as is the fresh Go
+test command. Actual Go 1.25.12 / Python 3.12.14 configuration preflight passes.
+[Verification](</Users/m4/Desktop/test/ur-regression-20260914/optimization-evidence/verification.json>)
+and adjacent runner.log, summary.log and actual-preflight.log retain the results.
+Shell syntax and whitespace checks pass. No product test or service was run for
+this tool change; product version remains 1.4.1.
+
+[Current dependencies, durable evidence and reuse boundaries](LOCAL-TEST-REUSE.md)
+distinguish available tools from missing jsonschema. Existing a84 native evidence
+supports same-image fresh install, real M113 interruption/resume and new-database
+restore/rebase in its accepted scope. Original consolidated remains FAIL (17 pass,
+2 failed packages; 760 pass, 3 fail, 4 skipped tests/subtests). Clone cleanup timeout
+and replay 409-to-503 remain open; isolated passes cannot close the original group.
+Performance, supported successful M118 reset, real successor/old-runtime inputs,
+formal customer delivery and full integration/parent acceptance remain separate.
+Experience file: no change needed; this is not a model/Provider adaptation change.
+
 ## Fresh installer source candidate — 2026-09-12
 
 The independent source closing review of `b4e1a77c` found that a disabled policy

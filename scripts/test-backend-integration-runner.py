@@ -87,6 +87,29 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(self.read_calls(), [])
                 del self.env[key]
 
+    def test_unavailable_python_fails_before_tests_or_log_creation(self):
+        broken = self.root / "broken-python"
+        broken.write_text('#!/bin/sh\nexit 7\n')
+        broken.chmod(0o700)
+        logs = self.root / "logs"
+        for python in (str(self.root / "missing-python"), str(broken)):
+            for check in ([], ["--check"]):
+                with self.subTest(python=python, check=check):
+                    self.env["PYTHON"] = python
+                    result = self.run_runner(*check, "--log-dir", str(logs))
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(self.read_calls(), [])
+                    self.assertFalse(logs.exists())
+
+    def test_fresh_check_reuses_python_preflight_without_running_tests(self):
+        self.env["PYTHON"] = str(self.root / "missing-python")
+        logs = self.root / "fresh-logs"
+        result = subprocess.run(["bash", "scripts/test-fresh-install.sh", "--check", str(logs)],
+                                cwd=REPO, env=self.env, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.read_calls(), [])
+        self.assertFalse(logs.exists())
+
     def test_incompatible_toolchain_fails_before_execution(self):
         self.env["FAKE_TOOLCHAIN_EXIT"] = "1"
         self.assertEqual(self.run_runner("--check").returncode, 1)

@@ -1,8 +1,28 @@
 # 本地测试准备与交付复用
 
-2026-09-11 的优化仅涉及内部测试和交接。已验收产品为 `59f7712d09653034756b846b15b8d69a16782791`，tree `ab09c48939539a10dbb039814489d764c0b53ca5`，版本 1.4.0。原候选工作树 `/private/tmp/unirouter-workfacts-20260909` 和原始证据不改写；优化位于 `/private/tmp/unirouter-test-preparation-20260911`。
+2026-09-11 的优化仅涉及内部测试和交接。已验收产品为 `59f7712d09653034756b846b15b8d69a16782791`，tree `ab09c48939539a10dbb039814489d764c0b53ca5`，版本 1.4.0。下文历史路径保留原始归属，不代表现在可用。
 
-## 当前交付与依赖
+## 当前入口与复用判定（2026-09-14）
+
+持久隔离工作树为 `/Users/m4/Desktop/test/ur-regression-20260914/source`，分支
+`codex/fresh-regression-20260914`；基线为 `a84ac2726e079796ade0af573b575b7c11bbdfbc`，
+tree `364048280499d697abc5a637fd0fb731073b56d1`，1.4.1。本轮工具和文档修改以实际 diff
+为准，不能把基线 HEAD 当作含修改的精确候选。测试材料放在相邻的持久目录中。
+
+| 对象 | 已核对的入口与状态 |
+| --- | --- |
+| 原生证据裁定 | [manager-decision.md](</Users/m4/Desktop/projects/About Me/library/reports/企业AI工作事实平台-目标拆解与验收-2026-09-05/supporting/xi-iteration-20260909/f-bounded/native-review-a84-f4/manager-decision.md>)：接受 a84 同镜像首装、M113 中断续装、新库恢复的明确范围，未接受完整产品 |
+| 原 consolidated FAIL | [恢复的原始摘要](</Users/m4/Desktop/projects/About Me/library/reports/企业AI工作事实平台-目标拆解与验收-2026-09-05/supporting/xi-iteration-20260909/f-bounded/native-review-a84-f4/recovered-evidence/regression-consolidated.summary.json>)，SHA-256 `1b7ca4b6ffacf55f3686976e13542cdad283fd7885eef8777ff525e2a627a31c`：17 包通过、2 包失败；760 测试/子测试通过、3 失败、4 跳过。原始失败保留，两项根因及原合并范围仍待关闭 |
+| M4 Go | `/Users/m4/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.12.darwin-arm64/bin/go`，实测 1.25.12；默认 Go 1.24.3 不能替代 |
+| M4 PostgreSQL 工具 | `/opt/homebrew/opt/postgresql@16/bin`，实测 psql 16.14；默认 PostgreSQL 18 不能冒充 PG16。这里只核工具，不证明服务或数据库就绪 |
+| M4 Python | `/Users/m4/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3`，实测 3.12.14；可运行标准库摘要。Homebrew Python 为 3.14.5 |
+| HTTP JSON Schema 验证依赖 | 旧 `/private/tmp/ur-workfacts-test.RDgTyF/schema-validator` 已不存在；上述两个 Python 均未找到 jsonschema。HTTP 校验入口的这项依赖待恢复，不能引用旧通过状态；本次未安装依赖 |
+
+下方 2026-09-11 的 tmp 工作树已失效；其他历史材料在使用前逐项核对。复用 a84 的原生
+证据时检查受影响差异和环境，不把四个后续组单独通过覆盖 consolidated FAIL。
+本轮仅优化内部工具及交接，不宣称性能、成功 M118 reset、真实 XI 或父平台验收完成。
+
+## 2026-09-11 交付与依赖（历史）
 
 后续 1.4.1 安装器源码工作见 [FRESH-INSTALL.md](../ops/FRESH-INSTALL.md)。其
 `scripts/test-fresh-install.sh` 为新增覆盖，复用本页工具链预检和日志摘要；原五组
@@ -30,12 +50,18 @@ UR A/B/D/X Local 已通过独立整体验收。性能与附加观测缺口、M11
 
 ```sh
 # 从当前候选根目录运行；只核对配置和 race 编译工具，不连接数据库。
-bash scripts/test-backend-integration.sh --check
+bash scripts/test-backend-integration.sh --check --log-dir /Users/m4/Desktop/test/ur-regression-20260914/next-run
 # 确认专用环境、前态与授权后执行；日志目录必须尚不存在。
-bash scripts/test-backend-integration.sh --log-dir /private/tmp/ur-next-batch-integration
+bash scripts/test-backend-integration.sh --log-dir /Users/m4/Desktop/test/ur-regression-20260914/next-run
 ```
 
 日志模式完整保留 `go test -json`，只返回退出码、包数、测试/子测试数、失败行号与路径。首次失败停止，未到达的组仍是未执行；不自动重试。空选择、全部跳过、不完整执行不会被摘要判为通过。摘要保留观察到的 commit/tree、tracked diff 摘要、未跟踪路径、runner 摘要；存在差异/覆盖文件时不能只引用 HEAD 声称 exact-commit 通过，也不自动授予证据复用资格。
+
+`--check --log-dir` 会先用所选 Python 执行摘要脚本 `--help`，验证实际语法和标准库，
+不创建日志目录、不运行测试。fresh 入口复用同一检查。摘要要求显式 `--runner` 并核对
+它与现有测试组的对应关系，记录实际入口路径、SHA-256 和摘要工具 SHA-256；不再把
+fresh 归为 backend。历史摘要不回写；原 a84 首装摘要中的 backend runner hash 是已知
+归属问题，需连同当时实际命令及源码裁定读取，不能用新字段追认旧证据。
 
 ## 昂贵执行前的具体准备
 

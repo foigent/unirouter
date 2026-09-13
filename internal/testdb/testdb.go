@@ -6,6 +6,7 @@ package testdb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 )
@@ -101,9 +103,47 @@ func QuoteIdent(value string) string {
 }
 
 func Drop(ctx context.Context, adminPool *pgxpool.Pool, dbName string) error {
-	_, err := adminPool.Exec(ctx, `DROP DATABASE IF EXISTS `+QuoteIdent(dbName))
-	return err
+	started := time.Now()
+	conn, err := adminPool.Acquire(ctx)
+	if err != nil {
+		return newDropError("acquire", started, err)
+	}
+	defer conn.Release()
+	started = time.Now()
+	_, err = conn.Exec(ctx, `DROP DATABASE IF EXISTS `+QuoteIdent(dbName))
+	if err != nil {
+		return newDropError("execute", started, err)
+	}
+	return nil
 }
+
+// Drop diagnostics preserve the original deadline and error chain, but never
+// include connection strings, server error detail or SQL parameters in logs.
+type dropError struct {
+	phase   string
+	elapsed time.Duration
+	cause   error
+}
+
+func newDropError(phase string, started time.Time, cause error) error {
+	return &dropError{phase: phase, elapsed: time.Since(started), cause: cause}
+}
+
+func (e *dropError) Error() string {
+	class, sqlstate := "other", "none"
+	var pgerr *pgconn.PgError
+	switch {
+	case errors.As(e.cause, &pgerr):
+		class, sqlstate = "postgres", pgerr.Code
+	case errors.Is(e.cause, context.DeadlineExceeded):
+		class = "deadline"
+	case errors.Is(e.cause, context.Canceled):
+		class = "canceled"
+	}
+	return fmt.Sprintf("phase=%s elapsed=%s class=%s sqlstate=%s", e.phase, e.elapsed, class, sqlstate)
+}
+
+func (e *dropError) Unwrap() error { return e.cause }
 
 func Unavailable(t *testing.T, format string, args ...any) {
 	t.Helper()

@@ -6,6 +6,11 @@ import json
 from pathlib import Path
 import subprocess
 
+RUNNER_GROUPS = {
+    "scripts/test-backend-integration.sh": {"consolidated", "source-media", "agentcap", "limitpolicy", "workloadadmission"},
+    "scripts/test-fresh-install.sh": {"fresh-install"},
+}
+
 
 def summarize(path, exit_code):
     packages, tests, locations = {}, {}, []
@@ -44,9 +49,15 @@ def main():
     parser.add_argument("log", type=Path)
     parser.add_argument("--exit-code", required=True, type=int)
     parser.add_argument("--group", required=True)
+    parser.add_argument("--runner", required=True, choices=RUNNER_GROUPS)
     args = parser.parse_args()
-    result = summarize(args.log, args.exit_code)
     repo = Path(__file__).resolve().parent.parent
+    if args.group not in RUNNER_GROUPS[args.runner]:
+        parser.error("group does not belong to the declared runner")
+    runner = repo / args.runner
+    if not runner.is_file():
+        parser.error("declared runner is unavailable")
+    result = summarize(args.log, args.exit_code)
     def git(*arguments):
         return subprocess.check_output(["git", *arguments], cwd=repo)
     diff = git("diff", "--binary", "HEAD")
@@ -55,7 +66,9 @@ def main():
         "tree": git("rev-parse", "HEAD^{tree}").decode().strip(),
         "tracked_diff_sha256": hashlib.sha256(diff).hexdigest(),
         "untracked_paths": git("ls-files", "--others", "--exclude-standard").decode().splitlines(),
-        "runner_sha256": hashlib.sha256((repo / "scripts/test-backend-integration.sh").read_bytes()).hexdigest(),
+        "runner_path": args.runner,
+        "runner_sha256": hashlib.sha256(runner.read_bytes()).hexdigest(),
+        "summarizer_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         "reuse": "Requires assessment of candidate, fixture, dependencies and affected behavior; never automatic."})
     target = args.log.with_suffix(".summary.json")
     with target.open("x") as output:
