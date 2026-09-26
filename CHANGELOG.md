@@ -4,6 +4,11 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.5.2] - 2026-09-27
+
+- 增加 development/test 历史运行实例的正式单实例停止检查与应用：在精确 rollout 退出、撤流和当前进程证据下，核对原支持清单、Target、版本与财务终态，只将旧实例状态置为 `stopped` 并递增修订号。旧镜像及历史证据继续保留为受支持的兼容恢复制品；租约过期不自动退役。
+- 宿主命令复用现有生命周期和 ingress 锁；证据缺失、旧容器仍可重启、活跃租约、未决财务、陈旧修订或变化的 ingress 均拒绝。当前为本地候选，不代表 Target 已执行停止或 M117 扩展。
+
 ## [1.5.1] - 2026-09-26
 
 - 修正客户升级说明中 M121 恢复辅助脚本的精确 SHA-256 与字节数，并明确 M119、M120、M121 恢复时同一事务重置 C recovery epoch；脚本字节及运行行为不变。

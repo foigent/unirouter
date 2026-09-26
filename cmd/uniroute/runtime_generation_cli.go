@@ -29,8 +29,8 @@ func runRuntimeGenerationCLI(ctx context.Context, args []string, cfg *config.Con
 		_, err = os.Stdout.Write(append(wire, '\n'))
 		return err
 	}
-	if len(args) != 1 || (args[0] != "inspect" && args[0] != "prepare" && args[0] != "complete" && args[0] != "read") {
-		return fmt.Errorf("usage: runtime-generation <support|inspect|prepare|complete|read>; commands accept typed JSON on stdin")
+	if len(args) != 1 || (args[0] != "inspect" && args[0] != "prepare" && args[0] != "complete" && args[0] != "read" && args[0] != "stop-check" && args[0] != "stop-apply") {
+		return fmt.Errorf("usage: runtime-generation <support|inspect|prepare|complete|read|stop-check|stop-apply>; commands accept typed JSON on stdin")
 	}
 	var plan runtimegeneration.IngressPlan
 	var complete struct {
@@ -42,6 +42,7 @@ func runRuntimeGenerationCLI(ctx context.Context, args []string, cfg *config.Con
 	var read struct {
 		ChangeID string `json:"change_id"`
 	}
+	var retirement runtimegeneration.RetirementInput
 	if args[0] != "inspect" {
 		var target any = &plan
 		if args[0] == "complete" {
@@ -50,9 +51,15 @@ func runRuntimeGenerationCLI(ctx context.Context, args []string, cfg *config.Con
 		if args[0] == "read" {
 			target = &read
 		}
+		if args[0] == "stop-check" || args[0] == "stop-apply" {
+			target = &retirement
+		}
 		if err := readBoundedCLIJSON(os.Stdin, 2<<20, target); err != nil {
 			return err
 		}
+	}
+	if (args[0] == "stop-check" || args[0] == "stop-apply") && retirement.ExpectedEnvironment != cfg.RuntimeEnvironment {
+		return fmt.Errorf("retirement Target environment differs from runtime configuration")
 	}
 	// A one-off control command must not outlive its bounded Artifact carrier.
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
@@ -78,7 +85,7 @@ func runRuntimeGenerationCLI(ctx context.Context, args []string, cfg *config.Con
 	switch args[0] {
 	case "inspect":
 		var encoded string
-		err = postgres.Pool.QueryRow(ctx, `SELECT jsonb_build_object('head',COALESCE((SELECT c.change_id FROM runtime_ingress_changes c WHERE NOT EXISTS(SELECT 1 FROM runtime_ingress_changes n WHERE n.predecessor_id=c.change_id)),''),'head_status',COALESCE((SELECT c.status FROM runtime_ingress_changes c WHERE NOT EXISTS(SELECT 1 FROM runtime_ingress_changes n WHERE n.predecessor_id=c.change_id)),''),'generations',COALESCE((SELECT jsonb_agg(jsonb_build_object('instance',g.instance_id,'artifact_digest',g.artifact_digest,'schema_head',g.schema_head,'state',g.state,'ingress_state',g.ingress_state,'lease_live',g.lease_expires_at>clock_timestamp(),'support_manifest_digest',m.manifest_digest) ORDER BY g.instance_id) FROM runtime_generations g JOIN runtime_support_manifests m USING(artifact_digest)),'[]'::jsonb))::text`).Scan(&encoded)
+		err = postgres.Pool.QueryRow(ctx, `SELECT jsonb_build_object('head',COALESCE((SELECT c.change_id FROM runtime_ingress_changes c WHERE NOT EXISTS(SELECT 1 FROM runtime_ingress_changes n WHERE n.predecessor_id=c.change_id)),''),'head_status',COALESCE((SELECT c.status FROM runtime_ingress_changes c WHERE NOT EXISTS(SELECT 1 FROM runtime_ingress_changes n WHERE n.predecessor_id=c.change_id)),''),'generations',COALESCE((SELECT jsonb_agg(jsonb_build_object('instance',g.instance_id,'artifact_digest',g.artifact_digest,'compatibility_epoch',g.compatibility_epoch,'schema_head',g.schema_head,'revision',g.revision,'state',g.state,'ingress_state',g.ingress_state,'lease_live',g.lease_expires_at>clock_timestamp(),'support_manifest_digest',m.manifest_digest) ORDER BY g.instance_id) FROM runtime_generations g JOIN runtime_support_manifests m USING(artifact_digest)),'[]'::jsonb))::text`).Scan(&encoded)
 		result = json.RawMessage(encoded)
 	case "prepare":
 		var status string
@@ -93,6 +100,10 @@ func runRuntimeGenerationCLI(ctx context.Context, args []string, cfg *config.Con
 		var status string
 		p, status, err = runtimegeneration.ReadIngress(ctx, postgres.Pool, read.ChangeID)
 		result = map[string]any{"plan": p, "status": status}
+	case "stop-check":
+		result, err = runtimegeneration.CheckRetirement(ctx, postgres.Pool, retirement)
+	case "stop-apply":
+		result, err = runtimegeneration.ApplyRetirement(ctx, postgres.Pool, retirement)
 	}
 	if err != nil {
 		return err
