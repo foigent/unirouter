@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -39,7 +40,7 @@ func (s *Service) Version() string {
 		return ""
 	}
 	o := s.options
-	canonical := fmt.Sprintf("admission-v2|redis=fail-closed|g=%d|o=%d|gs=%d|os=%d|i=%d/%d|s=%d/%d|e=%d/%d|poll=%d|active=%d|store=%d|grace=%d|queue=%d/%d/%d",
+	canonical := fmt.Sprintf("admission-v2|redis=fail-closed|wait=redis-origin-v1|g=%d|o=%d|gs=%d|os=%d|i=%d/%d|s=%d/%d|e=%d/%d|poll=%d|active=%d|store=%d|grace=%d|queue=%d/%d/%d",
 		o.GlobalCapacity, o.OrgCapacity, o.GlobalShortReserve, o.OrgShortReserve,
 		o.Interactive.Weight, ceilMilliseconds(o.Interactive.MaxWait),
 		o.Stream.Weight, ceilMilliseconds(o.Stream.MaxWait),
@@ -68,6 +69,9 @@ func (s *Service) Reserve(ctx context.Context, request Request) (*Reservation, D
 		stateTTL = maxLeaseTTL + time.Minute
 	}
 	keys := runtimeKeys(request.OrgID)
+	// Keep the first Redis queue origin even if another poll reaps its metadata.
+	// Application clocks must not redefine the shared queue deadline.
+	queueStartedMS := ""
 	for {
 		callCtx, cancel := s.storeContext(ctx, policy.MaxWait)
 		value, err := reserveScript.Run(callCtx, s.rdb, keys,
@@ -76,7 +80,7 @@ func (s *Service) Reserve(ctx context.Context, request Request) (*Reservation, D
 			s.options.GlobalShortReserve, s.options.OrgShortReserve,
 			ceilMilliseconds(request.LeaseTTL+s.options.LeaseGrace), ceilMilliseconds(policy.MaxWait),
 			ceilMilliseconds(s.options.ActivePollWindow), s.options.MaxQueueDepth, s.options.MaxQueueScan,
-			ceilSeconds(stateTTL), s.Version(), s.options.MaxOrgQueueDepth).Result()
+			ceilSeconds(stateTTL), s.Version(), s.options.MaxOrgQueueDepth, queueStartedMS).Result()
 		cancel()
 		if err != nil {
 			s.abandon(request.OrgID, member, fingerprint, stateTTL)
@@ -109,6 +113,9 @@ func (s *Service) Reserve(ctx context.Context, request Request) (*Reservation, D
 				Idempotent: store.Code == storeIdempotent,
 			}, decision, nil
 		case storeWait:
+			if queueStartedMS == "" {
+				queueStartedMS = strconv.FormatInt(store.NowMS-store.WaitedMS, 10)
+			}
 			wait := time.Duration(store.RetryMS) * time.Millisecond
 			if wait <= 0 || wait > s.options.PollInterval {
 				wait = s.options.PollInterval

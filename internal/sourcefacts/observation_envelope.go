@@ -14,7 +14,7 @@ const ObservationConnectorVersion = "2.0.0"
 
 var observationDescriptors = sync.OnceValues(func() (map[string]eventconnector.Descriptor, error) {
 	result := map[string]eventconnector.Descriptor{}
-	for _, profile := range ObservationProfiles() {
+	for _, profile := range v1ObservationProfiles() {
 		typeName, schemaRef := observationEventBinding(profile)
 		d, e := eventconnector.NewDescriptor(eventconnector.DescriptorBinding{
 			ProtocolVersion: "2.0.2", ProtocolCommit: "ad8fe7a38c9d7335657630baa8670dd07556b98c",

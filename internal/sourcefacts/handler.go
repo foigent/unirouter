@@ -48,6 +48,7 @@ func (s *Service) authenticateTx(ctx context.Context, tx pgx.Tx, r *http.Request
 	 JOIN execution_source_connections c ON c.org_id=sc.org_id AND c.project_id=sc.project_id
 	 JOIN orgs o ON o.id=ak.org_id JOIN projects p ON p.id=ak.project_id AND p.org_id=ak.org_id
 	 WHERE ak.purpose=$1 AND ak.verifier_scheme=$2 AND ak.key_hash=$3 AND ak.key_prefix=$4
+	 AND COALESCE(to_jsonb(ak)->>'source_lifecycle_scope','legacy')='legacy'
 	 AND ak.key_type='service' AND ak.allowed_models='' AND ak.status IN ('feed_active','feed_staged')
 	 AND o.status='active' AND p.status='active' FOR SHARE OF c`, Purpose, auth.ReceiverFeedVerifierScheme, hash, prefix).Scan(&a.keyID, &a.org, &a.project, &a.keyStatus, &a.ips, &a.instance, &a.status, &a.generation, &a.profiles, &a.credentialProfiles)
 	if e != nil {
@@ -307,6 +308,16 @@ func (s *Service) eventHandler(resolver middleware.ClientIPResolver, observation
 
 func (s *Service) boundEvent(wire []byte, a access, profile string, observations bool) (eventconnector.ImmutableEvent, error) {
 	if observations {
+		if profile == GatewayPreDispatchProfile {
+			doc, err := DecodeGatewayPreDispatchTerminal(wire)
+			if err != nil {
+				return eventconnector.ImmutableEvent{}, err
+			}
+			if doc.Profile != profile || doc.OrgID != strconv.FormatInt(a.org, 10) || doc.ProjectID != strconv.FormatInt(a.project, 10) || doc.SourceInstance != a.instance {
+				return eventconnector.ImmutableEvent{}, errors.New("source row binding failure")
+			}
+			return GatewayPreDispatchEvent(doc, wire)
+		}
 		doc, err := DecodeObservation(wire)
 		if err != nil {
 			return eventconnector.ImmutableEvent{}, err

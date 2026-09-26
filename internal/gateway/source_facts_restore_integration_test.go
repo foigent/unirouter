@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -65,7 +64,7 @@ func TestSourceFactsPGBackupRestorePreservesIdentityAndPendingJournalIntegration
 	require.NoError(t, f.Pool.QueryRow(t.Context(), `SELECT pg_get_functiondef('mark_micro_ledger_runtime_evidence()'::regprocedure)`).Scan(&markerDefinition))
 	require.Contains(t, markerDefinition, "NOT micro_evidence_written OR first_evidence_at IS NULL")
 	archive := filepath.Join(t.TempDir(), "synthetic-source.pgdump")
-	command := exec.CommandContext(t.Context(), filepath.Join(bin, "pg_dump"), "--format=custom", "--no-owner", "--no-acl", "--file", archive, "--dbname", f.Pool.Config().ConnString())
+	command := testutil.PostgresToolCommand(t, t.Context(), filepath.Join(bin, "pg_dump"), f.Pool.Config(), "--format=custom", "--no-owner", "--no-acl", "--file", archive)
 	output, err := command.CombinedOutput()
 	require.NoError(t, err, "pg_dump: %s", output)
 
@@ -78,7 +77,7 @@ func TestSourceFactsPGBackupRestorePreservesIdentityAndPendingJournalIntegration
 	require.NoError(t, f.Pool.QueryRow(t.Context(), `SELECT high_sequence FROM execution_source_streams WHERE profile=$1`, sourcefacts.ContextProfile).Scan(&laterHigh))
 	require.Greater(t, laterHigh, sourceHigh)
 	restored := testutil.SetupIsolatedTestDB(t)
-	command = exec.CommandContext(t.Context(), filepath.Join(bin, "pg_restore"), "--exit-on-error", "--single-transaction", "--no-owner", "--no-acl", "--dbname", restored.Config().ConnString(), archive)
+	command = testutil.PostgresToolCommand(t, t.Context(), filepath.Join(bin, "pg_restore"), restored.Config(), "--exit-on-error", "--single-transaction", "--no-owner", "--no-acl", archive)
 	output, err = command.CombinedOutput()
 	require.NoError(t, err, "pg_restore: %s", output)
 	require.Equal(t, before, sourceRecoveryTableDigests(t, restored), "all source/financial/recovery bytes must survive the actual archive")

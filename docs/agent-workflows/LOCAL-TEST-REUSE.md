@@ -2,12 +2,34 @@
 
 2026-09-11 的优化仅涉及内部测试和交接。已验收产品为 `59f7712d09653034756b846b15b8d69a16782791`，tree `ab09c48939539a10dbb039814489d764c0b53ca5`，版本 1.4.0。下文历史路径保留原始归属，不代表现在可用。
 
-## 当前入口与复用判定（2026-09-14）
+## 当前入口与复用判定（2026-09-15）
 
 持久隔离工作树为 `/Users/m4/Desktop/test/ur-regression-20260914/source`，分支
-`codex/fresh-regression-20260914`；基线为 `a84ac2726e079796ade0af573b575b7c11bbdfbc`，
-tree `364048280499d697abc5a637fd0fb731073b56d1`，1.4.1。本轮工具和文档修改以实际 diff
-为准，不能把基线 HEAD 当作含修改的精确候选。测试材料放在相邻的持久目录中。
+`codex/fresh-regression-20260914`。已交付诊断候选为
+`fe771d5c177f255523f290141acfc2809bb9cc31`，tree
+`cffaa770e08fcf9494d62af7a2c5c2230a294846`，1.4.1；其父基线是
+`a84ac2726e079796ade0af573b575b7c11bbdfbc`。当前已进入获批U1本地实现，存在未提交
+产品和测试diff；不能把HEAD、旧归档和未提交工作树视为同一个已验收对象。
+
+- 当前目标、授权和下一动作从相邻的 [DIAGNOSIS.md](/Users/m4/Desktop/test/ur-regression-20260914/DIAGNOSIS.md) 顶部恢复；其中 U1 实施计划与诊断交付分别记录，不用旧的“U1 未放行”快照推断当前状态。
+- 诊断交付的精确归档、bundle 前驱和验证范围见 [diagnostic-delivery.json](/Users/m4/Desktop/test/ur-regression-20260914/diagnostic-delivery.json)。该交付是诊断及内部工具变更，原 F 两项根因仍未关闭。
+- [工具优化验证](/Users/m4/Desktop/test/ur-regression-20260914/optimization-evidence/verification.json) 记录 14 项离线测试、选择器等价性及配置预检；诊断交付另记录 3 包、31 项测试/子测试通过。它们不证明 U1、完整 consolidated、性能或目标环境通过。
+- U1当前轻量证据：[检查点摘要](/private/tmp/u1-validation-checkpoint-a1q850kp/summary.json)，
+  五包74个顶层测试通过，兼容性纯测试另列；完整JSON日志同目录。初次缓存访问被沙箱拒绝，
+  未运行测试；获准重跑日志独立保留。此处是WIP检查点，不是产品或PG验收。
+  [旧55项摘要](/private/tmp/u1-local-check.xKqSRh/summary.json)保留原版本，不能与当前通过数相加。
+- 上述检查点的持久入口为[delivery-index.json](/Users/m4/Desktop/test/ur-regression-20260914/u1-pg-checkpoint-c3fb9083/delivery-index.json)：原归档、manifest、summary与日志逐字节复制，原临时证据保留；索引映射所有持久路径。
+- 后续C数据合同复用[原C0资产](../../contracts/source-content/v1/README.md)；
+  `TestContentContractOriginalC0Vectors`直接验证25个正例和19个反例，避免另写相似夹具。
+  Go canonical helper须先调用既有整数规范化；`json.Number`不能直接传入。
+  此后续增量不属于上面已固定的PG检查点，证据单独保留在桌面test的`u1-read-preparation-20260915`。
+- U1真实PG检查复用同一 `scripts/test-backend-integration.sh`：consolidated选择器新增
+  `TestContentControl.*Integration`、`TestContentPolicy.*Integration`、`TestContentCaptureMigration.*`，
+  source-media保留原两包并增加`internal/contentcapture`；runner离线测试断言三个选择器及精确包列表。
+  不另写初始化器，不改变原Redis组顺序、超时或断言。新增测试仅编译通过不能写为PG验收。
+
+下面的工具版本和依赖状态来自 9 月 14 日检查，未因本页更新日期改变而重新验证。
+实际执行前只核对会影响该次运行的路径和配置；原生运行仍须原操作方核对目标、资源及授权。
 
 | 对象 | 已核对的入口与状态 |
 | --- | --- |

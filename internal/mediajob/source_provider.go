@@ -3,6 +3,7 @@ package mediajob
 import (
 	"context"
 	"log"
+	"net/http"
 	"time"
 )
 
@@ -27,6 +28,16 @@ type SourceMediaProviderObserver interface {
 	ObservationsEnabled() bool
 	BeforeMediaRoute(context.Context, Job, SourceMediaRoute) error
 	CaptureMediaRoutes(context.Context, Job, []SourceMediaHTTP) error
+}
+
+// Content is independent of optional B observations. Implementations verify the
+// committed job identity and only affect capture, never provider authorization.
+type MediaContentObserver interface {
+	ObserveMediaProvider(context.Context, Job, SourceMediaRoute, *http.Request) (*http.Request, func(*http.Response, error))
+}
+
+func (p *GPTImageProvider) SetContentObserver(observer MediaContentObserver) {
+	p.contentObserver = observer
 }
 
 func (p *GPTImageProvider) SetSourceObserver(observer SourceMediaProviderObserver) {

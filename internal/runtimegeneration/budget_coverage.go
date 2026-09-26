@@ -2,7 +2,10 @@ package runtimegeneration
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -81,13 +84,50 @@ func ReadBudgetCoverage(ctx context.Context, q coverageReader) (BudgetCoverage, 
 	if err = CurrentManifest(schemaauthority.SupportedSchemaHeads()).Require(head, BudgetCoverageRequirements()); err != nil {
 		return c, err
 	}
-	var present bool
-	err = q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1) AND (SELECT MAX(version)=$1 AND encode(sha256(convert_to(string_agg(version,E'\n' ORDER BY version),'UTF8')),'hex')=$2 FROM schema_migrations)`, head, ledgerDigest).Scan(&present)
+	var encoded string
+	err = q.QueryRow(ctx, `SELECT COALESCE(jsonb_agg(version ORDER BY version),'[]'::jsonb)::text FROM schema_migrations`).Scan(&encoded)
 	if err != nil {
 		return c, err
 	}
-	if !present {
-		return c, fmt.Errorf("budget coverage schema head mismatch")
+	var ledger []string
+	if err := json.Unmarshal([]byte(encoded), &ledger); err != nil {
+		return c, err
 	}
+	if err := verifyBudgetCoverageLedger(ledger, head, ledgerDigest); err != nil {
+		return c, err
+	}
+
 	return c, nil
+}
+
+// M119 through M121 retain the exact M118 proof. A known additive suffix does not
+// recertify history or replace the original migration/manifest/ledger identity.
+func verifyBudgetCoverageLedger(ledger []string, certifiedHead, certifiedDigest string) error {
+	if certifiedHead != schemaauthority.BudgetSnapshotExpandHead || !artifactPattern.MatchString("sha256:"+certifiedDigest) || len(ledger) == 0 {
+		return fmt.Errorf("budget coverage schema head mismatch")
+	}
+	head := ledger[len(ledger)-1]
+	if head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead {
+		return fmt.Errorf("budget coverage schema head mismatch")
+	}
+	if err := schemaauthority.VerifyRuntimeLedger(ledger, ledger); err != nil {
+		return fmt.Errorf("budget coverage schema ledger: %w", err)
+	}
+	prefix := ledger
+	if head == schemaauthority.ContentCaptureExpandHead || head == schemaauthority.ContentReclaimExpandHead || head == schemaauthority.PreDispatchExpandHead {
+		prefix = ledger[:len(ledger)-1]
+		if head == schemaauthority.PreDispatchExpandHead {
+			prefix = ledger[:len(ledger)-3]
+		} else if head == schemaauthority.ContentReclaimExpandHead {
+			prefix = ledger[:len(ledger)-2]
+		}
+	}
+	if prefix[len(prefix)-1] != certifiedHead || fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(prefix, "\n")))) != certifiedDigest {
+		return fmt.Errorf("budget coverage certified predecessor mismatch")
+	}
+	refs := BudgetCoverageRequirements()
+	if head == schemaauthority.ContentCaptureExpandHead || head == schemaauthority.ContentReclaimExpandHead || head == schemaauthority.PreDispatchExpandHead {
+		refs = append(refs, ContentLifecycleRequirements()...)
+	}
+	return CurrentManifest(schemaauthority.SupportedSchemaHeads()).Require(head, refs)
 }

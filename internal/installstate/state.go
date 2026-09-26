@@ -110,8 +110,8 @@ func (p Plan) Validate() error {
 	if a.Version == "" || !gitHex.MatchString(a.Commit) || !gitHex.MatchString(a.Tree) || !strings.HasPrefix(a.ImageDigest, "sha256:") || !hex64.MatchString(strings.TrimPrefix(a.ImageDigest, "sha256:")) || !strings.HasPrefix(a.ExecutableDigest, "sha256:") || !hex64.MatchString(strings.TrimPrefix(a.ExecutableDigest, "sha256:")) || !hex64.MatchString(a.ManifestDigest) {
 		return fmt.Errorf("fresh-install requires exact build, image and support identities")
 	}
-	if len(a.Ledger) == 0 || a.Ledger[len(a.Ledger)-1] != schemaauthority.BudgetSnapshotExpandHead || schemaauthority.VerifyRuntimeLedger(a.Ledger, a.Ledger) != nil {
-		return fmt.Errorf("fresh-install supports only the exact current M118 artifact")
+	if len(a.Ledger) == 0 || (a.Ledger[len(a.Ledger)-1] != schemaauthority.BudgetSnapshotExpandHead && a.Ledger[len(a.Ledger)-1] != schemaauthority.ContentCaptureExpandHead && a.Ledger[len(a.Ledger)-1] != schemaauthority.ContentReclaimExpandHead && a.Ledger[len(a.Ledger)-1] != schemaauthority.PreDispatchExpandHead) || schemaauthority.VerifyRuntimeLedger(a.Ledger, a.Ledger) != nil {
+		return fmt.Errorf("fresh-install requires an exact supported M118, M119, M120 or M121 artifact")
 	}
 	for _, v := range a.Ledger {
 		if !hex64.MatchString(a.Files[v+".up.sql"]) {
@@ -168,7 +168,7 @@ func (r Record) Validate() error {
 				return fmt.Errorf("completion lacks a committed publication Plan")
 			}
 		}
-		if c.LedgerSHA256 != LedgerSHA(r.Plan.Artifact.Ledger) || c.MigrationSHA256 != "sha256:"+r.Plan.Artifact.Files[schemaauthority.BudgetSnapshotExpandHead+".up.sql"] || c.ManifestSHA256 != r.Plan.Artifact.ManifestDigest {
+		if c.LedgerSHA256 != LedgerSHA(r.Plan.Artifact.Ledger) || c.MigrationSHA256 != "sha256:"+r.Plan.Artifact.Files[r.Plan.Artifact.Ledger[len(r.Plan.Artifact.Ledger)-1]+".up.sql"] || c.ManifestSHA256 != r.Plan.Artifact.ManifestDigest {
 			return fmt.Errorf("invalid historical completion binding")
 		}
 	}

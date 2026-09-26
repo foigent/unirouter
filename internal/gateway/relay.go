@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/uniroute/unirouter/internal/contentcapture"
 	"github.com/uniroute/unirouter/internal/executionmeasurement"
 	"io"
 	"net/http"
@@ -118,6 +119,7 @@ type Relay struct {
 	runtimeEnvironment         string
 	modelExecution             *modelExecutionRuntime
 	providerHTTPDoer           adapters.HTTPDoer
+	contentCapture             contentcapture.Starter
 }
 
 // SetStreamCounterVersion is a startup-only selection. Schema compatibility is
@@ -1012,6 +1014,9 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		relay.recordTraceEvent(ctx, requestID, "routing.no_route", "routing", "error", req.Model, requestedModel, nil, http.StatusServiceUnavailable, elapsedMilliseconds(requestStart), map[string]interface{}{
 			"route_count": 0, "pre_freeze": true,
 		})
+		if captureErr := middleware.CaptureGatewayNoRoute(ctx); captureErr != nil {
+			reqLog.Error("Gateway pre-dispatch terminal capture unavailable")
+		}
 		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, http.StatusServiceUnavailable, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceNoRoute, estimatedTokens, "")
 		writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", fmt.Sprintf("No available channel for model: %s", req.Model))
 		return
@@ -1053,6 +1058,9 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		relay.recordTraceEvent(ctx, requestID, "routing.no_route", "routing", "error", req.Model, requestedModel, nil, http.StatusServiceUnavailable, elapsedMilliseconds(requestStart), map[string]interface{}{
 			"route_count": 0, "pre_freeze": true,
 		})
+		if captureErr := middleware.CaptureGatewayNoRoute(ctx); captureErr != nil {
+			reqLog.Error("Gateway pre-dispatch terminal capture unavailable")
+		}
 		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, http.StatusServiceUnavailable, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceNoRoute, estimatedTokens, "")
 		writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", fmt.Sprintf("No available channel for model: %s", req.Model))
 		return
@@ -1206,6 +1214,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 
 		recordCompressionReceipt(route)
 		providerAttempts++
+		upstreamReq, observeResponse := relay.observeProvider(attemptCtx, upstreamReq, preparedRoute.adapter, adapters.EndpointChatCompletions)
 		upstreamStart := time.Now()
 		finishMeasurement := executionmeasurement.HTTPStart(attemptCtx, attemptIDFromContext(attemptCtx))
 		resp, err := client.Do(upstreamReq)
@@ -1216,6 +1225,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		finishMeasurement(observedHTTPStatus)
 		upstreamDuration := time.Since(upstreamStart)
 		middleware.RecordUpstreamLatency(route.Channel.Provider, req.Model, upstreamDuration)
+		observeResponse(resp, err)
 		if err != nil {
 			relay.releaseResponseCacheMiss(attemptCtx, reqLog)
 			stopProbeLease()
@@ -2182,8 +2192,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		return true
 	}
 	type pendingStreamFrame struct {
-		data      []byte
-		doneAfter bool
+		data []byte
 	}
 	var pendingFrames []pendingStreamFrame
 	pendingBufferBytes := 0
@@ -2263,7 +2272,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		if !markBillableOutput() {
 			return false
 		}
-		for index, frame := range inspection.Frames {
+		for _, frame := range inspection.Frames {
 			if !firstTokenReceived {
 				firstTokenReceived = true
 				ttftMs = int(time.Since(streamStart).Milliseconds())
@@ -2306,9 +2315,6 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			if !writeOK {
 				streamTerminationCode = "downstream_stream_write_failed"
 				return false
-			}
-			if frames[index].doneAfter {
-				done = true
 			}
 		}
 		return true
@@ -2369,7 +2375,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 				return false
 			}
 		}
-		pendingFrames = append(pendingFrames, pendingStreamFrame{data: append([]byte(nil), data...), doneAfter: doneAfter})
+		pendingFrames = append(pendingFrames, pendingStreamFrame{data: append([]byte(nil), data...)})
 		pendingBufferBytes += frameBufferBytes
 		if streamGuardrailProfile.Enforced && guardrailBufferTimer == nil {
 			guardrailBufferTimer = time.NewTimer(streampolicy.EnforceBufferMaxWait)
@@ -2396,7 +2402,6 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			if !flushGuardrailBuffer() {
 				return false
 			}
-			done = true
 			return true
 		}
 		providerError, classifyErr := providerStreamErrorFrame(data)
@@ -2446,7 +2451,6 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 				return invalid()
 			}
 			providerTerminalObserved = true
-			done = true
 			return flushGuardrailBuffer()
 		}
 		// Raw duplicate validation must precede provider metadata map decoding.
@@ -2494,6 +2498,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		return enqueueGuardedFrame(data, false, present, false)
 	}
 	var scanErr error
+	transportEOFObserved := false
 	firstSSELine := true
 streamLoop:
 	for !done {
@@ -2508,6 +2513,7 @@ streamLoop:
 			}
 			if event.done {
 				scanErr = event.err
+				transportEOFObserved = event.err == nil
 				if functionToolAssembler != nil {
 					assembled, ready, err := functionToolAssembler.Finish()
 					if err != nil {
@@ -2526,7 +2532,7 @@ streamLoop:
 						done = true
 					}
 				}
-				if !flushGuardrailBuffer() {
+				if !flushGuardrailBuffer() || (transportEOFObserved && providerTerminalObserved) {
 					done = true
 				}
 				break streamLoop
@@ -2552,6 +2558,14 @@ streamLoop:
 			streamTerminationCode = "downstream_stream_write_failed"
 			done = true
 			break streamLoop
+		}
+		// A protocol terminal is not transport EOF. Preserve the existing
+		// contract that ignores trailing provider data: consume it through this
+		// same bounded scanner/cancellation select, but never parse it, disclose
+		// it, or let it alter usage/tool state. The provider observer retains raw
+		// consumed bytes. Close must never perform a second drain.
+		if providerTerminalObserved {
+			continue
 		}
 		if firstSSELine {
 			line = strings.TrimPrefix(line, "\uFEFF")
@@ -2611,7 +2625,6 @@ streamLoop:
 					done = true
 					continue
 				}
-				done = true
 				continue
 			}
 			chunk, err := streamNormalizer.NormalizeStreamChunk(ctx, adapters.StreamChunkInput{
@@ -2670,10 +2683,9 @@ streamLoop:
 				} else {
 					providerTerminalObserved = true
 				}
-				if !flushGuardrailBuffer() {
+				if !flushGuardrailBuffer() || streamPayloadInvalid {
 					done = true
 				}
-				done = true
 			}
 			if done {
 				continue
@@ -2709,7 +2721,6 @@ streamLoop:
 				done = true
 				continue
 			}
-			done = true
 			continue
 		}
 		if hasField && field.name == "data" {
@@ -2819,7 +2830,7 @@ streamLoop:
 	// still follow it. Only a clean EOF after every choice has a supported
 	// finish_reason becomes terminal; a truncated stream without that proof
 	// continues to fail closed below.
-	if scanErr == nil && currentKimiStream && streamTerminationCode == "" {
+	if transportEOFObserved && currentKimiStream && streamTerminationCode == "" {
 		if stateErr := kimiStreamState.FinishEOF(); stateErr != nil {
 			streamPayloadInvalid = true
 			streamTerminationCode = "upstream_stream_invalid_frame"
@@ -2828,7 +2839,7 @@ streamLoop:
 			done = true
 		}
 	}
-	if scanErr == nil && currentDeepSeekStream && !providerTerminalObserved && streamTerminationCode == "" {
+	if transportEOFObserved && currentDeepSeekStream && !providerTerminalObserved && streamTerminationCode == "" {
 		if stateErr := deepSeekStreamState.FinishEOF(); stateErr != nil {
 			streamPayloadInvalid = true
 			streamTerminationCode = "upstream_stream_invalid_frame"
@@ -2837,7 +2848,7 @@ streamLoop:
 			done = true
 		}
 	}
-	if scanErr == nil && !currentKimiStream && !currentDeepSeekStream && !providerTerminalObserved && streamTerminationCode == "" {
+	if transportEOFObserved && !currentKimiStream && !currentDeepSeekStream && !providerTerminalObserved && streamTerminationCode == "" {
 		if stateErr := exactStreamState.validateCleanEOF(providerFinishReasonObserved); stateErr != nil {
 			if exactStreamState != nil {
 				streamPayloadInvalid = true
@@ -2858,7 +2869,7 @@ streamLoop:
 			streamTerminationCode = "upstream_stream_read_failed"
 		}
 	}
-	if !done && streamTerminationCode == "" && !preOutputBillingFailure {
+	if (!done || !transportEOFObserved) && streamTerminationCode == "" && !preOutputBillingFailure {
 		streamTerminationCode = "upstream_stream_read_failed"
 	}
 	supplierOutputOverrun := providerCompletionBound && usedUpstreamUsage &&
@@ -3701,6 +3712,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		lastAttemptCtx = attemptCtx
 
 		providerAttempts++
+		upstreamReq, observeResponse := relay.observeProvider(attemptCtx, upstreamReq, preparedRoute.adapter, adapters.EndpointEmbeddings)
 		upstreamStart := time.Now()
 		finishMeasurement := executionmeasurement.HTTPStart(attemptCtx, attemptIDFromContext(attemptCtx))
 		resp, err := client.Do(upstreamReq)
@@ -3711,6 +3723,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		finishMeasurement(observedHTTPStatus)
 		upstreamDuration := time.Since(upstreamStart)
 		middleware.RecordUpstreamLatency(route.Channel.Provider, req.Model, upstreamDuration)
+		observeResponse(resp, err)
 		if err != nil {
 			stopProbeLease()
 			classified := adapters.ClassifyTransportError(attemptCtx, err)

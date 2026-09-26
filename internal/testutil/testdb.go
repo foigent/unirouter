@@ -308,7 +308,7 @@ func runStrictTestArtifactInstall(ctx context.Context, pool *pgxpool.Pool, migra
 	}
 	// This test-only caller owns an isolated database with no serving fleet.
 	// Exercise the same explicit expand owner; ordinary startup cannot apply it.
-	for _, expandVersion := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead} {
+	for _, expandVersion := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead} {
 		present := false
 		for _, version := range artifactLedger {
 			if version == expandVersion {
@@ -376,25 +376,29 @@ func InstallExactTestArtifact(ctx context.Context, pool *pgxpool.Pool, migration
 // RewindEmptyBudgetSnapshotsForLegacyTest must run before a legacy fixture
 // creates projects or other D history. It uses the guarded product down.
 func RewindEmptyBudgetSnapshotsForLegacyTest(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
-	var applied bool
-	if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, schemaauthority.BudgetSnapshotExpandHead).Scan(&applied); err != nil {
-		return err
+	for _, version := range []string{schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.BudgetSnapshotExpandHead} {
+		var applied bool
+		if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, version).Scan(&applied); err != nil {
+			return err
+		}
+		if !applied {
+			continue
+		}
+		wire, err := os.ReadFile(filepath.Join(migrationsDir, version+".down.sql"))
+		if err != nil {
+			return err
+		}
+		if _, err := pool.Exec(ctx, string(wire)); err != nil {
+			return err
+		}
 	}
-	if !applied {
-		return nil
-	}
-	wire, err := os.ReadFile(filepath.Join(migrationsDir, schemaauthority.BudgetSnapshotExpandHead+".down.sql"))
-	if err != nil {
-		return err
-	}
-	_, err = pool.Exec(ctx, string(wire))
-	return err
+	return nil
 }
 
 // RewindEmptySourceFactsForLegacyTest restores the real M115 predecessor using
 // guarded product downs without erasing data-bearing source evidence.
 func RewindEmptySourceFactsForLegacyTest(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
-	for _, version := range []string{schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.SourceFactsExpandHead} {
+	for _, version := range []string{schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.SourceFactsExpandHead} {
 		var applied bool
 		if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, version).Scan(&applied); err != nil {
 			return err
@@ -417,6 +421,9 @@ func RewindCapabilityPublicationsForLegacyMigrationTest(ctx context.Context, poo
 		migrationID string
 		kind        string
 	}{
+		{migrationID: "000121_gateway_pre_dispatch_terminal", kind: "unused pre-dispatch terminal expand test artifact"},
+		{migrationID: "000120_unpublished_content_reclamation", kind: "unused content reclamation expand test artifact"},
+		{migrationID: "000119_execution_content_capture", kind: "empty content capture expand test artifact"},
 		{migrationID: "000118_source_budget_snapshots", kind: "unused budget snapshot expand test artifact"},
 		{migrationID: "000117_execution_observations", kind: "empty source observations expand test artifact"},
 		{migrationID: "000116_execution_source_facts", kind: "empty source facts expand test artifact"},

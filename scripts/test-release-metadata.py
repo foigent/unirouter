@@ -34,6 +34,7 @@ class ReleasePolicyTests(unittest.TestCase):
         self.git('config', 'commit.gpgsign', 'false')
         self.git('config', 'core.hooksPath', str(self.root / 'no-hooks'))
         self.write_metadata('1.2.3')
+        self.write_toolchains()
         self.write('internal/runtime.go', 'package runtime\n')
         self.base = self.commit()
 
@@ -53,6 +54,29 @@ class ReleasePolicyTests(unittest.TestCase):
             self.write('frontend/' + name, json.dumps(
                 {'version': version, 'private': True}, indent=2) + '\n')
         self.write('CHANGELOG.md', f'# Changelog\n\n## [{version}] - 2026-09-07\n\nFixture.\n')
+
+    def write_toolchains(self):
+        self.write('go.mod', 'module example.invalid/fixture\n\ngo 1.25.0\n\ntoolchain go1.25.12\n')
+        self.write('Dockerfile', 'FROM golang:1.25.12-alpine AS builder\n')
+        self.write('frontend/Dockerfile', 'FROM node:24-alpine AS builder\n')
+        self.write('.github/workflows/ci.yml',
+                   "      - uses: actions/setup-go@v7\n"
+                   "        with:\n"
+                   "          go-version: '1.25.12'\n"
+                   "      - uses: actions/setup-go@v7\n"
+                   "        with:\n"
+                   "          go-version: '1.25.12'\n"
+                   "      - uses: actions/setup-node@v7\n"
+                   "        with:\n"
+                   "          node-version: '24'\n"
+                   "      - uses: actions/setup-node@v7\n"
+                   "        with:\n"
+                   "          node-version: '24'\n")
+        for name in ('capability-bundle.yml', 'foigent-protocol-conformance.yml'):
+            self.write('.github/workflows/' + name,
+                       "      - uses: actions/setup-go@v7\n"
+                       "        with:\n"
+                       "          go-version: '1.25.12'\n")
 
     def commit(self):
         self.git('add', '--all')
@@ -109,8 +133,34 @@ class ReleasePolicyTests(unittest.TestCase):
                 # Each case starts at the same fixture baseline; reset only this
                 # test-created repository, never the caller's working tree.
                 self.git('reset', '--hard', self.base)
-                self.write(path, 'changed runtime or contract\n')
+                if path in ('go.mod', 'Dockerfile'):
+                    comment = '// changed runtime or contract\n' if path == 'go.mod' else '# changed runtime or contract\n'
+                    self.write(path, (self.repo / path).read_text() + comment)
+                else:
+                    self.write(path, 'changed runtime or contract\n')
                 self.check(head=self.commit(), failed=True, error="must update VERSION")
+
+    def test_declared_toolchain_drift_fails_in_current_mode(self):
+        self.check(base='', mode='current')
+        cases = (
+            ('go.mod', 'toolchain go1.25.12', 'toolchain go1.25.13', 'Dockerfile'),
+            ('go.mod', 'go 1.25.0', 'go 1.26.0', 'go.mod'),
+            ('go.mod', 'toolchain go1.25.12\n', '', 'go.mod'),
+            ('Dockerfile', 'golang:1.25.12-alpine', 'golang:1.25.11-alpine', 'Dockerfile'),
+            ('.github/workflows/ci.yml', "go-version: '1.25.12'", "go-version: '1.25.11'", '.github/workflows/ci.yml'),
+            ('.github/workflows/capability-bundle.yml', "go-version: '1.25.12'", "go-version: '1.25.11'", '.github/workflows/capability-bundle.yml'),
+            ('.github/workflows/foigent-protocol-conformance.yml', "go-version: '1.25.12'", "go-version: '1.25.11'", '.github/workflows/foigent-protocol-conformance.yml'),
+            ('frontend/Dockerfile', 'node:24-alpine', 'node:22-alpine', 'frontend/Dockerfile'),
+            ('.github/workflows/ci.yml', "node-version: '24'", "node-version: '22'", '.github/workflows/ci.yml'),
+            ('.github/workflows/ci.yml', "node-version: '24'\n", '', '.github/workflows/ci.yml'),
+        )
+        for path, old, new, error in cases:
+            with self.subTest(path=path, old=old, new=new):
+                self.git('reset', '--hard', self.base)
+                source = (self.repo / path).read_text()
+                self.assertIn(old, source)
+                self.write(path, source.replace(old, new, 1))
+                self.check(base='', failed=True, error=error)
 
     def test_mixed_change_still_needs_bump(self):
         self.write('internal/runtime_test.go', 'package runtime\n')

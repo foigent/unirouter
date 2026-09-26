@@ -124,7 +124,8 @@ func (relay *Relay) HandlePublicNonStream(w http.ResponseWriter, r *http.Request
 		requestID: requestID, requestedModel: publicModel, resolvedModel: resolvedModel,
 	}
 	orchestrator := &publicNonStreamOrchestrator{
-		mode: runtime.mode, planner: runtime.planner, coordinator: runtime.publicCoordinator,
+		contentCapture: relay.contentCapture,
+		mode:           runtime.mode, planner: runtime.planner, coordinator: runtime.publicCoordinator,
 		billing: relay.billing, registry: runtime.publicRegistry,
 		decrypt: auth.DecryptKey, encryptionKey: relay.encKey,
 		doer: relay.providerClient(300 * time.Second), guard: guard,
@@ -164,7 +165,8 @@ func (relay *Relay) HandlePublicNonStream(w http.ResponseWriter, r *http.Request
 		if streaming {
 			streamPolicy := relay.currentStreamPolicy()
 			streamCore := &publicNonStreamOrchestrator{
-				mode: runtime.mode, planner: runtime.planner, coordinator: runtime.publicCoordinator,
+				contentCapture: relay.contentCapture,
+				mode:           runtime.mode, planner: runtime.planner, coordinator: runtime.publicCoordinator,
 				billing: relay.billing, registry: runtime.publicStreamRegistry,
 				decrypt: auth.DecryptKey, encryptionKey: relay.encKey,
 				// The request-scoped stream policy below is the only whole-stream

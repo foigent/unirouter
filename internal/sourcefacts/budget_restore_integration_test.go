@@ -48,7 +48,7 @@ func TestSourceBudgetActualBackupRestoreCannotReuseCoverageBeforeLostCharge(t *t
 	require.NoError(t, pool.QueryRow(ctx, `SELECT jsonb_agg(to_jsonb(f) ORDER BY profile,sequence)::text FROM execution_source_facts f`).Scan(&originalFacts))
 	require.NoError(t, pool.QueryRow(ctx, `SELECT jsonb_agg(to_jsonb(d) ORDER BY org_id,project_id,revision)::text FROM execution_source_budget_definitions d`).Scan(&originalDefinitions))
 	dump := filepath.Join(t.TempDir(), "synthetic-budget-before-charge.sql")
-	command := exec.CommandContext(ctx, dumpTool, "--no-owner", "--no-privileges", "--dbname", pool.Config().ConnString(), "--file", dump)
+	command := testutil.PostgresToolCommand(t, ctx, dumpTool, pool.Config(), "--no-owner", "--no-privileges", "--file", dump)
 	output, err := command.CombinedOutput()
 	require.NoError(t, err, "pg_dump: %s", output)
 	// The original writer commits 600 CNY after the backup. The older backup
@@ -69,7 +69,7 @@ func TestSourceBudgetActualBackupRestoreCannotReuseCoverageBeforeLostCharge(t *t
 	require.EqualValues(t, 600000000, settled.ChargedCostMicros)
 	// Restore to a different task-owned empty database, never over the source.
 	restored := testutil.SetupIsolatedTestDB(t)
-	command = exec.CommandContext(ctx, psqlTool, "--no-psqlrc", "--set", "ON_ERROR_STOP=1", "--dbname", restored.Config().ConnString(), "--file", dump)
+	command = testutil.PostgresToolCommand(t, ctx, psqlTool, restored.Config(), "--no-psqlrc", "--set", "ON_ERROR_STOP=1", "--file", dump)
 	output, err = command.CombinedOutput()
 	require.NoError(t, err, "restore: %s", output)
 	old, err := runtimegeneration.ReadBudgetCoverage(ctx, restored)

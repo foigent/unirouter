@@ -226,28 +226,26 @@ func (o *FreshOwner) Publication(ctx context.Context, allowed []string, hooks Pu
 
 // Expand is a fresh-only schema owner, not an online compatible-expand with a
 // fictitious empty fleet. The final callback verifies static authority and
-// certifies M118 using the original implementation, in the DDL/ledger tx.
+// certifies M118 using the original implementation. Only the exact Artifact
+// ceiling commits the completion envelope, now M121 for new installations.
 func (o *FreshOwner) Expand(ctx context.Context, version string, final func(context.Context, pgx.Tx) error) error {
 	s, err := o.requireActive(ctx)
 	if err != nil {
 		return err
 	}
-	if version != schemaauthority.CapabilityExpandHead && version != schemaauthority.StreamCounterExpandHead && version != schemaauthority.SourceFactsExpandHead && version != schemaauthority.ObservationExpandHead && version != schemaauthority.BudgetSnapshotExpandHead {
-		return fmt.Errorf("unknown fresh expansion")
-	}
-	if len(s.Ledger) >= len(o.plan.Artifact.Ledger) || o.plan.Artifact.Ledger[len(s.Ledger)] != version {
-		return fmt.Errorf("fresh expansion is not the next exact migration")
-	}
-	if (version == schemaauthority.BudgetSnapshotExpandHead) != (final != nil) {
-		return fmt.Errorf("M118 requires the final atomic verifier")
+	if err := validateFreshExpansion(o.plan.Artifact.Ledger, s.Ledger, version, final != nil); err != nil {
+		return err
 	}
 	return runOnConnection(ctx, o.conn, o.dir, runOptions{fresh: o, freshExpand: version, ceiling: version, requireExactPrefix: true,
 		beforeCommit: func(ctx context.Context, tx pgx.Tx, v string) error {
-			if v != schemaauthority.BudgetSnapshotExpandHead {
+			if final == nil {
 				return nil
 			}
 			if err := final(ctx, tx); err != nil {
 				return err
+			}
+			if v != o.plan.Artifact.Ledger[len(o.plan.Artifact.Ledger)-1] {
+				return nil
 			}
 			actual, err := installstate.Read(ctx, tx)
 			if err != nil {
@@ -262,4 +260,17 @@ func (o *FreshOwner) Expand(ctx context.Context, version string, final func(cont
 			return installstate.Write(ctx, tx, r)
 		},
 	})
+}
+
+func validateFreshExpansion(artifact, applied []string, version string, hasVerifier bool) error {
+	if version != schemaauthority.CapabilityExpandHead && version != schemaauthority.StreamCounterExpandHead && version != schemaauthority.SourceFactsExpandHead && version != schemaauthority.ObservationExpandHead && version != schemaauthority.BudgetSnapshotExpandHead && version != schemaauthority.ContentCaptureExpandHead && version != schemaauthority.ContentReclaimExpandHead && version != schemaauthority.PreDispatchExpandHead {
+		return fmt.Errorf("unknown fresh expansion")
+	}
+	if len(applied) >= len(artifact) || !slices.Equal(applied, artifact[:len(applied)]) || artifact[len(applied)] != version {
+		return fmt.Errorf("fresh expansion is not the next exact migration")
+	}
+	if (version == schemaauthority.BudgetSnapshotExpandHead || (version == schemaauthority.ContentCaptureExpandHead || version == schemaauthority.ContentReclaimExpandHead || version == schemaauthority.PreDispatchExpandHead)) != hasVerifier {
+		return fmt.Errorf("M118 certification and M119/M120/M121 completion require their atomic verifiers")
+	}
+	return nil
 }

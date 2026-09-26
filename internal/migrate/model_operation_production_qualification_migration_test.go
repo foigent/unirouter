@@ -89,11 +89,7 @@ func TestModelOperationProductionQualificationDownGuardsAllEvidenceBeforeDrop(t 
 }
 
 func TestCISelectsModelOperationProductionQualificationPostgresContracts(t *testing.T) {
-	workflowBytes, err := os.ReadFile("../../.github/workflows/ci.yml")
-	if err != nil {
-		t.Fatalf("read CI workflow: %v", err)
-	}
-	workflow := string(workflowBytes)
+	workflow := consolidatedIntegrationSource(t)
 	const selector = "TestModelOperation(HTTPSOriginGoSQLGoldenVectors|ProductionQualification(DatabaseGuards|DownRejects(FrozenEvidence|FutureM76)))Integration"
 	if !strings.Contains(workflow, selector) {
 		t.Fatalf("CI consolidated integration gate does not select M75 PostgreSQL contracts with %q", selector)

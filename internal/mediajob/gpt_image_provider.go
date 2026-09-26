@@ -30,12 +30,13 @@ type ImageRouter interface {
 }
 
 type GPTImageProvider struct {
-	sourceObserver SourceMediaProviderObserver
-	router         ImageRouter
-	profile        endpointprotocol.Profile
-	httpClient     *http.Client
-	encKey         []byte
-	timeout        time.Duration
+	contentObserver MediaContentObserver
+	sourceObserver  SourceMediaProviderObserver
+	router          ImageRouter
+	profile         endpointprotocol.Profile
+	httpClient      *http.Client
+	encKey          []byte
+	timeout         time.Duration
 }
 
 type GPTImageProviderOptions struct {
@@ -144,12 +145,18 @@ func (p *GPTImageProvider) generateRoute(
 		return ProviderResult{}, &ProviderError{Code: protocolErrorCode(err)}
 	}
 	var observation SourceMediaRoute
-	if p.SourceObservationsEnabled() {
+	if p.SourceObservationsEnabled() || p.contentObserver != nil {
 		descriptor := p.profile.Descriptor()
 		observation = SourceMediaRoute{Sequence: sequence, Total: total, ChannelID: route.Channel.ID, ChannelKeyID: route.ChannelKey.ID, Provider: route.Channel.Provider, Origin: upstreamRequest.URL.Scheme + "://" + upstreamRequest.URL.Host, Model: job.RoutingModel, Operation: job.Operation, ProtocolProfile: descriptor.ProfileID, ProtocolVersion: descriptor.ProfileVersion, Surface: descriptor.UpstreamEndpoint, ExecutionProfile: route.ExecutionProfileID, ExecutionVersion: route.ExecutionProfileVersion, ReleaseRef: route.RuntimeReleaseRef}
+	}
+	if p.SourceObservationsEnabled() {
 		if err := p.sourceObserver.BeforeMediaRoute(ctx, job, observation); err != nil {
 			return ProviderResult{}, &ProviderError{Code: "source_dispatch_unavailable"}
 		}
+	}
+	observeResponse := func(*http.Response, error) {}
+	if p.contentObserver != nil {
+		upstreamRequest, observeResponse = p.contentObserver.ObserveMediaProvider(ctx, job, observation, upstreamRequest)
 	}
 	var started time.Time
 	if p.SourceObservationsEnabled() {
@@ -164,6 +171,7 @@ func (p *GPTImageProvider) generateRoute(
 		}
 		recordSourceMediaHTTP(ctx, SourceMediaHTTP{Route: observation, Status: status, RoundTripNanoseconds: duration, ObservedAt: time.Now()})
 	}
+	observeResponse(response, err)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return ProviderResult{}, &ProviderError{

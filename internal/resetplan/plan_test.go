@@ -16,8 +16,8 @@ import (
 const testDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 func TestBuildHasStableSemanticScopeAndVariableArtifactIdentity(t *testing.T) {
-	firstSnapshot := completeSnapshot()
-	secondSnapshot := completeSnapshot()
+	firstSnapshot := syntheticClassifiedSnapshot()
+	secondSnapshot := syntheticClassifiedSnapshot()
 	secondSnapshot.Redis.Prefixes[0].KeyCount = 77
 	first, err := Build(firstSnapshot, testTarget(), "ecs.first-integration", "ecs.second-integration.v2", time.Unix(0, 0))
 	if err != nil {
@@ -62,18 +62,18 @@ func TestBuildHasStableSemanticScopeAndVariableArtifactIdentity(t *testing.T) {
 }
 
 func TestBuildRequiresNewSourceExactAdminAndCompleteClassification(t *testing.T) {
-	snapshot := completeSnapshot()
+	snapshot := syntheticClassifiedSnapshot()
 	if _, err := Build(snapshot, testTarget(), "source-a", "source-a", time.Unix(0, 0)); err == nil {
 		t.Fatal("reusing source_instance must fail")
 	}
 
-	badAdmin := completeSnapshot()
+	badAdmin := syntheticClassifiedSnapshot()
 	badAdmin.Admin.NormalizedLogin = "other"
 	if _, err := Build(badAdmin, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil {
 		t.Fatal("non-admin selected identity must fail")
 	}
 
-	unknown := completeSnapshot()
+	unknown := syntheticClassifiedSnapshot()
 	unknown.Tables = append(unknown.Tables, TableInventory{Name: "future_unknown"})
 	plan, err := Build(unknown, testTarget(), "source-a", "source-b", time.Unix(0, 0))
 	if err != nil {
@@ -84,14 +84,14 @@ func TestBuildRequiresNewSourceExactAdminAndCompleteClassification(t *testing.T)
 	}
 }
 
-func TestBuildSupportsExactCurrentSchemaAndRejectsPreviousOrFutureMax(t *testing.T) {
-	current := completeSnapshot()
+func TestBuildChecksSyntheticArtifactLedgerAndRejectsPreviousOrFutureMax(t *testing.T) {
+	current := syntheticClassifiedSnapshot()
 	plan, err := Build(current, testTarget(), "source-a", "source-b", time.Unix(0, 0))
 	if err != nil {
 		t.Fatalf("Build current schema: %v", err)
 	}
 	if got := plan.Schema.MigrationVersions[len(plan.Schema.MigrationVersions)-1]; got != schemaauthority.LatestSupportedMigration {
-		t.Fatalf("latest migration = %q, want %q", got, schemaauthority.LatestSupportedMigration)
+		t.Fatalf("fixture migration = %q, want %q", got, schemaauthority.LatestSupportedMigration)
 	}
 	if plan.Summary.TableCount != 140 || plan.Summary.ResetCandidateCount != 112 || plan.Summary.ReviewRequiredCount != 0 {
 		t.Fatalf("current schema changed reviewed table classification: %+v", plan.Summary)
@@ -103,19 +103,19 @@ func TestBuildSupportsExactCurrentSchemaAndRejectsPreviousOrFutureMax(t *testing
 		t.Fatalf("selected admin identity axes drifted: %+v", plan.SelectedAdmin)
 	}
 
-	previous := completeSnapshot()
+	previous := syntheticClassifiedSnapshot()
 	previous.MigrationVersions = previous.MigrationVersions[:len(previous.MigrationVersions)-1]
 	if _, err := Build(previous, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "reset_support_migration") {
 		t.Fatalf("previous schema as max error = %v", err)
 	}
 
-	future := completeSnapshot()
+	future := syntheticClassifiedSnapshot()
 	future.MigrationVersions = append(future.MigrationVersions, "999999_future_contract")
 	if _, err := Build(future, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "reset_support_migration") {
 		t.Fatalf("future migration error = %v", err)
 	}
 
-	missingMiddle := completeSnapshot()
+	missingMiddle := syntheticClassifiedSnapshot()
 	missingMiddle.MigrationVersions = []string{
 		missingMiddle.MigrationVersions[0],
 		missingMiddle.MigrationVersions[len(missingMiddle.MigrationVersions)-1],
@@ -124,7 +124,7 @@ func TestBuildSupportsExactCurrentSchemaAndRejectsPreviousOrFutureMax(t *testing
 		t.Fatalf("missing middle migration error = %v", err)
 	}
 
-	extraBeforeCeiling := completeSnapshot()
+	extraBeforeCeiling := syntheticClassifiedSnapshot()
 	extraBeforeCeiling.MigrationVersions = []string{
 		extraBeforeCeiling.MigrationVersions[0],
 		extraBeforeCeiling.MigrationVersions[1],
@@ -135,19 +135,19 @@ func TestBuildSupportsExactCurrentSchemaAndRejectsPreviousOrFutureMax(t *testing
 		t.Fatalf("extra pre-ceiling migration error = %v", err)
 	}
 
-	duplicate := completeSnapshot()
+	duplicate := syntheticClassifiedSnapshot()
 	duplicate.MigrationVersions = append(duplicate.MigrationVersions[:2], duplicate.MigrationVersions[1:]...)
 	if _, err := Build(duplicate, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "duplicate migration") {
 		t.Fatalf("duplicate migration error = %v", err)
 	}
 
-	reordered := completeSnapshot()
+	reordered := syntheticClassifiedSnapshot()
 	reordered.MigrationVersions[0], reordered.MigrationVersions[1] = reordered.MigrationVersions[1], reordered.MigrationVersions[0]
 	if _, err := Build(reordered, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "not strictly ordered") {
 		t.Fatalf("reordered migration error = %v", err)
 	}
 
-	wrongAdminAxis := completeSnapshot()
+	wrongAdminAxis := syntheticClassifiedSnapshot()
 	wrongAdminAxis.Admin.OrganizationRole = "member"
 	if _, err := Build(wrongAdminAxis, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "selected_admin") {
 		t.Fatalf("wrong selected admin organization role error = %v", err)
@@ -155,7 +155,7 @@ func TestBuildSupportsExactCurrentSchemaAndRejectsPreviousOrFutureMax(t *testing
 }
 
 func TestBuildOrdersCanonicalEvidenceBeforeReleaseAndDeploymentParents(t *testing.T) {
-	snapshot := completeSnapshot()
+	snapshot := syntheticClassifiedSnapshot()
 	snapshot.ForeignKeys = append(snapshot.ForeignKeys,
 		ForeignKey{Name: "release_authoring_receipt", ChildTable: "runtime_change_releases", ParentTable: "model_deployment_release_authoring_receipts", DeleteAction: "RESTRICT"},
 		ForeignKey{Name: "lifecycle_qualification_release", ChildTable: "model_deployment_lifecycle_receipt_qualifications", ParentTable: "model_deployment_lifecycle_receipt_releases", DeleteAction: "RESTRICT"},
@@ -217,7 +217,7 @@ func TestBuildOrdersCanonicalEvidenceBeforeReleaseAndDeploymentParents(t *testin
 }
 
 func TestBuildRejectsUnreviewedFKCycleAndMissingGuardTrigger(t *testing.T) {
-	cycle := completeSnapshot()
+	cycle := syntheticClassifiedSnapshot()
 	cycle.ForeignKeys = append(cycle.ForeignKeys,
 		ForeignKey{Name: "cycle_a", ChildTable: "channels", ParentTable: "api_keys"},
 		ForeignKey{Name: "cycle_b", ChildTable: "api_keys", ParentTable: "channels"},
@@ -226,13 +226,13 @@ func TestBuildRejectsUnreviewedFKCycleAndMissingGuardTrigger(t *testing.T) {
 		t.Fatalf("unreviewed FK cycle error = %v", err)
 	}
 
-	missingTrigger := completeSnapshot()
+	missingTrigger := syntheticClassifiedSnapshot()
 	missingTrigger.Triggers = missingTrigger.Triggers[1:]
 	if _, err := Build(missingTrigger, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "guarded_delete_trigger") {
 		t.Fatalf("missing guarded trigger error = %v", err)
 	}
 
-	missingCanonicalLifecycleTrigger := completeSnapshot()
+	missingCanonicalLifecycleTrigger := syntheticClassifiedSnapshot()
 	missingCanonicalLifecycleTrigger.Triggers = slices.DeleteFunc(missingCanonicalLifecycleTrigger.Triggers, func(trigger TriggerState) bool {
 		return trigger.Name == "model_deployments_identity_immutable"
 	})
@@ -240,7 +240,7 @@ func TestBuildRejectsUnreviewedFKCycleAndMissingGuardTrigger(t *testing.T) {
 		t.Fatalf("missing canonical lifecycle trigger error = %v", err)
 	}
 
-	missingP3QualificationTrigger := completeSnapshot()
+	missingP3QualificationTrigger := syntheticClassifiedSnapshot()
 	missingP3QualificationTrigger.Triggers = slices.DeleteFunc(missingP3QualificationTrigger.Triggers, func(trigger TriggerState) bool {
 		return trigger.Name == "runtime_route_revision_items_p3_qualification_guard"
 	})
@@ -249,7 +249,7 @@ func TestBuildRejectsUnreviewedFKCycleAndMissingGuardTrigger(t *testing.T) {
 		t.Fatalf("missing P3 qualification reset trigger error = %v", err)
 	}
 
-	missingLifecycleReceiptTrigger := completeSnapshot()
+	missingLifecycleReceiptTrigger := syntheticClassifiedSnapshot()
 	missingLifecycleReceiptTrigger.Triggers = slices.DeleteFunc(missingLifecycleReceiptTrigger.Triggers, func(trigger TriggerState) bool {
 		return trigger.Name == "model_deployment_lifecycle_receipts_immutable"
 	})
@@ -258,7 +258,7 @@ func TestBuildRejectsUnreviewedFKCycleAndMissingGuardTrigger(t *testing.T) {
 		t.Fatalf("missing lifecycle receipt reset trigger error = %v", err)
 	}
 
-	missingSuccessorCompletionGuard := completeSnapshot()
+	missingSuccessorCompletionGuard := syntheticClassifiedSnapshot()
 	missingSuccessorCompletionGuard.Triggers = slices.DeleteFunc(missingSuccessorCompletionGuard.Triggers, func(trigger TriggerState) bool {
 		return trigger.Name == successorCompletionGuardTrigger.Name
 	})
@@ -267,7 +267,7 @@ func TestBuildRejectsUnreviewedFKCycleAndMissingGuardTrigger(t *testing.T) {
 		t.Fatalf("missing successor completion guard error = %v", err)
 	}
 
-	missingAuthoringReceiptTrigger := completeSnapshot()
+	missingAuthoringReceiptTrigger := syntheticClassifiedSnapshot()
 	missingAuthoringReceiptTrigger.Triggers = slices.DeleteFunc(missingAuthoringReceiptTrigger.Triggers, func(trigger TriggerState) bool {
 		return trigger.Name == "model_deployment_release_authoring_receipts_immutable"
 	})
@@ -276,7 +276,7 @@ func TestBuildRejectsUnreviewedFKCycleAndMissingGuardTrigger(t *testing.T) {
 		t.Fatalf("missing authoring receipt reset trigger error = %v", err)
 	}
 
-	missingRuntimeEventTrigger := completeSnapshot()
+	missingRuntimeEventTrigger := syntheticClassifiedSnapshot()
 	missingRuntimeEventTrigger.Triggers = slices.DeleteFunc(missingRuntimeEventTrigger.Triggers, func(trigger TriggerState) bool {
 		return trigger.Name == "runtime_change_events_append_only"
 	})
@@ -285,7 +285,7 @@ func TestBuildRejectsUnreviewedFKCycleAndMissingGuardTrigger(t *testing.T) {
 		t.Fatalf("missing runtime event reset trigger error = %v", err)
 	}
 
-	missingCompatibilityTrigger := completeSnapshot()
+	missingCompatibilityTrigger := syntheticClassifiedSnapshot()
 	missingCompatibilityTrigger.Triggers = slices.DeleteFunc(missingCompatibilityTrigger.Triggers, func(trigger TriggerState) bool {
 		return trigger.Name == legacyRoleCompatibilityTrigger.Name
 	})
@@ -293,7 +293,7 @@ func TestBuildRejectsUnreviewedFKCycleAndMissingGuardTrigger(t *testing.T) {
 		t.Fatalf("missing legacy-role compatibility trigger error = %v", err)
 	}
 
-	missingProjectMemberCompatibilityTrigger := completeSnapshot()
+	missingProjectMemberCompatibilityTrigger := syntheticClassifiedSnapshot()
 	missingProjectMemberCompatibilityTrigger.Triggers = slices.DeleteFunc(missingProjectMemberCompatibilityTrigger.Triggers, func(trigger TriggerState) bool {
 		return trigger.Name == projectMemberRoleCompatibilityTrigger.Name
 	})
@@ -301,13 +301,13 @@ func TestBuildRejectsUnreviewedFKCycleAndMissingGuardTrigger(t *testing.T) {
 		t.Fatalf("missing project-member compatibility trigger error = %v", err)
 	}
 
-	restrictCycle := completeSnapshot()
+	restrictCycle := syntheticClassifiedSnapshot()
 	restrictCycle.ForeignKeys[0].DeleteAction = "RESTRICT"
 	if _, err := Build(restrictCycle, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "deferred_cycle_constraint") {
 		t.Fatalf("non-deferable delete action error = %v", err)
 	}
 
-	unsafeSequence := completeSnapshot()
+	unsafeSequence := syntheticClassifiedSnapshot()
 	unsafeSequence.Sequences[0].NextValue = unsafeSequence.Sequences[0].MaxObservedValue
 	if _, err := Build(unsafeSequence, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "sequence_state") {
 		t.Fatalf("sequence reuse risk error = %v", err)
@@ -315,7 +315,7 @@ func TestBuildRejectsUnreviewedFKCycleAndMissingGuardTrigger(t *testing.T) {
 }
 
 func TestPlanUnmarshalRejectsUnknownAndTrailingJSON(t *testing.T) {
-	plan, err := Build(completeSnapshot(), testTarget(), "source-a", "source-b", time.Unix(0, 0))
+	plan, err := Build(syntheticClassifiedSnapshot(), testTarget(), "source-a", "source-b", time.Unix(0, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +350,7 @@ func TestEveryCurrentMigrationTableHasAnExplicitResetClassification(t *testing.T
 	}
 	var unknown []string
 	for name := range seen {
-		if scope, _, _ := ClassifyTable(name); scope == ScopeReviewRequired {
+		if scope, action, reason := ClassifyTable(name); action == "" || reason == "" || (scope == ScopeReviewRequired && action != ActionPreserveAll) {
 			unknown = append(unknown, name)
 		}
 	}
@@ -360,10 +360,51 @@ func TestEveryCurrentMigrationTableHasAnExplicitResetClassification(t *testing.T
 	}
 }
 
+func TestContentTablesPreserveAllAndRefuseResetEvenWhenEmpty(t *testing.T) {
+	names := []string{"execution_content_streams", "execution_source_content_scopes", "execution_source_content_bindings", "execution_source_content_operations", "execution_content_policies", "execution_content_manifests", "execution_content_objects", "execution_content_health"}
+	for _, rows := range []int64{0, 1} {
+		for _, name := range names {
+			scope, action, reason := ClassifyTable(name)
+			if scope != ScopeReviewRequired || action != ActionPreserveAll || reason == "" {
+				t.Fatalf("content classification missing for %s: %s %s %s", name, scope, action, reason)
+			}
+			snapshot := syntheticClassifiedSnapshot()
+			snapshot.ExpectedMigrationVersions = slices.Clone(snapshot.MigrationVersions)
+			for _, content := range names {
+				count := int64(0)
+				if content == name {
+					count = rows
+				}
+				snapshot.Tables = append(snapshot.Tables, TableInventory{Name: content, RowCount: count})
+			}
+			plan, err := Build(snapshot, testTarget(), "source-a", "source-b", time.Unix(0, 0))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if plan.Summary.TableCount != 148 || plan.ScopeComplete || plan.Summary.ReviewRequiredCount != len(names) || Validate(plan) == nil {
+				t.Fatalf("M119 content scope must refuse apply, including empty tables: %+v", plan.Summary)
+			}
+			for _, entry := range plan.Tables {
+				if slices.Contains(names, entry.Name) && (entry.Action != ActionPreserveAll || entry.ExpectedDeletedRows != 0 || entry.ExpectedRetainedRows != entry.RowCount) {
+					t.Fatalf("content rows not fully retained: %+v", entry)
+				}
+			}
+			for _, step := range plan.DeleteOrder {
+				if slices.Contains(names, step.Table) {
+					t.Fatalf("content table entered deletion order: %s", step.Table)
+				}
+			}
+		}
+	}
+	if scope, action, _ := ClassifyTable("future_unknown"); scope != ScopeReviewRequired || action != "" {
+		t.Fatal("unknown tables must remain unclassified")
+	}
+}
+
 func TestSourceFactsDataCannotEnterTheExistingResetErasureScope(t *testing.T) {
 	for _, name := range []string{"execution_source_acknowledgements", "execution_source_connections", "execution_source_credentials", "execution_source_facts", "execution_source_streams", "execution_source_budget_scopes", "execution_source_budget_definitions", "execution_source_budget_bindings", "execution_source_budget_binding_history", "execution_source_budget_coverage", "usage_finalization_journal"} {
 		t.Run(name, func(t *testing.T) {
-			snapshot := completeSnapshot()
+			snapshot := syntheticClassifiedSnapshot()
 			for index := range snapshot.Tables {
 				if snapshot.Tables[index].Name == name {
 					snapshot.Tables[index].RowCount = 1
@@ -393,7 +434,10 @@ func TestSourceFactsDataCannotEnterTheExistingResetErasureScope(t *testing.T) {
 	}
 }
 
-func completeSnapshot() Snapshot {
+// This classified subset tests pure plan mechanics. It is not a complete
+// current-schema inventory or evidence that a real M119 reset is supported.
+// The content tests add all eight M119 tables and prove unconditional refusal.
+func syntheticClassifiedSnapshot() Snapshot {
 	allTables := []string{"schema_migrations", "settings"}
 	for name := range protectedTables {
 		allTables = append(allTables, name)

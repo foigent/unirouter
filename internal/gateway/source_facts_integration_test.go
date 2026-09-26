@@ -22,6 +22,7 @@ import (
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/capbilling"
 	"github.com/uniroute/unirouter/internal/completedfeed"
+	"github.com/uniroute/unirouter/internal/contentcapture"
 	"github.com/uniroute/unirouter/internal/executioncontext"
 	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/middleware"
@@ -235,7 +236,7 @@ func sourceGatewayHandler(t *testing.T, fixture gateway.SourceFactsGatewayFixtur
 	return sourceGatewayHandlerWithAuth(t, fixture, relay, capture, middleware.GatewayAuthWithAPIKeyHashSecret(fixture.Pool, sourceGatewaySyntheticSecret))
 }
 
-func sourceGatewayHandlerWithAuth(t *testing.T, fixture gateway.SourceFactsGatewayFixture, relay *gateway.Relay, capture middleware.ExecutionContextCapturer, authenticate func(http.Handler) http.Handler) http.Handler {
+func sourceGatewayHandlerWithAuth(t *testing.T, fixture gateway.SourceFactsGatewayFixture, relay *gateway.Relay, capture middleware.ExecutionContextCapturer, authenticate func(http.Handler) http.Handler, content ...contentcapture.Starter) http.Handler {
 	t.Helper()
 	final := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), middleware.CtxModelAlias, fixture.Model)
@@ -244,10 +245,14 @@ func sourceGatewayHandlerWithAuth(t *testing.T, fixture gateway.SourceFactsGatew
 		relay.HandlePublicNonStream(w, r.WithContext(ctx), fixture.Operation)
 	})
 	guarded := middleware.IdempotencyGuard(middleware.NewPostgresIdempotencyStore(fixture.Pool), sourceGatewaySyntheticSecret, final)
+	inner := middleware.StrictJSONIngress(guarded)
+	if len(content) == 1 {
+		inner = middleware.CaptureContent(content[0])(inner)
+	}
 	retained := payloadpolicy.RequestMiddlewareWithMax(payloadpolicy.MustNewBudget(payloadpolicy.DefaultLimits()), 8*payloadpolicy.MiB, middleware.GetOrgIDFromContext)
 	return middleware.OperationIdentityWithSecret(sourceGatewaySyntheticSecret)(middleware.GatewayAuthAcrossBufferedBody(
 		authenticate, retained)(
-		middleware.CaptureExecutionContext(capture)(middleware.StrictJSONIngress(guarded))))
+		middleware.CaptureExecutionContext(capture)(inner)))
 }
 
 func sourceGatewayAttachSource(t *testing.T, fixture gateway.SourceFactsGatewayFixture) (*sourcefacts.Service, *outbox.Service, string) {

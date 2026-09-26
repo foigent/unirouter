@@ -116,8 +116,11 @@ files, DB OID/name/owner or the original image to remain current. It validates
 the historical envelope, actual supported ledger/static projection and actual
 effective coverage certificate using the current binary. `check` also accepts
 an intact completed origin after a supported restore to another DB. Run the
-unchanged `scripts/source-budget-restore-rebase.sql` under the original stopped
+supported `scripts/source-budget-restore-rebase.sql` under the original stopped
 restore owner; preserve the origin COMMENT and initial certification history.
+On M119 the same transaction also replaces every C recovery epoch, for both
+SQL-only and paired SQL/body restores. All content readers and capture/media
+writers must remain stopped until the restore and binding checks finish.
 Active `apply`/`resume` retain the strict original target/artifact binding.
 
 ## Native verification and delivery boundary

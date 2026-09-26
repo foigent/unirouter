@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -352,14 +351,14 @@ func TestSourceFactsCredentialAndSignedCursorPGRestoreIntegration(t *testing.T) 
 	before := sourcePage(t, f.read(t, token, target+"&cursor="+url.QueryEscape(boot.NextCursor), "127.0.0.1:2000", 200))
 	require.Len(t, before.Events, 1)
 	archive := filepath.Join(t.TempDir(), "synthetic-source-credentials.pgdump")
-	command := exec.CommandContext(t.Context(), filepath.Join(bin, "pg_dump"), "--format=custom", "--no-owner", "--no-acl", "--file", archive, "--dbname", f.pool.Config().ConnString())
+	command := testutil.PostgresToolCommand(t, t.Context(), filepath.Join(bin, "pg_dump"), f.pool.Config(), "--format=custom", "--no-owner", "--no-acl", "--file", archive)
 	output, err := command.CombinedOutput()
 	require.NoError(t, err, "pg_dump: %s", output)
 	f.capture(t, "after-backup-source-request")
 	ahead := sourcePage(t, f.read(t, token, target+"&cursor="+url.QueryEscape(before.NextCursor), "127.0.0.1:2000", 200))
 	require.Len(t, ahead.Events, 1)
 	restored := testutil.SetupIsolatedTestDB(t)
-	command = exec.CommandContext(t.Context(), filepath.Join(bin, "pg_restore"), "--exit-on-error", "--single-transaction", "--no-owner", "--no-acl", "--dbname", restored.Config().ConnString(), archive)
+	command = testutil.PostgresToolCommand(t, t.Context(), filepath.Join(bin, "pg_restore"), restored.Config(), "--exit-on-error", "--single-transaction", "--no-owner", "--no-acl", archive)
 	output, err = command.CombinedOutput()
 	require.NoError(t, err, "pg_restore: %s", output)
 	resumed, err := sourcefacts.New(restored, sourcefacts.Options{Enabled: true, SourceInstance: f.source.SourceInstance(), CursorSecret: syntheticSourceControlSecret})

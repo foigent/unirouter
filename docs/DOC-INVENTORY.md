@@ -215,6 +215,7 @@ This section mixes governing documents and dated evidence references. Each file 
 | `docs/tech-ref/55-source-facts-v1.md` | UR-A local candidate source profiles, original identity/economic authority, immutable publication, read/retention boundaries and M116 compatibility; complete acceptance remains pending |
 | `contracts/source-facts/v2/README.md` | B observation profiles, finite kinds, canonical contracts, current execution lease snapshots and independent consumers; local candidate |
 | `contracts/source-budgets/v1/README.md` | D current budget snapshots, exact units, coverage and restore boundaries, explicit project binding, schemas and independent consumer; local candidate |
+| `contracts/source-content/v1/README.md` | Accepted C0 content schema, original synthetic vectors and offline verifier; U1 runtime implementation and acceptance remain incomplete |
 | `docs/governance/ADR-TEMPLATE.md` | Architecture Decision Record template |
 | `docs/governance/adr/ADR-0001-prd4-plungein-ports.md` | PRD4 PlungeIn ports architecture decision |
 | `docs/governance/adr/ADR-0002-prd4-api-key-owner-usage.md` | PRD4 API key owner usage attribution decision draft |

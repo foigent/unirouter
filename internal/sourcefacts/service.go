@@ -24,6 +24,7 @@ import (
 const RetentionWindow = 7 * 24 * time.Hour
 
 type Options struct {
+	ContentEnabled         bool
 	BudgetSnapshotsEnabled bool
 	FinancialJournalReady  func() bool
 	ObservationsEnabled    bool
@@ -40,8 +41,8 @@ type Service struct {
 }
 
 func New(database db.DBQuerier, options Options) (*Service, error) {
-	if (options.ObservationsEnabled || options.BudgetSnapshotsEnabled) && !options.Enabled {
-		return nil, errors.New("source observations and budgets require source facts enablement")
+	if (options.ContentEnabled || options.ObservationsEnabled || options.BudgetSnapshotsEnabled) && !options.Enabled {
+		return nil, errors.New("source observations, budgets and content require source facts enablement")
 	}
 	if options.Enabled {
 		if database == nil || len(options.CursorSecret) < 32 {
@@ -56,6 +57,8 @@ func New(database db.DBQuerier, options Options) (*Service, error) {
 
 func (s *Service) Enabled() bool { return s != nil && s.options.Enabled }
 
+func (s *Service) ContentEnabled() bool { return s.Enabled() && s.options.ContentEnabled }
+
 // CheckReady is read-only. Enabling capture on a predecessor schema or under
 // a different producer identity is rejected before serving any requests.
 func (s *Service) CheckReady(ctx context.Context) error {
@@ -68,11 +71,14 @@ func (s *Service) CheckReady(ctx context.Context) error {
 	if e := s.db.QueryRow(ctx, `SELECT COALESCE(MAX(version),'') FROM schema_migrations`).Scan(&head); e != nil {
 		return e
 	}
-	if head != schemaauthority.SourceFactsExpandHead && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead {
-		return errors.New("source facts capture requires M116, M117 or M118")
+	if head != schemaauthority.SourceFactsExpandHead && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead {
+		return errors.New("source facts capture requires M116, M117, M118, M119, M120 or M121")
 	}
-	if s.ObservationsEnabled() && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead {
-		return errors.New("source observations require M117 or M118")
+	if s.ObservationsEnabled() && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead {
+		return errors.New("source observations require M117, M118, M119, M120 or M121")
+	}
+	if s.ContentEnabled() && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead {
+		return errors.New("content capture requires M119, M120 or M121")
 	}
 	if s.BudgetsEnabled() {
 		if err := budgetassets.Verify(); err != nil {
@@ -91,6 +97,14 @@ func (s *Service) CheckReady(ctx context.Context) error {
 	}
 	if mismatch {
 		return errors.New("source facts producer instance changed")
+	}
+	if s.ContentEnabled() {
+		if e := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM execution_content_streams WHERE source_instance<>$1)`, s.options.SourceInstance).Scan(&mismatch); e != nil {
+			return e
+		}
+		if mismatch {
+			return errors.New("content producer instance changed")
+		}
 	}
 	if s.ObservationsEnabled() {
 		if _, e := observationDescriptors(); e != nil {
@@ -132,7 +146,7 @@ func (s *Service) CaptureAuthenticated(ctx context.Context, snapshot executionco
 	project, _ := strconv.ParseInt(snapshot.Core.ProjectID, 10, 64)
 	tx, e := s.db.Begin(ctx)
 	if e != nil {
-		return e
+		return captureError("begin", e)
 	}
 	defer tx.Rollback(ctx)
 	var observations []Observation
@@ -147,7 +161,7 @@ func (s *Service) CaptureAuthenticated(ctx context.Context, snapshot executionco
 	if e = s.publishTogetherTx(ctx, tx, s.contexts(org, project, snapshot.Core.RequestID, "authenticated", snapshot.Core.CapturedAt, snapshot.Core.CapturedAt, &snapshot), observations); e != nil {
 		return e
 	}
-	return tx.Commit(ctx)
+	return captureError("commit", tx.Commit(ctx))
 }
 
 func (s *Service) MaterializeReservationTx(ctx context.Context, tx pgx.Tx, req billing.FreezeRequest, basis billing.SourceBasis) error {
@@ -368,9 +382,13 @@ func (s *Service) publishRecordsTx(ctx context.Context, tx pgx.Tx, records []sou
 	// and replay/predecessor reads. No transaction or writer authority changes.
 	readBatch := &pgx.Batch{}
 	eventIDs, predecessorFacts, predecessorRevisions := []string{}, []string{}, []int64{}
-	for _, d := range documents {
-		readBatch.Queue(`INSERT INTO execution_source_streams(source_instance,org_id,project_id,profile) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`, d.SourceInstance, d.OrgID, d.ProjectID, d.Profile)
-		readBatch.Queue(`SELECT high_sequence FROM execution_source_streams WHERE source_instance=$1 AND org_id=$2 AND project_id=$3 AND profile=$4 FOR UPDATE`, d.SourceInstance, d.OrgID, d.ProjectID, d.Profile)
+	profiles := 0
+	for i, d := range documents {
+		if i == 0 || documents[i-1].Profile != d.Profile {
+			profiles++
+			readBatch.Queue(`INSERT INTO execution_source_streams(source_instance,org_id,project_id,profile) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`, d.SourceInstance, d.OrgID, d.ProjectID, d.Profile)
+			readBatch.Queue(`SELECT high_sequence FROM execution_source_streams WHERE source_instance=$1 AND org_id=$2 AND project_id=$3 AND profile=$4 FOR UPDATE`, d.SourceInstance, d.OrgID, d.ProjectID, d.Profile)
+		}
 		eventIDs = append(eventIDs, d.EventID)
 		if d.Revision != "1" {
 			previous, _ := strconv.ParseInt(d.PreviousRevision, 10, 64) // Encode validated canonical int64.
@@ -388,40 +406,41 @@ func (s *Service) publishRecordsTx(ctx context.Context, tx pgx.Tx, records []sou
 		results := tx.SendBatch(ctx, readBatch)
 		defer func() {
 			if closeErr := results.Close(); err == nil {
-				err = closeErr
+				err = captureError("batch_close", closeErr)
 			}
 		}()
-		for range documents {
+		for range profiles {
 			if _, err = results.Exec(); err != nil {
-				return err
+				return captureError("stream_insert", err)
 			}
 			var sequence int64
 			if err = results.QueryRow().Scan(&sequence); err != nil {
-				return err
+				return captureError("stream_lock", err)
 			}
 		}
 		if err = results.QueryRow().Scan(&published); err != nil {
-			return err
+			return captureError("publication_clock", err)
 		}
 		rows, err := results.Query()
 		if err != nil {
-			return err
+			return captureError("replay_predecessor_read", err)
 		}
 		defer rows.Close()
 		for rows.Next() {
 			var event, fact, hash string
 			var revision int64
 			if err = rows.Scan(&event, &fact, &revision, &hash); err != nil {
-				return err
+				return captureError("replay_predecessor_read", err)
 			}
 			existing[event] = hash
 			predecessors[fact+":"+strconv.FormatInt(revision, 10)] = hash
 		}
-		return rows.Err()
+		return captureError("replay_predecessor_read", rows.Err())
 	}(); e != nil {
 		return e
 	}
-	writeBatch := &pgx.Batch{}
+	pending := make([]sourcePublication, 0, len(documents))
+	pendingHashes := make([]string, 0, len(documents))
 	for i, d := range documents {
 		hash := eventconnector.HashSourceBytes(encoded[i])
 		if retainedHash, exists := existing[d.EventID]; exists {
@@ -439,11 +458,43 @@ func (s *Service) publishRecordsTx(ctx context.Context, tx pgx.Tx, records []sou
 				return errors.New("source revision predecessor differs")
 			}
 		}
+		pending = append(pending, d)
+		pendingHashes = append(pendingHashes, hash)
+	}
+	// Locks and predecessor reads above cover the whole batch before any
+	// sequence is allocated. Replays consume no sequence; each profile's new
+	// events retain the original (profile,event_id) order and exact wire bytes.
+	writeBatch := &pgx.Batch{}
+	writeCounts := []int64{}
+	for start := 0; start < len(pending); {
+		end := start + 1
+		for end < len(pending) && pending[end].Profile == pending[start].Profile {
+			end++
+		}
+		group := pending[start:end]
+		eventIDs, factIDs, stages, hashes := []string{}, []string{}, []string{}, []string{}
+		revisions, wires := []int64{}, [][]byte{}
+		for i, d := range group {
+			revision, _ := strconv.ParseInt(d.Revision, 10, 64) // Encode validated canonical int64.
+			eventIDs = append(eventIDs, d.EventID)
+			factIDs = append(factIDs, d.SourceFactID)
+			revisions = append(revisions, revision)
+			stages = append(stages, d.Stage)
+			wires = append(wires, d.Wire)
+			hashes = append(hashes, pendingHashes[start+i])
+		}
+		d := group[0]
 		writeBatch.Queue(`WITH allocated AS (
-		 UPDATE execution_source_streams SET high_sequence=high_sequence+1
+		 UPDATE execution_source_streams SET high_sequence=high_sequence+cardinality($6::text[])
 		 WHERE source_instance=$1 AND org_id=$2 AND project_id=$3 AND profile=$4 RETURNING high_sequence)
 		 INSERT INTO execution_source_facts(source_instance,org_id,project_id,profile,sequence,event_id,source_fact_id,revision,request_id,stage,document,source_hash,published_at)
-		 SELECT $1,$2,$3,$4,high_sequence,$5,$6,$7,$8,$9,$10,$11,$12 FROM allocated`, d.SourceInstance, d.OrgID, d.ProjectID, d.Profile, d.EventID, d.SourceFactID, d.Revision, d.RequestID, d.Stage, encoded[i], hash, published)
+		 SELECT $1,$2,$3,$4,allocated.high_sequence-cardinality($6::text[])+item.ordinality,
+		 item.event_id,item.fact_id,item.revision,$5,item.stage,item.document,item.source_hash,$12
+		 FROM allocated CROSS JOIN unnest($6::text[],$7::text[],$8::bigint[],$9::text[],$10::bytea[],$11::text[])
+		 WITH ORDINALITY AS item(event_id,fact_id,revision,stage,document,source_hash,ordinality)
+		 ORDER BY item.ordinality`, d.SourceInstance, d.OrgID, d.ProjectID, d.Profile, d.RequestID, eventIDs, factIDs, revisions, stages, wires, hashes, published)
+		writeCounts = append(writeCounts, int64(len(group)))
+		start = end
 	}
 	if writeBatch.Len() == 0 {
 		return nil
@@ -452,15 +503,15 @@ func (s *Service) publishRecordsTx(ctx context.Context, tx pgx.Tx, records []sou
 		results := tx.SendBatch(ctx, writeBatch)
 		defer func() {
 			if closeErr := results.Close(); err == nil {
-				err = closeErr
+				err = captureError("batch_close", closeErr)
 			}
 		}()
-		for range writeBatch.Len() {
+		for _, count := range writeCounts {
 			tag, err := results.Exec()
 			if err != nil {
-				return err
+				return captureError("sequence_and_fact_write", err)
 			}
-			if tag.RowsAffected() != 1 {
+			if tag.RowsAffected() != count {
 				return errors.New("source stream allocation missing")
 			}
 		}

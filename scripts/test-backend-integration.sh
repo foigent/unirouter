@@ -92,9 +92,13 @@ test_pattern+='|TestPublicResponsesExactProfile.*Integration|TestPublicClaude.*I
 test_pattern+='|TestPublicCoordinator.*Integration'
 test_pattern+='|TestSourceFacts.*Integration|TestSourceFacts(Expand|Down).*'
 test_pattern+='|TestSource(Observations|Policy|Dispatch).*|TestSourceMediaMainStartupBoundaries|TestSourceBudget.*'
+test_pattern+='|TestContentControl.*Integration|TestContentPolicy.*Integration|TestContentCaptureMigration.*'
+test_pattern+='|TestM115ToM121CompatibleExpandPreservesExistingKey'
+test_pattern+='|TestContentHTTP.*PG|TestContentPublic.*PG'
 test_pattern+='|TestLegacyReleaseAdmissionAllowExecutesStagedChannelIntegration'
 test_pattern+='|TestOwnedProviderAttemptAndTerminalHealthFenceAreReplaySafe'
 test_pattern+='|TestFreezeReplayRejectsChangedExecutionSnapshot|TestStreamOutputHold.*Integration|TestProviderCompletionRelayHoldSurvivesRecoveryIntegration'
+test_pattern+='|TestPendingAdmission(IndependentRequestsAndRecovery|DurableEvidenceFailsClosed|ExplicitRisksStillBlockMixedScope|StreamRequiresDurableFundedUsage|PreparationFundingFailureStillBlocks|LogicalCredentialRotationKeepsRiskScope)'
 test_pattern+='|TestP6F(06|07|08|09|10|11|20|21|40|41).*)$'
 readonly test_pattern
 
@@ -108,10 +112,10 @@ run_group consolidated go test -tags=integration -race \
   ./internal/modelcapabilitypublication \
   -run "$test_pattern" -count=1 -timeout=20m
 
-# New fixed-profile source and original media writers require their
+# Fixed-profile source, content policy and original media writers require their
 # real transaction/retention tests; the untagged race suite does not
 # select these files. Keep the pre-existing integration group intact.
-run_group source-media go test -tags=integration -race ./internal/sourcefacts ./internal/mediajob \
+run_group source-media go test -tags=integration -race ./internal/sourcefacts ./internal/mediajob ./internal/contentcapture \
   -count=1 -timeout=20m
 
 # These packages intentionally share and reset the dedicated Redis

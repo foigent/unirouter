@@ -22,11 +22,12 @@ spec.loader.exec_module(r)
 
 
 
-def carrier_read_ledgers(migrations):
+def carrier_read_ledgers(migrations, historical=False):
     versions=sorted(p.name[:-7] for p in migrations.glob("*.up.sql"))
-    expected=["000117_execution_observations","000118_source_budget_snapshots"]
+    expected=(["000117_execution_observations","000118_source_budget_snapshots"] if historical else
+              ["000120_unpublished_content_reclamation","000121_gateway_pre_dispatch_terminal"])
     if versions[-2:] != expected:
-        raise RuntimeError("carrier read fixture requires exact M117/M118 artifact heads")
+        raise RuntimeError("carrier read fixture requires exact reviewed artifact heads")
     return [("bridge",versions[:-1]),("current",versions)]
 
 

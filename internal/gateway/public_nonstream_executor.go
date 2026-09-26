@@ -206,6 +206,7 @@ func (executor *PublicNonStreamExecutor) Execute(
 			err,
 		)
 	}
+	request, observeResponse := observePublicProvider(ctx, request)
 	finishMeasurement := executionmeasurement.HTTPStart(ctx, "")
 	response, err := executor.doer.Do(request)
 	observedHTTPStatus := 0
@@ -213,6 +214,7 @@ func (executor *PublicNonStreamExecutor) Execute(
 		observedHTTPStatus = response.StatusCode
 	}
 	finishMeasurement(observedHTTPStatus)
+	observeResponse(response, err)
 	if err != nil {
 		if response != nil && response.Body != nil {
 			_ = response.Body.Close()

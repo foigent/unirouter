@@ -24,17 +24,17 @@ func (s *Service) CaptureAdmissionRejection(ctx context.Context, snapshot execut
 	defer cancel()
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return err
+		return captureError("begin", err)
 	}
 	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ; SET LOCAL lock_timeout='100ms'; SET LOCAL statement_timeout='200ms'`); err != nil {
-		return err
+	if _, err = tx.Exec(ctx, `SET TRANSACTION ISOLATION LEVEL READ COMMITTED; SET LOCAL lock_timeout='100ms'; SET LOCAL statement_timeout='200ms'`); err != nil {
+		return captureError("transaction_setup", err)
 	}
 	var admitted bool
 	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM freeze_idempotency WHERE org_id=$1 AND request_id=$2)
 		OR EXISTS(SELECT 1 FROM billing_provider_attempts WHERE org_id=$1 AND request_id=$2)
 		OR EXISTS(SELECT 1 FROM async_media_jobs WHERE org_id=$1 AND project_id=$3 AND request_id=$2)`, org, snapshot.Core.RequestID, project).Scan(&admitted); err != nil {
-		return err
+		return captureError("admission_lookup", err)
 	}
 	if admitted {
 		return nil
@@ -45,5 +45,5 @@ func (s *Service) CaptureAdmissionRejection(ctx context.Context, snapshot execut
 	if err = s.publishTogetherTx(ctx, tx, nil, []Observation{d}); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	return captureError("commit", tx.Commit(ctx))
 }

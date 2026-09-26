@@ -348,19 +348,49 @@ func isPaidGatewayEndpoint(method, path string) bool {
 
 func providerCostAdmissionBlocked(ctx context.Context, q db.DBQuerier, orgID, apiKeyID, accessCredentialID int64) (bool, error) {
 	var blocked bool
-	selector := "access_credential_id = $2"
+	selector := "p.access_credential_id = $2"
 	selectorID := accessCredentialID
 	if accessCredentialID <= 0 {
-		selector = "access_credential_id IS NULL AND api_key_id = $2"
+		selector = "p.access_credential_id IS NULL AND p.api_key_id = $2"
 		selectorID = apiKeyID
 	}
+	// Ordinary delivery may proceed independently only when this same snapshot
+	// proves durable usage and no additional Settle top-up. All explicit risk
+	// states still block; numeric arithmetic cannot overflow on persisted bigint.
 	err := q.QueryRow(ctx, `SELECT EXISTS (
-		SELECT 1 FROM billing_provider_attempts
-		WHERE org_id = $1 AND `+selector+`
-		  AND state IN (
+		SELECT 1 FROM billing_provider_attempts p
+		WHERE p.org_id = $1 AND `+selector+`
+		  AND p.state IN (
 		      'outcome_unknown','response_unusable','funding_pending',
 		      'delivery_pending','delivery_failed','output_withheld'
 		  )
+		  AND (p.state <> 'delivery_pending' OR NOT EXISTS (
+		      SELECT 1 FROM freeze_idempotency f
+		      WHERE f.org_id = p.org_id AND f.request_id = p.request_id
+		        AND f.delivery_attempt_id = p.attempt_id
+		        AND p.project_id IS NOT DISTINCT FROM NULLIF(f.project_id, 0)
+		        AND f.access_credential_id IS NOT DISTINCT FROM p.access_credential_id
+		        AND f.credential_ref IS NOT DISTINCT FROM p.credential_ref
+		        AND f.access_grant_id IS NOT DISTINCT FROM p.access_grant_id
+		        AND (f.api_key_id = p.api_key_id OR (f.api_key_id IS NULL AND p.access_credential_id IS NULL))
+		        AND f.status = 'settlement_pending'
+		        AND f.settlement_pending_reason IN ('delivery_prepared','delivery_completed')
+		        AND f.provider_cost_pending_at IS NULL
+		        AND f.settlement_payload_ready_at IS NOT NULL
+		        AND p.outcome_certainty = 'known_usage' AND NOT p.retry_authorized
+		        AND f.usage_purpose = 'customer_charge' AND f.usage_finality IN ('final','estimated')
+		        AND f.calculated_cost_micros >= 0 AND f.uncovered_cost_micros = 0
+		        AND (
+		            f.billing_mode = 'cost_observation'
+		            OR (f.billing_mode = 'prepaid_enforced'
+		                AND f.reserved_balance_micros >= 0 AND f.reserved_granted_micros >= 0
+		                AND f.frozen_amount_micros >= 0
+		                AND f.frozen_amount_micros::numeric = f.reserved_balance_micros::numeric + f.reserved_granted_micros::numeric
+		                AND f.reserved_balance_micros::numeric >= GREATEST(
+		                    f.calculated_cost_micros::numeric - LEAST(f.calculated_cost_micros::numeric, f.reserved_granted_micros::numeric), 0)
+		            )
+		        )
+		  ))
 	)`, orgID, selectorID).Scan(&blocked)
 	return blocked, err
 }

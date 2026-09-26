@@ -275,6 +275,8 @@ func (orchestrator *publicStreamOrchestrator) executeAttempt(
 	if err != nil {
 		return publicStreamAttemptResult{providerState: "undispatched", err: fmt.Errorf("%w: stream binding", errPublicNonStreamContractMismatch)}
 	}
+	captureCtx := withPublicContentObservation(streamCtx, orchestrator.core.contentCapture, request, attemptID)
+	httpRequest, observeResponse := observePublicProvider(captureCtx, httpRequest)
 	finishMeasurement := executionmeasurement.HTTPStart(streamCtx, attemptID)
 	response, err := orchestrator.core.doer.Do(httpRequest)
 	observedHTTPStatus := 0
@@ -282,6 +284,7 @@ func (orchestrator *publicStreamOrchestrator) executeAttempt(
 		observedHTTPStatus = response.StatusCode
 	}
 	finishMeasurement(observedHTTPStatus)
+	observeResponse(response, err)
 	if err != nil {
 		if response != nil && response.Body != nil {
 			_ = response.Body.Close()

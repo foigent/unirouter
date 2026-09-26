@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	budgetassets "github.com/uniroute/unirouter/contracts/source-budgets/v1"
+	predispatchassets "github.com/uniroute/unirouter/contracts/source-facts/pre-dispatch-v2"
 	sourceassets "github.com/uniroute/unirouter/contracts/source-facts/v1"
 	observationassets "github.com/uniroute/unirouter/contracts/source-facts/v2"
 	"slices"
@@ -25,6 +26,11 @@ import (
 const ManifestSchemaV1 = "unirouter.runtime-support.v1"
 const CompatibilityEpoch = modelprofile.DefinitionRuntimeEpoch
 const MaximumManifestBytes = 1 << 20
+const SourceContentLifecycleContract = "unirouter.source-content-lifecycle.v1"
+
+func ContentLifecycleRequirements() []modelprofile.ImplementationReference {
+	return []modelprofile.ImplementationReference{{Kind: "source_content", ID: SourceContentLifecycleContract}}
+}
 
 type Manifest struct {
 	SchemaVersion      string                                 `json:"schema_version"`
@@ -41,9 +47,11 @@ func CurrentManifest(schemaHeads []string) Manifest {
 	implementations = append(implementations, modelcapabilityqualification.ProbeImplementations()...)
 	implementations = append(implementations,
 		modelprofile.ImplementationReference{Kind: "source_facts", ID: sourceassets.SchemaVersion},
+		modelprofile.ImplementationReference{Kind: "source_content", ID: SourceContentLifecycleContract},
 		modelprofile.ImplementationReference{Kind: "source_budgets", ID: budgetassets.SchemaVersion},
 		modelprofile.ImplementationReference{Kind: "financial_journal", ID: budgetassets.WriterContract},
 		modelprofile.ImplementationReference{Kind: "source_observations", ID: observationassets.SchemaVersion},
+		modelprofile.ImplementationReference{Kind: "source_observations", ID: predispatchassets.SchemaVersion},
 		modelprofile.ImplementationReference{Kind: "source_dispatch", ID: observationassets.DispatchOutboxContract},
 		modelprofile.ImplementationReference{Kind: "stream_counter", ID: metering.GatewayCounterEstimateVersionV2},
 		modelprofile.ImplementationReference{Kind: "stream_counter", ID: metering.GatewayCounterEstimateVersionV3},

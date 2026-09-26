@@ -348,6 +348,12 @@ func (relay *Relay) materializeTrace(ctx context.Context, payload traceOutboxPay
 	if err != nil {
 		return err
 	}
+	// A selected channel is routing context, not execution identity. The trace
+	// schema permits route_channel_id only for an actual provider-attempt projection.
+	// Keep the shared projectionValues/call-log behavior and display context intact.
+	if values.Source == string(executionprojection.SourceNoProviderAttempt) || values.Source == string(executionprojection.SourceResponseCache) {
+		values.LegacyChannelID = 0
+	}
 	args := []any{
 		payload.RequestID, nullableString(payload.ClientRequestID), nullableString(payload.IdempotencyKeyHash),
 		payload.OrgID, nullableInt64Pointer(payload.ProjectID), nullableInt64Pointer(payload.APIKeyID), nullableInt64Pointer(payload.OwnerUserID), payload.KeyType,

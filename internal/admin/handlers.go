@@ -89,6 +89,8 @@ type Handler struct {
 		SourceInstance() string
 		ProfilesEnabled([]string) bool
 	}
+	contentPolicyController      contentPolicyController
+	contentPolicyReadiness       contentPolicyReadiness
 	xInsightConnectorManager     *xinsightconnector.Manager
 	xInsightConnectorIntake      xInsightConnectorInvitationIntake
 	modelAuthorizationEvaluator  *modelauthz.Evaluator

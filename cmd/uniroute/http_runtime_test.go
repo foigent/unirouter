@@ -255,12 +255,12 @@ func TestHTTPRuntimeRequestDeadlineAndForcedDrainAreExplicit(t *testing.T) {
 }
 
 func TestCounterWriterSchemaAndRecoveryAdmission(t *testing.T) {
-	for _, head := range []string{schemaauthority.LegacyCapabilityHead, schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead} {
+	for _, head := range []string{schemaauthority.LegacyCapabilityHead, schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead} {
 		if err := validateStreamCounterSchema(metering.GatewayCounterEstimateVersionV2, []string{head}); err != nil {
 			t.Fatal(err)
 		}
 		err := validateStreamCounterSchema(metering.GatewayCounterEstimateVersionV3, []string{head})
-		if (err == nil) != (head == schemaauthority.StreamCounterExpandHead || head == schemaauthority.SourceFactsExpandHead || head == schemaauthority.ObservationExpandHead || head == schemaauthority.BudgetSnapshotExpandHead) {
+		if (err == nil) != (head == schemaauthority.StreamCounterExpandHead || head == schemaauthority.SourceFactsExpandHead || head == schemaauthority.ObservationExpandHead || head == schemaauthority.BudgetSnapshotExpandHead || head == schemaauthority.ContentCaptureExpandHead || head == schemaauthority.ContentReclaimExpandHead) {
 			t.Fatalf("v3 schema acceptance differs: %s %v", head, err)
 		}
 	}

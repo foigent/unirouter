@@ -1,0 +1,24 @@
+{
+  "schema_version": "unirouter.source-observations-manifest.v2",
+  "status": "local_candidate",
+  "connector_id": "unirouter.workfacts",
+  "connector_version": "2.0.0",
+  "source_product": "unirouter",
+  "protocol_version": "2.0.2",
+  "protocol_commit": "ad8fe7a38c9d7335657630baa8670dd07556b98c",
+  "profiles": [
+    "unirouter.runtime-observation.v2"
+  ],
+  "purpose": "xinsight.source.read",
+  "transport": "pull",
+  "bootstrap": "forward_only",
+  "max_items": 50,
+  "max_source_bytes": 65536,
+  "retention_seconds": 604800,
+  "history_backfill": false,
+  "timeline_complete": false,
+  "source_schema_file": "schema.json",
+  "source_vectors_file": "golden-observations.json",
+  "source_schema_sha256": "sha256:29d9aa5712102f582302db3b82c25ea48fc3ff873903a4d53fc04f3348e20d11",
+  "source_vectors_sha256": "sha256:317cda1db82af7d435bc00a34fcc9bb9df78d69b348bf1c6b627ed2fe8d2e460"
+}

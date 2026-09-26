@@ -287,39 +287,3 @@ func (s *Service) ProcessDispatchEvent(ctx context.Context, claimed outbox.Event
 	}
 	return tx.Commit(ctx)
 }
-
-// No write lock is taken by the measurement reader: its existing RR snapshot
-// sees either the original pending row or the atomically published source row.
-func (s *Service) pendingDispatchDestination(ctx context.Context, tx pgx.Tx, org, project int64, request, attempt string) (Observation, bool, error) {
-	rows, err := tx.Query(ctx, `SELECT event_key,event_type,priority,org_id,request_id,payload,occurred_at FROM internal_outbox_events
-	 WHERE event_type=$1 AND org_id=$2 AND request_id=$3 AND payload->>'attempt_id'=$4 AND payload->>'source_instance'=$5 AND payload->>'project_id'=$6 LIMIT 2`, outbox.EventSourceDispatch, org, request, attempt, s.SourceInstance(), strconv.FormatInt(project, 10))
-	if err != nil {
-		return Observation{}, false, err
-	}
-	defer rows.Close()
-	var result Observation
-	found := false
-	for rows.Next() {
-		if found {
-			return Observation{}, false, errors.New("ambiguous frozen dispatch destination")
-		}
-		var event outbox.Event
-		if err = rows.Scan(&event.Key, &event.Type, &event.Priority, &event.OrgID, &event.RequestID, &event.Payload, &event.OccurredAt); err != nil {
-			return result, false, err
-		}
-		_, records, e := s.decodeDispatch(event)
-		if e != nil {
-			return result, false, e
-		}
-		for _, record := range records {
-			if record.Profile == DestinationProfile {
-				result, e = DecodeObservation(record.Wire)
-				if e != nil {
-					return result, false, e
-				}
-				found = true
-			}
-		}
-	}
-	return result, found, rows.Err()
-}

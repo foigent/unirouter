@@ -29,6 +29,7 @@ type SourceFactsGatewayFixture struct {
 	Relay                *Relay
 	Body                 []byte
 	ProviderCalls        func() int64
+	ProviderRequests     func() []string
 	ConnectionID         int64
 	BeforeProvider       func(func())
 }
@@ -65,6 +66,13 @@ func newSourceFactsGatewayFixture(t *testing.T, operation modeloperation.ID, ver
 	doer := &publicGatewayPGDoer{operation: operation, upstreamModel: fixture.upstreamModel, secret: fixture.providerSecret, responseText: "synthetic answer"}
 	var transport PublicNonStreamHTTPDoer = doer
 	calls := doer.calls.Load
+	requests := func() []string {
+		var bodies []string
+		for _, r := range doer.snapshot() {
+			bodies = append(bodies, r.body)
+		}
+		return bodies
+	}
 	body := publicGatewayPGRequestBody(operation, fixture.model)
 	if mode != "" {
 		body = []byte(strings.TrimSuffix(string(body), "}") + `,"stream":true}`)
@@ -78,8 +86,16 @@ func newSourceFactsGatewayFixture(t *testing.T, operation modeloperation.ID, ver
 		}
 		var count atomic.Int64
 		calls = count.Load
-		transport = publicNonStreamDoerFunc(func(*http.Request) (*http.Response, error) {
+		var bodies []string
+		requests = func() []string { return append([]string(nil), bodies...) }
+		transport = publicNonStreamDoerFunc(func(request *http.Request) (*http.Response, error) {
 			count.Add(1)
+			wire, err := io.ReadAll(request.Body)
+			if err != nil {
+				return nil, err
+			}
+			_ = request.Body.Close()
+			bodies = append(bodies, string(wire))
 			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(sse))}, nil
 		})
 	}
@@ -92,7 +108,7 @@ func newSourceFactsGatewayFixture(t *testing.T, operation modeloperation.ID, ver
 		return selectedTransport.Do(request)
 	})
 	return SourceFactsGatewayFixture{Pool: pool, Billing: fixture.billing, OrgID: fixture.orgID, UserID: fixture.userID, KeyID: fixture.apiKeyIDs[0], Path: fixture.identity.PublicPath, Model: fixture.model, Operation: operation,
-		Relay: publicGatewayPGRelay(t, fixture, transport), Body: body, ProviderCalls: calls, ConnectionID: fixture.connectionID, BeforeProvider: func(hook func()) { before = hook }}
+		Relay: publicGatewayPGRelay(t, fixture, transport), Body: body, ProviderCalls: calls, ProviderRequests: requests, ConnectionID: fixture.connectionID, BeforeProvider: func(hook func()) { before = hook }}
 }
 
 func (f SourceFactsGatewayFixture) SetDispatchMaterializer(t *testing.T, materializer modelexecution.DispatchMaterializer) {

@@ -87,7 +87,7 @@ func (h *Handler) GetXInsightSourceConnection(w http.ResponseWriter, r *http.Req
 	}
 	slices.Sort(availableProfiles)
 	e = h.db.QueryRow(r.Context(), `SELECT source_instance,status,scope_generation,profiles FROM execution_source_connections WHERE org_id=$1 AND project_id=$2`, org, project).Scan(&instance, &status, &generation, &profiles)
-	if errors.Is(e, pgx.ErrNoRows) {
+	if errors.Is(e, pgx.ErrNoRows) || e == nil && len(profiles) == 0 {
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, 200, map[string]any{"status": "not_configured", "source_instance": h.sourceFactsController.SourceInstance(), "capture_enabled": h.sourceFactsController.Enabled(), "available_profiles": availableProfiles})
 		return
@@ -96,7 +96,7 @@ func (h *Handler) GetXInsightSourceConnection(w http.ResponseWriter, r *http.Req
 		writeXInsightFeedControlError(w, e)
 		return
 	}
-	rows, e := h.db.Query(r.Context(), `SELECT ak.id,ak.key_prefix,ak.status,ak.registration_operation_id,sc.profiles FROM api_keys ak JOIN execution_source_credentials sc ON sc.api_key_id=ak.id WHERE ak.org_id=$1 AND ak.project_id=$2 AND ak.purpose=$3 AND ak.status IN ('feed_active','feed_staged') ORDER BY ak.id`, org, project, sourcefacts.Purpose)
+	rows, e := h.db.Query(r.Context(), `SELECT ak.id,ak.key_prefix,ak.status,ak.registration_operation_id,sc.profiles FROM api_keys ak JOIN execution_source_credentials sc ON sc.api_key_id=ak.id WHERE ak.org_id=$1 AND ak.project_id=$2 AND ak.purpose=$3 AND COALESCE(to_jsonb(ak)->>'source_lifecycle_scope','legacy')='legacy' AND ak.status IN ('feed_active','feed_staged') ORDER BY ak.id`, org, project, sourcefacts.Purpose)
 	if e != nil {
 		writeXInsightFeedControlError(w, e)
 		return
@@ -221,7 +221,7 @@ func (h *Handler) SourceControl(action string) http.HandlerFunc {
 			return
 		}
 		var active, staged int
-		e = tx.QueryRow(r.Context(), `SELECT count(*) FILTER(WHERE status='feed_active'),count(*) FILTER(WHERE status='feed_staged') FROM api_keys WHERE org_id=$1 AND project_id=$2 AND purpose=$3`, org, project, sourcefacts.Purpose).Scan(&active, &staged)
+		e = tx.QueryRow(r.Context(), `SELECT count(*) FILTER(WHERE status='feed_active'),count(*) FILTER(WHERE status='feed_staged') FROM api_keys WHERE org_id=$1 AND project_id=$2 AND purpose=$3 AND COALESCE(to_jsonb(api_keys)->>'source_lifecycle_scope','legacy')='legacy'`, org, project, sourcefacts.Purpose).Scan(&active, &staged)
 		if e != nil {
 			writeXInsightFeedControlError(w, e)
 			return
@@ -229,7 +229,7 @@ func (h *Handler) SourceControl(action string) http.HandlerFunc {
 		result := map[string]any{"status": status, "scope_generation": strconv.FormatInt(generation, 10)}
 		if targetCredential {
 			var currentID int64
-			e = tx.QueryRow(r.Context(), `SELECT id FROM api_keys WHERE org_id=$1 AND project_id=$2 AND purpose=$3 AND status='feed_staged'`, org, project, sourcefacts.Purpose).Scan(&currentID)
+			e = tx.QueryRow(r.Context(), `SELECT id FROM api_keys WHERE org_id=$1 AND project_id=$2 AND purpose=$3 AND COALESCE(to_jsonb(api_keys)->>'source_lifecycle_scope','legacy')='legacy' AND status='feed_staged'`, org, project, sourcefacts.Purpose).Scan(&currentID)
 			if errors.Is(e, pgx.ErrNoRows) || e == nil && currentID != credentialID {
 				e = errXInsightFeedConflict
 			}
@@ -240,16 +240,32 @@ func (h *Handler) SourceControl(action string) http.HandlerFunc {
 			result["credential_id"] = request.CredentialID
 		}
 		if register {
+			usedByContent, lookupErr := contentOperationExistsTx(r.Context(), tx, org, project, request.Registration.OperationID)
+			if lookupErr != nil {
+				writeXInsightFeedControlError(w, lookupErr)
+				return
+			}
+			if usedByContent {
+				writeXInsightFeedControlError(w, errXInsightFeedConflict)
+				return
+			}
+			if action == "prepare" && len(profiles) == 0 {
+				profiles = request.Registration.Profiles
+				if _, e = tx.Exec(r.Context(), `UPDATE execution_source_connections SET profiles=$3,updated_at=clock_timestamp() WHERE org_id=$1 AND project_id=$2`, org, project, profiles); e != nil {
+					writeXInsightFeedControlError(w, e)
+					return
+				}
+			}
 			if !slices.Equal(profiles, request.Registration.Profiles) {
 				writeXInsightFeedControlError(w, errXInsightFeedConflict)
 				return
 			}
 			digest, _ := request.Registration.Hash()
 			var keyID int64
-			var previousHash, previousStatus, previousIP string
-			e = tx.QueryRow(r.Context(), `SELECT ak.id,sc.registration_sha256,ak.status,ak.allowed_ips FROM api_keys ak JOIN execution_source_credentials sc ON sc.api_key_id=ak.id WHERE ak.org_id=$1 AND ak.project_id=$2 AND ak.purpose=$3 AND ak.registration_operation_id=$4`, org, project, sourcefacts.Purpose, request.Registration.OperationID).Scan(&keyID, &previousHash, &previousStatus, &previousIP)
+			var previousHash, previousStatus, previousIP, previousScope string
+			e = tx.QueryRow(r.Context(), `SELECT ak.id,sc.registration_sha256,ak.status,ak.allowed_ips,COALESCE(to_jsonb(ak)->>'source_lifecycle_scope','legacy') FROM api_keys ak JOIN execution_source_credentials sc ON sc.api_key_id=ak.id WHERE ak.org_id=$1 AND ak.project_id=$2 AND ak.purpose=$3 AND ak.registration_operation_id=$4`, org, project, sourcefacts.Purpose, request.Registration.OperationID).Scan(&keyID, &previousHash, &previousStatus, &previousIP, &previousScope)
 			if e == nil {
-				if previousHash != digest || previousStatus == "feed_revoked" || action == "prepare" && previousIP != request.AllowedIP {
+				if previousScope != "legacy" || previousHash != digest || previousStatus == "feed_revoked" || action == "prepare" && previousIP != request.AllowedIP {
 					writeXInsightFeedControlError(w, errXInsightFeedConflict)
 					return
 				}
@@ -270,7 +286,7 @@ func (h *Handler) SourceControl(action string) http.HandlerFunc {
 			}
 			allowedIP := request.AllowedIP
 			if action == "rotate" {
-				e = tx.QueryRow(r.Context(), `SELECT allowed_ips FROM api_keys WHERE org_id=$1 AND project_id=$2 AND purpose=$3 AND status='feed_active' FOR UPDATE`, org, project, sourcefacts.Purpose).Scan(&allowedIP)
+				e = tx.QueryRow(r.Context(), `SELECT allowed_ips FROM api_keys WHERE org_id=$1 AND project_id=$2 AND purpose=$3 AND COALESCE(to_jsonb(api_keys)->>'source_lifecycle_scope','legacy')='legacy' AND status='feed_active' FOR UPDATE`, org, project, sourcefacts.Purpose).Scan(&allowedIP)
 				if e != nil {
 					writeXInsightFeedControlError(w, e)
 					return
@@ -295,18 +311,23 @@ func (h *Handler) SourceControl(action string) http.HandlerFunc {
 					e = errXInsightFeedConflict
 					break
 				}
-				_, e = tx.Exec(r.Context(), `UPDATE api_keys SET status='feed_revoked',updated_at=clock_timestamp() WHERE org_id=$1 AND project_id=$2 AND purpose=$3 AND status='feed_active'`, org, project, sourcefacts.Purpose)
+				_, e = tx.Exec(r.Context(), `UPDATE api_keys SET status='feed_revoked',updated_at=clock_timestamp() WHERE org_id=$1 AND project_id=$2 AND purpose=$3 AND COALESCE(to_jsonb(api_keys)->>'source_lifecycle_scope','legacy')='legacy' AND status='feed_active'`, org, project, sourcefacts.Purpose)
 				if e == nil {
-					_, e = tx.Exec(r.Context(), `UPDATE api_keys SET status='feed_active',updated_at=clock_timestamp() WHERE org_id=$1 AND project_id=$2 AND purpose=$3 AND status='feed_staged'`, org, project, sourcefacts.Purpose)
+					_, e = tx.Exec(r.Context(), `UPDATE api_keys SET status='feed_active',updated_at=clock_timestamp() WHERE org_id=$1 AND project_id=$2 AND purpose=$3 AND COALESCE(to_jsonb(api_keys)->>'source_lifecycle_scope','legacy')='legacy' AND status='feed_staged'`, org, project, sourcefacts.Purpose)
 				}
 			case "cancel":
 				if status != "paused" || staged != 1 {
 					e = errXInsightFeedConflict
 					break
 				}
-				_, e = tx.Exec(r.Context(), `UPDATE api_keys SET status='feed_revoked',updated_at=clock_timestamp() WHERE org_id=$1 AND project_id=$2 AND purpose=$3 AND status='feed_staged'`, org, project, sourcefacts.Purpose)
+				_, e = tx.Exec(r.Context(), `UPDATE api_keys SET status='feed_revoked',updated_at=clock_timestamp() WHERE org_id=$1 AND project_id=$2 AND purpose=$3 AND COALESCE(to_jsonb(api_keys)->>'source_lifecycle_scope','legacy')='legacy' AND status='feed_staged'`, org, project, sourcefacts.Purpose)
 			case "resume":
-				if active != 1 || staged != 0 {
+				contentActive, contentErr := contentSourceActiveTx(r.Context(), tx, org, project)
+				if contentErr != nil {
+					e = contentErr
+					break
+				}
+				if staged != 0 || active != 1 && !contentActive {
 					e = errXInsightFeedConflict
 					break
 				}
@@ -325,9 +346,12 @@ func (h *Handler) SourceControl(action string) http.HandlerFunc {
 				if action == "profiles" && slices.Equal(profiles, request.Profiles) {
 					break
 				}
-				_, e = tx.Exec(r.Context(), `UPDATE api_keys SET status='feed_revoked',updated_at=clock_timestamp() WHERE org_id=$1 AND project_id=$2 AND purpose=$3 AND status IN ('feed_active','feed_staged')`, org, project, sourcefacts.Purpose)
+				_, e = tx.Exec(r.Context(), `UPDATE api_keys SET status='feed_revoked',updated_at=clock_timestamp() WHERE org_id=$1 AND project_id=$2 AND purpose=$3 AND ($4 OR COALESCE(to_jsonb(api_keys)->>'source_lifecycle_scope','legacy')='legacy') AND status IN ('feed_active','feed_staged')`, org, project, sourcefacts.Purpose, action == "revoke")
 				generation++
 				if action == "revoke" {
+					if e == nil {
+						e = revokeContentScopeTx(r.Context(), tx, org, project)
+					}
 					status = "revoked"
 				} else {
 					profiles = request.Profiles

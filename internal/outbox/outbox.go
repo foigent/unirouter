@@ -304,12 +304,21 @@ func (s *Service) runWorker(ctx context.Context, index int) {
 	lastLagRefresh := time.Time{}
 	for {
 		claimedBy := fmt.Sprintf("%s:worker-%d", s.workerID, index)
-		if _, err := s.drainOnce(ctx, claimedBy); err != nil && ctx.Err() == nil {
+		claimed, err := s.drainOnce(ctx, claimedBy)
+		if err != nil && ctx.Err() == nil {
 			log.Printf("[outbox] worker=%d drain error: %v", index, err)
 		}
 		if index == 0 && (lastLagRefresh.IsZero() || time.Since(lastLagRefresh) >= 5*time.Second) {
 			s.refreshTraceLag(ctx)
 			lastLagRefresh = time.Now()
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		// Polling is idle/error backoff, not a throughput cap on healthy work.
+		// Keep lag refresh above this branch so a busy queue cannot starve it.
+		if claimed > 0 && err == nil {
+			continue
 		}
 		select {
 		case <-ctx.Done():

@@ -209,6 +209,67 @@ class CounterTransitionTests(unittest.TestCase):
                 rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
 
 
+class SchemaBridgeTransitionTests(unittest.TestCase):
+    def test_every_exact_m115_to_m120_suffix_and_predecessor(self):
+        for index, head in enumerate(rollout.BRIDGE_HEADS[:-1]):
+            with self.subTest(head=head), tempfile.TemporaryDirectory() as directory:
+                new=Path(directory).resolve(); (new/"migrations").mkdir()
+                old=["000113_glm_stream_function_tools_qualification", rollout.CAPABILITY_HEAD,
+                     *rollout.BRIDGE_HEADS[:index+1]]
+                suffix=rollout.BRIDGE_HEADS[index+1:]
+                transition={"kind":"schema_bridge_expand_carrier","from_head":head,"migration_pairs":[]}
+                changes=[]
+                for version in suffix:
+                    pair={"version":version}
+                    for direction in ("up","down"):
+                        wire=(version+" "+direction+" exact reviewed fixture").encode()
+                        (new/"migrations"/(version+"."+direction+".sql")).write_bytes(wire)
+                        pair[direction+"_sha256"]=rollout.digest(wire)
+                        changes.append("A\tmigrations/"+version+"."+direction+".sql")
+                    transition["migration_pairs"].append(pair)
+                tree="\n".join("migrations/"+name+".up.sql" for name in old).encode()
+                delta="\n".join(changes).encode()
+                rollout.validate_transition(transition)
+                with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",delta]):
+                    rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+                with patch.object(rollout,"run",return_value=tree), self.assertRaisesRegex(RuntimeError,"predecessor"):
+                    rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old[:-1])
+                with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",delta+b"\nM\tmigrations/000001_init_schema.up.sql"]), self.assertRaisesRegex(RuntimeError,"migration pairs"):
+                    rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+                last=transition["migration_pairs"][-1]
+                (new/"migrations"/(last["version"]+".down.sql")).write_text("changed")
+                with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",delta]), self.assertRaisesRegex(RuntimeError,"bytes differ"):
+                    rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+
+    def test_schema_bridge_shape_rejects_missing_reordered_and_extra_pairs(self):
+        pairs=[{"version":name,"up_sha256":"a"*64,"down_sha256":"b"*64} for name in rollout.BRIDGE_HEADS[1:]]
+        valid={"kind":"schema_bridge_expand_carrier","from_head":rollout.COUNTER_HEAD,"migration_pairs":pairs}
+        rollout.validate_transition(valid)
+        for invalid in (dict(valid,migration_pairs=pairs[:-1]),
+                        dict(valid,migration_pairs=[pairs[1],pairs[0],*pairs[2:]]),
+                        dict(valid,migration_pairs=[*pairs,pairs[-1]]),
+                        dict(valid,migration_pairs=[dict(pairs[0],up_sha256="not-a-digest"),*pairs[1:]]),
+                        dict(valid,from_head="000114_capability_delivery_expand"),
+                        dict(valid,allow_unknown=True)):
+            with self.subTest(invalid=invalid), self.assertRaises(RuntimeError):
+                rollout.validate_transition(invalid)
+
+    def test_compose_defaults_only_add_absent_disabled_values(self):
+        expected={"RUNTIME_VERSION":"1.2.77", "SOURCE_FACTS_ENABLED":"false"}
+        actual=dict(expected)
+        rollout.add_disabled_source_defaults(expected,actual)
+        self.assertEqual({"RUNTIME_VERSION":"1.2.77",**rollout.SOURCE_DEFAULTS},expected)
+        for key,default in rollout.SOURCE_DEFAULTS.items():
+            enabled="true" if default=="false" else "/secret"
+            with self.subTest(key=key):
+                previous=dict(expected)
+                with self.assertRaisesRegex(RuntimeError,"disabled source"):
+                    rollout.add_disabled_source_defaults(dict(expected,**{key:enabled}),actual)
+                with self.assertRaisesRegex(RuntimeError,"disabled source"):
+                    rollout.add_disabled_source_defaults(expected,dict(actual,**{key:enabled}))
+                self.assertEqual(previous,expected)
+
+
 class ArtifactOwnerTests(unittest.TestCase):
     def test_docker_timestamp_fraction_and_timezone(self):
         for wire, microsecond, offset in (
@@ -957,18 +1018,26 @@ class ArtifactOwnerReadFixtureTests(unittest.TestCase):
         bridge,current=self.load_carrier().carrier_read_ledgers(migrations)
         self.assertEqual(bridge[0],"bridge")
         self.assertEqual(current[0],"current")
-        self.assertEqual(bridge[1][-1],"000117_execution_observations")
-        self.assertEqual(current[1][-1],"000118_source_budget_snapshots")
+        self.assertEqual(bridge[1][-1],"000120_unpublished_content_reclamation")
+        self.assertEqual(current[1][-1],"000121_gateway_pre_dispatch_terminal")
         self.assertEqual(current[1],sorted(p.name[:-7] for p in migrations.glob("*.up.sql")))
         self.assertEqual(bridge[1],current[1][:-1])
 
     def test_unknown_future_head_cannot_keep_a_stale_success_label(self):
         import tempfile
         with tempfile.TemporaryDirectory(prefix="ur-carrier-ledger-") as root:
-            for name in ["000117_execution_observations","000118_source_budget_snapshots","000119_unknown"]:
+            for name in ["000120_unpublished_content_reclamation","000121_gateway_pre_dispatch_terminal","000122_unknown"]:
                 (Path(root)/(name+".up.sql")).write_text("")
-            with self.assertRaisesRegex(RuntimeError,"exact M117/M118"):
+            with self.assertRaisesRegex(RuntimeError,"exact reviewed artifact heads"):
                 self.load_carrier().carrier_read_ledgers(Path(root))
+
+    def test_historical_m117_m118_read_fixture_remains_supported(self):
+        with tempfile.TemporaryDirectory(prefix="ur-carrier-historical-") as root:
+            for name in ["000117_execution_observations", "000118_source_budget_snapshots"]:
+                (Path(root)/(name+".up.sql")).write_text("")
+            bridge,current=self.load_carrier().carrier_read_ledgers(Path(root), historical=True)
+            self.assertEqual(bridge[1][-1], rollout.OBSERVATION_HEAD)
+            self.assertEqual(current[1][-1], rollout.BUDGET_HEAD)
 
     def test_carrier_logging_and_grace_match_actual_daemon_configuration(self):
         backend=self.load_carrier().carrier_compose("synthetic-image",Path("/release"))["services"]["backend"]

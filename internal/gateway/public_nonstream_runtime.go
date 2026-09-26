@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/uniroute/unirouter/internal/contentcapture"
 	"github.com/uniroute/unirouter/internal/executionmeasurement"
 	"github.com/uniroute/unirouter/internal/guardrail"
 	"net/http"
@@ -85,17 +86,18 @@ type publicProfileRegistry interface {
 }
 
 type publicNonStreamOrchestrator struct {
-	mode          modelrouting.Mode
-	planner       ModelRoutePlanner
-	coordinator   publicModelExecutionCoordinator
-	billing       publicNonStreamBilling
-	registry      publicProfileRegistry
-	decrypt       publicSecretDecryptor
-	encryptionKey []byte
-	doer          PublicNonStreamHTTPDoer
-	guard         publicNonStreamGuard
-	safetyFactor  string
-	minFreeze     int64
+	contentCapture contentcapture.Starter
+	mode           modelrouting.Mode
+	planner        ModelRoutePlanner
+	coordinator    publicModelExecutionCoordinator
+	billing        publicNonStreamBilling
+	registry       publicProfileRegistry
+	decrypt        publicSecretDecryptor
+	encryptionKey  []byte
+	doer           PublicNonStreamHTTPDoer
+	guard          publicNonStreamGuard
+	safetyFactor   string
+	minFreeze      int64
 }
 
 type publicNonStreamRequest struct {
@@ -671,7 +673,8 @@ func (orchestrator *publicNonStreamOrchestrator) execute(
 			continue
 		}
 
-		execution, executionErr := executor.Execute(executionmeasurement.WithAttempt(ctx, attemptID), candidate.upstream)
+		captureCtx := withPublicContentObservation(ctx, orchestrator.contentCapture, request, attemptID)
+		execution, executionErr := executor.Execute(executionmeasurement.WithAttempt(captureCtx, attemptID), candidate.upstream)
 		if executionErr != nil {
 			var failure *PublicNonStreamExecutionError
 			if errors.As(executionErr, &failure) && failure.Stage == PublicNonStreamStagePreflight {

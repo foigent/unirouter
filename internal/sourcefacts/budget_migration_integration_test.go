@@ -71,6 +71,9 @@ func TestSourceBudgetExpansionRequiresServingAndExpiredRecoveryWriterSupport(t *
 
 func budgetDown(t *testing.T, pool *pgxpool.Pool) error {
 	t.Helper()
+	if err := contentDownForBudgetFixture(t, pool); err != nil {
+		return err
+	}
 	wire, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), schemaauthority.BudgetSnapshotExpandHead+".down.sql"))
 	require.NoError(t, err)
 	conn, err := pool.Acquire(t.Context())
@@ -79,8 +82,54 @@ func budgetDown(t *testing.T, pool *pgxpool.Pool) error {
 	_, err = conn.Exec(t.Context(), string(wire))
 	if err != nil {
 		_, _ = conn.Exec(context.Background(), "ROLLBACK")
+	} else {
+		assertSourceFixtureLedger(t, pool, schemaauthority.ObservationExpandHead)
 	}
 	return err
+}
+
+func assertSourceFixtureLedger(t *testing.T, pool *pgxpool.Pool, head string) []string {
+	t.Helper()
+	artifact, err := schemaauthority.ExpectedLedger(testutil.MigrationsDir(t))
+	require.NoError(t, err)
+	index := slices.Index(artifact, head)
+	require.NotEqual(t, -1, index)
+	expected := artifact[:index+1]
+	var actual []string
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT array_agg(version::text ORDER BY version) FROM schema_migrations`).Scan(&actual))
+	require.Equal(t, expected, actual)
+	return actual
+}
+
+func contentDownForBudgetFixture(t *testing.T, pool *pgxpool.Pool) error {
+	t.Helper()
+	// Later additive migrations must be reversed in actual schema order before
+	// establishing the named historical fixture, including repeated M118 calls.
+	for _, version := range []string{schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead} {
+		if err := sourceBudgetFixtureDownIfPresent(t, pool, version); err != nil {
+			return err
+		}
+	}
+	assertSourceFixtureLedger(t, pool, schemaauthority.BudgetSnapshotExpandHead)
+	return nil
+}
+
+func sourceBudgetFixtureDownIfPresent(t *testing.T, pool *pgxpool.Pool, version string) error {
+	t.Helper()
+	var present bool
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, version).Scan(&present))
+	if present {
+		wire, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), version+".down.sql"))
+		require.NoError(t, err)
+		conn, err := pool.Acquire(t.Context())
+		require.NoError(t, err)
+		defer conn.Release()
+		if _, err = conn.Exec(t.Context(), string(wire)); err != nil {
+			_, _ = conn.Exec(context.Background(), "ROLLBACK")
+			return err
+		}
+	}
+	return nil
 }
 
 func TestSourceBudgetMigrationRequiresCertificateAndPreservesHistory(t *testing.T) {
@@ -103,6 +152,7 @@ func TestSourceBudgetMigrationRequiresCertificateAndPreservesHistory(t *testing.
 	}
 	require.NoError(t, migrate.RunCompatibleExpand(ctx, pool, dir, hooks))
 	require.NoError(t, migrate.RunCompatibleExpand(ctx, pool, dir, hooks))
+	assertSourceFixtureLedger(t, pool, schemaauthority.BudgetSnapshotExpandHead)
 	next, err := runtimegeneration.ReadBudgetCoverage(ctx, pool)
 	require.NoError(t, err)
 	require.True(t, next.CertifiedFrom.After(certificate.CertifiedFrom))
@@ -145,54 +195,88 @@ func TestSourceBudgetMigrationRequiresCertificateAndPreservesHistory(t *testing.
 }
 
 func TestSourceBudgetRestoreAlwaysRebasesAndReadinessDoesNotWrite(t *testing.T) {
-	pool, s, org, project := setupSourceDB(t)
-	ctx := t.Context()
-	snapshot := testSnapshot()
-	snapshot.Core.OrgID = fmt.Sprint(org)
-	snapshot.Core.ProjectID = fmt.Sprint(project)
-	require.NoError(t, s.CaptureAuthenticated(ctx, snapshot))
-	sourceBytes := func() string {
-		var value string
-		require.NoError(t, pool.QueryRow(ctx, `SELECT COALESCE(jsonb_agg(to_jsonb(f) ORDER BY profile,sequence),'[]'::jsonb)::text FROM execution_source_facts f`).Scan(&value))
-		return value
+	for _, head := range []string{schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead} {
+		t.Run(head, func(t *testing.T) {
+			pool := testutil.SetupMigratedTestDB(t)
+			if head == schemaauthority.BudgetSnapshotExpandHead {
+				require.NoError(t, contentDownForBudgetFixture(t, pool))
+			} else if head == schemaauthority.ContentCaptureExpandHead {
+				require.NoError(t, sourceBudgetFixtureDownIfPresent(t, pool, schemaauthority.PreDispatchExpandHead))
+				require.NoError(t, sourceBudgetFixtureDownIfPresent(t, pool, schemaauthority.ContentReclaimExpandHead))
+			} else if head == schemaauthority.ContentReclaimExpandHead {
+				require.NoError(t, sourceBudgetFixtureDownIfPresent(t, pool, schemaauthority.PreDispatchExpandHead))
+			}
+			assertSourceFixtureLedger(t, pool, head)
+			var contentObjects, reclaimedColumn bool
+			require.NoError(t, pool.QueryRow(t.Context(), `SELECT to_regclass('execution_content_objects') IS NOT NULL,
+EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('execution_content_objects') AND attname='reclaimed_at' AND NOT attisdropped)`).Scan(&contentObjects, &reclaimedColumn))
+			require.Equal(t, head != schemaauthority.BudgetSnapshotExpandHead, contentObjects)
+			require.Equal(t, head == schemaauthority.ContentReclaimExpandHead || head == schemaauthority.PreDispatchExpandHead, reclaimedColumn)
+			pool, s, org, project := setupSourceDBWithPool(t, pool)
+			s.options.ObservationsEnabled = true
+			ctx := t.Context()
+			snapshot := testSnapshot()
+			snapshot.Core.OrgID = fmt.Sprint(org)
+			snapshot.Core.ProjectID = fmt.Sprint(project)
+			require.NoError(t, s.CaptureAuthenticated(ctx, snapshot))
+			sourceBytes := func() string {
+				var value string
+				require.NoError(t, pool.QueryRow(ctx, `SELECT COALESCE(jsonb_agg(to_jsonb(f) ORDER BY profile,sequence),'[]'::jsonb)::text FROM execution_source_facts f`).Scan(&value))
+				return value
+			}
+			originalSource := sourceBytes()
+			var observations int
+			require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM execution_source_facts WHERE profile=$1`, RuntimeProfile).Scan(&observations))
+			require.Positive(t, observations)
+			proofBytes := func() string {
+				var proof string
+				require.NoError(t, pool.QueryRow(ctx, `SELECT (to_jsonb(c)-ARRAY['coverage_epoch','certified_from','ended_at','reason','predecessor_epoch','restore_boundary'])::text FROM execution_source_budget_coverage c WHERE ended_at IS NULL`).Scan(&proof))
+				return proof
+			}
+			originalProof := proofBytes()
+			original, err := runtimegeneration.ReadBudgetCoverage(ctx, pool)
+			require.NoError(t, err)
+			helper, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "..", "scripts", "source-budget-restore-rebase.sql"))
+			require.NoError(t, err)
+			for i := 0; i < 2; i++ {
+				_, err = pool.Exec(ctx, string(helper))
+				require.NoError(t, err)
+				current, err := runtimegeneration.ReadBudgetCoverage(ctx, pool)
+				require.NoError(t, err)
+				require.Greater(t, current.Epoch, original.Epoch)
+				require.Equal(t, "restore_rebase", current.Reason)
+				require.NotNil(t, current.RestoreBoundary)
+				require.Equal(t, current.CertifiedFrom, *current.RestoreBoundary)
+				require.True(t, current.CertifiedFrom.After(original.CertifiedFrom))
+				var oldFrom, ended time.Time
+				require.NoError(t, pool.QueryRow(ctx, `SELECT certified_from,ended_at FROM execution_source_budget_coverage WHERE coverage_epoch=$1`, original.Epoch).Scan(&oldFrom, &ended))
+				require.Equal(t, original.CertifiedFrom, oldFrom)
+				require.Equal(t, current.CertifiedFrom, ended)
+				require.Equal(t, originalProof, proofBytes(), "all original proof fields and manifest bytes survive each committed rebase")
+				original = current
+			}
+			require.Equal(t, originalSource, sourceBytes())
+			var before, after string
+			require.NoError(t, pool.QueryRow(ctx, `SELECT jsonb_agg(to_jsonb(c) ORDER BY coverage_epoch)::text FROM execution_source_budget_coverage c`).Scan(&before))
+			require.NoError(t, s.CheckReady(ctx))
+			_, err = runtimegeneration.ReadBudgetCoverage(ctx, pool)
+			require.NoError(t, err)
+			require.NoError(t, pool.QueryRow(ctx, `SELECT jsonb_agg(to_jsonb(c) ORDER BY coverage_epoch)::text FROM execution_source_budget_coverage c`).Scan(&after))
+			require.Equal(t, before, after)
+			tx, err := pool.Begin(ctx)
+			require.NoError(t, err)
+			_, err = tx.Exec(ctx, `DELETE FROM schema_migrations WHERE version=$1`, schemaauthority.BudgetSnapshotExpandHead)
+			require.NoError(t, err)
+			_, err = runtimegeneration.ReadBudgetCoverage(ctx, tx)
+			if head == schemaauthority.BudgetSnapshotExpandHead {
+				require.ErrorContains(t, err, "schema head mismatch")
+			} else {
+				require.ErrorContains(t, err, "budget coverage schema ledger: artifact does not contain a known exact compatibility bridge")
+			}
+			require.NoError(t, tx.Rollback(ctx))
+			require.Equal(t, originalSource, sourceBytes())
+		})
 	}
-	originalSource := sourceBytes()
-	original, err := runtimegeneration.ReadBudgetCoverage(ctx, pool)
-	require.NoError(t, err)
-	helper, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "..", "scripts", "source-budget-restore-rebase.sql"))
-	require.NoError(t, err)
-	for i := 0; i < 2; i++ {
-		_, err = pool.Exec(ctx, string(helper))
-		require.NoError(t, err)
-		current, err := runtimegeneration.ReadBudgetCoverage(ctx, pool)
-		require.NoError(t, err)
-		require.Greater(t, current.Epoch, original.Epoch)
-		require.Equal(t, "restore_rebase", current.Reason)
-		require.NotNil(t, current.RestoreBoundary)
-		require.Equal(t, current.CertifiedFrom, *current.RestoreBoundary)
-		require.True(t, current.CertifiedFrom.After(original.CertifiedFrom))
-		var oldFrom, ended time.Time
-		require.NoError(t, pool.QueryRow(ctx, `SELECT certified_from,ended_at FROM execution_source_budget_coverage WHERE coverage_epoch=$1`, original.Epoch).Scan(&oldFrom, &ended))
-		require.Equal(t, original.CertifiedFrom, oldFrom)
-		require.Equal(t, current.CertifiedFrom, ended)
-		original = current
-	}
-	require.Equal(t, originalSource, sourceBytes())
-	var before, after string
-	require.NoError(t, pool.QueryRow(ctx, `SELECT jsonb_agg(to_jsonb(c) ORDER BY coverage_epoch)::text FROM execution_source_budget_coverage c`).Scan(&before))
-	require.NoError(t, s.CheckReady(ctx))
-	_, err = runtimegeneration.ReadBudgetCoverage(ctx, pool)
-	require.NoError(t, err)
-	require.NoError(t, pool.QueryRow(ctx, `SELECT jsonb_agg(to_jsonb(c) ORDER BY coverage_epoch)::text FROM execution_source_budget_coverage c`).Scan(&after))
-	require.Equal(t, before, after)
-	tx, err := pool.Begin(ctx)
-	require.NoError(t, err)
-	_, err = tx.Exec(ctx, `DELETE FROM schema_migrations WHERE version=$1`, schemaauthority.BudgetSnapshotExpandHead)
-	require.NoError(t, err)
-	_, err = runtimegeneration.ReadBudgetCoverage(ctx, tx)
-	require.ErrorContains(t, err, "schema head mismatch")
-	require.NoError(t, tx.Rollback(ctx))
-	require.Equal(t, originalSource, sourceBytes())
 }
 
 func TestSourceBudgetRestoreHelperPreservesPreDSchema(t *testing.T) {

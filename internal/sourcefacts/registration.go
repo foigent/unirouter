@@ -29,7 +29,7 @@ var prefixPattern = regexp.MustCompile(`^ur-xf1-[0-9a-f]{13}$`)
 var operationPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 func ValidateProfiles(profiles []string) bool {
-	if len(profiles) < 1 || len(profiles) > 11 || !slices.IsSorted(profiles) {
+	if len(profiles) < 1 || len(profiles) > 12 || !slices.IsSorted(profiles) {
 		return false
 	}
 	for i, p := range profiles {

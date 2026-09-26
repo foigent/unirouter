@@ -109,7 +109,18 @@ func runtimeBootstrapState(t *testing.T, pool *pgxpool.Pool) string {
 		'audits',(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM audit_logs a),
 		'outbox',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM internal_outbox_events e)
 	)::text`).Scan(&state))
-	return state
+	parts := map[string]string{"business": state}
+	for _, name := range firstCustomerContentTables() {
+		var rows string
+		require.NoError(t, pool.QueryRow(t.Context(), `SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]'::jsonb)::text FROM `+pgx.Identifier{"public", name}.Sanitize()+` t`).Scan(&rows))
+		parts[name] = rows
+	}
+	var sequences string
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT jsonb_agg(jsonb_build_array(sequencename,last_value) ORDER BY sequencename)::text FROM pg_sequences WHERE schemaname='public'`).Scan(&sequences))
+	parts["sequences"] = sequences
+	wire, err := json.Marshal(parts)
+	require.NoError(t, err)
+	return string(wire)
 }
 
 func TestFirstCustomerRuntimeCheckpointReadOnlyIntegration(t *testing.T) {

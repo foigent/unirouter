@@ -45,21 +45,17 @@ func invokeGenerationCLI(t *testing.T, cfg *config.Config, action string, input 
 }
 
 func TestRuntimeGenerationCLIExpandedLedgerLifecycleIntegration(t *testing.T) {
-	for _, head := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead} {
+	for _, head := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead} {
 		t.Run(head, func(t *testing.T) {
 			pool := testutil.SetupMigratedTestDB(t)
 			dir := testutil.MigrationsDir(t)
-			if head != schemaauthority.BudgetSnapshotExpandHead {
-				wire, err := os.ReadFile(filepath.Join(dir, schemaauthority.BudgetSnapshotExpandHead+".down.sql"))
-				require.NoError(t, err)
-				_, err = pool.Exec(t.Context(), string(wire))
-				require.NoError(t, err)
-			}
-			if head < schemaauthority.ObservationExpandHead {
-				wire, err := os.ReadFile(filepath.Join(dir, schemaauthority.ObservationExpandHead+".down.sql"))
-				require.NoError(t, err)
-				_, err = pool.Exec(t.Context(), string(wire))
-				require.NoError(t, err)
+			for _, successor := range []string{schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ObservationExpandHead} {
+				if head < successor {
+					wire, err := os.ReadFile(filepath.Join(dir, successor+".down.sql"))
+					require.NoError(t, err)
+					_, err = pool.Exec(t.Context(), string(wire))
+					require.NoError(t, err)
+				}
 			}
 			if head < schemaauthority.SourceFactsExpandHead {
 				require.NoError(t, testutil.RewindEmptySourceFactsForLegacyTest(t.Context(), pool, dir))
@@ -113,11 +109,11 @@ func TestRuntimeGenerationCLIRejectsUnapprovedLedgersIntegration(t *testing.T) {
 			var query string
 			switch kind {
 			case "legacy":
-				query = `DELETE FROM schema_migrations WHERE version IN ('000114_capability_delivery_expand','000115_stream_counter_version','000116_execution_source_facts','000117_execution_observations','000118_source_budget_snapshots')`
+				query = `DELETE FROM schema_migrations WHERE version IN ('000114_capability_delivery_expand','000115_stream_counter_version','000116_execution_source_facts','000117_execution_observations','000118_source_budget_snapshots','000119_execution_content_capture','000120_unpublished_content_reclamation','000121_gateway_pre_dispatch_terminal')`
 			case "gap":
 				query = `DELETE FROM schema_migrations WHERE version='000114_capability_delivery_expand'`
 			case "future":
-				query = `INSERT INTO schema_migrations(version) VALUES ('000119_unapproved_future')`
+				query = `INSERT INTO schema_migrations(version) VALUES ('000122_unapproved_future')`
 			}
 			_, err := pool.Exec(t.Context(), query)
 			require.NoError(t, err)

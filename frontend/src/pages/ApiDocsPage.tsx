@@ -133,6 +133,8 @@ const endpointGroups: EndpointGroup[] = [
       ['GET', '/api/v1/projects', '当前账号可访问项目'],
       ['GET', '/api/v1/projects/{id}', '项目详情'],
       ['PUT', '/api/v1/projects/{id}', '更新项目'],
+      ['GET', '/api/v1/projects/{id}/payload-policy', '查看项目正文捕获策略的期望/生效版本与存储状态；仅项目管理权限，不创建策略记录'],
+      ['PUT', '/api/v1/projects/{id}/payload-policy', '按 expected_policy_version 更新策略并原子记录审计；202 表示等待生效，409 表示版本冲突'],
       ['GET', '/api/v1/projects/{id}/model-sets', '项目模型集合绑定'],
       ['PUT', '/api/v1/projects/{id}/model-sets', '更新项目模型集合绑定'],
       ['GET', '/api/v1/projects/{id}/members', '查看项目成员与同组织可加入用户'],

@@ -6,7 +6,7 @@
 
 详见 [Agent 执行与复核协议](./docs/agent-workflows/AGENT-PROTOCOL.md)。执行时还应遵守当前工作区或任务明确提供的更高优先级约束。
 
-本地直接开发使用与 CI 一致的 Go `1.25.12` 和 Node.js `20`；
+本地直接开发使用与 CI 一致的 Go `1.25.12` 和 Node.js `24`；
 Docker 开发路径使用根目录 source Compose，不得将其当作客户正式交付模板。
 
 ## 开发流程

@@ -103,7 +103,7 @@ func RunCompatibleExpand(ctx context.Context, pool *pgxpool.Pool, dir string, ho
 	if hooks.Version == "" {
 		hooks.Version = schemaauthority.CapabilityExpandHead
 	}
-	if hooks.Version != schemaauthority.CapabilityExpandHead && hooks.Version != schemaauthority.StreamCounterExpandHead && hooks.Version != schemaauthority.SourceFactsExpandHead && hooks.Version != schemaauthority.ObservationExpandHead && hooks.Version != schemaauthority.BudgetSnapshotExpandHead {
+	if hooks.Version != schemaauthority.CapabilityExpandHead && hooks.Version != schemaauthority.StreamCounterExpandHead && hooks.Version != schemaauthority.SourceFactsExpandHead && hooks.Version != schemaauthority.ObservationExpandHead && hooks.Version != schemaauthority.BudgetSnapshotExpandHead && hooks.Version != schemaauthority.ContentCaptureExpandHead && hooks.Version != schemaauthority.ContentReclaimExpandHead && hooks.Version != schemaauthority.PreDispatchExpandHead {
 		return fmt.Errorf("unknown exact expand target")
 	}
 	return run(ctx, pool, dir, runOptions{expand: &hooks, ceiling: hooks.Version, requireExactPrefix: true})
@@ -327,7 +327,7 @@ func runOnConnection(ctx context.Context, conn *pgxpool.Conn, dir string, option
 		options.scopeSet = true
 		for _, version := range pending {
 			if expandFiles[version] {
-				if version != schemaauthority.CapabilityExpandHead && version != schemaauthority.StreamCounterExpandHead && version != schemaauthority.SourceFactsExpandHead && version != schemaauthority.ObservationExpandHead && version != schemaauthority.BudgetSnapshotExpandHead {
+				if version != schemaauthority.CapabilityExpandHead && version != schemaauthority.StreamCounterExpandHead && version != schemaauthority.SourceFactsExpandHead && version != schemaauthority.ObservationExpandHead && version != schemaauthority.BudgetSnapshotExpandHead && version != schemaauthority.ContentCaptureExpandHead && version != schemaauthority.ContentReclaimExpandHead && version != schemaauthority.PreDispatchExpandHead {
 					return fmt.Errorf("unknown runtime expand boundary %s", version)
 				}
 				break

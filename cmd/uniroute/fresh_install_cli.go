@@ -106,7 +106,7 @@ func runFreshInstallCLI(ctx context.Context, args []string, cfg *config.Config) 
 	if err != nil {
 		return err
 	}
-	fmt.Printf("fresh_install=completed installation=%s plan=%s schema=%s evidence=%s\n", p.InstallationID, p.Digest, schemaauthority.BudgetSnapshotExpandHead, *evidence)
+	fmt.Printf("fresh_install=completed installation=%s plan=%s schema=%s evidence=%s\n", p.InstallationID, p.Digest, p.Artifact.Ledger[len(p.Artifact.Ledger)-1], *evidence)
 	return nil
 }
 
@@ -283,12 +283,12 @@ func executeFreshInstallObserved(ctx context.Context, owner *migrate.FreshOwner,
 			return err
 		}
 	}
-	for _, version := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead} {
+	for _, version := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead} {
 		s, err := owner.Snapshot(ctx)
 		if err != nil {
 			return err
 		}
-		if slices.Contains(s.Ledger, version) {
+		if !slices.Contains(p.Artifact.Ledger, version) || slices.Contains(s.Ledger, version) {
 			continue
 		}
 		var final func(context.Context, pgx.Tx) error
@@ -298,7 +298,16 @@ func executeFreshInstallObserved(ctx context.Context, owner *migrate.FreshOwner,
 				if err := runtimegeneration.CertifyBudgetCoverageTx(ctx, tx, manifest, "sha256:"+p.Artifact.Files[version+".up.sql"]); err != nil {
 					return err
 				}
-				return verifyFreshCompletion(ctx, tx, p.Artifact.Ledger)
+				return nil
+			}
+		}
+		if version == schemaauthority.ContentCaptureExpandHead || version == schemaauthority.ContentReclaimExpandHead || version == schemaauthority.PreDispatchExpandHead {
+			final = func(ctx context.Context, tx pgx.Tx) error {
+				if version == p.Artifact.Ledger[len(p.Artifact.Ledger)-1] {
+					return verifyFreshCompletion(ctx, tx, p.Artifact.Ledger)
+				}
+				_, err := runtimegeneration.ReadBudgetCoverage(ctx, tx)
+				return err
 			}
 		}
 		if err := owner.Expand(ctx, version, final); err != nil {
@@ -312,7 +321,7 @@ func executeFreshInstallObserved(ctx context.Context, owner *migrate.FreshOwner,
 			return err
 		}
 		if s.Record == nil || s.Record.State != "completed" {
-			return fmt.Errorf("M118 has no atomic completion envelope")
+			return fmt.Errorf("target schema has no atomic completion envelope")
 		}
 		return verifyFreshCompletion(ctx, conn, p.Artifact.Ledger)
 	})

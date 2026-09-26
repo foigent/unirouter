@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/executioncontext"
@@ -207,6 +208,11 @@ func TestPublicationBatchErrorsRequireWholeTransactionRollback(t *testing.T) {
 			require.NoError(t, err)
 			err = s.PublishTx(t.Context(), &sourceBatchFaultTx{Tx: tx, phase: tc.phase, readError: tc.read}, docs)
 			require.ErrorContains(t, err, "synthetic batch")
+			wantStage := "batch_close"
+			if tc.read {
+				wantStage = "replay_predecessor_read"
+			}
+			require.Equal(t, wantStage, CaptureErrorStage(err))
 			require.NoError(t, tx.Rollback(t.Context()))
 			var facts, streams int
 			require.NoError(t, pool.QueryRow(t.Context(), `SELECT (SELECT count(*) FROM execution_source_facts),(SELECT count(*) FROM execution_source_streams)`).Scan(&facts, &streams))
@@ -267,4 +273,38 @@ func TestPublicationBatchCancellationAndRevisionPredecessor(t *testing.T) {
 	require.Equal(t, 3, facts)
 	require.NoError(t, pool.QueryRow(t.Context(), `SELECT high_sequence FROM execution_source_streams WHERE profile=$1`, docs[0].Profile).Scan(&high))
 	require.Equal(t, 2, high)
+}
+
+// Reproduce a stale REPEATABLE READ stream-row conflict without HTTP load or
+// changing production isolation/retry/budgets. The diagnostic is evidence of
+// the SQL return stage, not a claim about the deleted earlier performance DB.
+func TestSourceCaptureStageConcurrentStreamPG(t *testing.T) {
+	pool, s, org, project := setupSourceDB(t)
+	snapshot := testSnapshot()
+	snapshot.Core.OrgID = executioncontext.ID(org)
+	snapshot.Core.ProjectID = executioncontext.ID(project)
+	require.NoError(t, s.CaptureAuthenticated(t.Context(), snapshot))
+	tx, err := pool.Begin(t.Context())
+	require.NoError(t, err)
+	defer tx.Rollback(context.Background())
+	_, err = tx.Exec(t.Context(), `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`)
+	require.NoError(t, err)
+	var sequence int64
+	require.NoError(t, tx.QueryRow(t.Context(), `SELECT high_sequence FROM execution_source_streams WHERE source_instance=$1 AND org_id=$2 AND project_id=$3 AND profile=$4`, s.SourceInstance(), org, project, ContextProfile).Scan(&sequence))
+	snapshot.Core.RequestID = "source-stage-committed"
+	require.NoError(t, s.CaptureAuthenticated(t.Context(), snapshot))
+	var before int64
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT count(*) FROM execution_source_facts`).Scan(&before))
+	snapshot.Core.RequestID = "source-stage-stale"
+	docs := s.contexts(org, project, snapshot.Core.RequestID, "authenticated", snapshot.Core.CapturedAt, snapshot.Core.CapturedAt, &snapshot)
+	err = s.PublishTx(t.Context(), tx, docs)
+	var pgerr *pgconn.PgError
+	require.ErrorAs(t, err, &pgerr)
+	require.Equal(t, "40001", pgerr.Code)
+	require.Contains(t, []string{"stream_insert", "stream_lock"}, CaptureErrorStage(err))
+	t.Logf("source_capture stage=%s sqlstate=%s", CaptureErrorStage(err), pgerr.Code)
+	require.NoError(t, tx.Rollback(t.Context()))
+	var after int64
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT count(*) FROM execution_source_facts`).Scan(&after))
+	require.Equal(t, before, after)
 }

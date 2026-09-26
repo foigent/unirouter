@@ -67,6 +67,14 @@ var (
 )
 
 func main() {
+	// Local storage administration needs no JWT/provider/license or DB config.
+	// Invalid subcommands terminate here and cannot fall through to HTTP startup.
+	if len(os.Args) > 1 && os.Args[1] == "content-store" {
+		if err := runContentStoreCLI(context.Background(), os.Args[2:], os.Stdout); err != nil {
+			log.Fatalf("Content store command failed: %v", err)
+		}
+		return
+	}
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
@@ -341,7 +349,7 @@ func main() {
 	billingSvc.SetOutbox(outboxSvc)
 	// Local source capture remains disabled unless SOURCE_FACTS_ENABLED is
 	// explicitly enabled after the separately authorized M116 installation.
-	sourceFactsSvc, err := sourcefacts.New(postgres.Pool, sourcefacts.Options{Enabled: cfg.SourceFactsEnabled, ObservationsEnabled: cfg.SourceObservationsEnabled, BudgetSnapshotsEnabled: cfg.SourceBudgetSnapshotsEnabled, FinancialJournalReady: billingSvc.FinancialJournalReady, SourceInstance: cfg.CompletedExecutionFeedSourceInstance, CursorSecret: cfg.APIKeyHashSecret, I01Enabled: cfg.CompletedExecutionFeedEnabled})
+	sourceFactsSvc, err := sourcefacts.New(postgres.Pool, sourcefacts.Options{Enabled: cfg.SourceFactsEnabled, ContentEnabled: cfg.SourceContentEnabled, ObservationsEnabled: cfg.SourceObservationsEnabled, BudgetSnapshotsEnabled: cfg.SourceBudgetSnapshotsEnabled, FinancialJournalReady: billingSvc.FinancialJournalReady, SourceInstance: cfg.CompletedExecutionFeedSourceInstance, CursorSecret: cfg.APIKeyHashSecret, I01Enabled: cfg.CompletedExecutionFeedEnabled})
 	if err != nil {
 		log.Fatalf("Failed to initialize source facts: %v", err)
 	}
@@ -351,6 +359,11 @@ func main() {
 	if err = sourceFactsSvc.CheckDispatchRecoveryReady(context.Background()); err != nil {
 		log.Fatalf("Source dispatch recovery preflight refused: %v", err)
 	}
+	contentCaptureRuntime, err := newContentRuntime(cfg, sourceFactsSvc)
+	if err != nil {
+		log.Fatalf("Content capture preflight refused: %v", err)
+	}
+	contentCaptureRuntime.startMaintenance(sourceFactsSvc)
 	billingSvc.SetTerminalMaterializer(billing.TerminalMaterializers{completedFeedSvc, sourceFactsSvc})
 	billingSvc.SetReservationMaterializer(sourceFactsSvc)
 	if cfg.SourceObservationsEnabled {
@@ -377,6 +390,9 @@ func main() {
 		}
 		if cfg.SourceObservationsEnabled {
 			mediaProvider.SetSourceObserver(sourceFactsSvc)
+		}
+		if contentCaptureRuntime != nil {
+			mediaProvider.SetContentObserver(contentCaptureRuntime.service)
 		}
 		mediaWorker, workerErr := mediajob.NewWorker(
 			mediaStore, mediaObjects, mediaProvider, mediaCipher,
@@ -445,6 +461,9 @@ func main() {
 		log.Fatalf("Invalid payload safety configuration: %v", err)
 	}
 	relay := gateway.NewRelay(postgres.Pool, redisClient.Client, router, sharedPolicyBilling, sensitiveFilter, encKey)
+	if contentCaptureRuntime != nil {
+		relay.SetContentCapture(contentCaptureRuntime.service)
+	}
 	if err := relay.SetStreamCounterVersion(cfg.EffectiveStreamCounterVersion()); err != nil {
 		log.Fatalf("Stream counter configuration: %v", err)
 	}
@@ -503,6 +522,9 @@ func main() {
 	adminHandler.SetOutbox(outboxSvc)
 	adminHandler.SetCompletedFeedController(completedFeedSvc)
 	adminHandler.SetSourceFactsController(sourceFactsSvc)
+	if contentCaptureRuntime != nil {
+		adminHandler.SetContentPolicyController(contentCaptureRuntime.service.PolicyStore(), contentCaptureRuntime.service.Readiness)
+	}
 	xInsightConnectorManager, err := xinsightconnector.NewManager(
 		postgres.Pool,
 		xinsightconnector.CommitAuthorizerFunc(adminHandler.AuthorizeXInsightConnectorControl),
@@ -712,6 +734,7 @@ func main() {
 		sourceCapturer = sourceFactsSvc
 	}
 	captureExecutionContext := middleware.CaptureExecutionContext(sourceCapturer)
+	capturePublicContent := contentCaptureRuntime.captureClient
 	gatewayLicenseGate := licenseRuntime.Gate(licensing.FeatureGateway)
 	agentLicenseGate := licenseRuntime.GateAll(licensing.FeatureGateway, licensing.FeatureAgentCapabilities)
 	rateLimiter := middleware.RateLimit(redisClient.Client)
@@ -733,13 +756,13 @@ func main() {
 	// Repeat live authentication after the complete body is retained. A slow
 	// upload cannot carry a pre-revocation Grant, Credential, membership,
 	// capability, endpoint, or provider-liability snapshot into paid admission.
-	mux.Handle("POST /v1/chat/completions", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(captureExecutionContext(gatewayLicenseGate(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(chatHandler)))))))
+	mux.Handle("POST /v1/chat/completions", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(captureExecutionContext(gatewayLicenseGate(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(chatHandler))))))))
 	mux.Handle("POST /v1/chat/completions/preflight", chatPreflightOperation(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(gatewayLicenseGate(middleware.StrictJSONIngress(newGatewayChatPreflightHandler(postgres.Pool, relay))))))
-	mux.Handle("POST /v1/embeddings", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, embeddingsPayloadGuard)(captureExecutionContext(gatewayLicenseGate(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(embeddingsHandler)))))))
-	mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(gatewayLicenseGate(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(responsesHandler)))))))
-	mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(gatewayLicenseGate(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(messagesHandler)))))))
+	mux.Handle("POST /v1/embeddings", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, embeddingsPayloadGuard)(captureExecutionContext(gatewayLicenseGate(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(embeddingsHandler))))))))
+	mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(gatewayLicenseGate(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(responsesHandler))))))))
+	mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(gatewayLicenseGate(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(messagesHandler))))))))
 	mux.Handle("GET /v1/models", gatewayAuth(gatewayLicenseGate(admissionMiddleware(http.HandlerFunc(relay.HandleModels)))))
-	mux.Handle("POST /v1/media/jobs", middleware.GatewayAuthAcrossBufferedBody(mediaAuth, mediaPayloadGuard)(captureExecutionContext(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Submit)))))
+	mux.Handle("POST /v1/media/jobs", middleware.GatewayAuthAcrossBufferedBody(mediaAuth, mediaPayloadGuard)(captureExecutionContext(gatewayLicenseGate(capturePublicContent(http.HandlerFunc(mediaHandler.Submit))))))
 	mux.Handle("GET /v1/media/jobs/{id}", mediaAuth(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Get))))
 	mux.Handle("POST /v1/media/jobs/{id}/cancel", mediaAuth(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Cancel))))
 	mux.Handle("GET /v1/media/jobs/{id}/content", mediaAuth(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Content))))
@@ -754,6 +777,9 @@ func main() {
 	mux.Handle("GET /api/v1/integrations/xinsight/source/v2/runtime/current", sourceFactsSvc.RuntimeCurrentHandler(clientIPResolver))
 	mux.Handle("GET /api/v1/integrations/xinsight/source/v2/budgets", sourceFactsSvc.BudgetHandler(clientIPResolver))
 	mux.Handle("GET /api/v1/integrations/xinsight/source/v2/budgets/current", sourceFactsSvc.BudgetHandler(clientIPResolver))
+	if err := contentCaptureRuntime.registerReads(mux, sourceFactsSvc, clientIPResolver); err != nil {
+		log.Fatalf("Content read runtime refused: %v", err)
+	}
 	registerAgentCapabilityRoutes(mux, agentCapabilityHandler, agentCapabilityRouteGuards{
 		authorize:    agentLicenseGate,
 		authenticate: gatewayAuth,
@@ -1108,6 +1134,8 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("POST /api/v1/projects", orgAdminRoute(adminHandler.CreateProject))
 	mux.Handle("GET /api/v1/projects/{id}", projectReadRoute(adminHandler.GetProject))
 	mux.Handle("PUT /api/v1/projects/{id}", adminRoute(adminHandler.UpdateProject))
+	mux.Handle("GET /api/v1/projects/{id}/payload-policy", projectManagementRoute(adminHandler.GetProjectPayloadPolicy))
+	mux.Handle("PUT /api/v1/projects/{id}/payload-policy", projectManagementRoute(adminHandler.PutProjectPayloadPolicy))
 	mux.Handle("GET /api/v1/projects/{id}/model-sets", licensedRoute(licensing.FeatureModelGovernance, projectReadRoute)(adminHandler.ListProjectModelSets))
 	mux.Handle("PUT /api/v1/projects/{id}/model-sets", licensedRoute(licensing.FeatureModelGovernance, func(h http.HandlerFunc) http.Handler {
 		return adminRoute(h)
@@ -1239,6 +1267,10 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 		safety:    platformRoute,
 		expansion: dataExchangeRoute,
 	})
+	registerXInsightContentControlRoutes(mux, adminHandler, xInsightFeedControlRouteGuards{
+		safety:    platformRoute,
+		expansion: dataExchangeRoute,
+	})
 
 	registerGlobalControlRoutes(mux, adminHandler, platformRoute, licensedRoute(licensing.FeatureGuardrails, platformRoute))
 	mux.Handle("POST /api/v1/channels/{id}/test", platformRoute(legacyModelMutationRetired))
@@ -1300,8 +1332,11 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	signal.Stop(quit)
 	ctx, cancel := context.WithTimeout(context.Background(), httpRuntime.drainTimeout)
 	defer cancel()
+	httpDrained := false
 	if err := httpRuntime.drainHTTP(ctx, srv); err != nil {
 		log.Printf("HTTP runtime drain incomplete: %v active_requests=%d", err, httpRuntime.status().ActiveRequests)
+	} else {
+		httpDrained = true
 	}
 	// HTTP handlers may still need these services to persist terminal evidence.
 	// Stop them only after handler drain, retaining their durable recovery leases.
@@ -1323,13 +1358,18 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 			log.Printf("%s did not stop before shutdown deadline", worker.name)
 		}
 	}
+	mediaDrained := stopAsyncMedia == nil
 	if stopAsyncMedia != nil {
 		stopAsyncMedia()
 		select {
 		case <-asyncMediaDone:
+			mediaDrained = true
 		case <-ctx.Done():
 			log.Printf("Async-media worker did not stop before shutdown timeout")
 		}
+	}
+	if err := contentCaptureRuntime.close(ctx, httpDrained && mediaDrained); err != nil {
+		log.Printf("Content capture shutdown incomplete: %v", err)
 	}
 	if err := gateway.ShutdownStreamAdvisoryScheduler(ctx); err != nil {
 		log.Printf("Guardrail advisory workers did not flush before shutdown timeout: %v", err)

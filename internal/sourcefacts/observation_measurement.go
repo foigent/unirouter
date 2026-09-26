@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/uniroute/unirouter/internal/eventconnector"
 	"github.com/uniroute/unirouter/internal/executioncontext"
 	"github.com/uniroute/unirouter/internal/executionmeasurement"
 )
@@ -26,11 +24,11 @@ func (s *Service) CaptureMeasurements(ctx context.Context, snapshot executioncon
 	defer cancel()
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return err
+		return captureError("begin", err)
 	}
 	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ; SET LOCAL lock_timeout='100ms'; SET LOCAL statement_timeout='200ms'`); err != nil {
-		return err
+	if _, err = tx.Exec(ctx, `SET TRANSACTION ISOLATION LEVEL READ COMMITTED; SET LOCAL lock_timeout='100ms'; SET LOCAL statement_timeout='200ms'`); err != nil {
+		return captureError("transaction_setup", err)
 	}
 	documents := make([]Observation, 0, len(samples))
 	at := time.Now()
@@ -66,8 +64,12 @@ func (s *Service) CaptureMeasurements(ctx context.Context, snapshot executioncon
 		if !sample.ObservedAt.IsZero() {
 			d.OccurredAt = executioncontext.Time(sample.ObservedAt)
 		}
+		var destination Observation
+		var destinationFound bool
 		if profile == AttemptProfile {
-			if err = tx.QueryRow(ctx, `SELECT COALESCE(route_evidence_hash,'') FROM billing_provider_attempts WHERE org_id=$1 AND project_id=$2 AND request_id=$3 AND attempt_id=$4`, org, project, snapshot.Core.RequestID, subjectID).Scan(&d.RouteEvidenceHash); err != nil {
+			registered := s.observation(org, project, snapshot.Core.RequestID, DestinationProfile, "provider_attempt", subjectID, "dispatch_registered", at)
+			d.RouteEvidenceHash, destination, destinationFound, err = s.measurementAttemptSnapshot(ctx, tx, org, project, snapshot.Core.RequestID, subjectID, registered, sample.State == "observed")
+			if err != nil {
 				return err
 			}
 		}
@@ -83,36 +85,10 @@ func (s *Service) CaptureMeasurements(ctx context.Context, snapshot executioncon
 		}
 		documents = append(documents, d)
 		if profile == AttemptProfile && sample.State == "observed" {
-			// The initial, immutable projection supplies the selected origin.
-			// A current connection URL can never reconstruct past disclosure.
-			registered := s.observation(org, project, snapshot.Core.RequestID, DestinationProfile, "provider_attempt", subjectID, "dispatch_registered", at)
-			var wire []byte
-			var hash string
-			err = tx.QueryRow(ctx, `SELECT document,source_hash FROM execution_source_facts WHERE source_fact_id=$1 AND revision=1`, registered.SourceFactID).Scan(&wire, &hash)
-			var destination Observation
-			if errors.Is(err, pgx.ErrNoRows) {
-				var found bool
-				destination, found, err = s.pendingDispatchDestination(ctx, tx, org, project, snapshot.Core.RequestID, subjectID)
-				if err != nil {
-					return err
-				}
-				if !found {
-					continue
-				}
-			} else {
-				if err != nil {
-					return err
-				}
-				if eventconnector.HashSourceBytes(wire) != hash {
-					return errors.New("selected destination source hash differs")
-				}
-				destination, err = DecodeObservation(wire)
-				if err != nil {
-					return err
-				}
-			}
-			if destination.SourceFactID != registered.SourceFactID || destination.Destination == nil {
-				return errors.New("selected destination binding differs")
+			// Only frozen dispatch bytes from the same SQL snapshot establish
+			// the origin; a current route cannot reconstruct past disclosure.
+			if !destinationFound {
+				continue
 			}
 			destination.Kind = "dispatch_result"
 			destination.SourceFactID = destination.factID()
@@ -133,5 +109,5 @@ func (s *Service) CaptureMeasurements(ctx context.Context, snapshot executioncon
 	if err = s.publishTogetherTx(ctx, tx, nil, documents); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	return captureError("commit", tx.Commit(ctx))
 }

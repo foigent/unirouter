@@ -290,14 +290,77 @@ artifact with its size and SHA-256 in the signed upgrade manifest, alongside thi
 restoration instruction. This source template does not itself sign or release it.
 
 - Repository/package path: `scripts/source-budget-restore-rebase.sql`
-- SHA-256: `e09d8a3897c40c8efc24d81fdba50bab7af179c07c3e8b3ae018305d88a3e6c7`
-- Bytes: `2084`
+- SHA-256: `e9437c0141d0e00852dc85fb9cabe65e7bc01759f5e822d3c3ffc74d6daaf0a5`
+- Bytes: `5836`
 
 After every supported SQL restore, while all database readers/writers are still
 stopped, run this helper with `psql -v ON_ERROR_STOP=1 -f` before restart. It retains
-the former coverage epoch and records the database restore boundary; it does not
-change money, credentials, source identity or A/B cursors. Any helper failure
+the former D coverage epoch and records the database restore boundary. With the
+exact M119 or M120 schema it also changes each C recovery epoch in the same transaction,
+invalidating old C cursors and in-flight grants. It does not change money,
+credentials, source identity, A/B cursors, C registration, manifests or object
+allocation epochs. Any helper failure
 stops restoration validation. The backend then verifies the exact retained schema
 and writer proof before enabling D. Config preflight alone is not readiness.
 Pre-D backups without M118 keep their original recovery path; D cannot be enabled
 until normal M118 expansion and a fresh certification have completed.
+
+SQL-only and paired SQL/body restores both require this rebase. Stop every
+reader and capture/media/recovery writer that uses the database or body root.
+For a paired backup, preserve the original body marker and files during the
+same stopped window and verify their digests; do not initialize a new binding.
+New authorization may read verified historical bodies. Missing files remain
+missing and damaged/binding-mismatched files remain corrupt without rewriting
+historical complete manifests. No store configured means source_unavailable.
+The helper does not clean files or release quota. C epochs use fresh positive
+63-bit random values, not ordered counters; random collisions are extremely
+unlikely, and a collision with the current epoch rejects the transaction.
+
+### Content storage initialization
+
+The local `content-store` command runs before service configuration loading; it
+requires no database, JWT, provider or license configuration. It never enables
+capture, changes policy, creates directories, changes permissions or starts a
+service. Supply existing private directories (normally mode 0700), an empty body
+root, and a new token-file path. Every path component must be free of symlinks.
+Identity is at most 128 UTF-8 bytes, without surrounding whitespace or controls.
+
+```sh
+uniroute content-store init --root /data/uniroute/content --identity customer-content --token-file /run/secrets/content-binding
+uniroute content-store check --root /data/uniroute/content --identity customer-content --token-file /run/secrets/content-binding
+```
+
+`init` exclusively creates the marker and mode-0600 token file, syncing both to
+disk. `check` only reads; it makes no probe files or permission changes. Configure
+`SOURCE_CONTENT_STORAGE_ROOT`, `SOURCE_CONTENT_STORAGE_IDENTITY` and
+`SOURCE_CONTENT_STORAGE_TOKEN_FILE` with these same values. Mount both paths at
+the corresponding container paths and keep their permissions private. Only the
+separate full-content deployment gate and effective project policy enable body
+capture. Ordinary startup verifies the binding and never initializes it.
+
+If initialization reports a partial failure, preserve the marker and any token
+file. To recover from a valid existing marker, explicitly export to a **new**
+token-file path, then check that path and update the configuration:
+
+```sh
+uniroute content-store export-token --root /data/uniroute/content --identity customer-content --token-file /run/secrets/content-binding-recovered
+uniroute content-store check --root /data/uniroute/content --identity customer-content --token-file /run/secrets/content-binding-recovered
+```
+
+Export preserves the original binding; it never rotates the marker or overwrites
+an existing empty, partial or complete token file. It rejects a malformed or
+noncanonical marker. Before creating the token, export syncs the verified marker
+and its directory to complete any previously unconfirmed initialization.
+Output includes action, status and paths, never token bytes.
+Preserve both binding files with private permissions in the deployment backup.
+
+Published body expiry uses each object's original retention deadline. With an
+existing bound store, the runtime checks at most 1,000 expired ready objects per
+minute (30 seconds per batch), including when capture policy is metadata-only or
+disabled. It removes only the exact final regular file, durably confirms absence,
+then atomically removes its object row and releases stored bytes. Historical
+manifests and digests remain; expired reads continue to return 410. Reserved and
+orphan objects, temporary files, directories and the binding marker are retained.
+Failures keep unreleased accounting for a later verified batch. These scheduling
+bounds are not a capacity or cleanup-throughput guarantee. Shutdown cancels and
+waits for maintenance before capture shutdown and closing the storage root.

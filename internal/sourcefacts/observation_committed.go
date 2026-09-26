@@ -25,7 +25,7 @@ func (s *Service) CaptureCommitted(ctx context.Context, event billing.CommittedO
 		return err
 	}
 	defer tx.Rollback(context.Background())
-	if _, err = tx.Exec(ctx, `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ; SET LOCAL lock_timeout='100ms'; SET LOCAL statement_timeout='200ms'`); err != nil {
+	if _, err = tx.Exec(ctx, `SET TRANSACTION ISOLATION LEVEL READ COMMITTED; SET LOCAL lock_timeout='100ms'; SET LOCAL statement_timeout='200ms'`); err != nil {
 		return err
 	}
 	var project int64
@@ -36,9 +36,17 @@ func (s *Service) CaptureCommitted(ctx context.Context, event billing.CommittedO
 	var status int
 	var at time.Time
 	var contextWire []byte
-	err = tx.QueryRow(ctx, `SELECT p.project_id,p.route_sequence,p.route_total,COALESCE(p.route_model_operation_id,''),COALESCE(p.route_evidence_hash,''),p.state,p.retry_authorized,COALESCE(p.http_status,0),p.updated_at,r.source_context,r.status,COALESCE(r.settlement_pending_reason,'')
+	var receiptMode, receiptOutcome, receiptError string
+	var receiptAt *time.Time
+	// Original attempt/reservation and the latest receipt share one snapshot.
+	// A receipt for an older outcome is not used to reconstruct an advanced event.
+	err = tx.QueryRow(ctx, `SELECT p.project_id,p.route_sequence,p.route_total,COALESCE(p.route_model_operation_id,''),COALESCE(p.route_evidence_hash,''),p.state,p.retry_authorized,COALESCE(p.http_status,0),p.updated_at,r.source_context,r.status,COALESCE(r.settlement_pending_reason,''),
+	 COALESCE(d.mode,''),COALESCE(d.outcome,''),COALESCE(d.error_code,''),d.occurred_at
 	 FROM billing_provider_attempts p JOIN freeze_idempotency r ON r.org_id=p.org_id AND r.request_id=p.request_id AND r.project_id=p.project_id
-	 WHERE p.org_id=$1 AND p.request_id=$2 AND p.attempt_id=$3`, event.OrgID, event.RequestID, event.AttemptID).Scan(&project, &sequence, &total, &operation, &hash, &state, &retry, &status, &at, &contextWire, &reservationState, &pendingReason)
+	 LEFT JOIN LATERAL (SELECT mode,outcome,error_code,occurred_at FROM request_delivery_receipts
+	 WHERE org_id=p.org_id AND request_id=p.request_id AND attempt_id=p.attempt_id AND $4<>'provider_result'
+	 ORDER BY sequence DESC LIMIT 1) d ON true
+	 WHERE p.org_id=$1 AND p.request_id=$2 AND p.attempt_id=$3`, event.OrgID, event.RequestID, event.AttemptID, event.Kind).Scan(&project, &sequence, &total, &operation, &hash, &state, &retry, &status, &at, &contextWire, &reservationState, &pendingReason, &receiptMode, &receiptOutcome, &receiptError, &receiptAt)
 	if err != nil {
 		return err
 	}
@@ -89,17 +97,17 @@ func (s *Service) CaptureCommitted(ctx context.Context, event billing.CommittedO
 			mode, delivery = "non_streaming", "not_started"
 		} else {
 			mode = "streaming"
-			err = tx.QueryRow(ctx, `SELECT outcome,occurred_at FROM request_delivery_receipts WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3 AND mode='stream' AND error_code=$4 ORDER BY sequence DESC LIMIT 1`, event.OrgID, event.RequestID, event.AttemptID, billing.ProviderOutputLimitExceeded).Scan(&delivery, &at)
-			if err != nil || !oneOf(delivery, billing.DeliveryOutcomeInterrupted, billing.DeliveryOutcomeWriteFailed) {
+			if receiptAt == nil || receiptMode != billing.DeliveryModeStream || receiptError != billing.ProviderOutputLimitExceeded || !oneOf(receiptOutcome, billing.DeliveryOutcomeInterrupted, billing.DeliveryOutcomeWriteFailed) {
 				return errors.New("original stream output hold receipt unavailable")
 			}
+			delivery, at = receiptOutcome, *receiptAt
 		}
 	} else {
-		var originalMode string
-		err = tx.QueryRow(ctx, `SELECT mode,outcome,occurred_at FROM request_delivery_receipts WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3 AND outcome=$4 ORDER BY sequence DESC LIMIT 1`, event.OrgID, event.RequestID, event.AttemptID, event.Outcome).Scan(&originalMode, &delivery, &at)
-		if err != nil {
-			return err
+		if receiptAt == nil || receiptOutcome != event.Outcome {
+			return errors.New("committed delivery boundary advanced or unavailable")
 		}
+		originalMode := receiptMode
+		delivery, at = receiptOutcome, *receiptAt
 		if originalMode == billing.DeliveryModeStream {
 			mode = "streaming"
 		} else if originalMode == billing.DeliveryModeNonStream {

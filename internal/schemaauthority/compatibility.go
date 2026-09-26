@@ -12,6 +12,23 @@ func RuntimeLedgers(artifact []string) ([][]string, error) {
 		return nil, err
 	}
 	end := len(artifact)
+	if end >= 9 && artifact[end-1] == PreDispatchExpandHead && artifact[end-2] == ContentReclaimExpandHead {
+		prior, err := RuntimeLedgers(artifact[:end-1])
+		if err != nil {
+			return nil, err
+		}
+		return append(prior, slices.Clone(artifact)), nil
+	}
+	if end >= 8 && artifact[end-1] == ContentReclaimExpandHead && artifact[end-2] == ContentCaptureExpandHead {
+		prior, err := RuntimeLedgers(artifact[:end-1])
+		if err != nil {
+			return nil, err
+		}
+		return append(prior, slices.Clone(artifact)), nil
+	}
+	if end >= 7 && artifact[end-1] == ContentCaptureExpandHead && artifact[end-2] == BudgetSnapshotExpandHead && artifact[end-3] == ObservationExpandHead && artifact[end-4] == SourceFactsExpandHead && artifact[end-5] == StreamCounterExpandHead && artifact[end-6] == CapabilityExpandHead && artifact[end-7] == LegacyCapabilityHead {
+		return [][]string{slices.Clone(artifact[:end-6]), slices.Clone(artifact[:end-5]), slices.Clone(artifact[:end-4]), slices.Clone(artifact[:end-3]), slices.Clone(artifact[:end-2]), slices.Clone(artifact[:end-1]), slices.Clone(artifact)}, nil
+	}
 	if end >= 6 && artifact[end-1] == BudgetSnapshotExpandHead && artifact[end-2] == ObservationExpandHead && artifact[end-3] == SourceFactsExpandHead && artifact[end-4] == StreamCounterExpandHead && artifact[end-5] == CapabilityExpandHead && artifact[end-6] == LegacyCapabilityHead {
 		return [][]string{slices.Clone(artifact[:end-5]), slices.Clone(artifact[:end-4]), slices.Clone(artifact[:end-3]), slices.Clone(artifact[:end-2]), slices.Clone(artifact[:end-1]), slices.Clone(artifact)}, nil
 	}
@@ -45,5 +62,5 @@ func VerifyRuntimeLedger(artifact, actual []string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("database ledger is outside the exact M113/M114/M115/M116/M117/M118 runtime compatibility bridge")
+	return fmt.Errorf("database ledger is outside the exact M113/M114/M115/M116/M117/M118/M119/M120/M121 runtime compatibility bridge")
 }

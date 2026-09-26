@@ -31,7 +31,7 @@ import (
 // and the supported legacy Chat route. Only the server-generated operation IDs
 // are deterministic test inputs, to select two members of the real 10% Canary
 // assignment without probabilistic retries. Client headers cannot choose them.
-func sourceHTTPCacheCase(t *testing.T, pool *pgxpool.Pool, relay *gateway.Relay, handler http.Handler, journal *outbox.Service, org, owner, project, key int64, raw string, calls *atomic.Int64, observations bool) {
+func sourceHTTPCacheCase(t *testing.T, pool *pgxpool.Pool, relay *gateway.Relay, handler http.Handler, journal *outbox.Service, org, owner, project, key int64, raw string, calls *atomic.Int64, observations bool, contentHarness ...*sourceHTTPContentHarness) {
 	t.Helper()
 	operationPrefix, err := middleware.NewOperationID()
 	require.NoError(t, err)
@@ -111,6 +111,9 @@ func sourceHTTPCacheCase(t *testing.T, pool *pgxpool.Pool, relay *gateway.Relay,
 	require.Contains(t, hit.Body.String(), `"attempt_count":0`)
 	require.EqualValues(t, 11, calls.Load())
 	var freezes, attempts, terminals, facts int
+	if len(contentHarness) == 1 && contentHarness[0] != nil {
+		contentHarness[0].assertRequest(t, selected[1], `{"model":"company-chat","messages":[{"role":"user","content":"source-private-prompt"}],"stream":false,"temperature":0}`, hit.Body.Bytes(), "chat_cache", 0)
+	}
 	var snapshot []byte
 	var hash string
 	require.NoError(t, pool.QueryRow(t.Context(), `SELECT (SELECT count(*) FROM freeze_idempotency WHERE request_id=$1),(SELECT count(*) FROM billing_provider_attempts WHERE request_id=$1),(SELECT count(*) FROM completed_execution_feed_items WHERE request_id=$1),(SELECT count(*) FROM execution_source_facts WHERE request_id=$1 AND profile=ANY($2))`, selected[1], sourcefacts.Profiles()).Scan(&freezes, &attempts, &terminals, &facts))

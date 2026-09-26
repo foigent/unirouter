@@ -92,6 +92,11 @@ type Config struct {
 	SourceFactsEnabled                   bool
 	SourceObservationsEnabled            bool
 	SourceBudgetSnapshotsEnabled         bool
+	SourceContentEnabled                 bool
+	SourceContentFullEnabled             bool
+	SourceContentStorageRoot             string
+	SourceContentStorageIdentity         string
+	SourceContentStorageTokenFile        string
 	CompletedExecutionFeedSourceInstance string
 	CompletedExecutionFeedReferenceMode  string
 	// The Connector agent is an optional product-local control-plane client.
@@ -526,6 +531,12 @@ func (c *Config) Validate() error {
 	if c.SourceObservationsEnabled && !c.SourceFactsEnabled {
 		return fmt.Errorf("SOURCE_OBSERVATIONS_ENABLED requires SOURCE_FACTS_ENABLED=true")
 	}
+	if c.SourceContentEnabled && !c.SourceFactsEnabled {
+		return fmt.Errorf("SOURCE_CONTENT_ENABLED requires SOURCE_FACTS_ENABLED=true")
+	}
+	if err := c.validateContentStorage(); err != nil {
+		return err
+	}
 	if c.CompletedExecutionFeedEnabled || c.SourceFactsEnabled {
 		if !completedExecutionSourceInstancePattern.MatchString(c.CompletedExecutionFeedSourceInstance) {
 			return fmt.Errorf("COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE must use 1-128 letters, numbers, dot, underscore, colon, or dash")
@@ -669,7 +680,14 @@ func (c *Config) ResolveXInsightConnectorReceiverBinding(
 	return "", false
 }
 
+// LoadDBPoolLimits uses the same environment/default semantics as Load.
+// The idle setting is passed to db.NewPostgres as its minimum pool size.
+func LoadDBPoolLimits() (maxConnections, minConnections int) {
+	return getEnvInt("DB_MAX_CONNECTIONS", 25), getEnvInt("DB_MAX_IDLE_CONNECTIONS", 5)
+}
+
 func Load() (*Config, error) {
+	dbMaxConnections, dbMinConnections := LoadDBPoolLimits()
 	jwtSecret := getEnvStr("JWT_SECRET", "")
 	logRetentionDays := getEnvInt("LOG_RETENTION_DAYS", 30)
 	asyncMediaEnabled := getEnvBool("ASYNC_MEDIA_ENABLED", false)
@@ -682,6 +700,14 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	sourceFactsEnabled, err := getEnvBoolStrict("SOURCE_FACTS_ENABLED", false)
+	if err != nil {
+		return nil, err
+	}
+	sourceContentEnabled, err := getEnvBoolStrict("SOURCE_CONTENT_ENABLED", false)
+	if err != nil {
+		return nil, err
+	}
+	sourceContentFullEnabled, err := getEnvBoolStrict("SOURCE_CONTENT_FULL_ENABLED", false)
 	if err != nil {
 		return nil, err
 	}
@@ -719,8 +745,8 @@ func Load() (*Config, error) {
 		ShutdownTimeoutSecs: getEnvInt("SHUTDOWN_TIMEOUT_SECONDS", 120),
 
 		DB_DSN:           getEnvStr("DB_DSN", "postgres://uniroute:password@localhost:5432/uniroute?sslmode=disable"),
-		DBMaxConnections: getEnvInt("DB_MAX_CONNECTIONS", 25),
-		DBMaxIdleConns:   getEnvInt("DB_MAX_IDLE_CONNECTIONS", 5),
+		DBMaxConnections: dbMaxConnections,
+		DBMaxIdleConns:   dbMinConnections,
 
 		RedisAddr:     getEnvStr("REDIS_ADDR", "localhost:6379"),
 		RedisPassword: getEnvStr("REDIS_PASSWORD", ""),
@@ -763,6 +789,11 @@ func Load() (*Config, error) {
 		SourceFactsEnabled:                   sourceFactsEnabled,
 		SourceObservationsEnabled:            sourceObservationsEnabled,
 		SourceBudgetSnapshotsEnabled:         sourceBudgetSnapshotsEnabled,
+		SourceContentEnabled:                 sourceContentEnabled,
+		SourceContentFullEnabled:             sourceContentFullEnabled,
+		SourceContentStorageRoot:             getEnvStr("SOURCE_CONTENT_STORAGE_ROOT", ""),
+		SourceContentStorageIdentity:         getEnvStr("SOURCE_CONTENT_STORAGE_IDENTITY", ""),
+		SourceContentStorageTokenFile:        getEnvStr("SOURCE_CONTENT_STORAGE_TOKEN_FILE", ""),
 		CompletedExecutionFeedSourceInstance: strings.TrimSpace(getEnvStr("COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE", "")),
 		CompletedExecutionFeedReferenceMode: getEnvStr(
 			"COMPLETED_EXECUTION_FEED_REFERENCE_MODE",

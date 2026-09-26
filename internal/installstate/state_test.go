@@ -56,7 +56,7 @@ func TestFreshEnvelopeStrictCanonicalAndHistoricalBinding(t *testing.T) {
 		r.References = append(r.References, Reference{Publication: id, PlanDigest: SHA([]byte(fmt.Sprint(i))), FileSHA256: strings.Repeat("f", 64), Committed: true})
 	}
 	r.State = "completed"
-	r.Completion = &Completion{LedgerSHA256: LedgerSHA(r.Plan.Artifact.Ledger), MigrationSHA256: "sha256:" + r.Plan.Artifact.Files[schemaauthority.BudgetSnapshotExpandHead+".up.sql"], ManifestSHA256: r.Plan.Artifact.ManifestDigest}
+	r.Completion = &Completion{LedgerSHA256: LedgerSHA(r.Plan.Artifact.Ledger), MigrationSHA256: "sha256:" + r.Plan.Artifact.Files[r.Plan.Artifact.Ledger[len(r.Plan.Artifact.Ledger)-1]+".up.sql"], ManifestSHA256: r.Plan.Artifact.ManifestDigest}
 	if err := r.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -90,5 +90,38 @@ func TestFreshEnvelopeSupersessionNeverRewritesCommittedPlan(t *testing.T) {
 	wire, _ := json.Marshal(r.Plan)
 	if _, err := DecodePlan(wire); err == nil {
 		t.Fatal("accepted missing executable identity")
+	}
+}
+
+func TestFreshCompletionRetainsHistoricalM118AndSeparatesM119(t *testing.T) {
+	for _, head := range []string{schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead} {
+		t.Run(head, func(t *testing.T) {
+			r := testRecord(t)
+			for r.Plan.Artifact.Ledger[len(r.Plan.Artifact.Ledger)-1] != head {
+				last := r.Plan.Artifact.Ledger[len(r.Plan.Artifact.Ledger)-1]
+				r.Plan.Artifact.Ledger = r.Plan.Artifact.Ledger[:len(r.Plan.Artifact.Ledger)-1]
+				delete(r.Plan.Artifact.Files, last+".up.sql")
+			}
+			r.Plan.Digest = r.Plan.CalculateDigest()
+			for i, id := range r.Plan.Artifact.Publications {
+				r.References = append(r.References, Reference{Publication: id, PlanDigest: SHA([]byte(fmt.Sprint(i))), FileSHA256: strings.Repeat("f", 64), Committed: true})
+			}
+			r.State = "completed"
+			r.Completion = &Completion{LedgerSHA256: LedgerSHA(r.Plan.Artifact.Ledger), MigrationSHA256: "sha256:" + r.Plan.Artifact.Files[head+".up.sql"], ManifestSHA256: r.Plan.Artifact.ManifestDigest}
+			wire, err := r.CommentBytes()
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoded, err := ParseComment(string(wire))
+			if err != nil || decoded.Completion.MigrationSHA256 != r.Completion.MigrationSHA256 {
+				t.Fatalf("historical completion changed: %v", err)
+			}
+			if head == schemaauthority.ContentCaptureExpandHead || head == schemaauthority.ContentReclaimExpandHead {
+				r.Completion.MigrationSHA256 = "sha256:" + r.Plan.Artifact.Files[schemaauthority.BudgetSnapshotExpandHead+".up.sql"]
+				if err := r.Validate(); err == nil {
+					t.Fatal("M118 proof prematurely completes M119 installation")
+				}
+			}
+		})
 	}
 }

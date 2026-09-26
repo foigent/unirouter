@@ -84,6 +84,13 @@ func CaptureExecutionContext(capturer ExecutionContextCapturer) func(http.Handle
 				writeGatewayRequestError(w, r, http.StatusServiceUnavailable, "source_facts.capture_unavailable", "Execution context is temporarily unavailable")
 				return
 			}
+			if sink, ok := capturer.(interface {
+				CaptureGatewayNoRoute(context.Context, executioncontext.Snapshot) error
+			}); ok {
+				ctx = WithGatewayNoRouteCapture(ctx, func(callCtx context.Context) error {
+					return sink.CaptureGatewayNoRoute(callCtx, snapshot)
+				})
+			}
 			if measurements != nil {
 				defer func() {
 					if err := measurementSink.CaptureMeasurements(ctx, snapshot, measurements.Samples()); err != nil {

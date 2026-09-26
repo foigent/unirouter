@@ -1,0 +1,4363 @@
+{
+  "schema_version": "c0.contract-vectors.v1",
+  "evidence_level": "synthetic_offline_only",
+  "valid": [
+    {
+      "id": "capabilities_c_only",
+      "schema": "Capabilities",
+      "document": {
+        "schema_version": "unirouter.content-capabilities.v1",
+        "profile": "unirouter.interaction-content.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "status": "active",
+        "credential_status": "feed_active",
+        "supported_protocols": [
+          "integration.openai.chat.v1"
+        ],
+        "observation_points": [
+          "client_request",
+          "provider_request",
+          "provider_response",
+          "client_response"
+        ],
+        "capture_modes": [
+          "disabled",
+          "metadata_only",
+          "full_content"
+        ],
+        "allowed_purposes": [
+          "human_review"
+        ],
+        "content_scope_revision": "c-generation-7",
+        "recovery_epoch": "1",
+        "coverage_from": {
+          "time": "2026-09-13T00:00:00.000000Z",
+          "after_sequence": "0"
+        },
+        "retention_floor": {
+          "time": "2026-09-13T00:00:00.000000Z",
+          "after_sequence": "0"
+        },
+        "limits": {
+          "max_saved_bytes": 33554432,
+          "max_read_bytes": 33554432,
+          "max_buffer_bytes": 1048576,
+          "max_manifest_bytes": 8388608,
+          "max_manifest_items": 50
+        },
+        "endpoints": {
+          "capabilities": "/api/v1/integrations/xinsight/source/v2/content-capabilities",
+          "manifests": "/api/v1/integrations/xinsight/source/v2/content-manifests",
+          "content": "/api/v1/integrations/xinsight/source/v2/contents/{content_ref}"
+        }
+      }
+    },
+    {
+      "id": "source_c_only_access",
+      "schema": "ContentAccess",
+      "document": {
+        "registration_hash": "sha256:8eb3b065ef3ec20ddb8dd432dff95c46dfd54123e6a91a1338644546abef4a6f",
+        "profile": "unirouter.interaction-content.v1",
+        "enabled": true,
+        "content_scope_revision": "c-generation-7",
+        "allowed_purposes": [
+          "human_review"
+        ],
+        "coverage_from": {
+          "time": "2026-09-13T00:00:00.000000Z",
+          "after_sequence": "0"
+        }
+      }
+    },
+    {
+      "id": "source_c_revoked",
+      "schema": "ContentAccess",
+      "document": {
+        "registration_hash": "sha256:8eb3b065ef3ec20ddb8dd432dff95c46dfd54123e6a91a1338644546abef4a6f",
+        "profile": "unirouter.interaction-content.v1",
+        "enabled": false,
+        "content_scope_revision": "c-generation-8",
+        "allowed_purposes": [],
+        "coverage_from": {
+          "time": "2026-09-13T00:00:00.000000Z",
+          "after_sequence": "0"
+        }
+      }
+    },
+    {
+      "id": "xi_c_only_grant",
+      "schema": "XIContentGrant",
+      "document": {
+        "allow_content": true,
+        "allowed_content_purposes": [
+          "human_review"
+        ]
+      }
+    },
+    {
+      "id": "xi_legacy_default_grant",
+      "schema": "XIContentGrant",
+      "document": {
+        "allow_content": false,
+        "allowed_content_purposes": []
+      }
+    },
+    {
+      "id": "policy_put_full",
+      "schema": "PolicyPut",
+      "document": {
+        "schema_version": "unirouter.payload-policy.update.v1",
+        "expected_policy_version": "1",
+        "desired": {
+          "mode": "full_content",
+          "supported_protocols": [
+            "integration.openai.chat.v1"
+          ],
+          "observation_points": [
+            "client_request",
+            "provider_request",
+            "provider_response",
+            "client_response"
+          ],
+          "retention_seconds": 604800,
+          "quota_bytes": 1073741824,
+          "max_saved_bytes": 33554432,
+          "allowed_purposes": [
+            "human_review"
+          ],
+          "on_limit": "record_capture_gap"
+        }
+      }
+    },
+    {
+      "id": "policy_applied",
+      "schema": "PolicyView",
+      "document": {
+        "schema_version": "unirouter.payload-policy.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "policy_ref": "project-3-content",
+        "desired": {
+          "policy_version": "2",
+          "config": {
+            "mode": "full_content",
+            "supported_protocols": [
+              "integration.openai.chat.v1"
+            ],
+            "observation_points": [
+              "client_request",
+              "provider_request",
+              "provider_response",
+              "client_response"
+            ],
+            "retention_seconds": 604800,
+            "quota_bytes": 1073741824,
+            "max_saved_bytes": 33554432,
+            "allowed_purposes": [
+              "human_review"
+            ],
+            "on_limit": "record_capture_gap"
+          }
+        },
+        "effective": {
+          "policy_version": "2",
+          "config": {
+            "mode": "full_content",
+            "supported_protocols": [
+              "integration.openai.chat.v1"
+            ],
+            "observation_points": [
+              "client_request",
+              "provider_request",
+              "provider_response",
+              "client_response"
+            ],
+            "retention_seconds": 604800,
+            "quota_bytes": 1073741824,
+            "max_saved_bytes": 33554432,
+            "allowed_purposes": [
+              "human_review"
+            ],
+            "on_limit": "record_capture_gap"
+          }
+        },
+        "effective_at": "2026-09-14T00:00:00.000000Z",
+        "application_status": "applied",
+        "application_reason": "none",
+        "storage_status": "ready",
+        "limits": {
+          "max_saved_bytes": 33554432,
+          "max_read_bytes": 33554432,
+          "max_buffer_bytes": 1048576,
+          "max_manifest_bytes": 8388608,
+          "max_manifest_items": 50
+        }
+      }
+    },
+    {
+      "id": "policy_pending",
+      "schema": "PolicyView",
+      "document": {
+        "schema_version": "unirouter.payload-policy.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "policy_ref": "project-3-content",
+        "desired": {
+          "policy_version": "2",
+          "config": {
+            "mode": "full_content",
+            "supported_protocols": [
+              "integration.openai.chat.v1"
+            ],
+            "observation_points": [
+              "client_request",
+              "provider_request",
+              "provider_response",
+              "client_response"
+            ],
+            "retention_seconds": 604800,
+            "quota_bytes": 1073741824,
+            "max_saved_bytes": 33554432,
+            "allowed_purposes": [
+              "human_review"
+            ],
+            "on_limit": "record_capture_gap"
+          }
+        },
+        "effective": {
+          "policy_version": "1",
+          "config": {
+            "mode": "metadata_only",
+            "supported_protocols": [
+              "integration.openai.chat.v1"
+            ],
+            "observation_points": [
+              "client_request",
+              "provider_request",
+              "provider_response",
+              "client_response"
+            ],
+            "allowed_purposes": []
+          }
+        },
+        "effective_at": "2026-09-14T00:00:00.000000Z",
+        "application_status": "pending",
+        "application_reason": "awaiting_activation",
+        "storage_status": "ready",
+        "limits": {
+          "max_saved_bytes": 33554432,
+          "max_read_bytes": 33554432,
+          "max_buffer_bytes": 1048576,
+          "max_manifest_bytes": 8388608,
+          "max_manifest_items": 50
+        }
+      }
+    },
+    {
+      "id": "policy_metadata_only",
+      "schema": "PolicyConfig",
+      "document": {
+        "mode": "metadata_only",
+        "supported_protocols": [
+          "integration.openai.chat.v1"
+        ],
+        "observation_points": [
+          "client_request",
+          "provider_request",
+          "provider_response",
+          "client_response"
+        ],
+        "allowed_purposes": []
+      }
+    },
+    {
+      "id": "policy_disabled",
+      "schema": "PolicyConfig",
+      "document": {
+        "mode": "disabled",
+        "supported_protocols": [
+          "integration.openai.chat.v1"
+        ],
+        "observation_points": [
+          "client_request",
+          "provider_request",
+          "provider_response",
+          "client_response"
+        ],
+        "allowed_purposes": []
+      }
+    },
+    {
+      "id": "manifest_complete",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "full_content",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "complete",
+          "reason": "none"
+        },
+        "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+        "representation": {
+          "media_type": "application/json",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 59,
+          "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+        },
+        "captured_at": "2026-09-14T00:00:00.000000Z",
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+      }
+    },
+    {
+      "id": "manifest_pending",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "full_content",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "pending",
+          "reason": "capture_in_progress"
+        },
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+      }
+    },
+    {
+      "id": "manifest_late_complete_r2",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "2",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:01:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "full_content",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "complete",
+          "reason": "none"
+        },
+        "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+        "representation": {
+          "media_type": "application/json",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 59,
+          "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+        },
+        "captured_at": "2026-09-14T00:00:00.000000Z",
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_fef44d89b3fb96e8e88ce07c7e30dace6f6f7129fe55f0b9ea938463482018b7",
+        "previous_revision": "1",
+        "previous_hash": "sha256:2b44a7dd715019e943fe30bdbebab24a4231ca2ca1223513926b8a29bd67151d",
+        "correction_reason": "capture_finalized"
+      }
+    },
+    {
+      "id": "manifest_partial_tool_json",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "provider_response",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "full_content",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "partial",
+          "reason": "stream_interrupted"
+        },
+        "content_ref": "uc1_268655930c36532b65972227e7ac3b798a67675aac66d1b32beb5598dd9ce738",
+        "representation": {
+          "media_type": "application/json",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 15,
+          "digest": "sha256:4199d75e19291c45e229031718a74b832d263f081a5e61e9451cfb74a90a361b"
+        },
+        "captured_at": "2026-09-14T00:00:00.000000Z",
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_fact_id": "uf1_a71f235010aa629cf6e5732a47460334af8384682a24e9aa42fa21f5118869b4",
+        "event_id": "uf1_de69ea9c1bdd21d2c265417fc8e49f7842a6b365423088b6506ae8eef8a6df2c",
+        "attempt_id": "attempt-1"
+      }
+    },
+    {
+      "id": "manifest_zero_bytes",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "full_content",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "complete",
+          "reason": "none"
+        },
+        "content_ref": "uc1_f706db95d4ea9a8c73bdb5bbceb02e74dffd06b0d830cfb051879234aa6813e7",
+        "representation": {
+          "media_type": "application/octet-stream",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 0,
+          "digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "captured_at": "2026-09-14T00:00:00.000000Z",
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+      }
+    },
+    {
+      "id": "manifest_large_17mib",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "full_content",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "complete",
+          "reason": "none"
+        },
+        "content_ref": "uc1_51a1ee6f0d931697ac314fe5c48a71874df846201d7b1523916e7f6169d017c2",
+        "representation": {
+          "media_type": "application/octet-stream",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 17825793,
+          "digest": "sha256:8bb126b9f2d77380704193e897869d79467fab9fbf3c2900c2cc4676c88518af"
+        },
+        "captured_at": "2026-09-14T00:00:00.000000Z",
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+      }
+    },
+    {
+      "id": "manifest_inert_html",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "full_content",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "complete",
+          "reason": "none"
+        },
+        "content_ref": "uc1_0f82bd93e8fbfee2efb5c5ffcee0ab5bec65c192e6b239e97ad3c324e2a0dd74",
+        "representation": {
+          "media_type": "text/html",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 60,
+          "digest": "sha256:4c4f21a983e9a4c650518fc3432ab7b59dbe00af00315b111d246d227e558c5d"
+        },
+        "captured_at": "2026-09-14T00:00:00.000000Z",
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+      }
+    },
+    {
+      "id": "manifest_binary_gzip_payload",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "full_content",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "complete",
+          "reason": "none"
+        },
+        "content_ref": "uc1_bed73cc23a8630237e05608a3780e39e9d77bc1034c783688ca0ee24d2aa359a",
+        "representation": {
+          "media_type": "application/gzip",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 78,
+          "digest": "sha256:fbeca1469e20faf0ec98e6a0d44b7994557c1e869f33f63b406427844224e5c3"
+        },
+        "captured_at": "2026-09-14T00:00:00.000000Z",
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+      }
+    },
+    {
+      "id": "manifest_redacted",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "redacted",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "complete",
+          "reason": "none"
+        },
+        "content_ref": "uc1_d28aa9655ec1ae35a15d5d6356093d5fe7e5b02c622b61fb1d5779494c0c0755",
+        "representation": {
+          "media_type": "application/json",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 24,
+          "digest": "sha256:0dfa5343783e590b67b501c92fc0860d44aab86f6f1474ca1277af6ac13d296e",
+          "redaction_ref": {
+            "id": "synthetic-redaction",
+            "version": "1"
+          }
+        },
+        "captured_at": "2026-09-14T00:00:00.000000Z",
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+      }
+    },
+    {
+      "id": "manifest_storage_write_failed",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "full_content",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "not_captured",
+          "reason": "storage_write_failed"
+        },
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+      }
+    },
+    {
+      "id": "manifest_queue_full",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "full_content",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "not_captured",
+          "reason": "queue_full"
+        },
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+      }
+    },
+    {
+      "id": "manifest_disabled",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "disabled",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "not_captured",
+          "reason": "policy_disabled"
+        },
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+      }
+    },
+    {
+      "id": "first_pull_retained_and_late_revision",
+      "schema": "ManifestPage",
+      "document": {
+        "schema_version": "unirouter.content-manifests-page.v1",
+        "profile": "unirouter.interaction-content.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "generated_at": "2026-09-14T00:02:00.000000Z",
+        "content_scope_revision": "c-generation-7",
+        "recovery_epoch": "1",
+        "coverage_from": {
+          "time": "2026-09-13T00:00:00.000000Z",
+          "after_sequence": "0"
+        },
+        "retention_floor": {
+          "time": "2026-09-13T00:00:00.000000Z",
+          "after_sequence": "0"
+        },
+        "after_sequence": "0",
+        "last_sequence": "2",
+        "high_watermark_sequence": "2",
+        "next_cursor": "SYNTHETIC_UNSIGNED_C_CURSOR_2",
+        "high_watermark": "SYNTHETIC_UNSIGNED_C_CURSOR_2",
+        "has_more": false,
+        "coverage": "bounded",
+        "gaps": [],
+        "items": [
+          {
+            "sequence": "1",
+            "document": {
+              "schema_version": "unirouter.content-manifest.v1",
+              "source_instance": "synthetic-ur-c0",
+              "org_id": "2",
+              "project_id": "3",
+              "request_id": "req-synthetic-1",
+              "profile": "unirouter.interaction-content.v1",
+              "revision": "1",
+              "occurred_at": "2026-09-14T00:00:00.000000Z",
+              "recorded_at": "2026-09-14T00:00:00.000000Z",
+              "protocol": "integration.openai.chat.v1",
+              "observation_point": "client_request",
+              "content_item_id": "body-0",
+              "capture": {
+                "mode": "full_content",
+                "policy_ref": "project-3-content",
+                "policy_version": "2",
+                "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+                "completeness": "pending",
+                "reason": "capture_in_progress"
+              },
+              "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+              "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+            },
+            "source_sha256": "sha256:2b44a7dd715019e943fe30bdbebab24a4231ca2ca1223513926b8a29bd67151d",
+            "availability": {
+              "state": "pending",
+              "evaluated_at": "2026-09-14T00:02:00.000000Z",
+              "retryable": true
+            }
+          },
+          {
+            "sequence": "2",
+            "document": {
+              "schema_version": "unirouter.content-manifest.v1",
+              "source_instance": "synthetic-ur-c0",
+              "org_id": "2",
+              "project_id": "3",
+              "request_id": "req-synthetic-1",
+              "profile": "unirouter.interaction-content.v1",
+              "revision": "2",
+              "occurred_at": "2026-09-14T00:00:00.000000Z",
+              "recorded_at": "2026-09-14T00:01:00.000000Z",
+              "protocol": "integration.openai.chat.v1",
+              "observation_point": "client_request",
+              "content_item_id": "body-0",
+              "capture": {
+                "mode": "full_content",
+                "policy_ref": "project-3-content",
+                "policy_version": "2",
+                "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+                "completeness": "complete",
+                "reason": "none"
+              },
+              "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+              "representation": {
+                "media_type": "application/json",
+                "encoding": "identity",
+                "byte_domain": "stored_representation_before_http_content_encoding",
+                "saved_bytes": 59,
+                "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+              },
+              "captured_at": "2026-09-14T00:00:00.000000Z",
+              "expires_at": "2026-09-21T00:00:00.000000Z",
+              "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+              "event_id": "uf1_fef44d89b3fb96e8e88ce07c7e30dace6f6f7129fe55f0b9ea938463482018b7",
+              "previous_revision": "1",
+              "previous_hash": "sha256:2b44a7dd715019e943fe30bdbebab24a4231ca2ca1223513926b8a29bd67151d",
+              "correction_reason": "capture_finalized"
+            },
+            "source_sha256": "sha256:e377ecf7fc6d3629078bf0da8a22dcd5164018070d6c1dc9124cc194a2af1593",
+            "availability": {
+              "state": "available",
+              "evaluated_at": "2026-09-14T00:02:00.000000Z",
+              "retryable": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "manifest_commit_fault_health_unknown",
+      "schema": "ManifestPage",
+      "document": {
+        "schema_version": "unirouter.content-manifests-page.v1",
+        "profile": "unirouter.interaction-content.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "generated_at": "2026-09-14T00:02:00.000000Z",
+        "content_scope_revision": "c-generation-7",
+        "recovery_epoch": "1",
+        "coverage_from": {
+          "time": "2026-09-13T00:00:00.000000Z",
+          "after_sequence": "0"
+        },
+        "retention_floor": {
+          "time": "2026-09-13T00:00:00.000000Z",
+          "after_sequence": "0"
+        },
+        "after_sequence": "0",
+        "last_sequence": "2",
+        "high_watermark_sequence": "2",
+        "next_cursor": "SYNTHETIC_UNSIGNED_C_CURSOR_2",
+        "high_watermark": "SYNTHETIC_UNSIGNED_C_CURSOR_2",
+        "has_more": false,
+        "coverage": "unknown",
+        "gaps": [
+          {
+            "reason": "manifest_write_unavailable",
+            "range_known": false
+          }
+        ],
+        "items": [
+          {
+            "sequence": "1",
+            "document": {
+              "schema_version": "unirouter.content-manifest.v1",
+              "source_instance": "synthetic-ur-c0",
+              "org_id": "2",
+              "project_id": "3",
+              "request_id": "req-synthetic-1",
+              "profile": "unirouter.interaction-content.v1",
+              "revision": "1",
+              "occurred_at": "2026-09-14T00:00:00.000000Z",
+              "recorded_at": "2026-09-14T00:00:00.000000Z",
+              "protocol": "integration.openai.chat.v1",
+              "observation_point": "client_request",
+              "content_item_id": "body-0",
+              "capture": {
+                "mode": "full_content",
+                "policy_ref": "project-3-content",
+                "policy_version": "2",
+                "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+                "completeness": "pending",
+                "reason": "capture_in_progress"
+              },
+              "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+              "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+            },
+            "source_sha256": "sha256:2b44a7dd715019e943fe30bdbebab24a4231ca2ca1223513926b8a29bd67151d",
+            "availability": {
+              "state": "pending",
+              "evaluated_at": "2026-09-14T00:02:00.000000Z",
+              "retryable": true
+            }
+          },
+          {
+            "sequence": "2",
+            "document": {
+              "schema_version": "unirouter.content-manifest.v1",
+              "source_instance": "synthetic-ur-c0",
+              "org_id": "2",
+              "project_id": "3",
+              "request_id": "req-synthetic-1",
+              "profile": "unirouter.interaction-content.v1",
+              "revision": "2",
+              "occurred_at": "2026-09-14T00:00:00.000000Z",
+              "recorded_at": "2026-09-14T00:01:00.000000Z",
+              "protocol": "integration.openai.chat.v1",
+              "observation_point": "client_request",
+              "content_item_id": "body-0",
+              "capture": {
+                "mode": "full_content",
+                "policy_ref": "project-3-content",
+                "policy_version": "2",
+                "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+                "completeness": "complete",
+                "reason": "none"
+              },
+              "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+              "representation": {
+                "media_type": "application/json",
+                "encoding": "identity",
+                "byte_domain": "stored_representation_before_http_content_encoding",
+                "saved_bytes": 59,
+                "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+              },
+              "captured_at": "2026-09-14T00:00:00.000000Z",
+              "expires_at": "2026-09-21T00:00:00.000000Z",
+              "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+              "event_id": "uf1_fef44d89b3fb96e8e88ce07c7e30dace6f6f7129fe55f0b9ea938463482018b7",
+              "previous_revision": "1",
+              "previous_hash": "sha256:2b44a7dd715019e943fe30bdbebab24a4231ca2ca1223513926b8a29bd67151d",
+              "correction_reason": "capture_finalized"
+            },
+            "source_sha256": "sha256:e377ecf7fc6d3629078bf0da8a22dcd5164018070d6c1dc9124cc194a2af1593",
+            "availability": {
+              "state": "available",
+              "evaluated_at": "2026-09-14T00:02:00.000000Z",
+              "retryable": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "expired_history_capture_unchanged",
+      "schema": "ManifestEntry",
+      "document": {
+        "sequence": "2",
+        "document": {
+          "schema_version": "unirouter.content-manifest.v1",
+          "source_instance": "synthetic-ur-c0",
+          "org_id": "2",
+          "project_id": "3",
+          "request_id": "req-synthetic-1",
+          "profile": "unirouter.interaction-content.v1",
+          "revision": "2",
+          "occurred_at": "2026-09-14T00:00:00.000000Z",
+          "recorded_at": "2026-09-14T00:01:00.000000Z",
+          "protocol": "integration.openai.chat.v1",
+          "observation_point": "client_request",
+          "content_item_id": "body-0",
+          "capture": {
+            "mode": "full_content",
+            "policy_ref": "project-3-content",
+            "policy_version": "2",
+            "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+            "completeness": "complete",
+            "reason": "none"
+          },
+          "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+          "representation": {
+            "media_type": "application/json",
+            "encoding": "identity",
+            "byte_domain": "stored_representation_before_http_content_encoding",
+            "saved_bytes": 59,
+            "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+          },
+          "captured_at": "2026-09-14T00:00:00.000000Z",
+          "expires_at": "2026-09-21T00:00:00.000000Z",
+          "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+          "event_id": "uf1_fef44d89b3fb96e8e88ce07c7e30dace6f6f7129fe55f0b9ea938463482018b7",
+          "previous_revision": "1",
+          "previous_hash": "sha256:2b44a7dd715019e943fe30bdbebab24a4231ca2ca1223513926b8a29bd67151d",
+          "correction_reason": "capture_finalized"
+        },
+        "source_sha256": "sha256:e377ecf7fc6d3629078bf0da8a22dcd5164018070d6c1dc9124cc194a2af1593",
+        "availability": {
+          "state": "expired",
+          "evaluated_at": "2026-09-22T00:00:00.000000Z",
+          "retryable": false
+        }
+      }
+    },
+    {
+      "id": "availability_missing",
+      "schema": "Availability",
+      "document": {
+        "state": "missing",
+        "evaluated_at": "2026-09-14T00:02:00.000000Z",
+        "retryable": false
+      }
+    },
+    {
+      "id": "availability_corrupt",
+      "schema": "Availability",
+      "document": {
+        "state": "corrupt",
+        "evaluated_at": "2026-09-14T00:02:00.000000Z",
+        "retryable": false
+      }
+    },
+    {
+      "id": "availability_source_unavailable",
+      "schema": "Availability",
+      "document": {
+        "state": "source_unavailable",
+        "evaluated_at": "2026-09-14T00:02:00.000000Z",
+        "retryable": true
+      }
+    },
+    {
+      "id": "read_metadata_zero",
+      "schema": "ReadMetadata",
+      "document": {
+        "schema_version": "unirouter.content-read-metadata.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "revision": "1",
+        "content_ref": "uc1_f706db95d4ea9a8c73bdb5bbceb02e74dffd06b0d830cfb051879234aa6813e7",
+        "representation": {
+          "media_type": "application/octet-stream",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 0,
+          "digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_sha256": "sha256:5552cf245e64fb49e48d2f1eb0ce29a660d4723b03f633c0cdf404a52b72bbed"
+      }
+    },
+    {
+      "id": "read_metadata_large",
+      "schema": "ReadMetadata",
+      "document": {
+        "schema_version": "unirouter.content-read-metadata.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "revision": "1",
+        "content_ref": "uc1_51a1ee6f0d931697ac314fe5c48a71874df846201d7b1523916e7f6169d017c2",
+        "representation": {
+          "media_type": "application/octet-stream",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 17825793,
+          "digest": "sha256:8bb126b9f2d77380704193e897869d79467fab9fbf3c2900c2cc4676c88518af"
+        },
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_sha256": "sha256:854b39c740cfb34c2055d662ded4deaa315879a2feab52859e5a11dd024e003f"
+      }
+    },
+    {
+      "id": "read_metadata_complete",
+      "schema": "ReadMetadata",
+      "document": {
+        "schema_version": "unirouter.content-read-metadata.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "revision": "2",
+        "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+        "representation": {
+          "media_type": "application/json",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 59,
+          "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+        },
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_sha256": "sha256:e377ecf7fc6d3629078bf0da8a22dcd5164018070d6c1dc9124cc194a2af1593"
+      }
+    },
+    {
+      "id": "ur_read_selector",
+      "schema": "URReadSelector",
+      "document": {
+        "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+        "request_id": "req-synthetic-1",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "revision": "2",
+        "purpose": "human_review"
+      }
+    },
+    {
+      "id": "xi_read_selector",
+      "schema": "XIReadSelector",
+      "document": {
+        "reading_id": "xrt_AAAAAAAAAAAAAAAAAAAAAA",
+        "request_ref": "xrr_217631c305d82900c29ba678fc28fed1fee6c7dadc674cfd7ac7ce4220d3bd22",
+        "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "revision": "2"
+      }
+    },
+    {
+      "id": "xi_content_without_b",
+      "schema": "XIContents",
+      "document": {
+        "version": "xinsight.runtime.contents.v1",
+        "reading_id": "xrt_AAAAAAAAAAAAAAAAAAAAAA",
+        "request_ref": "xrr_217631c305d82900c29ba678fc28fed1fee6c7dadc674cfd7ac7ce4220d3bd22",
+        "membership_ref": "synthetic-membership-frozen-r2",
+        "cutoff": "2026-09-14T00:02:00.000000Z",
+        "authorization_revision": "synthetic-auth-c7",
+        "content_interpretation_revision": "xinsight.content-membership.v1",
+        "member_basis": "content_manifest",
+        "items": [
+          {
+            "reference": {
+              "source_system_id": "22222222-2222-4222-8222-222222222224",
+              "source_instance": "synthetic-ur-c0",
+              "org_id": "2",
+              "project_id": "3",
+              "request_id": "req-synthetic-1",
+              "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+              "revision": "2",
+              "source_sha256": "sha256:e377ecf7fc6d3629078bf0da8a22dcd5164018070d6c1dc9124cc194a2af1593",
+              "capture_status": "complete",
+              "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+              "representation": {
+                "media_type": "application/json",
+                "encoding": "identity",
+                "byte_domain": "stored_representation_before_http_content_encoding",
+                "saved_bytes": 59,
+                "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+              },
+              "expires_at": "2026-09-21T00:00:00.000000Z"
+            },
+            "availability": {
+              "state": "available",
+              "evaluated_at": "2026-09-14T00:02:00.000000Z",
+              "retryable": false
+            },
+            "chain_state": "complete",
+            "newer_revision_available": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "xi_expired_reference_history_retained",
+      "schema": "XIContents",
+      "document": {
+        "version": "xinsight.runtime.contents.v1",
+        "reading_id": "xrt_AAAAAAAAAAAAAAAAAAAAAA",
+        "request_ref": "xrr_217631c305d82900c29ba678fc28fed1fee6c7dadc674cfd7ac7ce4220d3bd22",
+        "membership_ref": "synthetic-membership-frozen-r2",
+        "cutoff": "2026-09-14T00:02:00.000000Z",
+        "authorization_revision": "synthetic-auth-c7",
+        "content_interpretation_revision": "xinsight.content-membership.v1",
+        "member_basis": "content_manifest",
+        "items": [
+          {
+            "reference": {
+              "source_system_id": "22222222-2222-4222-8222-222222222224",
+              "source_instance": "synthetic-ur-c0",
+              "org_id": "2",
+              "project_id": "3",
+              "request_id": "req-synthetic-1",
+              "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+              "revision": "2",
+              "source_sha256": "sha256:e377ecf7fc6d3629078bf0da8a22dcd5164018070d6c1dc9124cc194a2af1593",
+              "capture_status": "complete",
+              "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+              "representation": {
+                "media_type": "application/json",
+                "encoding": "identity",
+                "byte_domain": "stored_representation_before_http_content_encoding",
+                "saved_bytes": 59,
+                "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+              },
+              "expires_at": "2026-09-21T00:00:00.000000Z"
+            },
+            "availability": {
+              "state": "expired",
+              "evaluated_at": "2026-09-22T00:00:00.000000Z",
+              "retryable": false
+            },
+            "chain_state": "complete",
+            "newer_revision_available": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "xi_old_reading_stays_pending",
+      "schema": "XIContents",
+      "document": {
+        "version": "xinsight.runtime.contents.v1",
+        "reading_id": "xrt_AAAAAAAAAAAAAAAAAAAAAA",
+        "request_ref": "xrr_217631c305d82900c29ba678fc28fed1fee6c7dadc674cfd7ac7ce4220d3bd22",
+        "membership_ref": "synthetic-membership-frozen-r1",
+        "cutoff": "2026-09-14T00:00:30.000000Z",
+        "authorization_revision": "synthetic-auth-c7",
+        "content_interpretation_revision": "xinsight.content-membership.v1",
+        "member_basis": "content_manifest",
+        "items": [
+          {
+            "reference": {
+              "source_system_id": "22222222-2222-4222-8222-222222222224",
+              "source_instance": "synthetic-ur-c0",
+              "org_id": "2",
+              "project_id": "3",
+              "request_id": "req-synthetic-1",
+              "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+              "revision": "1",
+              "source_sha256": "sha256:2b44a7dd715019e943fe30bdbebab24a4231ca2ca1223513926b8a29bd67151d",
+              "capture_status": "pending"
+            },
+            "availability": {
+              "state": "pending",
+              "evaluated_at": "2026-09-14T00:02:00.000000Z",
+              "retryable": true
+            },
+            "chain_state": "complete",
+            "newer_revision_available": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "stable_review_basis",
+      "schema": "ContentBasisExtension",
+      "document": {
+        "content_basis_version": "xinsight.review-content-basis.v1",
+        "contents": [
+          {
+            "scope": "finding",
+            "reference": {
+              "source_system_id": "22222222-2222-4222-8222-222222222224",
+              "source_instance": "synthetic-ur-c0",
+              "org_id": "2",
+              "project_id": "3",
+              "request_id": "req-synthetic-1",
+              "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+              "revision": "2",
+              "source_sha256": "sha256:e377ecf7fc6d3629078bf0da8a22dcd5164018070d6c1dc9124cc194a2af1593",
+              "capture_status": "complete",
+              "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+              "representation": {
+                "media_type": "application/json",
+                "encoding": "identity",
+                "byte_domain": "stored_representation_before_http_content_encoding",
+                "saved_bytes": 59,
+                "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+              },
+              "expires_at": "2026-09-21T00:00:00.000000Z"
+            },
+            "location": {
+              "kind": "byte_range",
+              "offset": 0,
+              "length": 59
+            },
+            "relation": "supports"
+          }
+        ]
+      }
+    },
+    {
+      "id": "tool_report_projection",
+      "schema": "ContentProjection",
+      "document": {
+        "parser_ref": {
+          "id": "synthetic-chat-parser",
+          "version": "1"
+        },
+        "links": [
+          {
+            "kind": "tool_result",
+            "location": {
+              "kind": "json_pointer",
+              "pointer": "/messages/1"
+            },
+            "tool_call_id": "call-shared",
+            "session_ref": "synthetic-session",
+            "association_basis": "exact_protocol_id",
+            "evidence_level": "client_reported_result"
+          }
+        ],
+        "projection_sha256": "sha256:8f14fba47c346366e29c6110d730d4558601121def335c8d44b24f68c92d2074"
+      }
+    },
+    {
+      "id": "error_content_expired",
+      "schema": "URError",
+      "document": {
+        "error": {
+          "code": "content_expired",
+          "retryable": false,
+          "error_version": "foigent.connector-error.v1",
+          "category": "source",
+          "phase": "fetch",
+          "operation": "read_source",
+          "safe_message": "Source facts request could not be completed",
+          "recovery": "operator_repair"
+        }
+      }
+    },
+    {
+      "id": "error_source_unavailable",
+      "schema": "URError",
+      "document": {
+        "error": {
+          "code": "source_unavailable",
+          "retryable": true,
+          "error_version": "foigent.connector-error.v1",
+          "category": "source",
+          "phase": "fetch",
+          "operation": "read_source",
+          "safe_message": "Source facts request could not be completed",
+          "recovery": "operator_repair"
+        }
+      }
+    },
+    {
+      "id": "error_content_pending",
+      "schema": "URError",
+      "document": {
+        "error": {
+          "code": "content_pending",
+          "retryable": true,
+          "error_version": "foigent.connector-error.v1",
+          "category": "source",
+          "phase": "fetch",
+          "operation": "read_source",
+          "safe_message": "Source facts request could not be completed",
+          "recovery": "operator_repair"
+        }
+      }
+    },
+    {
+      "id": "error_content_scope_changed",
+      "schema": "URError",
+      "document": {
+        "error": {
+          "code": "content_scope_changed",
+          "retryable": false,
+          "error_version": "foigent.connector-error.v1",
+          "category": "source",
+          "phase": "fetch",
+          "operation": "read_source",
+          "safe_message": "Source facts request could not be completed",
+          "recovery": "operator_repair"
+        }
+      }
+    },
+    {
+      "id": "error_source_epoch_changed",
+      "schema": "URError",
+      "document": {
+        "error": {
+          "code": "source_epoch_changed",
+          "retryable": false,
+          "error_version": "foigent.connector-error.v1",
+          "category": "source",
+          "phase": "fetch",
+          "operation": "read_source",
+          "safe_message": "Source facts request could not be completed",
+          "recovery": "operator_repair"
+        }
+      }
+    },
+    {
+      "id": "error_content_corrupt",
+      "schema": "URError",
+      "document": {
+        "error": {
+          "code": "content_corrupt",
+          "retryable": false,
+          "error_version": "foigent.connector-error.v1",
+          "category": "source",
+          "phase": "fetch",
+          "operation": "read_source",
+          "safe_message": "Source facts request could not be completed",
+          "recovery": "operator_repair"
+        }
+      }
+    },
+    {
+      "id": "manifest_first_query",
+      "schema": "ManifestQuery",
+      "document": {
+        "limit": 50,
+        "purpose": "human_review"
+      }
+    },
+    {
+      "id": "manifest_next_query",
+      "schema": "ManifestQuery",
+      "document": {
+        "limit": 50,
+        "purpose": "human_review",
+        "cursor": "SYNTHETIC_UNSIGNED_C_CURSOR_2"
+      }
+    },
+    {
+      "id": "xi_problem_content_expired",
+      "schema": "XIProblem",
+      "document": {
+        "type": "urn:xinsight:error:content_expired",
+        "title": "Content request could not be completed",
+        "status": 410,
+        "code": "content_expired",
+        "correlation_id": "xc_00000000000000000000000000000000",
+        "retryable": false
+      }
+    },
+    {
+      "id": "xi_problem_content_source_unavailable",
+      "schema": "XIProblem",
+      "document": {
+        "type": "urn:xinsight:error:content_source_unavailable",
+        "title": "Content request could not be completed",
+        "status": 503,
+        "code": "content_source_unavailable",
+        "correlation_id": "xc_00000000000000000000000000000000",
+        "retryable": true
+      }
+    },
+    {
+      "id": "xi_problem_content_integrity_failed",
+      "schema": "XIProblem",
+      "document": {
+        "type": "urn:xinsight:error:content_integrity_failed",
+        "title": "Content request could not be completed",
+        "status": 503,
+        "code": "content_integrity_failed",
+        "correlation_id": "xc_00000000000000000000000000000000",
+        "retryable": false
+      }
+    },
+    {
+      "id": "xi_problem_scope_revision_changed",
+      "schema": "XIProblem",
+      "document": {
+        "type": "urn:xinsight:error:scope_revision_changed",
+        "title": "Content request could not be completed",
+        "status": 409,
+        "code": "scope_revision_changed",
+        "correlation_id": "xc_00000000000000000000000000000000",
+        "retryable": false
+      }
+    },
+    {
+      "id": "manifest_tool_roundtrip",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-tool-roundtrip",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "full_content",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "complete",
+          "reason": "none"
+        },
+        "content_ref": "uc1_0bb78782d88039b1b41b2d3004cf2eae3b177cc7f95ac7bccd7b901409d510a5",
+        "representation": {
+          "media_type": "application/json",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 289,
+          "digest": "sha256:27b60b9af6403a1af545b5bb5e4638bef54e7b8d2ce0cbdc62cca0151dd66489"
+        },
+        "captured_at": "2026-09-14T00:00:00.000000Z",
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_fact_id": "uf1_04e57a370bb6e7c5beb88c324eea11a8041c083f9694b8fbd56356b905f0e20a",
+        "event_id": "uf1_7ce5da43a8ec372be700e952058dc7dc6e6fe85899101c2d8bc1ba8c50890b12"
+      }
+    },
+    {
+      "id": "normal_tool_roundtrip_projection",
+      "schema": "ContentProjection",
+      "document": {
+        "parser_ref": {
+          "id": "synthetic-chat-parser",
+          "version": "1"
+        },
+        "links": [
+          {
+            "kind": "tool_call",
+            "location": {
+              "kind": "json_pointer",
+              "pointer": "/messages/1/tool_calls/0"
+            },
+            "tool_call_id": "call-1",
+            "tool_name": "read_note",
+            "session_ref": "synthetic-tool-session",
+            "association_basis": "exact_protocol_id",
+            "evidence_level": "captured_message"
+          },
+          {
+            "kind": "tool_result",
+            "location": {
+              "kind": "json_pointer",
+              "pointer": "/messages/2"
+            },
+            "tool_call_id": "call-1",
+            "session_ref": "synthetic-tool-session",
+            "association_basis": "exact_protocol_id",
+            "evidence_level": "client_reported_result"
+          }
+        ],
+        "projection_sha256": "sha256:3d2daf95f8e1366f1ed5b6e2235049bc5df9625ab4444584c6dc47d0eca257c7"
+      }
+    },
+    {
+      "id": "message_exact_protocol_id_without_fake_tool",
+      "schema": "ContentLink",
+      "document": {
+        "kind": "message",
+        "location": {
+          "kind": "json_pointer",
+          "pointer": "/messages/0"
+        },
+        "message_role": "user",
+        "protocol_message_id": "synthetic-message-1",
+        "session_ref": "synthetic-session",
+        "association_basis": "exact_protocol_id",
+        "evidence_level": "captured_message"
+      }
+    },
+    {
+      "id": "r2_http_profile_not_authorized",
+      "schema": "URContentReadStateErrorResponse",
+      "document": {
+        "http_status": 403,
+        "body": {
+          "error": {
+            "code": "profile_not_authorized",
+            "retryable": false,
+            "error_version": "foigent.connector-error.v1",
+            "category": "source",
+            "phase": "fetch",
+            "operation": "read_source",
+            "safe_message": "Source facts request could not be completed",
+            "recovery": "operator_repair"
+          }
+        }
+      }
+    },
+    {
+      "id": "r2_http_source_paused",
+      "schema": "URContentReadStateErrorResponse",
+      "document": {
+        "http_status": 503,
+        "body": {
+          "error": {
+            "code": "source_paused",
+            "retryable": true,
+            "error_version": "foigent.connector-error.v1",
+            "category": "source",
+            "phase": "fetch",
+            "operation": "read_source",
+            "safe_message": "Source facts request could not be completed",
+            "recovery": "operator_repair"
+          }
+        }
+      }
+    },
+    {
+      "id": "r2_http_staged_credential_requires_pause",
+      "schema": "URContentReadStateErrorResponse",
+      "document": {
+        "http_status": 409,
+        "body": {
+          "error": {
+            "code": "staged_credential_requires_pause",
+            "retryable": false,
+            "error_version": "foigent.connector-error.v1",
+            "category": "source",
+            "phase": "fetch",
+            "operation": "read_source",
+            "safe_message": "Source facts request could not be completed",
+            "recovery": "operator_repair"
+          }
+        }
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "id": "manifest_inline_prompt",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "full_content",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "complete",
+          "reason": "none"
+        },
+        "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+        "representation": {
+          "media_type": "application/json",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 59,
+          "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+        },
+        "captured_at": "2026-09-14T00:00:00.000000Z",
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4",
+        "prompt": "prohibited raw body"
+      },
+      "expected_keyword": "additionalProperties",
+      "reason": "正文不能嵌入清单"
+    },
+    {
+      "id": "pending_readable_reference",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "full_content",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "pending",
+          "reason": "capture_in_progress"
+        },
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4",
+        "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140"
+      },
+      "expected_keyword": "not",
+      "reason": "未耐久完成时不得公布可读引用"
+    },
+    {
+      "id": "arbitrary_file_reference",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "full_content",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "complete",
+          "reason": "none"
+        },
+        "content_ref": "../../private/key",
+        "representation": {
+          "media_type": "application/json",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 59,
+          "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+        },
+        "captured_at": "2026-09-14T00:00:00.000000Z",
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+      },
+      "expected_keyword": "pattern",
+      "reason": "只接受不透明引用"
+    },
+    {
+      "id": "arbitrary_url_reference",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "full_content",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "complete",
+          "reason": "none"
+        },
+        "content_ref": "https://example.invalid/private",
+        "representation": {
+          "media_type": "application/json",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 59,
+          "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+        },
+        "captured_at": "2026-09-14T00:00:00.000000Z",
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+      },
+      "expected_keyword": "pattern",
+      "reason": "不允许输入任意URL读取"
+    },
+    {
+      "id": "provider_without_attempt",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "provider_response",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "full_content",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "partial",
+          "reason": "stream_interrupted"
+        },
+        "content_ref": "uc1_268655930c36532b65972227e7ac3b798a67675aac66d1b32beb5598dd9ce738",
+        "representation": {
+          "media_type": "application/json",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 15,
+          "digest": "sha256:4199d75e19291c45e229031718a74b832d263f081a5e61e9451cfb74a90a361b"
+        },
+        "captured_at": "2026-09-14T00:00:00.000000Z",
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_fact_id": "uf1_a71f235010aa629cf6e5732a47460334af8384682a24e9aa42fa21f5118869b4",
+        "event_id": "uf1_de69ea9c1bdd21d2c265417fc8e49f7842a6b365423088b6506ae8eef8a6df2c"
+      },
+      "expected_keyword": "required",
+      "reason": "提供方观察点必须绑定真实attempt"
+    },
+    {
+      "id": "revision_missing_predecessor",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "2",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:01:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "full_content",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "complete",
+          "reason": "none"
+        },
+        "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+        "representation": {
+          "media_type": "application/json",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 59,
+          "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+        },
+        "captured_at": "2026-09-14T00:00:00.000000Z",
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_fef44d89b3fb96e8e88ce07c7e30dace6f6f7129fe55f0b9ea938463482018b7",
+        "previous_revision": "1",
+        "correction_reason": "capture_finalized"
+      },
+      "expected_keyword": "required",
+      "reason": "修订必须给前驱摘要"
+    },
+    {
+      "id": "revision_one_with_predecessor",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "full_content",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "complete",
+          "reason": "none"
+        },
+        "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+        "representation": {
+          "media_type": "application/json",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 59,
+          "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+        },
+        "captured_at": "2026-09-14T00:00:00.000000Z",
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4",
+        "previous_revision": "1"
+      },
+      "expected_keyword": "not",
+      "reason": "首修订没有前驱"
+    },
+    {
+      "id": "negative_saved_bytes",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "full_content",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "complete",
+          "reason": "none"
+        },
+        "content_ref": "uc1_f706db95d4ea9a8c73bdb5bbceb02e74dffd06b0d830cfb051879234aa6813e7",
+        "representation": {
+          "media_type": "application/octet-stream",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": -1,
+          "digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "captured_at": "2026-09-14T00:00:00.000000Z",
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+      },
+      "expected_keyword": "minimum",
+      "reason": "零合法，负数字节非法"
+    },
+    {
+      "id": "metadata_marked_complete",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "metadata_only",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "complete",
+          "reason": "none"
+        },
+        "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+        "representation": {
+          "media_type": "application/json",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 59,
+          "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+        },
+        "captured_at": "2026-09-14T00:00:00.000000Z",
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+      },
+      "expected_keyword": "const",
+      "reason": "元数据模式不能伪装正文完成"
+    },
+    {
+      "id": "redacted_without_profile",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "redacted",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "complete",
+          "reason": "none"
+        },
+        "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+        "representation": {
+          "media_type": "application/json",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 59,
+          "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+        },
+        "captured_at": "2026-09-14T00:00:00.000000Z",
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+      },
+      "expected_keyword": "required",
+      "reason": "脱敏表示必须带规则版本"
+    },
+    {
+      "id": "digest_wrong_encoding",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "full_content",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "complete",
+          "reason": "none"
+        },
+        "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+        "representation": {
+          "media_type": "application/json",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 59,
+          "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "captured_at": "2026-09-14T00:00:00.000000Z",
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+      },
+      "expected_keyword": "pattern",
+      "reason": "摘要采用现有sha256前缀"
+    },
+    {
+      "id": "invalid_calendar_time",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-02-30T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "full_content",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "complete",
+          "reason": "none"
+        },
+        "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+        "representation": {
+          "media_type": "application/json",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 59,
+          "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+        },
+        "captured_at": "2026-09-14T00:00:00.000000Z",
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+      },
+      "expected_keyword": "format",
+      "reason": "日期必须真实有效"
+    },
+    {
+      "id": "staged_capabilities_success",
+      "schema": "Capabilities",
+      "document": {
+        "schema_version": "unirouter.content-capabilities.v1",
+        "profile": "unirouter.interaction-content.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "status": "active",
+        "credential_status": "feed_staged",
+        "supported_protocols": [
+          "integration.openai.chat.v1"
+        ],
+        "observation_points": [
+          "client_request",
+          "provider_request",
+          "provider_response",
+          "client_response"
+        ],
+        "capture_modes": [
+          "disabled",
+          "metadata_only",
+          "full_content"
+        ],
+        "allowed_purposes": [
+          "human_review"
+        ],
+        "content_scope_revision": "c-generation-7",
+        "recovery_epoch": "1",
+        "coverage_from": {
+          "time": "2026-09-13T00:00:00.000000Z",
+          "after_sequence": "0"
+        },
+        "retention_floor": {
+          "time": "2026-09-13T00:00:00.000000Z",
+          "after_sequence": "0"
+        },
+        "limits": {
+          "max_saved_bytes": 33554432,
+          "max_read_bytes": 33554432,
+          "max_buffer_bytes": 1048576,
+          "max_manifest_bytes": 8388608,
+          "max_manifest_items": 50
+        },
+        "endpoints": {
+          "capabilities": "/api/v1/integrations/xinsight/source/v2/content-capabilities",
+          "manifests": "/api/v1/integrations/xinsight/source/v2/content-manifests",
+          "content": "/api/v1/integrations/xinsight/source/v2/contents/{content_ref}"
+        }
+      },
+      "expected_keyword": "const",
+      "reason": "staged不能成功发现或读取内容"
+    },
+    {
+      "id": "capability_redirect_url",
+      "schema": "Capabilities",
+      "document": {
+        "schema_version": "unirouter.content-capabilities.v1",
+        "profile": "unirouter.interaction-content.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "status": "active",
+        "credential_status": "feed_active",
+        "supported_protocols": [
+          "integration.openai.chat.v1"
+        ],
+        "observation_points": [
+          "client_request",
+          "provider_request",
+          "provider_response",
+          "client_response"
+        ],
+        "capture_modes": [
+          "disabled",
+          "metadata_only",
+          "full_content"
+        ],
+        "allowed_purposes": [
+          "human_review"
+        ],
+        "content_scope_revision": "c-generation-7",
+        "recovery_epoch": "1",
+        "coverage_from": {
+          "time": "2026-09-13T00:00:00.000000Z",
+          "after_sequence": "0"
+        },
+        "retention_floor": {
+          "time": "2026-09-13T00:00:00.000000Z",
+          "after_sequence": "0"
+        },
+        "limits": {
+          "max_saved_bytes": 33554432,
+          "max_read_bytes": 33554432,
+          "max_buffer_bytes": 1048576,
+          "max_manifest_bytes": 8388608,
+          "max_manifest_items": 50
+        },
+        "endpoints": {
+          "capabilities": "/api/v1/integrations/xinsight/source/v2/content-capabilities",
+          "manifests": "/api/v1/integrations/xinsight/source/v2/content-manifests",
+          "content": "https://example.invalid/{content_ref}"
+        }
+      },
+      "expected_keyword": "const",
+      "reason": "端点固定相对受管地址"
+    },
+    {
+      "id": "automatic_purpose_in_v1",
+      "schema": "Capabilities",
+      "document": {
+        "schema_version": "unirouter.content-capabilities.v1",
+        "profile": "unirouter.interaction-content.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "status": "active",
+        "credential_status": "feed_active",
+        "supported_protocols": [
+          "integration.openai.chat.v1"
+        ],
+        "observation_points": [
+          "client_request",
+          "provider_request",
+          "provider_response",
+          "client_response"
+        ],
+        "capture_modes": [
+          "disabled",
+          "metadata_only",
+          "full_content"
+        ],
+        "allowed_purposes": [
+          "external_model_analysis"
+        ],
+        "content_scope_revision": "c-generation-7",
+        "recovery_epoch": "1",
+        "coverage_from": {
+          "time": "2026-09-13T00:00:00.000000Z",
+          "after_sequence": "0"
+        },
+        "retention_floor": {
+          "time": "2026-09-13T00:00:00.000000Z",
+          "after_sequence": "0"
+        },
+        "limits": {
+          "max_saved_bytes": 33554432,
+          "max_read_bytes": 33554432,
+          "max_buffer_bytes": 1048576,
+          "max_manifest_bytes": 8388608,
+          "max_manifest_items": 50
+        },
+        "endpoints": {
+          "capabilities": "/api/v1/integrations/xinsight/source/v2/content-capabilities",
+          "manifests": "/api/v1/integrations/xinsight/source/v2/content-manifests",
+          "content": "/api/v1/integrations/xinsight/source/v2/contents/{content_ref}"
+        }
+      },
+      "expected_keyword": "const",
+      "reason": "human_review不授权默认外部模型分析"
+    },
+    {
+      "id": "full_without_retention",
+      "schema": "PolicyConfig",
+      "document": {
+        "mode": "full_content",
+        "supported_protocols": [
+          "integration.openai.chat.v1"
+        ],
+        "observation_points": [
+          "client_request",
+          "provider_request",
+          "provider_response",
+          "client_response"
+        ],
+        "quota_bytes": 1073741824,
+        "max_saved_bytes": 33554432,
+        "allowed_purposes": [
+          "human_review"
+        ],
+        "on_limit": "record_capture_gap"
+      },
+      "expected_keyword": "required",
+      "reason": "启用前必须有有限保留期"
+    },
+    {
+      "id": "zero_retention",
+      "schema": "PolicyConfig",
+      "document": {
+        "mode": "full_content",
+        "supported_protocols": [
+          "integration.openai.chat.v1"
+        ],
+        "observation_points": [
+          "client_request",
+          "provider_request",
+          "provider_response",
+          "client_response"
+        ],
+        "retention_seconds": 0,
+        "quota_bytes": 1073741824,
+        "max_saved_bytes": 33554432,
+        "allowed_purposes": [
+          "human_review"
+        ],
+        "on_limit": "record_capture_gap"
+      },
+      "expected_keyword": "minimum",
+      "reason": "不能用0暗示无限保留"
+    },
+    {
+      "id": "full_without_purpose",
+      "schema": "PolicyConfig",
+      "document": {
+        "mode": "full_content",
+        "supported_protocols": [
+          "integration.openai.chat.v1"
+        ],
+        "observation_points": [
+          "client_request",
+          "provider_request",
+          "provider_response",
+          "client_response"
+        ],
+        "retention_seconds": 604800,
+        "quota_bytes": 1073741824,
+        "max_saved_bytes": 33554432,
+        "allowed_purposes": [],
+        "on_limit": "record_capture_gap"
+      },
+      "expected_keyword": "minItems",
+      "reason": "显式用途缺失"
+    },
+    {
+      "id": "legacy_grant_implicit_purpose",
+      "schema": "XIContentGrant",
+      "document": {
+        "allow_content": false,
+        "allowed_content_purposes": [
+          "human_review"
+        ]
+      },
+      "expected_keyword": "maxItems",
+      "reason": "默认拒绝不得保留活动用途"
+    },
+    {
+      "id": "page_inline_response",
+      "schema": "ManifestPage",
+      "document": {
+        "schema_version": "unirouter.content-manifests-page.v1",
+        "profile": "unirouter.interaction-content.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "generated_at": "2026-09-14T00:02:00.000000Z",
+        "content_scope_revision": "c-generation-7",
+        "recovery_epoch": "1",
+        "coverage_from": {
+          "time": "2026-09-13T00:00:00.000000Z",
+          "after_sequence": "0"
+        },
+        "retention_floor": {
+          "time": "2026-09-13T00:00:00.000000Z",
+          "after_sequence": "0"
+        },
+        "after_sequence": "0",
+        "last_sequence": "2",
+        "high_watermark_sequence": "2",
+        "next_cursor": "SYNTHETIC_UNSIGNED_C_CURSOR_2",
+        "high_watermark": "SYNTHETIC_UNSIGNED_C_CURSOR_2",
+        "has_more": false,
+        "coverage": "bounded",
+        "gaps": [],
+        "items": [
+          {
+            "sequence": "1",
+            "document": {
+              "schema_version": "unirouter.content-manifest.v1",
+              "source_instance": "synthetic-ur-c0",
+              "org_id": "2",
+              "project_id": "3",
+              "request_id": "req-synthetic-1",
+              "profile": "unirouter.interaction-content.v1",
+              "revision": "1",
+              "occurred_at": "2026-09-14T00:00:00.000000Z",
+              "recorded_at": "2026-09-14T00:00:00.000000Z",
+              "protocol": "integration.openai.chat.v1",
+              "observation_point": "client_request",
+              "content_item_id": "body-0",
+              "capture": {
+                "mode": "full_content",
+                "policy_ref": "project-3-content",
+                "policy_version": "2",
+                "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+                "completeness": "pending",
+                "reason": "capture_in_progress"
+              },
+              "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+              "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4",
+              "response": "body"
+            },
+            "source_sha256": "sha256:2b44a7dd715019e943fe30bdbebab24a4231ca2ca1223513926b8a29bd67151d",
+            "availability": {
+              "state": "pending",
+              "evaluated_at": "2026-09-14T00:02:00.000000Z",
+              "retryable": true
+            }
+          },
+          {
+            "sequence": "2",
+            "document": {
+              "schema_version": "unirouter.content-manifest.v1",
+              "source_instance": "synthetic-ur-c0",
+              "org_id": "2",
+              "project_id": "3",
+              "request_id": "req-synthetic-1",
+              "profile": "unirouter.interaction-content.v1",
+              "revision": "2",
+              "occurred_at": "2026-09-14T00:00:00.000000Z",
+              "recorded_at": "2026-09-14T00:01:00.000000Z",
+              "protocol": "integration.openai.chat.v1",
+              "observation_point": "client_request",
+              "content_item_id": "body-0",
+              "capture": {
+                "mode": "full_content",
+                "policy_ref": "project-3-content",
+                "policy_version": "2",
+                "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+                "completeness": "complete",
+                "reason": "none"
+              },
+              "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+              "representation": {
+                "media_type": "application/json",
+                "encoding": "identity",
+                "byte_domain": "stored_representation_before_http_content_encoding",
+                "saved_bytes": 59,
+                "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+              },
+              "captured_at": "2026-09-14T00:00:00.000000Z",
+              "expires_at": "2026-09-21T00:00:00.000000Z",
+              "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+              "event_id": "uf1_fef44d89b3fb96e8e88ce07c7e30dace6f6f7129fe55f0b9ea938463482018b7",
+              "previous_revision": "1",
+              "previous_hash": "sha256:2b44a7dd715019e943fe30bdbebab24a4231ca2ca1223513926b8a29bd67151d",
+              "correction_reason": "capture_finalized"
+            },
+            "source_sha256": "sha256:e377ecf7fc6d3629078bf0da8a22dcd5164018070d6c1dc9124cc194a2af1593",
+            "availability": {
+              "state": "available",
+              "evaluated_at": "2026-09-14T00:02:00.000000Z",
+              "retryable": false
+            }
+          }
+        ]
+      },
+      "expected_keyword": "additionalProperties",
+      "reason": "清单页不得带原始正文"
+    },
+    {
+      "id": "gap_hidden_by_bounded_coverage",
+      "schema": "ManifestPage",
+      "document": {
+        "schema_version": "unirouter.content-manifests-page.v1",
+        "profile": "unirouter.interaction-content.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "generated_at": "2026-09-14T00:02:00.000000Z",
+        "content_scope_revision": "c-generation-7",
+        "recovery_epoch": "1",
+        "coverage_from": {
+          "time": "2026-09-13T00:00:00.000000Z",
+          "after_sequence": "0"
+        },
+        "retention_floor": {
+          "time": "2026-09-13T00:00:00.000000Z",
+          "after_sequence": "0"
+        },
+        "after_sequence": "0",
+        "last_sequence": "2",
+        "high_watermark_sequence": "2",
+        "next_cursor": "SYNTHETIC_UNSIGNED_C_CURSOR_2",
+        "high_watermark": "SYNTHETIC_UNSIGNED_C_CURSOR_2",
+        "has_more": false,
+        "coverage": "bounded",
+        "gaps": [
+          {
+            "reason": "manifest_write_unavailable",
+            "range_known": false
+          }
+        ],
+        "items": [
+          {
+            "sequence": "1",
+            "document": {
+              "schema_version": "unirouter.content-manifest.v1",
+              "source_instance": "synthetic-ur-c0",
+              "org_id": "2",
+              "project_id": "3",
+              "request_id": "req-synthetic-1",
+              "profile": "unirouter.interaction-content.v1",
+              "revision": "1",
+              "occurred_at": "2026-09-14T00:00:00.000000Z",
+              "recorded_at": "2026-09-14T00:00:00.000000Z",
+              "protocol": "integration.openai.chat.v1",
+              "observation_point": "client_request",
+              "content_item_id": "body-0",
+              "capture": {
+                "mode": "full_content",
+                "policy_ref": "project-3-content",
+                "policy_version": "2",
+                "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+                "completeness": "pending",
+                "reason": "capture_in_progress"
+              },
+              "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+              "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+            },
+            "source_sha256": "sha256:2b44a7dd715019e943fe30bdbebab24a4231ca2ca1223513926b8a29bd67151d",
+            "availability": {
+              "state": "pending",
+              "evaluated_at": "2026-09-14T00:02:00.000000Z",
+              "retryable": true
+            }
+          },
+          {
+            "sequence": "2",
+            "document": {
+              "schema_version": "unirouter.content-manifest.v1",
+              "source_instance": "synthetic-ur-c0",
+              "org_id": "2",
+              "project_id": "3",
+              "request_id": "req-synthetic-1",
+              "profile": "unirouter.interaction-content.v1",
+              "revision": "2",
+              "occurred_at": "2026-09-14T00:00:00.000000Z",
+              "recorded_at": "2026-09-14T00:01:00.000000Z",
+              "protocol": "integration.openai.chat.v1",
+              "observation_point": "client_request",
+              "content_item_id": "body-0",
+              "capture": {
+                "mode": "full_content",
+                "policy_ref": "project-3-content",
+                "policy_version": "2",
+                "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+                "completeness": "complete",
+                "reason": "none"
+              },
+              "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+              "representation": {
+                "media_type": "application/json",
+                "encoding": "identity",
+                "byte_domain": "stored_representation_before_http_content_encoding",
+                "saved_bytes": 59,
+                "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+              },
+              "captured_at": "2026-09-14T00:00:00.000000Z",
+              "expires_at": "2026-09-21T00:00:00.000000Z",
+              "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+              "event_id": "uf1_fef44d89b3fb96e8e88ce07c7e30dace6f6f7129fe55f0b9ea938463482018b7",
+              "previous_revision": "1",
+              "previous_hash": "sha256:2b44a7dd715019e943fe30bdbebab24a4231ca2ca1223513926b8a29bd67151d",
+              "correction_reason": "capture_finalized"
+            },
+            "source_sha256": "sha256:e377ecf7fc6d3629078bf0da8a22dcd5164018070d6c1dc9124cc194a2af1593",
+            "availability": {
+              "state": "available",
+              "evaluated_at": "2026-09-14T00:02:00.000000Z",
+              "retryable": false
+            }
+          }
+        ]
+      },
+      "expected_keyword": "maxItems",
+      "reason": "未知采集缺口不能称清单覆盖正常"
+    },
+    {
+      "id": "reading_permanent_body_copy",
+      "schema": "XIContents",
+      "document": {
+        "version": "xinsight.runtime.contents.v1",
+        "reading_id": "xrt_AAAAAAAAAAAAAAAAAAAAAA",
+        "request_ref": "xrr_217631c305d82900c29ba678fc28fed1fee6c7dadc674cfd7ac7ce4220d3bd22",
+        "membership_ref": "synthetic-membership-frozen-r2",
+        "cutoff": "2026-09-14T00:02:00.000000Z",
+        "authorization_revision": "synthetic-auth-c7",
+        "content_interpretation_revision": "xinsight.content-membership.v1",
+        "member_basis": "content_manifest",
+        "items": [
+          {
+            "reference": {
+              "source_system_id": "22222222-2222-4222-8222-222222222224",
+              "source_instance": "synthetic-ur-c0",
+              "org_id": "2",
+              "project_id": "3",
+              "request_id": "req-synthetic-1",
+              "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+              "revision": "2",
+              "source_sha256": "sha256:e377ecf7fc6d3629078bf0da8a22dcd5164018070d6c1dc9124cc194a2af1593",
+              "capture_status": "complete",
+              "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+              "representation": {
+                "media_type": "application/json",
+                "encoding": "identity",
+                "byte_domain": "stored_representation_before_http_content_encoding",
+                "saved_bytes": 59,
+                "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+              },
+              "expires_at": "2026-09-21T00:00:00.000000Z"
+            },
+            "availability": {
+              "state": "available",
+              "evaluated_at": "2026-09-14T00:02:00.000000Z",
+              "retryable": false
+            },
+            "chain_state": "complete",
+            "newer_revision_available": false
+          }
+        ],
+        "body": "raw copy"
+      },
+      "expected_keyword": "additionalProperties",
+      "reason": "reading仅保存引用"
+    },
+    {
+      "id": "temporary_url_as_review_basis",
+      "schema": "ContentBasisExtension",
+      "document": {
+        "content_basis_version": "xinsight.review-content-basis.v1",
+        "contents": [
+          {
+            "scope": "finding",
+            "reference": {
+              "source_system_id": "22222222-2222-4222-8222-222222222224",
+              "source_instance": "synthetic-ur-c0",
+              "org_id": "2",
+              "project_id": "3",
+              "request_id": "req-synthetic-1",
+              "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+              "revision": "2",
+              "source_sha256": "sha256:e377ecf7fc6d3629078bf0da8a22dcd5164018070d6c1dc9124cc194a2af1593",
+              "capture_status": "complete",
+              "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+              "representation": {
+                "media_type": "application/json",
+                "encoding": "identity",
+                "byte_domain": "stored_representation_before_http_content_encoding",
+                "saved_bytes": 59,
+                "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+              },
+              "expires_at": "2026-09-21T00:00:00.000000Z"
+            },
+            "location": {
+              "kind": "byte_range",
+              "offset": 0,
+              "length": 59
+            },
+            "relation": "supports",
+            "reading_url": "/runtime/readings/expired"
+          }
+        ]
+      },
+      "expected_keyword": "additionalProperties",
+      "reason": "临时readingURL不是稳定证据"
+    },
+    {
+      "id": "negative_reference_offset",
+      "schema": "ContentChoice",
+      "document": {
+        "scope": "finding",
+        "reference": {
+          "source_system_id": "22222222-2222-4222-8222-222222222224",
+          "source_instance": "synthetic-ur-c0",
+          "org_id": "2",
+          "project_id": "3",
+          "request_id": "req-synthetic-1",
+          "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+          "revision": "2",
+          "source_sha256": "sha256:e377ecf7fc6d3629078bf0da8a22dcd5164018070d6c1dc9124cc194a2af1593",
+          "capture_status": "complete",
+          "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+          "representation": {
+            "media_type": "application/json",
+            "encoding": "identity",
+            "byte_domain": "stored_representation_before_http_content_encoding",
+            "saved_bytes": 59,
+            "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+          },
+          "expires_at": "2026-09-21T00:00:00.000000Z"
+        },
+        "location": {
+          "kind": "byte_range",
+          "offset": -1,
+          "length": 59
+        },
+        "relation": "supports"
+      },
+      "expected_keyword": "minimum",
+      "reason": "位置为保存表示字节偏移"
+    },
+    {
+      "id": "tool_claim_upgraded_to_audit",
+      "schema": "ContentProjection",
+      "document": {
+        "parser_ref": {
+          "id": "synthetic-chat-parser",
+          "version": "1"
+        },
+        "links": [
+          {
+            "kind": "tool_result",
+            "location": {
+              "kind": "json_pointer",
+              "pointer": "/messages/1"
+            },
+            "tool_call_id": "call-shared",
+            "session_ref": "synthetic-session",
+            "association_basis": "exact_protocol_id",
+            "evidence_level": "independently_verified_access"
+          }
+        ],
+        "projection_sha256": "sha256:8f14fba47c346366e29c6110d730d4558601121def335c8d44b24f68c92d2074"
+      },
+      "expected_keyword": "enum",
+      "reason": "客户端回报不升级为独立访问审计"
+    },
+    {
+      "id": "unknown_manifest_field",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": {
+          "mode": "full_content",
+          "policy_ref": "project-3-content",
+          "policy_version": "2",
+          "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+          "completeness": "complete",
+          "reason": "none"
+        },
+        "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+        "representation": {
+          "media_type": "application/json",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 59,
+          "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+        },
+        "captured_at": "2026-09-14T00:00:00.000000Z",
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4",
+        "unknown_extension": {}
+      },
+      "expected_keyword": "additionalProperties",
+      "reason": "未知字段须新版本显式协商"
+    },
+    {
+      "id": "null_capture",
+      "schema": "Manifest",
+      "document": {
+        "schema_version": "unirouter.content-manifest.v1",
+        "source_instance": "synthetic-ur-c0",
+        "org_id": "2",
+        "project_id": "3",
+        "request_id": "req-synthetic-1",
+        "profile": "unirouter.interaction-content.v1",
+        "revision": "1",
+        "occurred_at": "2026-09-14T00:00:00.000000Z",
+        "recorded_at": "2026-09-14T00:00:00.000000Z",
+        "protocol": "integration.openai.chat.v1",
+        "observation_point": "client_request",
+        "content_item_id": "body-0",
+        "capture": null,
+        "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+        "representation": {
+          "media_type": "application/json",
+          "encoding": "identity",
+          "byte_domain": "stored_representation_before_http_content_encoding",
+          "saved_bytes": 59,
+          "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+        },
+        "captured_at": "2026-09-14T00:00:00.000000Z",
+        "expires_at": "2026-09-21T00:00:00.000000Z",
+        "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+        "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+      },
+      "expected_keyword": "type",
+      "reason": "必需对象不接受null"
+    },
+    {
+      "id": "forged_analysis_query",
+      "schema": "ManifestQuery",
+      "document": {
+        "limit": 50,
+        "purpose": "external_model_analysis"
+      },
+      "expected_keyword": "const",
+      "reason": "源端检查用途，普通浏览器不能自填自动分析用途"
+    },
+    {
+      "id": "arbitrary_query_url",
+      "schema": "ManifestQuery",
+      "document": {
+        "limit": 50,
+        "purpose": "human_review",
+        "url": "file:///private/secret"
+      },
+      "expected_keyword": "additionalProperties",
+      "reason": "没有任意URL查询入口"
+    },
+    {
+      "id": "expired_error_auto_retry",
+      "schema": "URError",
+      "document": {
+        "error": {
+          "code": "content_expired",
+          "retryable": true,
+          "error_version": "foigent.connector-error.v1",
+          "category": "source",
+          "phase": "fetch",
+          "operation": "read_source",
+          "safe_message": "Source facts request could not be completed",
+          "recovery": "operator_repair"
+        }
+      },
+      "expected_keyword": "const",
+      "reason": "到期不能声明重试自动恢复"
+    },
+    {
+      "id": "message_tool_id_cannot_replace_message_id",
+      "schema": "ContentLink",
+      "document": {
+        "kind": "message",
+        "location": {
+          "kind": "json_pointer",
+          "pointer": "/messages/0"
+        },
+        "message_role": "user",
+        "session_ref": "synthetic-session",
+        "association_basis": "exact_protocol_id",
+        "evidence_level": "captured_message",
+        "tool_call_id": "not-a-message-id"
+      },
+      "expected_keyword": "required",
+      "reason": "普通消息精确关联需protocol_message_id，不能用工具ID替代或强迫虚构工具ID"
+    },
+    {
+      "id": "r2_wrong_retryable_profile_not_authorized",
+      "schema": "URContentReadStateErrorResponse",
+      "document": {
+        "http_status": 403,
+        "body": {
+          "error": {
+            "code": "profile_not_authorized",
+            "retryable": true,
+            "error_version": "foigent.connector-error.v1",
+            "category": "source",
+            "phase": "fetch",
+            "operation": "read_source",
+            "safe_message": "Source facts request could not be completed",
+            "recovery": "operator_repair"
+          }
+        }
+      },
+      "expected_keyword": "const",
+      "reason": "R2状态错误必须保留准确retryable，不能只放宽code枚举"
+    },
+    {
+      "id": "r2_wrong_http_profile_not_authorized",
+      "schema": "URContentReadStateErrorResponse",
+      "document": {
+        "http_status": 503,
+        "body": {
+          "error": {
+            "code": "profile_not_authorized",
+            "retryable": false,
+            "error_version": "foigent.connector-error.v1",
+            "category": "source",
+            "phase": "fetch",
+            "operation": "read_source",
+            "safe_message": "Source facts request could not be completed",
+            "recovery": "operator_repair"
+          }
+        }
+      },
+      "expected_keyword": "const",
+      "reason": "R2的HTTP状态与既有code成对绑定"
+    },
+    {
+      "id": "r2_wrong_retryable_source_paused",
+      "schema": "URContentReadStateErrorResponse",
+      "document": {
+        "http_status": 503,
+        "body": {
+          "error": {
+            "code": "source_paused",
+            "retryable": false,
+            "error_version": "foigent.connector-error.v1",
+            "category": "source",
+            "phase": "fetch",
+            "operation": "read_source",
+            "safe_message": "Source facts request could not be completed",
+            "recovery": "operator_repair"
+          }
+        }
+      },
+      "expected_keyword": "const",
+      "reason": "R2状态错误必须保留准确retryable，不能只放宽code枚举"
+    },
+    {
+      "id": "r2_wrong_http_source_paused",
+      "schema": "URContentReadStateErrorResponse",
+      "document": {
+        "http_status": 409,
+        "body": {
+          "error": {
+            "code": "source_paused",
+            "retryable": true,
+            "error_version": "foigent.connector-error.v1",
+            "category": "source",
+            "phase": "fetch",
+            "operation": "read_source",
+            "safe_message": "Source facts request could not be completed",
+            "recovery": "operator_repair"
+          }
+        }
+      },
+      "expected_keyword": "const",
+      "reason": "R2的HTTP状态与既有code成对绑定"
+    },
+    {
+      "id": "r2_wrong_retryable_staged_credential_requires_pause",
+      "schema": "URContentReadStateErrorResponse",
+      "document": {
+        "http_status": 409,
+        "body": {
+          "error": {
+            "code": "staged_credential_requires_pause",
+            "retryable": true,
+            "error_version": "foigent.connector-error.v1",
+            "category": "source",
+            "phase": "fetch",
+            "operation": "read_source",
+            "safe_message": "Source facts request could not be completed",
+            "recovery": "operator_repair"
+          }
+        }
+      },
+      "expected_keyword": "const",
+      "reason": "R2状态错误必须保留准确retryable，不能只放宽code枚举"
+    },
+    {
+      "id": "r2_wrong_http_staged_credential_requires_pause",
+      "schema": "URContentReadStateErrorResponse",
+      "document": {
+        "http_status": 503,
+        "body": {
+          "error": {
+            "code": "staged_credential_requires_pause",
+            "retryable": false,
+            "error_version": "foigent.connector-error.v1",
+            "category": "source",
+            "phase": "fetch",
+            "operation": "read_source",
+            "safe_message": "Source facts request could not be completed",
+            "recovery": "operator_repair"
+          }
+        }
+      },
+      "expected_keyword": "const",
+      "reason": "R2的HTTP状态与既有code成对绑定"
+    }
+  ],
+  "domain": [
+    {
+      "id": "stable_pending_to_complete",
+      "kind": "revision_chain",
+      "input": {
+        "documents": [
+          {
+            "schema_version": "unirouter.content-manifest.v1",
+            "source_instance": "synthetic-ur-c0",
+            "org_id": "2",
+            "project_id": "3",
+            "request_id": "req-synthetic-1",
+            "profile": "unirouter.interaction-content.v1",
+            "revision": "1",
+            "occurred_at": "2026-09-14T00:00:00.000000Z",
+            "recorded_at": "2026-09-14T00:00:00.000000Z",
+            "protocol": "integration.openai.chat.v1",
+            "observation_point": "client_request",
+            "content_item_id": "body-0",
+            "capture": {
+              "mode": "full_content",
+              "policy_ref": "project-3-content",
+              "policy_version": "2",
+              "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+              "completeness": "pending",
+              "reason": "capture_in_progress"
+            },
+            "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+            "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+          },
+          {
+            "schema_version": "unirouter.content-manifest.v1",
+            "source_instance": "synthetic-ur-c0",
+            "org_id": "2",
+            "project_id": "3",
+            "request_id": "req-synthetic-1",
+            "profile": "unirouter.interaction-content.v1",
+            "revision": "2",
+            "occurred_at": "2026-09-14T00:00:00.000000Z",
+            "recorded_at": "2026-09-14T00:01:00.000000Z",
+            "protocol": "integration.openai.chat.v1",
+            "observation_point": "client_request",
+            "content_item_id": "body-0",
+            "capture": {
+              "mode": "full_content",
+              "policy_ref": "project-3-content",
+              "policy_version": "2",
+              "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+              "completeness": "complete",
+              "reason": "none"
+            },
+            "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+            "representation": {
+              "media_type": "application/json",
+              "encoding": "identity",
+              "byte_domain": "stored_representation_before_http_content_encoding",
+              "saved_bytes": 59,
+              "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+            },
+            "captured_at": "2026-09-14T00:00:00.000000Z",
+            "expires_at": "2026-09-21T00:00:00.000000Z",
+            "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+            "event_id": "uf1_fef44d89b3fb96e8e88ce07c7e30dace6f6f7129fe55f0b9ea938463482018b7",
+            "previous_revision": "1",
+            "previous_hash": "sha256:2b44a7dd715019e943fe30bdbebab24a4231ca2ca1223513926b8a29bd67151d",
+            "correction_reason": "capture_finalized"
+          }
+        ]
+      },
+      "expect_valid": true
+    },
+    {
+      "id": "digest_based_fact_identity_rejected",
+      "kind": "revision_chain",
+      "input": {
+        "documents": [
+          {
+            "schema_version": "unirouter.content-manifest.v1",
+            "source_instance": "synthetic-ur-c0",
+            "org_id": "2",
+            "project_id": "3",
+            "request_id": "req-synthetic-1",
+            "profile": "unirouter.interaction-content.v1",
+            "revision": "1",
+            "occurred_at": "2026-09-14T00:00:00.000000Z",
+            "recorded_at": "2026-09-14T00:00:00.000000Z",
+            "protocol": "integration.openai.chat.v1",
+            "observation_point": "client_request",
+            "content_item_id": "body-0",
+            "capture": {
+              "mode": "full_content",
+              "policy_ref": "project-3-content",
+              "policy_version": "2",
+              "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+              "completeness": "pending",
+              "reason": "capture_in_progress"
+            },
+            "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+            "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+          },
+          {
+            "schema_version": "unirouter.content-manifest.v1",
+            "source_instance": "synthetic-ur-c0",
+            "org_id": "2",
+            "project_id": "3",
+            "request_id": "req-synthetic-1",
+            "profile": "unirouter.interaction-content.v1",
+            "revision": "2",
+            "occurred_at": "2026-09-14T00:00:00.000000Z",
+            "recorded_at": "2026-09-14T00:01:00.000000Z",
+            "protocol": "integration.openai.chat.v1",
+            "observation_point": "client_request",
+            "content_item_id": "body-0",
+            "capture": {
+              "mode": "full_content",
+              "policy_ref": "project-3-content",
+              "policy_version": "2",
+              "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+              "completeness": "complete",
+              "reason": "none"
+            },
+            "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+            "representation": {
+              "media_type": "application/json",
+              "encoding": "identity",
+              "byte_domain": "stored_representation_before_http_content_encoding",
+              "saved_bytes": 59,
+              "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+            },
+            "captured_at": "2026-09-14T00:00:00.000000Z",
+            "expires_at": "2026-09-21T00:00:00.000000Z",
+            "source_fact_id": "uf1_db82b15a812d61f39cbcb49c1de398c509a071a9cad1548140006629b97bb168",
+            "event_id": "uf1_fef44d89b3fb96e8e88ce07c7e30dace6f6f7129fe55f0b9ea938463482018b7",
+            "previous_revision": "1",
+            "previous_hash": "sha256:2b44a7dd715019e943fe30bdbebab24a4231ca2ca1223513926b8a29bd67151d",
+            "correction_reason": "capture_finalized"
+          }
+        ]
+      },
+      "expect_valid": false,
+      "expected_rule": "source_fact_id"
+    },
+    {
+      "id": "wrong_previous_hash_rejected",
+      "kind": "revision_chain",
+      "input": {
+        "documents": [
+          {
+            "schema_version": "unirouter.content-manifest.v1",
+            "source_instance": "synthetic-ur-c0",
+            "org_id": "2",
+            "project_id": "3",
+            "request_id": "req-synthetic-1",
+            "profile": "unirouter.interaction-content.v1",
+            "revision": "1",
+            "occurred_at": "2026-09-14T00:00:00.000000Z",
+            "recorded_at": "2026-09-14T00:00:00.000000Z",
+            "protocol": "integration.openai.chat.v1",
+            "observation_point": "client_request",
+            "content_item_id": "body-0",
+            "capture": {
+              "mode": "full_content",
+              "policy_ref": "project-3-content",
+              "policy_version": "2",
+              "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+              "completeness": "pending",
+              "reason": "capture_in_progress"
+            },
+            "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+            "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+          },
+          {
+            "schema_version": "unirouter.content-manifest.v1",
+            "source_instance": "synthetic-ur-c0",
+            "org_id": "2",
+            "project_id": "3",
+            "request_id": "req-synthetic-1",
+            "profile": "unirouter.interaction-content.v1",
+            "revision": "2",
+            "occurred_at": "2026-09-14T00:00:00.000000Z",
+            "recorded_at": "2026-09-14T00:01:00.000000Z",
+            "protocol": "integration.openai.chat.v1",
+            "observation_point": "client_request",
+            "content_item_id": "body-0",
+            "capture": {
+              "mode": "full_content",
+              "policy_ref": "project-3-content",
+              "policy_version": "2",
+              "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+              "completeness": "complete",
+              "reason": "none"
+            },
+            "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+            "representation": {
+              "media_type": "application/json",
+              "encoding": "identity",
+              "byte_domain": "stored_representation_before_http_content_encoding",
+              "saved_bytes": 59,
+              "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+            },
+            "captured_at": "2026-09-14T00:00:00.000000Z",
+            "expires_at": "2026-09-21T00:00:00.000000Z",
+            "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+            "event_id": "uf1_fef44d89b3fb96e8e88ce07c7e30dace6f6f7129fe55f0b9ea938463482018b7",
+            "previous_revision": "1",
+            "previous_hash": "sha256:50aec31f6a52ab15d06a5da723c9e10a8ee1babbcbdd3f85f505e986817a119d",
+            "correction_reason": "capture_finalized"
+          }
+        ]
+      },
+      "expect_valid": false,
+      "expected_rule": "previous_hash"
+    },
+    {
+      "id": "first_pull_includes_existing_content",
+      "kind": "first_page",
+      "input": {
+        "page": {
+          "schema_version": "unirouter.content-manifests-page.v1",
+          "profile": "unirouter.interaction-content.v1",
+          "source_instance": "synthetic-ur-c0",
+          "org_id": "2",
+          "project_id": "3",
+          "generated_at": "2026-09-14T00:02:00.000000Z",
+          "content_scope_revision": "c-generation-7",
+          "recovery_epoch": "1",
+          "coverage_from": {
+            "time": "2026-09-13T00:00:00.000000Z",
+            "after_sequence": "0"
+          },
+          "retention_floor": {
+            "time": "2026-09-13T00:00:00.000000Z",
+            "after_sequence": "0"
+          },
+          "after_sequence": "0",
+          "last_sequence": "2",
+          "high_watermark_sequence": "2",
+          "next_cursor": "SYNTHETIC_UNSIGNED_C_CURSOR_2",
+          "high_watermark": "SYNTHETIC_UNSIGNED_C_CURSOR_2",
+          "has_more": false,
+          "coverage": "bounded",
+          "gaps": [],
+          "items": [
+            {
+              "sequence": "1",
+              "document": {
+                "schema_version": "unirouter.content-manifest.v1",
+                "source_instance": "synthetic-ur-c0",
+                "org_id": "2",
+                "project_id": "3",
+                "request_id": "req-synthetic-1",
+                "profile": "unirouter.interaction-content.v1",
+                "revision": "1",
+                "occurred_at": "2026-09-14T00:00:00.000000Z",
+                "recorded_at": "2026-09-14T00:00:00.000000Z",
+                "protocol": "integration.openai.chat.v1",
+                "observation_point": "client_request",
+                "content_item_id": "body-0",
+                "capture": {
+                  "mode": "full_content",
+                  "policy_ref": "project-3-content",
+                  "policy_version": "2",
+                  "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+                  "completeness": "pending",
+                  "reason": "capture_in_progress"
+                },
+                "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+                "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+              },
+              "source_sha256": "sha256:2b44a7dd715019e943fe30bdbebab24a4231ca2ca1223513926b8a29bd67151d",
+              "availability": {
+                "state": "pending",
+                "evaluated_at": "2026-09-14T00:02:00.000000Z",
+                "retryable": true
+              }
+            },
+            {
+              "sequence": "2",
+              "document": {
+                "schema_version": "unirouter.content-manifest.v1",
+                "source_instance": "synthetic-ur-c0",
+                "org_id": "2",
+                "project_id": "3",
+                "request_id": "req-synthetic-1",
+                "profile": "unirouter.interaction-content.v1",
+                "revision": "2",
+                "occurred_at": "2026-09-14T00:00:00.000000Z",
+                "recorded_at": "2026-09-14T00:01:00.000000Z",
+                "protocol": "integration.openai.chat.v1",
+                "observation_point": "client_request",
+                "content_item_id": "body-0",
+                "capture": {
+                  "mode": "full_content",
+                  "policy_ref": "project-3-content",
+                  "policy_version": "2",
+                  "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+                  "completeness": "complete",
+                  "reason": "none"
+                },
+                "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+                "representation": {
+                  "media_type": "application/json",
+                  "encoding": "identity",
+                  "byte_domain": "stored_representation_before_http_content_encoding",
+                  "saved_bytes": 59,
+                  "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+                },
+                "captured_at": "2026-09-14T00:00:00.000000Z",
+                "expires_at": "2026-09-21T00:00:00.000000Z",
+                "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+                "event_id": "uf1_fef44d89b3fb96e8e88ce07c7e30dace6f6f7129fe55f0b9ea938463482018b7",
+                "previous_revision": "1",
+                "previous_hash": "sha256:2b44a7dd715019e943fe30bdbebab24a4231ca2ca1223513926b8a29bd67151d",
+                "correction_reason": "capture_finalized"
+              },
+              "source_sha256": "sha256:e377ecf7fc6d3629078bf0da8a22dcd5164018070d6c1dc9124cc194a2af1593",
+              "availability": {
+                "state": "available",
+                "evaluated_at": "2026-09-14T00:02:00.000000Z",
+                "retryable": false
+              }
+            }
+          ]
+        }
+      },
+      "expect_valid": true
+    },
+    {
+      "id": "old_forward_only_bootstrap_rejected",
+      "kind": "first_page",
+      "input": {
+        "page": {
+          "schema_version": "unirouter.content-manifests-page.v1",
+          "profile": "unirouter.interaction-content.v1",
+          "source_instance": "synthetic-ur-c0",
+          "org_id": "2",
+          "project_id": "3",
+          "generated_at": "2026-09-14T00:02:00.000000Z",
+          "content_scope_revision": "c-generation-7",
+          "recovery_epoch": "1",
+          "coverage_from": {
+            "time": "2026-09-13T00:00:00.000000Z",
+            "after_sequence": "0"
+          },
+          "retention_floor": {
+            "time": "2026-09-13T00:00:00.000000Z",
+            "after_sequence": "0"
+          },
+          "after_sequence": "2",
+          "last_sequence": "2",
+          "high_watermark_sequence": "2",
+          "next_cursor": "SYNTHETIC_UNSIGNED_C_CURSOR_2",
+          "high_watermark": "SYNTHETIC_UNSIGNED_C_CURSOR_2",
+          "has_more": false,
+          "coverage": "bounded",
+          "gaps": [],
+          "items": []
+        }
+      },
+      "expect_valid": false,
+      "expected_rule": "bootstrap_lower_bound"
+    },
+    {
+      "id": "cross_source_same_request_rejected",
+      "kind": "page",
+      "input": {
+        "page": {
+          "schema_version": "unirouter.content-manifests-page.v1",
+          "profile": "unirouter.interaction-content.v1",
+          "source_instance": "synthetic-ur-c0",
+          "org_id": "2",
+          "project_id": "3",
+          "generated_at": "2026-09-14T00:02:00.000000Z",
+          "content_scope_revision": "c-generation-7",
+          "recovery_epoch": "1",
+          "coverage_from": {
+            "time": "2026-09-13T00:00:00.000000Z",
+            "after_sequence": "0"
+          },
+          "retention_floor": {
+            "time": "2026-09-13T00:00:00.000000Z",
+            "after_sequence": "0"
+          },
+          "after_sequence": "0",
+          "last_sequence": "2",
+          "high_watermark_sequence": "2",
+          "next_cursor": "SYNTHETIC_UNSIGNED_C_CURSOR_2",
+          "high_watermark": "SYNTHETIC_UNSIGNED_C_CURSOR_2",
+          "has_more": false,
+          "coverage": "bounded",
+          "gaps": [],
+          "items": [
+            {
+              "sequence": "1",
+              "document": {
+                "schema_version": "unirouter.content-manifest.v1",
+                "source_instance": "synthetic-ur-c0",
+                "org_id": "2",
+                "project_id": "3",
+                "request_id": "req-synthetic-1",
+                "profile": "unirouter.interaction-content.v1",
+                "revision": "1",
+                "occurred_at": "2026-09-14T00:00:00.000000Z",
+                "recorded_at": "2026-09-14T00:00:00.000000Z",
+                "protocol": "integration.openai.chat.v1",
+                "observation_point": "client_request",
+                "content_item_id": "body-0",
+                "capture": {
+                  "mode": "full_content",
+                  "policy_ref": "project-3-content",
+                  "policy_version": "2",
+                  "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+                  "completeness": "pending",
+                  "reason": "capture_in_progress"
+                },
+                "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+                "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+              },
+              "source_sha256": "sha256:2b44a7dd715019e943fe30bdbebab24a4231ca2ca1223513926b8a29bd67151d",
+              "availability": {
+                "state": "pending",
+                "evaluated_at": "2026-09-14T00:02:00.000000Z",
+                "retryable": true
+              }
+            },
+            {
+              "sequence": "2",
+              "document": {
+                "schema_version": "unirouter.content-manifest.v1",
+                "source_instance": "another-source",
+                "org_id": "2",
+                "project_id": "3",
+                "request_id": "req-synthetic-1",
+                "profile": "unirouter.interaction-content.v1",
+                "revision": "2",
+                "occurred_at": "2026-09-14T00:00:00.000000Z",
+                "recorded_at": "2026-09-14T00:01:00.000000Z",
+                "protocol": "integration.openai.chat.v1",
+                "observation_point": "client_request",
+                "content_item_id": "body-0",
+                "capture": {
+                  "mode": "full_content",
+                  "policy_ref": "project-3-content",
+                  "policy_version": "2",
+                  "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+                  "completeness": "complete",
+                  "reason": "none"
+                },
+                "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+                "representation": {
+                  "media_type": "application/json",
+                  "encoding": "identity",
+                  "byte_domain": "stored_representation_before_http_content_encoding",
+                  "saved_bytes": 59,
+                  "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+                },
+                "captured_at": "2026-09-14T00:00:00.000000Z",
+                "expires_at": "2026-09-21T00:00:00.000000Z",
+                "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+                "event_id": "uf1_fef44d89b3fb96e8e88ce07c7e30dace6f6f7129fe55f0b9ea938463482018b7",
+                "previous_revision": "1",
+                "previous_hash": "sha256:2b44a7dd715019e943fe30bdbebab24a4231ca2ca1223513926b8a29bd67151d",
+                "correction_reason": "capture_finalized"
+              },
+              "source_sha256": "sha256:e377ecf7fc6d3629078bf0da8a22dcd5164018070d6c1dc9124cc194a2af1593",
+              "availability": {
+                "state": "available",
+                "evaluated_at": "2026-09-14T00:02:00.000000Z",
+                "retryable": false
+              }
+            }
+          ]
+        }
+      },
+      "expect_valid": false,
+      "expected_rule": "scope"
+    },
+    {
+      "id": "large_within_configured_limit",
+      "kind": "limit_relation",
+      "input": {
+        "limits": {
+          "max_saved_bytes": 33554432,
+          "max_read_bytes": 33554432,
+          "max_buffer_bytes": 1048576,
+          "max_manifest_bytes": 8388608,
+          "max_manifest_items": 50
+        },
+        "policy": {
+          "mode": "full_content",
+          "supported_protocols": [
+            "integration.openai.chat.v1"
+          ],
+          "observation_points": [
+            "client_request",
+            "provider_request",
+            "provider_response",
+            "client_response"
+          ],
+          "retention_seconds": 604800,
+          "quota_bytes": 1073741824,
+          "max_saved_bytes": 33554432,
+          "allowed_purposes": [
+            "human_review"
+          ],
+          "on_limit": "record_capture_gap"
+        },
+        "manifest": {
+          "schema_version": "unirouter.content-manifest.v1",
+          "source_instance": "synthetic-ur-c0",
+          "org_id": "2",
+          "project_id": "3",
+          "request_id": "req-synthetic-1",
+          "profile": "unirouter.interaction-content.v1",
+          "revision": "1",
+          "occurred_at": "2026-09-14T00:00:00.000000Z",
+          "recorded_at": "2026-09-14T00:00:00.000000Z",
+          "protocol": "integration.openai.chat.v1",
+          "observation_point": "client_request",
+          "content_item_id": "body-0",
+          "capture": {
+            "mode": "full_content",
+            "policy_ref": "project-3-content",
+            "policy_version": "2",
+            "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+            "completeness": "complete",
+            "reason": "none"
+          },
+          "content_ref": "uc1_51a1ee6f0d931697ac314fe5c48a71874df846201d7b1523916e7f6169d017c2",
+          "representation": {
+            "media_type": "application/octet-stream",
+            "encoding": "identity",
+            "byte_domain": "stored_representation_before_http_content_encoding",
+            "saved_bytes": 17825793,
+            "digest": "sha256:8bb126b9f2d77380704193e897869d79467fab9fbf3c2900c2cc4676c88518af"
+          },
+          "captured_at": "2026-09-14T00:00:00.000000Z",
+          "expires_at": "2026-09-21T00:00:00.000000Z",
+          "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+          "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+        }
+      },
+      "expect_valid": true
+    },
+    {
+      "id": "16mib_read_shrink_rejected",
+      "kind": "limit_relation",
+      "input": {
+        "limits": {
+          "max_saved_bytes": 33554432,
+          "max_read_bytes": 16777216,
+          "max_buffer_bytes": 1048576,
+          "max_manifest_bytes": 8388608,
+          "max_manifest_items": 50
+        },
+        "policy": {
+          "mode": "full_content",
+          "supported_protocols": [
+            "integration.openai.chat.v1"
+          ],
+          "observation_points": [
+            "client_request",
+            "provider_request",
+            "provider_response",
+            "client_response"
+          ],
+          "retention_seconds": 604800,
+          "quota_bytes": 1073741824,
+          "max_saved_bytes": 33554432,
+          "allowed_purposes": [
+            "human_review"
+          ],
+          "on_limit": "record_capture_gap"
+        },
+        "manifest": {
+          "schema_version": "unirouter.content-manifest.v1",
+          "source_instance": "synthetic-ur-c0",
+          "org_id": "2",
+          "project_id": "3",
+          "request_id": "req-synthetic-1",
+          "profile": "unirouter.interaction-content.v1",
+          "revision": "1",
+          "occurred_at": "2026-09-14T00:00:00.000000Z",
+          "recorded_at": "2026-09-14T00:00:00.000000Z",
+          "protocol": "integration.openai.chat.v1",
+          "observation_point": "client_request",
+          "content_item_id": "body-0",
+          "capture": {
+            "mode": "full_content",
+            "policy_ref": "project-3-content",
+            "policy_version": "2",
+            "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+            "completeness": "complete",
+            "reason": "none"
+          },
+          "content_ref": "uc1_51a1ee6f0d931697ac314fe5c48a71874df846201d7b1523916e7f6169d017c2",
+          "representation": {
+            "media_type": "application/octet-stream",
+            "encoding": "identity",
+            "byte_domain": "stored_representation_before_http_content_encoding",
+            "saved_bytes": 17825793,
+            "digest": "sha256:8bb126b9f2d77380704193e897869d79467fab9fbf3c2900c2cc4676c88518af"
+          },
+          "captured_at": "2026-09-14T00:00:00.000000Z",
+          "expires_at": "2026-09-21T00:00:00.000000Z",
+          "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+          "event_id": "uf1_8aea78c478697b2c41233138f64a6488695834404c704dea746f95f300bd30b4"
+        }
+      },
+      "expect_valid": false,
+      "expected_rule": "read_covers_save"
+    },
+    {
+      "id": "policy_applied_matches_effective",
+      "kind": "policy_view",
+      "input": {
+        "view": {
+          "schema_version": "unirouter.payload-policy.v1",
+          "source_instance": "synthetic-ur-c0",
+          "org_id": "2",
+          "project_id": "3",
+          "policy_ref": "project-3-content",
+          "desired": {
+            "policy_version": "2",
+            "config": {
+              "mode": "full_content",
+              "supported_protocols": [
+                "integration.openai.chat.v1"
+              ],
+              "observation_points": [
+                "client_request",
+                "provider_request",
+                "provider_response",
+                "client_response"
+              ],
+              "retention_seconds": 604800,
+              "quota_bytes": 1073741824,
+              "max_saved_bytes": 33554432,
+              "allowed_purposes": [
+                "human_review"
+              ],
+              "on_limit": "record_capture_gap"
+            }
+          },
+          "effective": {
+            "policy_version": "2",
+            "config": {
+              "mode": "full_content",
+              "supported_protocols": [
+                "integration.openai.chat.v1"
+              ],
+              "observation_points": [
+                "client_request",
+                "provider_request",
+                "provider_response",
+                "client_response"
+              ],
+              "retention_seconds": 604800,
+              "quota_bytes": 1073741824,
+              "max_saved_bytes": 33554432,
+              "allowed_purposes": [
+                "human_review"
+              ],
+              "on_limit": "record_capture_gap"
+            }
+          },
+          "effective_at": "2026-09-14T00:00:00.000000Z",
+          "application_status": "applied",
+          "application_reason": "none",
+          "storage_status": "ready",
+          "limits": {
+            "max_saved_bytes": 33554432,
+            "max_read_bytes": 33554432,
+            "max_buffer_bytes": 1048576,
+            "max_manifest_bytes": 8388608,
+            "max_manifest_items": 50
+          }
+        }
+      },
+      "expect_valid": true
+    },
+    {
+      "id": "false_applied_policy_rejected",
+      "kind": "policy_view",
+      "input": {
+        "view": {
+          "schema_version": "unirouter.payload-policy.v1",
+          "source_instance": "synthetic-ur-c0",
+          "org_id": "2",
+          "project_id": "3",
+          "policy_ref": "project-3-content",
+          "desired": {
+            "policy_version": "2",
+            "config": {
+              "mode": "full_content",
+              "supported_protocols": [
+                "integration.openai.chat.v1"
+              ],
+              "observation_points": [
+                "client_request",
+                "provider_request",
+                "provider_response",
+                "client_response"
+              ],
+              "retention_seconds": 604800,
+              "quota_bytes": 1073741824,
+              "max_saved_bytes": 33554432,
+              "allowed_purposes": [
+                "human_review"
+              ],
+              "on_limit": "record_capture_gap"
+            }
+          },
+          "effective": {
+            "policy_version": "1",
+            "config": {
+              "mode": "full_content",
+              "supported_protocols": [
+                "integration.openai.chat.v1"
+              ],
+              "observation_points": [
+                "client_request",
+                "provider_request",
+                "provider_response",
+                "client_response"
+              ],
+              "retention_seconds": 604800,
+              "quota_bytes": 1073741824,
+              "max_saved_bytes": 33554432,
+              "allowed_purposes": [
+                "human_review"
+              ],
+              "on_limit": "record_capture_gap"
+            }
+          },
+          "effective_at": "2026-09-14T00:00:00.000000Z",
+          "application_status": "applied",
+          "application_reason": "none",
+          "storage_status": "ready",
+          "limits": {
+            "max_saved_bytes": 33554432,
+            "max_read_bytes": 33554432,
+            "max_buffer_bytes": 1048576,
+            "max_manifest_bytes": 8388608,
+            "max_manifest_items": 50
+          }
+        }
+      },
+      "expect_valid": false,
+      "expected_rule": "applied_equals_effective"
+    },
+    {
+      "id": "frozen_review_reference",
+      "kind": "reference",
+      "input": {
+        "reference": {
+          "source_system_id": "22222222-2222-4222-8222-222222222224",
+          "source_instance": "synthetic-ur-c0",
+          "org_id": "2",
+          "project_id": "3",
+          "request_id": "req-synthetic-1",
+          "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+          "revision": "2",
+          "source_sha256": "sha256:e377ecf7fc6d3629078bf0da8a22dcd5164018070d6c1dc9124cc194a2af1593",
+          "capture_status": "complete",
+          "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+          "representation": {
+            "media_type": "application/json",
+            "encoding": "identity",
+            "byte_domain": "stored_representation_before_http_content_encoding",
+            "saved_bytes": 59,
+            "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+          },
+          "expires_at": "2026-09-21T00:00:00.000000Z"
+        },
+        "manifest": {
+          "schema_version": "unirouter.content-manifest.v1",
+          "source_instance": "synthetic-ur-c0",
+          "org_id": "2",
+          "project_id": "3",
+          "request_id": "req-synthetic-1",
+          "profile": "unirouter.interaction-content.v1",
+          "revision": "2",
+          "occurred_at": "2026-09-14T00:00:00.000000Z",
+          "recorded_at": "2026-09-14T00:01:00.000000Z",
+          "protocol": "integration.openai.chat.v1",
+          "observation_point": "client_request",
+          "content_item_id": "body-0",
+          "capture": {
+            "mode": "full_content",
+            "policy_ref": "project-3-content",
+            "policy_version": "2",
+            "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+            "completeness": "complete",
+            "reason": "none"
+          },
+          "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+          "representation": {
+            "media_type": "application/json",
+            "encoding": "identity",
+            "byte_domain": "stored_representation_before_http_content_encoding",
+            "saved_bytes": 59,
+            "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+          },
+          "captured_at": "2026-09-14T00:00:00.000000Z",
+          "expires_at": "2026-09-21T00:00:00.000000Z",
+          "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+          "event_id": "uf1_fef44d89b3fb96e8e88ce07c7e30dace6f6f7129fe55f0b9ea938463482018b7",
+          "previous_revision": "1",
+          "previous_hash": "sha256:2b44a7dd715019e943fe30bdbebab24a4231ca2ca1223513926b8a29bd67151d",
+          "correction_reason": "capture_finalized"
+        },
+        "location": {
+          "kind": "byte_range",
+          "offset": 0,
+          "length": 59
+        }
+      },
+      "expect_valid": true
+    },
+    {
+      "id": "wrong_representation_reference_rejected",
+      "kind": "reference",
+      "input": {
+        "reference": {
+          "source_system_id": "22222222-2222-4222-8222-222222222224",
+          "source_instance": "synthetic-ur-c0",
+          "org_id": "2",
+          "project_id": "3",
+          "request_id": "req-synthetic-1",
+          "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+          "revision": "2",
+          "source_sha256": "sha256:e377ecf7fc6d3629078bf0da8a22dcd5164018070d6c1dc9124cc194a2af1593",
+          "capture_status": "complete",
+          "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+          "representation": {
+            "media_type": "application/json",
+            "encoding": "identity",
+            "byte_domain": "stored_representation_before_http_content_encoding",
+            "saved_bytes": 59,
+            "digest": "sha256:d9298a10d1b0735837dc4bd85dac641b0f3cef27a47e5d53a54f2f3f5b2fcffa"
+          },
+          "expires_at": "2026-09-21T00:00:00.000000Z"
+        },
+        "manifest": {
+          "schema_version": "unirouter.content-manifest.v1",
+          "source_instance": "synthetic-ur-c0",
+          "org_id": "2",
+          "project_id": "3",
+          "request_id": "req-synthetic-1",
+          "profile": "unirouter.interaction-content.v1",
+          "revision": "2",
+          "occurred_at": "2026-09-14T00:00:00.000000Z",
+          "recorded_at": "2026-09-14T00:01:00.000000Z",
+          "protocol": "integration.openai.chat.v1",
+          "observation_point": "client_request",
+          "content_item_id": "body-0",
+          "capture": {
+            "mode": "full_content",
+            "policy_ref": "project-3-content",
+            "policy_version": "2",
+            "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+            "completeness": "complete",
+            "reason": "none"
+          },
+          "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+          "representation": {
+            "media_type": "application/json",
+            "encoding": "identity",
+            "byte_domain": "stored_representation_before_http_content_encoding",
+            "saved_bytes": 59,
+            "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+          },
+          "captured_at": "2026-09-14T00:00:00.000000Z",
+          "expires_at": "2026-09-21T00:00:00.000000Z",
+          "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+          "event_id": "uf1_fef44d89b3fb96e8e88ce07c7e30dace6f6f7129fe55f0b9ea938463482018b7",
+          "previous_revision": "1",
+          "previous_hash": "sha256:2b44a7dd715019e943fe30bdbebab24a4231ca2ca1223513926b8a29bd67151d",
+          "correction_reason": "capture_finalized"
+        },
+        "location": {
+          "kind": "byte_range",
+          "offset": 0,
+          "length": 59
+        }
+      },
+      "expect_valid": false,
+      "expected_rule": "reference_match"
+    },
+    {
+      "id": "byte_range_out_of_bounds_rejected",
+      "kind": "reference",
+      "input": {
+        "reference": {
+          "source_system_id": "22222222-2222-4222-8222-222222222224",
+          "source_instance": "synthetic-ur-c0",
+          "org_id": "2",
+          "project_id": "3",
+          "request_id": "req-synthetic-1",
+          "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+          "revision": "2",
+          "source_sha256": "sha256:e377ecf7fc6d3629078bf0da8a22dcd5164018070d6c1dc9124cc194a2af1593",
+          "capture_status": "complete",
+          "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+          "representation": {
+            "media_type": "application/json",
+            "encoding": "identity",
+            "byte_domain": "stored_representation_before_http_content_encoding",
+            "saved_bytes": 59,
+            "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+          },
+          "expires_at": "2026-09-21T00:00:00.000000Z"
+        },
+        "manifest": {
+          "schema_version": "unirouter.content-manifest.v1",
+          "source_instance": "synthetic-ur-c0",
+          "org_id": "2",
+          "project_id": "3",
+          "request_id": "req-synthetic-1",
+          "profile": "unirouter.interaction-content.v1",
+          "revision": "2",
+          "occurred_at": "2026-09-14T00:00:00.000000Z",
+          "recorded_at": "2026-09-14T00:01:00.000000Z",
+          "protocol": "integration.openai.chat.v1",
+          "observation_point": "client_request",
+          "content_item_id": "body-0",
+          "capture": {
+            "mode": "full_content",
+            "policy_ref": "project-3-content",
+            "policy_version": "2",
+            "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+            "completeness": "complete",
+            "reason": "none"
+          },
+          "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+          "representation": {
+            "media_type": "application/json",
+            "encoding": "identity",
+            "byte_domain": "stored_representation_before_http_content_encoding",
+            "saved_bytes": 59,
+            "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+          },
+          "captured_at": "2026-09-14T00:00:00.000000Z",
+          "expires_at": "2026-09-21T00:00:00.000000Z",
+          "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+          "event_id": "uf1_fef44d89b3fb96e8e88ce07c7e30dace6f6f7129fe55f0b9ea938463482018b7",
+          "previous_revision": "1",
+          "previous_hash": "sha256:2b44a7dd715019e943fe30bdbebab24a4231ca2ca1223513926b8a29bd67151d",
+          "correction_reason": "capture_finalized"
+        },
+        "location": {
+          "kind": "byte_range",
+          "offset": 0,
+          "length": 60
+        }
+      },
+      "expect_valid": false,
+      "expected_rule": "byte_range"
+    },
+    {
+      "id": "complete_capture_survives_expiry",
+      "kind": "availability",
+      "input": {
+        "entry": {
+          "sequence": "2",
+          "document": {
+            "schema_version": "unirouter.content-manifest.v1",
+            "source_instance": "synthetic-ur-c0",
+            "org_id": "2",
+            "project_id": "3",
+            "request_id": "req-synthetic-1",
+            "profile": "unirouter.interaction-content.v1",
+            "revision": "2",
+            "occurred_at": "2026-09-14T00:00:00.000000Z",
+            "recorded_at": "2026-09-14T00:01:00.000000Z",
+            "protocol": "integration.openai.chat.v1",
+            "observation_point": "client_request",
+            "content_item_id": "body-0",
+            "capture": {
+              "mode": "full_content",
+              "policy_ref": "project-3-content",
+              "policy_version": "2",
+              "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+              "completeness": "complete",
+              "reason": "none"
+            },
+            "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+            "representation": {
+              "media_type": "application/json",
+              "encoding": "identity",
+              "byte_domain": "stored_representation_before_http_content_encoding",
+              "saved_bytes": 59,
+              "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+            },
+            "captured_at": "2026-09-14T00:00:00.000000Z",
+            "expires_at": "2026-09-21T00:00:00.000000Z",
+            "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+            "event_id": "uf1_fef44d89b3fb96e8e88ce07c7e30dace6f6f7129fe55f0b9ea938463482018b7",
+            "previous_revision": "1",
+            "previous_hash": "sha256:2b44a7dd715019e943fe30bdbebab24a4231ca2ca1223513926b8a29bd67151d",
+            "correction_reason": "capture_finalized"
+          },
+          "source_sha256": "sha256:e377ecf7fc6d3629078bf0da8a22dcd5164018070d6c1dc9124cc194a2af1593",
+          "availability": {
+            "state": "expired",
+            "evaluated_at": "2026-09-22T00:00:00.000000Z",
+            "retryable": false
+          }
+        }
+      },
+      "expect_valid": true
+    },
+    {
+      "id": "expired_body_not_available",
+      "kind": "availability",
+      "input": {
+        "entry": {
+          "sequence": "2",
+          "document": {
+            "schema_version": "unirouter.content-manifest.v1",
+            "source_instance": "synthetic-ur-c0",
+            "org_id": "2",
+            "project_id": "3",
+            "request_id": "req-synthetic-1",
+            "profile": "unirouter.interaction-content.v1",
+            "revision": "2",
+            "occurred_at": "2026-09-14T00:00:00.000000Z",
+            "recorded_at": "2026-09-14T00:01:00.000000Z",
+            "protocol": "integration.openai.chat.v1",
+            "observation_point": "client_request",
+            "content_item_id": "body-0",
+            "capture": {
+              "mode": "full_content",
+              "policy_ref": "project-3-content",
+              "policy_version": "2",
+              "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+              "completeness": "complete",
+              "reason": "none"
+            },
+            "content_ref": "uc1_099be8962acb22f9df852f1e0ed3899a40f971da633ec7410ab95653d8425140",
+            "representation": {
+              "media_type": "application/json",
+              "encoding": "identity",
+              "byte_domain": "stored_representation_before_http_content_encoding",
+              "saved_bytes": 59,
+              "digest": "sha256:9ca98c0b5630d2ade1d3b6ad35183472a873d4d5fba3cf524e9316e9570f8d2b"
+            },
+            "captured_at": "2026-09-14T00:00:00.000000Z",
+            "expires_at": "2026-09-21T00:00:00.000000Z",
+            "source_fact_id": "uf1_2631e62bfac5426e50794e5cef411e008b0a89dd368363b16076d4b1e27fce2b",
+            "event_id": "uf1_fef44d89b3fb96e8e88ce07c7e30dace6f6f7129fe55f0b9ea938463482018b7",
+            "previous_revision": "1",
+            "previous_hash": "sha256:2b44a7dd715019e943fe30bdbebab24a4231ca2ca1223513926b8a29bd67151d",
+            "correction_reason": "capture_finalized"
+          },
+          "source_sha256": "sha256:e377ecf7fc6d3629078bf0da8a22dcd5164018070d6c1dc9124cc194a2af1593",
+          "availability": {
+            "state": "available",
+            "evaluated_at": "2026-09-22T00:00:00.000000Z",
+            "retryable": false
+          }
+        }
+      },
+      "expect_valid": false,
+      "expected_rule": "expired_cannot_be_available"
+    },
+    {
+      "id": "partial_tool_capture_not_complete",
+      "kind": "availability",
+      "input": {
+        "entry": {
+          "sequence": "3",
+          "document": {
+            "schema_version": "unirouter.content-manifest.v1",
+            "source_instance": "synthetic-ur-c0",
+            "org_id": "2",
+            "project_id": "3",
+            "request_id": "req-synthetic-1",
+            "profile": "unirouter.interaction-content.v1",
+            "revision": "1",
+            "occurred_at": "2026-09-14T00:00:00.000000Z",
+            "recorded_at": "2026-09-14T00:00:00.000000Z",
+            "protocol": "integration.openai.chat.v1",
+            "observation_point": "provider_response",
+            "content_item_id": "body-0",
+            "capture": {
+              "mode": "full_content",
+              "policy_ref": "project-3-content",
+              "policy_version": "2",
+              "policy_effective_at": "2026-09-14T00:00:00.000000Z",
+              "completeness": "partial",
+              "reason": "stream_interrupted"
+            },
+            "content_ref": "uc1_268655930c36532b65972227e7ac3b798a67675aac66d1b32beb5598dd9ce738",
+            "representation": {
+              "media_type": "application/json",
+              "encoding": "identity",
+              "byte_domain": "stored_representation_before_http_content_encoding",
+              "saved_bytes": 15,
+              "digest": "sha256:4199d75e19291c45e229031718a74b832d263f081a5e61e9451cfb74a90a361b"
+            },
+            "captured_at": "2026-09-14T00:00:00.000000Z",
+            "expires_at": "2026-09-21T00:00:00.000000Z",
+            "source_fact_id": "uf1_a71f235010aa629cf6e5732a47460334af8384682a24e9aa42fa21f5118869b4",
+            "event_id": "uf1_de69ea9c1bdd21d2c265417fc8e49f7842a6b365423088b6506ae8eef8a6df2c",
+            "attempt_id": "attempt-1"
+          },
+          "source_sha256": "sha256:cce8600f2fc87d830f78211fb740ce971847f1943a19a95f3b9567c2c75f6047",
+          "availability": {
+            "state": "available",
+            "evaluated_at": "2026-09-14T00:02:00.000000Z",
+            "retryable": false
+          }
+        }
+      },
+      "expect_valid": true
+    },
+    {
+      "id": "r2_state_order_profile_not_authorized",
+      "kind": "c_read_state_error",
+      "input": {
+        "endpoints": [
+          "/api/v1/integrations/xinsight/source/v2/content-capabilities",
+          "/api/v1/integrations/xinsight/source/v2/content-manifests",
+          "/api/v1/integrations/xinsight/source/v2/contents/{content_ref}"
+        ],
+        "authenticated_state": {
+          "profile_intersection": false,
+          "source_status": "paused",
+          "credential_status": "feed_staged"
+        },
+        "response": {
+          "http_status": 403,
+          "body": {
+            "error": {
+              "code": "profile_not_authorized",
+              "retryable": false,
+              "error_version": "foigent.connector-error.v1",
+              "category": "source",
+              "phase": "fetch",
+              "operation": "read_source",
+              "safe_message": "Source facts request could not be completed",
+              "recovery": "operator_repair"
+            }
+          }
+        }
+      },
+      "expect_valid": true
+    },
+    {
+      "id": "r2_wrong_state_mapping_profile_not_authorized",
+      "kind": "c_read_state_error",
+      "input": {
+        "endpoints": [
+          "/api/v1/integrations/xinsight/source/v2/content-capabilities",
+          "/api/v1/integrations/xinsight/source/v2/content-manifests",
+          "/api/v1/integrations/xinsight/source/v2/contents/{content_ref}"
+        ],
+        "authenticated_state": {
+          "profile_intersection": false,
+          "source_status": "paused",
+          "credential_status": "feed_staged"
+        },
+        "response": {
+          "http_status": 503,
+          "body": {
+            "error": {
+              "code": "source_paused",
+              "retryable": true,
+              "error_version": "foigent.connector-error.v1",
+              "category": "source",
+              "phase": "fetch",
+              "operation": "read_source",
+              "safe_message": "Source facts request could not be completed",
+              "recovery": "operator_repair"
+            }
+          }
+        }
+      },
+      "expect_valid": false,
+      "expected_rule": "c_read_state_mapping"
+    },
+    {
+      "id": "r2_state_order_source_paused",
+      "kind": "c_read_state_error",
+      "input": {
+        "endpoints": [
+          "/api/v1/integrations/xinsight/source/v2/content-capabilities",
+          "/api/v1/integrations/xinsight/source/v2/content-manifests",
+          "/api/v1/integrations/xinsight/source/v2/contents/{content_ref}"
+        ],
+        "authenticated_state": {
+          "profile_intersection": true,
+          "source_status": "paused",
+          "credential_status": "feed_staged"
+        },
+        "response": {
+          "http_status": 503,
+          "body": {
+            "error": {
+              "code": "source_paused",
+              "retryable": true,
+              "error_version": "foigent.connector-error.v1",
+              "category": "source",
+              "phase": "fetch",
+              "operation": "read_source",
+              "safe_message": "Source facts request could not be completed",
+              "recovery": "operator_repair"
+            }
+          }
+        }
+      },
+      "expect_valid": true
+    },
+    {
+      "id": "r2_wrong_state_mapping_source_paused",
+      "kind": "c_read_state_error",
+      "input": {
+        "endpoints": [
+          "/api/v1/integrations/xinsight/source/v2/content-capabilities",
+          "/api/v1/integrations/xinsight/source/v2/content-manifests",
+          "/api/v1/integrations/xinsight/source/v2/contents/{content_ref}"
+        ],
+        "authenticated_state": {
+          "profile_intersection": true,
+          "source_status": "paused",
+          "credential_status": "feed_staged"
+        },
+        "response": {
+          "http_status": 409,
+          "body": {
+            "error": {
+              "code": "staged_credential_requires_pause",
+              "retryable": false,
+              "error_version": "foigent.connector-error.v1",
+              "category": "source",
+              "phase": "fetch",
+              "operation": "read_source",
+              "safe_message": "Source facts request could not be completed",
+              "recovery": "operator_repair"
+            }
+          }
+        }
+      },
+      "expect_valid": false,
+      "expected_rule": "c_read_state_mapping"
+    },
+    {
+      "id": "r2_state_order_staged_credential_requires_pause",
+      "kind": "c_read_state_error",
+      "input": {
+        "endpoints": [
+          "/api/v1/integrations/xinsight/source/v2/content-capabilities",
+          "/api/v1/integrations/xinsight/source/v2/content-manifests",
+          "/api/v1/integrations/xinsight/source/v2/contents/{content_ref}"
+        ],
+        "authenticated_state": {
+          "profile_intersection": true,
+          "source_status": "active",
+          "credential_status": "feed_staged"
+        },
+        "response": {
+          "http_status": 409,
+          "body": {
+            "error": {
+              "code": "staged_credential_requires_pause",
+              "retryable": false,
+              "error_version": "foigent.connector-error.v1",
+              "category": "source",
+              "phase": "fetch",
+              "operation": "read_source",
+              "safe_message": "Source facts request could not be completed",
+              "recovery": "operator_repair"
+            }
+          }
+        }
+      },
+      "expect_valid": true
+    },
+    {
+      "id": "r2_wrong_state_mapping_staged_credential_requires_pause",
+      "kind": "c_read_state_error",
+      "input": {
+        "endpoints": [
+          "/api/v1/integrations/xinsight/source/v2/content-capabilities",
+          "/api/v1/integrations/xinsight/source/v2/content-manifests",
+          "/api/v1/integrations/xinsight/source/v2/contents/{content_ref}"
+        ],
+        "authenticated_state": {
+          "profile_intersection": true,
+          "source_status": "active",
+          "credential_status": "feed_staged"
+        },
+        "response": {
+          "http_status": 503,
+          "body": {
+            "error": {
+              "code": "source_paused",
+              "retryable": true,
+              "error_version": "foigent.connector-error.v1",
+              "category": "source",
+              "phase": "fetch",
+              "operation": "read_source",
+              "safe_message": "Source facts request could not be completed",
+              "recovery": "operator_repair"
+            }
+          }
+        }
+      },
+      "expect_valid": false,
+      "expected_rule": "c_read_state_mapping"
+    }
+  ],
+  "bytes": [
+    {
+      "id": "empty_bytes",
+      "manifest": "manifest_zero_bytes",
+      "recipe": {
+        "kind": "repeat",
+        "byte": 0,
+        "count": 0
+      },
+      "expect_match": true
+    },
+    {
+      "id": "normal_json_bytes",
+      "manifest": "manifest_complete",
+      "recipe": {
+        "kind": "hex",
+        "hex": "7b226d65737361676573223a5b7b22726f6c65223a2275736572222c22636f6e74656e74223a2273796e74686574696320726576696577227d5d7d"
+      },
+      "expect_match": true
+    },
+    {
+      "id": "non_json_inert_html",
+      "manifest": "manifest_inert_html",
+      "recipe": {
+        "kind": "hex",
+        "hex": "3c7363726970743e7468726f77206e6577204572726f722822494e4552542053594e54484554494320434f4e54454e5422293b3c2f7363726970743e"
+      },
+      "expect_match": true
+    },
+    {
+      "id": "binary_gzip_payload_raw_bytes",
+      "manifest": "manifest_binary_gzip_payload",
+      "recipe": {
+        "kind": "hex",
+        "hex": "1f8b08000000000002ffab56ca4d2d2e4e4c4f2d56b28aae562acacf4955b2522a2d4e2d52d2514acecf2b49cd2b010a1457e69564a49664262b14a59665a6962bd5c6d6020090b5210e3b000000"
+      },
+      "expect_match": true
+    },
+    {
+      "id": "17mib_plus_one_real_hashed_bytes",
+      "manifest": "manifest_large_17mib",
+      "recipe": {
+        "kind": "repeat",
+        "byte": 65,
+        "count": 17825793
+      },
+      "expect_match": true
+    },
+    {
+      "id": "wrong_representation_bytes",
+      "manifest": "manifest_complete",
+      "recipe": {
+        "kind": "hex",
+        "hex": "77726f6e67"
+      },
+      "expect_match": false
+    },
+    {
+      "id": "interrupted_transport_bytes",
+      "manifest": "manifest_complete",
+      "recipe": {
+        "kind": "hex",
+        "hex": "7b226d65737361676573223a5b7b22726f6c65223a2275736572222c22636f6e74656e74223a2273796e74686574696320726576696577227d5d"
+      },
+      "expect_match": false
+    },
+    {
+      "id": "normal_tool_roundtrip_saved_bytes",
+      "manifest": "manifest_tool_roundtrip",
+      "recipe": {
+        "kind": "hex",
+        "hex": "7b226d65737361676573223a5b7b22636f6e74656e74223a2252656164207468652073796e746865746963206e6f74652e222c22726f6c65223a2275736572227d2c7b22726f6c65223a22617373697374616e74222c22746f6f6c5f63616c6c73223a5b7b2266756e6374696f6e223a7b22617267756d656e7473223a227b5c226e616d655c223a5c2273796e7468657469632d6e6f74655c227d222c226e616d65223a22726561645f6e6f7465227d2c226964223a2263616c6c2d31222c2274797065223a2266756e6374696f6e227d5d7d2c7b22636f6e74656e74223a2273796e746865746963206e6f746520636f6e74656e7473222c22726f6c65223a22746f6f6c222c22746f6f6c5f63616c6c5f6964223a2263616c6c2d31227d5d7d"
+      },
+      "expect_match": true
+    }
+  ],
+  "contract_version": "1.0.0-candidate.2"
+}

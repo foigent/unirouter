@@ -583,6 +583,11 @@ func Validate(plan Plan) error {
 
 func ClassifyTable(name string) (scope, action, reason string) {
 	switch name {
+	case "execution_content_streams", "execution_source_content_scopes",
+		"execution_source_content_bindings", "execution_source_content_operations",
+		"execution_content_policies", "execution_content_manifests",
+		"execution_content_objects", "execution_content_health":
+		return ScopeReviewRequired, ActionPreserveAll, "content lifecycle requires a separately reviewed reset contract; preserve all and refuse apply"
 	case "schema_migrations":
 		return ScopeSchemaLedger, ActionPreserveAll, "migration ledger is immutable reset infrastructure"
 	case "settings":

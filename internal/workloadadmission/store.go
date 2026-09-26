@@ -56,6 +56,7 @@ type storeResult struct {
 	Code        int64
 	GlobalUsed  int64
 	OrgUsed     int64
+	NowMS       int64
 	RetryMS     int64
 	WaitedMS    int64
 	QueueDepth  int64
@@ -76,7 +77,7 @@ func parseStoreResult(value interface{}) (storeResult, error) {
 		}
 	}
 	return storeResult{
-		Code: parsed[0], GlobalUsed: parsed[1], OrgUsed: parsed[2], RetryMS: parsed[4],
+		Code: parsed[0], GlobalUsed: parsed[1], OrgUsed: parsed[2], NowMS: parsed[3], RetryMS: parsed[4],
 		WaitedMS: parsed[5], QueueDepth: parsed[6], LeaseExpiry: parsed[7],
 	}, nil
 }
@@ -127,6 +128,7 @@ local max_scan = tonumber(ARGV[14])
 local state_ttl = tonumber(ARGV[15])
 local config_version = ARGV[16]
 local max_org_queue = tonumber(ARGV[17])
+local original_queued_at = tonumber(ARGV[18] or "")
 
 local now = redis.call("TIME")
 local now_ms = (tonumber(now[1]) * 1000) + math.floor(tonumber(now[2]) / 1000)
@@ -155,6 +157,15 @@ local function decrement_org_queue(queued_org)
     local count = math.max(0, tonumber(redis.call("HGET", org_queue_counts, queued_org) or "0") - 1)
     if count == 0 then redis.call("HDEL", org_queue_counts, queued_org)
     else redis.call("HSET", org_queue_counts, queued_org, count) end
+end
+
+-- Preserve this caller's queue origin before expiry cleanup can remove it.
+-- A continuing caller also carries that Redis TIME origin across peer cleanup.
+if redis.call("HGET", metadata, meta_field(member, "state")) == "queued" then
+    local stored_queued_at = tonumber(redis.call("HGET", metadata, meta_field(member, "queued")))
+    if stored_queued_at and (not original_queued_at or stored_queued_at < original_queued_at) then
+        original_queued_at = stored_queued_at
+    end
 end
 
 local global_total = tonumber(redis.call("GET", global_total_key) or "0")
@@ -211,6 +222,28 @@ if existing_state then
 end
 
 local queue_depth = redis.call("ZCARD", q_interactive) + redis.call("ZCARD", q_stream) + redis.call("ZCARD", q_embedding)
+local function capacity_denial(waited_ms)
+    -- Expiry cleanup may already have removed this member and its org count.
+    if redis.call("ZREM", queue_for(class), member) == 1 then
+        decrement_org_queue(org)
+        queue_depth = queue_depth - 1
+    end
+    redis.call("ZREM", queue_deadlines, member)
+    delete_metadata(member)
+    local earliest = redis.call("ZRANGE", leases, 0, 0, "WITHSCORES")
+    local retry_ms = 1000
+    if #earliest == 2 then retry_ms = math.max(1, math.min(1000, tonumber(earliest[2]) - now_ms)) end
+    return {2, global_total, tonumber(redis.call("HGET", org_totals, org) or "0"), now_ms,
+            retry_ms, waited_ms, queue_depth, 0}
+end
+
+-- Active-lease idempotency above wins over a previous queue deadline. At the
+-- exact deadline an available slot may still be admitted; later polls may not
+-- restart the queue, advance fairness or acquire a lease, even after peer reap.
+if original_queued_at and now_ms > original_queued_at + max_wait_ms then
+    return capacity_denial(now_ms - original_queued_at)
+end
+local queued_at = original_queued_at or now_ms
 if not existing_state then
     local org_queue_depth = tonumber(redis.call("HGET", org_queue_counts, org) or "0")
     if queue_depth >= max_queue or org_queue_depth >= max_org_queue then
@@ -238,10 +271,10 @@ if not existing_state then
         meta_field(member, "org"), org,
         meta_field(member, "gfinish"), global_finish,
         meta_field(member, "ofinish"), org_finish,
-        meta_field(member, "queued"), now_ms,
+        meta_field(member, "queued"), queued_at,
         meta_field(member, "poll"), now_ms)
     redis.call("ZADD", queue_for(class), score, member)
-    redis.call("ZADD", queue_deadlines, now_ms + max_wait_ms, member)
+    redis.call("ZADD", queue_deadlines, queued_at + max_wait_ms, member)
     redis.call("HINCRBY", org_queue_counts, org, 1)
     queue_depth = queue_depth + 1
 else
@@ -349,22 +382,12 @@ if selected == member and reserve_ok then
     redis.call("HSET", fairness, "served", tonumber(redis.call("HGET", metadata, meta_field(member, "gfinish")) or "0"))
     redis.call("HSET", org_fairness, "served", tonumber(redis.call("HGET", metadata, meta_field(member, "ofinish")) or "0"))
     for _, key in ipairs(KEYS) do redis.call("EXPIRE", key, state_ttl) end
-    local queued_at = tonumber(redis.call("HGET", metadata, meta_field(member, "queued")) or now_ms)
     return {0, global_total, org_total, now_ms, 0, now_ms - queued_at, queue_depth - 1, expiry}
 end
 
-local deadline = tonumber(redis.call("ZSCORE", queue_deadlines, member) or now_ms)
-local queued_at = tonumber(redis.call("HGET", metadata, meta_field(member, "queued")) or now_ms)
+local deadline = queued_at + max_wait_ms
 if now_ms >= deadline then
-    redis.call("ZREM", queue_for(class), member)
-    redis.call("ZREM", queue_deadlines, member)
-    decrement_org_queue(org)
-    delete_metadata(member)
-    local earliest = redis.call("ZRANGE", leases, 0, 0, "WITHSCORES")
-    local retry_ms = 1000
-    if #earliest == 2 then retry_ms = math.max(1, math.min(1000, tonumber(earliest[2]) - now_ms)) end
-    return {2, global_total, tonumber(redis.call("HGET", org_totals, org) or "0"), now_ms,
-            retry_ms, now_ms - queued_at, queue_depth - 1, 0}
+    return capacity_denial(now_ms - queued_at)
 end
 
 for _, key in ipairs(KEYS) do redis.call("EXPIRE", key, state_ttl) end

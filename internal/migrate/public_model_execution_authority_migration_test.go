@@ -157,19 +157,7 @@ func TestPublicModelExecutionAuthorityDownGuardsFrozenAuthorityBeforeDrop(t *tes
 }
 
 func TestCISelectsPublicModelExecutionAuthorityPostgresContracts(t *testing.T) {
-	workflowBytes, err := os.ReadFile("../../.github/workflows/ci.yml")
-	if err != nil {
-		t.Fatalf("read CI workflow: %v", err)
-	}
-	workflow := string(workflowBytes)
-	laneStart := strings.Index(workflow, "- name: Run consolidated backend integration and feature gates")
-	if laneStart < 0 {
-		t.Fatal("CI consolidated integration gate is missing")
-	}
-	lane := workflow[laneStart:]
-	if next := strings.Index(lane[len("- name:"):], "\n      - name:"); next >= 0 {
-		lane = lane[:len("- name:")+next]
-	}
+	lane := consolidatedIntegrationSource(t)
 	if !strings.Contains(lane, "TestPublicModelExecutionAuthority.*Integration") {
 		t.Fatal("CI consolidated integration gate does not select M77 PostgreSQL contracts")
 	}

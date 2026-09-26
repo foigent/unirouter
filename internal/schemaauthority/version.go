@@ -9,8 +9,11 @@ const StreamCounterExpandHead = "000115_stream_counter_version"
 const SourceFactsExpandHead = "000116_execution_source_facts"
 const ObservationExpandHead = "000117_execution_observations"
 const BudgetSnapshotExpandHead = "000118_source_budget_snapshots"
-const LatestSupportedMigration = BudgetSnapshotExpandHead
+const ContentCaptureExpandHead = "000119_execution_content_capture"
+const ContentReclaimExpandHead = "000120_unpublished_content_reclamation"
+const PreDispatchExpandHead = "000121_gateway_pre_dispatch_terminal"
+const LatestSupportedMigration = PreDispatchExpandHead
 
 func SupportedSchemaHeads() []string {
-	return []string{LegacyCapabilityHead, CapabilityExpandHead, StreamCounterExpandHead, SourceFactsExpandHead, ObservationExpandHead, BudgetSnapshotExpandHead}
+	return []string{LegacyCapabilityHead, CapabilityExpandHead, StreamCounterExpandHead, SourceFactsExpandHead, ObservationExpandHead, BudgetSnapshotExpandHead, ContentCaptureExpandHead, ContentReclaimExpandHead, PreDispatchExpandHead}
 }

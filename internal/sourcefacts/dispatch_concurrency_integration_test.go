@@ -115,16 +115,25 @@ func TestSourceDispatchRCConcurrentPublishAndRRSnapshotVisibility(t *testing.T) 
 	pool, s, org, project := setupSourceDB(t)
 	ctx := t.Context()
 	events := make([]outbox.Event, 4)
+	var registered Observation
 	for i := range events {
 		docs := frozenDispatchFixture(t, s, org, project, fmt.Sprintf("publish-concurrent-%d", i), time.Now().UTC().Truncate(time.Microsecond))
+		if i == 0 {
+			for _, d := range docs {
+				if d.Profile == DestinationProfile {
+					registered = d
+				}
+			}
+		}
 		events[i] = ownFrozenDispatch(t, pool, insertFrozenDispatch(t, pool, s, docs))
 	}
+	observationSnapshotAttempt(t, pool, s, org, project, events[0].RequestID)
 	tx, err := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
 	require.NoError(t, err)
 	defer tx.Rollback(ctx)
 	request := events[0].RequestID
 	attempt := "synthetic-attempt-" + request
-	before, found, err := s.pendingDispatchDestination(ctx, tx, org, project, request, attempt)
+	_, before, found, err := s.measurementAttemptSnapshot(ctx, tx, org, project, request, attempt, registered, true)
 	require.NoError(t, err)
 	require.True(t, found)
 	results := make(chan error, len(events))
@@ -142,7 +151,7 @@ func TestSourceDispatchRCConcurrentPublishAndRRSnapshotVisibility(t *testing.T) 
 	require.NoError(t, worker.RegisterHandler(outbox.EventSourceDispatch, s.ProcessDispatchEvent))
 	_, err = worker.DrainOnce(ctx)
 	require.NoError(t, err)
-	after, found, err := s.pendingDispatchDestination(ctx, tx, org, project, request, attempt)
+	_, after, found, err := s.measurementAttemptSnapshot(ctx, tx, org, project, request, attempt, registered, true)
 	require.NoError(t, err)
 	require.True(t, found, "an old RR snapshot still sees frozen input after publication and ack")
 	require.Equal(t, before, after)
@@ -152,4 +161,12 @@ func TestSourceDispatchRCConcurrentPublishAndRRSnapshotVisibility(t *testing.T) 
 	decoded, err := DecodeObservation(wire)
 	require.NoError(t, err)
 	require.Equal(t, before, decoded, "a new snapshot sees the exact published origin")
+	expectedWire, err := EncodeObservation(before)
+	require.NoError(t, err)
+	require.Equal(t, expectedWire, wire, "published canonical bytes match the frozen snapshot")
+	var pending, bad int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM internal_outbox_events WHERE event_type=$1`, outbox.EventSourceDispatch).Scan(&pending))
+	require.Zero(t, pending, "original worker acknowledged all four events")
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM execution_source_streams s WHERE s.high_sequence<>(SELECT count(*) FROM execution_source_facts f WHERE f.source_instance=s.source_instance AND f.org_id=s.org_id AND f.project_id=s.project_id AND f.profile=s.profile) OR s.high_sequence<>COALESCE((SELECT max(sequence) FROM execution_source_facts f WHERE f.source_instance=s.source_instance AND f.org_id=s.org_id AND f.project_id=s.project_id AND f.profile=s.profile),0)`).Scan(&bad))
+	require.Zero(t, bad, "all stream sequences commit atomically without gaps")
 }

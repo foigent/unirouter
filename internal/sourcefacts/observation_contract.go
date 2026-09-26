@@ -28,8 +28,12 @@ const (
 	DestinationProfile = "unirouter.destination-observation.v1"
 )
 
-func ObservationProfiles() []string {
+func v1ObservationProfiles() []string {
 	return []string{RuntimeProfile, AttemptProfile, CapabilityProfile, PolicyProfile, DestinationProfile}
+}
+
+func ObservationProfiles() []string {
+	return append(v1ObservationProfiles(), GatewayPreDispatchProfile)
 }
 
 func validObservationProfile(profile string) bool {
@@ -209,7 +213,7 @@ func observationTime(value string) bool {
 
 func (d Observation) Validate() error {
 	invalid := errors.New("invalid source observation")
-	if d.SchemaVersion != ObservationVersion || !validObservationProfile(d.Profile) || !positiveID(d.OrgID) || !positiveID(d.ProjectID) || !positiveID(d.Revision) || !opaque(d.SourceInstance, 128) || !opaque(d.RequestID, 64) || !opaque(d.SubjectID, 128) {
+	if d.SchemaVersion != ObservationVersion || !slices.Contains(v1ObservationProfiles(), d.Profile) || !positiveID(d.OrgID) || !positiveID(d.ProjectID) || !positiveID(d.Revision) || !opaque(d.SourceInstance, 128) || !opaque(d.RequestID, 64) || !opaque(d.SubjectID, 128) {
 		return invalid
 	}
 	if !oneOf(d.SubjectKind, "request", "provider_attempt", "media_job", "media_attempt", "policy") || !slices.Contains(observationKinds[d.Profile], d.Kind) || !oneOf(d.Coverage, "observed", "partial", "not_observed") || !observationTime(d.OccurredAt) || !observationTime(d.RecordedAt) || d.SourceFactID != d.factID() || d.EventID != d.eventID() {

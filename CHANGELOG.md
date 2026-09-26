@@ -4,6 +4,56 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.5.0] - 2026-09-25
+
+- 为认证后的 Chat `routing.no_route` 503 新增独立 B v2 网关执行前终态；Provider、delivery 与财务均保持未开始/未创建，捕获失败保留原 503，不改 v1 财务终态与 completed-execution Feed。
+- M121 仅扩展 source stream/connection/credential 的有限 profile 集，运行代次必须声明 M121 与 v2 观测实现；旧读取者继续按显式 v1 profile 订阅。含数据或活跃代次时拒绝回退。
+- development/test 现存 M115–M120 数据库使用一次精确迁移后缀 carrier 切换到兼容二进制，再由原 `compatible-expand` 按头逐段扩展到 M121；每对 up/down 字节、旧账本和禁用的 source 配置均须吻合。旧二进制不因新 schema 自动取得回退资格。
+- 当前为本地候选；合成 PostgreSQL 全链与源码检查不代表日常备份/运行 fleet、XI v2 消费、CI、Target 或正式制品已验收。
+
+## [1.4.8] - 2026-09-23
+
+- 付费准入在同一数据库快照内区分普通 delivery_pending 与未决风险：精确绑定的持久用量已被预留现金和赠金完整覆盖，或属于成本观察模式时，允许独立请求继续；未知用量、补款不足、交付失败及其他明确风险继续阻断。
+- 原请求的 attempt fencing、交付凭据、收费和恢复合同不变；不引入活性租约或调整钱包、池大小及负载阈值。
+- 当前为本地候选；离线编译与纯测不代替真实 PostgreSQL、200 RPS、CI、制品或部署验证。
+
+## [1.4.7] - 2026-09-23
+
+- Source Facts A/B 发布在原事务内按唯一 profile 有序建流与加锁，完成重放和前驱校验后按 profile 批量分配序号并写入原始字节，减少重复 SQL；身份、hash、排序、原子回滚及财务边界不变。
+- 内容初始未捕获路径复用已存在 stream 的只读 epoch 快照，追加仍锁内核对精确 epoch；首次建流保留独立提交与 health 恢复锚点。策略、manifest、失联提交及恢复 fencing 合同不变。
+- 当前为本地内部优化候选；真实 PostgreSQL、原 200 RPS、CI、正式制品与部署验证独立，不以离线测试代替。
+
+## [1.4.6] - 2026-09-22
+
+- 加权准入保留一次 Reserve 的首次 Redis 排队起点；队列项被当前请求或其他请求清理后，原调用不能重置最长等待时间、重新推进公平序列或超期获得租约，等待证据保持累计值。
+- 新排队期限语义纳入现有 workload 配置指纹；新旧实例有在途租约或排队时沿用 mixed-config 拒绝与先 drain 切换，旧租约释放及清理兼容能力保留。
+- 活动租约幂等、恰好期限时的准入边界、容量与公平策略、终态释放及 Redis 不确定时 fail-closed 不变。本地修复不代表 200 RPS 验收、真实 Redis 或部署已经通过。
+
+## [1.4.5] - 2026-09-22
+
+- Trace 落库时，无 Provider attempt 或 response-cache 投影的 route_channel_id 写为 NULL，保留普通 routing 上下文；共享 call-log 投影、数据库约束和真实 attempt 资格不变。
+- 性能诊断纠正通用 context dial 标签，并在原 60 秒收口期限内、轮询前保留有界且精确作用域的 trace/outbox 白名单快照；辅助采样单独报告，不改变原成功判据；不修改费用 hold、池大小、重试或业务超时。
+- 当前为本地修复候选；定向纯测/编译与 PG、性能、正式制品和部署证据分别记录。本修复不代表此前 8.223 秒前上游延迟已定位或解决。
+
+## [1.4.4] - 2026-09-22
+
+- 独立 measurement、admission-rejection 和 committed observation 写事务使用 READ COMMITTED；跨来源的 dispatch 交接和已提交 attempt/reservation/delivery 读取各用单条 SQL 快照，保留冻结身份、hash、状态推进拒绝及原失败语义。
+- 原财务 writer、连续发布序列、提交原子性、准入未决保护、捕获预算及重试不变。
+- 当前仅为临时候选补丁；纯测/编译与 PG/ECS、性能、正式制品和部署证据分别记录。
+
+## [1.4.3] - 2026-09-22
+
+- 修正 durable outbox 有可领取工作时每批固定等待的问题：成功非空批次连续排空，空队列或错误仍沿用原轮询；worker、batch、lease、优先级及重试合同不变。
+- Source Facts 捕获失败保留有限 SQL 阶段及原错误链供安全诊断；不改变 SQL、事务隔离、预算、重试或原失败策略。
+- 当前为本地源码候选；PG/ECS、性能、签名发布及部署另行核验。
+
+## [1.4.2] - 2026-09-21
+
+- 新增显式离线 `content-store reclaim-unpublished check|apply`：核精确数据库/source/项目/对象绑定及完整未发布清单链，只回收持久映射的 final/temp 普通文件；check 不写入。
+- M120 增加 nullable `reclaimed_at`，保留原 reservation 去重行、原预留量、策略和 epoch；文件耐久缺失后一次释放 reserved，stored 与历史清单不变。来源不明 orphan、历史缺失、重复映射和已发布引用均拒绝。
+- M119 迁移字节不变；有限 runtime/fresh/restore 路径识别 M120，预算证明仍绑定原 M118 前缀。全部共享 DB/root 的进程停止且禁止重启是强制运维前提，无在线 GC 或目录扫描。
+- 当前为本地源码候选；PG/ECS 实际验收、签名发布及部署另行核验。
+
 ## [1.4.1] - 2026-09-12
 
 - 新增同一后端制品的 `fresh-install plan/check/apply/resume`，显式接管真实空库，沿用 M1–M118 迁移、独立 Publication Plan 和原 session migration lock。

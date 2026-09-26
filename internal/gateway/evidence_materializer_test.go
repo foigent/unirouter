@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/executionevidence"
 	"github.com/uniroute/unirouter/internal/executionprojection"
 	"github.com/uniroute/unirouter/internal/metering"
@@ -218,5 +220,55 @@ func TestContextWithCoordinatorExecutionProjectionBindsCanonicalAndVerifyIdentit
 		base, 12, "req_coordinator_projection", "att_coordinator_projection", compact,
 	); err == nil {
 		t.Fatal("cross-organization context projection must be rejected")
+	}
+}
+
+func TestTraceMaterializationChannelProjection(t *testing.T) {
+	for _, kind := range []string{"no_provider_attempt", "response_cache", "precontract_provider_attempt", "legacy", "verify", "canonical"} {
+		t.Run(kind, func(t *testing.T) {
+			projection := executionprojection.Projection{Source: executionprojection.Source(kind)}
+			var expected any
+			switch kind {
+			case "precontract_provider_attempt":
+				projection.LegacyChannelID = 7
+				expected = int64(7)
+			case "legacy", "verify", "canonical":
+				compact := &executionevidence.CompactProjection{ContractVersion: executionevidence.ContractVersion, AuthorityMode: executionevidence.AuthorityMode(kind), EvidenceHash: "sha256:" + strings.Repeat("a", 64), ModelOperationID: "openai.chat_completions.v1"}
+				if kind != "canonical" {
+					compact.LegacyChannelID = 7
+					expected = int64(7)
+				}
+				if kind != "legacy" {
+					compact.PublicModelID = 1
+					compact.DeploymentID = 2
+					compact.ConnectionID = 3
+					compact.CredentialBindingID = 4
+					compact.RuntimeReleaseID = 5
+					compact.SnapshotHash = "mrs1_" + strings.Repeat("b", 64)
+				}
+				projection = executionprojection.Projection{Source: executionprojection.SourceProviderAttempt, Compact: compact}
+			}
+			var actual []any
+			relay := &Relay{db: &testutil.MockDB{ExecFn: func(_ context.Context, _ string, args ...any) (pgconn.CommandTag, error) {
+				actual = args
+				return pgconn.CommandTag{}, nil
+			}}}
+			err := relay.materializeTrace(t.Context(), traceOutboxPayload{RequestID: "trace-projection", OrgID: 1, AttemptID: "att_correlation", Provider: "routing-provider", Channel: "routing-channel", ChannelID: 7, RouteProjection: projection, Metadata: []byte("{}"), SourceEventHash: strings.Repeat("c", 64)}, "test-event")
+			require.NoError(t, err)
+			require.Len(t, actual, 57)
+			require.Equal(t, expected, actual[56], "trace execution channel must follow the projection")
+			require.Equal(t, "routing-provider", actual[13])
+			require.Equal(t, "routing-channel", actual[14])
+			require.Equal(t, "att_correlation", actual[36])
+			if kind == "no_provider_attempt" || kind == "response_cache" {
+				shared, err := projectionValues(projection, 7)
+				require.NoError(t, err)
+				require.EqualValues(t, 7, shared.LegacyChannelID, "shared call-log behavior is unchanged")
+			}
+			if kind == "canonical" {
+				require.Equal(t, int64(2), actual[46])
+				require.Equal(t, string(executionprojection.SourceProviderAttempt), actual[41])
+			}
+		})
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -26,6 +27,7 @@ import (
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/capbilling"
 	"github.com/uniroute/unirouter/internal/completedfeed"
+	"github.com/uniroute/unirouter/internal/contentcapture"
 	"github.com/uniroute/unirouter/internal/filter"
 	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
@@ -49,18 +51,52 @@ func TestSourceObservationsChatAndEmbeddingsAuthHistoryAndReplayIntegration(t *t
 	sourceChatAndEmbeddingsAuthHistoryAndReplay(t, true)
 }
 
-func sourceChatAndEmbeddingsAuthHistoryAndReplay(t *testing.T, observations bool) {
+// J1 is separate from the frozen P3 selector and never runs without its exact-run approval.
+func TestJ1ContentAuthenticatedPullIntegration(t *testing.T) {
+	if os.Getenv("UR_J1_INTEROP") != "1" {
+		t.Skip("explicit J1 opt-in required")
+	}
+	j1RequireApproval(t)
+	sourceChatAndEmbeddingsAuthHistoryAndReplay(t, true, true)
+}
+
+func sourceChatAndEmbeddingsAuthHistoryAndReplay(t *testing.T, observations bool, contentEnabled ...bool) {
+	content := len(contentEnabled) == 1 && contentEnabled[0]
 	operations := []string{"chat", "chat_stream", "chat_stream_interrupted", "chat_stream_cancel", "embeddings", "chat_cache"}
 	if observations {
 		operations = append(operations, "chat_stream_tools", "chat_stream_write_failure", "chat_stream_flush_failure", "chat_fallback", "embeddings_fallback")
+	}
+	if os.Getenv("UR_J1_INTEROP") != "" {
+		require.Equal(t, "TestJ1ContentAuthenticatedPullIntegration", t.Name())
+		require.Equal(t, "", os.Getenv("UR_P3_INTEROP"))
+		j1RequireApproval(t)
+		operations = []string{"chat"}
 	}
 	for _, operation := range operations {
 		identities := []string{"legacy_shared", "legacy_personal", "legacy_application", "grant_personal", "grant_application", "agent"}
 		if operation == "chat_cache" || strings.HasPrefix(operation, "chat_stream_") || strings.HasSuffix(operation, "_fallback") {
 			identities = []string{"legacy_shared"}
 		}
+		if content && len(identities) > 1 {
+			identities = []string{"legacy_shared", "agent"}
+		}
+		if os.Getenv("UR_J1_INTEROP") == "1" {
+			identities = []string{"legacy_shared"}
+		}
 		for _, identity := range identities {
 			t.Run(operation+"/"+identity, func(t *testing.T) {
+				var interop *p3SourceFixture
+				if os.Getenv("UR_P3_INTEROP") != "" {
+					require.Equal(t, "1", os.Getenv("UR_P3_INTEROP"))
+					require.Equal(t, "TestSourceObservationsChatAndEmbeddingsAuthHistoryAndReplayIntegration/chat/legacy_shared", t.Name())
+					require.True(t, observations && !content)
+					interop = newP3SourceFixture(t)
+				}
+				if os.Getenv("UR_J1_INTEROP") == "1" {
+					require.Equal(t, "TestJ1ContentAuthenticatedPullIntegration/chat/legacy_shared", t.Name())
+					require.True(t, observations && content)
+					interop = newP3SourceFixture(t)
+				}
 				pool := testutil.SetupMigratedTestDB(t)
 				sourceHTTPIsolateRedisIdentities(t, pool)
 				role := "developer"
@@ -137,53 +173,15 @@ func sourceChatAndEmbeddingsAuthHistoryAndReplay(t *testing.T, observations bool
 						require.NoError(t, err)
 					}
 				}
+				runtime := newSourceHTTPRuntime(t, pool, org, project, key, observations, content, interop)
+				source, v1, journal, relay, capabilities := runtime.source, runtime.feed, runtime.journal, runtime.relay, runtime.capabilities
+				contentHarness, sourceToken := runtime.content, runtime.sourceToken
+				b, rdb := runtime.billing, runtime.redis
 				const sourceSecret = "synthetic-source-http-cursor-secret-only"
-				source, err := sourcefacts.New(pool, sourcefacts.Options{Enabled: true, ObservationsEnabled: observations, SourceInstance: "synthetic-http", CursorSecret: sourceSecret, I01Enabled: true})
-				require.NoError(t, err)
-				defer sourceHTTPAuthenticatedPull(t, pool, source, sourceSecret, org, project)()
-				v1, err := completedfeed.NewService(pool, sourceSecret, source.SourceInstance(), true)
-				require.NoError(t, err)
-				b := billing.NewBilling(pool, nil).WithMode(billing.BillingModeCostObservation)
-				b.SetReservationMaterializer(source)
-				b.SetTerminalMaterializer(billing.TerminalMaterializers{v1, source})
-				journal, err := outbox.New(pool, outbox.DefaultOptions())
-				require.NoError(t, err)
-				b.SetOutbox(journal)
-				require.NoError(t, journal.RegisterHandler(outbox.EventSourceDispatch, source.ProcessDispatchEvent))
-				for _, kind := range []string{outbox.EventBillingUsagePrepared, outbox.EventBillingSettled, outbox.EventBillingCancelled} {
-					require.NoError(t, journal.RegisterHandler(kind, b.ProcessUsageJournalEvent))
+				var err error
+				if interop == nil {
+					defer runtime.observe()
 				}
-				require.NotEmpty(t, os.Getenv("REDIS_ADDR"), "select the isolated integration Redis explicitly")
-				rdb := redis.NewClient(&redis.Options{Addr: os.Getenv("REDIS_ADDR"), Password: os.Getenv("REDIS_PASSWORD")})
-				t.Cleanup(func() { _ = rdb.Close() })
-				capabilities, err := agentcap.NewService(pool, rdb, prd2E2EJWTSecret)
-				require.NoError(t, err)
-				limits, err := limitpolicy.NewService(pool, rdb, limitpolicy.DefaultOptions())
-				require.NoError(t, err)
-				require.NoError(t, limits.Refresh(t.Context()))
-				hooks, err := newRuntimeTerminalHooks(pool, journal, capabilities, limits)
-				require.NoError(t, err)
-				require.NoError(t, journal.RegisterHandler(outbox.EventRuntimeTerminal, hooks.ProcessEvent))
-				require.NoError(t, journal.RegisterHandler(outbox.EventRuntimeTerminalV1, hooks.ProcessEvent))
-				audit := admin.NewHandler(pool, prd2E2EJWTSecret, prd2E2EEncryptionKey, nil)
-				require.NoError(t, journal.RegisterHandler(outbox.EventAudit, audit.ProcessAuditOutbox))
-				capBilling := capbilling.New(b, capabilities)
-				capBilling.SetTerminalHooks(hooks)
-				sharedBilling := policybilling.New(capBilling, limits)
-				sharedBilling.SetTerminalHooks(hooks)
-				relay := gateway.NewRelay(pool, rdb, gateway.NewRouter(pool), sharedBilling, filter.NewDFAFilter(nil), prd2E2EEncryptionKey)
-				policy := routingpolicy.Default()
-				planner, err := modelrouting.NewPlanner(pool, policy)
-				require.NoError(t, err)
-				executionConfig, err := modelexecution.ConfigFromRoutingPolicy(policy)
-				require.NoError(t, err)
-				coordinator, err := modelexecution.New(pool, b, executionConfig)
-				require.NoError(t, err)
-				if observations {
-					b.SetCommittedObservationSink(source)
-					coordinator.SetDispatchMaterializer(source)
-				}
-				require.NoError(t, relay.SetModelExecutionRuntime(modelrouting.ModeLegacy, planner, coordinator, policy))
 				path, body := "/v1/chat/completions", `{"model":"company-chat","messages":[{"role":"user","content":"source-private-prompt"}],"stream":false}`
 				final := newGatewayChatHandler(pool, relay)
 				if strings.HasPrefix(operation, "chat_stream") {
@@ -208,11 +206,13 @@ func sourceChatAndEmbeddingsAuthHistoryAndReplay(t *testing.T, observations bool
 					require.NoError(t, err)
 					raw, workflow = child.CapabilityToken, issued.WorkflowID
 				}
-				guarded := middleware.IdempotencyGuard(middleware.NewPostgresIdempotencyStore(pool), prd2E2EJWTSecret, final)
-				retained := payloadpolicy.RequestMiddlewareWithMax(payloadpolicy.MustNewBudget(payloadpolicy.DefaultLimits()), 8*payloadpolicy.MiB, middleware.GetOrgIDFromContext)
-				handler := middleware.OperationIdentityWithSecret(prd2E2EJWTSecret)(middleware.GatewayAuthAcrossBufferedBody(middleware.GatewayAuthWithAgentCapabilities(pool, prd2E2EJWTSecret, capabilities), retained)(middleware.CaptureExecutionContext(sourceCaptureDiagnostics{Service: source, t: t})(middleware.StrictJSONIngress(guarded))))
+				handler := runtime.handler(t, pool, final)
+				if interop != nil {
+					interop.serve(t, pool, source, v1, journal, handler, sourceSecret, sourceToken, org, project, &calls, contentHarness)
+					return
+				}
 				if operation == "chat_cache" {
-					sourceHTTPCacheCase(t, pool, relay, handler, journal, org, owner, project, key, raw, &calls, observations)
+					sourceHTTPCacheCase(t, pool, relay, handler, journal, org, owner, project, key, raw, &calls, observations, contentHarness)
 					return
 				}
 				invoke := func(document, token, idem string) *httptest.ResponseRecorder {
@@ -239,6 +239,9 @@ func sourceChatAndEmbeddingsAuthHistoryAndReplay(t *testing.T, observations bool
 					require.Contains(t, first.Body.String(), "synthetic answer")
 				}
 				request := first.Header().Get(middleware.OperationIDHeader)
+				if contentHarness != nil {
+					contentHarness.assertRequest(t, request, body, first.Body.Bytes(), operation, int(calls.Load()))
+				}
 				if operation == "chat_stream_write_failure" || operation == "chat_stream_flush_failure" {
 					_, err = journal.DrainOnce(t.Context())
 					require.NoError(t, err)
@@ -482,4 +485,156 @@ func sourceHTTPWorkloadGrantWithScope(t *testing.T, pool *pgxpool.Pool, org, pro
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO api_keys(org_id,project_id,key_type,name,key_hash,key_prefix,status,allowed_ips,allowed_models,allowed_endpoints,purpose,workload_application_id,access_grant_id,access_credential_id,credential_ref)
 	 VALUES($1,$2,'service','synthetic-source',$3,'ur-source-app','active','','company-chat',$7,'',$4,$5,$6,'cred_source_app_0001') RETURNING id`, org, project, auth.HashAPIKey(raw, hashSecret), app, grant, credential, endpoints).Scan(&key))
 	return app, key
+}
+
+// Shared initialization keeps the existing identity matrix and CC14 on one wiring path.
+type sourceHTTPRuntime struct {
+	billing        *billing.Billing
+	redis          *redis.Client
+	source         *sourcefacts.Service
+	feed           *completedfeed.Service
+	journal        *outbox.Service
+	relay          *gateway.Relay
+	capabilities   *agentcap.Service
+	content        *sourceHTTPContentHarness
+	contentStarter contentcapture.Starter
+	sourceToken    string
+	observe        func()
+}
+
+func newSourceHTTPRuntime(t *testing.T, pool *pgxpool.Pool, org, project, key int64, observations, content bool, interop *p3SourceFixture) *sourceHTTPRuntime {
+	t.Helper()
+	return newSourceHTTPRuntimeWithReceiver(t, pool, org, project, key, observations, content, interop, true)
+}
+
+// The diagnostic stream fixture needs the original runtime without issuing an
+// unrelated receiver credential. Existing callers retain their receiver setup.
+func newSourceHTTPRuntimeWithReceiver(t *testing.T, pool *pgxpool.Pool, org, project, key int64, observations, content bool, interop *p3SourceFixture, receiver bool) *sourceHTTPRuntime {
+	t.Helper()
+	rawRedisDB, redisDBSet := os.LookupEnv("REDIS_DB")
+	redisDB, err := sourceHTTPRedisDB(rawRedisDB, redisDBSet, interop != nil)
+	require.NoError(t, err)
+	const sourceSecret = "synthetic-source-http-cursor-secret-only"
+	source, err := sourcefacts.New(pool, sourcefacts.Options{Enabled: true, ContentEnabled: content, ObservationsEnabled: observations, SourceInstance: "synthetic-http", CursorSecret: sourceSecret, I01Enabled: true})
+	require.NoError(t, err)
+	var sourceToken string
+	observe := func() {}
+	if receiver {
+		observe = sourceHTTPAuthenticatedPull(t, pool, source, sourceSecret, org, project, func(token string) { sourceToken = token })
+	}
+	v1, err := completedfeed.NewService(pool, sourceSecret, source.SourceInstance(), true)
+	require.NoError(t, err)
+	b := billing.NewBilling(pool, nil).WithMode(billing.BillingModeCostObservation)
+	b.SetReservationMaterializer(source)
+	b.SetTerminalMaterializer(billing.TerminalMaterializers{v1, source})
+	journal, err := outbox.New(pool, outbox.DefaultOptions())
+	require.NoError(t, err)
+	b.SetOutbox(journal)
+	require.NoError(t, journal.RegisterHandler(outbox.EventSourceDispatch, source.ProcessDispatchEvent))
+	for _, kind := range []string{outbox.EventBillingUsagePrepared, outbox.EventBillingSettled, outbox.EventBillingCancelled} {
+		require.NoError(t, journal.RegisterHandler(kind, b.ProcessUsageJournalEvent))
+	}
+	require.NotEmpty(t, os.Getenv("REDIS_ADDR"), "select the isolated integration Redis explicitly")
+	redisOptions := &redis.Options{Addr: os.Getenv("REDIS_ADDR"), Password: os.Getenv("REDIS_PASSWORD"), DB: redisDB}
+	rdb := redis.NewClient(redisOptions)
+	t.Cleanup(func() { _ = rdb.Close() })
+	capabilities, err := agentcap.NewService(pool, rdb, prd2E2EJWTSecret)
+	require.NoError(t, err)
+	limits, err := limitpolicy.NewService(pool, rdb, limitpolicy.DefaultOptions())
+	require.NoError(t, err)
+	require.NoError(t, limits.Refresh(t.Context()))
+	if interop != nil {
+		interop.startPolicyRefresh(t, limits)
+		interop.checkPolicyRefresh(t, limits, limitpolicy.Subject{OrgID: org, ProjectID: project, APIKeyID: key, Model: "company-chat"})
+	}
+	hooks, err := newRuntimeTerminalHooks(pool, journal, capabilities, limits)
+	require.NoError(t, err)
+	require.NoError(t, journal.RegisterHandler(outbox.EventRuntimeTerminal, hooks.ProcessEvent))
+	require.NoError(t, journal.RegisterHandler(outbox.EventRuntimeTerminalV1, hooks.ProcessEvent))
+	audit := admin.NewHandler(pool, prd2E2EJWTSecret, prd2E2EEncryptionKey, nil)
+	require.NoError(t, journal.RegisterHandler(outbox.EventAudit, audit.ProcessAuditOutbox))
+	capBilling := capbilling.New(b, capabilities)
+	capBilling.SetTerminalHooks(hooks)
+	sharedBilling := policybilling.New(capBilling, limits)
+	sharedBilling.SetTerminalHooks(hooks)
+	relay := gateway.NewRelay(pool, rdb, gateway.NewRouter(pool), sharedBilling, filter.NewDFAFilter(nil), prd2E2EEncryptionKey)
+	var contentHarness *sourceHTTPContentHarness
+	var contentStarter contentcapture.Starter
+	if content {
+		contentHarness = newSourceHTTPContentHarness(t, pool, source, org, project, interop)
+		contentStarter = contentHarness
+		relay.SetContentCapture(contentStarter)
+	}
+	policy := routingpolicy.Default()
+	planner, err := modelrouting.NewPlanner(pool, policy)
+	require.NoError(t, err)
+	executionConfig, err := modelexecution.ConfigFromRoutingPolicy(policy)
+	require.NoError(t, err)
+	coordinator, err := modelexecution.New(pool, b, executionConfig)
+	require.NoError(t, err)
+	if observations {
+		b.SetCommittedObservationSink(source)
+		coordinator.SetDispatchMaterializer(source)
+	}
+	require.NoError(t, relay.SetModelExecutionRuntime(modelrouting.ModeLegacy, planner, coordinator, policy))
+	return &sourceHTTPRuntime{billing: b, redis: rdb, source: source, feed: v1, journal: journal, relay: relay, capabilities: capabilities, content: contentHarness, contentStarter: contentStarter, sourceToken: sourceToken, observe: observe}
+}
+func (runtime *sourceHTTPRuntime) handler(t *testing.T, pool *pgxpool.Pool, final http.Handler) http.Handler {
+	source, capabilities, contentStarter := runtime.source, runtime.capabilities, runtime.contentStarter
+	guarded := middleware.IdempotencyGuard(middleware.NewPostgresIdempotencyStore(pool), prd2E2EJWTSecret, final)
+	retained := payloadpolicy.RequestMiddlewareWithMax(payloadpolicy.MustNewBudget(payloadpolicy.DefaultLimits()), 8*payloadpolicy.MiB, middleware.GetOrgIDFromContext)
+	handler := middleware.OperationIdentityWithSecret(prd2E2EJWTSecret)(middleware.GatewayAuthAcrossBufferedBody(middleware.GatewayAuthWithAgentCapabilities(pool, prd2E2EJWTSecret, capabilities), retained)(middleware.CaptureExecutionContext(sourceCaptureDiagnostics{Service: source, t: t})(middleware.CaptureContent(contentStarter)(middleware.StrictJSONIngress(guarded)))))
+	return handler
+}
+
+// Unset preserves the existing fixture defaults. Explicit configuration must
+// be valid and may not override the admitted interop database.
+func sourceHTTPRedisDB(raw string, configured, interop bool) (int, error) {
+	database := 0
+	if interop {
+		database = 15
+	}
+	if !configured {
+		return database, nil
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed < 0 {
+		return 0, errors.New("REDIS_DB must be a nonnegative integer")
+	}
+	if interop && parsed != 15 {
+		return 0, errors.New("interop requires REDIS_DB=15")
+	}
+	return parsed, nil
+}
+
+func TestSourceHTTPRedisDBOffline(t *testing.T) {
+	for _, test := range []struct {
+		name, raw           string
+		configured, interop bool
+		want                int
+		invalid             bool
+	}{
+		{name: "unset_default", want: 0},
+		{name: "unset_interop", interop: true, want: 15},
+		{name: "explicit_zero", raw: "0", configured: true, want: 0},
+		{name: "explicit_fifteen", raw: "15", configured: true, want: 15},
+		{name: "explicit_other", raw: "4", configured: true, want: 4},
+		{name: "interop_match", raw: "15", configured: true, interop: true, want: 15},
+		{name: "interop_conflict", raw: "0", configured: true, interop: true, invalid: true},
+		{name: "empty", configured: true, invalid: true},
+		{name: "malformed", raw: "db15", configured: true, invalid: true},
+		{name: "negative", raw: "-1", configured: true, invalid: true},
+		{name: "whitespace", raw: " 15 ", configured: true, invalid: true},
+		{name: "overflow", raw: "999999999999999999999999", configured: true, invalid: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := sourceHTTPRedisDB(test.raw, test.configured, test.interop)
+			if test.invalid {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, test.want, got)
+		})
+	}
 }
