@@ -4,6 +4,10 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.5.1] - 2026-09-26
+
+- 修正客户升级说明中 M121 恢复辅助脚本的精确 SHA-256 与字节数，并明确 M119、M120、M121 恢复时同一事务重置 C recovery epoch；脚本字节及运行行为不变。
+
 ## [1.5.0] - 2026-09-25
 
 - 为认证后的 Chat `routing.no_route` 503 新增独立 B v2 网关执行前终态；Provider、delivery 与财务均保持未开始/未创建，捕获失败保留原 503，不改 v1 财务终态与 completed-execution Feed。
