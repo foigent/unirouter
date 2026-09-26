@@ -1921,7 +1921,6 @@ docker compose \
 
 #### 9.10.1 development/test schema-ceiling 部署的唯一受支持顺序
 
-仅前端修复可在 exact clean worktree 使用
 从 1.2.77 起，正式内部构建在精确源码、生命周期锁检查后、镜像选择/构建前，自动运行
 `python3 -B scripts/internal-target-rollout.py environment-check`，不可跳过。也可以先独立运行该只读命令。
 它要求 Python ≥3.10、稳定 Docker client/server 28.x 或 29.x、稳定 Compose ≥2.24.4，
@@ -1930,6 +1929,7 @@ docker compose \
 没有运行中的 UniRouter 容器时会明确报告未观察真实时间戳；候选镜像的 carrier 生命周期、
 响应丢失与清理仍须由构建后的既有测试证明。未知/不支持环境须先明确兼容性，不靠重复构建排查。
 
+仅前端修复可在 exact clean worktree 使用
 `scripts/internal-target-build-images.sh --frontend-only`。此模式保留源码、锁、
 存储和不可变标签校验，只输出前端的 `SELECTED` 身份；不会检查、构建或重新
 标记 backend，也不证明前后端兼容。部署前核对当前 backend 的精确镜像、既有

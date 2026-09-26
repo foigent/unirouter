@@ -1066,6 +1066,18 @@ reserve. No data was cleaned, runtime installed, image pulled or VM started.
 User approval and the stated resource prerequisites remain necessary for A11.
 Full A awaits the coordinator's independent acceptance; B/D remain design-only.
 经验文件无需变化：该续作修补媒体验证链与合成夹具，不新增模型适配合同。
+## Completed delivery — 1.2.77 compatibility and onboarding closeout
+
+The authorized bounded delivery is complete through review, CI/exact-main,
+Artifact, formal development rollout/inspect and representative GUI. Runtime is
+1.2.77/M115/v3 at cd9f354b. The user-approved exact compiler-cache cleanup restored
+the unchanged80%/8GiB gate; no image/data/backup/evidence cleanup occurred.
+Approval236 pins existing Function Tools Probe259; refresh and saved-connection
+continuation created no new Probe, ProviderAttempt, Release or Slot. All other
+approval pins remain; safe client configuration was verified. No paid model calls,
+new credentials, Production, old-writer retirement or X-Insight work. Preserve
+historical evidence/budgets and start the next integration/full-test task separately.
+[Exact Target/GUI evidence and next-task baseline](../ops/evidence/DELIVERY-ONBOARDING-177-20260909.md).
 
 ## Active delivery — compatibility and onboarding closeout
 

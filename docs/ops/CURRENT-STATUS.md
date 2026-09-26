@@ -63,6 +63,18 @@ Overall B/D/X acceptance is still pending.
 No B/D acceptance, GitHub CI, XI integration, Target or Production success is
 claimed. The accepted A performance limitations remain in force.
 [Current scope, exact evidence and continuation](../agent-workflows/EXECUTION-RECORD.md).
+## Delivery/onboarding 1.2.77 Target and GUI verified — 2026-09-09
+
+Development Target runs exact 1.2.77/M115/counter v3, commit cd9f354b; PR417 five
+CI checks and exact-main protocol passed. The mandatory pre-build host check passed
+on Python3.10.12/Docker29.6.0/Compose5.2.0. After user-approved deletion of one exact
+compiler cache, the unchanged storage gate passed; formal rollout/inspect completed
+with 48 passing bounded HTTP/1.1+HTTP/2 short observations. Real GUI created only
+Approval236 for existing Probe259, refreshed without resend, preserved other pins
+and Release59/Slot3, and verified saved-model continuation/client-name validation.
+Zero new paid calls; shared additional30/CNY5 pool unused. This bounded task is
+complete; X-Insight integration/full tests are a separate next user task.
+[Exact Target/GUI evidence and next-task baseline](evidence/DELIVERY-ONBOARDING-177-20260909.md).
 
 ## Delivery/onboarding 1.2.77 candidate — 2026-09-09
 
