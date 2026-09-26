@@ -99,6 +99,7 @@ func TestStreamCounterVersionPinRecoveryAndReplay(t *testing.T) {
 func TestStreamCounterBridgeRefreshesM114WithoutRestart(t *testing.T) {
 	pool, org, model := newReservationFixture(t, 10_000, 0)
 	dir := testutil.MigrationsDir(t)
+	require.NoError(t, testutil.RewindEmptySourceFactsForLegacyTest(t.Context(), pool, dir))
 	down, err := os.ReadFile(filepath.Join(dir, schemaauthority.StreamCounterExpandHead+".down.sql"))
 	require.NoError(t, err)
 	// Isolated predecessor fixture: no v3 rows, restore the actual M114 schema.

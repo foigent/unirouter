@@ -128,8 +128,8 @@ func validateStreamCounterSchema(version string, ledger []string) error {
 	if _, err := metering.CounterSource(version); err != nil {
 		return err
 	}
-	if version == metering.GatewayCounterEstimateVersionV3 && (len(ledger) == 0 || ledger[len(ledger)-1] != schemaauthority.StreamCounterExpandHead) {
-		return fmt.Errorf("stream counter v3 requires exact M115")
+	if version == metering.GatewayCounterEstimateVersionV3 && (len(ledger) == 0 || (ledger[len(ledger)-1] != schemaauthority.StreamCounterExpandHead && ledger[len(ledger)-1] != schemaauthority.SourceFactsExpandHead && ledger[len(ledger)-1] != schemaauthority.ObservationExpandHead && ledger[len(ledger)-1] != schemaauthority.BudgetSnapshotExpandHead && ledger[len(ledger)-1] != schemaauthority.ContentCaptureExpandHead && ledger[len(ledger)-1] != schemaauthority.ContentReclaimExpandHead && ledger[len(ledger)-1] != schemaauthority.PreDispatchExpandHead)) {
+		return fmt.Errorf("stream counter v3 requires exact M115, M116, M117, M118, M119, M120 or M121")
 	}
 	return nil
 }

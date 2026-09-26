@@ -14,6 +14,7 @@ import (
 
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/billing"
+	"github.com/uniroute/unirouter/internal/executionmeasurement"
 	"github.com/uniroute/unirouter/internal/guardrail"
 	"github.com/uniroute/unirouter/internal/invocationopt"
 	"github.com/uniroute/unirouter/internal/logger"
@@ -506,6 +507,7 @@ func (relay *Relay) serveResponseCacheHit(
 			return
 		}
 	}
+	guardrail.MarkSourceReplacement(ctx, guardrail.StageNonStreamOutput)
 	applyResponseCacheDeliveryIdentity(responseMap, requestID, requestStart)
 	applyResponseCacheDeliveryUsage(responseMap)
 	basePayload, maximum, err := relay.marshalNonStreamResponseBase(responseMap)
@@ -564,6 +566,7 @@ func (relay *Relay) serveResponseCacheHit(
 		}
 		return
 	}
+	executionmeasurement.ResponseWritten(ctx)
 	if !relay.recordResponseCacheDelivery(ctx, billing.ResponseCacheDeliveryEvent{
 		RequestID: requestID, OrgID: orgID, Outcome: billing.DeliveryOutcomeCompleted,
 		DeliveredBytes: int64(written), DeliveredChunks: 1, HTTPStatus: http.StatusOK,

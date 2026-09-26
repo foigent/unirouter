@@ -16,6 +16,7 @@ import (
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/config"
 	"github.com/uniroute/unirouter/internal/db"
+	"github.com/uniroute/unirouter/internal/installstate"
 	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/modelcapabilitypublication"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
@@ -54,6 +55,8 @@ func runCLIWithAdminPasswordInput(ctx context.Context, args []string, cfg *confi
 	}
 
 	switch args[0] {
+	case "fresh-install":
+		return true, runFreshInstallCLI(ctx, args[1:], cfg)
 	case "admin":
 		return true, runAdminCLIWithPasswordInput(ctx, args[1:], cfg, input)
 	case "migrate":
@@ -277,7 +280,7 @@ func runMigrateCLI(ctx context.Context, args []string, cfg *config.Config) error
 		if err := modelcapabilitypublication.VerifyArtifactPublicationInventory(migrationsDir, expectedLedger); err != nil {
 			return err
 		}
-		return migrate.Run(ctx, postgres.Pool, migrationsDir)
+		return migrate.RunExisting(ctx, postgres.Pool, migrationsDir)
 	case "status":
 		return printMigrationStatus(ctx, cfg, migrationsDir)
 	default:
@@ -312,7 +315,15 @@ func createAdmin(ctx context.Context, cfg *config.Config, username, password, or
 		return fmt.Errorf("hash password: %w", err)
 	}
 
-	_, err = postgres.Pool.Exec(ctx,
+	conn, err := postgres.Pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+	if _, err := installstate.RequireOrdinary(ctx, conn); err != nil {
+		return err
+	}
+	_, err = conn.Exec(ctx,
 		`INSERT INTO users (org_id, username, password_hash, organization_role, role, status, auth_provider, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, $5, 'active', 'local', NOW(), NOW())`,
 		orgID, username, string(hash), organizationRole, compatibilityRole,
@@ -336,7 +347,15 @@ func setAdminPassword(ctx context.Context, cfg *config.Config, username, passwor
 	}
 	defer postgres.Close()
 
-	if err := setAdminPasswordWithDB(ctx, postgres.Pool, username, password, orgID); err != nil {
+	conn, err := postgres.Pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+	if _, err := installstate.RequireOrdinary(ctx, conn); err != nil {
+		return err
+	}
+	if err := setAdminPasswordWithDB(ctx, conn, username, password, orgID); err != nil {
 		return err
 	}
 	fmt.Printf("password updated for admin user %q in org %d\n", username, orgID)

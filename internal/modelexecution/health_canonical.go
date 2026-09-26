@@ -264,7 +264,7 @@ func updateCanonicalBreaker(
 UPDATE model_deployments
    SET fail_count=$5,circuit_state=$6,half_open_until=$7,
        half_open_probe_until=$8,half_open_probe_token=NULLIF($9,''),
-       circuit_revision=$10,updated_at=NOW()
+       circuit_revision=$10,updated_at=$16
  WHERE id=$1 AND admin_state='enabled' AND config_revision=$2 AND circuit_revision=$3
    AND circuit_state=$4 AND fail_count=$11 AND degradation_threshold=$12
    AND half_open_until IS NOT DISTINCT FROM $13
@@ -273,7 +273,7 @@ UPDATE model_deployments
 		current.id, current.configRevision, current.circuitRevision, current.circuitState,
 		next.failCount, next.circuitState, next.halfOpenUntil, next.probeUntil, next.probeToken,
 		next.circuitRevision, current.failCount, current.degradationThreshold, current.halfOpenUntil,
-		current.probeUntil, current.probeToken,
+		current.probeUntil, current.probeToken, request.databaseTime,
 	)
 	if err != nil {
 		return "", err
@@ -300,7 +300,7 @@ func (c *Coordinator) renewCanonicalLease(
 	}
 	tag, err := tx.Exec(ctx, `
 UPDATE model_deployments
-   SET half_open_probe_until=$6,updated_at=NOW()
+   SET half_open_probe_until=$6,updated_at=$4
  WHERE id=$1 AND admin_state='enabled' AND config_revision=$2 AND circuit_revision=$3
    AND circuit_state='half_open' AND half_open_until<=$4
    AND half_open_probe_token=$5 AND half_open_probe_until>$4
@@ -325,14 +325,13 @@ func releaseCanonicalLease(
 	requireLive bool,
 ) (Status, error) {
 	predicate := ""
-	arguments := []any{current.id, current.configRevision, current.circuitRevision, request.token, current.probeUntil}
+	arguments := []any{current.id, current.configRevision, current.circuitRevision, request.token, current.probeUntil, request.databaseTime}
 	if requireLive {
 		predicate = " AND half_open_probe_until>$6"
-		arguments = append(arguments, request.databaseTime)
 	}
 	tag, err := tx.Exec(ctx, `
 UPDATE model_deployments
-   SET half_open_probe_until=NULL,half_open_probe_token=NULL,updated_at=NOW()
+   SET half_open_probe_until=NULL,half_open_probe_token=NULL,updated_at=$6
  WHERE id=$1 AND admin_state='enabled' AND config_revision=$2 AND circuit_revision=$3
    AND circuit_state='half_open' AND half_open_probe_token=$4
    AND half_open_probe_until IS NOT DISTINCT FROM $5`+predicate, arguments...)
@@ -373,12 +372,13 @@ func (c *Coordinator) updateCanonicalCredential(
 	}
 	tag, err := tx.Exec(ctx, `
 UPDATE provider_credential_bindings
-   SET fail_count=$5,last_used_at=$6,cooldown_until=$7,state_revision=$8,updated_at=NOW()
+   SET fail_count=$5,last_used_at=$6,cooldown_until=$7,state_revision=$8,updated_at=$11
  WHERE id=$1 AND connection_id=$2 AND status='active' AND state_revision=$3
    AND fail_count=$4 AND last_used_at IS NOT DISTINCT FROM $9
    AND cooldown_until IS NOT DISTINCT FROM $10`,
 		current.id, current.connectionID, current.stateRevision, current.failCount,
 		nextFailCount, nextLastUsed, nextCooldown, nextRevision, current.lastUsedAt, current.cooldownUntil,
+		dbNow,
 	)
 	if err != nil {
 		return "", err

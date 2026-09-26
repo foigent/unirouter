@@ -308,7 +308,7 @@ func runStrictTestArtifactInstall(ctx context.Context, pool *pgxpool.Pool, migra
 	}
 	// This test-only caller owns an isolated database with no serving fleet.
 	// Exercise the same explicit expand owner; ordinary startup cannot apply it.
-	for _, expandVersion := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead} {
+	for _, expandVersion := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead} {
 		present := false
 		for _, version := range artifactLedger {
 			if version == expandVersion {
@@ -324,7 +324,19 @@ func runStrictTestArtifactInstall(ctx context.Context, pool *pgxpool.Pool, migra
 		}
 		err = migrate.RunCompatibleExpand(ctx, pool, migrationsDir, migrate.CompatibleExpandHooks{
 			Version: expandVersion, ExpectedSHA256: fmt.Sprintf("sha256:%x", sha256.Sum256(wire)),
-			After: func(context.Context, pgx.Tx) error { return nil }, // isolated test DB has no receiving process
+			After: func(ctx context.Context, tx pgx.Tx) error {
+				if expandVersion != schemaauthority.BudgetSnapshotExpandHead {
+					return nil
+				}
+				// Explicit synthetic support proof for this empty, task-owned DB.
+				// Do not import runtimegeneration: its own tests use this helper.
+				proof := []byte(`{"compatibility_epoch":"unirouter.runtime-compatibility.v1","implementations":[{"id":"unirouter.gateway-financial-journal.v2","kind":"financial_journal"},{"id":"unirouter.budget-snapshot.v1","kind":"source_budgets"}],"schema_heads":["000118_source_budget_snapshots"],"schema_version":"unirouter.runtime-support.v1"}`)
+				_, err := tx.Exec(ctx, `UPDATE execution_source_budget_coverage SET state='certified',certified_from=clock_timestamp(),
+ schema_ledger_sha256=(SELECT encode(sha256(convert_to(string_agg(version,E'\n' ORDER BY version),'UTF8')),'hex') FROM schema_migrations),
+                    migration_sha256=$1,support_manifest_sha256=$2,support_manifest_bytes=$3 WHERE state='pending' AND ended_at IS NULL`,
+					fmt.Sprintf("sha256:%x", sha256.Sum256(wire)), fmt.Sprintf("%x", sha256.Sum256(proof)), proof)
+				return err
+			},
 			Before: func(ctx context.Context, conn *pgxpool.Conn) error {
 				var name string
 				if err := conn.QueryRow(ctx, `SELECT current_database()`).Scan(&name); err != nil {
@@ -361,11 +373,60 @@ func InstallExactTestArtifact(ctx context.Context, pool *pgxpool.Pool, migration
 // M100 schema ceiling. Every guarded down migration runs only when that exact
 // ledger entry is present; production recovery continues to require the
 // supported migration or Publication V1 owner path.
+// RewindEmptyBudgetSnapshotsForLegacyTest must run before a legacy fixture
+// creates projects or other D history. It uses the guarded product down.
+func RewindEmptyBudgetSnapshotsForLegacyTest(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
+	for _, version := range []string{schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.BudgetSnapshotExpandHead} {
+		var applied bool
+		if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, version).Scan(&applied); err != nil {
+			return err
+		}
+		if !applied {
+			continue
+		}
+		wire, err := os.ReadFile(filepath.Join(migrationsDir, version+".down.sql"))
+		if err != nil {
+			return err
+		}
+		if _, err := pool.Exec(ctx, string(wire)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RewindEmptySourceFactsForLegacyTest restores the real M115 predecessor using
+// guarded product downs without erasing data-bearing source evidence.
+func RewindEmptySourceFactsForLegacyTest(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
+	for _, version := range []string{schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.SourceFactsExpandHead} {
+		var applied bool
+		if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, version).Scan(&applied); err != nil {
+			return err
+		} else if !applied {
+			continue
+		}
+		wire, err := os.ReadFile(filepath.Join(migrationsDir, version+".down.sql"))
+		if err != nil {
+			return err
+		}
+		if _, err = pool.Exec(ctx, string(wire)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func RewindCapabilityPublicationsForLegacyMigrationTest(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
 	for _, rollback := range []struct {
 		migrationID string
 		kind        string
 	}{
+		{migrationID: "000121_gateway_pre_dispatch_terminal", kind: "unused pre-dispatch terminal expand test artifact"},
+		{migrationID: "000120_unpublished_content_reclamation", kind: "unused content reclamation expand test artifact"},
+		{migrationID: "000119_execution_content_capture", kind: "empty content capture expand test artifact"},
+		{migrationID: "000118_source_budget_snapshots", kind: "unused budget snapshot expand test artifact"},
+		{migrationID: "000117_execution_observations", kind: "empty source observations expand test artifact"},
+		{migrationID: "000116_execution_source_facts", kind: "empty source facts expand test artifact"},
 		{migrationID: "000115_stream_counter_version", kind: "empty stream counter expand test artifact"},
 		{migrationID: "000114_capability_delivery_expand", kind: "empty compatible expand test artifact"},
 		{migrationID: "000113_glm_stream_function_tools_qualification", kind: "capability publication test artifact"},

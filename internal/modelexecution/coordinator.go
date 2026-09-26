@@ -157,6 +157,11 @@ func (c *Coordinator) authorizeOnce(ctx context.Context, request preparedRequest
 	if result.status != Applied {
 		return Decision{Status: result.status, DatabaseTime: result.databaseTime}, retryNone, nil
 	}
+	if c.dispatchMaterializer != nil {
+		if err := c.dispatchMaterializer.MaterializeDispatchTx(ctx, tx, request.plan, request.route, start, request.dispatchEvidenceHash, result.databaseTime); err != nil {
+			return Decision{}, transactionRetryFor(err), wrapDatabaseError("record dispatch source observation", err)
+		}
+	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return Decision{}, retryCommitAmbiguity, wrapDatabaseError("commit dispatch authority", err)

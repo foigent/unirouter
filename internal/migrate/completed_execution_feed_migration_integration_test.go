@@ -15,6 +15,7 @@ import (
 
 func TestCompletedExecutionFeedPurposeCredentialIsLegacyBinaryFailClosed(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
+	require.NoError(t, testutil.RewindEmptyBudgetSnapshotsForLegacyTest(t.Context(), pool, testutil.MigrationsDir(t)))
 	ctx := context.Background()
 
 	var orgID, projectID int64

@@ -4,6 +4,7 @@ package outbox
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -143,4 +144,52 @@ func mustEvent(t *testing.T, eventType, key string, priority int, occurredAt tim
 	}, occurredAt)
 	require.NoError(t, err)
 	return event
+}
+
+func TestOutboxWorkerContinuousDrainPG(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	service, err := New(pool, DefaultOptions())
+	require.NoError(t, err)
+	for _, kind := range []string{EventTrace, EventBillingSettled} {
+		require.NoError(t, service.RegisterHandler(kind, func(context.Context, Event) error { return nil }))
+	}
+	for i := 0; i < 76; i++ {
+		kind, priority := EventTrace, PriorityTraceInfo
+		if i%3 == 0 {
+			kind, priority = EventBillingSettled, PriorityBilling
+		}
+		event := mustEvent(t, kind, fmt.Sprintf("continuous-%d", i), priority, time.Now())
+		_, created, err := service.Enqueue(t.Context(), event)
+		require.NoError(t, err)
+		require.True(t, created)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() { defer close(done); service.Run(ctx) }()
+	defer func() { cancel(); <-done }()
+	require.Eventually(t, func() bool {
+		var n int
+		return pool.QueryRow(t.Context(), `SELECT count(*) FROM internal_outbox_events`).Scan(&n) == nil && n == 0
+	}, 10*time.Second, 20*time.Millisecond)
+}
+
+func TestOutboxFutureEligibilityPG(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	service, err := New(pool, DefaultOptions())
+	require.NoError(t, err)
+	for _, key := range []string{"future-available", "future-lease"} {
+		_, _, err := service.Enqueue(t.Context(), mustEvent(t, EventTrace, key, PriorityTraceInfo, time.Now()))
+		require.NoError(t, err)
+	}
+	_, err = pool.Exec(t.Context(), `UPDATE internal_outbox_events SET available_at=clock_timestamp()+interval '1 hour' WHERE event_key='future-available'`)
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), `UPDATE internal_outbox_events SET claimed_by='other-owner',claimed_until=clock_timestamp()+interval '1 hour' WHERE event_key='future-lease'`)
+	require.NoError(t, err)
+	claimed, err := service.DrainOnce(t.Context())
+	require.NoError(t, err)
+	require.Zero(t, claimed)
+	var remaining, attempts int
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT count(*),sum(attempts) FROM internal_outbox_events`).Scan(&remaining, &attempts))
+	require.Equal(t, 2, remaining)
+	require.Zero(t, attempts)
 }

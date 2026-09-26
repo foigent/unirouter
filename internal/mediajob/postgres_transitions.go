@@ -51,6 +51,7 @@ func (s *PostgresStore) RequestCancellation(
 		return CancellationResult{}, err
 	}
 	outcome := "requested"
+	wasTerminal := job.Terminal()
 	switch {
 	case job.Lifecycle.Outcome == OutcomeSucceeded:
 		outcome = CancellationTooLate
@@ -111,8 +112,16 @@ func (s *PostgresStore) RequestCancellation(
 	if err != nil {
 		return CancellationResult{}, err
 	}
+	if !wasTerminal {
+		if err := s.sourceStageTx(ctx, tx, job, "terminal", nil); err != nil {
+			return CancellationResult{}, err
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return CancellationResult{}, fmt.Errorf("mediajob: commit cancellation: %w", err)
+	}
+	if !wasTerminal {
+		s.observeSourceCommitted(ctx, job, "terminal")
 	}
 	return CancellationResult{Job: job, Outcome: outcome}, nil
 }
@@ -136,7 +145,8 @@ func (s *PostgresStore) Claim(
 
 	// Once provider dispatch has begun, an expired lease has an ambiguous
 	// provider outcome. It must never be reclaimed for another provider call.
-	_, err = tx.Exec(ctx, `
+	var terminalJobs []sourceTerminalJob
+	err = s.updateTerminalJobs(ctx, tx, &terminalJobs, `
 		UPDATE async_media_jobs
 		   SET queue_state='terminal', lease_state='released',
 		       execution_state='terminal', provider_outcome='unknown',
@@ -157,7 +167,7 @@ func (s *PostgresStore) Claim(
 	}
 	// A pending execution has not dispatched. Its cancellation can therefore
 	// be accepted without creating provider-side ambiguity.
-	_, err = tx.Exec(ctx, `
+	err = s.updateTerminalJobs(ctx, tx, &terminalJobs, `
 		UPDATE async_media_jobs
 		   SET queue_state='terminal', lease_state='released',
 		       execution_state='terminal', provider_outcome='not_started',
@@ -173,7 +183,7 @@ func (s *PostgresStore) Claim(
 	if err != nil {
 		return nil, fmt.Errorf("mediajob: expire cancelled lease: %w", err)
 	}
-	_, err = tx.Exec(ctx, `
+	err = s.updateTerminalJobs(ctx, tx, &terminalJobs, `
 		UPDATE async_media_jobs
 		   SET queue_state='terminal', lease_state='released',
 		       execution_state='terminal',
@@ -193,7 +203,7 @@ func (s *PostgresStore) Claim(
 	if err != nil {
 		return nil, fmt.Errorf("mediajob: expire exhausted lease: %w", err)
 	}
-	_, err = tx.Exec(ctx, `
+	err = s.updateTerminalJobs(ctx, tx, &terminalJobs, `
 		UPDATE async_media_jobs
 		   SET queue_state='terminal', lease_state='released',
 		       execution_state='terminal', object_state='not_created',
@@ -242,9 +252,13 @@ func (s *PostgresStore) Claim(
 		now,
 	).Scan(&jobID, &scope.OrgID, &scope.ProjectID)
 	if errors.Is(err, pgx.ErrNoRows) {
+		if err := s.publishTerminalJobs(ctx, tx, terminalJobs); err != nil {
+			return nil, err
+		}
 		if commitErr := tx.Commit(ctx); commitErr != nil {
 			return nil, fmt.Errorf("mediajob: commit empty claim: %w", commitErr)
 		}
+		s.observeSourceTerminalJobs(ctx, terminalJobs)
 		return nil, nil
 	}
 	if err != nil {
@@ -270,9 +284,13 @@ func (s *PostgresStore) Claim(
 	if err != nil {
 		return nil, err
 	}
+	if err := s.publishTerminalJobs(ctx, tx, terminalJobs); err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("mediajob: commit claim: %w", err)
 	}
+	s.observeSourceTerminalJobs(ctx, terminalJobs)
 	return &job, nil
 }
 
@@ -328,41 +346,36 @@ func (s *PostgresStore) MarkRunning(
 	return ErrLeaseLost
 }
 
-func (s *PostgresStore) MarkProviderSucceeded(
-	ctx context.Context,
-	lease Lease,
-	mappedModel string,
-	now time.Time,
-) error {
+func (s *PostgresStore) MarkProviderSucceeded(ctx context.Context, lease Lease, mappedModel string, now time.Time) error {
 	mappedModel = strings.TrimSpace(mappedModel)
 	now = now.UTC()
 	if mappedModel == "" || len(mappedModel) > 200 || now.IsZero() {
 		return domainError(ErrInvalid, "provider_success_invalid")
 	}
-	tag, err := s.db.Exec(ctx, `
-		UPDATE async_media_jobs
-		   SET provider_outcome='succeeded', mapped_model=$1,
-		       cancellation_state=CASE
-		         WHEN cancellation_state='requested' THEN 'too_late'
-		         ELSE cancellation_state
-		       END,
-		       request_ciphertext=NULL, updated_at=$2
-		 WHERE job_id=$3 AND org_id=$4 AND project_id=$5
-		   AND lease_owner=$6 AND lease_fence=$7
-		   AND lease_expires_at > $2 AND queue_state='leased'
-		   AND execution_state='running'
-		   AND (
-		     provider_outcome='pending'
-		     OR (provider_outcome='succeeded' AND mapped_model=$1)
-		   )`,
-		mappedModel, now, lease.JobID, lease.Scope.OrgID, lease.Scope.ProjectID,
-		lease.Owner, lease.Fence,
-	)
+	// The original update remains idempotent. Return its prior outcome under the
+	// same row lock so a success replay cannot rematerialize retired source pages.
+	var created bool
+	err := s.db.QueryRow(ctx, `WITH previous AS MATERIALIZED (
+ SELECT job_id,provider_outcome FROM async_media_jobs
+ WHERE job_id=$3 AND org_id=$4 AND project_id=$5 FOR UPDATE
+ ) UPDATE async_media_jobs j
+ SET provider_outcome='succeeded',mapped_model=$1,
+ cancellation_state=CASE WHEN j.cancellation_state='requested' THEN 'too_late' ELSE j.cancellation_state END,
+ request_ciphertext=NULL,updated_at=$2
+ FROM previous
+ WHERE j.job_id=previous.job_id AND j.job_id=$3 AND j.org_id=$4 AND j.project_id=$5
+ AND j.lease_owner=$6 AND j.lease_fence=$7 AND j.lease_expires_at>$2
+ AND j.queue_state='leased' AND j.execution_state='running'
+ AND (j.provider_outcome='pending' OR (j.provider_outcome='succeeded' AND j.mapped_model=$1))
+ RETURNING previous.provider_outcome='pending'`, mappedModel, now, lease.JobID, lease.Scope.OrgID, lease.Scope.ProjectID, lease.Owner, lease.Fence).Scan(&created)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrLeaseLost
+	}
 	if err != nil {
 		return fmt.Errorf("mediajob: mark provider success: %w", err)
 	}
-	if tag.RowsAffected() != 1 {
-		return ErrLeaseLost
+	if created {
+		s.observeSourceProviderSuccess(ctx, lease.Scope, lease.JobID, now)
 	}
 	return nil
 }
@@ -462,9 +475,13 @@ func (s *PostgresStore) CompleteSuccess(
 	if err != nil {
 		return Job{}, err
 	}
+	if err := s.sourceStageTx(ctx, tx, job, "terminal", nil); err != nil {
+		return Job{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return Job{}, fmt.Errorf("mediajob: commit success: %w", err)
 	}
+	s.observeSourceCommitted(ctx, job, "terminal")
 	return job, nil
 }
 
@@ -476,7 +493,12 @@ func (s *PostgresStore) CompleteFailure(
 ) (Job, error) {
 	code = sanitizeErrorCode(code)
 	now = now.UTC()
-	tag, err := s.db.Exec(ctx, `
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return Job{}, err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, `
 		UPDATE async_media_jobs
 		   SET queue_state='terminal', lease_state='released',
 		       provider_outcome=CASE
@@ -505,7 +527,7 @@ func (s *PostgresStore) CompleteFailure(
 	if tag.RowsAffected() != 1 {
 		return Job{}, ErrLeaseLost
 	}
-	return s.Get(ctx, lease.Scope, lease.JobID)
+	return s.commitSourceTerminal(ctx, tx, lease.Scope, lease.JobID)
 }
 
 func (s *PostgresStore) CompleteUnknown(
@@ -516,7 +538,12 @@ func (s *PostgresStore) CompleteUnknown(
 ) (Job, error) {
 	code = sanitizeErrorCode(code)
 	now = now.UTC()
-	tag, err := s.db.Exec(ctx, `
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return Job{}, err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, `
 		UPDATE async_media_jobs
 		   SET queue_state='terminal', lease_state='released',
 		       execution_state='terminal', provider_outcome='unknown',
@@ -541,7 +568,7 @@ func (s *PostgresStore) CompleteUnknown(
 	if tag.RowsAffected() != 1 {
 		return Job{}, ErrLeaseLost
 	}
-	return s.Get(ctx, lease.Scope, lease.JobID)
+	return s.commitSourceTerminal(ctx, tx, lease.Scope, lease.JobID)
 }
 
 func (s *PostgresStore) CompleteOutputFailure(
@@ -552,7 +579,12 @@ func (s *PostgresStore) CompleteOutputFailure(
 ) (Job, error) {
 	code = sanitizeErrorCode(code)
 	now = now.UTC()
-	tag, err := s.db.Exec(ctx, `
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return Job{}, err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, `
 		UPDATE async_media_jobs
 		   SET queue_state='terminal', lease_state='released',
 		       execution_state='terminal', provider_outcome='succeeded',
@@ -577,7 +609,7 @@ func (s *PostgresStore) CompleteOutputFailure(
 	if tag.RowsAffected() != 1 {
 		return Job{}, ErrLeaseLost
 	}
-	return s.Get(ctx, lease.Scope, lease.JobID)
+	return s.commitSourceTerminal(ctx, tx, lease.Scope, lease.JobID)
 }
 
 func (s *PostgresStore) Requeue(
@@ -654,9 +686,13 @@ func (s *PostgresStore) Requeue(
 	if err != nil {
 		return Job{}, err
 	}
+	if err := s.sourceStageTx(ctx, tx, job, "terminal", nil); err != nil {
+		return Job{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return Job{}, fmt.Errorf("mediajob: commit requeue: %w", err)
 	}
+	s.observeSourceCommitted(ctx, job, "retry_scheduled")
 	return job, nil
 }
 
@@ -718,9 +754,13 @@ func (s *PostgresStore) RequeueRecovery(
 	if err != nil {
 		return Job{}, err
 	}
+	if err := s.sourceStageTx(ctx, tx, job, "terminal", nil); err != nil {
+		return Job{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return Job{}, fmt.Errorf("mediajob: commit output recovery requeue: %w", err)
 	}
+	s.observeSourceCommitted(ctx, job, "terminal")
 	return job, nil
 }
 

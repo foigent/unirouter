@@ -1,0 +1,54 @@
+{
+  "contract_version": "1.0.0-candidate.2",
+  "origin": "/Users/m4/Desktop/projects/About Me/library/reports/企业AI工作事实平台-目标拆解与验收-2026-09-05/supporting/content-capture-20260914/c0-contract-v1-candidate2",
+  "copied_verbatim": true,
+  "files": [
+    {
+      "path": "c0-contract.schema.json",
+      "sha256": "bb6c1ef5a7bf0e82d5f807cea7f2f53261e45525900bfbdac7370e876d72f180",
+      "bytes": 64384
+    },
+    {
+      "path": "vectors.json",
+      "sha256": "51a29b30b59d6791805d035b3140f561c0da3cfa2344336f8f90fd94e2d4cac2",
+      "bytes": 168790
+    },
+    {
+      "path": "verify.cjs",
+      "sha256": "0d61c0b7a9a63a147d5a786ac1cf538eafe603be278b0411bdaf497a610f11f2",
+      "bytes": 13234
+    },
+    {
+      "path": "legacy/completed-execution-v1.schema.json",
+      "sha256": "4ae2897d4f8470c38624dfe21c54d72eaf6d995d2c9578c4420c94d244424fb2",
+      "bytes": 4089
+    },
+    {
+      "path": "legacy/valid-settled.json",
+      "sha256": "5e9eda0a2630d52c5589d38b8ec480604c47c2cc77391b75a57b2a159db6dd27",
+      "bytes": 1196
+    },
+    {
+      "path": "R1-内容凭据生命周期.md",
+      "sha256": "4e7a3cf9b042928220ed5293cb86be984c919efd736182e050abcecd12f639fa",
+      "bytes": 8678
+    },
+    {
+      "path": "sources.json",
+      "sha256": "8dbacbe7c013640a9748b3a5888edcfc2ce3781bd729963fdd2790f2439564aa",
+      "bytes": 10976
+    },
+    {
+      "path": "接口与语义.md",
+      "sha256": "ff4e889656178d345de8698ba72d9def29404493b879586e368601bfa73c1e7c",
+      "bytes": 18947
+    },
+    {
+      "path": "兼容与产品验收.md",
+      "sha256": "0f0d42f2aafdda316cd8ebc419d277d476770668287a6e8fafe4145fe53ef094",
+      "bytes": 10975
+    }
+  ],
+  "status": "accepted_contract_assets_for_unfinished_U1_implementation",
+  "runtime_acceptance": false
+}

@@ -309,6 +309,13 @@ func (s *Service) Authenticate(ctx context.Context, rawToken string) (*Authentic
 	}
 
 	apiKey := authority.APIKey
+	identity := authority.Boundary.ExecutionIdentity()
+	identity.AuthorityVersion = authority.Version
+	identity.AuthorityRead = "validated_authority_cache_allowed"
+	if apiKey.GrantBound {
+		identity.AuthorityRead = "live_boundary"
+	}
+	apiKey.ExecutionIdentity = &identity
 	apiKey.AllowedModels = strings.Join(claims.Limits.AllowedModels, ",")
 	apiKey.RPMLimit = claims.RootRPMLimit
 	apiKey.QPSLimit = claims.RootRPSLimit

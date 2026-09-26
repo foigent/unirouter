@@ -795,6 +795,566 @@ paths:
         "503":
           $ref: "#/components/responses/CompletedExecutionFeedError"
 
+  /api/v1/data-exchange/xinsight/source-connections/{project_id}:
+    x-unirouter-rbac:
+      get: [platform_admin]
+    get:
+      tags: [Data Exchange]
+      summary: Inspect the source connection
+      description: Available for existing inactive projects and without the current Data Exchange entitlement; platform-admin authorization still applies.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      responses:
+        "200":
+          description: Non-secret connection or control result; Cache-Control is no-store. Registration may return replayed true.
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
+        "401": {description: Invalid administrator session}
+        "403": {description: "Role, live authorization or entitlement denied"}
+        "404": {description: Project or connection not found}
+        "409": {description: "Lifecycle, operation replay or credential identity conflict"}
+        "503": {description: Source capture is disabled}
+
+  /api/v1/data-exchange/xinsight/source-connections/{project_id}/prepare:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    post:
+      tags: [Data Exchange]
+      summary: Register a separate staged source credential
+      description: Requires an active project, current Data Exchange entitlement and live platform-admin commit authorization. Registration accepts only a receiver-generated SHA-256 verifier, never a bearer. Exact operation replay preserves the original binding; conflicting replay returns 409. Rotation inherits the original exact-host IP.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SourcePrepareRequest"}
+      responses:
+        "200":
+          description: Non-secret connection or control result; Cache-Control is no-store. Registration may return replayed true.
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
+        "401": {description: Invalid administrator session}
+        "403": {description: "Role, live authorization or entitlement denied"}
+        "404": {description: Project or connection not found}
+        "409": {description: "Lifecycle, operation replay or credential identity conflict"}
+        "503": {description: Source capture is disabled}
+
+  /api/v1/data-exchange/xinsight/source-connections/{project_id}/rotate:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    post:
+      tags: [Data Exchange]
+      summary: Prepare a replacement source credential
+      description: Requires an active project, current Data Exchange entitlement and live platform-admin commit authorization. Registration accepts only a receiver-generated SHA-256 verifier, never a bearer. Exact operation replay preserves the original binding; conflicting replay returns 409. Rotation inherits the original exact-host IP.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SourceRotateRequest"}
+      responses:
+        "200":
+          description: Non-secret connection or control result; Cache-Control is no-store. Registration may return replayed true.
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
+        "401": {description: Invalid administrator session}
+        "403": {description: "Role, live authorization or entitlement denied"}
+        "404": {description: Project or connection not found}
+        "409": {description: "Lifecycle, operation replay or credential identity conflict"}
+        "503": {description: Source capture is disabled}
+
+  /api/v1/data-exchange/xinsight/source-connections/{project_id}/activate:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    post:
+      tags: [Data Exchange]
+      summary: Activate the exact staged source credential
+      description: Requires an active project, current Data Exchange entitlement and live platform-admin commit authorization. Revokes the prior active credential atomically. The connection remains paused until a separate resume.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SourceCredentialTarget"}
+      responses:
+        "200":
+          description: Non-secret connection or control result; Cache-Control is no-store. Registration may return replayed true.
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
+        "401": {description: Invalid administrator session}
+        "403": {description: "Role, live authorization or entitlement denied"}
+        "404": {description: Project or connection not found}
+        "409": {description: "Lifecycle, operation replay or credential identity conflict"}
+        "503": {description: Source capture is disabled}
+
+  /api/v1/data-exchange/xinsight/source-connections/{project_id}/cancel:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    post:
+      tags: [Data Exchange]
+      summary: Revoke the exact staged source credential
+      description: Available for existing inactive projects and without the current Data Exchange entitlement; platform-admin authorization still applies.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SourceCredentialTarget"}
+      responses:
+        "200":
+          description: Non-secret connection or control result; Cache-Control is no-store. Registration may return replayed true.
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
+        "401": {description: Invalid administrator session}
+        "403": {description: "Role, live authorization or entitlement denied"}
+        "404": {description: Project or connection not found}
+        "409": {description: "Lifecycle, operation replay or credential identity conflict"}
+        "503": {description: Source capture is disabled}
+
+  /api/v1/data-exchange/xinsight/source-connections/{project_id}/pause:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    post:
+      tags: [Data Exchange]
+      summary: Pause source reads
+      description: Available for existing inactive projects and without the current Data Exchange entitlement; platform-admin authorization still applies.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SourceEmptyRequest"}
+      responses:
+        "200":
+          description: Non-secret connection or control result; Cache-Control is no-store. Registration may return replayed true.
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
+        "401": {description: Invalid administrator session}
+        "403": {description: "Role, live authorization or entitlement denied"}
+        "404": {description: Project or connection not found}
+        "409": {description: "Lifecycle, operation replay or credential identity conflict"}
+        "503": {description: Source capture is disabled}
+
+  /api/v1/data-exchange/xinsight/source-connections/{project_id}/resume:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    post:
+      tags: [Data Exchange]
+      summary: Resume source reads
+      description: Requires an active project, current Data Exchange entitlement and live platform-admin commit authorization.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SourceEmptyRequest"}
+      responses:
+        "200":
+          description: Non-secret connection or control result; Cache-Control is no-store. Registration may return replayed true.
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
+        "401": {description: Invalid administrator session}
+        "403": {description: "Role, live authorization or entitlement denied"}
+        "404": {description: Project or connection not found}
+        "409": {description: "Lifecycle, operation replay or credential identity conflict"}
+        "503": {description: Source capture is disabled}
+
+  /api/v1/data-exchange/xinsight/source-connections/{project_id}/revoke:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    post:
+      tags: [Data Exchange]
+      summary: Permanently revoke the source connection
+      description: Available for existing inactive projects and without the current Data Exchange entitlement; platform-admin authorization still applies. Revokes active and staged credentials and invalidates cursors. This connection cannot be resumed.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SourceEmptyRequest"}
+      responses:
+        "200":
+          description: Non-secret connection or control result; Cache-Control is no-store. Registration may return replayed true.
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
+        "401": {description: Invalid administrator session}
+        "403": {description: "Role, live authorization or entitlement denied"}
+        "404": {description: Project or connection not found}
+        "409": {description: "Lifecycle, operation replay or credential identity conflict"}
+        "503": {description: Source capture is disabled}
+
+  /api/v1/data-exchange/xinsight/source-connections/{project_id}/profiles:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    post:
+      tags: [Data Exchange]
+      summary: Replace fixed source profile permissions
+      description: Requires an active project, current Data Exchange entitlement and live platform-admin commit authorization. Changes to A/B grants require pause, revoke credentials and advance the event scope generation. A change only to D grants may occur while active and advances only D access/catalog revisions. It preserves A/B cursors and immutable credential grants; adding a connection grant never grants it to an existing credential.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SourceProfilesRequest"}
+      responses:
+        "200":
+          description: Non-secret connection or control result; Cache-Control is no-store. Registration may return replayed true.
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
+        "401": {description: Invalid administrator session}
+        "403": {description: "Role, live authorization or entitlement denied"}
+        "404": {description: Project or connection not found}
+        "409": {description: "Lifecycle, operation replay or credential identity conflict"}
+        "503": {description: Source capture is disabled}
+
+  /api/v1/integrations/xinsight/source-facts:
+    get:
+      tags: [Private Integration]
+      summary: Pull one fixed source-fact profile
+      description: |
+        Requires a separate xinsight.source.read receiver credential and its
+        exact project, network and profile authorization. Empty cursor returns
+        no events and establishes the current high watermark. Each later page
+        is an immutable foigent.event-batch.v1 snapshot, at most 50 events and
+        smaller than 8 MiB. Retention is seven days from publication. An expired
+        cursor returns 410; an ahead cursor returns 409. Neither is auto-reset.
+        Cost basis references I-01 amounts or the separate media charge fact;
+        it is not another summable cost. Identity fields use a separate profile.
+        No complete timeline or consumer queryability is implied by a pull.
+      security:
+        - sourceFactsKey: []
+      parameters:
+        - name: profile
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [unirouter.execution-context.v1, unirouter.execution-identity.v1, unirouter.cost-basis.v1]
+        - name: cursor
+          in: query
+          schema: {type: string, maxLength: 512}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 50, default: 50}
+      responses:
+        "200":
+          description: Fixed-profile Event Batch
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SourceFactEventBatch"}
+        "400": {$ref: "#/components/responses/SourceFactError"}
+        "401": {$ref: "#/components/responses/SourceFactError"}
+        "403": {$ref: "#/components/responses/SourceFactError"}
+        "409": {$ref: "#/components/responses/SourceFactError"}
+        "410": {$ref: "#/components/responses/SourceFactError"}
+        "503": {$ref: "#/components/responses/SourceFactError"}
+
+  /api/v1/integrations/xinsight/source-facts/capabilities:
+    get:
+      tags: [Private Integration]
+      summary: Read the credential's authorized source profiles
+      description: Staged credentials can inspect capabilities only while the connection is paused. This endpoint accepts no query parameters and does not activate a credential or consume data.
+      security:
+        - sourceFactsKey: []
+      responses:
+        "200":
+          description: Authorized profiles and explicit coverage boundaries
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SourceFactCapabilities"}
+        "400": {$ref: "#/components/responses/SourceFactError"}
+        "401": {$ref: "#/components/responses/SourceFactError"}
+        "409": {$ref: "#/components/responses/SourceFactError"}
+        "503": {$ref: "#/components/responses/SourceFactError"}
+
+  /api/v1/integrations/xinsight/source/v2/events:
+    get:
+      tags: [Private Integration]
+      summary: Pull one explicitly granted observation profile
+      description: |
+        Requires enabled A and B capture and a matching dedicated source credential.
+        Empty cursor bootstraps forward-only without returning history. B cursors
+        have an independent identity domain and cannot be exchanged with A cursors.
+        Pages contain at most 50 immutable events and are smaller than 8 MiB;
+        each source document is at most 64 KiB. Retention is seven days.
+        Optional observations can be missing and do not establish a complete
+        execution timeline. Measurements identify their original local boundary;
+        a missing value is not zero. Destination origins are disclosed only by
+        their explicit profile grant. No provider receipt, residency, input
+        binding, or additional financial amount is inferred from these events.
+      security:
+        - sourceFactsKey: []
+      parameters:
+        - name: profile
+          in: query
+          required: true
+          schema: {$ref: "#/components/schemas/SourceObservationProfile"}
+        - name: cursor
+          in: query
+          schema: {type: string, maxLength: 512}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 50, default: 50}
+      responses:
+        "200":
+          description: Immutable B Event Batch; no-store
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SourceObservationEventBatch"}
+        "400": {$ref: "#/components/responses/SourceFactError"}
+        "401": {$ref: "#/components/responses/SourceFactError"}
+        "403": {$ref: "#/components/responses/SourceFactError"}
+        "409": {$ref: "#/components/responses/SourceFactError"}
+        "410": {$ref: "#/components/responses/SourceFactError"}
+        "503": {$ref: "#/components/responses/SourceFactError"}
+
+  /api/v1/integrations/xinsight/source/v2/capabilities:
+    get:
+      tags: [Private Integration]
+      summary: Read granted observation and budget profiles and transports
+      description: No query parameters. A staged credential can inspect its scope only while paused. Advertises only the intersection of connection and credential grants; does not enable capture or extend authorization.
+      security:
+        - sourceFactsKey: []
+      responses:
+        "200":
+          description: Granted B/D profile transports and explicit coverage; no-store
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SourceObservationCapabilities"}
+        "400": {$ref: "#/components/responses/SourceFactError"}
+        "401": {$ref: "#/components/responses/SourceFactError"}
+        "409": {$ref: "#/components/responses/SourceFactError"}
+        "503": {$ref: "#/components/responses/SourceFactError"}
+
+  /api/v1/integrations/xinsight/source/v2/runtime/current:
+    get:
+      tags: [Private Integration]
+      summary: Read current execution-lease inventory
+      description: |
+        Requires the runtime-observation profile. Reads original stream/media
+        execution leases with matching owner, generation and state at one
+        repeatable-read observation. Probe leases do not imply execution.
+        Each continuation is a new current observation, not a frozen inventory.
+        With request_id, absence of a qualifying lease may return a last_known
+        original state; that state makes no liveness claim. Without request_id,
+        only qualifying lease inventory is returned. No date filter is imposed.
+        Synchronous requests without execution leases are explicitly uncovered.
+        Runtime cursors cannot be exchanged with event cursors or another scope,
+        credential, generation or request filter. Reading never acknowledges work.
+      security:
+        - sourceFactsKey: []
+      parameters:
+        - name: request_id
+          in: query
+          schema: {type: string, minLength: 1, maxLength: 64}
+        - name: cursor
+          in: query
+          schema: {type: string, maxLength: 4096}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 50, default: 50}
+      responses:
+        "200":
+          description: Current scoped observation; Cache-Control no-store
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SourceRuntimeCurrent"}
+        "400": {$ref: "#/components/responses/SourceFactError"}
+        "401": {$ref: "#/components/responses/SourceFactError"}
+        "403": {$ref: "#/components/responses/SourceFactError"}
+        "409": {$ref: "#/components/responses/SourceFactError"}
+        "503": {$ref: "#/components/responses/SourceFactError"}
+
+  /api/v1/integrations/xinsight/source/v2/budgets:
+    get:
+      tags: [Private Integration]
+      summary: List the current project budget catalog
+      description: |
+        Requires an active source connection and an explicit D profile granted to
+        both the connection and credential. Gateway budgets belong to the exact
+        credential project; enterprise project budgets require an active explicit
+        binding. The catalog is a current snapshot, not an event stream. Its cursor
+        is bound to this credential, D access generation and catalog revision.
+        A catalog change requires restarting enumeration. Unknown query keys fail.
+      security:
+        - sourceFactsKey: []
+      parameters:
+        - {name: cursor, in: query, schema: {type: string, maxLength: 4096}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 50, default: 50}}
+      responses:
+        "200":
+          description: Current scoped catalog; Cache-Control no-store
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SourceBudgetCatalog"}
+        "400": {$ref: "#/components/responses/SourceFactError"}
+        "401": {$ref: "#/components/responses/SourceFactError"}
+        "403": {$ref: "#/components/responses/SourceFactError"}
+        "409": {$ref: "#/components/responses/SourceFactError"}
+        "503": {$ref: "#/components/responses/SourceFactError"}
+
+  /api/v1/integrations/xinsight/source/v2/budgets/current:
+    get:
+      tags: [Private Integration]
+      summary: Read one current budget atomically
+      description: |
+        Reads only the D documents explicitly granted to this active credential.
+        Each request uses one repeatable-read database snapshot and a fresh reading
+        ID, cutoff, definition revision and binding revision. Amounts are exact
+        decimal strings with currency and scale. Gateway known_subtotal uses only
+        original settled charged money; incomplete coverage cannot produce a
+        remaining budget. Enterprise amounts are only the bound project allocation
+        slice. Snapshot amounts must never be added to I-01 or event amounts.
+        Alert continuation is a new current reading, not a frozen snapshot, and is
+        invalidated by D access, catalog, definition or binding changes. Historical
+        alerts retain their original trigger evidence; acknowledged is not read.
+        Canonical SHA-256 is over each complete document, not the outer reading.
+        At most three documents of 64 KiB each and 50 alerts are returned. No read
+        writes a journal, acknowledges delivery or changes an old reading.
+      security:
+        - sourceFactsKey: []
+      parameters:
+        - {name: budget_ref, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 256}}
+        - {name: alerts_cursor, in: query, schema: {type: string, maxLength: 4096}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 50, default: 50}}
+      responses:
+        "200":
+          description: Single scoped reading; Cache-Control no-store
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SourceBudgetReading"}
+        "400": {$ref: "#/components/responses/SourceFactError"}
+        "401": {$ref: "#/components/responses/SourceFactError"}
+        "403": {$ref: "#/components/responses/SourceFactError"}
+        "404": {$ref: "#/components/responses/SourceFactError"}
+        "409": {$ref: "#/components/responses/SourceFactError"}
+        "503": {$ref: "#/components/responses/SourceFactError"}
+
+  /api/v1/enterprise-finance/source-budget-bindings:
+    x-unirouter-rbac:
+      get: [platform_admin, billing_admin, org_admin]
+      post: [platform_admin, billing_admin]
+    get:
+      tags: [Enterprise Finance]
+      summary: List explicit enterprise budget source bindings for one project
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: org_id, in: query, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: project_id, in: query, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: after, in: query, schema: {type: string, maxLength: 160}}
+      responses:
+        "200":
+          description: At most 50 exact-project bindings; no-store
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SourceBudgetBindingList"}
+        "400": {description: Invalid project}
+        "401": {description: Authentication required}
+        "403": {description: Forbidden}
+        "404": {description: Project not found}
+        "503": {description: Unavailable}
+    post:
+      tags: [Enterprise Finance]
+      summary: Create or revise an explicit enterprise project budget binding
+      description: |
+        Rechecks the current database session and platform/billing role in the
+        commit transaction. Only an active project in the exact organization can
+        be bound. expected_revision is 0 for creation or the current revision for
+        update. The original audit outbox commits atomically with the binding and
+        history. D scope/catalog generations change; A/B cursors and credential
+        registrations remain unchanged. This does not create or approve a budget.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SourceBudgetBindingRequest"}
+      responses:
+        "200":
+          description: Committed binding and audit reference; no-store
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SourceBudgetBinding"}
+        "400": {description: Invalid binding}
+        "401": {description: Authentication required}
+        "403": {description: Current role or session cannot commit}
+        "404": {description: Project not found}
+        "409": {description: Revision conflict}
+        "503": {description: Binding or audit unavailable}
+
   /api/v1/auth/login:
     post:
       tags: [Auth]
@@ -2087,6 +2647,74 @@ paths:
     description: org_viewer may read ordinary metadata for projects in its organization but cannot write or invoke. Other non-admin organization roles require the exact live project membership shown in this canonical list; users.role does not grant access.
     get: *operation_get_by_id
     put: *operation_update_by_id
+
+  /api/v1/projects/{id}/payload-policy:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, project_admin]
+      put: [platform_admin, org_admin, project_admin]
+    description: |
+      Project content-capture policy, distinct from project budgets and request-size limits.
+      JWT actors are reauthorized against current organization/project management authority
+      inside the policy transaction; a billing role alone grants no access. Responses use
+      Cache-Control: no-store. Reading a policy does not grant access to captured bodies.
+    get:
+      tags: [Admin]
+      summary: Read desired and effective project content-capture policy
+      description: Returns stored desired/effective versions and current storage readiness. A project without a stored policy returns the deployment default at version "1" without inserting a policy row. A stored policy stopped by deployment settings returns 503; GET never activates or rewrites it.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Policy state and deployment limits
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayloadPolicyView" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404":
+          description: Project unavailable to the actor, or content policy is not configured
+        "503": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [Admin]
+      summary: Update desired project content-capture policy
+      description: |
+        One strict JSON object, at most 65536 bytes; duplicate/unknown fields and trailing
+        values are rejected. expected_policy_version must equal the current desired version.
+        The policy update and audit commit atomically. Enabling capture requires an active
+        project and supported deployment configuration. full_content additionally requires
+        the explicit deployment feature gate and verified storage readiness; 202 retains
+        the prior effective policy until the desired policy can be applied. No body-read
+        credential or historical capture is created by this operation.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PayloadPolicyUpdate" }
+      responses:
+        "200":
+          description: Desired policy applied
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayloadPolicyView" }
+        "202":
+          description: Desired policy accepted and pending; effective state remains explicit
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayloadPolicyView" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: Desired policy version changed; read the policy before retrying
+        "503": { $ref: "#/components/responses/Error" }
 
   /api/v1/projects/{id}/model-sets:
     x-unirouter-rbac:
@@ -4404,6 +5032,10 @@ paths:
 
 components:
   securitySchemes:
+    sourceFactsKey:
+      type: http
+      scheme: bearer
+      description: Independent project/network/profile-bound receiver credential with exact purpose xinsight.source.read. Cannot call models or the completed-execution V1 feed.
     bearerAuth:
       type: http
       scheme: bearer
@@ -4803,7 +5435,1273 @@ components:
           schema:
             $ref: "#/components/schemas/CompletedExecutionFeedError"
 
+    SourceFactError:
+      description: Bounded foigent.connector-error.v1 error; an expired or ahead cursor requires explicit operator recovery.
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [error]
+            properties:
+              error: {$ref: "#/components/schemas/SourceFactConnectorError"}
+
   schemas:
+    SourceProfileSet:
+      type: array
+      minItems: 1
+      maxItems: 11
+      uniqueItems: true
+      description: Exact fixed profiles, sorted in ascending byte order. Every profile is explicitly granted; B profiles require enabled observation capture and D profiles require enabled budget snapshots. Existing credentials gain no profiles during upgrade.
+      items:
+        type: string
+        enum: [unirouter.attempt-observation.v1, unirouter.budget-alert.v1, unirouter.budget-definition.v1, unirouter.budget-period-summary.v1, unirouter.capability-snapshot.v1, unirouter.cost-basis.v1, unirouter.destination-observation.v1, unirouter.execution-context.v1, unirouter.execution-identity.v1, unirouter.policy-observation.v1, unirouter.runtime-observation.v1]
+    SourceObservationProfile:
+      type: string
+      enum: [unirouter.attempt-observation.v1, unirouter.capability-snapshot.v1, unirouter.destination-observation.v1, unirouter.policy-observation.v1, unirouter.runtime-observation.v1]
+    SourceObservationEventBatch:
+      type: object
+      additionalProperties: false
+      required: [batch_version, connector_id, connector_version, producer_instance, generated_at, events, next_cursor, high_watermark, has_more]
+      properties:
+        batch_version: {type: string, enum: [foigent.event-batch.v1]}
+        connector_id: {type: string, enum: [unirouter.workfacts]}
+        connector_version: {type: string, enum: [2.0.0]}
+        producer_instance: {type: string, minLength: 1, maxLength: 128}
+        generated_at: {type: string, format: date-time}
+        events:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            description: Foigent 2.0.2 immutable Event Envelope. The exact source field constraints, finite kinds, measurement definitions and disclosure allowlists are in contracts/source-facts/v2/source-observation.schema.json, independently versioned from A.
+        next_cursor: {type: string, maxLength: 512}
+        high_watermark: {type: string, maxLength: 512}
+        has_more: {type: boolean}
+    SourceObservationCapabilities:
+      type: object
+      additionalProperties: false
+      required: [schema_version, source_instance, profiles, profile_version, status, credential_status, scope_generation, retention_seconds, bootstrap, timeline_complete, field_authorization, profile_transports, event_coverage, current_runtime_coverage]
+      properties:
+        schema_version: {type: string, enum: [unirouter.source-capabilities.v2]}
+        source_instance: {type: string, maxLength: 128}
+        profiles:
+          type: array
+          maxItems: 8
+          uniqueItems: true
+          items:
+            type: string
+            enum: [unirouter.attempt-observation.v1, unirouter.budget-alert.v1, unirouter.budget-definition.v1, unirouter.budget-period-summary.v1, unirouter.capability-snapshot.v1, unirouter.destination-observation.v1, unirouter.policy-observation.v1, unirouter.runtime-observation.v1]
+        profile_version: {type: string, enum: [2.0.0]}
+        status: {type: string, enum: [paused, active]}
+        credential_status: {type: string, enum: [feed_staged, feed_active]}
+        scope_generation: {type: string, pattern: '^[1-9][0-9]*$'}
+        retention_seconds: {type: integer, enum: [604800]}
+        bootstrap: {type: string, enum: [forward_only]}
+        timeline_complete: {type: boolean, enum: [false]}
+        field_authorization: {type: string, enum: [fixed_profiles]}
+        event_coverage: {type: string, enum: [forward_only]}
+        current_runtime_coverage: {type: string, enum: [lease_backed_inventory]}
+        profile_transports:
+          type: object
+          description: Only granted profiles are keys. Runtime supports incremental_events and current_snapshot; other B profiles support incremental_events. D profiles support budget_catalog and current_budget_snapshot and never enter the event feed.
+          additionalProperties:
+            type: array
+            uniqueItems: true
+            maxItems: 2
+            items: {type: string, enum: [incremental_events, current_snapshot, budget_catalog, current_budget_snapshot]}
+    SourceRuntimeCurrent:
+      type: object
+      additionalProperties: false
+      description: Canonical source_sha256 hashes all other returned fields, including continuation when present. The exact conditional constraints are in contracts/source-facts/v2/runtime-current.schema.json.
+      required: [schema_version, source_instance, org_id, project_id, profile, observed_at, coverage, uncovered, entries, has_more, source_sha256]
+      properties:
+        schema_version: {type: string, enum: [unirouter.runtime-current.v1]}
+        source_instance: {type: string, minLength: 1, maxLength: 128}
+        org_id: {type: string, pattern: '^[1-9][0-9]*$', maxLength: 19}
+        project_id: {type: string, pattern: '^[1-9][0-9]*$', maxLength: 19}
+        profile: {type: string, enum: [unirouter.runtime-observation.v1]}
+        observed_at: {type: string, format: date-time}
+        coverage: {type: string, enum: [lease_backed_inventory, requested_execution_snapshot]}
+        uncovered:
+          type: array
+          uniqueItems: true
+          minItems: 2
+          maxItems: 2
+          items: {type: string, enum: [synchronous_requests_without_execution_lease, progress_between_lease_observations]}
+        entries:
+          type: array
+          maxItems: 50
+          items: {$ref: "#/components/schemas/SourceRuntimeCurrentEntry"}
+        has_more: {type: boolean}
+        next_cursor: {type: string, minLength: 1, maxLength: 4096, description: Present only when has_more is true}
+        source_sha256: {type: string, pattern: '^sha256:[a-f0-9]{64}$'}
+    SourceRuntimeCurrentEntry:
+      type: object
+      additionalProperties: false
+      description: last_known forbids lease generation, valid_until and checkpoint_ref. Other freshness values require generation and valid_until. leased_pending is a media job with original pending execution state.
+      required: [request_id, family, subject_kind, subject_id, operation, freshness, original_state, last_observed_at, evidence_ref]
+      properties:
+        request_id: {type: string, minLength: 1, maxLength: 64}
+        family: {type: string, enum: [stream, media, request]}
+        subject_kind: {type: string, enum: [provider_attempt, media_job, request]}
+        subject_id: {type: string, minLength: 1, maxLength: 128}
+        operation: {type: string, minLength: 1, maxLength: 128}
+        freshness: {type: string, enum: [lease_valid_execution, leased_pending, last_known]}
+        original_state: {type: string, minLength: 1, maxLength: 32}
+        last_observed_at: {type: string, format: date-time}
+        valid_until: {type: string, format: date-time}
+        lease_generation: {type: string, pattern: '^[1-9][0-9]*$', maxLength: 19}
+        evidence_ref: {type: string, pattern: '^uf1_[a-f0-9]{64}$'}
+        checkpoint_ref: {type: string, pattern: '^uf1_[a-f0-9]{64}$'}
+    SourceBudgetAlert:
+      {
+        "additionalProperties": false,
+        "properties": {
+          "budget_at_trigger": {
+            "$ref": "#/components/schemas/SourceBudgetMoney"
+          },
+          "budget_version_state": {
+            "enum": [
+              "version_unknown"
+            ]
+          },
+          "delivery_cutoff": {
+            "format": "date-time",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "delivery_state": {
+            "enum": [
+              "not_configured",
+              "pending",
+              "delivered",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "event_ref": {
+            "pattern": "^notification_events:[1-9][0-9]{0,18}$",
+            "type": "string"
+          },
+          "human_read": {
+            "enum": [
+              "not_observed"
+            ]
+          },
+          "last_delivery_at": {
+            "format": "date-time",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "period_kind": {
+            "enum": [
+              "daily",
+              "monthly"
+            ],
+            "type": "string"
+          },
+          "period_start": {
+            "format": "date-time",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "source_updated_at": {
+            "format": "date-time",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "spent_at_trigger": {
+            "$ref": "#/components/schemas/SourceBudgetMoney"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "acknowledged",
+              "resolved"
+            ],
+            "type": "string"
+          },
+          "status_cutoff": {
+            "format": "date-time",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "threshold_percent": {
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "type": "string"
+          },
+          "trigger_evidence": {
+            "enum": [
+              "unknown",
+              "original_event_amounts",
+              "original_legacy_event_cents"
+            ],
+            "type": "string"
+          },
+          "triggered_at": {
+            "format": "date-time",
+            "maxLength": 40,
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_ref",
+          "triggered_at",
+          "trigger_evidence",
+          "budget_version_state",
+          "status",
+          "source_updated_at",
+          "status_cutoff",
+          "delivery_state",
+          "delivery_cutoff",
+          "human_read"
+        ],
+        "type": "object"
+      }
+    SourceBudgetAlerts:
+      {
+        "additionalProperties": false,
+        "properties": {
+          "coverage": {
+            "enum": [
+              "project_budget_notifications",
+              "not_modeled_by_original_authority"
+            ],
+            "type": "string"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/SourceBudgetAlert"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "coverage",
+          "entries",
+          "has_more"
+        ],
+        "type": "object"
+      }
+    SourceBudgetComparison:
+      {
+        "additionalProperties": false,
+        "properties": {
+          "remaining": {
+            "$ref": "#/components/schemas/SourceBudgetSignedMoney"
+          },
+          "state": {
+            "enum": [
+              "not_comparable",
+              "inactive_budget",
+              "coverage_gap",
+              "invalid_amount",
+              "unit_mismatch",
+              "comparable"
+            ],
+            "type": "string"
+          },
+          "threshold_state": {
+            "enum": [
+              "below",
+              "at",
+              "above"
+            ],
+            "type": "string"
+          },
+          "utilization_denominator": {
+            "pattern": "^[1-9][0-9]{0,77}$",
+            "type": "string"
+          },
+          "utilization_numerator": {
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "type": "object"
+      }
+    SourceBudgetCoverage:
+      {
+        "additionalProperties": false,
+        "properties": {
+          "certified_from": {
+            "format": "date-time",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "coverage_epoch": {
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "type": "string"
+          },
+          "materialization_pending": {
+            "pattern": "^(0|[1-9][0-9]{0,18})$",
+            "type": "string"
+          },
+          "materialized_awaiting_ack": {
+            "pattern": "^(0|[1-9][0-9]{0,18})$",
+            "type": "string"
+          },
+          "reasons": {
+            "items": {
+              "enum": [
+                "period_not_configured",
+                "writer_uncertified",
+                "period_before_certification",
+                "restore_gap",
+                "financial_journal_unavailable",
+                "unattributable_financial_outbox",
+                "financial_materialization_pending",
+                "financial_materialization_gap",
+                "no_allocation_run",
+                "unit_mismatch",
+                "allocation_partial"
+              ],
+              "type": "string"
+            },
+            "maxItems": 12,
+            "type": "array"
+          },
+          "restore_boundary": {
+            "format": "date-time",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "uncertified",
+              "known_subtotal_with_gap",
+              "complete_settled_as_of",
+              "unknown",
+              "no_allocation_run",
+              "unit_mismatch",
+              "exact",
+              "partial"
+            ],
+            "type": "string"
+          },
+          "writer_contract": {
+            "enum": [
+              "unirouter.gateway-financial-journal.v2",
+              "enterprise_finance.report_only"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "reasons",
+          "writer_contract",
+          "materialization_pending",
+          "materialized_awaiting_ack"
+        ],
+        "type": "object"
+      }
+    SourceBudgetDefinition:
+      {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "$ref": "#/components/schemas/SourceBudgetMoney"
+          },
+          "approval_state": {
+            "enum": [
+              "draft",
+              "approved",
+              "closed"
+            ],
+            "type": "string"
+          },
+          "authority_ref": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "change_kind": {
+            "enum": [
+              "observed_baseline",
+              "created",
+              "value_changed",
+              "authority_version"
+            ],
+            "type": "string"
+          },
+          "changed_at": {
+            "format": "date-time",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "fiscal_period_ref": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "gateway_project",
+              "enterprise_project"
+            ],
+            "type": "string"
+          },
+          "original_cents": {
+            "pattern": "^(0|-?[1-9][0-9]{0,18})$",
+            "type": "string"
+          },
+          "original_period": {
+            "maxLength": 20,
+            "minLength": 1,
+            "type": "string"
+          },
+          "period_kind": {
+            "enum": [
+              "unknown",
+              "none",
+              "daily",
+              "monthly",
+              "fiscal_period"
+            ],
+            "type": "string"
+          },
+          "revision": {
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "type": "string"
+          },
+          "runtime_effect": {
+            "enum": [
+              "report_only"
+            ]
+          },
+          "setting_state": {
+            "enum": [
+              "unset",
+              "unsupported",
+              "active",
+              "inactive_zero",
+              "inactive_period_none",
+              "not_approved"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "origin",
+          "revision",
+          "setting_state",
+          "period_kind",
+          "authority_ref",
+          "changed_at",
+          "change_kind",
+          "runtime_effect"
+        ],
+        "type": "object"
+      }
+    SourceBudgetMoney:
+      {
+        "additionalProperties": false,
+        "properties": {
+          "currency": {
+            "pattern": "^[A-Z]{3}$",
+            "type": "string"
+          },
+          "scale": {
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "type": "string"
+          },
+          "value_minor": {
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value_minor",
+          "currency",
+          "scale"
+        ],
+        "type": "object"
+      }
+    SourceBudgetSignedMoney:
+      {
+        "additionalProperties": false,
+        "properties": {
+          "currency": {
+            "pattern": "^[A-Z]{3}$",
+            "type": "string"
+          },
+          "scale": {
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "type": "string"
+          },
+          "value_minor": {
+            "pattern": "^(0|-?[1-9][0-9]{0,77})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value_minor",
+          "currency",
+          "scale"
+        ],
+        "type": "object"
+      }
+    SourceBudgetSummary:
+      {
+        "additionalProperties": false,
+        "properties": {
+          "allocation_run_ref": {
+            "maxLength": 160,
+            "minLength": 1,
+            "type": "string"
+          },
+          "amount_cutoff": {
+            "format": "date-time",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "authority": {
+            "enum": [
+              "usage_finalization_journal.settled.charged_cost_micros",
+              "enterprise_finance_allocation_results.project_slice"
+            ],
+            "type": "string"
+          },
+          "committed_state": {
+            "enum": [
+              "not_modeled"
+            ]
+          },
+          "comparison": {
+            "$ref": "#/components/schemas/SourceBudgetComparison"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/SourceBudgetCoverage"
+          },
+          "excluded": {
+            "items": {
+              "enum": [
+                "asynchronous_media_charge_facts",
+                "calculated_cost",
+                "wallet_balance",
+                "legacy_project_counter",
+                "historical_call_log_baseline",
+                "gateway_journal",
+                "other_allocation_targets",
+                "organization_totals"
+              ],
+              "type": "string"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "forecast_state": {
+            "enum": [
+              "not_modeled"
+            ]
+          },
+          "known_subtotal": {
+            "$ref": "#/components/schemas/SourceBudgetMoney"
+          },
+          "period_end": {
+            "format": "date-time",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "period_start": {
+            "format": "date-time",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "period_state": {
+            "enum": [
+              "not_configured",
+              "original_utc_period",
+              "open",
+              "preliminary",
+              "reconciled",
+              "closed"
+            ],
+            "type": "string"
+          },
+          "unresolved_economics": {
+            "$ref": "#/components/schemas/SourceBudgetUnresolved"
+          }
+        },
+        "required": [
+          "period_state",
+          "amount_cutoff",
+          "authority",
+          "coverage",
+          "comparison",
+          "unresolved_economics",
+          "excluded",
+          "committed_state",
+          "forecast_state"
+        ],
+        "type": "object"
+      }
+    SourceBudgetUnresolved:
+      {
+        "additionalProperties": false,
+        "properties": {
+          "financial_holds": {
+            "pattern": "^(0|[1-9][0-9]{0,18})$",
+            "type": "string"
+          },
+          "open_reservations": {
+            "pattern": "^(0|[1-9][0-9]{0,18})$",
+            "type": "string"
+          },
+          "reserved_at_read": {
+            "$ref": "#/components/schemas/SourceBudgetMoney"
+          },
+          "scope": {
+            "enum": [
+              "all_current_project_reservations_as_of_read",
+              "enterprise_project_allocation"
+            ],
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "not_observed",
+              "none_observed",
+              "unresolved",
+              "unknown",
+              "not_modeled"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "open_reservations",
+          "financial_holds",
+          "scope"
+        ],
+        "type": "object"
+      }
+    SourceBudgetDocument:
+      {
+        "additionalProperties": false,
+        "description": "Exact conditional constraints and canonical identity are defined in contracts/source-budgets/v1/budget-document.schema.json. Snapshot transport only; not a financial event.",
+        "properties": {
+          "binding_revision": {
+            "pattern": "^([1-9][0-9]{0,18})?$",
+            "type": "string"
+          },
+          "body": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SourceBudgetDefinition"
+              },
+              {
+                "$ref": "#/components/schemas/SourceBudgetSummary"
+              },
+              {
+                "$ref": "#/components/schemas/SourceBudgetAlerts"
+              }
+            ]
+          },
+          "budget_ref": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "definition_revision": {
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "org_id": {
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "type": "string"
+          },
+          "profile": {
+            "enum": [
+              "unirouter.budget-definition.v1",
+              "unirouter.budget-period-summary.v1",
+              "unirouter.budget-alert.v1"
+            ],
+            "type": "string"
+          },
+          "project_id": {
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "type": "string"
+          },
+          "reading_cutoff": {
+            "format": "date-time",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "reading_id": {
+            "pattern": "^ur-budget-reading-[a-f0-9]{32}$",
+            "type": "string"
+          },
+          "schema_version": {
+            "enum": [
+              "unirouter.budget-snapshot.v1"
+            ]
+          },
+          "source_instance": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "source_instance",
+          "org_id",
+          "project_id",
+          "reading_id",
+          "reading_cutoff",
+          "observed_at",
+          "budget_ref",
+          "definition_revision",
+          "binding_revision",
+          "profile",
+          "body"
+        ],
+        "type": "object"
+      }
+    SourceBudgetReading:
+      {
+        "additionalProperties": false,
+        "description": "Exact conditional constraints and canonical identity are defined in contracts/source-budgets/v1/budget-reading.schema.json. Snapshot transport only; not a financial event.",
+        "properties": {
+          "access_generation": {
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "type": "string"
+          },
+          "binding_revision": {
+            "pattern": "^([1-9][0-9]{0,18})?$",
+            "type": "string"
+          },
+          "budget_ref": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "catalog_revision": {
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "type": "string"
+          },
+          "definition_revision": {
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "type": "string"
+          },
+          "documents": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "document": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "binding_revision": {
+                      "pattern": "^([1-9][0-9]{0,18})?$",
+                      "type": "string"
+                    },
+                    "body": {},
+                    "budget_ref": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "definition_revision": {
+                      "pattern": "^[1-9][0-9]{0,18}$",
+                      "type": "string"
+                    },
+                    "observed_at": {
+                      "format": "date-time",
+                      "maxLength": 40,
+                      "type": "string"
+                    },
+                    "org_id": {
+                      "pattern": "^[1-9][0-9]{0,18}$",
+                      "type": "string"
+                    },
+                    "profile": {
+                      "enum": [
+                        "unirouter.budget-definition.v1",
+                        "unirouter.budget-period-summary.v1",
+                        "unirouter.budget-alert.v1"
+                      ],
+                      "type": "string"
+                    },
+                    "project_id": {
+                      "pattern": "^[1-9][0-9]{0,18}$",
+                      "type": "string"
+                    },
+                    "reading_cutoff": {
+                      "format": "date-time",
+                      "maxLength": 40,
+                      "type": "string"
+                    },
+                    "reading_id": {
+                      "pattern": "^ur-budget-reading-[a-f0-9]{32}$",
+                      "type": "string"
+                    },
+                    "schema_version": {
+                      "enum": [
+                        "unirouter.budget-snapshot.v1"
+                      ]
+                    },
+                    "source_instance": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "schema_version",
+                    "source_instance",
+                    "org_id",
+                    "project_id",
+                    "reading_id",
+                    "reading_cutoff",
+                    "observed_at",
+                    "budget_ref",
+                    "definition_revision",
+                    "binding_revision",
+                    "profile",
+                    "body"
+                  ],
+                  "type": "object"
+                },
+                "profile": {
+                  "enum": [
+                    "unirouter.budget-definition.v1",
+                    "unirouter.budget-period-summary.v1",
+                    "unirouter.budget-alert.v1"
+                  ],
+                  "type": "string"
+                },
+                "source_sha256": {
+                  "pattern": "^sha256:[a-f0-9]{64}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "profile",
+                "document",
+                "source_sha256"
+              ],
+              "type": "object"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "type": "array"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "org_id": {
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "type": "string"
+          },
+          "project_id": {
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "type": "string"
+          },
+          "reading_cutoff": {
+            "format": "date-time",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "reading_id": {
+            "pattern": "^ur-budget-reading-[a-f0-9]{32}$",
+            "type": "string"
+          },
+          "schema_version": {
+            "enum": [
+              "unirouter.budget-snapshot.v1"
+            ]
+          },
+          "source_instance": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "source_instance",
+          "org_id",
+          "project_id",
+          "reading_id",
+          "reading_cutoff",
+          "observed_at",
+          "budget_ref",
+          "definition_revision",
+          "access_generation",
+          "catalog_revision",
+          "documents"
+        ],
+        "type": "object"
+      }
+    SourceBudgetCatalog:
+      {
+        "additionalProperties": false,
+        "description": "Exact conditional constraints and canonical identity are defined in contracts/source-budgets/v1/budget-catalog.schema.json. Snapshot transport only; not a financial event.",
+        "properties": {
+          "access_generation": {
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "type": "string"
+          },
+          "catalog_revision": {
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "type": "string"
+          },
+          "enterprise_scope": {
+            "enum": [
+              "scope_not_configured",
+              "explicit_project_binding"
+            ],
+            "type": "string"
+          },
+          "entries": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "binding_revision": {
+                  "pattern": "^[1-9][0-9]{0,18}$",
+                  "type": "string"
+                },
+                "budget_ref": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "definition_revision": {
+                  "pattern": "^[1-9][0-9]{0,18}$",
+                  "type": "string"
+                },
+                "origin": {
+                  "enum": [
+                    "gateway_project",
+                    "enterprise_project"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "budget_ref",
+                "origin",
+                "definition_revision"
+              ],
+              "type": "object"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "maxLength": 4096,
+            "minLength": 0,
+            "type": "string"
+          },
+          "org_id": {
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "type": "string"
+          },
+          "profiles": {
+            "items": {
+              "enum": [
+                "unirouter.budget-definition.v1",
+                "unirouter.budget-period-summary.v1",
+                "unirouter.budget-alert.v1"
+              ],
+              "type": "string"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "project_id": {
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "type": "string"
+          },
+          "reading_cutoff": {
+            "format": "date-time",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "schema_version": {
+            "enum": [
+              "unirouter.budget-catalog.v1"
+            ]
+          },
+          "source_instance": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "source_instance",
+          "org_id",
+          "project_id",
+          "reading_cutoff",
+          "catalog_revision",
+          "access_generation",
+          "profiles",
+          "enterprise_scope",
+          "entries",
+          "has_more",
+          "next_cursor"
+        ],
+        "type": "object"
+      }
+    SourceBudgetBinding:
+      {
+        "additionalProperties": false,
+        "properties": {
+          "audit_ref": {
+            "pattern": "^audit:[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "changed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "project_id": {
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "type": "string"
+          },
+          "revision": {
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "type": "string"
+          },
+          "scope_kind": {
+            "enum": [
+              "project"
+            ],
+            "type": "string"
+          },
+          "scope_ref": {
+            "maxLength": 160,
+            "minLength": 1,
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "revoked"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope_kind",
+          "scope_ref",
+          "project_id",
+          "revision",
+          "status",
+          "audit_ref",
+          "changed_at"
+        ],
+        "type": "object"
+      }
+    SourceBudgetBindingRequest:
+      {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "pattern": "^(0|[1-9][0-9]{0,18})$",
+            "type": "string"
+          },
+          "org_id": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "project_id": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "scope_kind": {
+            "enum": [
+              "project"
+            ],
+            "type": "string"
+          },
+          "scope_ref": {
+            "maxLength": 160,
+            "minLength": 1,
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "revoked"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "scope_kind",
+          "scope_ref",
+          "expected_revision",
+          "status"
+        ],
+        "type": "object"
+      }
+    SourceBudgetBindingList:
+      {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SourceBudgetBinding"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "next_after": {
+            "maxLength": 160,
+            "type": "string"
+          },
+          "org_id": {
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "type": "string"
+          },
+          "project_id": {
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "has_more",
+          "next_after",
+          "org_id",
+          "project_id"
+        ],
+        "type": "object"
+      }
+    SourceRegistration:
+      type: object
+      additionalProperties: false
+      required: [schema_version, token_format, verifier_scheme, key_prefix, verifier_sha256, operation_id, source_instance, org_id, project_id, profiles]
+      properties:
+        schema_version: {type: string, enum: [unirouter.xinsight.source-credential-registration.v1]}
+        token_format: {type: string, enum: [ur-xf1-hex256.v1]}
+        verifier_scheme: {type: string, enum: [receiver_sha256_v1]}
+        key_prefix: {type: string, pattern: '^ur-xf1-[0-9a-f]{13}$'}
+        verifier_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        operation_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+        source_instance: {type: string, minLength: 1, maxLength: 128}
+        org_id: {type: string, pattern: '^[1-9][0-9]{0,18}$'}
+        project_id: {type: string, pattern: '^[1-9][0-9]{0,18}$'}
+        profiles: {$ref: "#/components/schemas/SourceProfileSet"}
+    SourcePrepareRequest:
+      type: object
+      additionalProperties: false
+      required: [allowed_ip, registration]
+      properties:
+        allowed_ip: {type: string, description: An exact IPv4 /32 or IPv6 /128 receiver binding}
+        registration: {$ref: "#/components/schemas/SourceRegistration"}
+    SourceRotateRequest:
+      type: object
+      additionalProperties: false
+      required: [registration]
+      properties:
+        registration: {$ref: "#/components/schemas/SourceRegistration"}
+    SourceCredentialTarget:
+      type: object
+      additionalProperties: false
+      required: [credential_id]
+      properties:
+        credential_id: {type: string, pattern: '^[1-9][0-9]{0,18}$', description: Exact currently staged credential ID}
+    SourceProfilesRequest:
+      type: object
+      additionalProperties: false
+      required: [profiles]
+      properties:
+        profiles: {$ref: "#/components/schemas/SourceProfileSet"}
+    SourceEmptyRequest:
+      type: object
+      additionalProperties: false
+    SourceFactConnectorError:
+      type: object
+      additionalProperties: false
+      required: [error_version, category, code, phase, operation, retryable, safe_message, recovery]
+      properties:
+        error_version: {type: string, enum: [foigent.connector-error.v1]}
+        category: {type: string, enum: [configuration, authentication, authorization, transport, source, contract, privacy, cursor, conflict, persistence, internal]}
+        code: {type: string, pattern: '^[a-z][a-z0-9_.-]*$', maxLength: 160}
+        phase: {type: string, enum: [configure, activate, fetch, decode, validate, normalize, commit, checkpoint, status, shutdown]}
+        operation: {type: string, pattern: '^[a-z][a-z0-9_.-]*$', maxLength: 128}
+        retryable: {type: boolean}
+        retry_after_seconds: {type: integer, minimum: 0, maximum: 300}
+        safe_message: {type: string, minLength: 1, maxLength: 512}
+        recovery: {type: string, enum: [automatic_retry, restart, reauthorize, operator_repair, explicit_resync, none]}
+    SourceFactEventBatch:
+      type: object
+      additionalProperties: false
+      required: [batch_version, connector_id, connector_version, producer_instance, generated_at, events, next_cursor, high_watermark, has_more]
+      properties:
+        batch_version: {type: string, enum: [foigent.event-batch.v1]}
+        connector_id: {type: string, enum: [unirouter.workfacts]}
+        connector_version: {type: string, enum: [1.0.0]}
+        producer_instance: {type: string, minLength: 1, maxLength: 128}
+        generated_at: {type: string, format: date-time}
+        events:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            description: Foigent 2.0.2 immutable Event Envelope; payload is validated against the bundled contracts/source-facts/v1/source-fact.schema.json and its fixed profile. IDs and quantities in the source document are decimal strings.
+        next_cursor: {type: string, maxLength: 512}
+        high_watermark: {type: string, maxLength: 512}
+        has_more: {type: boolean}
+    SourceFactCapabilities:
+      type: object
+      additionalProperties: false
+      required: [schema_version, source_instance, profiles, profile_version, status, credential_status, scope_generation, retention_seconds, bootstrap, timeline_complete, field_authorization]
+      properties:
+        schema_version: {type: string, enum: [unirouter.source-capabilities.v1]}
+        source_instance: {type: string, maxLength: 128}
+        profiles:
+          type: array
+          maxItems: 3
+          items:
+            type: string
+            enum: [unirouter.execution-context.v1, unirouter.execution-identity.v1, unirouter.cost-basis.v1]
+        profile_version: {type: string, enum: [1.0.0]}
+        status: {type: string, enum: [paused, active]}
+        credential_status: {type: string, enum: [feed_staged, feed_active]}
+        scope_generation: {type: string, pattern: '^[1-9][0-9]*$'}
+        retention_seconds: {type: integer, enum: [604800]}
+        bootstrap: {type: string, enum: [forward_only]}
+        timeline_complete: {type: boolean, enum: [false]}
+        field_authorization: {type: string, enum: [fixed_profiles]}
     CapabilityProbeGroup:
       type: object
       required: [plan_digest, request_digest, capability_ids, probe_contract, planned_provider_requests]
@@ -6920,6 +8818,78 @@ components:
         eligible_total: { type: integer, minimum: 0 }
         project_id: { type: integer, format: int64, minimum: 1 }
         project_name: { type: string }
+    PayloadPolicyConfig:
+      type: object
+      additionalProperties: false
+      required: [mode, supported_protocols, observation_points, allowed_purposes]
+      description: |
+        Protocols must be supported by this deployment. full_content requires positive
+        retention_seconds, quota_bytes and max_saved_bytes within returned deployment limits,
+        max_saved_bytes <= quota_bytes, allowed_purposes=[human_review] and
+        on_limit=record_capture_gap. disabled/metadata_only require an empty allowed_purposes
+        array and omit storage limits and on_limit. redaction_ref is unsupported.
+      properties:
+        mode: { type: string, enum: [disabled, metadata_only, full_content] }
+        supported_protocols:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, maxLength: 128 }
+        observation_points:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items: { type: string, enum: [client_request, provider_request, provider_response, client_response] }
+        retention_seconds: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        quota_bytes: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        max_saved_bytes: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        allowed_purposes:
+          type: array
+          maxItems: 1
+          items: { type: string, enum: [human_review] }
+        on_limit: { type: string, enum: [record_capture_gap] }
+    PayloadPolicyVersion:
+      type: object
+      additionalProperties: false
+      required: [policy_version, config]
+      properties:
+        policy_version: { type: string, pattern: '^[1-9][0-9]*$', description: Positive decimal version encoded as a string }
+        config: { $ref: "#/components/schemas/PayloadPolicyConfig" }
+    PayloadPolicyUpdate:
+      type: object
+      additionalProperties: false
+      required: [schema_version, expected_policy_version, desired]
+      properties:
+        schema_version: { type: string, enum: [unirouter.payload-policy.update.v1] }
+        expected_policy_version: { type: string, pattern: '^[1-9][0-9]*$', description: Current desired.policy_version from GET }
+        desired: { $ref: "#/components/schemas/PayloadPolicyConfig" }
+    PayloadPolicyView:
+      type: object
+      additionalProperties: false
+      required: [schema_version, source_instance, org_id, project_id, policy_ref, desired, effective, effective_at, application_status, application_reason, storage_status, limits]
+      properties:
+        schema_version: { type: string, enum: [unirouter.payload-policy.v1] }
+        source_instance: { type: string }
+        org_id: { type: string }
+        project_id: { type: string }
+        policy_ref: { type: string }
+        desired: { $ref: "#/components/schemas/PayloadPolicyVersion" }
+        effective: { $ref: "#/components/schemas/PayloadPolicyVersion" }
+        effective_at: { type: string, format: date-time, description: UTC with six fractional digits }
+        application_status: { type: string, enum: [applied, pending, failed] }
+        application_reason: { type: string, enum: [none, awaiting_activation, storage_unavailable, invalid_configuration] }
+        storage_status: { type: string, enum: [ready, not_configured, unavailable, capacity_exhausted] }
+        limits:
+          type: object
+          additionalProperties: false
+          required: [max_saved_bytes, max_read_bytes, max_buffer_bytes, max_manifest_bytes, max_manifest_items]
+          properties:
+            max_saved_bytes: { type: integer }
+            max_read_bytes: { type: integer }
+            max_buffer_bytes: { type: integer }
+            max_manifest_bytes: { type: integer }
+            max_manifest_items: { type: integer }
     ProjectBudget:
       type: object
       additionalProperties: false

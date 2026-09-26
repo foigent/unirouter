@@ -84,6 +84,13 @@ type Handler struct {
 	billingReadiness             billingReadinessProvider
 	guardrailController          guardrailController
 	completedFeedController      completedFeedController
+	sourceFactsController        interface {
+		Enabled() bool
+		SourceInstance() string
+		ProfilesEnabled([]string) bool
+	}
+	contentPolicyController      contentPolicyController
+	contentPolicyReadiness       contentPolicyReadiness
 	xInsightConnectorManager     *xinsightconnector.Manager
 	xInsightConnectorIntake      xInsightConnectorInvitationIntake
 	modelAuthorizationEvaluator  *modelauthz.Evaluator
@@ -176,6 +183,14 @@ func (h *Handler) SetGuardrailController(controller guardrailController) {
 
 func (h *Handler) SetCompletedFeedController(controller completedFeedController) {
 	h.completedFeedController = controller
+}
+
+func (h *Handler) SetSourceFactsController(controller interface {
+	Enabled() bool
+	SourceInstance() string
+	ProfilesEnabled([]string) bool
+}) {
+	h.sourceFactsController = controller
 }
 
 func (h *Handler) SetXInsightConnectorManager(manager *xinsightconnector.Manager) {

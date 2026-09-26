@@ -119,7 +119,11 @@ func (b *Billing) HoldNonStreamOutput(ctx context.Context, request SettleRequest
 	if err := enqueueUsageJournalTx(ctx, tx, b.outbox, outbox.EventBillingUsagePrepared, "usage_prepared", record, req, calculatedCost, 0, 0); err != nil {
 		return fmt.Errorf("enqueue output hold usage: %w", err)
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	b.observeCommitted(ctx, CommittedObservation{Kind: "output_hold", OrgID: req.OrgID, RequestID: req.RequestID, AttemptID: req.AttemptID, Outcome: ProviderAttemptStateOutputWithheld})
+	return nil
 }
 
 func normalizeProviderEvidenceUsage(req SettleRequest) (SettleRequest, error) {

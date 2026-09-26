@@ -8,6 +8,8 @@
 |------|------|
 | [AGENT-PROTOCOL.md](AGENT-PROTOCOL.md) | Agent Protocol v2.3，权限、风险、执行和复核规则 |
 | [EXECUTION-RECORD.md](EXECUTION-RECORD.md) | 当前批次的执行、测试、CI、部署、批准和缺口记录 |
+| [LOCAL-TEST-REUSE.md](LOCAL-TEST-REUSE.md) | 已验证测试入口、前置条件、当前交付与依赖、证据复用 |
+| [../ops/FRESH-INSTALL.md](../ops/FRESH-INSTALL.md) | 正式空库安装源码候选、命令合同与待执行原生验证 |
 | [reviews/README.md](reviews/README.md) | 独立复核格式；明确前置触发项见项目 AGENTS.md |
 | [../ops/CURRENT-STATUS.md](../ops/CURRENT-STATUS.md) | 当前项目事实入口 |
 | [../PROJECT-HANDOFF.md](../PROJECT-HANDOFF.md) | 按任务导航；历史检查点不替代当前状态 |

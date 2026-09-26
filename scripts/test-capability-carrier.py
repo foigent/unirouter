@@ -105,6 +105,59 @@ class CarrierTrustTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "public"):
             bridge.verify_bridge(runtime, backend, wire)
 
+    def test_source_bridge_requires_exact_head_and_each_runtime_implementation(self):
+        required = bridge.COUNTERS + [bridge.SOURCE_FACTS]
+        for missing in [None, *required, "head", "future"]:
+            with self.subTest(missing=missing):
+                manifest = {"schema_heads": list(bridge.HEADS), "implementations": list(required)}
+                if missing == "head":
+                    manifest["schema_heads"] = bridge.HEADS[:3]
+                elif missing == "future":
+                    manifest["schema_heads"].append("000117_unapproved")
+                elif missing is not None:
+                    manifest["implementations"].remove(missing)
+                wire = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
+                runtime = {"support_manifest_digest": hashlib.sha256(wire).hexdigest(),
+                           "supported_schema_heads": manifest["schema_heads"],
+                           "compatibility_epoch": "unirouter.runtime-compatibility.v1",
+                           "artifact_digest": "sha256:"+"a"*64}
+                backend = {"Image": runtime["artifact_digest"], "HostConfig": {"PortBindings": {}}}
+                if missing is None:
+                    bridge.verify_bridge(runtime, backend, wire, bridge.HEADS[3])
+                else:
+                    with self.assertRaises(RuntimeError):
+                        bridge.verify_bridge(runtime, backend, wire, bridge.HEADS[3])
+
+    def test_m119_through_m121_require_exact_prefix_and_new_implementations(self):
+        required = (bridge.COUNTERS + [bridge.SOURCE_FACTS, bridge.SOURCE_OBSERVATIONS,
+                    bridge.SOURCE_DISPATCH, *bridge.BUDGET_REQUIREMENTS, bridge.CONTENT_LIFECYCLE,
+                    bridge.PRE_DISPATCH_OBSERVATIONS])
+        for end in range(6, len(bridge.HEADS) + 1):
+            with self.subTest(end=end):
+                manifest = {"schema_heads": bridge.HEADS[:end], "implementations": required}
+                wire = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
+                runtime = {"support_manifest_digest": hashlib.sha256(wire).hexdigest(),
+                           "supported_schema_heads": manifest["schema_heads"],
+                           "compatibility_epoch": "unirouter.runtime-compatibility.v1",
+                           "artifact_digest": "sha256:" + "a" * 64}
+                backend = {"Image": runtime["artifact_digest"], "HostConfig": {"PortBindings": {}}}
+                bridge.verify_bridge(runtime, backend, wire, bridge.HEADS[end - 1])
+                for missing in required:
+                    reduced = dict(manifest, implementations=[ref for ref in required if ref != missing])
+                    reduced_wire = json.dumps(reduced, sort_keys=True, separators=(",", ":")).encode()
+                    reduced_runtime = dict(runtime, support_manifest_digest=hashlib.sha256(reduced_wire).hexdigest())
+                    required_for_head = (missing in bridge.COUNTERS or missing in
+                        [bridge.SOURCE_FACTS, bridge.SOURCE_OBSERVATIONS, bridge.SOURCE_DISPATCH,
+                         *bridge.BUDGET_REQUIREMENTS] or
+                        (end >= 7 and missing == bridge.CONTENT_LIFECYCLE) or
+                        (end == 9 and missing == bridge.PRE_DISPATCH_OBSERVATIONS))
+                    if required_for_head:
+                        with self.assertRaises(RuntimeError):
+                            bridge.verify_bridge(reduced_runtime, backend, reduced_wire, bridge.HEADS[end - 1])
+                if end < len(bridge.HEADS):
+                    with self.assertRaises(RuntimeError):
+                        bridge.verify_bridge(runtime, backend, wire, bridge.HEADS[end])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -144,12 +144,14 @@ func TestStreamOutputHoldRollbackAndCommitReadbackIntegration(t *testing.T) {
 					b, req, _ := newStreamOutputHoldFixture(t, "op_stream_hold_commit", version)
 					tx, err := b.db.Begin(t.Context())
 					require.NoError(t, err)
-					require.NoError(t, b.holdStreamOutputTx(t.Context(), tx, req, 128, 1))
+					created := false
+					require.NoError(t, b.holdStreamOutputTx(t.Context(), tx, req, 128, 1, &created))
+					require.True(t, created)
 					if commit {
-						require.NoError(t, b.commitStreamOutputHold(t.Context(), streamOutputHoldLostAck{Tx: tx, committed: true}, req, 128, 1))
+						require.NoError(t, b.commitStreamOutputHold(t.Context(), streamOutputHoldLostAck{Tx: tx, committed: true}, req, 128, 1, created))
 						require.NoError(t, b.readStreamOutputHold(t.Context(), req, 128, 1), "exact readback proves the committed state independently of its acknowledgement")
 					} else {
-						require.ErrorContains(t, b.commitStreamOutputHold(t.Context(), streamOutputHoldLostAck{Tx: tx}, req, 128, 1), "injected lost commit acknowledgement")
+						require.ErrorContains(t, b.commitStreamOutputHold(t.Context(), streamOutputHoldLostAck{Tx: tx}, req, 128, 1, created), "injected lost commit acknowledgement")
 						require.Error(t, b.readStreamOutputHold(t.Context(), req, 128, 1), "rolled-back usage is not durable provider evidence")
 						var state string
 						var payloadReady bool

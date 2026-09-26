@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/uniroute/unirouter/internal/installstate"
 	"github.com/uniroute/unirouter/internal/modelrouting"
 )
 
@@ -88,6 +89,9 @@ func (s *Service) PauseConnection(
 		return result, safetyUnavailable("begin connection pause", err)
 	}
 	defer tx.Rollback(ctx)
+	if _, err := installstate.RequireOrdinary(ctx, tx); err != nil {
+		return result, err
+	}
 	if err := validateSafetyActor(ctx, tx, request.CustomerOrgID, request.ActorUserID); err != nil {
 		return result, err
 	}
@@ -216,6 +220,9 @@ func (s *Service) RevokeCredential(
 		return result, safetyUnavailable("begin credential revoke", err)
 	}
 	defer tx.Rollback(ctx)
+	if _, err := installstate.RequireOrdinary(ctx, tx); err != nil {
+		return result, err
+	}
 	if err := validateSafetyActor(ctx, tx, request.CustomerOrgID, request.ActorUserID); err != nil {
 		return result, err
 	}

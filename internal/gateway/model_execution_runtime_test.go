@@ -621,9 +621,22 @@ func TestModelExecutionPreparationFailurePrecedesFreezeAndDispatch(t *testing.T)
 				t.Fatalf("set runtime: %v", err)
 			}
 			recorder := httptest.NewRecorder()
-			test.handle(relay, recorder, executionRequest(http.MethodPost, test.path, "req-build-fail-"+test.name, test.body))
+			var captures atomic.Int64
+			request := executionRequest(http.MethodPost, test.path, "req-build-fail-"+test.name, test.body)
+			request = request.WithContext(middleware.WithGatewayNoRouteCapture(request.Context(), func(context.Context) error {
+				captures.Add(1)
+				return errors.New("observation unavailable")
+			}))
+			test.handle(relay, recorder, request)
 			if recorder.Code != http.StatusServiceUnavailable {
 				t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+			}
+			wantCaptures := int64(0)
+			if test.operation == modeloperation.IDChatCompletions {
+				wantCaptures = 1
+			}
+			if captures.Load() != wantCaptures || !strings.Contains(recorder.Body.String(), "server_error.service_unavailable") {
+				t.Fatalf("no-route capture changed original response or crossed operation scope: captures=%d body=%s", captures.Load(), recorder.Body.String())
 			}
 			if freezes.Load() != 0 || attempts.Load() != 0 || coordinator.authorizeCount.Load() != 0 || network.Load() != 0 {
 				t.Fatalf("preparation failure crossed financial/dispatch boundary: freeze=%d attempts=%d authorize=%d network=%d",
@@ -654,10 +667,19 @@ func TestModelExecutionCapabilityNoRoutePrecedesFreeze(t *testing.T) {
 		t.Fatalf("set runtime: %v", err)
 	}
 	recorder := httptest.NewRecorder()
-	relay.HandleChatCompletion(recorder, executionRequest(http.MethodPost, "/v1/chat/completions", "req-capability", `{"model":"public-model","messages":[],"tools":[{"type":"function","function":{"name":"lookup"}}]}`))
+	var captures atomic.Int64
+	request := executionRequest(http.MethodPost, "/v1/chat/completions", "req-capability", `{"model":"public-model","messages":[],"tools":[{"type":"function","function":{"name":"lookup"}}]}`)
+	request = request.WithContext(middleware.WithGatewayNoRouteCapture(request.Context(), func(context.Context) error {
+		captures.Add(1)
+		return errors.New("observation unavailable")
+	}))
+	relay.HandleChatCompletion(recorder, request)
 	if recorder.Code != http.StatusServiceUnavailable || freezes.Load() != 0 || attempts.Load() != 0 || coordinator.authorizeCount.Load() != 0 || network.Load() != 0 {
 		t.Fatalf("capability rejection must be pre-freeze: status=%d freeze=%d attempts=%d authorize=%d network=%d",
 			recorder.Code, freezes.Load(), attempts.Load(), coordinator.authorizeCount.Load(), network.Load())
+	}
+	if captures.Load() != 1 || !strings.Contains(recorder.Body.String(), "server_error.service_unavailable") {
+		t.Fatalf("planner no-route capture changed original 503: captures=%d body=%s", captures.Load(), recorder.Body.String())
 	}
 	planner.mu.Lock()
 	defer planner.mu.Unlock()

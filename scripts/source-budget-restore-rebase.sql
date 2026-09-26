@@ -1,0 +1,93 @@
+-- Run by the original restore owner after SQL restore, with backend and
+-- recovery writers and content readers still stopped. D coverage and C cursor
+-- epochs change atomically, even for a fresh or paired database/body backup.
+BEGIN;
+DO $$
+DECLARE prior RECORD; boundary TIMESTAMPTZ; ledger TEXT[]; certified_ledger TEXT[];
+BEGIN
+    IF to_regclass('public.execution_source_budget_coverage') IS NULL THEN
+      LOCK TABLE schema_migrations IN SHARE MODE;
+      IF EXISTS(SELECT 1 FROM schema_migrations WHERE version >= '000118') THEN
+        RAISE EXCEPTION 'restored D schema is incomplete'; END IF;
+      IF EXISTS(SELECT 1 FROM unnest(ARRAY[
+        'execution_content_streams','execution_source_content_scopes',
+        'execution_source_content_bindings','execution_source_content_operations',
+        'execution_content_policies','execution_content_manifests',
+        'execution_content_objects','execution_content_health']) AS t(name)
+        WHERE to_regclass('public.' || name) IS NOT NULL) THEN
+        RAISE EXCEPTION 'restored C tables require the exact M119 ledger'; END IF;
+      RETURN;
+    END IF;
+    LOCK TABLE execution_source_budget_coverage IN ACCESS EXCLUSIVE MODE;
+    LOCK TABLE schema_migrations IN SHARE MODE;
+    SELECT array_agg(version::text ORDER BY version) INTO ledger FROM schema_migrations;
+    certified_ledger := ledger;
+    IF ledger[cardinality(ledger)]='000121_gateway_pre_dispatch_terminal' THEN
+      IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000120_unpublished_content_reclamation'
+         OR ledger[cardinality(ledger)-2] IS DISTINCT FROM '000119_execution_content_capture' THEN
+        RAISE EXCEPTION 'restored budget coverage proof is invalid: pre-dispatch predecessor'; END IF;
+      certified_ledger := ledger[:cardinality(ledger)-3];
+    ELSIF ledger[cardinality(ledger)]='000120_unpublished_content_reclamation' THEN
+      IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000119_execution_content_capture' THEN
+        RAISE EXCEPTION 'restored budget coverage proof is invalid: content reclamation predecessor'; END IF;
+      certified_ledger := ledger[:cardinality(ledger)-2];
+    ELSIF ledger[cardinality(ledger)]='000119_execution_content_capture' THEN
+      certified_ledger := ledger[:cardinality(ledger)-1];
+    END IF;
+    SELECT * INTO STRICT prior FROM execution_source_budget_coverage WHERE ended_at IS NULL FOR UPDATE;
+    IF prior.state IS DISTINCT FROM 'certified' OR prior.schema_head IS DISTINCT FROM '000118_source_budget_snapshots'
+       OR prior.writer_contract IS DISTINCT FROM 'unirouter.gateway-financial-journal.v2'
+       OR prior.support_manifest_sha256 IS DISTINCT FROM encode(sha256(prior.support_manifest_bytes),'hex')
+       OR certified_ledger[cardinality(certified_ledger)] IS DISTINCT FROM '000118_source_budget_snapshots'
+       OR prior.schema_ledger_sha256 IS DISTINCT FROM
+          encode(sha256(convert_to(array_to_string(certified_ledger,E'\n'),'UTF8')),'hex') THEN
+       RAISE EXCEPTION 'restored budget coverage proof is invalid';
+    END IF;
+    boundary:=clock_timestamp();
+    IF boundary<prior.certified_from THEN RAISE EXCEPTION 'restore clock precedes the retained certification'; END IF;
+    UPDATE execution_source_budget_coverage SET ended_at=boundary WHERE coverage_epoch=prior.coverage_epoch;
+    INSERT INTO execution_source_budget_coverage(certified_from,state,reason,writer_contract,schema_head,
+      migration_sha256,schema_ledger_sha256,support_manifest_sha256,support_manifest_bytes,predecessor_epoch,restore_boundary)
+    VALUES(boundary,'certified','restore_rebase',prior.writer_contract,prior.schema_head,
+      prior.migration_sha256,prior.schema_ledger_sha256,prior.support_manifest_sha256,prior.support_manifest_bytes,prior.coverage_epoch,boundary);
+END $$;
+DO $$
+DECLARE head TEXT; present INTEGER; prior RECORD; next_epoch BIGINT;
+BEGIN
+    -- The preceding D block holds coverage -> ledger locks until this same
+    -- transaction ends. No reader/writer may be restarted between the blocks.
+    SELECT max(version) INTO head FROM schema_migrations;
+    SELECT count(*) INTO present FROM unnest(ARRAY[
+      'execution_content_streams','execution_source_content_scopes',
+      'execution_source_content_bindings','execution_source_content_operations',
+      'execution_content_policies','execution_content_manifests',
+      'execution_content_objects','execution_content_health']) AS t(name)
+      WHERE to_regclass('public.' || name) IS NOT NULL;
+    IF head IS DISTINCT FROM '000119_execution_content_capture' AND head IS DISTINCT FROM '000120_unpublished_content_reclamation'
+       AND head IS DISTINCT FROM '000121_gateway_pre_dispatch_terminal' THEN
+      IF present<>0 THEN RAISE EXCEPTION 'restored C tables require the exact M119 ledger'; END IF;
+      RETURN;
+    END IF;
+    IF present<>8 THEN RAISE EXCEPTION 'restored C schema is incomplete'; END IF;
+    IF head IN ('000120_unpublished_content_reclamation','000121_gateway_pre_dispatch_terminal') THEN
+      IF NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='execution_content_objects'::regclass AND attname='reclaimed_at' AND NOT attisdropped AND atttypid='timestamptz'::regtype AND NOT attnotnull) THEN
+        RAISE EXCEPTION 'restored content reclamation schema mismatch'; END IF;
+    ELSIF EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='execution_content_objects'::regclass AND attname='reclaimed_at' AND NOT attisdropped) THEN
+      RAISE EXCEPTION 'pre-M120 schema contains content reclamation state';
+    END IF;
+    LOCK TABLE execution_content_streams IN ACCESS EXCLUSIVE MODE;
+    FOR prior IN SELECT org_id,project_id,recovery_epoch FROM execution_content_streams
+      ORDER BY org_id,project_id FOR UPDATE LOOP
+      -- A restored sequence or old+1 would repeat after restoring the same
+      -- snapshot again. Use fresh entropy, independent of the backup and clock.
+      -- Epochs are opaque positive int64 strings, not ordered counters.
+      next_epoch := ('x' || substr(md5(gen_random_uuid()::text),1,16))::bit(64)::bigint
+        & 9223372036854775807;
+      IF next_epoch=0 OR next_epoch=prior.recovery_epoch THEN
+        RAISE EXCEPTION 'fresh content recovery epoch collision';
+      END IF;
+      UPDATE execution_content_streams SET recovery_epoch=next_epoch
+        WHERE org_id=prior.org_id AND project_id=prior.project_id;
+    END LOOP;
+END $$;
+COMMIT;

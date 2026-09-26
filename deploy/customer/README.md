@@ -16,6 +16,11 @@ build version/commit and vendor License/upgrade public trust roots. Runtime
 environment variables cannot replace those embedded roots. A stable deployment
 identity remains mandatory configuration.
 
+For the 1.4.1 source candidate, schema installation uses the same backend image's
+explicit `fresh-install` owner before any full runtime is started. Native build,
+installation and full first-customer acceptance are still pending for this
+candidate; this template is not evidence of a signed release or successful run.
+
 `MODEL_ROUTE_AUTHORITY` is a process-level cutover gate. The binary and the
 Compose fallback default to `canonical`, with
 `MODEL_ROUTE_COMPATIBILITY_ENABLED=false`. The formal fresh-install
@@ -99,8 +104,39 @@ Before first start:
    substitute for step 1's signed-manifest verification;
 6. make the exact independently verified release package available at an
    approved, readable absolute host path;
-7. with customer Gateway traffic still blocked, start the full legacy
-   compatibility stack and copy that same package into the healthy backend,
+7. with customer Gateway traffic still blocked, start only PostgreSQL and Redis
+   and wait for their existing health checks. On a fresh database, use the
+   exact same verified backend image as a one-off installer. Provide a private,
+   persistent evidence parent and the image digest verified in step 1; this
+   digest is public identity, not a secret. The installer creates its own new
+   `publications` directory and never creates a separate serving generation:
+
+   ```bash
+   : "${UNIROUTER_INSTALL_EVIDENCE:?Set the approved absolute persistent evidence parent}"
+   : "${UNIROUTER_INSTALL_IMAGE_DIGEST:?Set the exact inspected sha256 image digest}"
+   test -d "$UNIROUTER_INSTALL_EVIDENCE"
+   compose=(docker compose --env-file ./.env -f ./docker-compose.yml)
+   "${compose[@]}" up -d postgres redis
+   install=("${compose[@]}" run --rm --no-deps \
+     --volume "$UNIROUTER_INSTALL_EVIDENCE:/evidence" \
+     --env "RUNTIME_IMAGE_DIGEST=$UNIROUTER_INSTALL_IMAGE_DIGEST" backend ./uniroute fresh-install)
+   "${install[@]}" plan --out /evidence/install.json
+   "${install[@]}" check --plan /evidence/install.json
+   "${install[@]}" apply --plan /evidence/install.json --evidence-dir /evidence/publications
+   # After an interruption, retain every Plan and use the SAME image and DB:
+   # "${install[@]}" resume --plan /evidence/install.json --evidence-dir /evidence/publications
+   ```
+
+   `plan/check` do not change the database. An incomplete installation refuses
+   ordinary startup and writers. Never replace an original referenced Plan;
+   a missing or damaged reference must be restored from the original evidence.
+   The existing `install-baseline` command is for nonempty historical restore
+   continuation, not fresh installation. Completed DB restores follow the
+   existing stopped-writer restore/rebase procedure, preserving their historical
+   installation COMMENT; do not rerun fresh certification after restore.
+
+   After the owner reports completed M118 and the retained readback is verified,
+   start the full legacy compatibility stack and copy the same package into the healthy backend,
    re-verify it with the running release binary and record the initial
    installed release:
 
@@ -225,3 +261,106 @@ by frontend Nginx. The TLS proxy must overwrite an inbound client-supplied
 `X-Forwarded-For` or append its verified network peer; it must not pass the
 header through unchanged. Do not use `0.0.0.0/0` or `::/0` as trusted proxy
 ranges. Login throttling and API-key IP allowlists share this resolver.
+
+## Optional source observations and budget snapshots
+
+M118 currently has no supported successful `reset` lifecycle. Budget definition,
+binding, coverage history and the original journal are preserved; the old reset
+scope is incomplete: the CLI can write a read-only diagnostic preview, but that
+preview cannot be loaded as an executable plan and apply is refused. Disabling D
+capture does not remove this restriction. Historical A/M116 reset evidence
+does not establish support for this version. Do not clear metadata or alter the
+migration ledger to make reset proceed.
+
+`SOURCE_OBSERVATIONS_ENABLED` and `SOURCE_BUDGET_SNAPSHOTS_ENABLED` default to
+`false` and each requires `SOURCE_FACTS_ENABLED=true`. B requires the reviewed
+M117 expansion; D requires M118 and original financial-journal writer support.
+Every non-stopped generation, including recovery-capable generations, must
+advertise the finite schema and writer contracts before expansion. Connection
+and credential profiles are explicit; upgrade never expands old credentials.
+
+D snapshots are report-only. Gateway known subtotals exclude calculated prices,
+reservations and legacy call-log baselines. Enterprise budgets require an explicit
+same-project binding; no organization totals are exposed. M118 initially covers
+only the interval beginning at certification. A missing interval prevents a
+comparable remaining amount, even when the current journal subtotal is zero.
+
+A customer package supporting D must carry the exact helper below as a declared
+artifact with its size and SHA-256 in the signed upgrade manifest, alongside this
+restoration instruction. This source template does not itself sign or release it.
+
+- Repository/package path: `scripts/source-budget-restore-rebase.sql`
+- SHA-256: `e9437c0141d0e00852dc85fb9cabe65e7bc01759f5e822d3c3ffc74d6daaf0a5`
+- Bytes: `5836`
+
+After every supported SQL restore, while all database readers/writers are still
+stopped, run this helper with `psql -v ON_ERROR_STOP=1 -f` before restart. It retains
+the former D coverage epoch and records the database restore boundary. With the
+exact M119 or M120 schema it also changes each C recovery epoch in the same transaction,
+invalidating old C cursors and in-flight grants. It does not change money,
+credentials, source identity, A/B cursors, C registration, manifests or object
+allocation epochs. Any helper failure
+stops restoration validation. The backend then verifies the exact retained schema
+and writer proof before enabling D. Config preflight alone is not readiness.
+Pre-D backups without M118 keep their original recovery path; D cannot be enabled
+until normal M118 expansion and a fresh certification have completed.
+
+SQL-only and paired SQL/body restores both require this rebase. Stop every
+reader and capture/media/recovery writer that uses the database or body root.
+For a paired backup, preserve the original body marker and files during the
+same stopped window and verify their digests; do not initialize a new binding.
+New authorization may read verified historical bodies. Missing files remain
+missing and damaged/binding-mismatched files remain corrupt without rewriting
+historical complete manifests. No store configured means source_unavailable.
+The helper does not clean files or release quota. C epochs use fresh positive
+63-bit random values, not ordered counters; random collisions are extremely
+unlikely, and a collision with the current epoch rejects the transaction.
+
+### Content storage initialization
+
+The local `content-store` command runs before service configuration loading; it
+requires no database, JWT, provider or license configuration. It never enables
+capture, changes policy, creates directories, changes permissions or starts a
+service. Supply existing private directories (normally mode 0700), an empty body
+root, and a new token-file path. Every path component must be free of symlinks.
+Identity is at most 128 UTF-8 bytes, without surrounding whitespace or controls.
+
+```sh
+uniroute content-store init --root /data/uniroute/content --identity customer-content --token-file /run/secrets/content-binding
+uniroute content-store check --root /data/uniroute/content --identity customer-content --token-file /run/secrets/content-binding
+```
+
+`init` exclusively creates the marker and mode-0600 token file, syncing both to
+disk. `check` only reads; it makes no probe files or permission changes. Configure
+`SOURCE_CONTENT_STORAGE_ROOT`, `SOURCE_CONTENT_STORAGE_IDENTITY` and
+`SOURCE_CONTENT_STORAGE_TOKEN_FILE` with these same values. Mount both paths at
+the corresponding container paths and keep their permissions private. Only the
+separate full-content deployment gate and effective project policy enable body
+capture. Ordinary startup verifies the binding and never initializes it.
+
+If initialization reports a partial failure, preserve the marker and any token
+file. To recover from a valid existing marker, explicitly export to a **new**
+token-file path, then check that path and update the configuration:
+
+```sh
+uniroute content-store export-token --root /data/uniroute/content --identity customer-content --token-file /run/secrets/content-binding-recovered
+uniroute content-store check --root /data/uniroute/content --identity customer-content --token-file /run/secrets/content-binding-recovered
+```
+
+Export preserves the original binding; it never rotates the marker or overwrites
+an existing empty, partial or complete token file. It rejects a malformed or
+noncanonical marker. Before creating the token, export syncs the verified marker
+and its directory to complete any previously unconfirmed initialization.
+Output includes action, status and paths, never token bytes.
+Preserve both binding files with private permissions in the deployment backup.
+
+Published body expiry uses each object's original retention deadline. With an
+existing bound store, the runtime checks at most 1,000 expired ready objects per
+minute (30 seconds per batch), including when capture policy is metadata-only or
+disabled. It removes only the exact final regular file, durably confirms absence,
+then atomically removes its object row and releases stored bytes. Historical
+manifests and digests remain; expired reads continue to return 410. Reserved and
+orphan objects, temporary files, directories and the binding marker are retained.
+Failures keep unreleased accounting for a later verified batch. These scheduling
+bounds are not a capacity or cleanup-throughput guarantee. Shutdown cancels and
+waits for maintenance before capture shutdown and closing the storage root.

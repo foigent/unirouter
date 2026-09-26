@@ -4,6 +4,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/uniroute/unirouter/internal/executionprojection"
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/outbox"
 	"github.com/uniroute/unirouter/internal/testutil"
 	"github.com/uniroute/unirouter/internal/traceutil"
@@ -194,6 +196,7 @@ VALUES ('pre-dispatch-trace-projection','active','customer') RETURNING id`).Scan
 		{eventType: "provider.request_build_failed", stage: "provider"},
 		{eventType: "routing.probe_claim_failed", stage: "routing"},
 		{eventType: "routing.route_selected", stage: "routing"},
+		{eventType: "routing.dispatch_authority_failed", stage: "routing"},
 		{eventType: "billing.provider_attempt.begin_failed", stage: "billing"},
 	}
 	record := func(requestID, attemptID string) {
@@ -203,7 +206,7 @@ VALUES ('pre-dispatch-trace-projection','active','customer') RETURNING id`).Scan
 		for _, event := range events {
 			relay.recordTraceEvent(
 				evidenceCtx, requestID, event.eventType, event.stage, "warning",
-				"model-a", "model-a", nil, 0, 1, nil,
+				"model-a", "model-a", &RouteResult{Channel: models.Channel{ID: 201, Provider: "provider-a", Name: "selected-channel"}}, 0, 1, nil,
 			)
 		}
 	}
@@ -218,9 +221,18 @@ VALUES ('pre-dispatch-trace-projection','active','customer') RETURNING id`).Scan
 	require.NoError(t, service.RegisterHandler(outbox.EventTrace, relay.ProcessTraceOutbox))
 	relay.outbox = service
 	record("pre-dispatch-outbox", "att_pre_dispatch_outbox")
+	var replay outbox.Event
+	var replayWire []byte
+	require.NoError(t, pool.QueryRow(ctx, `SELECT id,event_key,event_type,org_id,request_id,payload,occurred_at FROM internal_outbox_events WHERE org_id=$1 AND request_id='pre-dispatch-outbox' ORDER BY id LIMIT 1`, orgID).Scan(&replay.ID, &replay.Key, &replay.Type, &replay.OrgID, &replay.RequestID, &replayWire, &replay.OccurredAt))
+	replay.Payload = json.RawMessage(replayWire)
 	processed, err := service.DrainOnce(ctx)
 	require.NoError(t, err)
 	require.Equal(t, len(events), processed)
+	require.NoError(t, relay.ProcessTraceOutbox(ctx, replay))
+	require.NoError(t, relay.ProcessTraceOutbox(ctx, replay))
+	var replayCount int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM request_trace_events WHERE outbox_event_key=$1`, replay.Key).Scan(&replayCount))
+	require.Equal(t, 1, replayCount, "exact outbox replay stays idempotent")
 
 	var total, explicitNoAttempt, retainedCorrelation, compactIdentity int
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -231,7 +243,8 @@ SELECT COUNT(*),
                          OR route_evidence_hash IS NOT NULL
                          OR route_deployment_id IS NOT NULL
                          OR route_connection_id IS NOT NULL
-                         OR route_credential_binding_id IS NOT NULL)
+                         OR route_credential_binding_id IS NOT NULL
+                         OR route_channel_id IS NOT NULL)
   FROM request_trace_events
  WHERE org_id=$1 AND request_id IN ('pre-dispatch-sync','pre-dispatch-outbox')`, orgID,
 	).Scan(&total, &explicitNoAttempt, &retainedCorrelation, &compactIdentity))
@@ -239,6 +252,9 @@ SELECT COUNT(*),
 	require.Equal(t, total, explicitNoAttempt)
 	require.Equal(t, total, retainedCorrelation)
 	require.Zero(t, compactIdentity, "pre-dispatch correlation must not manufacture receipt identity")
+	var routingContext int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM request_trace_events WHERE org_id=$1 AND provider='provider-a' AND channel='selected-channel'`, orgID).Scan(&routingContext))
+	require.Equal(t, total, routingContext)
 
 	// A durable dispatch/response contract still fails closed when the exact
 	// immutable provider-attempt receipt is absent.
@@ -271,7 +287,7 @@ VALUES ('projection-no-attempt','active','customer') RETURNING id`).Scan(&orgID)
 	)
 	relay.recordTraceEvent(
 		evidenceCtx, "projection-cache-trace", "response_cache.hit", "cache", "info",
-		"model", "model", nil, 200, 1, nil,
+		"model", "model", &RouteResult{Channel: models.Channel{ID: 201, Provider: "provider-a", Name: "selected-channel"}}, 200, 1, nil,
 	)
 	relay.recordRequest(
 		evidenceCtx, "projection-no-route-call", orgID, 0, 0, "", "", "model", "model", "",
@@ -279,7 +295,7 @@ VALUES ('projection-no-attempt','active','customer') RETURNING id`).Scan(&orgID)
 	)
 	relay.recordTraceEvent(
 		evidenceCtx, "projection-local-trace", "auth.model_not_allowed", "auth", "warning",
-		"model", "model", nil, 403, 1, map[string]any{"error_code": "auth_error.model_not_allowed"},
+		"model", "model", &RouteResult{Channel: models.Channel{ID: 201, Provider: "provider-a", Name: "selected-channel"}}, 403, 1, map[string]any{"error_code": "auth_error.model_not_allowed"},
 	)
 
 	for _, test := range []struct {
@@ -297,5 +313,13 @@ VALUES ('projection-no-attempt','active','customer') RETURNING id`).Scan(&orgID)
 			orgID, test.requestID).Scan(&actualSource, &attemptID))
 		require.Equal(t, test.source, actualSource)
 		require.Nil(t, attemptID, "a local terminal source must not manufacture a provider attempt identity")
+		if test.table == "request_trace_events" {
+			var channelID *int64
+			var provider, channel string
+			require.NoError(t, pool.QueryRow(ctx, `SELECT route_channel_id,provider,channel FROM request_trace_events WHERE org_id=$1 AND request_id=$2`, orgID, test.requestID).Scan(&channelID, &provider, &channel))
+			require.Nil(t, channelID)
+			require.Equal(t, "provider-a", provider)
+			require.Equal(t, "selected-channel", channel)
+		}
 	}
 }

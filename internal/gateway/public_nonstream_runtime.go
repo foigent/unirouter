@@ -6,6 +6,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/uniroute/unirouter/internal/contentcapture"
+	"github.com/uniroute/unirouter/internal/executionmeasurement"
+	"github.com/uniroute/unirouter/internal/guardrail"
 	"net/http"
 	"reflect"
 	"slices"
@@ -83,17 +86,18 @@ type publicProfileRegistry interface {
 }
 
 type publicNonStreamOrchestrator struct {
-	mode          modelrouting.Mode
-	planner       ModelRoutePlanner
-	coordinator   publicModelExecutionCoordinator
-	billing       publicNonStreamBilling
-	registry      publicProfileRegistry
-	decrypt       publicSecretDecryptor
-	encryptionKey []byte
-	doer          PublicNonStreamHTTPDoer
-	guard         publicNonStreamGuard
-	safetyFactor  string
-	minFreeze     int64
+	contentCapture contentcapture.Starter
+	mode           modelrouting.Mode
+	planner        ModelRoutePlanner
+	coordinator    publicModelExecutionCoordinator
+	billing        publicNonStreamBilling
+	registry       publicProfileRegistry
+	decrypt        publicSecretDecryptor
+	encryptionKey  []byte
+	doer           PublicNonStreamHTTPDoer
+	guard          publicNonStreamGuard
+	safetyFactor   string
+	minFreeze      int64
 }
 
 type publicNonStreamRequest struct {
@@ -669,7 +673,8 @@ func (orchestrator *publicNonStreamOrchestrator) execute(
 			continue
 		}
 
-		execution, executionErr := executor.Execute(ctx, candidate.upstream)
+		captureCtx := withPublicContentObservation(ctx, orchestrator.contentCapture, request, attemptID)
+		execution, executionErr := executor.Execute(executionmeasurement.WithAttempt(captureCtx, attemptID), candidate.upstream)
 		if executionErr != nil {
 			var failure *PublicNonStreamExecutionError
 			if errors.As(executionErr, &failure) && failure.Stage == PublicNonStreamStagePreflight {
@@ -909,6 +914,9 @@ func (orchestrator *publicNonStreamOrchestrator) applyInputGuard(
 	if err != nil {
 		return nil, fmt.Errorf("%w: transformed request", errPublicNonStreamGuardFailed)
 	}
+	if decision.Action == PublicOutputGuardReplace {
+		guardrail.MarkSourceReplacement(ctx, guardrail.StageInput)
+	}
 	return reprepared, nil
 }
 
@@ -1080,6 +1088,7 @@ func (orchestrator *publicNonStreamOrchestrator) deliver(
 			fmt.Errorf("%w: downstream write", errPublicNonStreamDeliveryFailed), recordErr,
 		)}
 	}
+	executionmeasurement.ResponseWritten(ctx)
 	event.Outcome = billing.DeliveryOutcomeCompleted
 	event.DeliveredBytes = int64(written)
 	event.DeliveredChunks = 1

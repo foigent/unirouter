@@ -92,6 +92,8 @@ class CounterTransitionTests(unittest.TestCase):
     def test_named_transition_is_finite_and_strict(self):
         rollout.validate_transition(None)
         rollout.validate_transition({"kind":"stream_counter_expand_carrier", "up_sha256":"a"*64, "down_sha256":"b"*64})
+        rollout.validate_transition({"kind":"source_facts_expand_carrier", "up_sha256":"a"*64, "down_sha256":"b"*64})
+        rollout.validate_transition({"kind":"source_observations_expand_carrier", "up_sha256":"a"*64, "down_sha256":"b"*64})
         for before, after in ((rollout.COUNTER_V2,rollout.COUNTER_V3),(rollout.COUNTER_V3,rollout.COUNTER_V2)):
             rollout.validate_transition({"kind":"stream_counter_writer","from":before,"to":after})
         for value in ({"kind":"any_schema"}, {"kind":"stream_counter_expand_carrier","up_sha256":"a"*64},
@@ -139,6 +141,133 @@ class CounterTransitionTests(unittest.TestCase):
             (new/"migrations"/(rollout.COUNTER_HEAD+".down.sql")).write_text("unreviewed replacement")
             with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes]), self.assertRaisesRegex(RuntimeError,"bytes differ"):
                 rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+
+
+    def test_source_expand_requires_exact_m115_ledger_and_reviewed_pair(self):
+        old=["000113_glm_stream_function_tools_qualification", rollout.CAPABILITY_HEAD, rollout.COUNTER_HEAD]
+        tree="\n".join("migrations/"+name+".up.sql" for name in old).encode()
+        changes="\n".join("A\tmigrations/"+rollout.SOURCE_HEAD+"."+direction+".sql" for direction in ("up","down")).encode()
+        with tempfile.TemporaryDirectory() as directory:
+            new=Path(directory).resolve(); (new/"migrations").mkdir()
+            transition={"kind":"source_facts_expand_carrier"}
+            for direction in ("up","down"):
+                wire=(direction+" exact M116 fixture").encode()
+                (new/"migrations"/(rollout.SOURCE_HEAD+"."+direction+".sql")).write_bytes(wire)
+                transition[direction+"_sha256"]=rollout.digest(wire)
+            with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes]):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+            with patch.object(rollout,"run",return_value=tree), self.assertRaisesRegex(RuntimeError,"predecessor"):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old[:-1])
+            with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes+b"\nM\tmigrations/000001_init_schema.up.sql"]), self.assertRaisesRegex(RuntimeError,"migration pair"):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+            (new/"migrations"/(rollout.SOURCE_HEAD+".down.sql")).write_text("changed")
+            with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes]), self.assertRaisesRegex(RuntimeError,"bytes differ"):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+
+
+    def test_observation_expand_requires_exact_m116_and_preserves_older_bytes(self):
+        old=["000113_glm_stream_function_tools_qualification", rollout.CAPABILITY_HEAD, rollout.COUNTER_HEAD, rollout.SOURCE_HEAD]
+        tree="\n".join("migrations/"+name+".up.sql" for name in old).encode()
+        changes="\n".join("A\tmigrations/"+rollout.OBSERVATION_HEAD+"."+direction+".sql" for direction in ("up","down")).encode()
+        with tempfile.TemporaryDirectory() as directory:
+            new=Path(directory).resolve(); (new/"migrations").mkdir()
+            transition={"kind":"source_observations_expand_carrier"}
+            for direction in ("up","down"):
+                wire=(direction+" exact M117 fixture").encode()
+                (new/"migrations"/(rollout.OBSERVATION_HEAD+"."+direction+".sql")).write_bytes(wire)
+                transition[direction+"_sha256"]=rollout.digest(wire)
+            with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes]):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+            with patch.object(rollout,"run",return_value=tree), self.assertRaisesRegex(RuntimeError,"predecessor"):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old[:-1])
+            with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes+b"\nM\tmigrations/"+rollout.SOURCE_HEAD.encode()+b".up.sql"]), self.assertRaisesRegex(RuntimeError,"migration pair"):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+            (new/"migrations"/(rollout.OBSERVATION_HEAD+".down.sql")).write_text("unreviewed replacement")
+            with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes]), self.assertRaisesRegex(RuntimeError,"bytes differ"):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+
+
+    def test_budget_expand_requires_exact_m117_and_preserves_older_bytes(self):
+        old=["000113_glm_stream_function_tools_qualification", rollout.CAPABILITY_HEAD, rollout.COUNTER_HEAD, rollout.SOURCE_HEAD, rollout.OBSERVATION_HEAD]
+        tree="\n".join("migrations/"+name+".up.sql" for name in old).encode()
+        changes="\n".join("A\tmigrations/"+rollout.BUDGET_HEAD+"."+direction+".sql" for direction in ("up","down")).encode()
+        with tempfile.TemporaryDirectory() as directory:
+            new=Path(directory).resolve(); (new/"migrations").mkdir()
+            transition={"kind":"source_budgets_expand_carrier"}
+            for direction in ("up","down"):
+                wire=(direction+" exact M118 fixture").encode()
+                (new/"migrations"/(rollout.BUDGET_HEAD+"."+direction+".sql")).write_bytes(wire)
+                transition[direction+"_sha256"]=rollout.digest(wire)
+            with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes]):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+            with patch.object(rollout,"run",return_value=tree), self.assertRaisesRegex(RuntimeError,"predecessor"):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old[:-1])
+            with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes+b"\nM\tmigrations/"+rollout.SOURCE_HEAD.encode()+b".up.sql"]), self.assertRaisesRegex(RuntimeError,"migration pair"):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+            (new/"migrations"/(rollout.BUDGET_HEAD+".down.sql")).write_text("unreviewed replacement")
+            with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",changes]), self.assertRaisesRegex(RuntimeError,"bytes differ"):
+                rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+
+
+class SchemaBridgeTransitionTests(unittest.TestCase):
+    def test_every_exact_m115_to_m120_suffix_and_predecessor(self):
+        for index, head in enumerate(rollout.BRIDGE_HEADS[:-1]):
+            with self.subTest(head=head), tempfile.TemporaryDirectory() as directory:
+                new=Path(directory).resolve(); (new/"migrations").mkdir()
+                old=["000113_glm_stream_function_tools_qualification", rollout.CAPABILITY_HEAD,
+                     *rollout.BRIDGE_HEADS[:index+1]]
+                suffix=rollout.BRIDGE_HEADS[index+1:]
+                transition={"kind":"schema_bridge_expand_carrier","from_head":head,"migration_pairs":[]}
+                changes=[]
+                for version in suffix:
+                    pair={"version":version}
+                    for direction in ("up","down"):
+                        wire=(version+" "+direction+" exact reviewed fixture").encode()
+                        (new/"migrations"/(version+"."+direction+".sql")).write_bytes(wire)
+                        pair[direction+"_sha256"]=rollout.digest(wire)
+                        changes.append("A\tmigrations/"+version+"."+direction+".sql")
+                    transition["migration_pairs"].append(pair)
+                tree="\n".join("migrations/"+name+".up.sql" for name in old).encode()
+                delta="\n".join(changes).encode()
+                rollout.validate_transition(transition)
+                with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",delta]):
+                    rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+                with patch.object(rollout,"run",return_value=tree), self.assertRaisesRegex(RuntimeError,"predecessor"):
+                    rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old[:-1])
+                with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",delta+b"\nM\tmigrations/000001_init_schema.up.sql"]), self.assertRaisesRegex(RuntimeError,"migration pairs"):
+                    rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+                last=transition["migration_pairs"][-1]
+                (new/"migrations"/(last["version"]+".down.sql")).write_text("changed")
+                with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",delta]), self.assertRaisesRegex(RuntimeError,"bytes differ"):
+                    rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+
+    def test_schema_bridge_shape_rejects_missing_reordered_and_extra_pairs(self):
+        pairs=[{"version":name,"up_sha256":"a"*64,"down_sha256":"b"*64} for name in rollout.BRIDGE_HEADS[1:]]
+        valid={"kind":"schema_bridge_expand_carrier","from_head":rollout.COUNTER_HEAD,"migration_pairs":pairs}
+        rollout.validate_transition(valid)
+        for invalid in (dict(valid,migration_pairs=pairs[:-1]),
+                        dict(valid,migration_pairs=[pairs[1],pairs[0],*pairs[2:]]),
+                        dict(valid,migration_pairs=[*pairs,pairs[-1]]),
+                        dict(valid,migration_pairs=[dict(pairs[0],up_sha256="not-a-digest"),*pairs[1:]]),
+                        dict(valid,from_head="000114_capability_delivery_expand"),
+                        dict(valid,allow_unknown=True)):
+            with self.subTest(invalid=invalid), self.assertRaises(RuntimeError):
+                rollout.validate_transition(invalid)
+
+    def test_compose_defaults_only_add_absent_disabled_values(self):
+        expected={"RUNTIME_VERSION":"1.2.77", "SOURCE_FACTS_ENABLED":"false"}
+        actual=dict(expected)
+        rollout.add_disabled_source_defaults(expected,actual)
+        self.assertEqual({"RUNTIME_VERSION":"1.2.77",**rollout.SOURCE_DEFAULTS},expected)
+        for key,default in rollout.SOURCE_DEFAULTS.items():
+            enabled="true" if default=="false" else "/secret"
+            with self.subTest(key=key):
+                previous=dict(expected)
+                with self.assertRaisesRegex(RuntimeError,"disabled source"):
+                    rollout.add_disabled_source_defaults(dict(expected,**{key:enabled}),actual)
+                with self.assertRaisesRegex(RuntimeError,"disabled source"):
+                    rollout.add_disabled_source_defaults(expected,dict(actual,**{key:enabled}))
+                self.assertEqual(previous,expected)
 
 
 class ArtifactOwnerTests(unittest.TestCase):
@@ -874,6 +1003,57 @@ class PinnedObserverTests(unittest.TestCase):
                     path.write_bytes(b"".join(rollout.canonical(r) + b"\n" for r in rows))
                 self.assertEqual(rollout.observation_acceptance(self.evidence), "unproven_gap")
                 self.evidence = old
+
+
+class ArtifactOwnerReadFixtureTests(unittest.TestCase):
+    def load_carrier(self):
+        path=Path(__file__).with_name("test-artifact-owner-docker.py")
+        spec=importlib.util.spec_from_file_location("carrier_read_fixture",path)
+        module=importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_exact_current_artifact_and_bridge_are_reported_separately(self):
+        migrations=Path(__file__).resolve().parent.parent/"migrations"
+        bridge,current=self.load_carrier().carrier_read_ledgers(migrations)
+        self.assertEqual(bridge[0],"bridge")
+        self.assertEqual(current[0],"current")
+        self.assertEqual(bridge[1][-1],"000120_unpublished_content_reclamation")
+        self.assertEqual(current[1][-1],"000121_gateway_pre_dispatch_terminal")
+        self.assertEqual(current[1],sorted(p.name[:-7] for p in migrations.glob("*.up.sql")))
+        self.assertEqual(bridge[1],current[1][:-1])
+
+    def test_unknown_future_head_cannot_keep_a_stale_success_label(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="ur-carrier-ledger-") as root:
+            for name in ["000120_unpublished_content_reclamation","000121_gateway_pre_dispatch_terminal","000122_unknown"]:
+                (Path(root)/(name+".up.sql")).write_text("")
+            with self.assertRaisesRegex(RuntimeError,"exact reviewed artifact heads"):
+                self.load_carrier().carrier_read_ledgers(Path(root))
+
+    def test_historical_m117_m118_read_fixture_remains_supported(self):
+        with tempfile.TemporaryDirectory(prefix="ur-carrier-historical-") as root:
+            for name in ["000117_execution_observations", "000118_source_budget_snapshots"]:
+                (Path(root)/(name+".up.sql")).write_text("")
+            bridge,current=self.load_carrier().carrier_read_ledgers(Path(root), historical=True)
+            self.assertEqual(bridge[1][-1], rollout.OBSERVATION_HEAD)
+            self.assertEqual(current[1][-1], rollout.BUDGET_HEAD)
+
+    def test_carrier_logging_and_grace_match_actual_daemon_configuration(self):
+        backend=self.load_carrier().carrier_compose("synthetic-image",Path("/release"))["services"]["backend"]
+        service,container,image=fixture()
+        service["logging"]=backend["logging"]
+        service["stop_grace_period"]=backend["stop_grace_period"]
+        container["HostConfig"]["LogConfig"]={"Type":"local","Config":{"max-size":"10m","max-file":"3"}}
+        rollout.check_service(service,container,image,"unirouter")
+        # Reproduce both setup regressions against the unchanged product checker.
+        container["Config"]["StopTimeout"]=40
+        with self.assertRaisesRegex(RuntimeError,"stop grace"):
+            rollout.check_service(service,container,image,"unirouter")
+        container["Config"]["StopTimeout"]=2100
+        del service["logging"]
+        with self.assertRaisesRegex(RuntimeError,"logging"):
+            rollout.check_service(service,container,image,"unirouter")
 
 
 if __name__ == "__main__":

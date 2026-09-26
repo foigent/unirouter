@@ -50,6 +50,7 @@
 | 42 | [Model Execution Profile And Capability Status](42-model-execution-profile-capability-status.md) | 版本化模型执行档案、M82 Release 密封、供应商能力与 UniRouter 已验证能力的事实边界 | v1.1 |
 | 43 | [Versioned Pricing Profiles And Client Projection](43-versioned-pricing-and-client-profile-sync.md) | 绝对单价、来源证据、Freeze 版本、非 Token 计费与 OpenClaw Profile 投影 | v1.0 |
 | 44 | [Model Adaptation Required Baseline V1](44-model-adaptation-required-baseline-v1.md) | 需求矩阵草案，尚未签发不可变批准 Baseline；身份数量与批准状态以正文为准，另有明确用户承诺的要求保留；不是运行时权威 | v1.0 |
+| 55 | [UR Source Facts V1](55-source-facts-v1.md) | UR-A 本地候选：固定字段 profile、身份与费用依据、原事务发布、游标保留及 M116 安装恢复边界；接入控制与整体验收待完成 | candidate |
 
 ## 关联文档
 - [PRD Phase 1](../PRD-Phase1.md) — 历史需求参考

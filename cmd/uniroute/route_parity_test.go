@@ -417,7 +417,7 @@ func TestPublicMediaRoutesOnlySubmitExecutionWork(t *testing.T) {
 	}
 	mainSource := string(src)
 	for _, registration := range []string{
-		`mux.Handle("POST /v1/media/jobs", middleware.GatewayAuthAcrossBufferedBody(mediaAuth, mediaPayloadGuard)(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Submit))))`,
+		`mux.Handle("POST /v1/media/jobs", middleware.GatewayAuthAcrossBufferedBody(mediaAuth, mediaPayloadGuard)(captureExecutionContext(gatewayLicenseGate(capturePublicContent(http.HandlerFunc(mediaHandler.Submit))))))`,
 		`mux.Handle("GET /v1/media/jobs/{id}", mediaAuth(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Get))))`,
 		`mux.Handle("POST /v1/media/jobs/{id}/cancel", mediaAuth(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Cancel))))`,
 		`mux.Handle("GET /v1/media/jobs/{id}/content", mediaAuth(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Content))))`,
@@ -445,10 +445,10 @@ func TestGatewayAuthenticationPrecedesLicenseDisclosure(t *testing.T) {
 	}
 	mainSource := string(src)
 	for _, registration := range []string{
-		`mux.Handle("POST /v1/chat/completions", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(gatewayLicenseGate(`,
-		`mux.Handle("POST /v1/embeddings", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, embeddingsPayloadGuard)(gatewayLicenseGate(`,
-		`mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(gatewayLicenseGate(`,
-		`mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(gatewayLicenseGate(`,
+		`mux.Handle("POST /v1/chat/completions", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(captureExecutionContext(gatewayLicenseGate(`,
+		`mux.Handle("POST /v1/embeddings", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, embeddingsPayloadGuard)(captureExecutionContext(gatewayLicenseGate(`,
+		`mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(gatewayLicenseGate(`,
+		`mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(gatewayLicenseGate(`,
 		`mux.Handle("GET /v1/models", gatewayAuth(gatewayLicenseGate(`,
 	} {
 		if !strings.Contains(mainSource, registration) {
@@ -496,8 +496,8 @@ func TestPublicNonStreamRoutesUseExactProductionPipeline(t *testing.T) {
 		`responsesHandler := newGatewayPublicNonStreamHandler(postgres.Pool, relay, modeloperation.IDResponses, outboxSvc)`,
 		`messagesHandler := newGatewayPublicNonStreamHandler(postgres.Pool, relay, modeloperation.IDMessages, outboxSvc)`,
 		`publicNonStreamPayloadGuard := payloadpolicy.RequestMiddlewareWithMax(payloadBudget, 8*payloadpolicy.MiB, middleware.GetOrgIDFromContext)`,
-		`mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(gatewayLicenseGate(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(responsesHandler))))))`,
-		`mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(gatewayLicenseGate(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(messagesHandler))))))`,
+		`mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(gatewayLicenseGate(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(responsesHandler))))))))`,
+		`mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(gatewayLicenseGate(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(messagesHandler))))))))`,
 	} {
 		if !strings.Contains(mainSource, fragment) {
 			t.Fatalf("public non-stream production pipeline missing %q", fragment)

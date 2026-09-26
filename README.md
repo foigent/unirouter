@@ -30,8 +30,12 @@ docker compose up -d
 curl http://localhost:8080/health/ready
 ```
 
-全新空库会在 HTTP bind 前被 canonical startup gate 拒绝，不能把上面的普通启动
-当成 fresh bootstrap。仅在没有外部反代、负载均衡或客户 Gateway 流量的隔离开发
+全新空库必须先用同一后端制品的
+[`fresh-install plan/check/apply`](docs/ops/FRESH-INSTALL.md) 完成正式 schema 安装。
+构建时须写入精确 version/commit/tree，并提供实际镜像 digest；默认
+`local`/`unknown` 源码构建不能充当此安装制品。普通启动和活动安装期间的管理写入
+均会拒绝空库或未完成的安装，切换成 legacy 也不能跳过此入口。
+schema 安装完成后，仅在没有外部反代、负载均衡或客户 Gateway 流量的隔离开发
 环境中，才可临时把 `.env` 改为
 `MODEL_ROUTE_AUTHORITY=legacy`、
 `MODEL_ROUTE_COMPATIBILITY_ENABLED=true`、`ASYNC_MEDIA_ENABLED=false`，然后启动

@@ -267,7 +267,7 @@ func (h *Handler) verifyFirstCustomerBootstrapCheckpoint(r *http.Request, tx pgx
 // normalized only after every invariant has matched, in the same SERIALIZABLE
 // transaction that creates the first customer.
 func (h *Handler) verifyFirstCustomerFreshMigrationCheckpoint(r *http.Request, tx pgx.Tx, adminUserID, adminOrgID int64) error {
-	expectedTables := resetplan.ExpectedPublicTables()
+	expectedTables := firstCustomerExpectedPublicTables()
 	checks := []struct {
 		name  string
 		query string
@@ -443,7 +443,7 @@ func (h *Handler) verifyFirstCustomerFreshMigrationCheckpoint(r *http.Request, t
 	if err := h.verifyFirstCustomerFreshReleaseEvidence(r, tx); err != nil {
 		return err
 	}
-	for _, name := range resetplan.BootstrapZeroTables() {
+	for _, name := range firstCustomerZeroTables() {
 		if name == "projects" || name == "project_members" {
 			continue
 		}
@@ -632,7 +632,7 @@ func readFirstCustomerBootstrapReplay(r *http.Request, tx pgx.Tx, clientRequestI
 
 func verifyFirstCustomerEmptyCheckpoint(r *http.Request, tx pgx.Tx, adminUserID, adminOrgID int64) error {
 	retainedSettingKeys := append(resetplan.ProtectedSettingKeys(), resetplan.PlatformBaselineSettingKeys()...)
-	expectedTables := resetplan.ExpectedPublicTables()
+	expectedTables := firstCustomerExpectedPublicTables()
 	checks := []struct {
 		name  string
 		query string
@@ -670,7 +670,7 @@ func verifyFirstCustomerEmptyCheckpoint(r *http.Request, tx pgx.Tx, adminUserID,
 			return fmt.Errorf("check %s: got %d want %d", check.name, count, check.want)
 		}
 	}
-	for _, name := range resetplan.BootstrapZeroTables() {
+	for _, name := range firstCustomerZeroTables() {
 		query := "SELECT COUNT(*) FROM " + pgx.Identifier{"public", name}.Sanitize()
 		var count int64
 		if err := tx.QueryRow(r.Context(), query).Scan(&count); err != nil {

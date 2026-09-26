@@ -116,14 +116,17 @@ func TestFirstCustomerBootstrapAcceptsExactFreshMigrationSeedAfterPasswordRotati
 	require.NotEmpty(t, login.Token)
 
 	protected := middleware.OperationIdentity(middleware.AdminAuth(pool, jwtSecret)(http.HandlerFunc(handler.BootstrapFirstCustomer)))
-	serve := func(clientRequestID string) *httptest.ResponseRecorder {
+	serveBody := func(clientRequestID, body string) *httptest.ResponseRecorder {
 		request := httptest.NewRequest(http.MethodPost, "/api/v1/bootstrap/first-customer",
-			bytes.NewBufferString(`{"organization_name":"Fresh Customer"}`))
+			bytes.NewBufferString(body))
 		request.Header.Set("Authorization", "Bearer "+login.Token)
 		request.Header.Set(middleware.ClientRequestIDHeader, clientRequestID)
 		response := httptest.NewRecorder()
 		protected.ServeHTTP(response, request)
 		return response
+	}
+	serve := func(clientRequestID string) *httptest.ResponseRecorder {
+		return serveBody(clientRequestID, `{"organization_name":"Fresh Customer"}`)
 	}
 
 	missingRelease := serve("fresh-bootstrap-client-001")
@@ -138,6 +141,25 @@ func TestFirstCustomerBootstrapAcceptsExactFreshMigrationSeedAfterPasswordRotati
 	require.EqualValues(t, 1, unchangedProjects)
 
 	seedFreshBootstrapReleaseEvidence(t, pool)
+	for _, kind := range []string{"stream", "policy", "health"} {
+		t.Run("retained_content_"+kind, func(t *testing.T) {
+			check := func() error {
+				tx, err := pool.Begin(t.Context())
+				require.NoError(t, err)
+				defer tx.Rollback(t.Context())
+				return handler.verifyFirstCustomerFreshMigrationCheckpoint(httptest.NewRequest(http.MethodPost, "/api/v1/bootstrap/first-customer", nil), tx, adminID, adminOrgID)
+			}
+			require.NoError(t, check())
+			seedFirstCustomerContentState(t, pool, adminOrgID, baseline.ProjectID, kind)
+			before := runtimeBootstrapState(t, pool)
+			require.ErrorContains(t, check(), "check fresh empty table execution_content_")
+			for _, dry := range []string{"false", "true"} {
+				response := serveBody("fresh-content-"+kind+"-"+dry, `{"organization_name":"Must Not Exist","dry_run":`+dry+`}`)
+				require.Equal(t, http.StatusConflict, response.Code, response.Body.String())
+				require.Equal(t, before, runtimeBootstrapState(t, pool))
+			}
+		})
+	}
 	for _, corruption := range []struct {
 		name, table, trigger, statement, failedCheck string
 	}{
@@ -418,6 +440,21 @@ func TestFirstCustomerBootstrapFailsClosedOnDirtyBaselineAndRoleIntegration(t *t
 }
 
 func TestFirstCustomerBootstrapFailsClosedOnSchemaDriftIntegration(t *testing.T) {
+	for _, statement := range []string{
+		`DROP TABLE execution_content_health`,
+		`ALTER TABLE execution_content_health RENAME TO unrecognized_content_health`,
+	} {
+		t.Run(statement, func(t *testing.T) {
+			pool := testutil.SetupMigratedTestDB(t)
+			adminID, adminOrgID := seedFirstCustomerBootstrapAdmin(t, pool)
+			handler := NewHandler(pool, "bootstrap-integration-jwt", []byte("0123456789abcdef01234567"), nil)
+			assertFirstCustomerCheckpoint(t, pool, adminID, adminOrgID)
+			_, err := pool.Exec(t.Context(), statement)
+			require.NoError(t, err)
+			response := serveFirstCustomerBootstrap(t, handler, adminID, adminOrgID, "platform_admin", "bootstrap-content-schema", "First Customer")
+			require.Equal(t, http.StatusConflict, response.Code, response.Body.String())
+		})
+	}
 	t.Run("unknown public table", func(t *testing.T) {
 		pool := testutil.SetupMigratedTestDB(t)
 		adminID, adminOrgID := seedFirstCustomerBootstrapAdmin(t, pool)

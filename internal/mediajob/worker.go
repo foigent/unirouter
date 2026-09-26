@@ -249,6 +249,17 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 	}
 	lease.Attempt = attached.ProviderAttempt
 	lease.Job.Attempt = attached.ProviderAttempt
+	if provider, ok := w.provider.(interface{ SourceObservationsEnabled() bool }); ok && provider.SourceObservationsEnabled() {
+		var observations *sourceMediaSamples
+		ctx, observations = startSourceMediaSamples(ctx)
+		defer func() {
+			if sink, ok := w.store.(interface {
+				CaptureSourceMediaRoutes(context.Context, Job, []SourceMediaHTTP)
+			}); ok {
+				sink.CaptureSourceMediaRoutes(ctx, lease.Job, observations.samples)
+			}
+		}()
+	}
 	dispatchCtx, cancelDispatch := context.WithDeadline(ctx, lease.ExpiresAt)
 	// AttachExecutionReservation is the provider-dispatch fence: it is the
 	// first transition that consumes a provider attempt. Pass that exact

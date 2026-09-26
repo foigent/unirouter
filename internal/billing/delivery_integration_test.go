@@ -90,7 +90,7 @@ func TestP6F41BNonStreamChargeRequiresCompletedLocalDelivery(t *testing.T) {
 	}))
 	var preSettlementAttemptState string
 	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT state FROM billing_provider_attempts WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3`, orgID, requestID, attemptID).Scan(&preSettlementAttemptState))
-	require.Equal(t, providerAttemptStateDeliveryPending, preSettlementAttemptState, "completed delivery must stay blocked until the customer ledger terminal exists")
+	require.Equal(t, providerAttemptStateDeliveryPending, preSettlementAttemptState, "this operation remains delivery_pending until its customer ledger terminal exists")
 	settled, err := b.Settle(t.Context(), req)
 	require.NoError(t, err)
 	require.True(t, settled.Success)

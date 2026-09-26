@@ -3,6 +3,8 @@ package gateway
 import (
 	"context"
 	"errors"
+	"github.com/uniroute/unirouter/internal/executionmeasurement"
+	"github.com/uniroute/unirouter/internal/guardrail"
 	"io"
 	"net"
 	"net/http"
@@ -204,7 +206,15 @@ func (executor *PublicNonStreamExecutor) Execute(
 			err,
 		)
 	}
+	request, observeResponse := observePublicProvider(ctx, request)
+	finishMeasurement := executionmeasurement.HTTPStart(ctx, "")
 	response, err := executor.doer.Do(request)
+	observedHTTPStatus := 0
+	if response != nil {
+		observedHTTPStatus = response.StatusCode
+	}
+	finishMeasurement(observedHTTPStatus)
+	observeResponse(response, err)
 	if err != nil {
 		if response != nil && response.Body != nil {
 			_ = response.Body.Close()
@@ -341,6 +351,7 @@ func (executor *PublicNonStreamExecutor) Execute(
 				ErrPublicNonStreamOutputGuard,
 			)
 		}
+		guardrail.MarkSourceReplacement(ctx, guardrail.StageNonStreamOutput)
 	case PublicOutputGuardBlock:
 		return parsed, publicNonStreamFailure(
 			PublicNonStreamStageOutputGuardrail,

@@ -2,6 +2,7 @@ package workloadadmission
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"sync"
@@ -442,4 +443,464 @@ func clusterTag(key string) string {
 		}
 	}
 	return ""
+}
+
+// cc13ReserveHook controls only the local emulator's Redis clock and the order
+// of real script calls. It does not replace a Lua result or change the service.
+type cc13ReserveHook struct {
+	after func(context.Context, redis.Cmder) error
+}
+
+func (h cc13ReserveHook) DialHook(next redis.DialHook) redis.DialHook { return next }
+func (h cc13ReserveHook) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.ProcessPipelineHook {
+	return next
+}
+func (h cc13ReserveHook) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
+	return func(ctx context.Context, cmd redis.Cmder) error {
+		if err := next(ctx, cmd); err != nil {
+			return err
+		}
+		return h.after(ctx, cmd)
+	}
+}
+
+func TestCC13MaxWaitCannotRestartAfterQueueExpiry(t *testing.T) {
+	cases := []struct {
+		name                              string
+		elapsed                           time.Duration
+		peerCleanup, release, wantAllowed bool
+	}{
+		{name: "before_deadline_capacity_released", elapsed: 49 * time.Millisecond, release: true, wantAllowed: true},
+		{name: "equal_deadline_capacity_held", elapsed: 50 * time.Millisecond},
+		{name: "equal_deadline_capacity_released", elapsed: 50 * time.Millisecond, release: true, wantAllowed: true},
+		{name: "self_cleanup_capacity_held", elapsed: 51 * time.Millisecond},
+		{name: "self_cleanup_capacity_released", elapsed: 51 * time.Millisecond, release: true},
+		{name: "peer_cleanup_capacity_held", elapsed: 51 * time.Millisecond, peerCleanup: true},
+		{name: "peer_cleanup_capacity_released", elapsed: 51 * time.Millisecond, peerCleanup: true, release: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := miniredis.RunT(t)
+			base := time.Unix(1800000000, 0)
+			server.SetTime(base)
+			options := testOptions()
+			options.GlobalCapacity, options.OrgCapacity = 2, 1
+			options.Interactive = ClassPolicy{Weight: 1, MaxWait: 50 * time.Millisecond}
+			options.Stream = ClassPolicy{Weight: 1, MaxWait: 50 * time.Millisecond}
+			options.Embedding = ClassPolicy{Weight: 1, MaxWait: 50 * time.Millisecond}
+			service, client := newTestService(t, server, options)
+			peer, observer := newTestService(t, server, options)
+			holder, _, err := service.Reserve(context.Background(), request("cc13-holder", 7, ClassInteractive, time.Minute))
+			if err != nil {
+				t.Fatal(err)
+			}
+			target := request("cc13-waiter", 7, ClassInteractive, time.Minute)
+			member := operationMember(target.OperationID)
+			keys := runtimeKeys(target.OrgID)
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			calls := 0
+			var observed []storeResult
+			var deadlines []int64
+			var fairnessBeforeRetry string
+			peerRemoved := false
+			client.AddHook(cc13ReserveHook{after: func(_ context.Context, cmd redis.Cmder) error {
+				args := cmd.Args()
+				if cmd.Name() != "evalsha" || len(args) <= 3+len(keys) || fmt.Sprint(args[1]) != reserveScript.Hash() || fmt.Sprint(args[3+len(keys)]) != member {
+					return nil
+				}
+				calls++
+				raw, err := cmd.(*redis.Cmd).Result()
+				if err != nil {
+					return err
+				}
+				result, err := parseStoreResult(raw)
+				if err != nil {
+					return err
+				}
+				observed = append(observed, result)
+				deadline, err := observer.ZScore(context.Background(), keys[8], member).Result()
+				if err != nil && !errors.Is(err, redis.Nil) {
+					return err
+				}
+				deadlines = append(deadlines, int64(deadline))
+				if calls == 1 {
+					if result.Code != storeWait || result.WaitedMS != 0 {
+						return fmt.Errorf("fixture first call was not newly queued: %#v", result)
+					}
+					server.SetTime(base.Add(tc.elapsed))
+					if tc.peerCleanup {
+						peerReservation, _, err := peer.Reserve(context.Background(), request("cc13-peer", 8, ClassInteractive, time.Minute))
+						if err != nil || peerReservation == nil {
+							return fmt.Errorf("peer cleanup failed: %v", err)
+						}
+						exists, err := observer.HExists(context.Background(), keys[9], member+":state").Result()
+						if err != nil {
+							return err
+						}
+						peerRemoved = !exists
+						if !peerRemoved {
+							return fmt.Errorf("peer did not remove expired original member")
+						}
+					}
+					if tc.release {
+						if err := service.Release(context.Background(), holder); err != nil {
+							return err
+						}
+					}
+					fairnessBeforeRetry = observer.HGet(context.Background(), keys[10], "last:interactive").Val()
+				} else if result.Code == storeWait {
+					// Stop the defective loop after observing one real retry. This guard is
+					// not evidence of a product timeout: the script result and reset score are.
+					cancel()
+				}
+				return nil
+			}})
+			reservation, decision, reserveErr := service.Reserve(ctx, target)
+			t.Logf("redis_elapsed_ms=%d calls=%d peer_removed=%v script_results=%+v deadlines_ms=%v reservation=%v decision=%+v err=%v", tc.elapsed/time.Millisecond, calls, peerRemoved, observed, deadlines, reservation != nil, decision, reserveErr)
+			if tc.elapsed > options.Interactive.MaxWait {
+				if current := observer.HGet(context.Background(), keys[10], "last:interactive").Val(); current != fairnessBeforeRetry {
+					t.Errorf("expired poll advanced fairness: %s -> %s", fairnessBeforeRetry, current)
+				}
+				if present := observer.HExists(context.Background(), keys[9], member+":state").Val(); present {
+					t.Error("expired waiter metadata retained")
+				}
+				if _, err := observer.ZScore(context.Background(), keys[0], member).Result(); !errors.Is(err, redis.Nil) {
+					t.Errorf("expired waiter acquired lease: %v", err)
+				}
+				if depth := observer.ZCard(context.Background(), keys[5]).Val(); depth != 0 {
+					t.Errorf("expired queue depth=%d", depth)
+				}
+				if count := observer.HGet(context.Background(), keys[13], "7").Val(); count != "" {
+					t.Errorf("expired org queue count=%q", count)
+				}
+			}
+			if calls != 2 {
+				t.Fatalf("fixture expected exactly two actual waiter script calls, got %d", calls)
+			}
+			if tc.wantAllowed {
+				if reserveErr != nil || reservation == nil || decision.Waited != tc.elapsed {
+					t.Fatalf("pre-deadline control should admit with original wait: reservation=%v decision=%+v err=%v", reservation, decision, reserveErr)
+				}
+			} else {
+				if observed[1].Code != storeCapacity {
+					t.Errorf("at/after original MaxWait: script code=%d, want capacity=%d; old deadline=%d new=%d", observed[1].Code, storeCapacity, deadlines[0], deadlines[1])
+				}
+				if !errors.Is(reserveErr, ErrCapacityExceeded) || reservation != nil || decision.Decision != "deny" || decision.Reason != ReasonCapacityExceeded {
+					t.Errorf("expired original Reserve must deny capacity: reservation=%v decision=%+v err=%v", reservation != nil, decision, reserveErr)
+				}
+				if decision.Waited != tc.elapsed {
+					t.Errorf("Waited=%v, want original Redis queue age %v", decision.Waited, tc.elapsed)
+				}
+			}
+		})
+	}
+}
+
+func cc13WorkloadOptions() Options {
+	options := testOptions()
+	options.GlobalCapacity, options.OrgCapacity = 2, 1
+	options.Interactive = ClassPolicy{Weight: 1, MaxWait: 50 * time.Millisecond}
+	options.Stream = ClassPolicy{Weight: 1, MaxWait: 50 * time.Millisecond}
+	options.Embedding = ClassPolicy{Weight: 1, MaxWait: 50 * time.Millisecond}
+	return options
+}
+
+// This is the exact pre-fix canonical, not an invented conflicting version.
+func cc13LegacyWorkloadVersion(o Options) string {
+	canonical := fmt.Sprintf("admission-v2|redis=fail-closed|g=%d|o=%d|gs=%d|os=%d|i=%d/%d|s=%d/%d|e=%d/%d|poll=%d|active=%d|store=%d|grace=%d|queue=%d/%d/%d",
+		o.GlobalCapacity, o.OrgCapacity, o.GlobalShortReserve, o.OrgShortReserve,
+		o.Interactive.Weight, ceilMilliseconds(o.Interactive.MaxWait), o.Stream.Weight, ceilMilliseconds(o.Stream.MaxWait),
+		o.Embedding.Weight, ceilMilliseconds(o.Embedding.MaxWait), ceilMilliseconds(o.PollInterval), ceilMilliseconds(o.ActivePollWindow),
+		ceilMilliseconds(o.StoreTimeout), ceilMilliseconds(o.LeaseGrace), o.MaxQueueDepth, o.MaxOrgQueueDepth, o.MaxQueueScan)
+	sum := sha256.Sum256([]byte(canonical))
+	return fmt.Sprintf("%x", sum[:8])
+}
+
+func cc13ReserveScriptOnce(t *testing.T, client *redis.Client, o Options, req Request, version, origin string) storeResult {
+	t.Helper()
+	policy, _ := o.Policy(req.Class)
+	value, err := reserveScript.Run(context.Background(), client, runtimeKeys(req.OrgID),
+		operationMember(req.OperationID), operationFingerprint(req, policy.Weight), req.OrgID, req.Class, policy.Weight,
+		o.GlobalCapacity, o.OrgCapacity, o.GlobalShortReserve, o.OrgShortReserve,
+		ceilMilliseconds(req.LeaseTTL+o.LeaseGrace), ceilMilliseconds(policy.MaxWait), ceilMilliseconds(o.ActivePollWindow),
+		o.MaxQueueDepth, o.MaxQueueScan, ceilSeconds(req.LeaseTTL+o.LeaseGrace+policy.MaxWait+time.Second), version, o.MaxOrgQueueDepth, origin).Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := parseStoreResult(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func cc13Reservation(req Request, weight int64) *Reservation {
+	return &Reservation{OperationID: req.OperationID, OrgID: req.OrgID, Class: req.Class, Weight: weight, member: operationMember(req.OperationID), fingerprint: operationFingerprint(req, weight)}
+}
+
+func TestCC13WorkloadLegacyCanonicalRequiresDrain(t *testing.T) {
+	for _, queued := range []bool{false, true} {
+		t.Run(fmt.Sprintf("queued_only_%v", queued), func(t *testing.T) {
+			server := miniredis.RunT(t)
+			server.SetTime(time.Unix(1800000000, 0))
+			o := cc13WorkloadOptions()
+			service, client := newTestService(t, server, o)
+			legacy := cc13LegacyWorkloadVersion(o)
+			if legacy == service.Version() {
+				t.Fatal("new wait contract reused old fingerprint")
+			}
+			holder := request("legacy-holder", 7, ClassInteractive, time.Minute)
+			if r := cc13ReserveScriptOnce(t, client, o, holder, legacy, ""); r.Code != storeAdmitted {
+				t.Fatalf("legacy holder=%+v", r)
+			}
+			waiting := request("legacy-waiter", 7, ClassInteractive, time.Minute)
+			if queued {
+				if r := cc13ReserveScriptOnce(t, client, o, waiting, legacy, ""); r.Code != storeWait {
+					t.Fatalf("legacy queued=%+v", r)
+				}
+				if err := service.Release(context.Background(), cc13Reservation(holder, 1)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if r, d, err := service.Reserve(context.Background(), request("new-before-drain", 8, ClassInteractive, time.Minute)); !errors.Is(err, ErrConfigConflict) || r != nil || d.Reason != ReasonConfigConflict {
+				t.Fatalf("new/old mismatch r=%v d=%+v err=%v", r, d, err)
+			}
+			if got := client.Get(context.Background(), runtimeKeys(7)[12]).Val(); got != legacy {
+				t.Fatalf("refused new caller changed old config: %q", got)
+			}
+			if queued {
+				service.abandon(waiting.OrgID, operationMember(waiting.OperationID), operationFingerprint(waiting, 1), time.Minute)
+			} else if err := service.Release(context.Background(), cc13Reservation(holder, 1)); err != nil {
+				t.Fatal(err)
+			}
+			fresh, _, err := service.Reserve(context.Background(), request("new-after-drain", 7, ClassInteractive, time.Minute))
+			if err != nil {
+				t.Fatalf("drained activation: %v", err)
+			}
+			if got := client.Get(context.Background(), runtimeKeys(7)[12]).Val(); got != service.Version() {
+				t.Fatalf("new config=%q", got)
+			}
+			oldRetry := request("legacy-after-new", 8, ClassInteractive, time.Minute)
+			if r := cc13ReserveScriptOnce(t, client, o, oldRetry, legacy, ""); r.Code != storeConfigConflict {
+				t.Fatalf("old/new mismatch=%+v", r)
+			}
+			if err := service.Release(context.Background(), fresh); err != nil {
+				t.Fatal(err)
+			}
+			if r := cc13ReserveScriptOnce(t, client, o, oldRetry, legacy, ""); r.Code != storeAdmitted {
+				t.Fatalf("drained legacy activation=%+v", r)
+			}
+			if err := service.Release(context.Background(), cc13Reservation(oldRetry, 1)); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestCC13ActiveLeaseReplayPrecedesQueueDeadline(t *testing.T) {
+	server := miniredis.RunT(t)
+	base := time.Unix(1800000000, 0)
+	server.SetTime(base)
+	o := cc13WorkloadOptions()
+	service, client := newTestService(t, server, o)
+	req := request("active-replay", 7, ClassInteractive, time.Minute)
+	first, _, err := service.Reserve(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.SetTime(base.Add(500 * time.Millisecond))
+	result := cc13ReserveScriptOnce(t, client, o, req, service.Version(), fmt.Sprint(base.UnixMilli()))
+	if result.Code != storeIdempotent || result.GlobalUsed != 1 || result.OrgUsed != 1 {
+		t.Fatalf("active lease was denied or double counted: %+v", result)
+	}
+	if err := service.Release(context.Background(), first); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Release(context.Background(), first); err != nil {
+		t.Fatal(err)
+	}
+	if got := client.Get(context.Background(), runtimeKeys(7)[3]).Val(); got != "0" {
+		t.Fatalf("repeated release total=%q", got)
+	}
+}
+
+func TestCC13WaitOriginSurvivesMultiplePolls(t *testing.T) {
+	for _, release := range []bool{false, true} {
+		t.Run(fmt.Sprintf("release_%v", release), func(t *testing.T) {
+			server := miniredis.RunT(t)
+			base := time.Unix(1800000000, 0)
+			server.SetTime(base)
+			o := cc13WorkloadOptions()
+			service, client := newTestService(t, server, o)
+			_, observer := newTestService(t, server, o)
+			holder, _, err := service.Reserve(context.Background(), request("multi-held", 7, ClassInteractive, time.Minute))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := request("multi-wait", 7, ClassInteractive, time.Minute)
+			member := operationMember(req.OperationID)
+			keys := runtimeKeys(7)
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			calls := 0
+			var seen []int64
+			var fairness string
+			client.AddHook(cc13ReserveHook{after: func(_ context.Context, cmd redis.Cmder) error {
+				args := cmd.Args()
+				if cmd.Name() != "evalsha" || len(args) <= 3+len(keys) || fmt.Sprint(args[1]) != reserveScript.Hash() || fmt.Sprint(args[3+len(keys)]) != member {
+					return nil
+				}
+				calls++
+				value, err := cmd.(*redis.Cmd).Result()
+				if err != nil {
+					return err
+				}
+				r, err := parseStoreResult(value)
+				if err != nil {
+					return err
+				}
+				seen = append(seen, r.WaitedMS)
+				current := observer.HGet(context.Background(), keys[10], "last:interactive").Val()
+				if calls == 1 {
+					fairness = current
+				} else if current != fairness {
+					return fmt.Errorf("poll advanced fairness: %s -> %s", fairness, current)
+				}
+				if calls > 1 && fmt.Sprint(args[3+len(keys)+17]) != fmt.Sprint(base.UnixMilli()) {
+					return fmt.Errorf("poll %d changed Redis queue origin: %v", calls, args[3+len(keys)+17])
+				}
+				switch calls {
+				case 1:
+					server.SetTime(base.Add(10 * time.Millisecond))
+				case 2:
+					server.SetTime(base.Add(20 * time.Millisecond))
+				case 3:
+					elapsed := 51 * time.Millisecond
+					if release {
+						elapsed = 49 * time.Millisecond
+					}
+					server.SetTime(base.Add(elapsed))
+					if release {
+						return service.Release(context.Background(), holder)
+					}
+				default:
+					if r.Code == storeWait {
+						cancel()
+					}
+				}
+				return nil
+			}})
+			reservation, decision, err := service.Reserve(ctx, req)
+			want := int64(51)
+			if release {
+				want = 49
+			}
+			if fmt.Sprint(seen) != fmt.Sprint([]int64{0, 10, 20, want}) {
+				t.Fatalf("wait history=%v", seen)
+			}
+			if decision.Waited != time.Duration(want)*time.Millisecond {
+				t.Fatalf("wait=%v", decision.Waited)
+			}
+			if release {
+				if err != nil || reservation == nil {
+					t.Fatalf("in-budget admission=%v err=%v", reservation, err)
+				}
+			} else if !errors.Is(err, ErrCapacityExceeded) || reservation != nil {
+				t.Fatalf("expired admission=%v err=%v", reservation, err)
+			}
+		})
+	}
+}
+
+func TestCC13ExpiredWaiterDoesNotDecrementAnotherQueueEntry(t *testing.T) {
+	server := miniredis.RunT(t)
+	base := time.Unix(1800000000, 0)
+	server.SetTime(base)
+	o := cc13WorkloadOptions()
+	service, client := newTestService(t, server, o)
+	holder, _, err := service.Reserve(context.Background(), request("count-holder", 7, ClassInteractive, time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := request("count-expired", 7, ClassInteractive, time.Minute)
+	if r := cc13ReserveScriptOnce(t, client, o, old, service.Version(), ""); r.Code != storeWait {
+		t.Fatalf("first queue=%+v", r)
+	}
+	server.SetTime(base.Add(25 * time.Millisecond))
+	next := request("count-still-live", 7, ClassInteractive, time.Minute)
+	if r := cc13ReserveScriptOnce(t, client, o, next, service.Version(), ""); r.Code != storeWait {
+		t.Fatalf("second queue=%+v", r)
+	}
+	keys := runtimeKeys(7)
+	fairness := client.HGet(context.Background(), keys[10], "last:interactive").Val()
+	server.SetTime(base.Add(51 * time.Millisecond))
+	result := cc13ReserveScriptOnce(t, client, o, old, service.Version(), fmt.Sprint(base.UnixMilli()))
+	if result.Code != storeCapacity || result.WaitedMS != 51 || result.QueueDepth != 1 || result.GlobalUsed != 1 || result.OrgUsed != 1 {
+		t.Fatalf("expired result=%+v", result)
+	}
+	if got := client.HGet(context.Background(), keys[13], "7").Val(); got != "1" {
+		t.Fatalf("other org queue entry lost: %q", got)
+	}
+	if got := client.ZCard(context.Background(), keys[5]).Val(); got != 1 {
+		t.Fatalf("remaining queue=%d", got)
+	}
+	if got := client.HGet(context.Background(), keys[10], "last:interactive").Val(); got != fairness {
+		t.Fatalf("expired poll advanced fairness: %q -> %q", fairness, got)
+	}
+	if err := service.Release(context.Background(), holder); err != nil {
+		t.Fatal(err)
+	}
+	admitted, decision, err := service.Reserve(context.Background(), next)
+	if err != nil || admitted == nil || decision.Waited != 26*time.Millisecond {
+		t.Fatalf("surviving queued request r=%v d=%+v err=%v", admitted, decision, err)
+	}
+	if err := service.Release(context.Background(), admitted); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCC13QueuedFaultsRemainFailClosed(t *testing.T) {
+	for _, outage := range []bool{false, true} {
+		t.Run(fmt.Sprintf("outage_%v", outage), func(t *testing.T) {
+			server := miniredis.RunT(t)
+			server.SetTime(time.Unix(1800000000, 0))
+			o := cc13WorkloadOptions()
+			service, client := newTestService(t, server, o)
+			if _, _, err := service.Reserve(context.Background(), request("fault-holder", 7, ClassInteractive, time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			req := request("fault-waiter", 7, ClassInteractive, time.Minute)
+			member := operationMember(req.OperationID)
+			keys := runtimeKeys(7)
+			client.AddHook(cc13ReserveHook{after: func(_ context.Context, cmd redis.Cmder) error {
+				args := cmd.Args()
+				if cmd.Name() != "evalsha" || len(args) <= 3+len(keys) || fmt.Sprint(args[1]) != reserveScript.Hash() || fmt.Sprint(args[3+len(keys)]) != member {
+					return nil
+				}
+				if outage {
+					server.SetError("ERR cc13 local fixture unavailable")
+				} else {
+					cancel()
+				}
+				return nil
+			}})
+			r, d, err := service.Reserve(ctx, req)
+			server.SetError("")
+			if r != nil || !errors.Is(err, ErrStateUnavailable) || d.Decision != "deny" || d.Reason != ReasonStateUnavailable || d.Fallback {
+				t.Fatalf("queued fault r=%v d=%+v err=%v", r, d, err)
+			}
+			if _, err := client.ZScore(context.Background(), keys[0], member).Result(); !errors.Is(err, redis.Nil) {
+				t.Fatalf("fault acquired lease: %v", err)
+			}
+			if got := client.Get(context.Background(), keys[3]).Val(); got != "1" {
+				t.Fatalf("fault changed holder capacity: %q", got)
+			}
+			if !outage && client.HExists(context.Background(), keys[9], member+":state").Val() {
+				t.Fatal("cancelled queue entry retained")
+			}
+		})
+	}
 }

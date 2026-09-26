@@ -8,6 +8,7 @@ import { StatusTag } from '../ui';
 import { useAuthStore } from '../store/auth';
 import { customerOrganizationDisplayName } from '../utils/customerContext';
 import { projectDisplayName } from '../utils/projectDisplay';
+import XInsightSourceConnection from './XInsightSourceConnection';
 
 const { Text, Title } = Typography;
 
@@ -684,6 +685,7 @@ export default function XInsightLiveConnection({
         </Text>
       </div>
 
+      {projectID && <XInsightSourceConnection key={projectID} projectId={projectID} orgId={selectedProject?.org_id} expansionAllowed={expansionEnabled} budgetReadAllowed={['platform_admin', 'org_admin', 'billing_admin'].includes(user?.organization_role ?? user?.role ?? '')} budgetWriteAllowed={['platform_admin', 'billing_admin'].includes(user?.organization_role ?? user?.role ?? '')} />}
     </div>
   );
 }

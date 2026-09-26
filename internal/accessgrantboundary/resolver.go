@@ -13,6 +13,7 @@ import (
 
 	"github.com/uniroute/unirouter/internal/accessscope"
 	"github.com/uniroute/unirouter/internal/db"
+	"github.com/uniroute/unirouter/internal/executioncontext"
 	"github.com/uniroute/unirouter/internal/models"
 )
 
@@ -224,7 +225,27 @@ func Resolve(ctx context.Context, q db.DBQuerier, keyID int64) (Snapshot, error)
 			return Snapshot{}, ErrInactive
 		}
 	}
+	identity := snapshot.ExecutionIdentity()
+	snapshot.APIKey.ExecutionIdentity = &identity
 	return snapshot, nil
+}
+
+// ExecutionIdentity projects this exact admitted boundary without another
+// authority lookup. It deliberately omits names, email and credential material.
+func (s Snapshot) ExecutionIdentity() executioncontext.Identity {
+	identity := executioncontext.Identity{ActualHuman: "unknown", AuthorityRead: "live_boundary"}
+	if s.APIKey.OwnerUserID != nil {
+		identity.OwnerUserID = executioncontext.ID(*s.APIKey.OwnerUserID)
+	}
+	if s.APIKey.AccessGrantID != nil {
+		identity.GrantID = executioncontext.ID(*s.APIKey.AccessGrantID)
+	}
+	identity.GrantRevision = executioncontext.ID(s.GrantRevision)
+	identity.GrantSubjectType = s.GrantSubjectType
+	identity.GrantSubjectUserID = executioncontext.ID(s.GrantSubjectUserID)
+	identity.GrantSubjectWorkloadID = executioncontext.ID(s.GrantSubjectWorkloadID)
+	identity.SponsorUserID = executioncontext.ID(s.GrantSponsorUserID)
+	return identity
 }
 
 func active(s Snapshot) bool {

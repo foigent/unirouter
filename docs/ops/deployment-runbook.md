@@ -1230,9 +1230,18 @@ docker compose cp redis:/data/dump.rdb ./backups/redis_$(date +%Y%m%d_%H%M%S).rd
 
 ### 4.2 恢复
 
+恢复期间必须停止所有 backend、内容 reader/capture/media 和独立恢复 writer，包括连接同一正文根的其他实例。默认 Compose 的服务名为 `backend`；其他拓扑按其实际服务清单停止全部进程，SQL 锁不能替代这一步。M118 预算认证不能沿用备份中的起点，即使备份很新也必须执行下面的固定 rebase SQL，再由新二进制 preflight 验证后恢复服务。跨恢复边界的日/月预算只提供 known subtotal 和 restore gap，下一完整 UTC 周期才可能恢复完整覆盖。
+
+该 SQL 原子修改 D coverage 历史和 M119 的 C recovery epoch，不改账、凭据、source instance、A/B 游标、C registration、历史 manifest 或对象 allocation epoch。每次恢复使用新的随机正 BIGINT 世代（字符串传输；不承诺数值递增），避免重复还原同一备份确定性复用旧 cursor；有限随机域仍有极低碰撞概率，碰撞到当前值则整体拒绝。无 D/C schema 的旧备份不补认证；混入部分 C 表、缺表或未知账本则拒绝。
+
+SQL-only 与成对 SQL/正文备份均必须执行此 helper。成对备份须在同一停写窗口保留数据库及准确正文根（包括原 marker），并分别验证文件摘要；恢复时保持原 binding token/identity，不重新初始化根。只有 SQL 而缺正文时，新授权读报告 missing，不改写历史 complete。错 binding/损坏字节报告 corrupt；未配置存储报告 source_unavailable。重启前核对绑定、样本字节与摘要、旧 cursor 409 和新授权读取结果。此 helper 不扫描或清理孤儿文件、不释放正文配额。
+
 ```bash
+docker compose stop backend
 # 恢复 PostgreSQL
-cat backup.sql | docker compose exec -T postgres psql -U uniroute uniroute
+cat backup.sql | docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U uniroute uniroute
+# 在任何 backend/source reader 重启之前重建 D coverage 和 C recovery epoch。
+cat scripts/source-budget-restore-rebase.sql | docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U uniroute uniroute
 
 # 恢复 Redis；必须先停止实例，避免关停保存覆盖待恢复的 RDB
 docker compose stop redis
@@ -2001,6 +2010,40 @@ HTTP 端口的 CLI one-off 容器执行受支持的 `./uniroute migrate up`。
 schema 共享写入。迁移已提交后的恢复路径是修正候选并 roll-forward，
 不是在已有新 evidence 时盲目回退 schema。
 
+#### 9.10.2 M115 到 M121 的有限兼容扩展候选
+
+本节仅适用于已核准的 development/test 现存数据库，不适用上面的通用
+`migrate up` 示例。1.2.77/M115 日常实例到 1.5.0/M121 候选必须使用现有
+`internal-target-rollout.py` 和 `compatible-expand.py` 的正式路径；不能以
+一次性 SQL、fresh-install 或直接 `migrate up` 跳过中间前态与运行 fleet 门。
+这是源码支持的候选流程，尚不证明任何 Target 已通过。
+
+先核对准确旧 commit/完整迁移 ledger 与数据库账本一致、同一 PG system ID、
+现存 stable/canary/frontend/Nginx 五文件 Compose chain、密钥散列/上游密文/
+Release/Slot/账务读回、系统盘门槛、经过校验的备份与恢复入口。为这一精确
+候选构建本地不可变镜像后，用一次 `schema_bridge_expand_carrier` 命名转换
+滚动原有 stable/canary；输入 `from_head` 为实际 M115–M120 前态，
+`migration_pairs` 是从下一头到 M121 的完整有序后缀，每对含准确版本及
+up/down SHA-256。控制器拒绝旧迁移变更、未知新增文件、缺对或错序，
+并只允许八项新增 source Compose 设置保持 `false`/空值。此滚动不执行迁移；
+新二进制须先在旧 ledger 上完成兼容启动、readiness 和恢复代证明。
+
+然后在每一头分别调用 `compatible-expand.py` 的 `check` 与 `apply`，
+顺序严格为 M116、M117、M118、M119、M120、M121（若实际前态较新，
+只执行其后缀），每次以当次 up SQL 的 `sha256:<64位十六进制>` 为
+`--migration-digest`，保留相同的精确 Target、Nginx、配置和源 Artifact
+身份。每一步重新读回完整 ledger、两台运行实例及其 support manifest，
+核对历史数据/身份/账务不变，并按候选 binary 的恢复 fleet 门审查所有保留
+代。`check` 不写数据库，`apply` 由唯一 schema owner 事务性执行；任一步
+失败先读准确 ledger 和运行状态，不猜测远端未提交，也不复用旧二进制进行
+新 schema 的盲回退。已提交迁移需要与实际前态兼容的同一候选 roll-forward，
+或按已验证备份及适用 rebase 规则离线恢复。
+
+M121 的 `runtime-observation.v2` 是独立 profile；升级和 schema 支持不自动
+给 XI 授权或扩大现有连接 profile。I-01 保持独立 completed-execution
+feed；B/D v1 和 C v2 继续按各自已支持合同及显式 profile 注册交付。
+接收端是否实际支持须另按其当前 schema/FPV 与正式注册读回确认。
+
 所有长期 Compose 服务默认使用 Docker `json-file` 日志轮转：单文件 20 MiB、最多
 3 个文件。可通过 `DOCKER_LOG_MAX_SIZE` 和 `DOCKER_LOG_MAX_FILES` 在部署环境调整，
 但不能留空或移除 `logging` 合同。日志参数只在容器创建时生效；修改后必须按
@@ -2178,6 +2221,11 @@ bootstrap-only listener。外层 TLS proxy、负载均衡和任何客户 Gateway
 
 ### 10.2 启动、首装登记与读回
 
+1.4.1 的全新数据库先按 [`deploy/customer/README.md`](../../deploy/customer/README.md)
+第 7 步，用同一已验证后端镜像执行 `fresh-install plan/check/apply`，保留原 Plan 与
+Publication 证据；中断时使用原身份 `resume`。只有原子完成 M118 并完成读回后，
+才执行下列普通启动与首装登记。此候选尚待原生验证，本节不构成已发布或部署成功的证据。
+
 ```bash
 : "${UNIROUTER_SIGNED_PACKAGE:?Set the absolute path to the exact verified release package}"
 : "${UNIROUTER_RELEASE_OPERATOR:?Set the approved operator or deployment identity}"
@@ -2325,3 +2373,67 @@ allowlist，同时外部请求不能直接伪造 XFF 获得信任。
 | 密钥 | 正式模式要求 `JWT_SECRET` 与 `API_KEY_HASH_SECRET` 均至少 32 bytes；`JWT_SECRET` 可按需轮换；`API_KEY_HASH_SECRET`、`ENCRYPTION_KEY` 和通知 Webhook HMAC 轮换前必须确认 API Key、上游通道密钥及接收端双密钥窗口的影响；正式验签根由签发/发布方管理 |
 | Grafana | 设置 `GRAFANA_ADMIN_PASSWORD`，禁止继续使用 `admin/admin` |
 | 备份 | 备份文件加密存储 |
+
+
+### Offline interrupted unpublished content reclamation (M120)
+
+`content-store reclaim-unpublished` is a manual, single-reservation recovery
+command. It must never be scheduled or run while any process sharing this
+PostgreSQL database or body root can read, write or restart. Stop and join all
+backend, reader, capture, media and maintenance owners, disable their restart
+paths, and retain the exact process/root/database/object inventory as offline
+evidence. Lease expiry, recovery epoch changes and a Close timeout are not exit
+proof. The two acknowledgement flags and evidence digest record the operator's
+assertion; the command cannot prove remote OS process quiescence. Non-stopped
+runtime rows additionally veto the command even when their leases have expired.
+
+Use the existing approved database credential through
+`UR_CONTENT_RECLAIM_DATABASE_URL`; never put a DSN/token in command arguments.
+The following is a template, not authorization for any target or object:
+
+```sh
+uniroute content-store reclaim-unpublished check \
+  --root "$EXACT_BODY_ROOT" --identity "$EXACT_STORE_ID" \
+  --token-file "$EXISTING_PRIVATE_BINDING_FILE" --migrations-dir migrations \
+  --environment "$EXACT_ENVIRONMENT" --database "$EXACT_DATABASE" \
+  --database-oid "$EXACT_DATABASE_OID" --system-identifier "$EXACT_PG_SYSTEM_ID" \
+  --database-owner "$EXACT_DATABASE_OWNER" --database-role "$EXACT_DATABASE_ROLE" \
+  --source-instance "$EXACT_SOURCE_INSTANCE" --org-id "$EXACT_ORG_ID" \
+  --project-id "$EXACT_PROJECT_ID" --content-ref "$EXACT_CONTENT_REF" \
+  --all-owners-stopped --restarts-prohibited \
+  --offline-evidence-sha256 "$RETAINED_OFFLINE_PROOF_SHA256"
+```
+
+`check` uses a read-only transaction and exact file opens/stat only; it does not
+initialize storage, migrate schema, unlink, sync directories or release quota.
+Both modes require the trusted complete M120 artifact/ledger. M119 and partially
+upgraded schemas are rejected without attempting SQL repair. A successful check
+is not a durable authorization: apply repeats every target/history/quota check.
+After reviewing the exact returned content_ref and relative_path under the
+existing deletion authorization, run the same command with `apply` in place of
+`check`, retaining the offline fence for its entire duration.
+
+Only the persisted `relative_path` and `.` + `relative_path` + `.tmp` are eligible.
+Both existing names must be regular and the same inode. Unknown orphan rows,
+symlinks/directories, different inodes, duplicate mappings, wrong bindings,
+quota mismatch, any readable body reference in the complete manifest chain, or
+an already-retained manifest prefix cause refusal. A valid `not_captured` terminal
+without a body reference is allowed. Retained-prefix rejection is conservative:
+this command has no authority to reconstruct missing publication history.
+
+After exact unlink and directory fsync, a second stream→policy→object transaction
+rechecks the original immutable row and history, marks `orphan/reclaimed_at`, and
+subtracts only its original reserved bytes. Stored bytes and every historical
+manifest stay unchanged. The object row remains permanently available for
+reservation deduplication. Old allocation epochs need not equal the current
+stream epoch. Partial file removal, failed fsync, DB rollback or ambiguous commit
+must be retried with the same exact object after renewing the offline proof;
+never manually subtract counters or delete the reservation row. A marked row
+returns `already_reclaimed` only when both names remain absent. M120 down rejects
+any reclaim marker and cannot erase this dedup/release evidence.
+
+Keep the output with the operator evidence. Generic CLI errors deliberately omit
+raw database messages and secrets. Failure does not imply that files remain or
+that a transaction did not commit; re-run the zero-write check for the same exact
+target before deciding the next action. No directory scan, automatic publication,
+policy change or general cleanup is supported.

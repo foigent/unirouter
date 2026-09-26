@@ -18,7 +18,7 @@ import (
 // history may remain; the committing session is still checked under its lock.
 func (h *Handler) verifyFirstCustomerRuntimeResetCheckpoint(r *http.Request, tx pgx.Tx, adminUserID, adminOrgID int64) error {
 	retainedSettingKeys := append(resetplan.ProtectedSettingKeys(), resetplan.PlatformBaselineSettingKeys()...)
-	expectedTables := resetplan.ExpectedPublicTables()
+	expectedTables := firstCustomerExpectedPublicTables()
 	checks := []struct {
 		name  string
 		query string
@@ -94,7 +94,7 @@ func (h *Handler) verifyFirstCustomerRuntimeResetCheckpoint(r *http.Request, tx 
 	if err := schemaauthority.VerifyLedger(h.runtimeOptions.SchemaMigrations, actualMigrations); err != nil {
 		return fmt.Errorf("check runtime migration ledger: %w", err)
 	}
-	for _, name := range resetplan.BootstrapZeroTables() {
+	for _, name := range firstCustomerZeroTables() {
 		if name == "projects" {
 			continue
 		}

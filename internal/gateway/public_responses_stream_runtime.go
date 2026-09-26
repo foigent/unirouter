@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/uniroute/unirouter/internal/executionmeasurement"
 	"io"
 	"mime"
 	"net/http"
@@ -274,7 +275,16 @@ func (orchestrator *publicStreamOrchestrator) executeAttempt(
 	if err != nil {
 		return publicStreamAttemptResult{providerState: "undispatched", err: fmt.Errorf("%w: stream binding", errPublicNonStreamContractMismatch)}
 	}
+	captureCtx := withPublicContentObservation(streamCtx, orchestrator.core.contentCapture, request, attemptID)
+	httpRequest, observeResponse := observePublicProvider(captureCtx, httpRequest)
+	finishMeasurement := executionmeasurement.HTTPStart(streamCtx, attemptID)
 	response, err := orchestrator.core.doer.Do(httpRequest)
+	observedHTTPStatus := 0
+	if response != nil {
+		observedHTTPStatus = response.StatusCode
+	}
+	finishMeasurement(observedHTTPStatus)
+	observeResponse(response, err)
 	if err != nil {
 		if response != nil && response.Body != nil {
 			_ = response.Body.Close()
@@ -356,33 +366,34 @@ func (orchestrator *publicStreamOrchestrator) executeAttempt(
 }
 
 type publicStreamRun struct {
-	orchestrator     *publicStreamOrchestrator
-	request          publicNonStreamRequest
-	preparation      publicExecutionPreparation
-	attemptID        string
-	decision         modelexecution.Decision
-	stream           publicStreamBinding
-	writer           http.ResponseWriter
-	body             io.Reader
-	guardProfile     guardrail.StreamProfile
-	guardHistory     map[string]string
-	advisoryHistory  map[string]string
-	started          bool
-	deliveredBytes   int64
-	deliveredChunks  int
-	completionTokens int
-	partialRecorded  bool
-	lease            billing.StreamDeliveryStart
-	fence            billing.StreamLeaseFence
-	streamWriter     *sseStreamWriter
-	providerHealth   PublicNonStreamHealthAction
-	attemptCompleted bool
-	healthAttempted  bool
-	completionFailed bool
-	clientContext    context.Context
-	lastCheckpointAt time.Time
-	checkpointBytes  int64
-	checkpointTokens int
+	measurementContext context.Context
+	orchestrator       *publicStreamOrchestrator
+	request            publicNonStreamRequest
+	preparation        publicExecutionPreparation
+	attemptID          string
+	decision           modelexecution.Decision
+	stream             publicStreamBinding
+	writer             http.ResponseWriter
+	body               io.Reader
+	guardProfile       guardrail.StreamProfile
+	guardHistory       map[string]string
+	advisoryHistory    map[string]string
+	started            bool
+	deliveredBytes     int64
+	deliveredChunks    int
+	completionTokens   int
+	partialRecorded    bool
+	lease              billing.StreamDeliveryStart
+	fence              billing.StreamLeaseFence
+	streamWriter       *sseStreamWriter
+	providerHealth     PublicNonStreamHealthAction
+	attemptCompleted   bool
+	healthAttempted    bool
+	completionFailed   bool
+	clientContext      context.Context
+	lastCheckpointAt   time.Time
+	checkpointBytes    int64
+	checkpointTokens   int
 }
 
 type publicStreamScannedLine struct {
@@ -395,6 +406,7 @@ func (run *publicStreamRun) execute(ctx context.Context) (returnErr error) {
 	if run == nil || run.orchestrator == nil || !run.stream.valid() || run.writer == nil || run.body == nil {
 		return errPublicNonStreamRuntimeUnavailable
 	}
+	run.measurementContext = ctx
 	run.providerHealth = PublicNonStreamHealthNone
 	run.lease = billing.StreamDeliveryStart{
 		RequestID: run.request.RequestID, AttemptID: run.attemptID, OwnerID: processStreamLeaseOwner,
@@ -679,8 +691,12 @@ func (run *publicStreamRun) flushGuardedDeltas(
 		if !run.guardProfile.Enforced {
 			value = event.Texts()[0].Text
 		}
+		replaced := value != event.Texts()[0].Text
 		if err := event.CommitTexts([]string{value}); err != nil {
 			return errors.Join(errPublicNonStreamGuardFailed, err)
+		}
+		if replaced {
+			guardrail.MarkSourceReplacement(ctx, guardrail.StageStreamOutput)
 		}
 		run.completionTokens += tokenutil.EstimateTokens(value)
 		if run.completionTokens > run.preparation.outputEstimate {
@@ -734,6 +750,15 @@ func (run *publicStreamRun) writeEvent(event publicStreamEvent) error {
 	}
 	if err != nil || written != len(payload) {
 		return errors.Join(errPublicNonStreamDeliveryFailed, err)
+	}
+	for _, text := range event.Texts() {
+		if text.Text != "" {
+			executionmeasurement.FirstOutputFlushed(run.measurementContext)
+			break
+		}
+	}
+	if event.Terminal() {
+		executionmeasurement.TerminalFlushed(run.measurementContext)
 	}
 	run.deliveredChunks++
 	if err := run.checkpoint(!run.partialRecorded || event.Terminal()); err != nil {

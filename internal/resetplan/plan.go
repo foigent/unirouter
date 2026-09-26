@@ -50,6 +50,17 @@ var (
 	identifierPattern     = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 
 	protectedTables = map[string]string{
+		"execution_source_budget_scopes":                       "budget coverage and authority history cannot be erased by the existing reset contract",
+		"execution_source_budget_definitions":                  "budget coverage and authority history cannot be erased by the existing reset contract",
+		"execution_source_budget_bindings":                     "budget coverage and authority history cannot be erased by the existing reset contract",
+		"execution_source_budget_binding_history":              "budget coverage and authority history cannot be erased by the existing reset contract",
+		"execution_source_budget_coverage":                     "budget coverage and authority history cannot be erased by the existing reset contract",
+		"usage_finalization_journal":                           "budget coverage and authority history cannot be erased by the existing reset contract",
+		"execution_source_acknowledgements":                    "source receiver position is outside the existing reset erasure contract",
+		"execution_source_connections":                         "source connection and permission generation need a separately reviewed reset lifecycle",
+		"execution_source_credentials":                         "source credential bindings are not erased by the existing reset contract",
+		"execution_source_facts":                               "immutable source facts are preserved until their reset lifecycle is reviewed",
+		"execution_source_streams":                             "source identity, epoch and retention floor cannot be silently reset",
 		"capability_publications":                              "append-only capability publication authority and retained provenance survive product reset",
 		"model_profile_definitions":                            "immutable capability definitions remain addressable with their publication history",
 		"runtime_support_manifests":                            "immutable installed Artifact implementation support is host-operability evidence",
@@ -110,7 +121,7 @@ var (
 		"request_idempotency", "request_trace_events", "response_cache_commercial_receipts",
 		"response_cache_delivery_receipts", "runtime_change_events", "runtime_change_releases",
 		"runtime_change_slots", "runtime_route_revision_items", "runtime_terminal_hooks", "stream_delivery_checkpoints",
-		"stream_delivery_leases", "transactions", "usage_finalization_journal", "users",
+		"stream_delivery_leases", "transactions", "users",
 		"wallets", "workload_application_client_profiles", "workload_applications",
 		"xinsight_connector_control_bindings", "xinsight_connector_installations",
 		"xinsight_connector_operations", "xinsight_connector_phase_operations",
@@ -448,6 +459,13 @@ func Build(snapshot Snapshot, target TargetIdentity, currentSourceInstance, next
 		}
 		seen[name] = struct{}{}
 		scope, action, reason := ClassifyTable(name)
+		// Unused source authority retains the existing reset path. Source data
+		// makes this older reset scope incomplete; never authorize deleting its
+		// referenced project/key while retaining an incoherent source history.
+		if isSourceFactsTable(name) && table.RowCount > 0 {
+			scope = ScopeReviewRequired
+			reason = "source data requires a separately reviewed reset lifecycle; this preview preserves it and cannot authorize apply"
+		}
 		entry := TablePlan{Name: name, RowCount: table.RowCount, Scope: scope, Action: action, Reason: reason}
 		switch action {
 		case ActionDeleteAll:
@@ -565,6 +583,11 @@ func Validate(plan Plan) error {
 
 func ClassifyTable(name string) (scope, action, reason string) {
 	switch name {
+	case "execution_content_streams", "execution_source_content_scopes",
+		"execution_source_content_bindings", "execution_source_content_operations",
+		"execution_content_policies", "execution_content_manifests",
+		"execution_content_objects", "execution_content_health":
+		return ScopeReviewRequired, ActionPreserveAll, "content lifecycle requires a separately reviewed reset contract; preserve all and refuse apply"
 	case "schema_migrations":
 		return ScopeSchemaLedger, ActionPreserveAll, "migration ledger is immutable reset infrastructure"
 	case "settings":
@@ -581,6 +604,17 @@ func ClassifyTable(name string) (scope, action, reason string) {
 		return ScopeResetCandidate, ActionDeleteAll, "pre-reset product, control-plane, evidence, Feed, Outbox, checkpoint, credential, or business data"
 	}
 	return ScopeReviewRequired, "", "unclassified table blocks reset until the product contract is updated"
+}
+
+func isSourceFactsTable(name string) bool {
+	switch name {
+	case "execution_source_acknowledgements", "execution_source_connections", "execution_source_credentials", "execution_source_facts", "execution_source_streams":
+		return true
+	case "execution_source_budget_scopes", "execution_source_budget_definitions", "execution_source_budget_bindings", "execution_source_budget_binding_history", "execution_source_budget_coverage", "usage_finalization_journal":
+		return true
+	default:
+		return false
+	}
 }
 
 // ProtectedTableNames is shared by preview and apply inventory. Retaining one

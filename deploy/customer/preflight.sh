@@ -181,6 +181,89 @@ if [[ ! "${docker_log_max_files}" =~ ^[1-9][0-9]*$ ]] || (( docker_log_max_files
   exit 1
 fi
 
+load_effective_value SOURCE_FACTS_ENABLED true
+source_facts_enabled="${effective_value:-false}"
+case "${source_facts_enabled}" in
+  false) ;;
+  true)
+    load_effective_value COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE true
+    if [[ ! "${effective_value}" =~ ^[a-zA-Z0-9._:-]{1,128}$ ]]; then
+      echo "customer preflight: source facts require a stable COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE" >&2
+      exit 1
+    fi
+    echo "customer preflight: source capture requires the supported M116–M119 schema and preserves the existing producer identity; config validation does not prove database readiness" >&2
+    ;;
+  *) echo "customer preflight: SOURCE_FACTS_ENABLED must be true or false" >&2; exit 1 ;;
+esac
+
+load_effective_value SOURCE_OBSERVATIONS_ENABLED true
+source_observations_enabled="${effective_value:-false}"
+case "${source_observations_enabled}" in
+  false) ;;
+  true)
+    if [[ "${source_facts_enabled}" != "true" ]]; then
+      echo "customer preflight: SOURCE_OBSERVATIONS_ENABLED requires SOURCE_FACTS_ENABLED=true" >&2
+      exit 1
+    fi
+    echo "customer preflight: B observations require M117 and explicit receiver profile grants; runtime verifies database readiness" >&2
+    ;;
+  *) echo "customer preflight: SOURCE_OBSERVATIONS_ENABLED must be true or false" >&2; exit 1 ;;
+esac
+
+load_effective_value SOURCE_BUDGET_SNAPSHOTS_ENABLED true
+source_budget_snapshots_enabled="${effective_value:-false}"
+case "${source_budget_snapshots_enabled}" in
+  false) ;;
+  true)
+    if [[ "${source_facts_enabled}" != "true" ]]; then
+      echo "customer preflight: SOURCE_BUDGET_SNAPSHOTS_ENABLED requires SOURCE_FACTS_ENABLED=true" >&2
+      exit 1
+    fi
+    echo "customer preflight: D snapshots require M118 writer certification and explicit profile grants; runtime verifies restored coverage" >&2
+    ;;
+  *) echo "customer preflight: SOURCE_BUDGET_SNAPSHOTS_ENABLED must be true or false" >&2; exit 1 ;;
+esac
+
+load_effective_value SOURCE_CONTENT_ENABLED true
+source_content_enabled="${effective_value:-false}"
+case "${source_content_enabled}" in
+  false) ;;
+  true)
+    if [[ "${source_facts_enabled}" != "true" ]]; then
+      echo "customer preflight: SOURCE_CONTENT_ENABLED requires SOURCE_FACTS_ENABLED=true" >&2
+      exit 1
+    fi
+    echo "customer preflight: C lifecycle requires M119; this switch does not enable full body capture or receiver grants; runtime verifies database readiness" >&2
+    ;;
+  *) echo "customer preflight: SOURCE_CONTENT_ENABLED must be true or false" >&2; exit 1 ;;
+esac
+
+load_effective_value SOURCE_CONTENT_FULL_ENABLED true
+source_content_full_enabled="${effective_value:-false}"
+case "${source_content_full_enabled}" in
+  false) ;;
+  true)
+    if [[ "${source_content_enabled}" != "true" ]]; then
+      echo "customer preflight: SOURCE_CONTENT_FULL_ENABLED requires SOURCE_CONTENT_ENABLED=true" >&2
+      exit 1
+    fi
+    ;;
+  *) echo "customer preflight: SOURCE_CONTENT_FULL_ENABLED must be true or false" >&2; exit 1 ;;
+esac
+load_effective_value SOURCE_CONTENT_STORAGE_ROOT true
+content_storage_root="${effective_value:-}"
+load_effective_value SOURCE_CONTENT_STORAGE_IDENTITY true
+content_storage_identity="${effective_value:-}"
+load_effective_value SOURCE_CONTENT_STORAGE_TOKEN_FILE true
+content_storage_token_file="${effective_value:-}"
+if [[ "${source_content_full_enabled}" == "true" || -n "${content_storage_root}${content_storage_identity}${content_storage_token_file}" ]]; then
+  if [[ "${content_storage_root}" != /* || "${content_storage_root}" == "/" || -z "${content_storage_identity}" || "${content_storage_token_file}" != /* ]]; then
+    echo "customer preflight: content storage requires absolute runtime ROOT/TOKEN_FILE paths and IDENTITY together" >&2
+    exit 1
+  fi
+  echo "customer preflight: runtime verifies the mounted, previously initialized content store and binding; no startup initialization" >&2
+fi
+
 load_effective_value XINSIGHT_CONNECTOR_AGENT_ENABLED true
 connector_agent_enabled="${effective_value:-false}"
 case "${connector_agent_enabled}" in

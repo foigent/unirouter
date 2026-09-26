@@ -1,0 +1,203 @@
+{
+  "contract_version": "1.0.0-candidate.2",
+  "captured_at": "2026-09-14T21:04:21.243126+00:00",
+  "scope": "local_source_and_design_read_only; no product tests",
+  "ur_read_base": {
+    "path": "/Users/m4/Desktop/test/ur-regression-20260914/source",
+    "commit": "fe771d5c177f255523f290141acfc2809bb9cc31",
+    "tree": "cffaa770e08fcf9494d62af7a2c5c2230a294846"
+  },
+  "xi_read_base": {
+    "path": "/Users/m4/.codex/worktrees/3a2b/X-Insight/output/xi-b-recovery-20260913/source",
+    "commit": "d52885d93ea33e5f2e298e03a2239af60a43e6d0",
+    "tree": "50976ad06f9d6bd703541f07e0abe42b6b6345ca"
+  },
+  "sources": [
+    {
+      "path": "library/reports/企业AI工作事实平台-目标拆解与验收-2026-09-05/55-内容采集合同与离线样例验收-2026-09-14.md",
+      "purpose": "authoritative_design",
+      "sha256": "sha256:70f2b4f119c73a9f7661bc11eb84103e26981878698c7f26a5a9e9ef12765b8a"
+    },
+    {
+      "path": "library/reports/企业AI工作事实平台-目标拆解与验收-2026-09-05/supporting/content-capture-20260914/接口差异与任务包.md",
+      "purpose": "joint_amendments_sections_2_4_6_7",
+      "sha256": "sha256:17f2ab7faf76038cc2e1630794c41be7202838014987635ba59c407039b64a14"
+    },
+    {
+      "path": "library/reports/企业AI工作事实平台-目标拆解与验收-2026-09-05/supporting/content-capture-20260914/C0-接口与兼容增量候选.md",
+      "purpose": "approved_direction_candidate",
+      "sha256": "sha256:c42f6bf99f4e52007c1fb18b3c8d94728c5f7826cd3f4c840b65f618e3220e13"
+    },
+    {
+      "path": "library/reports/企业AI工作事实平台-目标拆解与验收-2026-09-05/supporting/ur-iteration-20260909/C0-内容采集合同只读复核-fe771d5c-20260914.md",
+      "purpose": "ur_original_c0_review",
+      "sha256": "sha256:e9c99e697c8b3baedb5ab7721b70f2f4fe7923eb88a617a116fdcb9c35ce73aa"
+    },
+    {
+      "path": "library/reports/企业AI工作事实平台-目标拆解与验收-2026-09-05/supporting/xi-iteration-20260909/c0-content-contract-review-20260914.md",
+      "purpose": "xi_original_c0_review",
+      "sha256": "sha256:47e7e72c07e38aa24a10564044fb08139f36b474554512351c7085c35acbf64e"
+    },
+    {
+      "path": "/Users/m4/Desktop/test/ur-regression-20260914/source/internal/sourcefacts/contract.go",
+      "purpose": "sourceID_and_canonical_fields",
+      "sha256": "sha256:43713a1079495a9f4df8715cbf1f5c3d63faa9b513315d2fc7f857c97fd4f649"
+    },
+    {
+      "path": "/Users/m4/Desktop/test/ur-regression-20260914/source/internal/sourcefacts/observation_contract.go",
+      "purpose": "revision_and_attempt_identity",
+      "sha256": "sha256:8a36d6bbdde4df3b59d6f6cffc659d77867eb001818d52cd48b4f91696134e2d"
+    },
+    {
+      "path": "/Users/m4/Desktop/test/ur-regression-20260914/source/internal/sourcefacts/cursor.go",
+      "purpose": "existing_signed_cursor_domains",
+      "sha256": "sha256:56abf537cacbb3230b06ecfe9eae54fdad1200130bc8f0471f4e48101f81c646"
+    },
+    {
+      "path": "/Users/m4/Desktop/test/ur-regression-20260914/source/internal/sourcefacts/registration.go",
+      "purpose": "immutable_registration_and_profile_activation",
+      "sha256": "sha256:64d1dda8f386c617c8c5cb5e6d841ac17eed025772872e2c6a53f1eb2044f5d9"
+    },
+    {
+      "path": "/Users/m4/Desktop/test/ur-regression-20260914/source/internal/sourcefacts/handler.go",
+      "purpose": "current_capability_and_error_wrapper",
+      "sha256": "sha256:c37f2ab9143a5f77c8ef4823bb7aeaea254ed8a8ace89d0436107bd5733242b5"
+    },
+    {
+      "path": "/Users/m4/Desktop/test/ur-regression-20260914/source/internal/eventconnector/error.go",
+      "purpose": "connector_error_dto",
+      "sha256": "sha256:a16cacc5494f96721a5964c2dc73b5c6f32e66e9e83bdf7e473751223c626845"
+    },
+    {
+      "path": "/Users/m4/.codex/worktrees/3a2b/X-Insight/output/xi-b-recovery-20260913/source/internal/workbench/runtime.go",
+      "purpose": "existing_reading_and_request_id_formats",
+      "sha256": "sha256:be06e779b9d437a833ad5f6f7e053afc91310fb6b1313a7195ae262b9004c0cb"
+    },
+    {
+      "path": "/Users/m4/.codex/worktrees/3a2b/X-Insight/output/xi-b-recovery-20260913/source/internal/api/problem.go",
+      "purpose": "existing_XI_error_wrapper",
+      "sha256": "sha256:b4190c2d059ec131bc45e81dcb6de50b361b1e2b49499ae1537e39259b5d2324"
+    },
+    {
+      "path": "/Users/m4/.codex/worktrees/3a2b/X-Insight/output/xi-b-recovery-20260913/source/internal/db/runtime_resources.go",
+      "purpose": "frozen_members_and_empty_digest_compatibility",
+      "sha256": "sha256:19bb4bb7604a3b7ad0d2d6580d4a6741ae28518b74d2ce48b38634cd2373c22f"
+    },
+    {
+      "path": "/Users/m4/.codex/worktrees/3a2b/X-Insight/output/xi-b-recovery-20260913/source/internal/workspace/resource_basis.go",
+      "purpose": "stable_review_reference_and_restore_boundary",
+      "sha256": "sha256:ac09cb5eb338d95f839cf73add37910c37032bc7621e068c417657c7fc8dff6e"
+    },
+    {
+      "path": "/Users/m4/.codex/worktrees/3a2b/X-Insight/output/xi-b-recovery-20260913/source/internal/adapters/unirouter/completed_execution.go",
+      "purpose": "legacy_prohibited_payload_keys",
+      "sha256": "sha256:e1c167f8eb41ec136beaa31964817e4493dea7202c14f9edddf246bc586b0705"
+    }
+  ],
+  "legacy_exact_copies": [
+    {
+      "source_path": "/Users/m4/Desktop/test/ur-regression-20260914/source/contracts/completed-execution/v1/unirouter.completed-execution.v1.schema.json",
+      "package_path": "legacy/completed-execution-v1.schema.json",
+      "sha256": "sha256:4ae2897d4f8470c38624dfe21c54d72eaf6d995d2c9578c4420c94d244424fb2",
+      "byte_equal": true,
+      "copied_from_candidate1": "/Users/m4/Desktop/projects/About Me/library/reports/企业AI工作事实平台-目标拆解与验收-2026-09-05/supporting/content-capture-20260914/c0-contract-v1/legacy/completed-execution-v1.schema.json"
+    },
+    {
+      "source_path": "/Users/m4/Desktop/test/ur-regression-20260914/source/contracts/completed-execution/v1/fixtures/valid-settled.json",
+      "package_path": "legacy/valid-settled.json",
+      "sha256": "sha256:5e9eda0a2630d52c5589d38b8ec480604c47c2cc77391b75a57b2a159db6dd27",
+      "byte_equal": true,
+      "copied_from_candidate1": "/Users/m4/Desktop/projects/About Me/library/reports/企业AI工作事实平台-目标拆解与验收-2026-09-05/supporting/content-capture-20260914/c0-contract-v1/legacy/valid-settled.json"
+    }
+  ],
+  "limits": [
+    "No current service, database, UI, migration, credentials or network accessed.",
+    "Read-base commits are not deployment or final implementation candidates.",
+    "Offline schema/byte checks cannot validate actual authorization, transport, recovery, or financial outcomes."
+  ],
+  "candidate1_provenance": {
+    "path": "/Users/m4/Desktop/projects/About Me/library/reports/企业AI工作事实平台-目标拆解与验收-2026-09-05/supporting/content-capture-20260914/c0-contract-v1",
+    "manifest_sha256": "sha256:e9f585cdfaf7f2a7a5cc5335e326cec593c6f82fe7a52bc41dd9806d935c83bc",
+    "original_files_unchanged": true,
+    "files": [
+      {
+        "package_path": "README.md",
+        "sha256": "sha256:1313643b9f75a219683a0de8835c4417200cf7f7f7de0f810f3c0a8dd65a1fe2"
+      },
+      {
+        "package_path": "c0-contract.schema.json",
+        "sha256": "sha256:f845901df7cd28890db5671739140377d93f467f5a93949bbb601ea3bd04c934"
+      },
+      {
+        "package_path": "legacy/completed-execution-v1.schema.json",
+        "sha256": "sha256:4ae2897d4f8470c38624dfe21c54d72eaf6d995d2c9578c4420c94d244424fb2"
+      },
+      {
+        "package_path": "legacy/valid-settled.json",
+        "sha256": "sha256:5e9eda0a2630d52c5589d38b8ec480604c47c2cc77391b75a57b2a159db6dd27"
+      },
+      {
+        "package_path": "sources.json",
+        "sha256": "sha256:f27b60f5173158dbc33b2b876e24a5f5d757f65e348ef25a273235827dbe0899"
+      },
+      {
+        "package_path": "vectors.json",
+        "sha256": "sha256:5e98deff59c3ec888451483ab5becca4670aff80c8679b15295d9e5c5228525c"
+      },
+      {
+        "package_path": "verification-result.json",
+        "sha256": "sha256:b7c6713d074ca57c48550d7722cc116710f081970cbf619beb2927d76c4d8dbb"
+      },
+      {
+        "package_path": "verify.cjs",
+        "sha256": "sha256:99616d09334da215cbbcbd97c8cfbb05031d5163f771010ddde8a399bc1e99c6"
+      },
+      {
+        "package_path": "兼容与产品验收.md",
+        "sha256": "sha256:60ea280c99d81d960d8acb9955b145b2b6491fc8b64aacb62da3bc6f67042cf7"
+      },
+      {
+        "package_path": "接口与语义.md",
+        "sha256": "sha256:945a798496e05ce30caabae4b1793941b14f3d3a2149e266847adce4c0b75ba8"
+      }
+    ],
+    "reuse": "Original accepted source evidence, assets and legacy snapshots copied without changes to candidate.1. New package version and R1/R2 amendments are separate."
+  },
+  "candidate2_incremental_sources": [
+    {
+      "path": "/Users/m4/Desktop/projects/About Me/library/reports/企业AI工作事实平台-目标拆解与验收-2026-09-05/supporting/ur-iteration-20260909/C0-正式候选增量复核与U1准备-20260915.md",
+      "purpose": "ur_candidate1_incremental_review_R1_R2",
+      "sha256": "sha256:89afea1faf00e2a2ba39f51d34bc7795e4aca22fb960116136fac9d391f65895"
+    },
+    {
+      "path": "/Users/m4/Desktop/test/ur-regression-20260914/source/internal/sourcefacts/handler.go",
+      "purpose": "R2_exact_state_order_and_original_capability_exception",
+      "sha256": "sha256:c37f2ab9143a5f77c8ef4823bb7aeaea254ed8a8ace89d0436107bd5733242b5",
+      "lines": "30-72,143-210"
+    },
+    {
+      "path": "/Users/m4/Desktop/test/ur-regression-20260914/source/internal/sourcefacts/budget_handler.go",
+      "purpose": "R2_existing_budget_state_mapping",
+      "sha256": "sha256:e718c186f8127acd3aee19f3c21503806cd625f2033dbe9fef2e0825032df6b1",
+      "lines": "125-150"
+    },
+    {
+      "path": "/Users/m4/Desktop/test/ur-regression-20260914/source/internal/sourcefacts/runtime_current.go",
+      "purpose": "R2_existing_runtime_state_mapping",
+      "sha256": "sha256:29f24261bebfa5ea79f6d0f2ff6960b586e0b94621fe625f210d542fc62875ab",
+      "lines": "242-260"
+    },
+    {
+      "path": "/Users/m4/Desktop/test/ur-regression-20260914/source/internal/sourcefacts/registration.go",
+      "purpose": "R1_hash_uses_original_json_marshal",
+      "sha256": "sha256:64d1dda8f386c617c8c5cb5e6d841ac17eed025772872e2c6a53f1eb2044f5d9",
+      "lines": "56-65"
+    },
+    {
+      "path": "/Users/m4/Desktop/projects/About Me/library/reports/企业AI工作事实平台-目标拆解与验收-2026-09-05/supporting/content-capture-20260914/c0-contract-v1-candidate2/R1-内容凭据生命周期.md",
+      "purpose": "parent_authored_R1_final_contract_product_scenarios_not_run",
+      "sha256": "sha256:4e7a3cf9b042928220ed5293cb86be984c919efd736182e050abcecd12f639fa"
+    }
+  ],
+  "R1_schema_scope": "R1 lifecycle is the parent-authored normative input. No new lifecycle request DTO fields are claimed in this Schema; UR implementation and XI wire review remain required."
+}

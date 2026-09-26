@@ -1,5 +1,1071 @@
 # Current Execution Record
 
+## Bounded native-regression diagnosis — 2026-09-14
+
+The supervisor accepted the independent diagnosis plan, including resource-admitted
+M4 synthetic checks. Product deadlines, mandatory source capture, replay identity,
+Provider/freeze/terminal counts and the original F consolidated failure remain intact.
+No product behavior repair is justified by the currently available evidence.
+
+Test-only diagnostics distinguish Drop connection acquisition from execution while
+preserving its caller's original deadline and error chain. Logs contain phase,
+elapsed time, error class and SQLSTATE, not raw PostgreSQL details or DSNs. The
+source HTTP fixture delegates the original capture interfaces and records failed
+capture boundaries after return; replay assertion diagnostics also retain both
+operation headers. No source publication, billing or middleware runtime changed.
+
+M4 uses dedicated synthetic PG16.14 and Redis8.8, Go1.25.12, task-local cache and
+logs under `/Users/m4/Desktop/test/ur-regression-20260914`. The adjacent
+`resource-admission.json` records the 10 GiB incremental disk estimate, 21 GiB
+retained floor and 5 GiB incremental memory estimate. These are M4 diagnosis
+conditions, not verified equivalence to the original F run.
+
+The initial narrow diagnostic run passed. The subsequent related matrix passes
+all 3 packages and 31 tests/subtests, with unchanged source before/after execution:
+the existing complete SourceObservations HTTP matrix, matching AtomicModelRelease
+authoring cases and Drop diagnostic checks. The existing injected admission failure
+returns 503 with SQLSTATE P0001; normal replay and single-effect assertions pass.
+Controlled test-owned connection contention distinguishes acquire/execute timeout;
+this proves the diagnostics, not the cause of the old cleanup failure.
+See [exact run metadata](</Users/m4/Desktop/test/ur-regression-20260914/diagnostic-evidence/related-matrix.result.json>)
+and [diagnosis and F reproduction handoff](</Users/m4/Desktop/test/ur-regression-20260914/DIAGNOSIS.md>).
+
+Original F root causes remain unproven. Static review found no concurrent source
+worker in this fixture and no evidence to blame RR serialization. Historical
+launch/version/resource/server-log inputs were requested through the supervisor;
+UR does not operate or contact XI/F. Original 19-package consolidated plus four
+following groups remain the closure scope. A diagnostic/test-only commit is not
+a real product successor, and does not satisfy same-M118 successor, old-runtime,
+formal customer package or parent integration acceptance.
+
+## Internal test and handoff follow-up — 2026-09-14
+
+The user requested execution of the efficiency improvements; the supervisor
+accepted this bounded follow-up. Work is in the persistent isolated checkout
+`/Users/m4/Desktop/test/ur-regression-20260914/source`, branch
+`codex/fresh-regression-20260914`, based on a84ac272. The previous tmp checkout
+is gone. This entry supersedes historical path availability and native-pending
+statements below, while retaining their original evidence and scope.
+
+The existing five-group runner and six preparation lessons are reused. This
+follow-up fixes the summarizer's hardcoded backend attribution: both callers
+declare their actual runner, invalid group/runner pairs fail, and evidence records
+runner path/hash plus summarizer hash. Logged backend and fresh checks now execute
+the summarizer's `--help` before tests to verify Python, syntax and dependencies
+without creating logs or contacting services. Independent precode review requested
+this actual-script check instead of a guessed Python version or imports alone;
+the correction is incorporated. No product runtime or test selector changes.
+
+Validation: 9 offline runner and 5 summary regressions pass. Missing/broken Python,
+missing/wrong runner, no-test/no-directory preflight, fail-stop exit propagation,
+all-skipped/incomplete failure and package/subtest counts are covered. The complete
+backend selector/execution suffix is byte-identical to a84, as is the fresh Go
+test command. Actual Go 1.25.12 / Python 3.12.14 configuration preflight passes.
+[Verification](</Users/m4/Desktop/test/ur-regression-20260914/optimization-evidence/verification.json>)
+and adjacent runner.log, summary.log and actual-preflight.log retain the results.
+Shell syntax and whitespace checks pass. No product test or service was run for
+this tool change; product version remains 1.4.1.
+
+[Current dependencies, durable evidence and reuse boundaries](LOCAL-TEST-REUSE.md)
+distinguish available tools from missing jsonschema. Existing a84 native evidence
+supports same-image fresh install, real M113 interruption/resume and new-database
+restore/rebase in its accepted scope. Original consolidated remains FAIL (17 pass,
+2 failed packages; 760 pass, 3 fail, 4 skipped tests/subtests). Clone cleanup timeout
+and replay 409-to-503 remain open; isolated passes cannot close the original group.
+Performance, supported successful M118 reset, real successor/old-runtime inputs,
+formal customer delivery and full integration/parent acceptance remain separate.
+Experience file: no change needed; this is not a model/Provider adaptation change.
+
+## Fresh installer source candidate — 2026-09-12
+
+The independent source closing review of `b4e1a77c` found that a disabled policy
+or explicit column collation could pass the original-empty-ledger check. The
+bounded follow-up rejects both catalogue differences, exercises formal
+`plan/check` with unchanged-state assertions, and retains the normal original
+empty-ledger positive case. This is a static-source finding and correction;
+database reproduction and new Go tests remain unexecuted under the same resource
+boundary. The follow-up remains part of the pending 1.4.1 candidate.
+
+Current branch `codex/fresh-install-owner` reuses the existing isolated
+`/private/tmp/unirouter-test-preparation-20260911` worktree from `6676c0c1`.
+The supervisor accepted the bounded installer plan and three corrections before
+source changes. The overall resource clarification permits small text/Git edits;
+native compilation, DB/image work and cache generation remain outside the
+current M4 resource admission. No protected ASUS asset or XI task is operated.
+
+[Design, command contract, executable test matrix and native gaps](../ops/FRESH-INSTALL.md)
+are the current source handoff. Version 1.4.1 is pending native validation, not
+product acceptance. M1–M118 migration files and original publication contracts
+are unchanged. The 1.4.0 product acceptance and 6676 test-tool evidence below
+retain their original scope; neither proves the new installer. Experience file:
+no change needed because the new recovery tests have not yet executed.
+
+## Test preparation and handoff optimization — 2026-09-11
+
+User authorized implementation of the execution-efficiency improvements. Isolated
+worktree: `/private/tmp/unirouter-test-preparation-20260911`, based on accepted
+product `59f7712d09653034756b846b15b8d69a16782791`. Original source and evidence
+remain unchanged. UR A/B/D/X Local independent acceptance is complete; the
+September 10 pending entries below are historical checkpoints.
+
+Scope: reuse the five original backend integration selector groups between CI
+and local execution, retain compact structured evidence, absorb the accepted
+Docker logging fixture correction, and consolidate exact dependencies and reuse
+boundaries in [LOCAL-TEST-REUSE.md](LOCAL-TEST-REUSE.md). No runtime/migration,
+required-test reduction, new environment operation or product version change.
+Validation: 71 existing rollout/carrier regressions pass, including the added
+logging/2100-second-grace negative cases; 7 offline runner tests and 4 summary
+tests pass. Exact old/new Go argv comparison against 59 preserves all five groups
+(19/2/1/1/1 packages), selectors and flags. Proof:
+`/private/tmp/ur-test-preparation-selector-parity.json`.
+Logs: `/private/tmp/ur-test-preparation-rollout.log`,
+`/private/tmp/ur-test-preparation-runner-final.log`,
+`/private/tmp/ur-test-preparation-summary-final.log`.
+Real Go 1.25.12 JSON smoke evidence in `/private/tmp/ur-go-summary-real-979ckeqf`
+correctly counts pass/skip and propagates an intentional failure. An initial
+tool-only smoke selected base Go 1.24.3 under `GOTOOLCHAIN=local` and refused
+go.mod before execution; retained at
+`/var/folders/48/r2my3shx3yqb_v8ngzvygg8m0000gn/T/ur-go-summary-real-sfy19fg3`.
+The runner now checks go.mod/toolchain compatibility offline before tests.
+Actual local configuration-only preflight and Python/jsonschema dependency
+readback passed; shell syntax and whitespace checks passed. The original final
+acceptance SHA and referenced indices were verified. No full product/ASUS suite
+or remote CI was rerun for this internal-tool change; original product acceptance
+retains its exact 59 identity and limitations. Experience file: no change needed.
+
+## Active local delivery — UR B/D/X after accepted A — 2026-09-10
+
+The coordinator independently accepted complete UR-A Local at
+`25f5c1fdfb6b5376496c34e9b9cd295efbaf17cd`, tree
+`9444830ae7a12de8aa3087489420709a01735bab` (1.3.0). The acceptance source is
+`/Users/m4/Desktop/projects/About Me/library/reports/企业AI工作事实平台-目标拆解与验收-2026-09-05/supporting/ur-iteration-20260909/independent-A-acceptance.json`;
+the complete delivery and original failures remain in
+`/private/tmp/ur-asus-a11-20260910/A-COMPLETE-DELIVERY.md` and its exact index.
+The coordinator released the ASUS environment hold and the A-to-B/D gate.
+
+Implementation now follows the jointly reviewed
+[B/D v2 design](../analysis/UR-WORKFACTS-BD-DESIGN-V2-20260909.md), SHA-256
+`0065cf2f2c7342fc652b2a4017eaec23666eb1c7755d7368c61776421b9c5ec7`, in the
+same isolated worktree. The direct synthetic credential, local test, ASUS v2/N1,
+source transfer and coordinator-report authorizations continue within their
+original boundaries; no repeated user approval is required for covered actions.
+No XI contact, real Provider/credential/traffic, push, merge, release or deployment.
+
+B's implemented core and bounded cross-package regression have passed. D is
+implemented in the local candidate: M118 transactional coverage
+certification, project budget revision history, independent D scopes, explicit
+enterprise project bindings, and catalog/current/alert snapshot readers. This
+is ongoing implementation, not complete B/D/X acceptance. The A relative 5%
+performance reference remains unmet; accepted A evidence is not B/D evidence.
+
+The accepted dispatch amendment v2 (SHA-256
+`471f360abad6b9b1c901025fe3ad866cf99e43cabe5225a17bd9c74851d5c113`)
+is implemented without changing Authorize's RR, original retry budget or other
+optional observation RR transactions. M117 now guards the original queue and
+runtime-generation fleet; the original worker starts only after source and
+runtime support checks. Local evidence under `/private/tmp/ur-bd-workfacts-20260910`:
+- `dispatch-outbox-boundaries-v3-race.log`: eight transaction, concurrency,
+  migration/Renew, replay/retention, RR visibility, maximum-payload and lease
+  expiry tests pass. The boundary payload was 165055 JSONB bytes pending and
+  165081 marked, below 262144; each source record remains bounded at 65536.
+- `dispatch-main-startup-v1-race.log`: actual race-built main recovers pending
+  events with both capture flags off; wrong source instance refuses before claim.
+- `dispatch-public-recovery-v2-race.log`: original public paths and publication
+  fault recovery pass, including current URL changes and late registration
+  preserving an already observed result. The old health revision fence remains.
+- Symmetric comparison is complete in `dispatch-performance-summary-v1.json`:
+  all ten serial runs pass. Concurrent successes per 128 requests are A126,
+  off125, B126, D123 and BD127. Every committed B/BD attempt has all three
+  dispatch records; queues empty and original terminals/holds reconcile. Failed
+  groups retain FAIL, successful-request latency is separate, and the large
+  optional-observation gaps remain explicit. A diagnostic run identified the
+  original attempt INSERT serialization path; no capacity claim is made.
+- Broader checks exposed an old positional M113/M114 test ledger and stale
+  reset table counts. Fixtures now use the exact head. The accepted D reset
+  protection is also wired into the existing review-required refusal for all
+  five D metadata tables and the journal; no reset ran. Counter v3 now accepts
+  the already-supported M118 head. `dispatch-final-unit-delta-v1.log` passes.
+Earlier failing logs are retained, including the missing sandbox network
+permission in `dispatch-final-unit-race-v1.log`; it is not product-failure proof.
+
+The current full CI integration selection passed in all unchanged packages;
+its three old reset assumptions failed and are retained in
+`dispatch-ci-selected-v1-race.log`. The independent coordinator's
+`D-reset-boundary-review-20260910.json` accepted current M118 refusal and separate
+historical A evidence. `reset-final-ci-delta-v1-race.log` passes the same complete
+selector for the two changed packages. `dispatch-source-media-full-v1-race.log`
+passes both complete source/media packages; vet and rollout tests also pass.
+These are local executions of required checks, not GitHub CI runs.
+
+M118 has no supported successful reset lifecycle, even with D capture disabled.
+The real CLI writes a private read-only diagnostic with `scope_complete=false`;
+`Unmarshal`/`Validate` and `Apply` refuse execution. The existing
+`apply_supported=true` field reports implementation availability and grants no
+authority without complete scope. An initial review incorrectly attributed the
+old test's Unmarshal failure to CLI writing; actual execution corrected that
+claim without changing the CLI. `reset-current-m118-refusal-v2-race.log` proves
+diagnostics, plan/apply refusal and unchanged PostgreSQL/Redis state. The three
+original A tests pass in `reset-accepted-a-exact-v1-race.log`;
+`reset-historical-a-source-proof.json` verifies all 2482 source blobs against
+accepted A and no extra Go files. This does not claim current-binary old-schema
+reset support. Product/customer/contract notes disclose the restriction.
+
+Coordinator communication was twice rejected by automatic approval review, so
+those attempts were never recorded as delivered. The exact prior user approval
+of network actions plus bidirectional reporting was then verified in this task's
+original record; same-channel re-review passed and reporting resumed. Covered
+actions continue under that authorization, without another user approval.
+The one source closing review of `d60b833d95beccc4ee7fd1081a0906654f40079c`
+found one product blocker, BD-CLOSE-01: an empty enterprise project allocation
+slice incorrectly skipped the original run's currency/scale check. The repair
+always checks run units and only conditions per-row checks on row presence.
+The original admin Draft/Approve/AllocationRun and actual source read reproduce
+both wrong-scale and wrong-currency zero cases on the preserved original code;
+the repair passes both and the matching-unit exact-zero control. Evidence:
+`bd-close-01-before-v4-race.log`, `bd-close-01-fixed-v1-race.log`, and
+`bd-close-01-source-full-race.log`. Earlier test-input failures are retained.
+
+The CI group count is 17 initially passing packages plus the two repaired reset
+packages, not 18 initially passing. The three separately selected Redis gates
+now pass against the current M118 candidate in `dispatch-agentcap-ci-v1-race.log`,
+`dispatch-limitpolicy-ci-v1-race.log`, and
+`dispatch-workloadadmission-ci-v1-race.log`. The performance executable is
+byte-identical to exact d60 plus its original two test overlays; the binding is
+in `perf-d60b833d-source-binding.json`, without rerunning the benchmark.
+The closing review accepts the bounded dispatch-contention repair while keeping
+mixed-error groups as FAIL. Further latency and optional-capture optimization
+is deferred; this is not a performance pass or an ASUS/overall-acceptance waiver.
+Only the repair delta review, reviewed-source ASUS validation and overall
+acceptance remain. The d60 archive is preserved and must not be transferred.
+The model-adaptation lesson admission criteria were checked; no applicable new
+model/provider invariant was introduced, so the experience file needs no change.
+
+### ASUS compatibility repair after source release — 2026-09-11
+
+The coordinator accepted the exact 8e4af934 repair and released its source to
+ASUS. The original Linux build helper produced backend image `sha256:9a04691bf81f8a09a2726ce0adce7f09f0f1e09298ffda103cfb944cf68acd98`.
+Full M116 and M118 installations, source/media/admin/main race selections,
+canonical lifecycle and actual PostgreSQL 16 backup/restore passed. The original
+Docker-context CI body and rollout/ingress tests passed locally; the real owner
+carrier used the same previously reviewed one-line explicit logging fixture.
+It proves M117/M118 read carriers only; complete installation has separate proof.
+
+The original M117 controller check then exposed a real blocker on the retained
+M116 database: supported expired/absent identities left after a process restart
+were required to match the two current receivers. Batch 08 proves the actual
+CLI refusal with exact compact JSON, unchanged database/schema/sequences and
+only two current host processes. Earlier stop-grace and diagnostic-serialization
+fixture mistakes are preserved separately. No historical identity was rewritten
+to force success. Every completed N1 batch restored task networking and stopped
+containers, PostgreSQL and the dedicated WSL normally.
+
+The coordinator's `BD-compatible-upgrade-review-8e4af934.json` accepted the
+bounded repair before coding. Live or ingress-associated extra identities still
+refuse; only expired/absent historical identities may use their own verified
+canonical manifest and complete target requirements, including both counters,
+source facts/observations/dispatch and M118 budget/journal. The migration bytes,
+locks, Renew/bootstrap and host process inventory remain unchanged. This is not
+retirement of unsupported identities or a new general upgrade lifecycle.
+The fix and read-only/negative tests pass locally in
+`compatible-recovery-fixed-v1-race.log`. New exact source/image validation and
+retained-database M116→M117→M118 completion remain required before full delivery.
+ASUS evidence is under `/private/tmp/ur-asus-a11-20260910`; the original performance
+HTTP files now have a compact measurement index in
+`dispatch-consumer-measurements-extracted-v1.json`, without rerunning benchmarks.
+
+New D evidence in `/private/tmp/ur-bd-workfacts-20260910`:
+- `source-d-m118-certificate-v2-race.log`: M118 fails/rolls back without a
+  support certificate; exact ledger proof, atomic revisions, no-op/rollback,
+  and immutable-history/down guards passed.
+- `source-d-restore-metadata-v1-race.log`: the fixed restore SQL always rebases,
+  retains prior certificates and A bytes, does not write on readiness, and
+  preserves a pre-D restore. This is helper/DB evidence, not a full backup run.
+- `source-d-original-enterprise-ab-v4-race.log`: original Draft/Approve/
+  AllocationRun + explicit binding, scoped 600/1000 => 400, other-target privacy,
+  original budget notification, D revoke and A/B backlog continuation passed.
+- `source-d-financial-queue-v1-race.log`: original Freeze/Settle charged 600,
+  prepared/settled queues with future availability/claim/retry/dead letter,
+  materialized awaiting ack/replay, detail-only 200 exclusion and corrupted
+  scope denial passed. Future UTC coverage cases are explicit synthetic event
+  timestamps, not live future observations. The held-RR check subsequently passed in the boundaries export run.
+- `source-d-ab-control-v1-race.log`: unchanged A/B explicit-grant tests and
+  original enterprise route-role separation passed.
+- One real D canonicalization bug (typed nil assigned to `error`, all valid
+  snapshots rejected) was fixed and protected by exact bytes/money tests.
+  Earlier fixture slug/type/assertion failures remain in their original logs.
+
+D is default-off (`SOURCE_BUDGET_SNAPSHOTS_ENABLED`), requires A, M118 and the
+original attached financial outbox. Main now attaches that original outbox
+before source readiness, without starting another worker. D-only profile
+changes preserve existing immutable key registrations and A/B generation.
+The original SQL restore runbook/rehearsal calls
+`scripts/source-budget-restore-rebase.sql` before any restored reader starts.
+D metadata and the original financial journal are protected from resetplan;
+no reset was executed.
+
+Latest D/X local checks (still uncommitted, product metadata now 1.4.0):
+- `source-d-boundaries-export-v2-race.log`: all D source/admin boundary tests
+  passed, including old-key attenuation, current role/session commit checks,
+  original audit failure rollback and concurrent binding revocation.
+- `source-d-independent-http-v2.json`: 4 actual HTTP samples, 5 positive and
+  8 negative schema/hash/math vectors, immutable SQLite reading retention.
+- `source-d-restore-bootstrap-doc-v2-race.log`: actual pg_dump to a separate
+  empty task DB, lost post-backup original charge, mandatory coverage rebase,
+  preserved A/definition bytes and no false remaining; original first-customer
+  bootstrap and API/route parity passed. Historical definition identity now
+  survives original empty-project removal; current binding FK remains enforced.
+- `source-d-ui-v2.log`: 10 UI tests passed. Full frontend type-check, 90 files /
+  749 tests and production build passed (`source-bd-frontend-*-v1/v2.log`).
+- `source-bd-full-unit-race-v1.log`: full Go race ran; only missing frontend
+  route documentation failed, subsequently fixed and rerun above. `source-bd-vet-v1.log` passed.
+- `source-bd-ci-selected-v1-race.log`: original CI selection completed; three
+  old migration fixtures failed due to new schema predecessors. Guarded fixture
+  ordering was fixed; `source-bd-legacy-fixtures-v2-race.log` passed all affected
+  Feed/successor tests. No production down guard was weakened.
+- `source-bd-source-media-admin-v1-race.log`: all source/media passed; initial
+  bootstrap failures were fixed and rerun in the restore/bootstrap v2 evidence.
+- `source-d-m118-rollout-v2-unit.log`: 70 finite-transition/recovery tests passed.
+  `source-d-restore-script-v2.log`: password-boundary regression passed, including
+  rebase after restore and before validation. VERSION/frontend metadata 1.4.0 match.
+- Ten-thousand-scale assumptions were not used: `budget-scale-v1` contains real
+  EXPLAIN over 100,000 synthetic journal and 100,000 outbox rows. Payload-org
+  mismatch detection scanned unrelated queues; the narrow financial payload-org
+  index passed. `budget-scale-v3` also puts 100 projects in the same organization:
+  the settled subtotal uses the project/period index (0.185ms) and materialization
+  checks use the two financial indexes (0.061ms). This is synthetic query-scale
+  evidence, not original financial-writer or production capacity evidence.
+- `source-d-final-v5-race.log`: final original charged/calculated distinction,
+  actual PG16 backup/restore, boundaries and scale passed. `source-d-runtime-support-v1-race.log`
+  passed missing schema/budget/journal support, including expired recovery writers.
+- `source-d-independent-http-v3.json`: independently checked the later actual
+  HTTP snapshot samples, hashes, arithmetic and retained reading identities.
+- `source-d-browser-v3.log`: built frontend plus real login/control handlers passed
+  A+D registration/activation, restricted source read, binding/revoke/rebind
+  revisions 1/2/3, pause (`503 source_paused`) and resume. No browser page errors or
+  external browser requests. Screenshots/text are under `output/playwright/source-budget-v3`.
+  Earlier ambiguous locator and incorrect pause-status fixture assertions are retained.
+
+**Current B blocker:** ten symmetric sequential groups in `perf-v3-results.json`
+passed, but B median latency is about 10.96ms versus accepted A 7.55ms; this does
+not pass the relative 5% reference. Four-credential concurrent groups in
+`concurrent-v4-results.json` expose 36–42/64 HTTP 503s for B/BD versus 0–2/64 for
+A/off/D. No mixed-failure p95 is accepted. The coordinator independently matched
+all ten logs and classified B/BD as `validated_blocker`.
+
+`concurrent-candidate-diagnostic-v2.log` locates SQLSTATE 40001 at direct B
+source-stream updates inside original Authorize RR (33 failures), and original
+provider-attempt insert (4 failures), after the existing one retry. A narrow
+[dispatch contention amendment](../analysis/UR-WORKFACTS-B-DISPATCH-CONTENTION-20260910.md),
+SHA-256 `ff9ab1f5f33fd93b5ea166fa1047588eff60e647268cc4a84a3e8ce1fe209d8a`,
+was independently reviewed before implementation. Its amended v2 object,
+SHA-256 `471f360abad6b9b1c901025fe3ad866cf99e43cabe5225a17bd9c74851d5c113`,
+is now jointly accepted: durable pre-dispatch recording through the existing
+outbox with later source publication, base64-frozen bytes, monotonic live-event
+marker, capture-off recovery, down guards and exact handler support. The accepted
+original design and amendment identities are retained separately.
+
+The amendment is being implemented, not yet fully verified. Core source tests
+passed in `dispatch-outbox-boundaries-v2-race.log`: original transaction rollback,
+capture-off recovery, exact JSONB/base64 round trip, late first publication,
+lease rejection, immutable marker/body, real retention and non-resurrection,
+original worker ack, and all retained-event down states. Public/stream gateway
+tests passed in `dispatch-outbox-public-v2-race.log`, including durable enqueue
+failure before Provider and destination capture before the queued registration
+is published. Earlier canonical-input error and empty-selector run remain
+recorded and are not counted as passing evidence. Worker Run now follows actual
+runtime-generation startup authority; startup/generation concurrency evidence
+and the new performance comparison remain pending. No B/D source transfer yet.
+
+Remaining: agreed B contention fix and repeated affected concurrency/performance,
+final changed-code checks, customer/contract packaging, reviewed ASUS B/D candidate and Docker/N1,
+one closing independent review and complete coordinator delivery. No B/D archive
+has been transferred or accepted; no GitHub CI/Target/XI/Production claim.
+
+Five B profiles use a new source identity domain; A's three profiles, immutable
+bytes, descriptors and cursors remain separate. The finite observation-kind
+sets and each 64KiB document limit are in `observation_contract.go`; measurement
+boundaries have distinct identities and nanosecond representation is not a clock
+accuracy claim. No per-token/frame/heartbeat publication is introduced. Final
+per-handler row/byte bounds must be tied to the existing retry/policy/media
+limits before the corresponding writers are enabled.
+
+Implemented in the uncommitted B candidate: M117 finite bridge and explicit
+profile expansion, independent v2 event/cursor transport, original coordinator
+pre-dispatch transaction hook, post-commit Provider/delivery observations,
+combined A+B journal terminal publication, and process-local response/stream/HTTP
+measurements. B remains disabled unless SOURCE_OBSERVATIONS_ENABLED=true and A
+capture is enabled. Only explicitly registered B profiles can be read.
+
+Current Local evidence is under `/private/tmp/ur-bd-workfacts-20260910`:
+- `source-dispatch-boundary-m117-race.log`: original coordinator source rollback
+  and both landed/rolled-back ambiguous commit recovery passed.
+- `observation-admin-source-lifecycle-race.log`: original A lifecycle plus new B
+  explicit grant, profile narrowing, independent cursor, pause/revoke tests passed.
+- `observation-monotonic-optional-race.log`: source M117 guarded upgrade/down,
+  Responses/Messages original nonstream and complete/interrupted stream paths,
+  and optional observation failure preserving original money/delivery passed.
+- `observation-bounds-measurement-unit.log`: separate timing boundaries, true
+  zero/missing distinction and 128 requirement/64 evidence entries (supported
+  ASCII capability identifiers, worst escaped evidence states) encode to 46139
+  bytes without truncation. This is not yet the complete per-handler bound.
+- Independent Draft 2020-12 validation: 10 positive and 8 schema-negative vectors;
+  the remaining identity-negative vector is rejected by the Go domain validator.
+- `runtime-current-source-authorization-race.log`: original stream/media leases,
+  expiry/fences/current-only pagination and authenticated profile/lifecycle scope
+  passed. Synchronous requests remain explicitly outside lease inventory.
+- `policy-complete-boundaries-race.log`: actual policy detectors and gateway
+  shadow/enforce, input/output replacement/block, degraded/fail-closed and partial
+  stream termination passed; metadata buffers retain no input or detector findings.
+- `media-b-real-http-worker-v3-race.log`: actual media HTTP/auth/worker/Provider
+  paths passed for legacy and grant identities. Each yielded 31 authenticated A/B
+  facts over 19 pages. Independent v2 Python schema/hash/identity and SQLite
+  restart/checkpoint/replay consumer passed both exported synthetic fixtures.
+- `media-main-startup-matrix-v2-race.log`: the real race-built main binary passed
+  blocked/mismatched source readiness and five media/A/B enablement combinations.
+  Readiness refusal leaves queued/expired jobs, objects and source/money unchanged;
+  successful readiness permits both original loops and original SIGTERM shutdown.
+  This implements the coordinator's `media-worker-startup-review-20260910.json`
+  validated_required decision; it does not promise no side effects before unrelated
+  later startup failures. The same run passed original pre-dispatch cancellation
+  with a B terminal observation and no manufactured provider attempt.
+- `source-b-original-output-holds-race.log`: original nonstream/stream holds,
+  commit ambiguity/rollback/replay and optional source failure preserve the
+  original pending financial state; B records output_held after the commit.
+- `source-b-native-media-http-matrix-v3-race.log`: complete A/B native Chat,
+  Embeddings, cache, six identity kinds, actual two-route fallbacks, stream
+  cancellation/tool output/Write/Flush faults, and media success/fault cases pass.
+  `native-media-http-ab-pages-v3-independent.json` independently validates 61
+  exported authenticated fixtures, including 32 B-containing cases with original
+  A/I-01 joins and durable SQLite restart/checkpoint/replay checks.
+- `source-b-native-admission-policy-v1-race.log`: rejection is now captured before
+  the first 4xx header when no original admission exists; source failure returns
+  503 with zero Provider calls. Original policy and middleware transport tests pass.
+- `source-b-native-fallback-context-v1-race.log`: two actual attempts retain one
+  original I-01 terminal; request_context_done conveys no human-cancel or Provider
+  timeout inference. `source-b-independent-contract-v2.json` verifies both schema
+  pins, source identities and all current observation/runtime positive/negative
+  vectors. T01–T10 semantic vectors are separate from real HTTP observations.
+- `source-b-current-probe-negative-race.log`: an active original routing Probe
+  cannot enter the execution-lease inventory; probe-only sync remains last_known.
+- B profiles are now exposed explicitly in admin/UI and OpenAPI; default-off
+  config, M117 rollout classification and the actual M114/115/116/117 runtime CLI
+  matrix are covered by `source-b-profile-ui-tests.log`,
+  `source-b-available-profiles-admin-race.log`, `source-b-openapi-tests.log`,
+  `source-b-rollout-m117-v2-unit.log` and
+  `source-b-runtime-cli-m114-m117-v2-race.log`.
+
+Retained test corrections: shared Redis originally collided on disposable PG
+org/API-key IDs, and the first isolation attempt exceeded the original Freeze
+int4 API-key field. Source HTTP fixtures now use separate IDs within that supported
+range; no product limit is relaxed and shared Redis is not flushed. The transport
+assertion now selects the last append-only receipt by sequence, rather than its
+first write_started row. These were fixture corrections, not product fixes.
+
+Later edits still require rerunning affected evidence. Conservative B row/raw-byte
+bounds are documented in `contracts/source-facts/v2/README.md`; they exclude
+DB/index/WAL overhead and do not replace benchmarks. Remaining B regression and
+candidate performance review, D budgets and
+coverage/restore, product version/OpenAPI/docs, full X regressions/performance,
+review and fresh ASUS batches remain outstanding. Old failures remain retained.
+No new tool was installed and no accepted A evidence was rewritten.
+
+## Active local delivery — UR work facts A
+
+2026-09-09: the user directly reaffirmed in the UR task the workflow of independent
+UR planning, review and mutual agreement before execution, followed by full
+delivery and independent acceptance. The planning/review condition is satisfied:
+About Me coordinator `01a08371-5a0f-7d32-856e-340ccc778825` accepted the
+[exact plan](../analysis/UR-WORKFACTS-LOCAL-PLAN-20260909.md), SHA-256
+`0e504bffc251c815680485f1b2dab8b69b335e682ec4d66e586b9b7923a07cbd`.
+
+Owner `01a08339-f189-7703-acd9-5d0a63a2873b` implements UR-A and necessary
+X configuration/migration/recovery work in `/private/tmp/unirouter-workfacts-20260909`,
+branch `codex/ur-workfacts-20260909`, base `cd9f354b8a104a6f0677345a5694b19c000ab015`,
+tree `7725ffa81b6f6897f5ef6ff843f308c05d44fd63` (1.2.77).
+
+Scope remains local implementation, synthetic identities/fake Provider,
+task-owned PG16/Redis, tests and local commits. No push/PR/merge, official
+signing/release, deployment, real credentials/calls, existing services,
+user-data deletion or system installs. Do not message XI; collect its dependencies
+in the final package. The other delivery below retains its historical scope and
+authority; none is inherited by this batch. Required A01–12/I2, old V1,
+protocol/auth/operation, migration/recovery and performance evidence remain in
+the accepted plan.
+
+Current state: local candidate 1.3.0 implements captured context, fixed source
+profiles, transaction-bound publication, persisted billing basis, media writers,
+M116 and the finite runtime/install compatibility changes. Targeted source and
+middleware tests pass. Task-owned UTF-8 PG16 tests pass for M1–M116, immutable
+publication, rollback/replay, retention, self-contained terminal facts and I-01
+references, late capture, and media cancellation/expiry/success without invented
+I-01. The rollout script's 66 tests and targeted route/OpenAPI/docs parity pass.
+Further Local evidence: the real two-pass grant authentication/public relay/
+billing path passes Responses and Messages non-streaming tests, including two
+server requests for one client correlation, historical owner retention after
+live-key mutation, and frozen observation economics after a mode change.
+Responses stream success, Messages V2 success/interruption/client cancellation,
+and Messages V1 stream refusal pass. Required source-write failures return 503
+before dispatch or retry via the original financial outbox after settlement;
+recovery preserves one dispatch/journal/I-01 and replay does not rebuild expired
+facts. Eight independent valid and nine invalid frozen source vectors pass.
+
+M116 atomicity, busy-owner yield, missing runtime implementations, unsafe down,
+and old/new finite ledger tests pass alongside historical M114/M115 tests. Full
+sourcefacts/mediajob integration race passes, including reverse profile input
+order under concurrent publication. Full Go race initially exposed stale route
+assertions and five unclassified source tables in reset preview; both affected
+packages pass after correction. Source-bearing reset previews now preserve the
+new data and block the older erasure scope; empty M116 keeps the existing path.
+This protective compatibility decision still belongs in the final coordinator
+review; no reset action was performed. `go vet ./...` passed before that focused
+correction; affected-package incremental vet subsequently passed.
+
+Frontend type-check, production build/bundle budget and all 88 test files / 739
+tests pass. Offline dependency installation initially omitted native canvas;
+the exact cached canvas 3.2.3/NAPI7/darwin-arm64 prebuild restored the required
+environment without downloading or installing a system tool. Current CI's
+consolidated integration selector, full admin Integration group and all three
+sequential Redis groups passed against the task-owned services. Two runtimechange
+historical fixtures initially omitted guarded M116 down; both passed after that
+fixture correction. These are Local results, not GitHub CI/exact-main.
+
+Additional actual-handler evidence now covers Chat and Embeddings under legacy
+shared/personal/application keys, personal/workload grants and delegated Agent
+capabilities (12 combinations), with real planner/coordinator, policybilling,
+capbilling, PG16, dedicated Redis and a local fake Provider. Replay/conflict,
+model denial, unauthenticated ingress and empty-wallet admission preserve one
+execution/economic result. Historical owner/application/Sponsor/Agent facts
+survive live ownership changes, Sponsor deactivation and the test workflow's
+Redis expiry; Sponsor does not become a personal usage owner.
+
+An actual PG16 custom-format pg_dump/pg_restore into another new temporary
+database preserves exact hashes of 12 source/financial/recovery tables, including
+retention floor and pending outbox. Continuing the original worker preserves
+I-01 hashes and one terminal, with no Provider redispatch. Receiver credential
+and authenticated cursor recovery are still separately pending. Fourteen frozen
+public-page fixtures match actual Go Event projection; an independent Python/
+SQLite consumer verifies seven invalid pages, the original R1–R5 individual
+amounts/scopes, both I-01/I-02 arrival orders, partial-page restart, checkpoint
+failure, repeated receipt and consumer-adapter replay (100→105 CNY calculated,
+zero charged). This is offline fixture evidence, not authenticated source pull
+or XI integration. Source-page/consumer fixture check is retained in local CI code.
+
+### A12 jointly reviewed local performance boundary
+
+The coordinator independently reviewed the raw base/candidate ABBA samples,
+overlays and implementation, then approved bounded SQL batching within the
+existing transaction and lock order. The source publisher now uses two bounded
+SendBatch calls (rather than per-statement calls), not a new queue. Read result,
+read/write Close failure, cancellation, revision predecessor, immutable replay,
+reverse profile order, original outbox recovery and PG restore tests pass.
+SendBatch call count is a code fact, not a measured network round-trip count.
+
+After batching, 10 warmup + 60 measured requests per batch, base/on/off/off/on/base,
+showed request p95 base 6.909125/6.771916ms, on 8.034750/7.701084ms and off
+6.632125/6.609917ms. Enabled increments were 1.125625ms (+16.2919%) and
+0.929168ms (+13.7209%); no increment was observed with capture off. Raw samples
+are retained under `RDgTyF/perf-v2-results.json`, alongside the untouched first
+round. The 5% relative experiment suggestion was not reached. Per the coordinator's
+explicit joint review on 2026-09-09, this bounded approximately 1ms incremental
+cost is acceptable for this 6–7ms fake-Provider Responses microbenchmark under
+the existing ≤5ms absolute p95 increment suggestion; it is not a performance
+promise for other protocols, loads, B stages or Production. No artificial
+Provider latency was added to dilute the percentage. Original response, amount,
+consistency, recovery and default-off requirements remain.
+
+No other task-owned PG write test ran concurrently with that measurement. WAL
+is instance-wide (including possible background activity); relation growth
+includes page/index allocation and is not steady per-request storage. Current
+samples do not establish a clear latency improvement from batching. Concurrent
+load/lock sampling and original-worker catch-up are being measured separately;
+authenticated page/consumer latency depends on the pending credential approval.
+A12 as a whole, A01–12 and complete candidate acceptance remain open.
+
+### Joint correction of the original cache-path assumption
+
+The coordinator independently verified the exact cd9f354b baseline and agreed on
+2026-09-09 that the accepted plan's statement that cache hits create no Freeze
+or I-01 was incorrect. Preserve the original plan as historical review evidence.
+The actual Chat path freezes before cache lookup. A cache hit retains the existing
+zero-token, zero-calculated/charged delivery preparation, receipt, settlement and
+recovery. It makes no new Provider attempt or call and cannot repeat the original
+miss request's economic amount. With I-01 enabled and a valid project, the original
+journal materializer also publishes that distinct zero terminal; it has no
+zero-amount exclusion. The source must describe this existing path without
+changing the financial contract. Actual miss-to-hit validation now passes with
+real ten-request Shadow admission and the original Canary gate: one Freeze,
+zero Provider attempts/calls for the hit, an independent zero-token/zero-amount
+I-01 terminal and seven source facts with the exact I-01 hash. The earlier miss
+snapshot stays unchanged; omitting opt-in keeps the Provider path. All thirteen
+HTTP matrix branches pass with race detection. Existing cache trace projection
+warnings remain recorded; this does not claim that trace delivery passed.
+
+The first four-worker, same-key/route diagnostic already failed on 1.2.77.
+Its follow-up preserved 64 outcomes: 8 HTTP 200, 40 HTTP 409 provider-cost-pending
+and 16 HTTP 503 (14 public execution unavailable, 2 execution state unavailable).
+The 409 guard also covers the existing delivery-pending window; it is neither
+proof of the initial cause nor by itself a product defect. Auth can reject before
+capture, so the diagnostic's candidate assertion that every request has at least
+two facts was invalid. Those initial failures remain in the raw logs. A bounded
+diagnostic now records states and errors; mixed response rate/latency cannot
+establish successful-request throughput, capacity or candidate compatibility.
+
+The additional PG16 diagnostic located SQLSTATE 40001 inside M36's
+`mark_micro_ledger_runtime_evidence`: every ledger statement rewrites the same
+already-marked singleton. The coordinator corrected the initial overstatement:
+the excerpt contains fifty marker UPDATE contexts and six deployment-parent
+foreign-key key-share contexts. M36 is a confirmed hotspot, not the sole
+proven cause of all concurrent errors. Base, capture-on and capture-off all hit
+the marker context during owned attempt insertion/health fence update. The
+three 64-request samples had 13/4/3 successes, 34/56/59 pending refusals and
+17/4/2 service errors, with 2/1/1 unresolved holds afterward. The candidate-on
+sample's database publication lag p95 was 57.68335ms after a manually started
+original-worker catch-up; it is not continuous-worker, authenticated pull or
+consumer latency. No performance compatibility/capacity pass follows from these
+diagnostics. The coordinator independently approved revised marker patch v2,
+SHA-256 `2a491944f6842ac38b12b6947e486e54a8e8f90153b1d70080c72205362674c9`,
+before implementation. It is now applied: prelock the exact projects parent
+with NOWAIT, then replace the marker function only after dependent DDL. The
+first rejected patch remains retained. Current M116 up/down hashes are
+`f94c3617d33bece9b77871151a8f8330c9566b97898a0f3491dec71f765e7357` and
+`92be74583b6f9706fac9116b668806d45746c09ffe4890908b792133fdc8b88c`.
+Fresh-database tests cover actual M115/function predecessors, cold first-commit
+and rollback interleavings, old RR snapshots, warm marker tuple/first-time
+stability, busy projects/marker owners, migration failure rollback, all eleven
+original triggers and unsafe M36 down rejection. All pass with race detection.
+No isolation, retry or financial guard was relaxed.
+
+After that change, another candidate-on/off four-worker diagnostic still had
+5/5 HTTP successes, 57/58 pending refusals and 2/1 service errors, with 2/1
+remaining holds. The three observed service errors occurred at the original
+model-deployment health FOR UPDATE under RR, not the marker. Mixed response
+latency/rate is not successful capacity, and the few successful samples do not
+support a compatibility pass. Skipping an unchanged breaker update alone would
+not prove closure: success also updates credential last_used_at in the same
+health transaction. The coordinator subsequently classified that original
+health failure as a current A12 blocker and independently accepted the bounded
+health v2 plan before implementation (see the evidence below).
+Raw samples, diagnostic overlays and PG excerpts remain in `RDgTyF`, including
+`perf-concurrent-marker-v4-results.json` and all earlier failed experiments.
+
+Latest independent checks pass: complete sourcefacts/mediajob race integration,
+all thirteen Chat/Embeddings/cache HTTP cases, the frozen-page SQLite consumer,
+affected source/gateway/main vet and whitespace validation. Tests use isolated
+database clones. The cache test now uses a new server-operation prefix per run
+and stays below the unchanged 10 RPS key limit; earlier fixture failures (429
+and cross-run Redis operation collision) remain in separate logs.
+
+The post-marker CI consolidation, complete source/media, admin, Agent,
+limit-policy and workload-admission integration groups all pass (six exit-zero
+groups in `marker-integration-results.json`). A fresh opt-in PG16 dump/restore
+also passes with the actual current marker function definition compared before
+and after restore, alongside the twelve table digests and original worker replay
+(`source-marker-pg-restore-race.log`). Public Responses/Messages tests preserve
+legacy wildcard/exact-endpoint denial and Messages header rejection before
+capture/Freeze/Provider. Explicit endpoint grants on a real synthetic agent
+workload support Exchange/Delegate/public execution and seven source facts;
+personal grants cannot mint that workload authority, and Sponsor stays separate
+from owner. These four public-auth cases pass with race detection in
+`source-gateway-workload-auth-race.log`; fixtures use a fake Provider and synthetic
+model authorization, not production licenses or actual Provider qualification.
+
+### Reviewed health correction and further local evidence
+
+The immutable health proposal v1 remains the prefix of
+`docs/analysis/UR-HEALTH-CONCURRENCY-PLAN-20260909.md`; its appended v2 was
+independently accepted at SHA-256
+`fc6da3284d210adce183febdaefe02b7fcf825e7c98331cfa718617bab29ad3c`.
+Implementation changes only `applyHealthOnce` to Read Committed and binds its
+ten shared projection `updated_at` writes to the existing database time obtained
+after the relevant row locks. Existing current-row validation, attempt fence,
+CAS, atomic mirror writes, replay and commit-ambiguity handling remain.
+Authorization stays Repeatable Read; retries and unresolved-hold protection
+are unchanged. This approved design is not yet an A12 or full-A pass.
+
+Twelve deterministic canonical/legacy/verify interleavings pass: an earlier
+transaction acquiring rows after a later health commit, opposite outcomes,
+new revision rejection, exact replay and the uniform lock-time timestamp.
+Six actual PostgreSQL lock-wait and cancellation cases also pass. Full original
+modelexecution integration initially failed three old fixtures before health
+because their disabled/expired lease writes violated M70. Correcting only the
+fixture predecessor (clear probes when disabling; await a real one-second
+lease) makes both affected original groups and all eighteen new cases pass in
+`health-current-wait-and-supported-lease-race.log`. The raw full failed log is
+retained as `health-current-row-race.log`.
+
+The real pre-v2 `ReconcileLegacyProjection` writer is blocked on the parent
+while health owns it, and adds no fanout member before health commits. Its
+new link nevertheless uses channel/key times read before that wait. The
+additional assertion expecting the later health time failed, as recorded in
+`health-reconcile-parent-timing-race.log`. Replacing only the four production
+health files with exact cd9f versions via Go overlay reproduces the earlier
+link time (`health-reconcile-parent-before-fix-race.log`). The parent-lock
+proof passes; the cached-time assumption does not. This existing writer reads
+channel/key metadata before upserting the parent. Full projection readback then
+found an actual additional effect: canonical binding `last_used_at` is overwritten
+to NULL while the legacy key retains the health time. Candidate
+`health-reconcile-full-projection-race.log` and original four-file overlay
+`health-reconcile-projection-before-fix-race.log` fail at the same credential
+parity assertion. The earlier old-overlay timing test stopped first on the old
+NOW()/DatabaseTime mismatch; its printed link time, not that failed assertion,
+was the evidence of the existing early read.
+
+The coordinator independently classified the cached link time and the actual
+credential mirror overwrite as separate, bounded `valid_deferred` findings.
+`deploy/customer/README.md:43–66` and the deployment runbook place explicit
+verify preparation in an approved maintenance window with old writers drained
+before startup/cutover. `Service.Apply` only accepts verify and the reconciler
+rejects any current v2 authority. Online apply overlapping active health is not
+an added support promise. Runtime protection does not completely exclude that
+overlap; it is not claimed to be safe. The supported no-overlap order preserves
+the unified link time and full breaker/credential parity. Original probe scope
+and history regressions pass. No reconcile production writer was changed.
+
+The failing full-parity source is preserved as
+`RDgTyF/health-reconcile-overlap-regression-v1_test.go`, SHA-256
+`3d3b668e4f386932bc8d3aac6e9e25699a777ad7e0e7ce649edda15a9edb1e08`.
+The normal regression distinguishes parent/member commit protection from the
+supported maintenance-order consumer/parity requirement. The separate
+`TestKnownReconcileOverlappingHealthProjectionDiagnostic` retains the failing
+assertion and runs only with `UR_RUN_KNOWN_RECONCILE_OVERLAP_DIAGNOSTIC=1`;
+its default skip is not diagnostic success. Original FAIL evidence is retained,
+not relabeled as PASS. Reopen these findings if a supported online apply path
+is identified, drained maintenance still loses health or wrongly grants probe
+eligibility, or a candidate-specific difference is demonstrated. This does not
+prove other health values, all fanout states or qualification outcomes safe.
+
+The main actual-handler matrix now has 21 cases: six Chat, six Chat SSE, two
+partial/cancelled Chat SSE, six Embeddings and one cache case. All six streaming
+auth combinations pass. The initial full run passed nineteen and exposed an
+incorrect new-test assumption for the two partial Chat streams. Original Chat
+uses delivered-counter partial settlement (`gateway_counter`,
+`customer_charge`, `estimated`) rather than the strict Messages/Responses V2
+pending contract. Both corrected assertions pass with one I-01, seven matching
+source facts, zero charged amount and no repeated Provider call in
+`source-chat-partial-counter-race.log`. The initial failure is preserved.
+After the health change, the complete 21-case invocation exits zero with race
+detection (`health-source-http-21-race.log`, SHA-256
+`d98cc1e365ea233166eea96abe7b45a2d164e573e8e650feafbb962cf3b73216`).
+Six actual same-attempt concurrent replay/opposite-outcome cases also pass;
+the first outcome remains unique and a conflicting outcome is Stale. Original
+reconcile probe history and deployment credential-scope negative tests, plus
+the full source Responses/Messages auth/stream/economic recovery and original
+concurrent outbox groups, all pass in the four-package
+`health-same-attempt-probe-gateway-race.log`.
+
+Four original outbox service instances (batch four) concurrently publish the
+terminal facts for 32 actual fake-Provider Responses requests. Continuous profile
+ordering, matching I-01 order/hash, one terminal per request, replay stability
+and empty pending queues pass in `source-original-outbox-concurrent-v2-race.log`.
+The initial batch-one experiment exposed existing high-priority starvation in
+the original scheduler; its failed log is retained and the independent finding
+was sent to the coordinator. The default batch is 25; no scheduler change was
+made. Context tests also pass for int64 IDs, lineage copies, UTF-8/control/size
+bounds and JSON escaping amplification (`source-context-bound-unit.log`).
+
+Media tests now cover dispatched expiry after early facts have been retained
+out: the real expiry writer emits a self-contained unknown terminal retaining
+the exact historical seed. Revoking an ordinary synthetic model key between
+admission and reservation blocks attempt/dispatch while preserving admission
+facts. Both pass in `source-media-late-revoked-v2-race.log`; the first failed
+attempt correctly rejected completion with an expired lease, and its log is
+retained. No production lease guard or credential control path was changed.
+
+### Final health candidate performance and remaining diagnostic limits
+
+With the reviewed health change, the same four-worker/64-request experiment
+records on=16 HTTP 200, 47 pending 409, 1 authorize 503; off=22 HTTP 200,
+42 pending 409 and no service error. Both have zero health failure and zero
+residual holds. After normal original-worker completion, one new request per
+group succeeds without clearing holds or retrying that request. The on group
+has 27 Provider calls and 27 successful I-01 records at 600 calculated micros
+and zero charged, plus one pre-dispatch 0/0 cancellation; 28 total terminals,
+196 source facts, no duplicate terminal and no I-01 hash mismatch. Off has
+33 calls/terminals and zero source facts. The on diagnostic exits 1 because
+it explicitly rejects service errors; off exits 0, still with legitimate 409s.
+Raw outcomes are in `perf-concurrent-health-v5-results.json`, SHA-256
+`1fd396124ba6d4617aef0b500b0216f4af53f97c9e5647b01dd540d362bfcf13`.
+
+The remaining on-group 503 comes before Provider execution, from the original
+RR authorizer's owned-attempt INSERT and deployment FK KEY SHARE (SQLSTATE
+40001). Its original cancel path finishes with zero amount and no hold. The
+coordinator accepts this exact category as a separate `valid_deferred`
+availability gap. The category appeared in the original baseline, but these
+small on/off samples do not prove an unchanged error probability or that source
+capture cannot amplify it. Reopen if it produces dispatch, charge, retained
+hold, source/I-01 mismatch, or a demonstrated new/amplified candidate defect.
+Authorize RR, M77 attempt-first, FK and retry contracts remain unchanged.
+No overall concurrency/capacity pass or elimination of all 40001 is claimed.
+
+The final code was also recompiled for an independent six-group sequential
+comparison: 10 warmup + 60 measured requests, old base/on/off/off/on/old base.
+All six exit zero. Request p95 in milliseconds is
+6.801583 / 7.689084 / 6.746000 / 6.672584 / 7.657375 / 6.690750.
+Supply-on increments versus the same candidate off are 0.943084ms (13.9799%)
+and 0.984791ms (14.7588%); versus the old base they are 0.887501/0.966625ms.
+The 5% relative suggestion remains unmet, while the previously jointly accepted
+bounded <=5ms absolute increment holds. Health improvement is not subtracted
+from source overhead. Samples are in `perf-health-v6-results.json` and the six
+`health-v6-*-perf.log` files; no other PG write test overlapped measurement.
+WAL on is 2,921,696/2,917,528 bytes, off 1,855,560/1,855,384; relation growth
+on is 2,400,256/2,392,064, off 1,261,568/1,261,568. These include allocation,
+indexes and instance-wide WAL effects, not steady per-request storage. Neither
+this microbenchmark nor the mixed concurrent DB-publication lag measures
+authenticated pull-to-consumer delay. Those and full A acceptance remain open.
+
+At this health cutoff, `go vet ./...` and `go test -race ./...` both exit zero
+(`health-final-all-vet.log`, `health-final-all-race.log`); the latter reports
+124 package outcomes, including packages with no tests, and no race warning.
+Nonfatal macOS linker warnings remain in the raw log. The supported parent-lock
+and maintenance-order consumer tests pass (`health-supported-reconcile-race.log`),
+as do all three selected original apply/check groups
+(`health-maintenance-apply-check-race.log`). The explicitly requested known
+online-overlap diagnostic still fails at the retained credential parity assertion
+(`health-known-reconcile-overlap-opt-in-race.log`); that is recorded separately
+from default test results. The independent frozen-page SQLite consumer also
+passes again. Original checkout branch/HEAD/tree, all eighteen recorded file
+hashes and porcelain status are unchanged; only the isolated worktree was edited.
+
+The source credential control handlers/routes are not written: automatic
+approval review twice rejected their credential lifecycle/permission code even
+after the accepted plan and default-off evidence were supplied. A direct user
+question is pending for local implementation and synthetic tests only. Continue
+independent source, migration, protocol and documentation work while that exact
+part remains pending. No real credential or permission action was attempted.
+
+Test state lives only under `/private/tmp/ur-workfacts-test.RDgTyF`: PG16 uses
+`pgdata-utf8` and its private Unix socket, port 65419; dedicated Redis uses
+127.0.0.1:16649. Existing user services are excluded. Ordinary-sandbox full
+runtime tests hit an httptest socket permission error; that is an environment
+failure requiring a scoped test rerun, not a product pass.
+Docker runtime and exact Neutral N1 local artifact remain unverified environment
+dependencies; they do not block independent local work or become skipped passes.
+After complete A delivery the coordinator reviews acceptance before B/D/X.
+
+### B/D design prepared while A remains unaccepted
+
+The coordinator explicitly authorized B/D design preparation only while A's
+source-control approval remains pending. The independent proposal is
+[UR-WORKFACTS-BD-DESIGN-20260909.md](../analysis/UR-WORKFACTS-BD-DESIGN-20260909.md),
+SHA-256 `c22f9895803edc777030e83bb429f0798219e6ff6875fe7c6a12439482d94f27`.
+It maps original R/CT2/T/DATA/B/FA3 acceptance to real writers, transaction order,
+bounded profiles, timing, budget authority and recovery. Two explicit review
+points are a separate D current-snapshot contract and a controlled enterprise
+project-scope binding; arbitrary scope_ref strings do not authorize project
+access. Existing project counters do not prove full-period coverage.
+
+No B/D product implementation or tests were performed. The accepted A plan,
+its review and health plan remain byte-identical. A full delivery and independent
+acceptance still precede B/D product implementation, even if this design is
+accepted. The source-control auto-review blocker is unchanged; this design
+neither applies its proposed patch nor grants new credential authority.
+
+The coordinator reviewed the exact draft and classified four planning gaps as
+validated_required. The consolidated revision is
+[UR-WORKFACTS-BD-DESIGN-V2-20260909.md](../analysis/UR-WORKFACTS-BD-DESIGN-V2-20260909.md),
+SHA-256 `0065cf2f2c7342fc652b2a4017eaec23666eb1c7755d7368c61776421b9c5ec7`.
+The first draft remains unchanged. V2 separates mandatory original/dispatch
+records from post-commit optional observations, adds bounded reads of actual
+live stream/media leases, preserves the original I01/source/budget outbox order,
+specifies journal/outbox coverage and mandatory rebasing after supported
+restores, and restricts enterprise binding writes to the existing platform/billing
+roles with a D-only revocation generation. Unchanged A/B cursors must continue
+catch-up across D-only changes. The coordinator independently reread the exact
+V2 and accepted all four planning corrections as the joint design. No further
+formal plan review is required for that unchanged object. This is not product
+acceptance or permission to start B/D before complete A acceptance.
+
+### Source control implementation resumed under direct approval
+
+On 2026-09-09 the user explicitly approved: “同意按提案，在隔离工作树实现源凭据生命周期及权限控制，仅使用合成身份进行本地测试”.
+The prior source-control implementation blocker is therefore resolved. The owner
+applied the retained proposal in the isolated worktree, added exact staged-key
+identity checks and registration/IP replay checks, and implemented the management
+UI against those real handlers. Live commit authorization, purpose isolation,
+profile changes, pause/rotation/cancel/revoke, immutable authenticated pages and
+real synthetic PG credential/cursor restoration now have passing Local tests.
+The following earlier dependency table is a historical cutoff, not a current
+request for the same approval. A final evidence index below this section records
+the resumed candidate and remaining independent dependencies.
+
+### A unblocked closeout and exact remaining dependencies
+
+After that design acceptance, the owner checked the accepted A01–12 matrix
+against current implementation and retained evidence. One independent gap was
+closed: the actual source HTTP reader now has sixteen negative integration
+cases for disabled capture, write methods, profile/query/page limits, missing
+or duplicate/malformed authorization, an ordinary model token and unauthenticated
+capabilities. All pass with race detection against the task-owned PG16, with
+no change to source/credential/ack/business row counts and zero Provider calls.
+No source receiver was registered or activated. The existing CI
+`TestSourceFacts.*Integration` selector already includes this test.
+
+Test: `internal/gateway/source_facts_read_boundary_integration_test.go`.
+Evidence: `/private/tmp/ur-workfacts-test.RDgTyF/source-reader-negative-boundary-race.log`,
+exit 0, SHA-256 `2fc807e7a0d331db85a133679ddd4fe441e00fe2f9110a8e2ec3986eff7be1c4`.
+It does not prove accepted receiver-purpose/profile authorization or successful
+pull. Runtime product code is unchanged since the health cutoff; prior fresh
+Go/frontend/source/migration/performance results remain applicable and were not
+rerun just to increase test count. The opt-in known failures retain their
+separate valid_deferred classification and actual failing logs.
+
+| Unfinished A requirement | Exact dependency and currently available evidence | Can it independently finish now? |
+| --- | --- | --- |
+| Source lifecycle handlers/routes and existing connection-management UI | Direct user approval is still pending after two automatic-review rejections of registration/activation/rotation/pause/revoke/profile-permission code. The review-only patch is retained and absent from runtime targets. UI must bind those real handlers rather than a mock success path | No; the UI/lifecycle completion depends on the pending implementation |
+| A07 successful source-purpose authorization, field profiles, lifecycle/IP/project denial and old/new-purpose isolation | Pure cursor binding, generic-key exclusion and the new negative reader cases are partial evidence. A complete test must use a source receiver established through its real authorized lifecycle | No; dependent on source control, not replaceable with a direct SQL credential fixture |
+| A01/A04/A05/A08/A10 authenticated model-handler→source HTTP pages→independent consumer, pause/rotation/ack/retention and restored signed-cursor behavior | Actual model handlers, PG publication, retained data and offline public-page/SQLite consumer pass. They do not establish authenticated source pull or live receiver checkpoint recovery | No; successful source receiver and lifecycle are missing |
+| Remaining A12 authenticated pull-to-consumer availability/lag and recovery under the declared load | Final comparable base/on/off sequential samples and DB/original-worker diagnostics are retained; approximately 1ms bounded source overhead accepted only for that microbenchmark. The on concurrent diagnostic still contains its separately deferred authorize503 | No for the unmeasured authenticated chain; source control/pull prerequisite. No new broad capacity pass is inferred |
+| A11 Docker Build/Compose/customer preflight and applicable container installer execution | Docker and Podman are not on PATH; `customer-preflight-environment.log` says Docker Compose v2 is required. Real PG migrations, guarded down, finite bridge/runtime and non-Docker checks already pass | No until an authorized compatible local runtime is available; no system installation or mock-Docker pass |
+| Exact Neutral N1 qualification required by the existing protocol CI contract | `UNIROUTE_INTEGRATION_CONTROL_N1_ROOT` is not configured to a verified artifact. Existing CI qualifies a specific release through authorized installation-token/artifact orchestration; local protocol/strict V1 vectors do not substitute for it | No until the exact validated local artifact root is supplied or its acquisition is authorized; no network/authentication workaround |
+| General JSON Schema validation of the candidate schema and vectors | Typed Go validation and independent stdlib Python canonical/hash/page/SQLite checks pass. No jsonschema/check-jsonschema/ajv CLI or declared existing validator dependency is available in checked runtimes; those checks are not a general JSON Schema engine | No until an approved available validator/dependency path is provided; no new tool or dependency was installed |
+| Final complete A candidate/commit/package and coordinator product acceptance | Candidate schema/manifest/vectors/specification already exist, but lifecycle/UI and the above required verification remain unfinished. The exact working-tree/evidence cutoff remains reviewable | Final content cannot be sealed as complete yet. An intermediate commit would not satisfy the missing acceptance criteria |
+
+The two source-control target files remain absent:
+`internal/admin/xinsight_source_control.go` and
+`cmd/uniroute/xinsight_source_control_routes.go`. The unapplied candidate is
+`/private/tmp/ur-workfacts-test.RDgTyF/source-control-proposed.patch`, SHA-256
+`47b2550c713f15b723e3c1985f38fd7fe1d7fdc2a937e2c2d1bbba07bfde6ca9`.
+Approval for this specific local implementation/synthetic verification remains
+distinct from real credentials, services, provider calls or deployment.
+
+Resume in `/private/tmp/unirouter-workfacts-20260909` with the original
+`/private/tmp/ur-workfacts-test.RDgTyF` state/evidence. The PG16 recovery test is
+`TestSourceFactsPGBackupRestorePreservesIdentityAndPendingJournalIntegration`
+in `internal/gateway/source_facts_restore_integration_test.go`; it requires
+`SOURCE_FACTS_PG_BIN=/opt/homebrew/opt/postgresql@16/bin` and the explicit
+task-owned PG16 socket/port 65419 and Redis 16649 settings above. It creates and
+restores a separate disposable test DB; it is not permission to restore over a
+user database. Current DB-only restore evidence is
+`source-marker-pg-restore-race.log`; receiver/cursor restore is still pending.
+
+After explicit approval, apply/review the retained control proposal against the
+then-current A tree, complete real lifecycle/UI and dependent tests, then run
+the checks affected by those new changes and form the final A delivery. Do not
+restart B/D implementation on design acceptance alone. No other unfinished,
+independently executable necessary A step was identified in this matrix audit.
+Remote CI, official signing/release, Target, real Provider/XI and combined E
+remain outside current local authorization; none was represented as passed.
+
+### Resumed A candidate — source control and remaining local runtime gate
+
+This checkpoint supersedes the unfinished-dependency classifications in the
+historical table above. It records Local implementation and verification, not
+complete A acceptance. Candidate version: 1.3.0; base: `cd9f354b8a104a6f0677345a5694b19c000ab015`.
+The final local commit/tree, changed-file hashes, exact logs, dependency identities
+and protection readback are bound in
+`/private/tmp/ur-workfacts-test.RDgTyF/source-control-delivery-evidence.json`.
+
+- Source lifecycle and its management UI are implemented. Platform-admin route
+  guards and live transaction reauthorization cover registration, activation,
+  pause, rotation, cancellation, resume, profile changes and permanent revoke.
+  Registration accepts only receiver verifier metadata, never a Bearer. Staged
+  activation/cancellation binds the exact decimal credential ID; operation replay
+  also checks the original registration and IP. Identical profiles preserve the
+  current generation; changed profiles revoke keys and invalidate cursors.
+- Source reads lock the connection consistently with control writes. A forced
+  revocation/read race proves that the old reader cannot publish a page or ACK;
+  stale authorization fails on retry. Real task-owned PG16 dump/restore preserves
+  credential binding and retained signed cursors. Safety actions remain available
+  with capture disabled. All credentials, actors and Provider responses are synthetic.
+- Final `-tags=integration -race` source regressions pass in admin, sourcefacts,
+  gateway and cmd/uniroute. Whole untagged Go race and vet, route guards, OpenAPI
+  and frontend API parity pass; later lifecycle changes are covered by the final
+  integration regression. No production identity or Provider was used.
+- Actual model handlers, authenticated source HTTP pages and the independent
+  SQLite consumer pass across 29 cases: 637 facts, 360 pages and 69 original I-01
+  records. The consumer covers replay, restart/checkpoint failure and both I-01
+  arrival orders. These are UR-owned Local fixtures, not XI integration acceptance.
+- A separate same-run sample issues 32 sequential model requests with four
+  original outbox workers. It delivers 224 facts and 32 I-01 records; the latest
+  journal/publication database timestamp to independent consumer verification is
+  1265.716/1261.655 ms. These timestamps are not commit-ACK timestamps. Prior
+  accepted bounded performance limits and the two valid_deferred diagnostics
+  remain unchanged; no general concurrent capacity or production SLO is claimed.
+- General Draft 2020-12 validation passes: 8 valid vectors, 5 schema-negative
+  vectors, 2 wire-negative vectors, 13 static payloads and all 637 authenticated
+  payloads (plus the separate 224-fact sample). Two domain-only negatives remain
+  checked by the required Go decoder tests. Development-only dependencies are
+  pinned with official PyPI wheel hashes and installed only in the task directory;
+  their exact versions, licenses and provenance are retained. Required CI now
+  installs those pins and includes the admin source integration package; CI was
+  not dispatched.
+- Exact Neutral N1 `v0.1.0-candidate.1` qualification passes using existing local
+  assets whose five original hashes were checked. The original D1 qualifier at
+  `db10730d64a9302887ad59c53921e98c757927e7` and the complete sourceevidence race
+  suite pass with the qualified root. This local Darwin run does not substitute
+  for future Linux CI execution.
+- Final frontend result: 89 files / 743 tests, exit 0, with the original warning
+  budgets intact (findDOMNode 10/10). The earlier all-assertions-pass run exited 1
+  at 11/10 and remains retained. Native DOM confirmation triggers remove the new
+  warning without weakening disabled-action controls. Production frontend build
+  and bundle budget pass: 91 assets, largest 362364 bytes, limit 460800 bytes.
+- The saved checkout's 18 protected file hashes remain unchanged. Its separately
+  recorded research directory remains present; its contents were never hashed in
+  the protection baseline and are not claimed verified. Generated Python caches
+  are excluded from the local candidate commit; user files were not cleaned.
+
+The remaining A11 local dependency is an actual compatible Docker/Compose runtime.
+Docker Desktop, OrbStack and the checked Docker/Colima/Podman/Lima/nerdctl binaries
+and local runtime sockets are absent. Customer preflight reports that Compose v2
+is required. Required container build, merged Compose and applicable installer
+runtime checks have not passed; no system tool was installed or mock used. The
+formal development path requires Docker 28/29 and supported Compose merge syntax.
+Remote CI, Target, deployment and XI acceptance remain outside this Local evidence.
+No push, PR, merge, release, real credential or service action was performed.
+B/D implementation remains gated on complete A delivery and coordinator acceptance.
+经验文件无需变化：本次来源控制与本地验证未产生符合模型适配经验准入门槛的新条目。
+
+### Media HTTP evidence follow-up after independent acceptance review
+
+The coordinator classified the missing legacy async-media HTTP-to-consumer chain
+as validated_required and accepted section 2 of
+`/private/tmp/ur-workfacts-test.RDgTyF/source-media-and-container-verification-proposal.md`
+(SHA-256 `e17b38c7bcb2f4a75c7b8c8091baa0f9c18143281057b4cec278ba90eb849063`).
+The earlier claim that only Docker remained was a self-review cutoff; this
+independent finding supplements it. The aa119e12 candidate and its evidence are
+retained, not rewritten or reclassified as a full acceptance.
+
+The follow-up mechanically extracts main's two media authorizers; their bodies
+and error mappings are unchanged apart from the passed pool reference. Eight real
+media HTTP cases now cover legacy/explicit-grant success and replay, key/grant
+revocation before dispatch, queued and in-flight cancellation, real Agent/source
+credential rejection, original identity snapshots and non-I-01 charge facts.
+Real PG, Redis, model authorization, limit policy, Worker and source control/page
+handlers are used. Provider/object storage remain synthetic. The independent
+consumer compares original job charge metadata and preserves zero additional
+money; media's 80 facts / 48 pages contain zero text I-01 records.
+
+The first complete bounded regression passes the eight media and 21 original text
+HTTP cases plus original media writer/re-authorization tests. Their 455 facts /
+267 pages / 33 original I-01 records pass independent consumer and general Schema
+validation. Subsequent explicit dual-role initialization of the synthetic receiver
+admin passes full cmd race unit tests and a focused rerun of all eight media plus
+seven selected text cases. Unchanged frontend, N1 and unrelated product evidence
+are reused; no CI, Provider/S3 or container pass is inferred.
+
+Retained unsuccessful runs distinguish fixture setup errors, a sandbox socket
+restriction and a redundant overlapping Redis RPM-limit regression from product
+failures. No assertion or rate-limit budget was relaxed. The exact passing logs,
+failed diagnostics, extraction proof, successor commit/tree and changed-file
+hashes are bound in
+`/private/tmp/ur-workfacts-test.RDgTyF/source-media-delivery-evidence.json`.
+
+The carrier read fixture actually derived all current migration names; its old
+fixed M115 report did not identify its real input. It now separately selects the
+M115 bridge and M116 current ledgers, checks actual CLI inspect and unchanged
+read-fixture state, and reports both exact heads/digests. Two offline selection
+regressions pass; actual Docker execution remains unperformed. Its four read
+tables are explicitly not a complete M116 migration/install proof.
+
+The concrete runtime proposal is
+`/private/tmp/ur-workfacts-test.RDgTyF/a11-runtime-approval-proposal.md`, with pinned
+Lima/Ubuntu/Engine/Compose identities, official hashes/licenses, bounded local
+paths/permissions/downloads and stop conditions. Host capacity is a timed sample,
+not a fixed fact; current free space is below the planned 32 GiB VM plus host
+reserve. No data was cleaned, runtime installed, image pulled or VM started.
+User approval and the stated resource prerequisites remain necessary for A11.
+Full A awaits the coordinator's independent acceptance; B/D remain design-only.
+经验文件无需变化：该续作修补媒体验证链与合成夹具，不新增模型适配合同。
 ## Completed delivery — 1.2.77 compatibility and onboarding closeout
 
 The authorized bounded delivery is complete through review, CI/exact-main,

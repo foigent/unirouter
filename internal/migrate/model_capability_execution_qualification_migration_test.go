@@ -69,11 +69,7 @@ func TestModelCapabilityExecutionQualificationDownGuardsEvidenceBeforeDrop(t *te
 }
 
 func TestModelCapabilityExecutionQualificationIntegrationIsSelectedByCI(t *testing.T) {
-	workflowBytes, err := os.ReadFile("../../.github/workflows/ci.yml")
-	if err != nil {
-		t.Fatalf("read CI workflow: %v", err)
-	}
-	workflow := string(workflowBytes)
+	workflow := consolidatedIntegrationSource(t)
 	for _, required := range []string{
 		"TestModelCapabilityQualification.*Integration",
 		"TestPlannerAndCutoverSelectTheSamePreferredCapabilityApprovalIntegration",

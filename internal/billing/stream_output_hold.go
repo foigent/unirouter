@@ -40,13 +40,14 @@ func (b *Billing) HoldStreamOutput(ctx context.Context, request SettleRequest, d
 		return fmt.Errorf("begin stream output hold: %w", err)
 	}
 	defer tx.Rollback(ctx)
-	if err := b.holdStreamOutputTx(ctx, tx, req, deliveredBytes, deliveredChunks); err != nil {
+	created := false
+	if err := b.holdStreamOutputTx(ctx, tx, req, deliveredBytes, deliveredChunks, &created); err != nil {
 		return err
 	}
-	return b.commitStreamOutputHold(ctx, tx, req, deliveredBytes, deliveredChunks)
+	return b.commitStreamOutputHold(ctx, tx, req, deliveredBytes, deliveredChunks, created)
 }
 
-func (b *Billing) commitStreamOutputHold(ctx context.Context, tx pgx.Tx, req SettleRequest, deliveredBytes int64, deliveredChunks int) error {
+func (b *Billing) commitStreamOutputHold(ctx context.Context, tx pgx.Tx, req SettleRequest, deliveredBytes int64, deliveredChunks int, created bool) error {
 	if err := tx.Commit(ctx); err != nil {
 		// The command may have committed despite losing its acknowledgement. A
 		// bounded exact readback may prove success; no new financial command or
@@ -57,10 +58,14 @@ func (b *Billing) commitStreamOutputHold(ctx context.Context, tx pgx.Tx, req Set
 			return fmt.Errorf("commit stream output hold: %w (readback: %v)", err, readErr)
 		}
 	}
+	if created {
+		b.observeCommitted(ctx, CommittedObservation{Kind: "local_delivery", OrgID: req.OrgID, RequestID: req.RequestID, AttemptID: req.AttemptID, Outcome: streamOutputHoldOutcome(deliveredBytes, deliveredChunks)})
+		b.observeCommitted(ctx, CommittedObservation{Kind: "output_hold", OrgID: req.OrgID, RequestID: req.RequestID, AttemptID: req.AttemptID, Outcome: providerAttemptStateDeliveryFailed})
+	}
 	return nil
 }
 
-func (b *Billing) holdStreamOutputTx(ctx context.Context, tx pgx.Tx, req SettleRequest, deliveredBytes int64, deliveredChunks int) error {
+func (b *Billing) holdStreamOutputTx(ctx context.Context, tx pgx.Tx, req SettleRequest, deliveredBytes int64, deliveredChunks int, created *bool) error {
 	record, err := reservationForUpdate(ctx, tx, req.RequestID, req.OrgID)
 	if err != nil {
 		return fmt.Errorf("lock stream output hold reservation: %w", err)
@@ -123,12 +128,12 @@ WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3`,
 	if err := updateRequestIdempotencyUsageTx(ctx, tx, req); err != nil {
 		return err
 	}
-	if err := recordDeliveryTx(ctx, tx, DeliveryEvent{
+	if err := recordDeliveryObservedTx(ctx, tx, DeliveryEvent{
 		OrgID: req.OrgID, RequestID: req.RequestID, AttemptID: req.AttemptID,
 		Mode: DeliveryModeStream, Outcome: streamOutputHoldOutcome(deliveredBytes, deliveredChunks),
 		DeliveredBytes: deliveredBytes, DeliveredChunks: deliveredChunks,
 		HTTPStatus: 200, ErrorCode: ProviderOutputLimitExceeded, StreamFence: req.StreamFence,
-	}); err != nil {
+	}, created); err != nil {
 		return err
 	}
 	result, err := tx.Exec(ctx, `UPDATE stream_delivery_leases

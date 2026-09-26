@@ -217,17 +217,39 @@ def check_service(service, container, image, project, runtime_environment=None):
 COUNTER_V2 = "unirouter.stream-counter.v2"
 COUNTER_V3 = "unirouter.stream-counter.v3"
 COUNTER_HEAD = "000115_stream_counter_version"
+SOURCE_HEAD = "000116_execution_source_facts"
+OBSERVATION_HEAD = "000117_execution_observations"
+BUDGET_HEAD = "000118_source_budget_snapshots"
+CONTENT_HEAD = "000119_execution_content_capture"
+RECLAIM_HEAD = "000120_unpublished_content_reclamation"
+PRE_DISPATCH_HEAD = "000121_gateway_pre_dispatch_terminal"
 CAPABILITY_HEAD = "000114_capability_delivery_expand"
+BRIDGE_HEADS = (COUNTER_HEAD, SOURCE_HEAD, OBSERVATION_HEAD, BUDGET_HEAD, CONTENT_HEAD, RECLAIM_HEAD, PRE_DISPATCH_HEAD)
+SOURCE_DEFAULTS = {"SOURCE_FACTS_ENABLED": "false", "SOURCE_OBSERVATIONS_ENABLED": "false",
+                   "SOURCE_BUDGET_SNAPSHOTS_ENABLED": "false", "SOURCE_CONTENT_ENABLED": "false",
+                   "SOURCE_CONTENT_FULL_ENABLED": "false", "SOURCE_CONTENT_STORAGE_ROOT": "",
+                   "SOURCE_CONTENT_STORAGE_IDENTITY": "", "SOURCE_CONTENT_STORAGE_TOKEN_FILE": ""}
 
 
 def validate_transition(transition):
     if transition is None:
         return
     require(isinstance(transition, dict), "invalid named transition")
-    if transition.get("kind") == "stream_counter_expand_carrier":
+    if transition.get("kind") in ("stream_counter_expand_carrier", "source_facts_expand_carrier", "source_observations_expand_carrier", "source_budgets_expand_carrier"):
         require(set(transition) == {"kind", "up_sha256", "down_sha256"} and
                 all(re.fullmatch(r"[a-f0-9]{64}", transition[key]) for key in ("up_sha256", "down_sha256")),
-                "exact reviewed M115 bytes required")
+                "exact reviewed expansion bytes required")
+    elif transition.get("kind") == "schema_bridge_expand_carrier":
+        require(set(transition) == {"kind", "from_head", "migration_pairs"} and
+                transition["from_head"] in BRIDGE_HEADS[:-1] and isinstance(transition["migration_pairs"], list),
+                "unsupported finite schema bridge")
+        expected = BRIDGE_HEADS[BRIDGE_HEADS.index(transition["from_head"]) + 1:]
+        require(len(transition["migration_pairs"]) == len(expected), "schema bridge requires its complete ordered suffix")
+        for pair, version in zip(transition["migration_pairs"], expected):
+            require(isinstance(pair, dict) and set(pair) == {"version", "up_sha256", "down_sha256"} and
+                    pair["version"] == version and
+                    all(isinstance(pair[key], str) and re.fullmatch(r"[a-f0-9]{64}", pair[key]) for key in ("up_sha256", "down_sha256")),
+                    "exact reviewed schema bridge pair required")
     elif transition.get("kind") == "stream_counter_writer":
         require(set(transition) == {"kind", "from", "to"} and
                 {transition["from"], transition["to"]} == {COUNTER_V2, COUNTER_V3},
@@ -251,17 +273,36 @@ def writer_overlay(overlay, transition):
     return overlay[:anchor.end()] + b"\n" + anchor.group(1) + b"STREAM_COUNTER_VERSION: " + transition["to"].encode() + overlay[anchor.end():]
 
 
+def add_disabled_source_defaults(expected_env, actual_env):
+    for key, default in SOURCE_DEFAULTS.items():
+        require(expected_env.get(key, default) == default and actual_env.get(key, default) == default,
+                "schema bridge requires disabled source capture and empty storage settings")
+    for key, default in SOURCE_DEFAULTS.items():
+        expected_env.setdefault(key, default)
+
+
 def validate_pending_counter_carrier(old_source, new_source, transition, actual_ledger):
-    require(transition and transition["kind"] == "stream_counter_expand_carrier", "bound schema source differs")
+    transitions = {"stream_counter_expand_carrier": (CAPABILITY_HEAD, COUNTER_HEAD),
+                   "source_facts_expand_carrier": (COUNTER_HEAD, SOURCE_HEAD),
+                   "source_observations_expand_carrier": (SOURCE_HEAD, OBSERVATION_HEAD),
+                   "source_budgets_expand_carrier": (OBSERVATION_HEAD, BUDGET_HEAD)}
+    require(transition and transition["kind"] in (*transitions, "schema_bridge_expand_carrier"), "bound schema source differs")
+    if transition["kind"] == "schema_bridge_expand_carrier":
+        predecessor = transition["from_head"]
+        pairs = transition["migration_pairs"]
+    else:
+        predecessor, target = transitions[transition["kind"]]
+        pairs = [{"version": target, "up_sha256": transition["up_sha256"], "down_sha256": transition["down_sha256"]}]
     old_paths = run(["git", "-C", str(old_source), "ls-tree", "-r", "--name-only", "HEAD", "migrations"]).decode().splitlines()
     old_ledger = sorted(Path(path).name[:-7] for path in old_paths if path.endswith(".up.sql"))
-    require(old_ledger and old_ledger[-1] == CAPABILITY_HEAD and actual_ledger == old_ledger, "pending M115 carrier requires the complete exact M114 predecessor")
+    require(old_ledger and old_ledger[-1] == predecessor and actual_ledger == old_ledger, "pending expansion carrier requires the complete exact predecessor")
     changes = run(["git", "-C", str(new_source), "diff", "--no-renames", "--name-status",
                    run(["git", "-C", str(old_source), "rev-parse", "HEAD"]).decode().strip(), "HEAD", "--", "migrations"]).decode().splitlines()
-    expected = sorted("A\tmigrations/" + COUNTER_HEAD + suffix for suffix in (".up.sql", ".down.sql"))
-    require(sorted(changes) == expected, "M115 carrier may only add its exact migration pair")
-    for direction in ("up", "down"):
-        require(digest(regular(new_source / "migrations" / (COUNTER_HEAD + "." + direction + ".sql")).read_bytes()) == transition[direction + "_sha256"], "reviewed M115 carrier bytes differ")
+    expected = sorted("A\tmigrations/" + pair["version"] + suffix for pair in pairs for suffix in (".up.sql", ".down.sql"))
+    require(sorted(changes) == expected, "expansion carrier may only add its exact migration pairs")
+    for pair in pairs:
+        for direction in ("up", "down"):
+            require(digest(regular(new_source / "migrations" / (pair["version"] + "." + direction + ".sql")).read_bytes()) == pair[direction + "_sha256"], "reviewed expansion carrier bytes differ")
 
 
 def document(path):
@@ -494,11 +535,12 @@ class Rollout:
             require(old_identity["commit"] == self.source["commit"] and old_identity["tree"] == self.source["tree"] and
                     all(containers[role]["Image"] == self.spec["images"]["frontend" if role == "frontend" else "backend"]["digest"] for role in CONTAINERS),
                     "writer transition requires the same exact Artifact")
-            require(self.sql("SELECT max(version) FROM schema_migrations") == COUNTER_HEAD, "writer transition requires M115")
+            writer_head = self.sql("SELECT max(version) FROM schema_migrations")
+            require(writer_head in BRIDGE_HEADS, "writer transition requires an exact supported M115–M121 head")
             for role in ("stable", "canary"):
                 require(environment(containers[role]["Config"]["Env"]).get("STREAM_COUNTER_VERSION", COUNTER_V2) == transition["from"], "mixed writer predecessor")
                 manifest = load(run(["docker", "exec", CONTAINERS[role], "./uniroute", "runtime-generation", "support"]))
-                require(COUNTER_HEAD in manifest.get("schema_heads", []) and
+                require(writer_head in manifest.get("schema_heads", []) and
                         all({"kind": "stream_counter", "id": version} in manifest.get("implementations", []) for version in (COUNTER_V2, COUNTER_V3)), "writer bridge lacks both recovery implementations")
             overlay = writer_overlay(overlay, transition)
         new_tags = {k: v["tag"] for k, v in self.spec["images"].items()}
@@ -510,6 +552,18 @@ class Rollout:
                 expected["services"][service]["environment"].update(replacements)
                 if transition and transition["kind"] == "stream_counter_writer":
                     expected["services"][service]["environment"]["STREAM_COUNTER_VERSION"] = transition["to"]
+                if transition and transition["kind"] == "source_facts_expand_carrier":
+                    require(environment(containers[role]["Config"]["Env"]).get("SOURCE_FACTS_ENABLED", "false") == "false", "source expansion bridge requires capture disabled")
+                    expected["services"][service]["environment"]["SOURCE_FACTS_ENABLED"] = "false"
+                if transition and transition["kind"] == "source_observations_expand_carrier":
+                    require(environment(containers[role]["Config"]["Env"]).get("SOURCE_OBSERVATIONS_ENABLED", "false") == "false", "observation expansion bridge requires B capture disabled")
+                    expected["services"][service]["environment"]["SOURCE_OBSERVATIONS_ENABLED"] = "false"
+                if transition and transition["kind"] == "source_budgets_expand_carrier":
+                    require(environment(containers[role]["Config"]["Env"]).get("SOURCE_BUDGET_SNAPSHOTS_ENABLED", "false") == "false", "budget expansion bridge requires D snapshots disabled")
+                    expected["services"][service]["environment"]["SOURCE_BUDGET_SNAPSHOTS_ENABLED"] = "false"
+                if transition and transition["kind"] == "schema_bridge_expand_carrier":
+                    add_disabled_source_defaults(expected["services"][service]["environment"],
+                                                 environment(containers[role]["Config"]["Env"]))
         for service, target, relative in (("backend", "/app/migrations", "migrations"), ("backend-canary", "/app/migrations", "migrations"),
                                           ("prometheus", "/etc/prometheus/prometheus.yml", "infra/prometheus/prometheus.yml"),
                                           ("grafana", "/etc/grafana/provisioning", "infra/grafana/provisioning"),

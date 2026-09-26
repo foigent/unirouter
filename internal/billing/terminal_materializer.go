@@ -11,6 +11,8 @@ import (
 // asynchronous product read models. It deliberately carries no prompt,
 // response, credential, network address, or raw upstream error.
 type TerminalRecord struct {
+	BillingMode          string
+	BillingModeSource    string
 	EventKey             string
 	RequestID            string
 	OrgID                int64

@@ -1,5 +1,68 @@
 # UniRouter Current Status
 
+## Durable test handoff and bounded optimization — 2026-09-14
+
+The a84/1.4.1 source is restored at
+`/Users/m4/Desktop/test/ur-regression-20260914/source`. The current working diff
+improves internal runner attribution, early Python checks and evidence navigation;
+14 offline tool tests pass, and original integration selectors/flags are unchanged.
+[Execution and evidence](../agent-workflows/EXECUTION-RECORD.md) distinguish this
+tool validation from product acceptance. Old tmp paths below are historical.
+
+Existing native evidence now supports a84 same-image installation, real M113
+interruption/resume and new-database restore/rebase. The old blanket native-pending
+heading below describes September 12 source delivery only. Original consolidated
+still has two root failures (clone cleanup timeout and replay 503 instead of 409);
+full product acceptance, performance, real successor/old-runtime and formal
+customer/integration delivery remain open. No release or GitHub push is claimed.
+
+## Fresh installer source candidate, native evidence pending — 2026-09-12
+
+Version 1.4.1 adds the reviewed one-off fresh owner in the same backend image,
+using original migrations and Publication Plans. Source/test text is being
+delivered from `codex/fresh-install-owner`; no new compile, database, image,
+restore or runtime result is claimed. [Current contract and evidence gaps](FRESH-INSTALL.md).
+Accepted 1.4.0 and test-workflow 6676 evidence below are unchanged in scope.
+
+## UR A/B/D/X Local accepted; internal test workflow optimization — 2026-09-11
+
+Independent overall Local acceptance is complete for product commit
+`59f7712d09653034756b846b15b8d69a16782791`, tree
+`ab09c48939539a10dbb039814489d764c0b53ca5`, version 1.4.0.
+The September 10 active/pending entries below are historical checkpoints.
+Performance/optional-observation gaps and unsupported successful M118 reset remain;
+no release, remote CI/exact-main, real XI or parent-platform acceptance is claimed.
+The separately authorized September 11 work changes internal tests and handoff only.
+[Current evidence, dependencies and reusable entrypoints](../agent-workflows/LOCAL-TEST-REUSE.md).
+
+## UR-A Local accepted; B/D/X implementation active — 2026-09-10
+
+The isolated work-facts candidate 1.3.0 at `25f5c1fdfb6b` received complete
+independent UR-A Local acceptance, including actual ASUS-hosted Linux/amd64
+Docker/Compose, migrations, permissions and recovery. The accepted B/D v2 design
+is now implemented as a 1.4.0 local candidate in
+`/private/tmp/unirouter-workfacts-20260909`; local contract, authorization,
+actual backup/restore, source/budget management browser and broad regressions
+have passed after fixes. Concurrent testing found a validated B/BD blocker:
+direct source-stream updates amplify serialization failures in original Authorize
+RR. The independently accepted dispatch-outbox amendment is now implemented;
+transaction, retention, lease, concurrent migration/Renew, snapshot visibility,
+actual main recovery and public fault-path checks passed locally. Symmetric
+serial runs all passed; concurrent successes per 128 requests were A126,
+off125, B126, D123, BD127. Committed dispatch coverage was complete, while
+original concurrency failures and optional observation gaps remain explicit.
+M118 has no successful reset lifecycle: read-only diagnostics remain available,
+but incomplete plans cannot be loaded for execution or applied. Historical
+A/M116 reset evidence and current M118 refusal evidence are separate.
+The reviewed 8e4af934 source passed Linux image builds, complete M116/M118
+installation, actual PostgreSQL restore and local Docker-context checks. A real
+ASUS M117 preflight then rejected supported historical instances after restart.
+The independently reviewed bounded repair preserves live fleet and full manifest
+gates; new exact image and retained-database upgrade checks remain active.
+Overall B/D/X acceptance is still pending.
+No B/D acceptance, GitHub CI, XI integration, Target or Production success is
+claimed. The accepted A performance limitations remain in force.
+[Current scope, exact evidence and continuation](../agent-workflows/EXECUTION-RECORD.md).
 ## Delivery/onboarding 1.2.77 Target and GUI verified — 2026-09-09
 
 Development Target runs exact 1.2.77/M115/counter v3, commit cd9f354b; PR417 five

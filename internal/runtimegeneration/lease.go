@@ -60,6 +60,9 @@ func Renew(ctx context.Context, pool *pgxpool.Pool, identity Identity, manifest 
 	if err != nil {
 		return time.Time{}, head, err
 	}
+	if err := requireLeaseManifest(manifest, head); err != nil {
+		return time.Time{}, head, err
+	}
 	updated, err := pool.Exec(ctx, `UPDATE runtime_generations g SET lease_expires_at=clock_timestamp()+$6*interval '1 second',revision=g.revision+1,updated_at=clock_timestamp()
 FROM runtime_support_manifests m WHERE g.instance_id=$1 AND g.artifact_digest=$2 AND g.compatibility_epoch=$3 AND g.schema_head=$4 AND g.state=$5
 AND m.artifact_digest=g.artifact_digest AND m.manifest_digest=$7 AND m.canonical_bytes=$8
@@ -80,6 +83,9 @@ AND $9::text[]=(SELECT array_agg(version::text ORDER BY version) FROM schema_mig
 	}
 	_, head, err = readLeaseLedger(ctx, tx, artifactLedger)
 	if err != nil {
+		return time.Time{}, head, err
+	}
+	if err := requireLeaseManifest(manifest, head); err != nil {
 		return time.Time{}, head, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO runtime_support_manifests(artifact_digest,manifest_digest,canonical_bytes) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, identity.Artifact, digest, wire); err != nil {
@@ -130,7 +136,7 @@ func readLeaseLedger(ctx context.Context, q interface {
 		return nil, "", fmt.Errorf("%w: %v", ErrIncompatible, err)
 	}
 	head := ledger[len(ledger)-1]
-	if head != schemaauthority.CapabilityExpandHead && head != schemaauthority.StreamCounterExpandHead {
+	if head != schemaauthority.CapabilityExpandHead && head != schemaauthority.StreamCounterExpandHead && head != schemaauthority.SourceFactsExpandHead && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead {
 		return nil, head, fmt.Errorf("%w: runtime lease requires explicit expand", ErrIncompatible)
 	}
 	return ledger, head, nil
@@ -170,4 +176,20 @@ func BootstrapVerifiedBridge(ctx context.Context, tx pgx.Tx, identity Identity, 
 	_, err = tx.Exec(ctx, `INSERT INTO runtime_generations(instance_id,artifact_digest,compatibility_epoch,schema_head,state,ingress_state,lease_expires_at)
 VALUES($1,$2,$3,$4,'serving','absent',clock_timestamp()+$5*interval '1 second')`, identity.Instance, identity.Artifact, CompatibilityEpoch, head, int(LeaseTTL/time.Second))
 	return err
+}
+
+// Schema advertisement alone cannot register a pre-C same-purpose writer on M119.
+func requireLeaseManifest(manifest Manifest, head string) error {
+	if head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead {
+		return nil
+	}
+	if err := manifest.Require(head, ContentLifecycleRequirements()); err != nil {
+		return fmt.Errorf("%w: %v", ErrIncompatible, err)
+	}
+	if head == schemaauthority.PreDispatchExpandHead {
+		if err := manifest.Require(head, []modelprofile.ImplementationReference{{Kind: "source_observations", ID: "unirouter.source-observation.v2"}}); err != nil {
+			return fmt.Errorf("%w: %v", ErrIncompatible, err)
+		}
+	}
+	return nil
 }

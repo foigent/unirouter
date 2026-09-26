@@ -20,6 +20,7 @@ import (
 	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/runtimegeneration"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
+	"github.com/uniroute/unirouter/internal/testutil"
 )
 
 var errInjectedAmbiguousCommit = errors.New("injected ambiguous commit result")
@@ -79,6 +80,7 @@ func (tx *ambiguousCommitTx) Commit(ctx context.Context) error {
 func TestAuthorizeOwnerSurvivesCommitAmbiguityAcrossCompatibleExpandIntegration(t *testing.T) {
 	fixture := newExecutionFixture(t, true, false)
 	dir := "../../migrations"
+	require.NoError(t, testutil.RewindEmptySourceFactsForLegacyTest(t.Context(), fixture.pool, dir))
 	counterDown, err := os.ReadFile(filepath.Join(dir, schemaauthority.StreamCounterExpandHead+".down.sql"))
 	require.NoError(t, err)
 	_, err = fixture.pool.Exec(t.Context(), string(counterDown))
@@ -89,7 +91,7 @@ func TestAuthorizeOwnerSurvivesCommitAmbiguityAcrossCompatibleExpandIntegration(
 	require.NoError(t, err)
 	ledger, err := schemaauthority.ExpectedLedger(dir)
 	require.NoError(t, err)
-	ledger = ledger[:len(ledger)-1] // Preserve this historical M113→M114 commit-ambiguity fixture.
+	ledger = ledger[:len(ledger)-2] // Preserve this historical M113→M114 commit-ambiguity fixture.
 	wire, err := os.ReadFile(filepath.Join(dir, schemaauthority.CapabilityExpandHead+".up.sql"))
 	require.NoError(t, err)
 	process := runtimegeneration.Identity{Instance: "uri_" + strings.Repeat("a", 32), Artifact: "sha256:" + strings.Repeat("b", 64)}

@@ -30,6 +30,76 @@ if ! grep -Eq "^## \[${current_version//./\\.}\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$" 
   exit 1
 fi
 
+# Compare declared build toolchains before the current-mode early return.
+# This checks source metadata only; CI/build jobs still execute the toolchains.
+python3 - <<'PY'
+from pathlib import Path
+import re
+import sys
+
+
+def fail(path, detail):
+    sys.exit(f"release metadata: {path}: {detail}")
+
+
+def read(path):
+    try:
+        return Path(path).read_text()
+    except OSError as exc:
+        fail(path, f"cannot read: {exc}")
+
+
+def one(path, pattern, label):
+    matches = re.findall(pattern, read(path), re.MULTILINE)
+    if len(matches) != 1:
+        fail(path, f"expected exactly one {label} declaration, found {len(matches)}")
+    return matches[0]
+
+
+minimum = one("go.mod", r"^go[ \t]+([0-9]+\.[0-9]+(?:\.[0-9]+)?)[ \t]*$", "go minimum")
+toolchain = one("go.mod", r"^toolchain[ \t]+go([0-9]+\.[0-9]+\.[0-9]+)[ \t]*$", "Go toolchain")
+
+
+def version_parts(value):
+    parts = tuple(map(int, value.split(".")))
+    return parts if len(parts) == 3 else (*parts, 0)
+
+
+if version_parts(minimum) > version_parts(toolchain):
+    fail("go.mod", f"go minimum {minimum} exceeds toolchain go{toolchain}")
+
+backend_tag = one("Dockerfile", r"^FROM[ \t]+golang:([^ \t\r\n]+)", "Go builder image")
+if backend_tag != f"{toolchain}-alpine":
+    fail("Dockerfile", f"Go builder {backend_tag} does not match go.mod toolchain go{toolchain}")
+
+frontend_tag = one("frontend/Dockerfile", r"^FROM[ \t]+node:([^ \t\r\n]+)", "Node builder image")
+node_match = re.fullmatch(r"([0-9]+)-alpine", frontend_tag)
+if not node_match:
+    fail("frontend/Dockerfile", f"Node builder {frontend_tag} must declare a major-version Alpine tag")
+node_major = node_match.group(1)
+
+
+def check_workflow(path, action, key, expected):
+    content = read(path)
+    steps = re.findall(rf"^[ \t]*(?:-[ \t]*)?uses:[ \t]*actions/{action}@", content, re.MULTILINE)
+    pins = re.findall(rf"^[ \t]*{key}:[ \t]*['\"]?([^'\" \t\r\n#]+)['\"]?[ \t]*(?:#.*)?$", content, re.MULTILINE)
+    if not steps or len(pins) != len(steps):
+        fail(path, f"expected one {key} pin per {action} step; found {len(pins)} pins for {len(steps)} steps")
+    for pin in pins:
+        if pin != expected:
+            authority = "go.mod toolchain" if key == "go-version" else "frontend/Dockerfile Node major"
+            fail(path, f"{key} {pin} does not match {authority} {expected}")
+
+
+for workflow in (
+    ".github/workflows/ci.yml",
+    ".github/workflows/capability-bundle.yml",
+    ".github/workflows/foigent-protocol-conformance.yml",
+):
+    check_workflow(workflow, "setup-go", "go-version", toolchain)
+check_workflow(".github/workflows/ci.yml", "setup-node", "node-version", node_major)
+PY
+
 base_sha="${BASE_SHA:-}"
 head_sha="${HEAD_SHA:-HEAD}"
 if [[ -z "${base_sha}" ]]; then

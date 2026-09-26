@@ -7,7 +7,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/uniroute/unirouter/internal/installstate"
 	"github.com/uniroute/unirouter/internal/modelcapabilitypublication"
+	"github.com/uniroute/unirouter/internal/runtimegeneration"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
 )
 
@@ -19,12 +21,24 @@ func verifyRuntimeAuthority(ctx context.Context, pool *pgxpool.Pool, artifact []
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
+	installation, err := installstate.RequireOrdinary(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
 	actual, err := readCompatibleRuntimeSchema(ctx, tx, artifact)
 	if err != nil {
 		return nil, err
 	}
 	if err := modelcapabilitypublication.VerifyRuntimeStaticProjection(ctx, tx, actual); err != nil {
 		return nil, err
+	}
+	if installation.Record != nil {
+		// Completed installation metadata records origin, not today's DB OID,
+		// image, owner or coverage epoch. Read the actual current certificate;
+		// a supported restore rebase is not another initial certification.
+		if _, err := runtimegeneration.ReadBudgetCoverage(ctx, tx); err != nil {
+			return nil, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err

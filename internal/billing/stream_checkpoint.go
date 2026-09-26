@@ -198,7 +198,11 @@ func (b *Billing) BeginStreamDelivery(ctx context.Context, start StreamDeliveryS
   ) VALUES ($1,$2,$3,$4,$5,'active',clock_timestamp()+($6*INTERVAL '1 millisecond')`+values+`)`, args...); err != nil {
 		return fmt.Errorf("create stream delivery lease: %w", err)
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	b.observeCommitted(ctx, CommittedObservation{Kind: "local_delivery", OrgID: start.OrgID, RequestID: start.RequestID, AttemptID: start.AttemptID, Outcome: DeliveryOutcomeWriteStarted})
+	return nil
 }
 
 func (b *Billing) RenewStreamDelivery(ctx context.Context, start StreamDeliveryStart) error {

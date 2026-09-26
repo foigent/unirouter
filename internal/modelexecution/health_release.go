@@ -62,7 +62,7 @@ func releaseUndispatchedProjection(
 	for _, current := range canonical {
 		tag, execErr := tx.Exec(ctx, `
 UPDATE model_deployments
-   SET half_open_probe_until=NULL,half_open_probe_token=NULL,updated_at=clock_timestamp()
+   SET half_open_probe_until=NULL,half_open_probe_token=NULL,updated_at=$4
  WHERE id=$1 AND admin_state='enabled' AND config_revision=$2 AND circuit_revision=$3
    AND circuit_state='half_open' AND half_open_until<=$4
    AND half_open_probe_token=$5 AND half_open_probe_until IS NOT DISTINCT FROM $6
@@ -80,7 +80,7 @@ UPDATE model_deployments
 	if legacy != nil {
 		tag, execErr := tx.Exec(ctx, `
 UPDATE channels
-   SET half_open_probe_until=NULL,half_open_probe_token=NULL,updated_at=clock_timestamp()
+   SET half_open_probe_until=NULL,half_open_probe_token=NULL,updated_at=$4
  WHERE id=$1 AND (status='active' OR ($7 AND status='staged'))
    AND routing_epoch=$2 AND circuit_epoch=$3
    AND circuit_state='half_open' AND half_open_until<=$4

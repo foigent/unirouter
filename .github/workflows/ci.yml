@@ -273,10 +273,22 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
+      - name: Check independent source page and consumer fixtures
+        run: |
+          python3 -m pip --isolated --disable-pip-version-check install \
+            --only-binary=:all: --require-hashes --index-url https://pypi.org/simple \
+            --target "$RUNNER_TEMP/source-schema-validator" \
+            -r contracts/source-facts/v1/requirements-schema.txt
+          PYTHONPATH="$RUNNER_TEMP/source-schema-validator" PYTHONDONTWRITEBYTECODE=1 \
+            python3 contracts/source-facts/v1/check_schema.py
+          PYTHONDONTWRITEBYTECODE=1 python3 contracts/source-facts/v1/check_pages.py
+
       - name: Check runtime ingress failure recovery
         run: |
           PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-runtime-ingress.py
           PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-internal-target-rollout.py
+          python3 -B scripts/test-go-test-summary.py
+          python3 -B scripts/test-backend-integration-runner.py
           PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-capability-carrier.py
 
       - name: Validate tracked capability Bundle sources
@@ -319,72 +331,7 @@ jobs:
         # Keep the accepted named integration selectors, but start each selected
         # package only once. The ordinary unit/race suite above already covers
         # admin and other untagged feature tests.
-        run: |
-          test_pattern='^(Test(ConnectorManager|ConnectorRedeem|PostgresPhaseJournal|XInsightConnector(CP1|CP2A|RedeemLifecycle)).*'
-          test_pattern+='|Test(ApplyDeterministicReset|ApplyStopsBeforeRedisMutation|SecondIntegrationResetSupportMigration|FirstCustomerBootstrap|ResetPreviewCLI).*'
-          test_pattern+='|Test(PostgresStore|ProjectionStore|Enterprise|Allocation|PRD8RuntimeChange|PRD8RuntimeControl|PRD8GatewayModelAuthorization).*'
-          test_pattern+='|TestAdminSessionRevocationMigration(ConstraintsIntegration|UnusedDownAndEvidenceGuardsIntegration)'
-          test_pattern+='|TestAdmin(SetPassword|Create)CLI.*Integration'
-          test_pattern+='|TestGatewayAuth_PersonalProjectAuthorityRevocation_Integration'
-          test_pattern+='|TestV1(DeliveryAttemptBinding|StreamLeaseFencing|LocalLoginIdentity|ProviderBackedFrozenReservation|StreamFence|CheckpointCannotReviveLease|StreamGenerationFences|GenericRecoveryRejects|Pricing(Authority|UnitContract)|MicroPrecisionLedger|CommercialReleaseControlMigrationAndConcurrentResourceLimit).*'
-          test_pattern+='|TestUpgradeRecordAppliedPinsRuntimeDigestSequenceAndSchema'
-          test_pattern+='|TestRuntimeGenerationCLI.*Integration'
-          test_pattern+='|TestMaterializationProjectFenceOrdersVisibilityByCommit|TestMaterializationRollbackAndReplayRemainSingleFinalItem|TestRetentionUsesPublicationOrderNotTerminalTime|TestRetentionProjectFencePreventsFloorJumpOnConcurrentRollback'
-          test_pattern+='|TestBillingTerminalMaterializationFailureIsRetriedWithoutPartialFeedState|TestCompletedExecutionFeedPurposeCredentialIsLegacyBinaryFailClosed|TestCompletedExecutionFeedMigrationDownRemainsAvailableWithoutFeedState|TestCompletedExecutionFeedProjectScopeSurvivesGuardrailRollbackThenFeedRollback'
-          test_pattern+='|TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration|TestUpgradeLegacyRollbackPreflightRequiresFeedCredentialDisablement'
-          test_pattern+='|Test(RoutingPolicyPostgresStateTransitions|P6F08RoutingPolicyV1).*'
-          test_pattern+='|TestEventService_CheckProjectBudgetTenantScope_Integration'
-          test_pattern+='|TestAgentCapabilityPostgresAuthorityAndRevocationIntegration'
-          test_pattern+='|TestModelOperation(HTTPSOriginGoSQLGoldenVectors|ProductionQualification(DatabaseGuards|DownRejects(FrozenEvidence|FutureM76)))Integration'
-          test_pattern+='|Test(ModelDeploymentLifecycleReceipt|DeploymentLifecycleReceipt|InitialDeploymentLifecycleReceipt).*Integration'
-          test_pattern+='|Test(RepeatedModelSuccessor|RepeatedSuccessor|ModelSuccessorCutoverAtomic|NeverActivatedStagingModelSuccessor|RetirementRejectsPreparedPlan).*Integration'
-          test_pattern+='|TestAtomicModelReleaseAuthoring.*Integration'
-          test_pattern+='|TestSealedModelExecutionContract.*Integration'
-          test_pattern+='|TestDataReleaseAuthoringPinsDefinitionWithoutRewritingModelOrHistory|TestSealedCapabilityDecisionSurvivesSelectorButHonorsDisable'
-          test_pattern+='|TestAuthorizeOwnerSurvivesCommitAmbiguityAcrossCompatibleExpandIntegration'
-          test_pattern+='|TestEnsureBaseline.*Integration'
-          test_pattern+='|TestCanonicalConnectionLicenseAuthority.*Integration'
-          test_pattern+='|TestObservationProviderCostReconciliationMigrationIntegration'
-          test_pattern+='|TestVersionedModelExecutionProfilesMigrationIntegration'
-          test_pattern+='|TestModelExecutionPlanFreezeFence.*Integration|TestExactPublicExecutionBindings.*Integration'
-          test_pattern+='|TestModelCapabilityQualification.*Integration'
-          test_pattern+='|TestGLMM113ActualArtifactsGuardedRoundTripIntegration'
-          test_pattern+='|TestPlannerAndCutoverSelectTheSamePreferredCapabilityApprovalIntegration'
-          test_pattern+='|TestPreDispatchValidatesBoundCapabilityApprovalInsteadOfLatestIntegration'
-          test_pattern+='|TestOfficialRateSourceCurrencyDraftMigrationGuardsUSDReviewEvidence'
-          test_pattern+='|TestOfficialRateDraftImportIsAtomicEvidenceBackedAndNeverActive'
-          test_pattern+='|TestApply(AndCheckLegacyCompatibilityAuthorityAreIdempotentAndReadOnly|SealsCurrentLegacyStableAndCanaryBeforeVerifyCheck|FailsClosedWhenCurrentLegacyCanaryProjectionDrifts|AtExactCanonicalConnectionLimitRemainsIdempotentIntegration)'
-          test_pattern+='|TestPublicModelExecutionAuthority.*Integration'
-          test_pattern+='|TestPublicResponsesExactProfile.*Integration|TestPublicClaude.*Integration'
-          test_pattern+='|TestPublicCoordinator.*Integration'
-          test_pattern+='|TestLegacyReleaseAdmissionAllowExecutesStagedChannelIntegration'
-          test_pattern+='|TestOwnedProviderAttemptAndTerminalHealthFenceAreReplaySafe'
-          test_pattern+='|TestFreezeReplayRejectsChangedExecutionSnapshot|TestStreamOutputHold.*Integration|TestProviderCompletionRelayHoldSurvivesRecoveryIntegration'
-          test_pattern+='|TestP6F(06|07|08|09|10|11|20|21|40|41).*)$'
-          readonly test_pattern
-
-          go test -tags=integration -race \
-            ./internal/xinsightconnector ./internal/migrate \
-            ./internal/resetexec ./cmd/uniroute \
-            ./internal/orgdirectory ./internal/enterprisefinance ./internal/runtimechange \
-            ./internal/customercontext ./internal/modelrouteauthority \
-            ./internal/billing ./internal/modelexecution ./internal/modelrouting ./internal/middleware ./internal/completedfeed \
-            ./internal/gateway ./internal/outbox ./internal/terminalhook \
-            ./internal/modelcapabilitypublication \
-            -run "$test_pattern" -count=1 -timeout=20m
-
-          # These packages intentionally share and reset the dedicated Redis
-          # test database, so package-level parallelism would corrupt their
-          # observations. Untagged tests already ran in the full race suite.
-          go test -tags=integration -race ./internal/agentcap \
-            -run '^TestAgentCapabilityPostgresAuthorityAndRevocationIntegration$' \
-            -count=1 -timeout=20m
-          go test -tags=integration -race ./internal/limitpolicy \
-            -run '^TestP6F07PostgresRedisMultiInstanceIntegration$' \
-            -count=1 -timeout=20m
-          go test -tags=integration -race ./internal/workloadadmission \
-            -run '^TestP6F21RedisMultiInstanceLeaseAndFaultIntegration$' \
-            -count=1 -timeout=20m
+        run: bash scripts/test-backend-integration.sh
       
       - name: Upload coverage
         uses: actions/upload-artifact@v7
@@ -539,7 +486,7 @@ jobs:
       - name: Run real-backend browser acceptances
         run: >-
           go test -tags=integration,pr4browser ./cmd/uniroute
-          -run '^(TestPR4AccessUXModelReadinessBrowserE2E|TestModelEndpointOnboardingBrowserE2E)$'
+          -run '^(TestPR4AccessUXModelReadinessBrowserE2E|TestModelEndpointOnboardingBrowserE2E|TestSourceBudgetManagementBrowserE2E)$'
           -count=1 -timeout=20m -v
 
   docker:
@@ -714,6 +661,16 @@ jobs:
             exit 1
           fi
           deploy/customer/preflight.sh /dev/null
+          SOURCE_FACTS_ENABLED=true SOURCE_OBSERVATIONS_ENABLED=true SOURCE_BUDGET_SNAPSHOTS_ENABLED=true \
+            COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE=synthetic-customer-preflight deploy/customer/preflight.sh /dev/null
+          if SOURCE_FACTS_ENABLED=false SOURCE_BUDGET_SNAPSHOTS_ENABLED=true deploy/customer/preflight.sh /dev/null; then
+            echo 'budget snapshots must require source facts' >&2
+            exit 1
+          fi
+          if SOURCE_BUDGET_SNAPSHOTS_ENABLED=yes deploy/customer/preflight.sh /dev/null; then
+            echo 'budget snapshots must reject a non-exact boolean' >&2
+            exit 1
+          fi
           for invalid_runtime_environment in local dev test; do
             if RUNTIME_ENVIRONMENT="${invalid_runtime_environment}" deploy/customer/preflight.sh /dev/null; then
               echo "formal customer preflight must reject RUNTIME_ENVIRONMENT=${invalid_runtime_environment}" >&2
