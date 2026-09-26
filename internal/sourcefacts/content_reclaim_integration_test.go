@@ -15,9 +15,36 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/contentcapture"
 	"github.com/uniroute/unirouter/internal/installstate"
+	"github.com/uniroute/unirouter/internal/runtimegeneration"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
+
+func TestUnpublishedReclaimLiveOwnerVetoSurvivesHistoricalStop(t *testing.T) {
+	p := setupContentPublishPG(t, []byte("synthetic unpublished content"), 1)
+	ledger, err := schemaauthority.ExpectedLedger(testutil.MigrationsDir(t))
+	require.NoError(t, err)
+	manifest := runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads())
+	old := runtimegeneration.Identity{Instance: "uri_" + strings.Repeat("a", 32), Artifact: "sha256:" + strings.Repeat("a", 64)}
+	live := runtimegeneration.Identity{Instance: "uri_" + strings.Repeat("b", 32), Artifact: "sha256:" + strings.Repeat("b", 64)}
+	for _, identity := range []runtimegeneration.Identity{old, live} {
+		_, _, err = runtimegeneration.Renew(t.Context(), p.pool, identity, manifest, ledger, false)
+		require.NoError(t, err)
+	}
+	_, err = p.pool.Exec(t.Context(), `UPDATE runtime_generations SET state='stopped',lease_expires_at=clock_timestamp()-interval '1 hour'
+	 WHERE instance_id=$1 AND ingress_state='absent'`, old.Instance)
+	require.NoError(t, err)
+	before := reclaimSnapshot(t, p)
+	input := reclaimInput(t, p)
+	// Even a (synthetically) stopped historical row and a false offline operator
+	// assertion cannot authorize reclaim while another real runtime is live.
+	for _, checkOnly := range []bool{true, false} {
+		input.CheckOnly = checkOnly
+		_, err = ReclaimUnpublishedContent(t.Context(), p.pool, p.files, input)
+		require.ErrorIs(t, err, ErrUnpublishedReclaim)
+		require.Equal(t, before, reclaimSnapshot(t, p))
+	}
+}
 
 func reclaimInput(t *testing.T, p contentPublishPG) UnpublishedReclaimRequest {
 	t.Helper()

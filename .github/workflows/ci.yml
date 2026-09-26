@@ -287,6 +287,7 @@ jobs:
         run: |
           PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-runtime-ingress.py
           PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-internal-target-rollout.py
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-runtime-generation-retire.py
           python3 -B scripts/test-go-test-summary.py
           python3 -B scripts/test-backend-integration-runner.py
           PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-capability-carrier.py

@@ -94,6 +94,7 @@ test_pattern+='|TestSourceFacts.*Integration|TestSourceFacts(Expand|Down).*'
 test_pattern+='|TestSource(Observations|Policy|Dispatch).*|TestSourceMediaMainStartupBoundaries|TestSourceBudget.*'
 test_pattern+='|TestContentControl.*Integration|TestContentPolicy.*Integration|TestContentCaptureMigration.*'
 test_pattern+='|TestM115ToM121CompatibleExpandPreservesExistingKey'
+test_pattern+='|TestHistoricalM115RetirementPermitsOnlyProvedSuffix|TestRetirementRacesFastAndSlowRenewWithoutReusingStoppedIdentity'
 test_pattern+='|TestContentHTTP.*PG|TestContentPublic.*PG'
 test_pattern+='|TestLegacyReleaseAdmissionAllowExecutesStagedChannelIntegration'
 test_pattern+='|TestOwnedProviderAttemptAndTerminalHealthFenceAreReplaySafe'
@@ -105,7 +106,7 @@ readonly test_pattern
 run_group consolidated go test -tags=integration -race \
   ./internal/xinsightconnector ./internal/migrate \
   ./internal/resetexec ./cmd/uniroute \
-  ./internal/orgdirectory ./internal/enterprisefinance ./internal/runtimechange \
+  ./internal/orgdirectory ./internal/enterprisefinance ./internal/runtimechange ./internal/runtimegeneration \
   ./internal/customercontext ./internal/modelrouteauthority \
   ./internal/billing ./internal/modelexecution ./internal/modelrouting ./internal/middleware ./internal/completedfeed \
   ./internal/gateway ./internal/admin ./internal/outbox ./internal/terminalhook \

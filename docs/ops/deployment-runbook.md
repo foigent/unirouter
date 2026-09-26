@@ -2028,6 +2028,13 @@ up/down SHA-256。控制器拒绝旧迁移变更、未知新增文件、缺对�
 并只允许八项新增 source Compose 设置保持 `false`/空值。此滚动不执行迁移；
 新二进制须先在旧 ledger 上完成兼容启动、readiness 和恢复代证明。
 
+在这一正式 rollout 的 `done-stop-{canary,stable}`、替换及撤流证据齐全后，
+使用同一 rollout input 按 `docs/ops/RUNTIME-CONTINUITY.md` 的
+`runtime-generation-retire.py check/apply` 分别停止两个**旧进程实例身份**，
+再尝试超出旧镜像支持头的扩展。此步骤也适用于以后相同的正常滚动升级；
+不是过期租约自动清理。若更早的历史实例缺少能绑定其容器、退出和撤流的
+原始证据，正式命令必须拒绝，单独记录缺口，不用 SQL 手工改状态。
+
 然后在每一头分别调用 `compatible-expand.py` 的 `check` 与 `apply`，
 顺序严格为 M116、M117、M118、M119、M120、M121（若实际前态较新，
 只执行其后缀），每次以当次 up SQL 的 `sha256:<64位十六进制>` 为

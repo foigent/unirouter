@@ -61,13 +61,16 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         before = self.read_calls()
         self.assertEqual(len(before), 5)
-        self.assertEqual([sum(arg.startswith("./") for arg in call) for call in before], [19, 3, 1, 1, 1])
+        self.assertEqual([sum(arg.startswith("./") for arg in call) for call in before], [20, 3, 1, 1, 1])
+        self.assertIn("./internal/runtimegeneration", before[0])
         self.assertEqual([arg for arg in before[1] if arg.startswith("./")],
                          ["./internal/sourcefacts", "./internal/mediajob", "./internal/contentcapture"])
         pattern = before[0][before[0].index("-run") + 1]
         self.assertIn("TestContentControl.*Integration", pattern)
         self.assertIn("TestContentPolicy.*Integration", pattern)
         self.assertIn("TestContentCaptureMigration.*", pattern)
+        self.assertIn("TestHistoricalM115RetirementPermitsOnlyProvedSuffix", pattern)
+        self.assertIn("TestRetirementRacesFastAndSlowRenewWithoutReusingStoppedIdentity", pattern)
         self.assertEqual([call[call.index("-run") + 1] for call in before[2:]], [
             "^TestAgentCapabilityPostgresAuthorityAndRevocationIntegration$",
             "^TestP6F07PostgresRedisMultiInstanceIntegration$",

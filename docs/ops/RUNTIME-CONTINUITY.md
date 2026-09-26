@@ -129,6 +129,33 @@ may continue a daemon operation after its CLI times out: an existing command
 marker with old/absent state is unconfirmed and is never automatically reissued.
 Readback may close an exact finished post-state; it cannot infer that no command
 was sent merely because the old container still runs.
+
+After a completed backend rollout, retire each replaced **process instance ID**
+before expanding beyond an old image's supported schema head. The installed
+1.5.2 or later owner provides the narrow `runtime-generation stop-check` and
+`stop-apply` commands through the formal host wrapper:
+
+```bash
+python3 scripts/runtime-generation-retire.py check --rollout-input /absolute/rollout-input.json --role canary
+python3 scripts/runtime-generation-retire.py apply --rollout-input /absolute/rollout-input.json --role canary
+python3 scripts/runtime-generation-retire.py check --rollout-input /absolute/rollout-input.json --role stable
+python3 scripts/runtime-generation-retire.py apply --rollout-input /absolute/rollout-input.json --role stable
+```
+
+Use the input and evidence directory from the exact rollout that replaced the
+instance. The wrapper acquires the existing lifecycle and ingress locks, checks
+the retained Plan, withdrawal/stop/replacement/rejoin/verify receipts, the old
+container's absence, current host process inventory and applied ingress history.
+The owner independently checks the exact Target, immutable historical manifest,
+row revision, expired lease, absent ingress and every associated attempt's
+financial terminal/reservation closure. `check` writes no DB or evidence state;
+`apply` repeats these predicates and changes only state/revision/updated_at.
+An unknown commit requires exact row readback before another action. Missing
+historical exit evidence leaves that identity unretired; lease expiry alone is
+insufficient. The old image and manifest remain available as recovery artifacts;
+only the exited process instance is permanently stopped. This command does not
+run automatically on lease expiry or during Docker stop, and it never changes
+schema, ingress, traffic or container state.
 A preparation failure has no runtime side effect; retain that incomplete candidate
 and use a new operation identity after correcting the prerequisite.
 
