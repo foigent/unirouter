@@ -82,7 +82,7 @@ def main():
             sql="""CREATE TABLE schema_migrations(version text);
 CREATE TABLE runtime_ingress_changes(change_id text, predecessor_id text, status text);
 CREATE TABLE runtime_support_manifests(artifact_digest text, manifest_digest text);
-CREATE TABLE runtime_generations(instance_id text, artifact_digest text, schema_head text, state text, ingress_state text, lease_expires_at timestamptz);
+CREATE TABLE runtime_generations(instance_id text, artifact_digest text, compatibility_epoch text, schema_head text, revision bigint, state text, ingress_state text, lease_expires_at timestamptz);
 """
             r.run(["docker","exec","-i",pg,"psql","-U","postgres","-v","ON_ERROR_STOP=1"],data=sql.encode())
             source={"directory":str(repo),"version":"1.0.0-ci","commit":"a"*40,"tree":"b"*40}
@@ -114,6 +114,26 @@ CREATE TABLE runtime_generations(instance_id text, artifact_digest text, schema_
                     assert state()==before,"inspect changed the read fixture"
                     assert r.inspect(name,missing_ok=True) is None
                     reports.append({"role":label,"head":versions[-1],"ledger_count":len(versions),"ledger_sha256":r.digest(r.canonical(versions)),"inspect":"passed","unchanged":"passed"})
+                fixture_artifact="sha256:"+"a"*64
+                fixture_manifest="b"*64
+                fixture_instance="uri_"+"c"*32
+                fixture_epoch="unirouter.runtime-compatibility.v1"
+                fixture_revision=7
+                sql=("INSERT INTO runtime_support_manifests VALUES ('"+fixture_artifact+"','"+fixture_manifest+"');"
+                     "INSERT INTO runtime_generations VALUES ('"+fixture_instance+"','"+fixture_artifact+"','"+fixture_epoch+"','"+versions[-1]+"',"+str(fixture_revision)+",'draining','absent','2000-01-01 UTC');")
+                r.run(["docker","exec","-i",pg,"psql","-U","postgres","-v","ON_ERROR_STOP=1"],data=sql.encode())
+                with_row=state()
+                assert with_row=={"ledger":versions,"ingress":0,"manifests":1,"generations":1},with_row
+                result=owner.artifact_owner_command("ignored","inspect")
+                assert result=={"head":"","head_status":"","generations":[{"instance":fixture_instance,
+                    "artifact_digest":fixture_artifact,"compatibility_epoch":fixture_epoch,"schema_head":versions[-1],
+                    "revision":fixture_revision,"state":"draining","ingress_state":"absent","lease_live":False,
+                    "support_manifest_digest":fixture_manifest}]},result
+                assert state()==with_row,"inspect changed the populated read fixture"
+                reports[-1]["inspect_revision"]="passed"
+                r.run(["docker","exec","-i",pg,"psql","-U","postgres","-v","ON_ERROR_STOP=1"],
+                      data=b"TRUNCATE runtime_generations, runtime_support_manifests;")
+                assert state()==before,"populated read fixture cleanup failed"
                 # Lose the current-head command response after actual completion.
                 # The same finally path must still stop the exact real carrier.
                 original=subprocess.run
