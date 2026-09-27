@@ -9,6 +9,7 @@ import { useAuthStore } from '../store/auth';
 import { customerOrganizationDisplayName } from '../utils/customerContext';
 import { projectDisplayName } from '../utils/projectDisplay';
 import XInsightSourceConnection from './XInsightSourceConnection';
+import XInsightContentManagement from './XInsightContentManagement';
 
 const { Text, Title } = Typography;
 
@@ -236,6 +237,14 @@ function connectorProductLabel(status?: FeedConnectionStatus['connector_product_
     case 'paused': return '已暂停';
     case 'connecting': return '连接中';
     default: return '未连接';
+  }
+}
+
+function feedConnectionLabel(status?: FeedConnectionStatus['connection_status']) {
+  switch (status) {
+    case 'active': return '读取已启用';
+    case 'paused': return '已暂停';
+    default: return '未配置';
   }
 }
 
@@ -476,22 +485,30 @@ export default function XInsightLiveConnection({
       )}
 
       <div style={{ padding: 14, border: '1px solid var(--semi-color-border)', borderRadius: 8 }}>
-        <Title heading={6} style={{ marginTop: 0 }}>Connector 状态</Title>
+        <Title heading={6} style={{ marginTop: 0 }}>Connector 配对与 Feed 状态</Title>
         <Descriptions
           row
           data={[
             {
-              key: '状态',
+              key: 'Connector 配对状态',
               value: <StatusTag status={status?.connector_product_status || 'not_connected'}>
                 {connectorProductLabel(status?.connector_product_status)}
               </StatusTag>,
             },
             {
-              key: '最近同步',
+              key: 'Feed 实际状态',
+              value: <StatusTag status={status?.connection_status || 'not_configured'}>
+                {feedConnectionLabel(status?.connection_status)}
+              </StatusTag>,
+            },
+            { key: 'Feed 当前凭据', value: credentialLabel(status?.active_credential) },
+            {
+              key: 'Connector 最近同步',
               value: status?.connector_installation?.last_successful_sync_at
                 ? formatDateTime(status.connector_installation.last_successful_sync_at)
-                : status?.last_authenticated_pull_at ? formatDateTime(status.last_authenticated_pull_at) : '-',
+                : '-',
             },
+            { key: 'Feed 最近认证拉取', value: status?.last_authenticated_pull_at ? formatDateTime(status.last_authenticated_pull_at) : '-' },
             { key: '待同步 backlog', value: boundedBacklogLabel(status) },
             {
               key: '最旧待同步延迟',
@@ -507,6 +524,7 @@ export default function XInsightLiveConnection({
             },
           ]}
         />
+        <Text type="tertiary">Connector 配对状态只反映自动配对；手工 Feed 的真实连接和凭据状态以上方 Feed 字段为准。</Text>
         {status?.connector_installation?.last_error_code && (
           <div style={{ marginTop: 8 }}>
             <Tag color="red">{status.connector_installation.last_error_code}</Tag>
@@ -686,6 +704,7 @@ export default function XInsightLiveConnection({
       </div>
 
       {projectID && <XInsightSourceConnection key={projectID} projectId={projectID} orgId={selectedProject?.org_id} expansionAllowed={expansionEnabled} budgetReadAllowed={['platform_admin', 'org_admin', 'billing_admin'].includes(user?.organization_role ?? user?.role ?? '')} budgetWriteAllowed={['platform_admin', 'billing_admin'].includes(user?.organization_role ?? user?.role ?? '')} />}
+      {projectID && <XInsightContentManagement key={`content-${projectID}`} projectId={projectID} expansionAllowed={expansionEnabled} />}
     </div>
   );
 }

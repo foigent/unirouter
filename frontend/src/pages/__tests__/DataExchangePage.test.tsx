@@ -16,6 +16,18 @@ const prepareRotation = vi.fn();
 const activateRotation = vi.fn();
 const createFeedCredential = vi.fn();
 const installConnector = vi.fn();
+const getPayloadPolicy = vi.fn();
+const getContentConnection = vi.fn();
+
+vi.mock('../../api/contentManagement', async original => ({
+  ...await original<typeof import('../../api/contentManagement')>(),
+  contentManagementApi: {
+    getPolicy: (...args: unknown[]) => getPayloadPolicy(...args),
+    putPolicy: vi.fn(),
+    getConnection: (...args: unknown[]) => getContentConnection(...args),
+    control: vi.fn(),
+  },
+}));
 
 const licensedAccess = {
   status: 'active',
@@ -192,6 +204,19 @@ describe('DataExchangePage', () => {
       operation_id: 'b'.repeat(32),
     });
     installConnector.mockResolvedValue({ connector_product_status: 'connecting' });
+    getPayloadPolicy.mockResolvedValue({
+      schema_version: 'unirouter.payload-policy.v1', source_instance: 'unirouter-dev-149a8220bf1e',
+      org_id: '1', project_id: '22', policy_ref: 'content-policy:1:22',
+      desired: { policy_version: '1', config: { mode: 'disabled', supported_protocols: ['chat'], observation_points: ['client_request'], allowed_purposes: [] } },
+      effective: { policy_version: '1', config: { mode: 'disabled', supported_protocols: ['chat'], observation_points: ['client_request'], allowed_purposes: [] } },
+      application_status: 'applied', application_reason: 'none', storage_status: 'not_configured',
+      limits: { max_saved_bytes: 4096, max_read_bytes: 4096, max_buffer_bytes: 4096, max_manifest_bytes: 4096, max_manifest_items: 1 },
+    });
+    getContentConnection.mockResolvedValue({
+      schema_version: 'unirouter.source-content-control.v1', source_instance: 'unirouter-dev-149a8220bf1e',
+      org_id: '1', project_id: '22', connection_status: 'paused', content_status: 'not_configured',
+      state_version: '0', content_scope_revision: '0',
+    });
   });
 
   it('defaults to the product live connection and labels receiver acknowledgement truthfully', async () => {
@@ -204,11 +229,26 @@ describe('DataExchangePage', () => {
     expect(container.textContent).toContain('不代表搜索、API 或 UI 已可见');
     expect(container.textContent).toContain('systemctl restart（不可 reload）');
     expect(container.textContent).toContain('receiver-generated credential');
-    expect(container.textContent).toContain('Connector 状态');
+    expect(container.textContent).toContain('Connector 配对与 Feed 状态');
     await waitFor(() => expect(container.textContent).toContain('已连接'));
     expect(container.textContent).toContain('最旧待同步延迟');
     expect(container.textContent).toContain('connect · succeeded');
     expect(container.textContent).toContain('高级 Source / 凭证诊断');
+  });
+
+  it('shows manual Feed truth separately when no Connector installation exists', async () => {
+    getFeedConnection.mockResolvedValueOnce({
+      project_id: 22, project_name: 'Development', project_status: 'active',
+      global_configured: true, global_enabled: true, source_instance: 'unirouter-dev-149a8220bf1e',
+      connection_status: 'active', active_credential: { id: 41, key_prefix: 'ur-xf1-aaaaaaaaaaaaa', lifecycle: 'active' },
+      connector_product_status: 'not_connected', connector_installation: null,
+      last_authenticated_pull_at: '2026-07-25T08:10:00Z', pending_item_count: 0,
+    });
+    const { container } = render(<DataExchangePage />);
+    await waitFor(() => expect(container.textContent).toContain('Connector 配对状态'));
+    expect(container.textContent).toContain('Feed 实际状态');
+    expect(container.textContent).toContain('读取已启用');
+    expect(container.textContent).toContain('手工 Feed 的真实连接和凭据状态');
   });
 
   it('registers only the strict non-secret receiver bundle and never renders a plaintext key surface', async () => {
