@@ -4,6 +4,12 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.6.0] - 2026-09-28
+
+- 在现有 X-Insight 集成页加入项目级正文策略与正文连接管理。策略读取不写入，保存使用期望版本并回读期望/生效状态；完整正文的保留期限和配额必须显式填写，脱敏仍不受支持，页面打开不会启用正文。
+- 正文连接沿现有非秘密 registration 和 C 控制 API 管理准备、激活、暂停、恢复及凭据生命周期；所有控制按回读的状态版本提交并核对结果 ID/hash，不修改服务端权限、协议或数据库。
+- 区分 Connector 自动配对状态与手工 Feed 实际状态，避免手工 Feed 已启用时仍显示笼统的“未连接”。当前仅为本地 UI 候选，不代表正文已在任何目标环境启用。
+
 ## [1.5.2] - 2026-09-27
 
 - 增加 development/test 历史运行实例的正式单实例停止检查与应用：在精确 rollout 退出、撤流和当前进程证据下，核对原支持清单、Target、版本与财务终态，只将旧实例状态置为 `stopped` 并递增修订号。旧镜像及历史证据继续保留为受支持的兼容恢复制品；租约过期不自动退役。
