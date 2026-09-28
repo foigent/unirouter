@@ -106,7 +106,7 @@ func (s *Service) MaterializeDispatchTx(ctx context.Context, tx pgx.Tx, plan mod
 	}
 	slices.SortFunc(c.Capabilities, func(a, b CapabilityReference) int { return strings.Compare(a.CapabilityID, b.CapabilityID) })
 	if plan.ReleaseExecution != nil {
-		c.ExecutionProfile.SHA256 = plan.ReleaseExecution.ProfileDefinitionDigest
+		c.ExecutionProfile.SHA256 = "sha256:" + plan.ReleaseExecution.ProfileDefinitionDigest
 	}
 	if evidence.SlotVersion > 0 {
 		c.SlotVersion = executioncontext.ID(evidence.SlotVersion)

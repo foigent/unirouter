@@ -4,6 +4,10 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.6.2] - 2026-09-28
+
+- 修复带数据 Release 的模型请求在来源观测开启时可能因 Profile definition digest 格式不符而被拒绝：仅在写入观测引用时补齐 `sha256:` 前缀，保留 Release 原始 digest、严格校验及原有调度事务回滚边界。
+
 ## [1.6.1] - 2026-09-28
 
 - 项目正文表单预填推荐的 30 天、5 GiB、32 MiB，并允许逐项留空回退；保存前展示实际值。现有策略值优先且保持秒/字节精度，非法、超限或不整除的单位转换会明确报错。
