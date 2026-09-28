@@ -48,7 +48,7 @@ const policy: PayloadPolicy = {
   schema_version: 'unirouter.payload-policy.v1', source_instance: 'synthetic-source', org_id: '1', project_id: '2',
   policy_ref: 'content-policy:1:2', desired: { policy_version: '1', config }, effective: { policy_version: '1', config },
   effective_at: '2026-09-28T00:00:00.000000Z', application_status: 'applied', application_reason: 'none', storage_status: 'not_configured',
-  limits: { max_saved_bytes: 4096, max_read_bytes: 4096, max_buffer_bytes: 4096, max_manifest_bytes: 4096, max_manifest_items: 1 },
+  limits: { max_saved_bytes: 32 * 1024 * 1024, max_read_bytes: 32 * 1024 * 1024, max_buffer_bytes: 4096, max_manifest_bytes: 4096, max_manifest_items: 1 },
 };
 const initial: ContentConnection = {
   schema_version: 'unirouter.source-content-control.v1', source_instance: 'synthetic-source', org_id: '1', project_id: '2',
@@ -73,11 +73,13 @@ describe('project content management', () => {
     render(<XInsightContentManagement projectId={2} expansionAllowed />);
     expect(await screen.findByText(/关闭 v1 \/ 关闭 v1/)).toBeTruthy();
     expect(screen.getByText(/存储状态/)).toBeTruthy();
+    expect(screen.getByText(/不脱敏（当前版本尚不支持脱敏）/)).toBeTruthy();
     expect(contentManagementApi.getPolicy).toHaveBeenCalledWith(2);
     expect(contentManagementApi.getConnection).toHaveBeenCalledWith(2);
     expect(contentManagementApi.putPolicy).not.toHaveBeenCalled();
     expect(contentManagementApi.control).not.toHaveBeenCalled();
-    expect(screen.queryByLabelText('正文保留秒数')).toBeNull();
+    expect(screen.queryByLabelText('正文保留期限')).toBeNull();
+    expect(screen.getByText(/修改期限不会延长已有正文/)).toBeTruthy();
   });
 
   it('accepts only the project-bound public content registration', () => {
@@ -87,15 +89,112 @@ describe('project content management', () => {
     }
   });
 
-  it('requires explicit retention and limits before a full-content save', async () => {
+  it('shows recommendations before save, restores them without writing, and uses them for cleared fields', async () => {
+    const fullConfig = { ...config, mode: 'full_content' as const, retention_seconds: 30 * 86400, quota_bytes: 5 * 1024 ** 3, max_saved_bytes: 32 * 1024 ** 2, allowed_purposes: ['human_review'], on_limit: 'record_capture_gap' as const };
+    const next = { ...policy, desired: { policy_version: '2', config: fullConfig }, effective: { policy_version: '2', config: fullConfig } };
+    vi.mocked(contentManagementApi.putPolicy).mockResolvedValue(next);
+    vi.mocked(contentManagementApi.getPolicy).mockResolvedValueOnce(policy).mockResolvedValue(next);
     render(<XInsightContentManagement projectId={2} expansionAllowed />);
     await screen.findByText(/关闭 v1 \/ 关闭 v1/);
     fireEvent.change(screen.getByLabelText('正文策略模式'), { target: { value: 'full_content' } });
-    expect(screen.getByLabelText('正文保留秒数')).toHaveValue('');
-    expect(screen.getByLabelText('正文项目配额字节数')).toHaveValue('');
+    expect(screen.getByLabelText('正文保留期限')).toHaveValue('30');
+    expect(screen.getByLabelText('正文项目容量')).toHaveValue('5');
+    expect(screen.getByLabelText('正文单项上限')).toHaveValue('32');
+    expect(screen.getByText('保留期限')).toBeTruthy();
+    expect(screen.getByText('项目容量')).toBeTruthy();
+    expect(screen.getByText('单项上限')).toBeTruthy();
+    expect(screen.getByText(/保存将使用：保留期限 30 天；项目容量 5 GiB；单项上限 32 MiB/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('正文保留期限'), { target: { value: '14' } });
+    fireEvent.click(screen.getByRole('button', { name: '使用推荐设置' }));
+    expect(screen.getByLabelText('正文保留期限')).toHaveValue('30');
+    expect(contentManagementApi.putPolicy).not.toHaveBeenCalled();
+    for (const label of ['正文保留期限', '正文项目容量', '正文单项上限']) {
+      fireEvent.change(screen.getByLabelText(label), { target: { value: '' } });
+    }
+    expect(screen.getByText(/保存将使用：保留期限 30 天；项目容量 5 GiB；单项上限 32 MiB/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '保存项目策略' }));
-    fireEvent.click(screen.getByRole('button', { name: '确定' }));
-    expect(await screen.findByText('保留秒数必须显式填写正整数')).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: '确定' }));
+    await waitFor(() => expect(contentManagementApi.putPolicy).toHaveBeenCalledWith(2, '1', fullConfig));
+    expect(contentManagementApi.control).not.toHaveBeenCalled();
+  });
+
+  it('keeps custom server values exact through refresh and save, including non-divisible units', async () => {
+    const fullConfig = { ...config, mode: 'full_content' as const, retention_seconds: 86401, quota_bytes: 5 * 1024 ** 3 + 1, max_saved_bytes: 32 * 1024 ** 2 - 1, allowed_purposes: ['human_review'], on_limit: 'record_capture_gap' as const };
+    const existing = { ...policy, desired: { policy_version: '1', config: fullConfig }, effective: { policy_version: '1', config: fullConfig } };
+    const next = { ...existing, desired: { policy_version: '2', config: fullConfig }, effective: { policy_version: '2', config: fullConfig } };
+    vi.mocked(contentManagementApi.getPolicy).mockResolvedValueOnce(existing).mockResolvedValueOnce(existing).mockResolvedValue(next);
+    vi.mocked(contentManagementApi.putPolicy).mockResolvedValue(next);
+    render(<XInsightContentManagement projectId={2} expansionAllowed />);
+    await screen.findByText(/完整正文 v1 \/ 完整正文 v1/);
+    expect(screen.getByLabelText('正文保留期限')).toHaveValue('86401');
+    expect(screen.getByLabelText('正文保留期限单位')).toHaveValue('秒');
+    expect(screen.getByLabelText('正文项目容量')).toHaveValue(String(fullConfig.quota_bytes));
+    expect(screen.getByLabelText('正文项目容量单位')).toHaveValue('字节');
+    expect(screen.getByLabelText('正文单项上限')).toHaveValue(String(fullConfig.max_saved_bytes));
+    fireEvent.click(screen.getByRole('button', { name: '刷新策略' }));
+    await waitFor(() => expect(contentManagementApi.getPolicy).toHaveBeenCalledTimes(2));
+    expect(screen.getByLabelText('正文保留期限')).toHaveValue('86401');
+    fireEvent.click(screen.getByRole('button', { name: '保存项目策略' }));
+    fireEvent.click(await screen.findByRole('button', { name: '确定' }));
+    await waitFor(() => expect(contentManagementApi.putPolicy).toHaveBeenCalledWith(2, '1', fullConfig));
+  });
+
+  it('accepts user-chosen hours and MiB without changing the integer API contract', async () => {
+    const fullConfig = { ...config, mode: 'full_content' as const, retention_seconds: 48 * 3600, quota_bytes: 512 * 1024 ** 2, max_saved_bytes: 16 * 1024 ** 2, allowed_purposes: ['human_review'], on_limit: 'record_capture_gap' as const };
+    const next = { ...policy, desired: { policy_version: '2', config: fullConfig }, effective: { policy_version: '2', config: fullConfig } };
+    vi.mocked(contentManagementApi.getPolicy).mockResolvedValueOnce(policy).mockResolvedValue(next);
+    vi.mocked(contentManagementApi.putPolicy).mockResolvedValue(next);
+    render(<XInsightContentManagement projectId={2} expansionAllowed />);
+    await screen.findByText(/关闭 v1 \/ 关闭 v1/);
+    fireEvent.change(screen.getByLabelText('正文策略模式'), { target: { value: 'full_content' } });
+    fireEvent.change(screen.getByLabelText('正文保留期限单位'), { target: { value: '小时' } });
+    fireEvent.change(screen.getByLabelText('正文保留期限'), { target: { value: '48' } });
+    fireEvent.change(screen.getByLabelText('正文项目容量单位'), { target: { value: 'MiB' } });
+    fireEvent.change(screen.getByLabelText('正文项目容量'), { target: { value: '512' } });
+    fireEvent.change(screen.getByLabelText('正文单项上限'), { target: { value: '16' } });
+    expect(screen.getByText(/保留期限 48 小时；项目容量 512 MiB；单项上限 16 MiB/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '保存项目策略' }));
+    fireEvent.click(await screen.findByRole('button', { name: '确定' }));
+    await waitFor(() => expect(contentManagementApi.putPolicy).toHaveBeenCalledWith(2, '1', fullConfig));
+  });
+
+  it.each([
+    ['正文保留期限', '-1', '保留期限必须显式填写正整数'],
+    ['正文项目容量', 'abc', '项目容量必须显式填写正整数'],
+    ['正文单项上限', '9007199254740992', '单项上限超出安全整数范围'],
+    ['正文单项上限', '33', '单项上限不得超过部署上限'],
+  ])('rejects invalid or over-limit input in %s', async (label, value, message) => {
+    render(<XInsightContentManagement projectId={2} expansionAllowed />);
+    await screen.findByText(/关闭 v1 \/ 关闭 v1/);
+    fireEvent.change(screen.getByLabelText('正文策略模式'), { target: { value: 'full_content' } });
+    fireEvent.change(screen.getByLabelText(label), { target: { value } });
+    fireEvent.click(screen.getByRole('button', { name: '保存项目策略' }));
+    fireEvent.click(await screen.findByRole('button', { name: '确定' }));
+    expect(await screen.findByText(message)).toBeTruthy();
+    expect(contentManagementApi.putPolicy).not.toHaveBeenCalled();
+  });
+
+  it('rejects an item larger than the project capacity', async () => {
+    render(<XInsightContentManagement projectId={2} expansionAllowed />);
+    await screen.findByText(/关闭 v1 \/ 关闭 v1/);
+    fireEvent.change(screen.getByLabelText('正文策略模式'), { target: { value: 'full_content' } });
+    fireEvent.change(screen.getByLabelText('正文项目容量单位'), { target: { value: 'MiB' } });
+    fireEvent.change(screen.getByLabelText('正文项目容量'), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存项目策略' }));
+    fireEvent.click(await screen.findByRole('button', { name: '确定' }));
+    expect(await screen.findByText('单项上限不得超过项目容量')).toBeTruthy();
+    expect(contentManagementApi.putPolicy).not.toHaveBeenCalled();
+  });
+
+  it('does not round a non-divisible server value when changing units', async () => {
+    const fullConfig = { ...config, mode: 'full_content' as const, retention_seconds: 86401, quota_bytes: 5 * 1024 ** 3, max_saved_bytes: 32 * 1024 ** 2, allowed_purposes: ['human_review'], on_limit: 'record_capture_gap' as const };
+    vi.mocked(contentManagementApi.getPolicy).mockResolvedValue({ ...policy, desired: { policy_version: '1', config: fullConfig }, effective: { policy_version: '1', config: fullConfig } });
+    render(<XInsightContentManagement projectId={2} expansionAllowed />);
+    await screen.findByText(/完整正文 v1 \/ 完整正文 v1/);
+    fireEvent.change(screen.getByLabelText('正文保留期限单位'), { target: { value: '天' } });
+    expect(await screen.findByText(/保留期限不能整除为天/)).toBeTruthy();
+    expect(screen.getByLabelText('正文保留期限单位')).toHaveValue('秒');
+    expect(screen.getByLabelText('正文保留期限')).toHaveValue('86401');
     expect(contentManagementApi.putPolicy).not.toHaveBeenCalled();
   });
 
@@ -110,6 +209,23 @@ describe('project content management', () => {
     await waitFor(() => expect(contentManagementApi.putPolicy).toHaveBeenCalledWith(2, '1', config));
     await screen.findByText(/关闭 v2 \/ 关闭 v2/);
     expect(contentManagementApi.control).not.toHaveBeenCalled();
+  });
+
+  it('keeps metadata-only storage-free and never offers or sends redaction', async () => {
+    const metadataConfig = { ...config, mode: 'metadata_only' as const };
+    const next = { ...policy, desired: { policy_version: '2', config: metadataConfig }, effective: { policy_version: '2', config: metadataConfig } };
+    vi.mocked(contentManagementApi.putPolicy).mockResolvedValue(next);
+    vi.mocked(contentManagementApi.getPolicy).mockResolvedValueOnce(policy).mockResolvedValue(next);
+    render(<XInsightContentManagement projectId={2} expansionAllowed />);
+    await screen.findByText(/关闭 v1 \/ 关闭 v1/);
+    fireEvent.change(screen.getByLabelText('正文策略模式'), { target: { value: 'metadata_only' } });
+    expect(contentManagementApi.putPolicy).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('正文保留期限')).toBeNull();
+    expect(screen.queryByRole('switch', { name: /脱敏/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '保存项目策略' }));
+    fireEvent.click(await screen.findByRole('button', { name: '确定' }));
+    await waitFor(() => expect(contentManagementApi.putPolicy).toHaveBeenCalledWith(2, '1', metadataConfig));
+    expect(JSON.stringify(vi.mocked(contentManagementApi.putPolicy).mock.calls[0][2])).not.toContain('redaction_ref');
   });
 
   it('refreshes a version conflict and never reports it as saved', async () => {
