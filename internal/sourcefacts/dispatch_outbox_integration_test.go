@@ -13,8 +13,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	assets "github.com/uniroute/unirouter/contracts/source-facts/v2"
+	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/executioncontext"
+	"github.com/uniroute/unirouter/internal/modelprofile"
+	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/outbox"
+	"github.com/uniroute/unirouter/internal/releaseexecution"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -72,6 +76,84 @@ func ownFrozenDispatch(t *testing.T, pool *pgxpool.Pool, event outbox.Event) out
 	_, err := pool.Exec(t.Context(), `UPDATE internal_outbox_events SET claimed_by=$2,claimed_until=clock_timestamp()+interval '1 minute' WHERE id=$1`, event.ID, event.ClaimedBy)
 	require.NoError(t, err)
 	return event
+}
+
+func TestDispatchSourceReleaseDefinitionDigestUsesObservationHashFormat(t *testing.T) {
+	pool, source, org, project := setupSourceDB(t)
+	source.options.ObservationsEnabled = true
+	profile, ok := modelprofile.Lookup("glm.5.3.api", "1.9.0")
+	require.True(t, ok)
+	profile.Version = "99.0.0" // Exercise a data-defined Profile absent from the compiled catalog.
+	definition, err := modelprofile.NewDefinition(profile, "glm/glm-5.3", "")
+	require.NoError(t, err)
+	release := &releaseexecution.Snapshot{
+		SchemaVersion: releaseexecution.SnapshotSchema, PublicModelID: 1,
+		ProductLineageID: definition.ProductLineageID(), ProfileDefinitionDigest: definition.Digest(),
+		ExecutionProfileID: profile.ID, ExecutionProfileVersion: profile.Version,
+		PublicContextLimit: 128000, PublicOutputLimit: 65536,
+		RouteItemsHash: "sha256:" + strings.Repeat("a", 64),
+		Requirements:   releaseexecution.Requirements(definition, nil),
+	}
+	_, err = release.CanonicalBytes()
+	require.NoError(t, err)
+	require.NoError(t, release.ValidateDefinition(definition))
+	require.Len(t, definition.Digest(), 64, "the Release authority retains its bare digest")
+
+	for _, tc := range []struct {
+		name, digest, expectedHash string
+		withRelease                bool
+		wantError                  bool
+	}{
+		{name: "release", digest: definition.Digest(), expectedHash: "sha256:" + definition.Digest(), withRelease: true},
+		{name: "no_release", expectedHash: ""},
+		{name: "empty_digest", digest: "", withRelease: true, wantError: true},
+		{name: "invalid_digest", digest: strings.Repeat("g", 64), withRelease: true, wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			request := "digest-boundary-" + tc.name
+			_, err := pool.Exec(t.Context(), `INSERT INTO freeze_idempotency(request_id,org_id,project_id,status,billing_mode,model_name,pricing_version) VALUES($1,$2,$3,'frozen','cost_observation','synthetic-model','test-pricing.v1')`, request, org, project)
+			require.NoError(t, err)
+			plan := modelrouting.Plan{PublicModel: "synthetic-model", ModelOperationID: modelprofile.OperationOpenAIChat,
+				ExecutionProfileID: profile.ID, ExecutionProfileVersion: profile.Version, RequiredCapabilities: []string{}}
+			if tc.withRelease {
+				selected := *release
+				selected.ProfileDefinitionDigest = tc.digest
+				plan.ReleaseExecution = &selected
+			}
+			start := billing.ProviderAttemptStart{RequestID: request, AttemptID: "synthetic-attempt-" + tc.name,
+				OrgID: org, RouteSequence: 1, RouteTotal: 1, Endpoint: "/v1/chat/completions"}
+			tx, err := pool.BeginTx(t.Context(), pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadWrite})
+			require.NoError(t, err)
+			err = source.MaterializeDispatchTx(t.Context(), tx, plan,
+				modelrouting.Route{Provider: "glm", BaseURL: "https://open.bigmodel.cn/api/paas/v4"},
+				start, "sha256:"+strings.Repeat("f", 64), time.Now().UTC().Truncate(time.Microsecond))
+			if tc.wantError {
+				require.ErrorContains(t, err, "invalid source observation")
+				require.NoError(t, tx.Rollback(t.Context()))
+				var count int
+				require.NoError(t, pool.QueryRow(t.Context(), `SELECT count(*) FROM internal_outbox_events WHERE request_id=$1 AND event_type=$2`, request, outbox.EventSourceDispatch).Scan(&count))
+				require.Zero(t, count, "a rejected observation cannot leave a dispatch event")
+				return
+			}
+			require.NoError(t, err)
+			require.NoError(t, tx.Commit(t.Context()))
+			var event outbox.Event
+			require.NoError(t, pool.QueryRow(t.Context(), `SELECT id,event_key,event_type,priority,org_id,request_id,payload,occurred_at FROM internal_outbox_events WHERE request_id=$1 AND event_type=$2`, request, outbox.EventSourceDispatch).Scan(&event.ID, &event.Key, &event.Type, &event.Priority, &event.OrgID, &event.RequestID, &event.Payload, &event.OccurredAt))
+			_, records, err := source.decodeDispatch(event)
+			require.NoError(t, err, "the real M117 writer and strict outbox decoder must accept the frozen batch")
+			require.Len(t, records, 3)
+			for _, record := range records {
+				if record.Profile != CapabilityProfile {
+					continue
+				}
+				observation, err := DecodeObservation(record.Wire)
+				require.NoError(t, err)
+				require.Equal(t, tc.expectedHash, observation.Capability.ExecutionProfile.SHA256)
+				return
+			}
+			t.Fatal("missing capability observation")
+		})
+	}
 }
 
 func TestSourceDispatchOutboxAtomicRecoveryAndRetention(t *testing.T) {
