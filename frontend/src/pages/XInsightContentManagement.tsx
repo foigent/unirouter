@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Banner, Button, Descriptions, Input, Popconfirm, Select, Tag, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
+import { Banner, Button, Descriptions, Input, Popconfirm, Select, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
 import { ApiError } from '../api/transport';
 import {
   contentManagementApi, parseContentRegistration,
@@ -11,6 +11,41 @@ const { Text, Title } = Typography;
 const modeLabels: Record<PayloadMode, string> = {
   disabled: '关闭', metadata_only: '仅元数据', full_content: '完整正文',
 };
+const DAY = 24 * 60 * 60;
+const HOUR = 60 * 60;
+const MIB = 1024 * 1024;
+const GIB = 1024 * MIB;
+const recommended = { retention: 30 * DAY, quota: 5 * GIB, maxSaved: 32 * MIB };
+type Unit = '天' | '小时' | '秒' | 'GiB' | 'MiB' | '字节';
+type Quantity = { value: string; unit: Unit };
+
+function fromStored(value: number | undefined, fallback: number, preferred: Unit, scale: number, base: Unit): Quantity {
+  const actual = value ?? fallback;
+  return actual % scale === 0
+    ? { value: String(actual / scale), unit: preferred }
+    : { value: String(actual), unit: base };
+}
+
+function quantityValue(quantity: Quantity, fallback: number, label: string): number {
+  if (quantity.value === '') return fallback;
+  const multiplier = quantity.unit === '天' ? DAY : quantity.unit === '小时' ? HOUR : quantity.unit === 'GiB' ? GIB : quantity.unit === 'MiB' ? MIB : 1;
+  const value = positiveInteger(quantity.value, label) * multiplier;
+  if (!Number.isSafeInteger(value)) throw new Error(`${label}超出安全整数范围`);
+  return value;
+}
+
+function changeUnit(quantity: Quantity, unit: Unit, fallback: number, label: string): Quantity {
+  if (quantity.value === '') return { value: '', unit };
+  const value = quantityValue(quantity, fallback, label);
+  const multiplier = unit === '天' ? DAY : unit === '小时' ? HOUR : unit === 'GiB' ? GIB : unit === 'MiB' ? MIB : 1;
+  if (value % multiplier !== 0) throw new Error(`${label}不能整除为${unit}，请保留当前单位或先修改数值`);
+  return { value: String(value / multiplier), unit };
+}
+
+function formatQuantity(value: number, preferred: Unit, scale: number, base: Unit): string {
+  const quantity = fromStored(value, value, preferred, scale, base);
+  return `${quantity.value} ${quantity.unit}`;
+}
 
 function positiveInteger(raw: string, label: string): number {
   if (!/^[1-9][0-9]*$/.test(raw)) throw new Error(`${label}必须显式填写正整数`);
@@ -57,9 +92,9 @@ export default function XInsightContentManagement({ projectId, expansionAllowed 
   const [policyError, setPolicyError] = useState('');
   const [connectionError, setConnectionError] = useState('');
   const [mode, setMode] = useState<PayloadMode>('disabled');
-  const [retention, setRetention] = useState('');
-  const [quota, setQuota] = useState('');
-  const [maxSaved, setMaxSaved] = useState('');
+  const [retention, setRetention] = useState<Quantity>({ value: '30', unit: '天' });
+  const [quota, setQuota] = useState<Quantity>({ value: '5', unit: 'GiB' });
+  const [maxSaved, setMaxSaved] = useState<Quantity>({ value: '32', unit: 'MiB' });
   const [registration, setRegistration] = useState('');
   const [allowedIP, setAllowedIP] = useState('');
   const [busy, setBusy] = useState(false);
@@ -68,9 +103,9 @@ export default function XInsightContentManagement({ projectId, expansionAllowed 
     const next = await contentManagementApi.getPolicy(projectId);
     setPolicy(next);
     setMode(next.desired.config.mode);
-    setRetention(next.desired.config.retention_seconds?.toString() ?? '');
-    setQuota(next.desired.config.quota_bytes?.toString() ?? '');
-    setMaxSaved(next.desired.config.max_saved_bytes?.toString() ?? '');
+    setRetention(fromStored(next.desired.config.retention_seconds, recommended.retention, '天', DAY, '秒'));
+    setQuota(fromStored(next.desired.config.quota_bytes, recommended.quota, 'GiB', GIB, '字节'));
+    setMaxSaved(fromStored(next.desired.config.max_saved_bytes, recommended.maxSaved, 'MiB', MIB, '字节'));
     setPolicyError('');
     return next;
   }, [projectId]);
@@ -93,6 +128,28 @@ export default function XInsightContentManagement({ projectId, expansionAllowed 
 
   useEffect(() => { void refreshPolicy(); void refreshConnection(); }, [refreshPolicy, refreshConnection]);
 
+  const resetRecommended = () => {
+    setRetention({ value: '30', unit: '天' });
+    setQuota({ value: '5', unit: 'GiB' });
+    setMaxSaved({ value: '32', unit: 'MiB' });
+    setPolicyError('');
+  };
+
+  const selectUnit = (quantity: Quantity, unit: Unit, fallback: number, label: string, set: (value: Quantity) => void) => {
+    try { set(changeUnit(quantity, unit, fallback, label)); setPolicyError(''); }
+    catch (error) { setPolicyError(error instanceof Error ? error.message : '单位转换失败'); }
+  };
+
+  let savePreview = '';
+  if (mode === 'full_content') {
+    try {
+      quantityValue(retention, recommended.retention, '保留期限');
+      quantityValue(quota, recommended.quota, '项目容量');
+      quantityValue(maxSaved, recommended.maxSaved, '单项上限');
+      savePreview = `保存将使用：保留期限 ${retention.value || '30'} ${retention.value ? retention.unit : '天'}；项目容量 ${quota.value || '5'} ${quota.value ? quota.unit : 'GiB'}；单项上限 ${maxSaved.value || '32'} ${maxSaved.value ? maxSaved.unit : 'MiB'}`;
+    } catch { savePreview = '保存前请修正无效的期限或容量'; }
+  }
+
   const savePolicy = async () => {
     if (!policy) return;
     setBusy(true);
@@ -105,12 +162,11 @@ export default function XInsightContentManagement({ projectId, expansionAllowed 
         allowed_purposes: [],
       };
       if (mode === 'full_content') {
-        desired.retention_seconds = positiveInteger(retention, '保留秒数');
-        desired.quota_bytes = positiveInteger(quota, '项目配额字节数');
-        desired.max_saved_bytes = positiveInteger(maxSaved, '单项上限字节数');
-        if (desired.max_saved_bytes > desired.quota_bytes || desired.max_saved_bytes > policy.limits.max_saved_bytes) {
-          throw new Error('单项上限不得超过项目配额或部署上限');
-        }
+        desired.retention_seconds = quantityValue(retention, recommended.retention, '保留期限');
+        desired.quota_bytes = quantityValue(quota, recommended.quota, '项目容量');
+        desired.max_saved_bytes = quantityValue(maxSaved, recommended.maxSaved, '单项上限');
+        if (desired.max_saved_bytes > desired.quota_bytes) throw new Error('单项上限不得超过项目容量');
+        if (desired.max_saved_bytes > policy.limits.max_saved_bytes) throw new Error('单项上限不得超过部署上限');
         desired.allowed_purposes = ['human_review'];
         desired.on_limit = 'record_capture_gap';
       }
@@ -164,7 +220,7 @@ export default function XInsightContentManagement({ projectId, expansionAllowed 
 
   return <section aria-label="项目正文管理" style={{ display: 'grid', gap: 14, borderTop: '1px solid var(--semi-color-border)', paddingTop: 18 }}>
     <Title heading={5} style={{ margin: 0 }}>项目正文管理</Title>
-    <Text>正文策略按当前项目生效，与 A/B 来源事实授权及 Feed 状态分别管理。此页仅回读和显式提交；查看状态不会创建策略或启用正文。脱敏当前不受支持。</Text>
+    <Text>正文策略覆盖当前项目全部新请求；修改期限不会延长已有正文。查看或刷新不会启用正文；容量满时记录采集缺口。此处设置 UniRouter 留存；X-Insight 目前从 UniRouter 读取，UniRouter 正文到期后 X-Insight 也无法打开原文，尚未独立保存。</Text>
     <div className="ur-toolbar"><Text strong>项目正文策略</Text><Button disabled={busy} onClick={() => void refreshPolicy()}>刷新策略</Button></div>
     {policyError && <Banner type="warning" description={policyError} closeIcon={null} />}
     {policy && <>
@@ -173,21 +229,29 @@ export default function XInsightContentManagement({ projectId, expansionAllowed 
         { key: '期望 / 生效', value: `${modeLabels[policy.desired.config.mode]} v${policy.desired.policy_version} / ${modeLabels[policy.effective.config.mode]} v${policy.effective.policy_version}` },
         { key: '应用状态', value: `${policy.application_status} · ${policy.application_reason}` },
         { key: '存储状态', value: policy.storage_status },
-        { key: '部署单项上限', value: `${policy.limits.max_saved_bytes} 字节` },
+        { key: '正文脱敏', value: '不脱敏（当前版本尚不支持脱敏）' },
+        { key: '部署单项上限', value: formatQuantity(policy.limits.max_saved_bytes, 'MiB', MIB, '字节') },
         { key: '协议 / 观测点', value: `${policy.desired.config.supported_protocols.join(', ')} / ${policy.desired.config.observation_points.join(', ')}` },
       ]} />
       <div className="ur-toolbar" style={{ flexWrap: 'wrap' }}>
         <Select aria-label="正文策略模式" value={mode} optionList={Object.entries(modeLabels).map(([value, label]) => ({ value, label }))} onChange={value => setMode(value as PayloadMode)} disabled={busy} style={{ width: 150 }} />
         {mode === 'full_content' && <>
-          <Input aria-label="正文保留秒数" placeholder="明确填写保留秒数" value={retention} onChange={setRetention} disabled={busy || !expansionAllowed} style={{ width: 175 }} />
-          <Input aria-label="正文项目配额字节数" placeholder="明确填写项目配额" value={quota} onChange={setQuota} disabled={busy || !expansionAllowed} style={{ width: 185 }} />
-          <Input aria-label="正文单项上限字节数" placeholder="明确填写单项上限" value={maxSaved} onChange={setMaxSaved} disabled={busy || !expansionAllowed} style={{ width: 185 }} />
-          <Tag>用途：human_review；达限：记录 capture gap</Tag>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Text>保留期限</Text>
+            <Input aria-label="正文保留期限" value={retention.value} onChange={value => setRetention({ ...retention, value })} disabled={busy || !expansionAllowed} style={{ width: 100 }} />
+            <Select aria-label="正文保留期限单位" value={retention.unit} optionList={['天', '小时', '秒'].map(value => ({ value, label: value }))} onChange={value => selectUnit(retention, value as Unit, recommended.retention, '保留期限', setRetention)} disabled={busy || !expansionAllowed} style={{ width: 80 }} /></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Text>项目容量</Text>
+            <Input aria-label="正文项目容量" value={quota.value} onChange={value => setQuota({ ...quota, value })} disabled={busy || !expansionAllowed} style={{ width: 100 }} />
+            <Select aria-label="正文项目容量单位" value={quota.unit} optionList={['GiB', 'MiB', '字节'].map(value => ({ value, label: value }))} onChange={value => selectUnit(quota, value as Unit, recommended.quota, '项目容量', setQuota)} disabled={busy || !expansionAllowed} style={{ width: 90 }} /></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Text>单项上限</Text>
+            <Input aria-label="正文单项上限" value={maxSaved.value} onChange={value => setMaxSaved({ ...maxSaved, value })} disabled={busy || !expansionAllowed} style={{ width: 100 }} />
+            <Select aria-label="正文单项上限单位" value={maxSaved.unit} optionList={['MiB', '字节'].map(value => ({ value, label: value }))} onChange={value => selectUnit(maxSaved, value as Unit, recommended.maxSaved, '单项上限', setMaxSaved)} disabled={busy || !expansionAllowed} style={{ width: 90 }} /></div>
+          <Button disabled={busy || !expansionAllowed} onClick={resetRecommended}>使用推荐设置</Button>
         </>}
-        <Popconfirm title={mode === 'full_content' ? '确认按填写的期限和配额提交完整正文策略？是否生效以服务端回读为准。' : '确认更新当前项目的正文策略？'} onConfirm={() => void savePolicy()}>
+        <Popconfirm title={mode === 'full_content' ? `确认提交完整正文策略？${savePreview}。是否生效以服务端回读为准。` : '确认更新当前项目的正文策略？'} onConfirm={() => void savePolicy()}>
           <Button type="primary" disabled={busy || !expansionAllowed && mode !== 'disabled'}>保存项目策略</Button>
         </Popconfirm>
       </div>
+      {mode === 'full_content' && <Text>{savePreview}。留空的项目按推荐值计算。</Text>}
     </>}
     <div className="ur-toolbar"><Text strong>正文来源连接</Text><Button disabled={busy} onClick={() => void refreshConnection()}>刷新正文连接</Button></div>
     {connectionError && <Banner type="warning" description={connectionError} closeIcon={null} />}

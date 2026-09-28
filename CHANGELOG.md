@@ -4,6 +4,11 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.6.1] - 2026-09-28
+
+- 项目正文表单预填推荐的 30 天、5 GiB、32 MiB，并允许逐项留空回退；保存前展示实际值。现有策略值优先且保持秒/字节精度，非法、超限或不整除的单位转换会明确报错。
+- 说明当前正文不脱敏、策略只影响新请求、UniRouter 与 X-Insight 的留存边界；将数据交换页的 metadata-only 描述限定为 I-01 完成请求摘要通道。
+
 ## [1.6.0] - 2026-09-28
 
 - 在现有 X-Insight 集成页加入项目级正文策略与正文连接管理。策略读取不写入，保存使用期望版本并回读期望/生效状态；完整正文的保留期限和配额必须显式填写，脱敏仍不受支持，页面打开不会启用正文。

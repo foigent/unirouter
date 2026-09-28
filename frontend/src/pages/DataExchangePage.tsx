@@ -314,7 +314,7 @@ export default function DataExchangePage() {
       <PageHeader
         eyebrow="系统与集成"
         title="X-Insight 数据交换"
-        description="实时连接是 UniRouter → X-Insight 的产品化 metadata feed；旧审批与制品账本保留为独立的历史人工流程。"
+        description="I-01 完成请求摘要通道是 UniRouter → X-Insight 的 metadata feed，不含原始正文；正文设置另行管理。旧审批与制品账本保留为独立的历史人工流程。"
         actions={(
           <Button
             icon={<IconRefresh />}
@@ -329,8 +329,8 @@ export default function DataExchangePage() {
       <Surface>
         <div className="ur-chip-row" style={{ marginBottom: 12 }}>
           <Tag color="blue">实时连接：私有 pull feed</Tag>
-          <Tag color="green">metadata only</Tag>
-          <Tag>无原始 prompt/response</Tag>
+          <Tag color="green">I-01 metadata only</Tag>
+          <Tag>I-01 无原始 prompt/response</Tag>
           <Tag>feed-only service credential</Tag>
           <Tag>无原始 IP</Tag>
           <Tag>无原始上游错误</Tag>

@@ -223,8 +223,8 @@ describe('DataExchangePage', () => {
     const { container } = render(<DataExchangePage />);
     await waitFor(() => expect(getFeedConnection).toHaveBeenCalledWith(22));
     expect(getProjects).toHaveBeenCalledWith(1, 100);
-    expect(container.textContent).toContain('metadata only');
-    expect(container.textContent).toContain('无原始 prompt/response');
+    expect(container.textContent).toContain('I-01 metadata only');
+    expect(container.textContent).toContain('I-01 无原始 prompt/response');
     expect(container.textContent).toContain('接收端提交确认 cursor');
     expect(container.textContent).toContain('不代表搜索、API 或 UI 已可见');
     expect(container.textContent).toContain('systemctl restart（不可 reload）');
