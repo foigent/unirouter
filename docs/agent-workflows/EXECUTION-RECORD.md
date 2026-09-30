@@ -1,5 +1,130 @@
 # Current Execution Record
 
+## P3 step 2 — M121→M123 daily UR source-to-Target boundary — 2026-09-30
+
+This bounded source review uses merged main `11052bb539903022713d3676222f7fda6a4cd957`,
+tree `d467a590d9fd9f10bd0d93dab9e7be3cb78e1f61`, VERSION 1.8.0. The local
+candidate `2b1820def9f19e6aa89b3242bc253e0e911203df` has that same tree.
+Historical `2bad61e92a45ae5ce8e4205fdaaa9a6f580327f5` is 1.6.2/M121;
+the exact migration difference is only the M122/M123 up/down pairs. Overall
+reported PR425, candidate CI36659048365 and exact-main protocol36662848089
+successful; this task did not rerun them or read the Target. September 28 Target
+state and org2/project86 key105/106/107 identity remain historical leads.
+
+The existing finite `schema_bridge_expand_carrier`, formal rollout, old-process
+`runtime-generation-retire` and per-head `compatible-expand` describe an exact
+M121→M123 path **if** the Target's complete old ledger/artifact/host state and
+disabled-source gate match. The carrier also requires all five source
+capture flags disabled and its three storage settings empty on both old/new
+backends; if daily A/C reads depend on enabled source service, this path refuses
+the rollout and continuity needs a separate decision, not silent flag changes.
+Run the carrier build from a clean exact-main
+checkout, plan/prepare/apply the one ordered M122/M123 bridge, retire the exited
+old canary and stable process identities with check/apply, then M122 check/apply
+and M123 check/apply with complete ledger and recovery-fleet readback after each.
+`prepare` verifies a PG dump only; C body storage needs a paired same-window
+backup if present. After new evidence exists, 1.6.2 cannot be assumed a valid
+M123 rollback; use compatible roll-forward or guarded offline recovery including
+the existing D-coverage/C-epoch rebase. Legacy A/C key continuity is conditional:
+read exact key/enrollment/installation/coverage state, use existing admin
+`bind-existing` separately for eligible facts/content, and verify XI actual reads.
+No key ID is assigned to an A/C role from memory.
+
+[Executable existing commands, reviewed M122/M123 digests, minimum Target
+readback fields, key-continuity conditions and restore limits](</Users/m4/Desktop/test/ur-regression-20260914/DIAGNOSIS.md>)
+are appended to the existing diagnosis. No ECS/Target, XI, credential, build,
+deploy, traffic, test, commit or push action occurred in this step. The current
+runbook section 9.10.3 records a September 29 unmerged-candidate cutoff; this
+entry supersedes only that source status, not its Target preflight and authorization
+gates. Experience file: no change needed; no new runtime/model result was gained.
+
+The overall coordinator's 2026-09-30 04:00 UTC Target readback is retained at
+`/private/tmp/ur-xi-p3-target-20260930/ur-readback.json` (SHA256
+`9e10ee430759cc949019b186321c87087242fc4e073210573820277633da12a4`).
+It reports healthy 1.6.2/M121 stable/canary processes on image
+`sha256:f0000763e7ed55b3a1f93e4b12bb3392695c932016462fb6eb4122a74b83f225`
+and two unretired `serving/absent/lease_live=false` old identities:
+`uri_369b8dc1f9fd70ddb30f6b34a81b6eb2` and
+`uri_b95435dec827c6414e446a1787b4dd9f`, each at revision 6739 on old image
+`sha256:a5fb9213860232a19cdaccfec4ce4d236ea1eb5c441ee6f3e66ed7a46d265b13`.
+The retained `/private/tmp/ur-rollout-2bad61e9-20260928-input.json` points to
+`/opt/unirouter/deployment-evidence/20260928-source-digest-fix/rollout`, but the
+original Plan and withdrawal/clean-stop/replacement/rejoin/verify receipts were
+not read in this task. Their exact old-instance binding, current ingress and
+container inventory, immutable manifest, and financial closure remain required
+before formal retirement; an expired lease is insufficient. This is an archive
+lead, not a retirement eligibility result. The diagnosis now records the exact
+readback and proof requirements. If current source settings are enabled/nonempty,
+the narrow M121→M123 carrier needs a reviewed compatibility correction that
+preserves all eight old/new effective settings; no live source disablement,
+product edit or Target operation was performed here.
+
+The coordinator's 04:09 UTC detail readback
+`/private/tmp/ur-xi-p3-target-20260930/ur-detail-readback.json` (SHA256
+`b902976f17c435fea1da658a6237be0a788fddd529aec1d6a9454e7fe7983adc`)
+confirms both backends have source A/B/C and full content enabled, D disabled,
+and the same nonempty content storage binding. Therefore the existing disabled-only
+bridge rejects the actual Target. It also identifies key105 as completed-feed,
+key106 as legacy A/B, and key107 as content C for org2/project86; content scope
+is active at state/access generation 2 with 6841 stored bytes and no reservation.
+These do not prove future enrollment eligibility or XI read acceptance.
+
+The pre-code review proposal in the diagnosis confines a source-preservation
+allowance to the exact M121→M123 bridge, while keeping older bridges disabled-only
+and every original source/image/mount/manifest/recovery gate. A second old→main
+Compose difference adds `ASYNC_MEDIA_REQUEST_TTL_HOURS` (template default 24,
+Target effective value not yet read); the current exact
+config-delta comparison will reject it. The 1.8.0 media store also references
+columns added only at M122, so enabled media on M121 is an unresolved service
+compatibility condition, not an acceptable switch-off. The Target readback has
+not established media settings or outstanding jobs. Existing M123 `bind-existing`
+can conditionally attach old C key107 after an active enrollment and exact GET
+candidate, without key or content reset; no new C bind channel is proposed.
+
+### Local M121 bridge correction and verification — 2026-09-30
+
+After independent pre-code review, the authorized local patch is VERSION 1.8.1.
+Only the `schema_bridge_expand_carrier` branch whose exact predecessor is M121
+preserves all eight source/storage values and
+`COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE` across old Compose, both actual old
+containers and new effective Compose; stable/canary must match. It requires
+media already disabled on both old actors and the new actor, and permits only
+the previously absent `ASYNC_MEDIA_REQUEST_TTL_HOURS=24` in the new Compose.
+All other config/mount/source identity changes still fail the existing exact
+checks. Older schema bridges retain the disabled-source rule. Enabled M121
+media remains an independent unsupported predecessor, not a reason to switch
+off a live service.
+
+Local evidence: `scripts/test-internal-target-rollout.py` passed 76 tests;
+`TestM121ActiveSourceBridgeMainStartup` passed against a task-owned isolated
+PostgreSQL database installed through real M121 and local Redis. It built and
+started the current binary with A/B/C and full content enabled, existing
+producer identity and C binding, disabled media and TTL 24. The same fixture
+authenticated an existing unmarked C key against M121, obtained an actual
+HTTP 200 from `/health/ready`, wrote body bytes with the real file store and
+read those bytes through the binary's authenticated HTTP C body endpoint. The
+ready-object database row is test fixture setup; this does not prove a full
+online capture or XI consumer flow. The test confirmed the ledger stayed M121
+and the binding remained. The `cmd/uniroute` unit suite
+also passed. `check-release-metadata.sh`
+reported `RELEASE_METADATA_OK version=1.8.1 mode=current`; `git diff --check`
+passed. The existing consolidated CI selector now includes the exact M121
+integration test name; its offline runner passed all 9 checks and confirmed
+`cmd/uniroute` remains selected. The full consolidated suite was not rerun.
+These are Local results, not CI, signed Artifact or Target results.
+
+The 04:19 UTC Target detail
+`/private/tmp/ur-xi-p3-target-20260930/ur-retirement-r2-readback.json`
+(SHA256 `37f07d6237e76215766bb130ed5350c8c6878b76cb2f4c53d486f4bc97479e29`)
+shows the actual producer identity `unirouter-test-reset-20260824-v3` on both
+backends, media disabled, old TTL absent and zero async-media jobs. The
+September 28 rollout Plan names **different** old instances and cannot retire
+`uri_369b…`/`uri_b954…`. The 09:27 config-rollout history and original log
+identify these as predecessors of its canary/stable replacement; host proof,
+current inventory and exact read-only retirement checks remain the coordinator's
+separate Target gate. No remote action, retirement apply, commit or push occurred
+in this local patch.
+
 ## Bounded native-regression diagnosis — 2026-09-14
 
 The supervisor accepted the independent diagnosis plan, including resource-admitted
