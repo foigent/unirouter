@@ -22,17 +22,9 @@ import (
 )
 
 func TestHistoricalM115RetirementPermitsOnlyProvedSuffix(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupMigratedThroughTestDB(t, schemaauthority.StreamCounterExpandHead)
 	ctx := t.Context()
 	dir := testutil.MigrationsDir(t)
-	for _, head := range []string{schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead,
-		schemaauthority.ContentCaptureExpandHead, schemaauthority.BudgetSnapshotExpandHead,
-		schemaauthority.ObservationExpandHead, schemaauthority.SourceFactsExpandHead} {
-		wire, err := os.ReadFile(filepath.Join(dir, head+".down.sql"))
-		require.NoError(t, err)
-		_, err = pool.Exec(ctx, string(wire))
-		require.NoError(t, err)
-	}
 	manifestWire, err := os.ReadFile("testdata/runtime-support-1.2.77-m115.json")
 	require.NoError(t, err)
 	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.TrimSpace(string(manifestWire)))))
@@ -218,7 +210,7 @@ func TestRetirementRacesFastAndSlowRenewWithoutReusingStoppedIdentity(t *testing
 			id := Identity{Instance: "uri_" + strings.Repeat("d", 32), Artifact: "sha256:" + strings.Repeat("d", 64)}
 			_, head, err := Renew(ctx, pool, id, manifest, ledger, false)
 			require.NoError(t, err)
-			require.Equal(t, schemaauthority.PreDispatchExpandHead, head)
+			require.Equal(t, schemaauthority.LatestSupportedMigration, head)
 			_, err = pool.Exec(ctx, `UPDATE runtime_generations SET lease_expires_at=clock_timestamp()-interval '1 hour' WHERE instance_id=$1`, id.Instance)
 			require.NoError(t, err)
 			config := []byte("race-empty-ingress")
