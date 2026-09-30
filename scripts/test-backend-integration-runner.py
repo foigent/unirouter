@@ -64,6 +64,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(len(before), 5)
         self.assertEqual([sum(arg.startswith("./") for arg in call) for call in before], [20, 3, 1, 1, 1])
         self.assertIn("./internal/runtimegeneration", before[0])
+        self.assertIn("./cmd/uniroute", before[0])
         self.assertEqual([arg for arg in before[1] if arg.startswith("./")],
                          ["./internal/sourcefacts", "./internal/mediajob", "./internal/contentcapture"])
         pattern = before[0][before[0].index("-run") + 1]
@@ -86,6 +87,7 @@ class RunnerTests(unittest.TestCase):
             "TestXInsightFutureSourceEnrollmentACReadAndRevokeIntegration",
             "TestXInsightBindExistingFactsAndContentIntegration",
             "TestScopedPolicyHTTPEnterpriseAndProjectCASIntegration",
+            "TestM121ActiveSourceBridgeMainStartup",
         ):
             with self.subTest(name=name):
                 self.assertIsNotNone(re.fullmatch(pattern, name))

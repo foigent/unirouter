@@ -278,6 +278,39 @@ class SchemaBridgeTransitionTests(unittest.TestCase):
                     rollout.add_disabled_source_defaults(expected,dict(actual,**{key:enabled}))
                 self.assertEqual(previous,expected)
 
+    def test_m121_carrier_preserves_live_source_and_only_adds_disabled_media_ttl(self):
+        original = {"SOURCE_FACTS_ENABLED":"true", "SOURCE_OBSERVATIONS_ENABLED":"true",
+                    "SOURCE_BUDGET_SNAPSHOTS_ENABLED":"false", "SOURCE_CONTENT_ENABLED":"true",
+                    "SOURCE_CONTENT_FULL_ENABLED":"true", "SOURCE_CONTENT_STORAGE_ROOT":"/data/content",
+                    "SOURCE_CONTENT_STORAGE_IDENTITY":"existing-store",
+                    "SOURCE_CONTENT_STORAGE_TOKEN_FILE":"/run/secrets/content.token",
+                    "COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE":"existing-producer",
+                    "ASYNC_MEDIA_ENABLED":"false"}
+        actual = dict(original)
+        future = dict(original, ASYNC_MEDIA_REQUEST_TTL_HOURS="24")
+        expected = dict(original)
+        fingerprint = rollout.preserve_m121_source_config(expected, actual, future, ["PATH=/bin"])
+        self.assertEqual("24", expected["ASYNC_MEDIA_REQUEST_TTL_HOURS"])
+        self.assertEqual("true", expected["SOURCE_CONTENT_FULL_ENABLED"])
+        self.assertEqual(tuple(original[key] for key in (*rollout.SOURCE_DEFAULTS,
+                         "COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE")), fingerprint)
+        for changed, value in (("SOURCE_FACTS_ENABLED", "false"),
+                               ("SOURCE_CONTENT_STORAGE_IDENTITY", "another-store"),
+                               ("COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE", "another-producer")):
+            with self.subTest(changed=changed), self.assertRaisesRegex(RuntimeError, "source identity or capture"):
+                rollout.preserve_m121_source_config(dict(original), actual, dict(future, **{changed:value}), [])
+        with self.assertRaisesRegex(RuntimeError, "media already disabled"):
+            rollout.preserve_m121_source_config(dict(original), dict(actual, ASYNC_MEDIA_ENABLED="true"), future, [])
+        with self.assertRaisesRegex(RuntimeError, "TTL default"):
+            rollout.preserve_m121_source_config(dict(original), actual,
+                                                 dict(future, ASYNC_MEDIA_REQUEST_TTL_HOURS="48"), [])
+        with self.assertRaisesRegex(RuntimeError, "TTL default"):
+            rollout.preserve_m121_source_config(dict(original, ASYNC_MEDIA_REQUEST_TTL_HOURS="24"),
+                                                 dict(actual, ASYNC_MEDIA_REQUEST_TTL_HOURS="24"), future, [])
+        with self.assertRaisesRegex(RuntimeError, "producer identity"):
+            empty = dict(original, COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE="")
+            rollout.preserve_m121_source_config(empty, empty, dict(future, COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE=""), [])
+
 
 class ArtifactOwnerTests(unittest.TestCase):
     def test_docker_timestamp_fraction_and_timezone(self):

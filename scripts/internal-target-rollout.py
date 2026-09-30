@@ -283,6 +283,27 @@ def add_disabled_source_defaults(expected_env, actual_env):
         expected_env.setdefault(key, default)
 
 
+def preserve_m121_source_config(expected_env, actual_env, new_env, image_env):
+    """Keep an active M121 source intact while carrying only M122/M123 files."""
+    effective_new = environment(image_env)
+    effective_new.update({key: str(value) for key, value in new_env.items() if value is not None})
+    preserved = (*SOURCE_DEFAULTS, "COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE")
+    require(all(key in expected_env and key in new_env and
+                expected_env[key] == actual_env.get(key) == effective_new.get(key)
+                for key in preserved), "M121 source identity or capture configuration differs")
+    require(expected_env["SOURCE_FACTS_ENABLED"] != "true" or
+            expected_env["COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE"] != "",
+            "enabled M121 source requires its original producer identity")
+    require(expected_env.get("ASYNC_MEDIA_ENABLED") == actual_env.get("ASYNC_MEDIA_ENABLED") ==
+            effective_new.get("ASYNC_MEDIA_ENABLED") == "false",
+            "M121 bridge requires media already disabled")
+    ttl = "ASYNC_MEDIA_REQUEST_TTL_HOURS"
+    require(ttl not in expected_env and ttl not in actual_env and new_env.get(ttl) == effective_new.get(ttl) == "24",
+            "M121 bridge permits only the new disabled-media TTL default")
+    expected_env[ttl] = "24"
+    return tuple(expected_env[key] for key in preserved)
+
+
 def validate_pending_counter_carrier(old_source, new_source, transition, actual_ledger):
     transitions = {"stream_counter_expand_carrier": (CAPABILITY_HEAD, COUNTER_HEAD),
                    "source_facts_expand_carrier": (COUNTER_HEAD, SOURCE_HEAD),
@@ -499,7 +520,7 @@ class Rollout:
 
     def plan(self):
         self.identity()
-        self.images()  # Absence is rejected before storage, backup or stop.
+        images = self.images()  # Absence is rejected before storage, backup or stop.
         self.sources()
         containers = {role: inspect(name) for role, name in CONTAINERS.items()}
         old_chain = containers["stable"]["Config"]["Labels"]["com.docker.compose.project.config_files"].split(",")
@@ -548,6 +569,7 @@ class Rollout:
         new_tags = {k: v["tag"] for k, v in self.spec["images"].items()}
         new_config = self.config(self.chain(self.new_source, "-"), new_tags, overlay)
         expected = copy.deepcopy(old_config)
+        m121_sources = []
         for role, service in SERVICES.items():
             expected["services"][service]["image"] = new_tags["frontend" if role == "frontend" else "backend"]
             if role != "frontend":
@@ -564,8 +586,16 @@ class Rollout:
                     require(environment(containers[role]["Config"]["Env"]).get("SOURCE_BUDGET_SNAPSHOTS_ENABLED", "false") == "false", "budget expansion bridge requires D snapshots disabled")
                     expected["services"][service]["environment"]["SOURCE_BUDGET_SNAPSHOTS_ENABLED"] = "false"
                 if transition and transition["kind"] == "schema_bridge_expand_carrier":
-                    add_disabled_source_defaults(expected["services"][service]["environment"],
-                                                 environment(containers[role]["Config"]["Env"]))
+                    if transition["from_head"] == PRE_DISPATCH_HEAD:
+                        m121_sources.append(preserve_m121_source_config(
+                            expected["services"][service]["environment"],
+                            environment(containers[role]["Config"]["Env"]),
+                            new_config["services"][service]["environment"],
+                            images["backend"]["Config"].get("Env")))
+                    else:
+                        add_disabled_source_defaults(expected["services"][service]["environment"],
+                                                     environment(containers[role]["Config"]["Env"]))
+        require(not m121_sources or m121_sources[0] == m121_sources[1], "M121 backend source settings differ")
         for service, target, relative in (("backend", "/app/migrations", "migrations"), ("backend-canary", "/app/migrations", "migrations"),
                                           ("prometheus", "/etc/prometheus/prometheus.yml", "infra/prometheus/prometheus.yml"),
                                           ("grafana", "/etc/grafana/provisioning", "infra/grafana/provisioning"),

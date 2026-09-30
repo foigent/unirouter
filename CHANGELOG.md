@@ -4,6 +4,11 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.8.1] - 2026-09-30
+
+- development/test 日常 M121→M123 正式升级载体保留原 A/B/C 采集、生产者与正文存储绑定；M115–M120 仍要求采集关闭。仅在旧媒体服务已关闭、旧配置无该项时，允许新 Compose 增加默认 24 小时的媒体请求期限设置；其他环境、挂载、身份及迁移字节漂移继续拒绝。
+- 本修正只扩展受支持升级前态，不自动迁移数据库、退役历史运行代、绑定 X-Insight 凭据或证明 Target 已升级。启用异步媒体的 M121 前态仍被拒绝。
+
 ## [1.8.0] - 2026-09-29
 
 - 增加按精确 X-Insight Installation 绑定的策略管理与 A/C 自动供数独立机器凭据、人类委托、当前及未来项目发现、事务性策略 CAS/审计/回执，以及新项目 A/C 项目凭据注册与读时撤权检查。
