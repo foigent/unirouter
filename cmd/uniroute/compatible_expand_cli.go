@@ -63,7 +63,7 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 	if input.TargetVersion == "" {
 		input.TargetVersion = schemaauthority.CapabilityExpandHead
 	}
-	if input.TargetVersion != schemaauthority.CapabilityExpandHead && input.TargetVersion != schemaauthority.StreamCounterExpandHead && input.TargetVersion != schemaauthority.SourceFactsExpandHead && input.TargetVersion != schemaauthority.ObservationExpandHead && input.TargetVersion != schemaauthority.BudgetSnapshotExpandHead && input.TargetVersion != schemaauthority.ContentCaptureExpandHead && input.TargetVersion != schemaauthority.ContentReclaimExpandHead && input.TargetVersion != schemaauthority.PreDispatchExpandHead {
+	if input.TargetVersion != schemaauthority.CapabilityExpandHead && input.TargetVersion != schemaauthority.StreamCounterExpandHead && input.TargetVersion != schemaauthority.SourceFactsExpandHead && input.TargetVersion != schemaauthority.ObservationExpandHead && input.TargetVersion != schemaauthority.BudgetSnapshotExpandHead && input.TargetVersion != schemaauthority.ContentCaptureExpandHead && input.TargetVersion != schemaauthority.ContentReclaimExpandHead && input.TargetVersion != schemaauthority.PreDispatchExpandHead && (input.TargetVersion != schemaauthority.ScopedContentExpandHead && input.TargetVersion != schemaauthority.XInsightPolicyExpandHead) {
 		return fmt.Errorf("unknown exact expansion target")
 	}
 	dir := configuredMigrationsDir(cfg)
@@ -100,7 +100,7 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 		if err != nil {
 			return fmt.Errorf("%s support manifest: %w", host, err)
 		}
-		if input.TargetVersion == schemaauthority.StreamCounterExpandHead || input.TargetVersion == schemaauthority.SourceFactsExpandHead || input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead || (input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead) {
+		if input.TargetVersion == schemaauthority.StreamCounterExpandHead || input.TargetVersion == schemaauthority.SourceFactsExpandHead || input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead || (input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead || (input.TargetVersion == schemaauthority.ScopedContentExpandHead || input.TargetVersion == schemaauthority.XInsightPolicyExpandHead)) {
 			if err := manifest.Require(input.TargetVersion, []modelprofile.ImplementationReference{{Kind: "stream_counter", ID: metering.GatewayCounterEstimateVersionV2}, {Kind: "stream_counter", ID: metering.GatewayCounterEstimateVersionV3}}); err != nil {
 				return err
 			}
@@ -108,28 +108,38 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 				return fmt.Errorf("runtime does not support requested expansion")
 			}
 		}
-		if input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead || (input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead) {
+		if input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead || (input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead || (input.TargetVersion == schemaauthority.ScopedContentExpandHead || input.TargetVersion == schemaauthority.XInsightPolicyExpandHead)) {
 			if err := manifest.Require(input.TargetVersion, []modelprofile.ImplementationReference{{Kind: "source_observations", ID: "unirouter.source-observation.v1"}, {Kind: "source_dispatch", ID: "unirouter.source-dispatch-outbox.v1"}}); err != nil {
 				return err
 			}
 		}
-		if input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead || (input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead) {
+		if input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead || (input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead || (input.TargetVersion == schemaauthority.ScopedContentExpandHead || input.TargetVersion == schemaauthority.XInsightPolicyExpandHead)) {
 			if err := manifest.Require(input.TargetVersion, runtimegeneration.BudgetCoverageRequirements()); err != nil {
 				return err
 			}
 		}
-		if input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead {
+		if input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead || (input.TargetVersion == schemaauthority.ScopedContentExpandHead || input.TargetVersion == schemaauthority.XInsightPolicyExpandHead) {
 			if err := manifest.Require(input.TargetVersion, runtimegeneration.ContentLifecycleRequirements()); err != nil {
 				return err
 			}
 		}
-		if input.TargetVersion == schemaauthority.PreDispatchExpandHead {
+		if input.TargetVersion == schemaauthority.PreDispatchExpandHead || (input.TargetVersion == schemaauthority.ScopedContentExpandHead || input.TargetVersion == schemaauthority.XInsightPolicyExpandHead) {
 			if err := manifest.Require(input.TargetVersion, []modelprofile.ImplementationReference{{Kind: "source_observations", ID: "unirouter.source-observation.v2"}}); err != nil {
 				return err
 			}
 		}
+		if input.TargetVersion == schemaauthority.ScopedContentExpandHead || input.TargetVersion == schemaauthority.XInsightPolicyExpandHead {
+			if err := manifest.Require(input.TargetVersion, runtimegeneration.ScopedContentRequirements()); err != nil {
+				return err
+			}
+		}
+		if input.TargetVersion == schemaauthority.XInsightPolicyExpandHead {
+			if err := manifest.Require(input.TargetVersion, runtimegeneration.XInsightPolicyRequirements()); err != nil {
+				return err
+			}
+		}
 		manifests[host] = manifest
-		if input.TargetVersion == schemaauthority.SourceFactsExpandHead || input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead || (input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead) {
+		if input.TargetVersion == schemaauthority.SourceFactsExpandHead || input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead || (input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead || (input.TargetVersion == schemaauthority.ScopedContentExpandHead || input.TargetVersion == schemaauthority.XInsightPolicyExpandHead)) {
 			if err := manifest.Require(input.TargetVersion, []modelprofile.ImplementationReference{{Kind: "source_facts", ID: "unirouter.source-fact.v1"}}); err != nil {
 				return err
 			}
@@ -148,19 +158,19 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 			return err
 		}
 		predecessor := schemaauthority.LegacyCapabilityHead
-		if input.TargetVersion == schemaauthority.StreamCounterExpandHead || input.TargetVersion == schemaauthority.SourceFactsExpandHead || input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead || (input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead) {
+		if input.TargetVersion == schemaauthority.StreamCounterExpandHead || input.TargetVersion == schemaauthority.SourceFactsExpandHead || input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead || (input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead || (input.TargetVersion == schemaauthority.ScopedContentExpandHead || input.TargetVersion == schemaauthority.XInsightPolicyExpandHead)) {
 			predecessor = schemaauthority.CapabilityExpandHead
 		}
-		if input.TargetVersion == schemaauthority.SourceFactsExpandHead || input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead || (input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead) {
+		if input.TargetVersion == schemaauthority.SourceFactsExpandHead || input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead || (input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead || (input.TargetVersion == schemaauthority.ScopedContentExpandHead || input.TargetVersion == schemaauthority.XInsightPolicyExpandHead)) {
 			predecessor = schemaauthority.StreamCounterExpandHead
 		}
-		if input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead || (input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead) {
+		if input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead || (input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead || (input.TargetVersion == schemaauthority.ScopedContentExpandHead || input.TargetVersion == schemaauthority.XInsightPolicyExpandHead)) {
 			predecessor = schemaauthority.SourceFactsExpandHead
 		}
-		if input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead || (input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead) {
+		if input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead || (input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead || (input.TargetVersion == schemaauthority.ScopedContentExpandHead || input.TargetVersion == schemaauthority.XInsightPolicyExpandHead)) {
 			predecessor = schemaauthority.ObservationExpandHead
 		}
-		if input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead {
+		if input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead || (input.TargetVersion == schemaauthority.ScopedContentExpandHead || input.TargetVersion == schemaauthority.XInsightPolicyExpandHead) {
 			predecessor = schemaauthority.BudgetSnapshotExpandHead
 		}
 		if input.TargetVersion == schemaauthority.ContentReclaimExpandHead {
@@ -169,10 +179,16 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 		if input.TargetVersion == schemaauthority.PreDispatchExpandHead {
 			predecessor = schemaauthority.ContentReclaimExpandHead
 		}
+		if input.TargetVersion == schemaauthority.ScopedContentExpandHead || input.TargetVersion == schemaauthority.XInsightPolicyExpandHead {
+			predecessor = schemaauthority.PreDispatchExpandHead
+		}
+		if input.TargetVersion == schemaauthority.XInsightPolicyExpandHead {
+			predecessor = schemaauthority.ScopedContentExpandHead
+		}
 		if actual[len(actual)-1] != predecessor && actual[len(actual)-1] != input.TargetVersion {
 			return fmt.Errorf("expansion predecessor differs")
 		}
-		if input.TargetVersion == schemaauthority.StreamCounterExpandHead || input.TargetVersion == schemaauthority.SourceFactsExpandHead || input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead || (input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead) {
+		if input.TargetVersion == schemaauthority.StreamCounterExpandHead || input.TargetVersion == schemaauthority.SourceFactsExpandHead || input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead || (input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead || (input.TargetVersion == schemaauthority.ScopedContentExpandHead || input.TargetVersion == schemaauthority.XInsightPolicyExpandHead)) {
 			if err := verifyCompatibleRecoveryFleet(ctx, conn, input.TargetVersion, instances); err != nil {
 				return err
 			}
@@ -218,7 +234,7 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 				if input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead {
 					return runtimegeneration.CertifyBudgetCoverageTx(ctx, tx, manifests["uniroute-api"], input.MigrationDigest)
 				}
-				if input.TargetVersion == schemaauthority.StreamCounterExpandHead || input.TargetVersion == schemaauthority.SourceFactsExpandHead || input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead || (input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead) {
+				if input.TargetVersion == schemaauthority.StreamCounterExpandHead || input.TargetVersion == schemaauthority.SourceFactsExpandHead || input.TargetVersion == schemaauthority.ObservationExpandHead || input.TargetVersion == schemaauthority.BudgetSnapshotExpandHead || (input.TargetVersion == schemaauthority.ContentCaptureExpandHead || input.TargetVersion == schemaauthority.ContentReclaimExpandHead || input.TargetVersion == schemaauthority.PreDispatchExpandHead || (input.TargetVersion == schemaauthority.ScopedContentExpandHead || input.TargetVersion == schemaauthority.XInsightPolicyExpandHead)) {
 					return nil
 				} // Existing actors renew against the new head; never re-bootstrap M114.
 				for _, host := range []string{"uniroute-api", "uniroute-api-canary"} {
@@ -244,7 +260,7 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 // may retain them only when their own immutable manifest supports the complete
 // target contract. The host controller still proves the actual process fleet.
 func verifyCompatibleRecoveryFleet(ctx context.Context, conn *pgxpool.Conn, target string, instances map[string]bool) error {
-	retainedRecovery := target == schemaauthority.ObservationExpandHead || target == schemaauthority.BudgetSnapshotExpandHead || (target == schemaauthority.ContentCaptureExpandHead || target == schemaauthority.ContentReclaimExpandHead || target == schemaauthority.PreDispatchExpandHead)
+	retainedRecovery := target == schemaauthority.ObservationExpandHead || target == schemaauthority.BudgetSnapshotExpandHead || (target == schemaauthority.ContentCaptureExpandHead || target == schemaauthority.ContentReclaimExpandHead || target == schemaauthority.PreDispatchExpandHead || target == schemaauthority.ScopedContentExpandHead || target == schemaauthority.XInsightPolicyExpandHead)
 	inventory := `SELECT g.instance_id,(g.ingress_state<>'absent' OR g.lease_expires_at>clock_timestamp()),COALESCE(m.manifest_digest,''),m.canonical_bytes
 FROM runtime_generations g LEFT JOIN runtime_support_manifests m USING(artifact_digest) WHERE g.state<>'stopped'`
 	if !retainedRecovery {
@@ -287,14 +303,20 @@ func verifyDormantExpansionManifest(wire []byte, digest, target string) error {
 		{Kind: "source_observations", ID: "unirouter.source-observation.v1"},
 		{Kind: "source_dispatch", ID: "unirouter.source-dispatch-outbox.v1"},
 	}
-	if target == schemaauthority.BudgetSnapshotExpandHead || (target == schemaauthority.ContentCaptureExpandHead || target == schemaauthority.ContentReclaimExpandHead || target == schemaauthority.PreDispatchExpandHead) {
+	if target == schemaauthority.BudgetSnapshotExpandHead || (target == schemaauthority.ContentCaptureExpandHead || target == schemaauthority.ContentReclaimExpandHead || target == schemaauthority.PreDispatchExpandHead || target == schemaauthority.ScopedContentExpandHead || target == schemaauthority.XInsightPolicyExpandHead) {
 		refs = append(refs, runtimegeneration.BudgetCoverageRequirements()...)
 	}
-	if target == schemaauthority.ContentCaptureExpandHead || target == schemaauthority.ContentReclaimExpandHead || target == schemaauthority.PreDispatchExpandHead {
+	if target == schemaauthority.ContentCaptureExpandHead || target == schemaauthority.ContentReclaimExpandHead || target == schemaauthority.PreDispatchExpandHead || target == schemaauthority.ScopedContentExpandHead || target == schemaauthority.XInsightPolicyExpandHead {
 		refs = append(refs, runtimegeneration.ContentLifecycleRequirements()...)
 	}
-	if target == schemaauthority.PreDispatchExpandHead {
+	if target == schemaauthority.PreDispatchExpandHead || target == schemaauthority.ScopedContentExpandHead || target == schemaauthority.XInsightPolicyExpandHead {
 		refs = append(refs, modelprofile.ImplementationReference{Kind: "source_observations", ID: "unirouter.source-observation.v2"})
+	}
+	if target == schemaauthority.ScopedContentExpandHead || target == schemaauthority.XInsightPolicyExpandHead {
+		refs = append(refs, runtimegeneration.ScopedContentRequirements()...)
+	}
+	if target == schemaauthority.XInsightPolicyExpandHead {
+		refs = append(refs, runtimegeneration.XInsightPolicyRequirements()...)
 	}
 	return manifest.Require(target, refs)
 }

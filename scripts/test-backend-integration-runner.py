@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -71,6 +72,23 @@ class RunnerTests(unittest.TestCase):
         self.assertIn("TestContentCaptureMigration.*", pattern)
         self.assertIn("TestHistoricalM115RetirementPermitsOnlyProvedSuffix", pattern)
         self.assertIn("TestRetirementRacesFastAndSlowRenewWithoutReusingStoppedIdentity", pattern)
+        for name in (
+            "TestAsyncMediaImageMigrationContractAndRollbackGuard",
+            "TestReceiverFeedCredentialMigrationContractAndDownRefusal",
+            "TestXInsightFeedControlMigrationEnforcesStagedAndRollbackLifecycle",
+            "TestM115ToM123CompatibleExpandPreservesExistingKey",
+            "TestSourceCompatibleExpandRetainsOnlySupportedDormantGenerations",
+            "TestScopedContentMigrationPreservesOldPolicyAndRefusesNewHistoryRollback",
+            "TestResponseCachePolicySwitchReleasesRealRedisReservationIntegration",
+            "TestXInsightMachinePolicyDelegationCASAndReplayIntegration",
+            "TestXInsightAuditHumanSystemServiceProjectionIntegration",
+            "TestXInsightAuditM123HistoricalActorBackfillIntegration",
+            "TestXInsightFutureSourceEnrollmentACReadAndRevokeIntegration",
+            "TestXInsightBindExistingFactsAndContentIntegration",
+            "TestScopedPolicyHTTPEnterpriseAndProjectCASIntegration",
+        ):
+            with self.subTest(name=name):
+                self.assertIsNotNone(re.fullmatch(pattern, name))
         self.assertEqual([call[call.index("-run") + 1] for call in before[2:]], [
             "^TestAgentCapabilityPostgresAuthorityAndRevocationIntegration$",
             "^TestP6F07PostgresRedisMultiInstanceIntegration$",

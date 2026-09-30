@@ -128,7 +128,7 @@ func BuildPlanV2(ctx context.Context, tx pgx.Tx, a AuthorityV2, r PlanRequestV2)
 	if err := schemaauthority.VerifyRuntimeLedger(a.ArtifactMigrationLedger, ledger); err != nil {
 		return p, err
 	}
-	if ledger[len(ledger)-1] != schemaauthority.CapabilityExpandHead && ledger[len(ledger)-1] != schemaauthority.StreamCounterExpandHead && ledger[len(ledger)-1] != schemaauthority.SourceFactsExpandHead && ledger[len(ledger)-1] != schemaauthority.ObservationExpandHead && ledger[len(ledger)-1] != schemaauthority.BudgetSnapshotExpandHead && ledger[len(ledger)-1] != schemaauthority.ContentCaptureExpandHead && ledger[len(ledger)-1] != schemaauthority.ContentReclaimExpandHead && ledger[len(ledger)-1] != schemaauthority.PreDispatchExpandHead {
+	if ledger[len(ledger)-1] != schemaauthority.CapabilityExpandHead && ledger[len(ledger)-1] != schemaauthority.StreamCounterExpandHead && ledger[len(ledger)-1] != schemaauthority.SourceFactsExpandHead && ledger[len(ledger)-1] != schemaauthority.ObservationExpandHead && ledger[len(ledger)-1] != schemaauthority.BudgetSnapshotExpandHead && ledger[len(ledger)-1] != schemaauthority.ContentCaptureExpandHead && ledger[len(ledger)-1] != schemaauthority.ContentReclaimExpandHead && ledger[len(ledger)-1] != schemaauthority.PreDispatchExpandHead && (ledger[len(ledger)-1] != schemaauthority.ScopedContentExpandHead && ledger[len(ledger)-1] != schemaauthority.XInsightPolicyExpandHead) {
 		return p, fmt.Errorf("explicit additive expand must precede capability authoring")
 	}
 	target, err := readTargetIdentity(ctx, tx, a.Environment)

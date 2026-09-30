@@ -28,6 +28,7 @@ type contentPublishPG struct {
 	receipt     contentcapture.StoredReceipt
 	manifest    ContentManifest
 	limits      contentcapture.StoreLimits
+	principal   contentcapture.CapturePrincipal
 }
 
 func setupContentPublishPG(t *testing.T, body []byte, revision int64) contentPublishPG {
@@ -64,7 +65,13 @@ func setupContentPublishPGWithRetention(t *testing.T, body []byte, revision, ret
 	require.NoError(t, err)
 	policy, err := contentcapture.NewPolicyStore(pool, contentcapture.PolicyStoreOptions{SourceInstance: s.SourceInstance(), DefaultMode: contentcapture.ModeMetadataOnly, SupportedProtocols: []string{m.Protocol}, ObservationPoints: []string{m.ObservationPoint}, Limits: contentcapture.PolicyLimits{MaxSavedBytes: 128, MaxReadBytes: 128, MaxBufferBytes: 7, MaxManifestBytes: 4096, MaxManifestItems: 10}, FullContentEnabled: true})
 	require.NoError(t, err)
-	r, err = policy.Reserve(t.Context(), files, contentcapture.ReservationRequest{OrgID: org, ProjectID: project, ContentRef: m.ContentRef, SourceFactID: m.SourceFactID, Revision: revision, ExpectedPolicyVersion: "1", ExpectedRecoveryEpoch: 1, Protocol: m.Protocol, ObservationPoint: m.ObservationPoint, MaxSavedBytes: 128, LeaseOwner: "synthetic-publisher", LeaseTTL: min(time.Hour, time.Duration(retention)*time.Second)})
+	var keyID int64
+	require.NoError(t, pool.QueryRow(t.Context(), `INSERT INTO api_keys(org_id,project_id,name,key_hash,key_prefix,status)
+      VALUES($1,$2,'synthetic-publish',repeat('d',64),'synthetic-publish','active') RETURNING id`, org, project).Scan(&keyID))
+	principal := contentcapture.CapturePrincipal{APIKeyID: keyID, KeyType: "shared"}
+	snapshot, err := policy.EffectiveScopedForCapture(t.Context(), principal, org, project, "ready")
+	require.NoError(t, err)
+	r, err = policy.Reserve(t.Context(), files, contentcapture.ReservationRequest{OrgID: org, ProjectID: project, ContentRef: m.ContentRef, SourceFactID: m.SourceFactID, Revision: revision, ExpectedPolicyVersion: snapshot.Effective.PolicyVersion, ExpectedPolicyRef: snapshot.PolicyRef, ExpectedPolicyVector: snapshot.Vector, Principal: principal, ExpectedRecoveryEpoch: 1, Protocol: m.Protocol, ObservationPoint: m.ObservationPoint, MaxSavedBytes: 128, LeaseOwner: "synthetic-publisher", LeaseTTL: min(time.Hour, time.Duration(retention)*time.Second)})
 	require.NoError(t, err)
 	limits := contentcapture.StoreLimits{MaxSavedBytes: 128, MaxReadBytes: 128, MaxBufferBytes: 7}
 	receipt, err := files.SaveReservation(t.Context(), r, bytes.NewReader(body), limits)
@@ -74,7 +81,7 @@ func setupContentPublishPGWithRetention(t *testing.T, body []byte, revision, ret
 	m.Capture.PolicyEffectiveAt = r.EffectiveAt
 	m.CapturedAt = r.ExpiresAt.Add(-time.Duration(*r.Effective.Config.RetentionSeconds) * time.Second).UTC().Format("2006-01-02T15:04:05.000000Z")
 	m.ExpiresAt = r.ExpiresAt.UTC().Format("2006-01-02T15:04:05.000000Z")
-	return contentPublishPG{pool: pool, service: s, files: files, root: root, reservation: r, receipt: receipt, manifest: m, limits: limits}
+	return contentPublishPG{pool: pool, service: s, files: files, root: root, reservation: r, receipt: receipt, manifest: m, limits: limits, principal: principal}
 }
 
 func (p contentPublishPG) publish(t *testing.T) (ContentAppendResult, error) {

@@ -2,6 +2,7 @@
 """Exercise release metadata policy and the actual CI router in isolated Git repos."""
 
 import json
+import hashlib
 import os
 import re
 from pathlib import Path
@@ -74,9 +75,14 @@ class ReleasePolicyTests(unittest.TestCase):
                    "          node-version: '24'\n")
         for name in ('capability-bundle.yml', 'foigent-protocol-conformance.yml'):
             self.write('.github/workflows/' + name,
-                       "      - uses: actions/setup-go@v7\n"
-                       "        with:\n"
-                       "          go-version: '1.25.12'\n")
+                   "      - uses: actions/setup-go@v7\n"
+                   "        with:\n"
+                   "          go-version: '1.25.12'\n")
+        restore = b'-- synthetic restore helper fixture\n'
+        self.write('scripts/source-budget-restore-rebase.sql', restore.decode())
+        self.write('deploy/customer/README.md',
+                   '- SHA-256: `' + hashlib.sha256(restore).hexdigest() + '`\n'
+                   '- Bytes: `' + str(len(restore)) + '`\n')
 
     def commit(self):
         self.git('add', '--all')
@@ -161,6 +167,11 @@ class ReleasePolicyTests(unittest.TestCase):
                 self.assertIn(old, source)
                 self.write(path, source.replace(old, new, 1))
                 self.check(base='', failed=True, error=error)
+
+    def test_restore_helper_identity_drift_fails_in_current_mode(self):
+        self.check(base='', mode='current')
+        self.write('scripts/source-budget-restore-rebase.sql', '-- changed helper\n')
+        self.check(base='', failed=True, error='declared restore helper identity differs')
 
     def test_mixed_change_still_needs_bump(self):
         self.write('internal/runtime_test.go', 'package runtime\n')

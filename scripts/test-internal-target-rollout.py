@@ -210,7 +210,7 @@ class CounterTransitionTests(unittest.TestCase):
 
 
 class SchemaBridgeTransitionTests(unittest.TestCase):
-    def test_every_exact_m115_to_m120_suffix_and_predecessor(self):
+    def test_every_exact_m115_to_m122_suffix_and_predecessor(self):
         for index, head in enumerate(rollout.BRIDGE_HEADS[:-1]):
             with self.subTest(head=head), tempfile.TemporaryDirectory() as directory:
                 new=Path(directory).resolve(); (new/"migrations").mkdir()
@@ -230,12 +230,21 @@ class SchemaBridgeTransitionTests(unittest.TestCase):
                 tree="\n".join("migrations/"+name+".up.sql" for name in old).encode()
                 delta="\n".join(changes).encode()
                 rollout.validate_transition(transition)
+                for invalid in (dict(transition,migration_pairs=transition["migration_pairs"][:-1]),
+                                dict(transition,migration_pairs=[*transition["migration_pairs"],transition["migration_pairs"][-1]]),
+                                dict(transition,migration_pairs=[dict(transition["migration_pairs"][0],version="000124_unapproved"),*transition["migration_pairs"][1:]])):
+                    with self.assertRaises(RuntimeError):
+                        rollout.validate_transition(invalid)
                 with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",delta]):
                     rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
                 with patch.object(rollout,"run",return_value=tree), self.assertRaisesRegex(RuntimeError,"predecessor"):
                     rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old[:-1])
                 with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",delta+b"\nM\tmigrations/000001_init_schema.up.sql"]), self.assertRaisesRegex(RuntimeError,"migration pairs"):
                     rollout.validate_pending_counter_carrier(Path("/old"),new,transition,old)
+                if len(transition["migration_pairs"]) > 1:
+                    reversed_pairs=dict(transition,migration_pairs=list(reversed(transition["migration_pairs"])))
+                    with self.assertRaises(RuntimeError):
+                        rollout.validate_transition(reversed_pairs)
                 last=transition["migration_pairs"][-1]
                 (new/"migrations"/(last["version"]+".down.sql")).write_text("changed")
                 with patch.object(rollout,"run",side_effect=[tree,b"oldcommit",delta]), self.assertRaisesRegex(RuntimeError,"bytes differ"):
@@ -1018,8 +1027,8 @@ class ArtifactOwnerReadFixtureTests(unittest.TestCase):
         bridge,current=self.load_carrier().carrier_read_ledgers(migrations)
         self.assertEqual(bridge[0],"bridge")
         self.assertEqual(current[0],"current")
-        self.assertEqual(bridge[1][-1],"000120_unpublished_content_reclamation")
-        self.assertEqual(current[1][-1],"000121_gateway_pre_dispatch_terminal")
+        self.assertEqual(bridge[1][-1],rollout.SCOPED_CONTENT_HEAD)
+        self.assertEqual(current[1][-1],rollout.XINSIGHT_POLICY_HEAD)
         self.assertEqual(current[1],sorted(p.name[:-7] for p in migrations.glob("*.up.sql")))
         self.assertEqual(bridge[1],current[1][:-1])
 

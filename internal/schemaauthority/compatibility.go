@@ -12,6 +12,20 @@ func RuntimeLedgers(artifact []string) ([][]string, error) {
 		return nil, err
 	}
 	end := len(artifact)
+	if end >= 11 && artifact[end-1] == XInsightPolicyExpandHead && artifact[end-2] == ScopedContentExpandHead {
+		prior, err := RuntimeLedgers(artifact[:end-1])
+		if err != nil {
+			return nil, err
+		}
+		return append(prior, slices.Clone(artifact)), nil
+	}
+	if end >= 10 && artifact[end-1] == ScopedContentExpandHead && artifact[end-2] == PreDispatchExpandHead {
+		prior, err := RuntimeLedgers(artifact[:end-1])
+		if err != nil {
+			return nil, err
+		}
+		return append(prior, slices.Clone(artifact)), nil
+	}
 	if end >= 9 && artifact[end-1] == PreDispatchExpandHead && artifact[end-2] == ContentReclaimExpandHead {
 		prior, err := RuntimeLedgers(artifact[:end-1])
 		if err != nil {
@@ -62,5 +76,5 @@ func VerifyRuntimeLedger(artifact, actual []string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("database ledger is outside the exact M113/M114/M115/M116/M117/M118/M119/M120/M121 runtime compatibility bridge")
+	return fmt.Errorf("database ledger is outside the exact M113/M114/M115/M116/M117/M118/M119/M120/M121/M122/M123 runtime compatibility bridge")
 }

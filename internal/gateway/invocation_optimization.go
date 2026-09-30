@@ -14,6 +14,7 @@ import (
 
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/billing"
+	"github.com/uniroute/unirouter/internal/contentcapture"
 	"github.com/uniroute/unirouter/internal/executionmeasurement"
 	"github.com/uniroute/unirouter/internal/guardrail"
 	"github.com/uniroute/unirouter/internal/invocationopt"
@@ -42,6 +43,31 @@ type invocationOptimizationState struct {
 type responseCacheMissState struct {
 	reservation *responsecache.Reservation
 	identity    responsecache.Identity
+	principal   contentcapture.CapturePrincipal
+	orgID       int64
+	projectID   int64
+}
+
+type cacheContentPolicyGuard interface {
+	CachePersistenceAllowed(context.Context, contentcapture.CapturePrincipal, int64, int64) (bool, error)
+}
+
+func (relay *Relay) cacheContentAllowed(ctx context.Context, principal contentcapture.CapturePrincipal, orgID, projectID int64) bool {
+	if relay == nil {
+		return false
+	}
+	if relay.contentCapture == nil {
+		// Production requires a content authority even when body capture is
+		// disabled. Test and pre-M122 callers without that startup contract keep
+		// their legacy cache behavior.
+		return !relay.contentPolicyRequiredForCache
+	}
+	guard, ok := relay.contentCapture.(cacheContentPolicyGuard)
+	if !ok || principal.APIKeyID <= 0 || orgID <= 0 || projectID <= 0 {
+		return false
+	}
+	allowed, err := guard.CachePersistenceAllowed(ctx, principal, orgID, projectID)
+	return err == nil && allowed
 }
 
 type responseCacheMissContextKey struct{}
@@ -369,6 +395,15 @@ func (relay *Relay) evaluateResponseCache(
 	if mode == invocationopt.EffectiveDisabled {
 		return result
 	}
+	principal := contentcapture.CapturePrincipal{APIKeyID: apiKey.ID, KeyType: apiKey.KeyType}
+	if apiKey.OwnerUserID != nil {
+		principal.OwnerUserID = *apiKey.OwnerUserID
+	}
+	projectID := middleware.GetProjectIDFromContext(ctx)
+	if !relay.cacheContentAllowed(ctx, principal, apiKey.OrgID, projectID) {
+		result.reason = responsecache.ReasonPersistenceDenied
+		return result
+	}
 	body, err := exactUpstreamBody(upstreamRequest, 1024*1024)
 	if err != nil {
 		result.reason = responsecache.ReasonIneligibleShape
@@ -446,7 +481,8 @@ func (relay *Relay) evaluateResponseCache(
 	case responsecache.DecisionHit:
 		result.hit = decision.Hit
 	case responsecache.DecisionOwner:
-		result.miss = &responseCacheMissState{reservation: decision.Reservation, identity: identity}
+		result.miss = &responseCacheMissState{reservation: decision.Reservation, identity: identity,
+			principal: principal, orgID: apiKey.OrgID, projectID: projectID}
 	case responsecache.DecisionReject:
 		result.reject = true
 	}
@@ -727,6 +763,12 @@ func (relay *Relay) commitResponseCacheMiss(
 	reqLog *logger.Logger,
 ) {
 	if relay == nil || relay.responseCache == nil || state == nil || state.reservation == nil {
+		return
+	}
+	if !relay.cacheContentAllowed(ctx, state.principal, state.orgID, state.projectID) {
+		releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+		_ = relay.responseCache.Release(releaseCtx, state.reservation)
+		cancel()
 		return
 	}
 	proof := responsecache.UsageProof{

@@ -23,13 +23,13 @@ import (
 // This exercises the candidate binary's complete real-PG schema chain with an
 // existing M115 key. The Target's actual backup, process fleet and host controller
 // are separate deployment gates; this test never treats a synthetic DB as those.
-func TestM115ToM121CompatibleExpandPreservesExistingKey(t *testing.T) {
+func TestM115ToM123CompatibleExpandPreservesExistingKey(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	dir := testutil.MigrationsDir(t)
 	ctx := t.Context()
 	artifact, err := schemaauthority.ExpectedLedger(dir)
 	require.NoError(t, err)
-	require.Equal(t, schemaauthority.PreDispatchExpandHead, artifact[len(artifact)-1])
+	require.Equal(t, schemaauthority.XInsightPolicyExpandHead, artifact[len(artifact)-1])
 	require.NoError(t, testutil.RewindEmptySourceFactsForLegacyTest(ctx, pool, dir))
 	ledger := contentMigrationLedger(t, pool)
 	require.Equal(t, schemaauthority.StreamCounterExpandHead, ledger[len(ledger)-1])
@@ -53,7 +53,8 @@ func TestM115ToM121CompatibleExpandPreservesExistingKey(t *testing.T) {
 
 	for _, version := range []string{schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead,
 		schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead,
-		schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead} {
+		schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead,
+		schemaauthority.ScopedContentExpandHead, schemaauthority.XInsightPolicyExpandHead} {
 		t.Run(version, func(t *testing.T) {
 			before := contentMigrationLedger(t, pool)
 			require.NoError(t, migrate.RunRuntime(ctx, pool, dir), "candidate startup must preserve pending explicit expansion")
@@ -67,6 +68,16 @@ func TestM115ToM121CompatibleExpandPreservesExistingKey(t *testing.T) {
 			require.Error(t, migrate.RunCompatibleExpand(ctx, pool, dir, hooks), "wrong immutable bytes must fail")
 			require.Equal(t, before, contentMigrationLedger(t, pool))
 			hooks.ExpectedSHA256 = digest
+			if version == schemaauthority.ScopedContentExpandHead {
+				// An exact M123 file cannot skip M122 when the real ledger is at M121.
+				future, readErr := os.ReadFile(filepath.Join(dir, schemaauthority.XInsightPolicyExpandHead+".up.sql"))
+				require.NoError(t, readErr)
+				futureHooks := hooks
+				futureHooks.Version = schemaauthority.XInsightPolicyExpandHead
+				futureHooks.ExpectedSHA256 = fmt.Sprintf("sha256:%x", sha256.Sum256(future))
+				require.ErrorContains(t, migrate.RunCompatibleExpand(ctx, pool, dir, futureHooks), "pending compatible expansion 000122")
+				require.Equal(t, before, contentMigrationLedger(t, pool))
+			}
 			if version == schemaauthority.BudgetSnapshotExpandHead {
 				hooks.After = func(ctx context.Context, tx pgx.Tx) error {
 					return runtimegeneration.CertifyBudgetCoverageTx(ctx, tx,
@@ -84,6 +95,15 @@ func TestM115ToM121CompatibleExpandPreservesExistingKey(t *testing.T) {
 			}
 		})
 	}
+	require.Equal(t, artifact, contentMigrationLedger(t, pool))
+	require.Equal(t, keyHash, readKey())
+	_, err = pool.Exec(ctx, `INSERT INTO audit_logs(org_id,user_id,source,action,resource,actor_kind,actor_ref)
+		VALUES($1,NULL,'system','m123.chain.down.refusal','migration','system','system')`, org)
+	require.NoError(t, err)
+	down, err := os.ReadFile(filepath.Join(dir, schemaauthority.XInsightPolicyExpandHead+".down.sql"))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(down))
+	require.ErrorContains(t, err, "unsafe down refused")
 	require.Equal(t, artifact, contentMigrationLedger(t, pool))
 	require.Equal(t, keyHash, readKey())
 }

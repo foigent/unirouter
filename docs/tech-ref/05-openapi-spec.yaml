@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: UniRouter API
-  version: 1.5.0
+  version: 1.8.0
   description: |
     Current UniRouter API contract snapshot for active backend routes.
 
@@ -516,8 +516,14 @@ paths:
         idempotent replay is resolved before admission/capacity checks and can
         therefore return its existing job while new admissions are paused or
         capacity is full.
-        Prompt bytes are encrypted while work is nonterminal and erased from the
-        database at terminal state. This operation never debits the text-token wallet.
+        New jobs require an effective temporary-allowed execution-storage policy;
+        strict-no-persist denies the new submission without storing its prompt.
+        The encrypted request has a fixed 1-72 hour deadline (24 hours by default)
+        from admission. The worker clears expired pending requests before dispatch;
+        an offline worker may clear them later. request_cleared_at reports the
+        database-field transition, not physical removal from WAL or backups.
+        Legacy accepted jobs retain their original lifecycle and have no new deadline.
+        This operation never debits the text-token wallet.
       security:
         - gatewayRootKey: []
       parameters:
@@ -2715,6 +2721,300 @@ paths:
         "409":
           description: Desired policy version changed; read the policy before retrying
         "503": { $ref: "#/components/responses/Error" }
+
+  /api/v2/organizations/{org_id}/payload-policy:
+    description: Enterprise default for review content and execution-required temporary storage. An organization administrator or platform administrator is reauthorized in the write transaction. GET is read-only; no body is returned.
+    parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    get:
+      tags: [Admin]
+      summary: Read the enterprise policy layer and its desired/effective versions
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: "Enterprise scoped policy", content: { application/json: { schema: { $ref: "#/components/schemas/ScopedPayloadPolicyView" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [Admin]
+      summary: CAS update the enterprise default and project quota baseline
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ScopedPayloadPolicyUpdate" } } } }
+      responses:
+        "200": { description: "Applied scoped policy", content: { application/json: { schema: { $ref: "#/components/schemas/ScopedPayloadPolicyView" } } } }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /api/v2/projects/{id}/payload-policy:
+    description: Project override and resolved shared-key effective policy. An absent project override inherits the enterprise default; the project quota ledger remains shared by all keys.
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Admin]
+      summary: Read enterprise and project layers with resolved effective policy
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: "Scoped policy view", content: { application/json: { schema: { $ref: "#/components/schemas/ScopedPayloadPolicyView" } } } }
+    put:
+      tags: [Admin]
+      summary: CAS update the explicit project policy and audit in one transaction
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ScopedPayloadPolicyUpdate" } } } }
+      responses:
+        "200": { description: "Applied scoped policy", content: { application/json: { schema: { $ref: "#/components/schemas/ScopedPayloadPolicyView" } } } }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v2/projects/{id}/users/{user_id}/payload-policy:
+    description: Personal-key exception for a currently active project member. It has no private quota and does not affect shared or service keys.
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - name: user_id
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    get:
+      tags: [Admin]
+      summary: Read enterprise, project and personal exception with resolved policy
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: "Scoped policy view", content: { application/json: { schema: { $ref: "#/components/schemas/ScopedPayloadPolicyView" } } } }
+    put:
+      tags: [Admin]
+      summary: CAS update a personal exception without a private quota
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ScopedPayloadPolicyUpdate" } } } }
+      responses:
+        "200": { description: "Applied scoped policy", content: { application/json: { schema: { $ref: "#/components/schemas/ScopedPayloadPolicyView" } } } }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v2/audit-logs:
+    description: Tenant-scoped typed audit projection; service actors have null user_id, unlike the numeric-zero v1 compatibility projection.
+    get: *operation_list
+
+  /api/v2/organizations/{org_id}/xinsight-policy-delegations:
+    description: Human JWT management of exact or current-and-future policy grants for one installed XI deployment. Project administrators may request a project_id filter and see only exact grants they can manage.
+    parameters:
+      - { name: org_id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      - { name: installation_id, in: query, required: false, schema: { type: string } }
+      - { name: project_id, in: query, required: false, schema: { type: integer, minimum: 1 } }
+    get: *operation_get
+    post:
+      tags: [Admin]
+      summary: Create a policy delegation
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/XInsightPolicyDelegationInput" } } } }
+      responses:
+        "201": { $ref: "#/components/responses/JSON" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v2/organizations/{org_id}/xinsight-policy-delegations/{delegation_id}:
+    parameters:
+      - { name: org_id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      - { name: delegation_id, in: path, required: true, schema: { type: string, pattern: '^xipg_[1-9][0-9]*$' } }
+    put:
+      tags: [Admin]
+      summary: Update the actions/expiry of an unchanged delegation scope by expected_revision
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/XInsightPolicyDelegationInput" } } } }
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v2/organizations/{org_id}/xinsight-policy-delegations/{delegation_id}/revoke:
+    parameters:
+      - { name: org_id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      - { name: delegation_id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Admin]
+      summary: Revoke a policy delegation by expected_revision
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [expected_revision], properties: { expected_revision: { type: string } } } } } }
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v2/organizations/{org_id}/xinsight-policy-credentials:
+    description: Org/platform administrator registers only a public verifier. The raw XI-generated bearer is never accepted by this human endpoint. Purpose is policy.manage or source.enroll.
+    parameters:
+      - { name: org_id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      - { name: installation_id, in: query, required: false, schema: { type: string } }
+    get: *operation_get
+    post:
+      tags: [Admin]
+      summary: Register a staged machine credential for one installation and purpose
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/XInsightMachineCredentialRegistration" } } } }
+      responses:
+        "201": { $ref: "#/components/responses/JSON" }
+        "200": { description: Exact registration operation replay }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v2/organizations/{org_id}/xinsight-policy-credentials/{key_id}/activate:
+    parameters:
+      - { name: org_id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      - { name: key_id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    post: *operation_create
+  /api/v2/organizations/{org_id}/xinsight-policy-credentials/{key_id}/revoke:
+    parameters:
+      - { name: org_id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      - { name: key_id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    post: *operation_create
+
+  /api/v2/organizations/{org_id}/xinsight-source-enrollments:
+    description: Human source grant; all_current_future requires a live organization/platform administrator. A profiles and C human_review are independent options.
+    parameters:
+      - { name: org_id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      - { name: installation_id, in: query, required: false, schema: { type: string } }
+      - { name: project_id, in: query, required: false, schema: { type: integer, minimum: 1 } }
+    get: *operation_get
+    post:
+      tags: [Admin]
+      summary: Grant source enrollment for an exact project or current and future projects
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/XInsightSourceEnrollmentInput" } } } }
+      responses:
+        "201": { $ref: "#/components/responses/JSON" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v2/organizations/{org_id}/xinsight-source-enrollments/{enrollment_id}/revoke:
+    parameters:
+      - { name: org_id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      - { name: enrollment_id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Admin]
+      summary: Revoke source enrollment by expected_revision
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [expected_revision], properties: { expected_revision: { type: string } } } } } }
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v2/organizations/{org_id}/xinsight-source-enrollments/{enrollment_id}/projects/{project_id}:
+    parameters:
+      - { name: org_id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      - { name: enrollment_id, in: path, required: true, schema: { type: string } }
+      - { name: project_id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    put:
+      tags: [Admin]
+      summary: Exclude or reinclude one project from a current-and-future enrollment with CAS
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [excluded, expected_revision], properties: { excluded: { type: boolean }, expected_revision: { type: string } } } } } }
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v2/organizations/{org_id}/xinsight-source-enrollments/{enrollment_id}/projects/{project_id}/bind-existing:
+    description: Human-authorized, exact bind of an existing active A or C project credential. No old bearer enters this API; original token, coverage, cursor, and connection state remain unchanged. The bound credential becomes subject to live enrollment revocation on every read.
+    parameters:
+      - { name: org_id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      - { name: enrollment_id, in: path, required: true, schema: { type: string, pattern: '^xise_[1-9][0-9]*$' } }
+      - { name: project_id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    get:
+      tags: [Admin]
+      summary: Preview exact existing active A/C credentials and CAS state digest
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Non-secret candidate states and keys }
+        "403": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [Admin]
+      summary: Bind one reviewed existing A or C key to a live source enrollment
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/XInsightBindExistingRequest" } } } }
+      responses:
+        "200": { description: Bound or exact bind operation replay; XI must still verify real read }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { description: "Stale candidate, staged rotation, or conflicting credential/operation" }
+
+  /api/v1/integrations/xinsight/payload-policy/scopes:
+    description: Policy machine-key-only, installation-bound current project/grant discovery. Cursor is the last returned project ID; pages have at most 100 projects.
+    get: &xinsight_policy_discovery_get
+      tags: [Private Integration]
+      summary: Discover authorized policy scopes
+      security: [{ xInsightPolicyMachineKey: [] }]
+      parameters:
+        - { name: cursor, in: query, schema: { type: string, pattern: '^([1-9][0-9]*)?$' } }
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v1/integrations/xinsight/payload-policy/organizations/{org_id}:
+    parameters:
+      - { name: org_id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      - { name: delegation_id, in: query, required: false, schema: { type: string } }
+    get: &xinsight_policy_machine_get
+      tags: [Private Integration]
+      summary: Read an explicitly delegated scoped policy
+      security: [{ xInsightPolicyMachineKey: [] }]
+      responses:
+        "200": { description: "Desired/effective scoped policy and current source capabilities", content: { application/json: { schema: { $ref: "#/components/schemas/ScopedPayloadPolicyView" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    put: &xinsight_policy_machine_put
+      tags: [Private Integration]
+      summary: CAS update a delegated scope and commit service audit plus operation receipt
+      security: [{ xInsightPolicyMachineKey: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/XInsightPolicyMachineWrite" } } } }
+      responses:
+        "200": { description: Committed and applied policy-write-result.v1 }
+        "202": { description: "Committed desired policy, pending effective application" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { description: "delegation_changed, version_conflict, or operation_body_changed" }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/integrations/xinsight/payload-policy/projects/{project_id}:
+    parameters:
+      - { name: project_id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      - { name: delegation_id, in: query, required: false, schema: { type: string } }
+    get: *xinsight_policy_machine_get
+    put: *xinsight_policy_machine_put
+  /api/v1/integrations/xinsight/payload-policy/projects/{project_id}/users:
+    parameters:
+      - { name: project_id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    get: *xinsight_policy_discovery_get
+  /api/v1/integrations/xinsight/payload-policy/projects/{project_id}/users/{user_id}:
+    parameters:
+      - { name: project_id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      - { name: user_id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      - { name: delegation_id, in: query, required: false, schema: { type: string } }
+    get: *xinsight_policy_machine_get
+    put: *xinsight_policy_machine_put
+  /api/v1/integrations/xinsight/payload-policy/operations/{operation_ref}:
+    parameters:
+      - { name: operation_ref, in: path, required: true, schema: { type: string, pattern: '^xipw_[0-9a-f]{32}$' } }
+    get:
+      tags: [Private Integration]
+      summary: Read a committed operation receipt after fresh machine and delegation authorization
+      security: [{ xInsightPolicyMachineKey: [] }]
+      responses:
+        "200": { description: Original policy-write-result.v1 }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v1/integrations/xinsight/source-enrollments/projects:
+    description: Source-enroll machine-key-only discovery. Each active project nests its current eligible grants and separate facts/content status; old manual connections appear as requires_migration.
+    get: &xinsight_enrollment_discovery_get
+      tags: [Private Integration]
+      summary: Discover current and future source enrollment projects
+      security: [{ xInsightSourceEnrollmentKey: [] }]
+      parameters:
+        - { name: cursor, in: query, schema: { type: string, pattern: '^([1-9][0-9]*)?$' } }
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v1/integrations/xinsight/source-enrollments/projects/{project_id}:
+    parameters:
+      - { name: project_id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    get: *xinsight_enrollment_discovery_get
+  /api/v1/integrations/xinsight/source-enrollments/projects/{project_id}/registrations:
+    parameters:
+      - { name: project_id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    post:
+      tags: [Private Integration]
+      summary: Register one exact A or C project credential under a live source enrollment
+      description: Only a receiver-generated public verifier is accepted. Manual existing connections return 409 requires_migration; registration never replaces an old credential.
+      security: [{ xInsightSourceEnrollmentKey: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/XInsightSourceEnrollmentRegistration" } } } }
+      responses:
+        "201": { description: "New active project credential and non-secret receipt", content: { application/json: { schema: { $ref: "#/components/schemas/XInsightSourceEnrollmentReceipt" } } } }
+        "200": { description: "Exact registration operation replay with the original registration_hash and replayed true", content: { application/json: { schema: { $ref: "#/components/schemas/XInsightSourceEnrollmentReceipt" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
 
   /api/v1/projects/{id}/model-sets:
     x-unirouter-rbac:
@@ -5032,6 +5332,14 @@ paths:
 
 components:
   securitySchemes:
+    xInsightPolicyMachineKey:
+      type: http
+      scheme: bearer
+      description: Installation-bound receiver credential with exact purpose xinsight.policy.manage; cannot call source or model APIs.
+    xInsightSourceEnrollmentKey:
+      type: http
+      scheme: bearer
+      description: Installation-bound receiver credential with exact purpose xinsight.source.enroll; cannot read source facts or call model APIs.
     sourceFactsKey:
       type: http
       scheme: bearer
@@ -8300,6 +8608,12 @@ components:
         routing_model: { type: string }
         mapped_model: { type: string }
         request_sha256: { type: string, pattern: '^sha256:[a-f0-9]{64}$' }
+        request_expires_at: { type: string, format: date-time, description: Fixed deadline for new jobs; absent on legacy jobs }
+        request_cleared_at: { type: string, format: date-time, description: Actual request ciphertext field clearing time }
+        execution_storage_mode: { type: string, enum: [temporary_allowed] }
+        content_policy_ref: { type: string }
+        content_policy_version: { type: string }
+        content_policy_vector: { type: string }
         lifecycle: { $ref: "#/components/schemas/MediaLifecycle" }
         attempt: { type: integer, minimum: 0 }
         max_attempts: { type: integer, minimum: 1, maximum: 10 }
@@ -8864,6 +9178,158 @@ components:
         schema_version: { type: string, enum: [unirouter.payload-policy.update.v1] }
         expected_policy_version: { type: string, pattern: '^[1-9][0-9]*$', description: Current desired.policy_version from GET }
         desired: { $ref: "#/components/schemas/PayloadPolicyConfig" }
+    ScopedPayloadPolicyUpdate:
+      type: object
+      additionalProperties: false
+      required: [schema_version, expected_policy_ref, expected_version, expected_vector, desired, execution_storage_mode]
+      properties:
+        schema_version: { type: string, enum: [unirouter.payload-policy.v2] }
+        expected_policy_ref: { type: string }
+        expected_version: { type: string, description: Desired version or zero for an absent layer }
+        expected_vector: { type: string, description: Exact version_vector returned by GET }
+        desired: { $ref: "#/components/schemas/PayloadPolicyConfig" }
+        execution_storage_mode: { type: string, enum: [temporary_allowed, strict_no_persist] }
+        project_quota_bytes: { type: integer, minimum: 1, description: "Required for enterprise; forbidden for personal exception. For full_content, desired.quota_bytes and project_quota_bytes express the same per-project quota and must match." }
+    XInsightPolicyDelegationInput:
+      type: object
+      additionalProperties: false
+      required: [installation_id, target_kind, coverage, read, write]
+      properties:
+        installation_id: { type: string }
+        target_kind: { type: string, enum: [enterprise_default, project_policy, user_exception] }
+        coverage: { type: string, enum: [exact, all_current_future] }
+        project_id: { type: string, pattern: '^[1-9][0-9]*$' }
+        user_id: { type: string, pattern: '^[1-9][0-9]*$' }
+        read: { type: boolean }
+        write: { type: boolean }
+        expires_at: { type: string, format: date-time }
+        expected_revision: { type: string, pattern: '^[1-9][0-9]*$' }
+    XInsightMachineCredentialRegistration:
+      type: object
+      additionalProperties: false
+      required: [installation_id, purpose, key_prefix, verifier_sha256, operation_id, allowed_ip]
+      properties:
+        installation_id: { type: string }
+        purpose: { type: string, enum: [xinsight.policy.manage, xinsight.source.enroll] }
+        key_prefix: { type: string, description: Purpose-specific ur-xpm1- or ur-xse1- prefix; no raw token }
+        verifier_sha256: { type: string, description: Receiver verifier digest; no raw token }
+        operation_id: { type: string, pattern: '^[0-9a-f]{32}$' }
+        allowed_ip: { type: string, description: Exact host network binding }
+    XInsightSourceEnrollmentInput:
+      type: object
+      additionalProperties: false
+      required: [installation_id, coverage, profiles, include_content]
+      properties:
+        installation_id: { type: string }
+        coverage: { type: string, enum: [exact, all_current_future] }
+        project_id: { type: string, pattern: '^[1-9][0-9]*$' }
+        profiles: { type: array, items: { type: string }, description: Sorted unique enabled A profiles; may be empty for content-only enrollment }
+        include_content: { type: boolean }
+        expires_at: { type: string, format: date-time }
+        expected_revision: { type: string, pattern: '^[1-9][0-9]*$' }
+    XInsightPolicyMachineWrite:
+      type: object
+      additionalProperties: false
+      required: [schema_version, operation_ref, installation_id, source_instance, delegation_id, expected_delegation_revision, xi_operator, policy]
+      properties:
+        schema_version: { type: string, enum: [unirouter.xinsight.policy-write.v1] }
+        operation_ref: { type: string, pattern: '^xipw_[0-9a-f]{32}$' }
+        installation_id: { type: string }
+        source_instance: { type: string }
+        delegation_id: { type: string, pattern: '^xipg_[1-9][0-9]*$' }
+        expected_delegation_revision: { type: string, pattern: '^[1-9][0-9]*$' }
+        xi_operator:
+          type: object
+          additionalProperties: false
+          required: [kind, subject_ref, xi_request_ref]
+          properties:
+            kind: { type: string, enum: [human] }
+            subject_ref: { type: string, minLength: 1, maxLength: 128 }
+            xi_request_ref: { type: string, minLength: 1, maxLength: 128 }
+        policy: { $ref: "#/components/schemas/ScopedPayloadPolicyUpdate" }
+    XInsightSourceEnrollmentRegistration:
+      type: object
+      additionalProperties: false
+      required: [enrollment_id, kind, registration]
+      properties:
+        enrollment_id: { type: string, pattern: '^xise_[1-9][0-9]*$' }
+        kind: { type: string, enum: [facts, content] }
+        registration:
+          type: object
+          additionalProperties: false
+          required: [schema_version, token_format, verifier_scheme, key_prefix, verifier_sha256, operation_id, source_instance, org_id, project_id, profiles]
+          properties:
+            schema_version: { type: string, enum: [unirouter.xinsight.source-credential-registration.v1] }
+            token_format: { type: string, enum: [ur-xf1-hex256.v1] }
+            verifier_scheme: { type: string, enum: [receiver_sha256_v1] }
+            key_prefix: { type: string, pattern: '^ur-xf1-[0-9a-f]{13}$' }
+            verifier_sha256: { type: string }
+            operation_id: { type: string, pattern: '^[0-9a-f]{32}$' }
+            source_instance: { type: string }
+            org_id: { type: string, pattern: '^[1-9][0-9]*$' }
+            project_id: { type: string, pattern: '^[1-9][0-9]*$' }
+            profiles: { type: array, items: { type: string } }
+    XInsightSourceEnrollmentReceipt:
+      type: object
+      required: [enrollment_id, kind, credential_id, status, registration_hash]
+      properties:
+        enrollment_id: { type: string, pattern: '^xise_[1-9][0-9]*$' }
+        kind: { type: string, enum: [facts, content] }
+        credential_id: { type: string, pattern: '^[1-9][0-9]*$' }
+        status: { type: string, enum: [active] }
+        registration_hash: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        replayed: { type: boolean, description: True on an exact registration replay. }
+    XInsightBindExistingRequest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, kind, credential_id, expected_state_sha256, operation_id]
+      properties:
+        schema_version: { type: string, enum: [unirouter.xinsight.bind-existing.v1] }
+        kind: { type: string, enum: [facts, content] }
+        credential_id: { type: string, pattern: '^[1-9][0-9]*$' }
+        expected_state_sha256: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        operation_id: { type: string, pattern: '^[0-9a-f]{32}$' }
+    ScopedPayloadPolicyLayer:
+      type: object
+      required: [policy_ref, explicit]
+      properties:
+        policy_ref: { type: string }
+        explicit: { type: boolean }
+        desired: { $ref: "#/components/schemas/PayloadPolicyVersion" }
+        effective: { $ref: "#/components/schemas/PayloadPolicyVersion" }
+        desired_execution_storage_mode: { type: string, enum: [temporary_allowed, strict_no_persist] }
+        effective_execution_storage_mode: { type: string, enum: [temporary_allowed, strict_no_persist] }
+        application_status: { type: string, enum: [applied, pending, failed] }
+        application_reason: { type: string }
+        project_quota_bytes: { type: integer }
+        desired_default_project_quota_bytes: { type: integer }
+        effective_default_project_quota_bytes: { type: integer }
+    ScopedPayloadPolicyView:
+      type: object
+      required: [schema_version, source_instance, org_id, enterprise, version_vector, storage_status, deployment_mode, full_content_enabled, limits]
+      properties:
+        schema_version: { type: string, enum: [unirouter.payload-policy.v2] }
+        source_instance: { type: string }
+        org_id: { type: string }
+        project_id: { type: string }
+        user_id: { type: string }
+        enterprise: { $ref: "#/components/schemas/ScopedPayloadPolicyLayer" }
+        project: { $ref: "#/components/schemas/ScopedPayloadPolicyLayer" }
+        user: { $ref: "#/components/schemas/ScopedPayloadPolicyLayer" }
+        effective: { type: object, description: Selected scope-qualified effective policy and version_vector; absent for enterprise-only view }
+        version_vector: { type: string }
+        storage_status: { type: string }
+        deployment_mode: { type: string, enum: [disabled, metadata_only] }
+        full_content_enabled: { type: boolean }
+        limits: { type: object }
+        policy_capabilities:
+          type: object
+          description: Current source support for policy writes, including when the enterprise policy is absent. These are not an active policy, a default selection, or authorization. Limits and full_content_enabled apply independently.
+          additionalProperties: false
+          required: [supported_protocols, observation_points]
+          properties:
+            supported_protocols: { type: array, items: { type: string } }
+            observation_points: { type: array, items: { type: string } }
     PayloadPolicyView:
       type: object
       additionalProperties: false

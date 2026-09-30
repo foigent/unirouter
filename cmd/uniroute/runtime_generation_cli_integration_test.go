@@ -49,7 +49,7 @@ func TestRuntimeGenerationCLIExpandedLedgerLifecycleIntegration(t *testing.T) {
 		t.Run(head, func(t *testing.T) {
 			pool := testutil.SetupMigratedTestDB(t)
 			dir := testutil.MigrationsDir(t)
-			for _, successor := range []string{schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ObservationExpandHead} {
+			for _, successor := range []string{schemaauthority.XInsightPolicyExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ObservationExpandHead} {
 				if head < successor {
 					wire, err := os.ReadFile(filepath.Join(dir, successor+".down.sql"))
 					require.NoError(t, err)
@@ -122,7 +122,7 @@ func TestRuntimeGenerationCLIRejectsUnapprovedLedgersIntegration(t *testing.T) {
 				_, err = invokeGenerationCLI(t, cfg, action, map[string]any{})
 				require.Error(t, err)
 				if kind == "legacy" {
-					require.ErrorContains(t, err, "requires the exact expanded schema")
+					require.ErrorContains(t, err, "M123 runtime compatibility bridge")
 				}
 			}
 			var count int

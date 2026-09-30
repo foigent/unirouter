@@ -28,6 +28,13 @@ AND execution_state='running' AND provider_outcome='pending')`, job.JobID, job.S
 	if err != nil || !matches {
 		return request, unchanged
 	}
-	id := contentcapture.Observation{OrgID: job.Scope.OrgID, ProjectID: job.Scope.ProjectID, RequestID: job.RequestID, Protocol: route.ProtocolProfile, AttemptID: s.source.mediaRouteID(job, route)}
+	// The accepted job binds the key ID; these fields are hints only. Begin and
+	// Reserve recheck the live key, owner and project authority transactionally.
+	principal := contentcapture.CapturePrincipal{APIKeyID: job.APIKeyID}
+	if err := s.pool.QueryRow(checkCtx, `SELECT COALESCE(NULLIF(key_type,''),'shared'),COALESCE(owner_user_id,0)
+FROM api_keys WHERE id=$1 AND org_id=$2 AND project_id=$3`, job.APIKeyID, job.Scope.OrgID, job.Scope.ProjectID).Scan(&principal.KeyType, &principal.OwnerUserID); err != nil {
+		return request, unchanged
+	}
+	id := contentcapture.Observation{OrgID: job.Scope.OrgID, ProjectID: job.Scope.ProjectID, RequestID: job.RequestID, Protocol: route.ProtocolProfile, AttemptID: s.source.mediaRouteID(job, route), Principal: principal}
 	return contentcapture.ObserveProvider(s, id, request)
 }

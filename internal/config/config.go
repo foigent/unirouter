@@ -131,6 +131,7 @@ type Config struct {
 	AsyncMediaPollMilliseconds    int
 	AsyncMediaProviderTimeoutSecs int
 	AsyncMediaMaxAttempts         int
+	AsyncMediaRequestTTLHrs       int
 
 	// License
 	LicensePublicKey         string
@@ -444,6 +445,9 @@ func (c *Config) Validate() error {
 		}
 		if c.AsyncMediaMaxAttempts < 1 || c.AsyncMediaMaxAttempts > 10 {
 			return fmt.Errorf("ASYNC_MEDIA_MAX_ATTEMPTS must be between 1 and 10")
+		}
+		if c.AsyncMediaRequestTTLHrs != 0 && (c.AsyncMediaRequestTTLHrs < 1 || c.AsyncMediaRequestTTLHrs > 72) {
+			return fmt.Errorf("ASYNC_MEDIA_REQUEST_TTL_HOURS must be between 1 and 72")
 		}
 	}
 	if c.LogRetentionDays < 0 {
@@ -825,6 +829,7 @@ func Load() (*Config, error) {
 		AsyncMediaPollMilliseconds:    getEnvInt("ASYNC_MEDIA_POLL_MILLISECONDS", 500),
 		AsyncMediaProviderTimeoutSecs: getEnvInt("ASYNC_MEDIA_PROVIDER_TIMEOUT_SECONDS", 180),
 		AsyncMediaMaxAttempts:         getEnvInt("ASYNC_MEDIA_MAX_ATTEMPTS", 3),
+		AsyncMediaRequestTTLHrs:       getEnvInt("ASYNC_MEDIA_REQUEST_TTL_HOURS", 24),
 
 		LicensePublicKey:         getEnvStr("LICENSE_PUBLIC_KEY", ""),
 		LicensePublicKeys:        getEnvStr("LICENSE_PUBLIC_KEYS", ""),

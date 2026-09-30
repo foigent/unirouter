@@ -9,7 +9,7 @@ import (
 )
 
 func TestFirstCustomerInventoryKeepsContentSeparateFromReset(t *testing.T) {
-	content := []string{"execution_content_health", "execution_content_manifests", "execution_content_objects", "execution_content_policies", "execution_content_streams", "execution_source_content_bindings", "execution_source_content_operations", "execution_source_content_scopes"}
+	content := []string{"execution_content_enterprise_policies", "execution_content_health", "execution_content_manifests", "execution_content_objects", "execution_content_policies", "execution_content_streams", "execution_content_user_policies", "execution_source_content_bindings", "execution_source_content_operations", "execution_source_content_scopes", "xinsight_machine_credentials", "xinsight_policy_delegations", "xinsight_policy_operations", "xinsight_source_enrollment_bindings", "xinsight_source_enrollment_exclusions", "xinsight_source_enrollments"}
 	require.Equal(t, content, firstCustomerContentTables())
 	reset := resetplan.ExpectedPublicTables()
 	require.Len(t, reset, 140)
@@ -17,7 +17,7 @@ func TestFirstCustomerInventoryKeepsContentSeparateFromReset(t *testing.T) {
 	slices.Sort(expected)
 	actual := firstCustomerExpectedPublicTables()
 	require.Equal(t, expected, actual)
-	require.Len(t, slices.Compact(slices.Clone(actual)), 148)
+	require.Len(t, slices.Compact(slices.Clone(actual)), 156)
 	zero := firstCustomerZeroTables()
 	require.Equal(t, zero, slices.Compact(slices.Clone(zero)))
 	for _, name := range content {

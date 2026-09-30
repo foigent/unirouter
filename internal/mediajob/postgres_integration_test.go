@@ -4,6 +4,7 @@ package mediajob
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/accessgrantlifecycle"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/contentcapture"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
@@ -160,6 +162,88 @@ func TestPostgresStoreImageLifecycleFencingAndTenantIsolation(t *testing.T) {
 	require.Empty(t, purged.ObjectKey)
 	require.NotNil(t, purged.Output)
 	require.NotNil(t, purged.Output.PurgedAt)
+}
+
+func TestScopedMediaRequestDeadlineAndStrictAdmissionIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := t.Context()
+	store, err := NewPostgresStore(pool, ExecutionModelAuthorizerFunc(func(context.Context, db.DBQuerier, ExecutionAuthorization) error { return nil }))
+	require.NoError(t, err)
+	policy, err := contentcapture.NewPolicyStore(pool, contentcapture.PolicyStoreOptions{
+		SourceInstance: "synthetic-media-policy", DefaultMode: contentcapture.ModeMetadataOnly,
+		SupportedProtocols: []string{"media_jobs"}, ObservationPoints: []string{"client_request"},
+		Limits: contentcapture.PolicyLimits{MaxSavedBytes: 1024, MaxReadBytes: 1024, MaxBufferBytes: 128, MaxManifestBytes: 4096, MaxManifestItems: 10},
+	})
+	require.NoError(t, err)
+	store.SetContentPolicy(policy)
+	orgID, projectID, keyID := seedMediaScope(t, pool)
+	scope := Scope{OrgID: orgID, ProjectID: projectID}
+	now := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	record := mediaCreateRecord(scope, keyID, "a", now, 3)
+	record.RequestTTL = time.Hour
+	created, reused, err := store.CreateOrGet(ctx, record)
+	require.NoError(t, err)
+	require.False(t, reused)
+	require.NotNil(t, created.RequestExpiresAt)
+	require.Equal(t, now.Add(time.Hour), *created.RequestExpiresAt)
+	require.Nil(t, created.RequestClearedAt)
+	require.Equal(t, contentcapture.ExecutionStorageTemporary, created.ExecutionStorageMode)
+	require.NotEmpty(t, created.ContentPolicyRef)
+	require.NotEmpty(t, created.ContentPolicyVector)
+	claimed, err := store.Claim(ctx, "deadline-worker", now.Add(time.Hour), time.Minute)
+	require.NoError(t, err)
+	require.Nil(t, claimed)
+	expired, err := store.Get(ctx, scope, created.JobID)
+	require.NoError(t, err)
+	require.Equal(t, OutcomeNotStarted, expired.Lifecycle.Outcome)
+	require.Equal(t, "request_deadline_expired", expired.ErrorCode)
+	require.Empty(t, expired.RequestCiphertext)
+	require.NotNil(t, expired.RequestClearedAt)
+	replayed, reused, err := store.CreateOrGet(ctx, record)
+	require.NoError(t, err)
+	require.True(t, reused)
+	require.Equal(t, expired.JobID, replayed.JobID)
+	lateRecord := mediaCreateRecord(scope, keyID, "c", now.Add(time.Minute), 3)
+	lateRecord.RequestTTL = time.Hour
+	late, reused, err := store.CreateOrGet(ctx, lateRecord)
+	require.NoError(t, err)
+	require.False(t, reused)
+	leased, err := store.Claim(ctx, "deadline-fence", now.Add(2*time.Minute), 2*time.Hour)
+	require.NoError(t, err)
+	require.NotNil(t, leased)
+	require.Equal(t, late.JobID, leased.JobID)
+	lease := leaseFromClaimed(*leased)
+	expected, err := store.ExecutionLimitSubject(ctx, lease)
+	require.NoError(t, err)
+	operationID := "deadline-dispatch-fence"
+	_, _, err = store.AttachExecutionReservation(ctx, lease, expected,
+		&limitpolicy.DurableReservation{OperationID: operationID}, operationID,
+		now.Add(3*time.Hour), now.Add(time.Hour+time.Minute))
+	require.ErrorIs(t, err, ErrCancelled)
+	late, err = store.Get(ctx, scope, late.JobID)
+	require.NoError(t, err)
+	require.Equal(t, OutcomeNotStarted, late.Lifecycle.Outcome)
+	require.Zero(t, late.Attempt)
+	require.NotNil(t, late.RequestClearedAt)
+	var reservations int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM async_media_limit_reservations WHERE job_id=$1`, late.JobID).Scan(&reservations))
+	require.Zero(t, reservations)
+
+	strictConfig := contentcapture.PolicyConfig{Mode: contentcapture.ModeDisabled, SupportedProtocols: []string{"media_jobs"}, ObservationPoints: []string{"client_request"}, AllowedPurposes: []string{}}
+	body, err := json.Marshal(strictConfig)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO execution_content_enterprise_policies(org_id,desired_version,effective_version,desired_config,effective_config,
+	  desired_execution_storage_mode,effective_execution_storage_mode,desired_default_project_quota_bytes,effective_default_project_quota_bytes,
+	  effective_at,application_status,application_reason)
+	  VALUES($1,1,1,$2,$2,'strict_no_persist','strict_no_persist',1024,1024,clock_timestamp(),'applied','none')`, orgID, body)
+	require.NoError(t, err)
+	newRecord := mediaCreateRecord(scope, keyID, "b", now.Add(time.Minute), 3)
+	newRecord.RequestTTL = time.Hour
+	_, _, err = store.CreateOrGet(ctx, newRecord)
+	require.ErrorIs(t, err, ErrForbidden)
+	var count int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM async_media_jobs WHERE job_id=$1`, newRecord.Job.JobID).Scan(&count))
+	require.Zero(t, count)
 }
 
 func TestPostgresStoreUnknownAndRecoveryOnlyStates(t *testing.T) {

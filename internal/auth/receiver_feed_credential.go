@@ -16,6 +16,10 @@ const (
 	ReceiverFeedTokenPrefix            = "ur-xf1-"
 	ReceiverFeedVerifierDomain         = "unirouter.xinsight.feed-credential.v1"
 	ReceiverFeedCredentialPrefixLength = 20
+	XInsightPolicyTokenPrefix          = "ur-xpm1-"
+	XInsightPolicyVerifierDomain       = "unirouter.xinsight.policy-manage.v1"
+	XInsightEnrollmentTokenPrefix      = "ur-xse1-"
+	XInsightEnrollmentVerifierDomain   = "unirouter.xinsight.source-enroll.v1"
 )
 
 var errInvalidReceiverFeedCredential = errors.New("invalid receiver-generated feed credential")
@@ -80,6 +84,30 @@ func HashReceiverFeedCredential(rawToken, secret string) (string, string, error)
 		return "", "", err
 	}
 	return HashReceiverFeedVerifier(verifier, secret), prefix, nil
+}
+
+// The same receiver-verifier primitive is domain-separated by purpose. A
+// source-read bearer cannot authenticate a policy or enrollment route.
+func HashXInsightMachineCredential(rawToken, secret, purpose string) (string, string, error) {
+	var prefix, domain string
+	switch purpose {
+	case "xinsight.policy.manage":
+		prefix, domain = XInsightPolicyTokenPrefix, XInsightPolicyVerifierDomain
+	case "xinsight.source.enroll":
+		prefix, domain = XInsightEnrollmentTokenPrefix, XInsightEnrollmentVerifierDomain
+	default:
+		return "", "", errInvalidReceiverFeedCredential
+	}
+	if len(rawToken) != len(prefix)+64 || !strings.HasPrefix(rawToken, prefix) {
+		return "", "", errInvalidReceiverFeedCredential
+	}
+	for _, c := range rawToken[len(prefix):] {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return "", "", errInvalidReceiverFeedCredential
+		}
+	}
+	sum := sha256.Sum256([]byte(domain + "\x00" + rawToken))
+	return HashReceiverFeedVerifier(sum[:], secret), rawToken[:ReceiverFeedCredentialPrefixLength], nil
 }
 
 func validReceiverFeedRawToken(raw string) bool {

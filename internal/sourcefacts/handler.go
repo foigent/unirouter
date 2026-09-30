@@ -20,9 +20,9 @@ import (
 )
 
 type access struct {
-	keyID, org, project, generation  int64
-	keyStatus, status, instance, ips string
-	profiles, credentialProfiles     []string
+	keyID, org, project, generation               int64
+	keyStatus, status, instance, ips, policyLabel string
+	profiles, credentialProfiles                  []string
 }
 
 var errSourceAccessDenied = errors.New("source credential denied")
@@ -43,14 +43,14 @@ func (s *Service) authenticateTx(ctx context.Context, tx pgx.Tx, r *http.Request
 	if e != nil {
 		return a, errSourceAccessDenied
 	}
-	e = tx.QueryRow(ctx, `SELECT ak.id,ak.org_id,ak.project_id,ak.status,ak.allowed_ips,c.source_instance,c.status,c.scope_generation,c.profiles,sc.profiles
+	e = tx.QueryRow(ctx, `SELECT ak.id,ak.org_id,ak.project_id,ak.status,ak.allowed_ips,c.source_instance,c.status,c.scope_generation,c.profiles,sc.profiles,ak.policy_labels
 	 FROM api_keys ak JOIN execution_source_credentials sc ON sc.api_key_id=ak.id AND sc.org_id=ak.org_id AND sc.project_id=ak.project_id
 	 JOIN execution_source_connections c ON c.org_id=sc.org_id AND c.project_id=sc.project_id
 	 JOIN orgs o ON o.id=ak.org_id JOIN projects p ON p.id=ak.project_id AND p.org_id=ak.org_id
 	 WHERE ak.purpose=$1 AND ak.verifier_scheme=$2 AND ak.key_hash=$3 AND ak.key_prefix=$4
 	 AND COALESCE(to_jsonb(ak)->>'source_lifecycle_scope','legacy')='legacy'
 	 AND ak.key_type='service' AND ak.allowed_models='' AND ak.status IN ('feed_active','feed_staged')
-	 AND o.status='active' AND p.status='active' FOR SHARE OF c`, Purpose, auth.ReceiverFeedVerifierScheme, hash, prefix).Scan(&a.keyID, &a.org, &a.project, &a.keyStatus, &a.ips, &a.instance, &a.status, &a.generation, &a.profiles, &a.credentialProfiles)
+	 AND o.status='active' AND p.status='active' FOR SHARE OF c`, Purpose, auth.ReceiverFeedVerifierScheme, hash, prefix).Scan(&a.keyID, &a.org, &a.project, &a.keyStatus, &a.ips, &a.instance, &a.status, &a.generation, &a.profiles, &a.credentialProfiles, &a.policyLabel)
 	if e != nil {
 		if errors.Is(e, pgx.ErrNoRows) {
 			return a, errSourceAccessDenied
@@ -58,6 +58,13 @@ func (s *Service) authenticateTx(ctx context.Context, tx pgx.Tx, r *http.Request
 		return a, e
 	}
 	if a.instance != s.options.SourceInstance || a.status == "revoked" || strings.TrimSpace(a.ips) == "" || !ipallowlist.Matches(resolver.Resolve(r), a.ips) {
+		return a, errSourceAccessDenied
+	}
+	allowed, e := enrollmentReadAllowedTx(ctx, tx, a.keyID, a.org, a.project, a.instance, "facts", a.policyLabel)
+	if e != nil {
+		return a, e
+	}
+	if !allowed {
 		return a, errSourceAccessDenied
 	}
 	return a, nil

@@ -26,6 +26,7 @@ import (
 	"github.com/uniroute/unirouter/internal/capbilling"
 	"github.com/uniroute/unirouter/internal/completedfeed"
 	"github.com/uniroute/unirouter/internal/config"
+	"github.com/uniroute/unirouter/internal/contentcapture"
 	"github.com/uniroute/unirouter/internal/customercontext"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/eventconnectorshadow"
@@ -274,6 +275,7 @@ func main() {
 		mediajob.ServiceOptions{
 			Retention:        mediajob.DefaultRetention,
 			MaxAttempts:      cfg.AsyncMediaMaxAttempts,
+			RequestTTL:       time.Duration(cfg.AsyncMediaRequestTTLHrs) * time.Hour,
 			RuntimeEnabled:   cfg.AsyncMediaEnabled,
 			AdmissionEnabled: cfg.AsyncMediaAdmissionEnabled,
 			LimitPolicy:      limitPolicyService,
@@ -363,6 +365,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("Content capture preflight refused: %v", err)
 	}
+	mediaPolicyOptions := contentRuntimeOptions(cfg, "media-policy").Policy
+	if mediaPolicyOptions.SourceInstance == "" {
+		mediaPolicyOptions.SourceInstance = "unirouter"
+	}
+	mediaContentPolicy, err := contentcapture.NewPolicyStore(postgres.Pool, mediaPolicyOptions)
+	if err != nil {
+		log.Fatalf("Async-media content policy preflight refused: %v", err)
+	}
+	mediaStore.SetContentPolicy(mediaContentPolicy)
 	contentCaptureRuntime.startMaintenance(sourceFactsSvc)
 	billingSvc.SetTerminalMaterializer(billing.TerminalMaterializers{completedFeedSvc, sourceFactsSvc})
 	billingSvc.SetReservationMaterializer(sourceFactsSvc)
@@ -461,6 +472,7 @@ func main() {
 		log.Fatalf("Invalid payload safety configuration: %v", err)
 	}
 	relay := gateway.NewRelay(postgres.Pool, redisClient.Client, router, sharedPolicyBilling, sensitiveFilter, encKey)
+	relay.RequireContentPolicyForCache()
 	if contentCaptureRuntime != nil {
 		relay.SetContentCapture(contentCaptureRuntime.service)
 	}
@@ -524,6 +536,10 @@ func main() {
 	adminHandler.SetSourceFactsController(sourceFactsSvc)
 	if contentCaptureRuntime != nil {
 		adminHandler.SetContentPolicyController(contentCaptureRuntime.service.PolicyStore(), contentCaptureRuntime.service.Readiness)
+	} else {
+		adminHandler.SetContentPolicyController(mediaContentPolicy, func(context.Context) (contentcapture.PolicyApplication, error) {
+			return contentcapture.PolicyApplication{StorageStatus: "not_configured"}, nil
+		})
 	}
 	xInsightConnectorManager, err := xinsightconnector.NewManager(
 		postgres.Pool,
@@ -1136,6 +1152,12 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("PUT /api/v1/projects/{id}", adminRoute(adminHandler.UpdateProject))
 	mux.Handle("GET /api/v1/projects/{id}/payload-policy", projectManagementRoute(adminHandler.GetProjectPayloadPolicy))
 	mux.Handle("PUT /api/v1/projects/{id}/payload-policy", projectManagementRoute(adminHandler.PutProjectPayloadPolicy))
+	mux.Handle("GET /api/v2/organizations/{org_id}/payload-policy", orgAdminRoute(adminHandler.GetEnterprisePayloadPolicyV2))
+	mux.Handle("PUT /api/v2/organizations/{org_id}/payload-policy", orgAdminRoute(adminHandler.PutEnterprisePayloadPolicyV2))
+	mux.Handle("GET /api/v2/projects/{id}/payload-policy", projectManagementRoute(adminHandler.GetProjectPayloadPolicyV2))
+	mux.Handle("PUT /api/v2/projects/{id}/payload-policy", projectManagementRoute(adminHandler.PutProjectPayloadPolicyV2))
+	mux.Handle("GET /api/v2/projects/{id}/users/{user_id}/payload-policy", projectManagementRoute(adminHandler.GetUserPayloadPolicyV2))
+	mux.Handle("PUT /api/v2/projects/{id}/users/{user_id}/payload-policy", projectManagementRoute(adminHandler.PutUserPayloadPolicyV2))
 	mux.Handle("GET /api/v1/projects/{id}/model-sets", licensedRoute(licensing.FeatureModelGovernance, projectReadRoute)(adminHandler.ListProjectModelSets))
 	mux.Handle("PUT /api/v1/projects/{id}/model-sets", licensedRoute(licensing.FeatureModelGovernance, func(h http.HandlerFunc) http.Handler {
 		return adminRoute(h)
@@ -1242,6 +1264,35 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("POST /api/v1/notification-webhooks/{id}/verify-scope", notificationOperatorLicensedRoute(adminHandler.VerifyNotificationWebhookScope))
 
 	mux.Handle("GET /api/v1/audit-logs", organizationRoleRoute(adminHandler.ListAuditLogs, auth.RolePlatformAdmin, auth.RoleOrgAdmin))
+	mux.Handle("GET /api/v2/audit-logs", organizationRoleRoute(adminHandler.ListAuditLogsV2, auth.RolePlatformAdmin, auth.RoleOrgAdmin))
+	mux.Handle("GET /api/v2/organizations/{org_id}/xinsight-policy-delegations", adminRoute(adminHandler.ListXInsightPolicyDelegations))
+	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight-policy-delegations", adminRoute(adminHandler.CreateXInsightPolicyDelegation))
+	mux.Handle("PUT /api/v2/organizations/{org_id}/xinsight-policy-delegations/{delegation_id}", adminRoute(adminHandler.UpdateXInsightPolicyDelegation))
+	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight-policy-delegations/{delegation_id}/revoke", adminRoute(adminHandler.RevokeXInsightPolicyDelegation))
+	mux.Handle("GET /api/v2/organizations/{org_id}/xinsight-source-enrollments", adminRoute(adminHandler.ListXInsightSourceEnrollments))
+	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight-source-enrollments", adminRoute(adminHandler.CreateXInsightSourceEnrollment))
+	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight-source-enrollments/{enrollment_id}/revoke", adminRoute(adminHandler.RevokeXInsightSourceEnrollment))
+	mux.Handle("PUT /api/v2/organizations/{org_id}/xinsight-source-enrollments/{enrollment_id}/projects/{project_id}", adminRoute(adminHandler.PutXInsightSourceEnrollmentExclusion))
+	mux.Handle("GET /api/v2/organizations/{org_id}/xinsight-source-enrollments/{enrollment_id}/projects/{project_id}/bind-existing", adminRoute(adminHandler.GetXInsightBindExistingCandidates))
+	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight-source-enrollments/{enrollment_id}/projects/{project_id}/bind-existing", adminRoute(adminHandler.BindExistingXInsightSourceEnrollment))
+	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight-policy-credentials", orgAdminRoute(adminHandler.RegisterXInsightMachineCredential))
+	mux.Handle("GET /api/v2/organizations/{org_id}/xinsight-policy-credentials", orgAdminRoute(adminHandler.ListXInsightMachineCredentials))
+	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight-policy-credentials/{key_id}/activate", orgAdminRoute(adminHandler.ActivateXInsightMachineCredential))
+	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight-policy-credentials/{key_id}/revoke", orgAdminRoute(adminHandler.RevokeXInsightMachineCredential))
+	policyMachineRoute := middleware.XInsightMachineAuth(postgres.Pool, cfg.APIKeyHashSecret, "xinsight.policy.manage", clientIPResolver)
+	mux.Handle("GET /api/v1/integrations/xinsight/payload-policy/organizations/{org_id}", policyMachineRoute(adminHandler.GetXInsightMachinePolicy(contentcapture.PolicyScopeEnterprise)))
+	mux.Handle("PUT /api/v1/integrations/xinsight/payload-policy/organizations/{org_id}", policyMachineRoute(adminHandler.PutXInsightMachinePolicy(contentcapture.PolicyScopeEnterprise)))
+	mux.Handle("GET /api/v1/integrations/xinsight/payload-policy/projects/{project_id}", policyMachineRoute(adminHandler.GetXInsightMachinePolicy(contentcapture.PolicyScopeProject)))
+	mux.Handle("PUT /api/v1/integrations/xinsight/payload-policy/projects/{project_id}", policyMachineRoute(adminHandler.PutXInsightMachinePolicy(contentcapture.PolicyScopeProject)))
+	mux.Handle("GET /api/v1/integrations/xinsight/payload-policy/projects/{project_id}/users/{user_id}", policyMachineRoute(adminHandler.GetXInsightMachinePolicy(contentcapture.PolicyScopeUser)))
+	mux.Handle("PUT /api/v1/integrations/xinsight/payload-policy/projects/{project_id}/users/{user_id}", policyMachineRoute(adminHandler.PutXInsightMachinePolicy(contentcapture.PolicyScopeUser)))
+	mux.Handle("GET /api/v1/integrations/xinsight/payload-policy/operations/{operation_ref}", policyMachineRoute(http.HandlerFunc(adminHandler.GetXInsightMachinePolicyOperation)))
+	mux.Handle("GET /api/v1/integrations/xinsight/payload-policy/scopes", policyMachineRoute(http.HandlerFunc(adminHandler.GetXInsightMachinePolicyScopes)))
+	mux.Handle("GET /api/v1/integrations/xinsight/payload-policy/projects/{project_id}/users", policyMachineRoute(http.HandlerFunc(adminHandler.GetXInsightMachinePolicyUsers)))
+	sourceEnrollmentMachineRoute := middleware.XInsightMachineAuth(postgres.Pool, cfg.APIKeyHashSecret, "xinsight.source.enroll", clientIPResolver)
+	mux.Handle("GET /api/v1/integrations/xinsight/source-enrollments/projects", sourceEnrollmentMachineRoute(http.HandlerFunc(adminHandler.ListXInsightMachineEnrollmentProjects)))
+	mux.Handle("GET /api/v1/integrations/xinsight/source-enrollments/projects/{project_id}", sourceEnrollmentMachineRoute(http.HandlerFunc(adminHandler.GetXInsightMachineEnrollmentProject)))
+	mux.Handle("POST /api/v1/integrations/xinsight/source-enrollments/projects/{project_id}/registrations", sourceEnrollmentMachineRoute(http.HandlerFunc(adminHandler.RegisterXInsightSourceEnrollmentProject)))
 	mediaReadRoute := licensedRoute(licensing.FeatureGateway, projectReadRoute)
 	mediaWriteRoute := licensedRoute(licensing.FeatureGateway, projectWriteRoute)
 	mux.Handle("GET /api/v1/media-jobs/contract", mediaReadRoute(mediaHandler.Contract))

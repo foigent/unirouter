@@ -182,10 +182,9 @@ func TestUnpublishedReclaimPGRejectsAmbiguousAndPublished(t *testing.T) {
 			case "retained_history":
 				_, err = p.pool.Exec(t.Context(), `UPDATE execution_content_streams SET high_sequence=1,retained_after_sequence=1 WHERE org_id=$1 AND project_id=$2`, input.OrgID, input.ProjectID)
 			case "missing_M120":
-				require.NoError(t, sourceBudgetFixtureDownIfPresent(t, p.pool, schemaauthority.PreDispatchExpandHead))
-				wire, e := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), schemaauthority.ContentReclaimExpandHead+".down.sql"))
-				require.NoError(t, e)
-				_, err = p.pool.Exec(t.Context(), string(wire))
+				// Corrupt only this disposable test ledger. Real M122 down must
+				// refuse while the retained content object exists.
+				_, err = p.pool.Exec(t.Context(), `DELETE FROM schema_migrations WHERE version=$1`, schemaauthority.ContentReclaimExpandHead)
 			case "missing_middle":
 				_, err = p.pool.Exec(t.Context(), `DELETE FROM schema_migrations WHERE version=$1`, schemaauthority.ContentCaptureExpandHead)
 			case "quota_mismatch":

@@ -759,7 +759,7 @@ describe('API Client', () => {
         end_time: '2026-07-02T23:59:59Z',
       })
       const url = mockFetch.mock.calls[0][0]
-      expect(url).toBe('/api/v1/audit-logs?page=3&page_size=50&org_id=1&project_id=9&actor_id=7&action=channel.test&resource=channel&request_id=op-001&client_request_id=client-001&source=gateway_api&start_time=2026-07-02T00%3A00%3A00Z&end_time=2026-07-02T23%3A59%3A59Z')
+      expect(url).toBe('/api/v2/audit-logs?page=3&page_size=50&org_id=1&project_id=9&actor_id=7&action=channel.test&resource=channel&request_id=op-001&client_request_id=client-001&source=gateway_api&start_time=2026-07-02T00%3A00%3A00Z&end_time=2026-07-02T23%3A59%3A59Z')
     })
 
     it('loads notification events with filters', async () => {

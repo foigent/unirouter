@@ -14,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/accessgrantboundary"
+	"github.com/uniroute/unirouter/internal/contentcapture"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
@@ -23,6 +24,7 @@ type PostgresStore struct {
 	db                  db.DBQuerier
 	executionAuthorizer ExecutionModelAuthorizer
 	sourceMaterializer  SourceMaterializer
+	contentPolicy       *contentcapture.PolicyStore
 }
 
 const (
@@ -44,6 +46,10 @@ func NewPostgresStore(database db.DBQuerier, authorizers ...ExecutionModelAuthor
 	return &PostgresStore{db: database, executionAuthorizer: authorizer}, nil
 }
 
+func (s *PostgresStore) SetContentPolicy(policy *contentcapture.PolicyStore) {
+	s.contentPolicy = policy
+}
+
 const jobColumns = `
     j.contract_version, j.job_id, j.org_id, j.project_id, j.api_key_id,
     j.access_grant_id, j.access_credential_id, COALESCE(j.credential_ref, ''),
@@ -51,6 +57,9 @@ const jobColumns = `
     j.request_id, j.client_request_id, j.operation, j.profile_id,
     j.requested_model, j.routing_model, j.mapped_model, j.request_sha256,
     j.idempotency_hash, COALESCE(j.request_ciphertext, ''),
+    j.request_expires_at, j.request_cleared_at, COALESCE(j.execution_storage_mode,''),
+    COALESCE(j.content_policy_ref,''), COALESCE(j.content_policy_version,0),
+    COALESCE(j.content_policy_vector::text,''),
     j.admission_state, j.queue_state, j.lease_state, j.execution_state,
     j.provider_outcome, j.cancellation_state, j.object_state, j.settlement_state,
     j.attempt, j.max_attempts, j.lease_owner, j.lease_fence,
@@ -77,6 +86,7 @@ func scanJobExact(row rowScanner) (Job, error) {
 	var amountMicros *int64
 	var unitsBody []byte
 	var factRecordedAt *time.Time
+	var policyVersion int64
 	if err := row.Scan(
 		&job.ContractVersion, &job.JobID, &job.Scope.OrgID, &job.Scope.ProjectID,
 		&job.APIKeyID, &job.AccessGrantID, &job.AccessCredentialID, &job.CredentialRef,
@@ -84,6 +94,8 @@ func scanJobExact(row rowScanner) (Job, error) {
 		&job.RequestID, &job.ClientRequestID, &job.Operation,
 		&job.ProfileID, &job.RequestedModel, &job.RoutingModel, &job.MappedModel,
 		&job.RequestSHA256, &job.IdempotencyHash, &job.RequestCiphertext,
+		&job.RequestExpiresAt, &job.RequestClearedAt, &job.ExecutionStorageMode,
+		&job.ContentPolicyRef, &policyVersion, &job.ContentPolicyVector,
 		&job.Lifecycle.Admission, &job.Lifecycle.Queue, &job.Lifecycle.Lease,
 		&job.Lifecycle.Execution, &job.Lifecycle.Outcome,
 		&job.Lifecycle.Cancellation, &job.Lifecycle.Object,
@@ -101,6 +113,11 @@ func scanJobExact(row rowScanner) (Job, error) {
 		return Job{}, err
 	}
 	job.LeaseExpiresAt = utcTimePointer(job.LeaseExpiresAt)
+	job.RequestExpiresAt = utcTimePointer(job.RequestExpiresAt)
+	job.RequestClearedAt = utcTimePointer(job.RequestClearedAt)
+	if policyVersion > 0 {
+		job.ContentPolicyVersion = strconv.FormatInt(policyVersion, 10)
+	}
 	job.PurgeExpiresAt = utcTimePointer(job.PurgeExpiresAt)
 	job.StartedAt = utcTimePointer(job.StartedAt)
 	job.TerminalAt = utcTimePointer(job.TerminalAt)
@@ -201,6 +218,29 @@ func nullMediaCredentialRef(value string) any {
 		return nil
 	}
 	return value
+}
+
+func nullMediaText(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
+}
+
+func nullMediaPolicyVersion(value string) any {
+	if value == "" {
+		return nil
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed <= 0 {
+		return nil
+	}
+	return parsed
+}
+
+func utcTimePointerFunc(value time.Time) *time.Time {
+	normalized := value.UTC()
+	return &normalized
 }
 
 func (s *PostgresStore) FindByIdempotency(ctx context.Context, lookup IdempotencyLookup) (Job, error) {
@@ -316,8 +356,9 @@ func (s *PostgresStore) AttachExecutionReservation(
 		return ExecutionReservation{}, false, domainError(ErrConflict, "execution_authority_revision_changed")
 	}
 	var cancellation string
+	var requestExpiresAt *time.Time
 	if err := tx.QueryRow(ctx, `
-		SELECT cancellation_state
+		SELECT cancellation_state,request_expires_at
 		  FROM async_media_jobs
 		 WHERE job_id=$1 AND org_id=$2 AND project_id=$3
 		   AND lease_owner=$4 AND lease_fence=$5 AND lease_expires_at>$6
@@ -325,11 +366,31 @@ func (s *PostgresStore) AttachExecutionReservation(
 		   AND provider_outcome='pending'
 		 FOR UPDATE`,
 		lease.JobID, lease.Scope.OrgID, lease.Scope.ProjectID, lease.Owner, lease.Fence, now.UTC(),
-	).Scan(&cancellation); err != nil {
+	).Scan(&cancellation, &requestExpiresAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ExecutionReservation{}, false, ErrLeaseLost
 		}
 		return ExecutionReservation{}, false, fmt.Errorf("mediajob: lock dispatch lease: %w", err)
+	}
+	if requestExpiresAt != nil && !now.UTC().Before(*requestExpiresAt) {
+		_, err := tx.Exec(ctx, `UPDATE async_media_jobs SET
+		  queue_state='terminal',lease_state='released',execution_state='terminal',
+		  provider_outcome='not_started',object_state='not_created',settlement_state='not_eligible',
+		  cancellation_state=CASE WHEN cancellation_state='requested' THEN 'accepted' ELSE cancellation_state END,
+		  request_ciphertext=NULL,lease_owner='',lease_expires_at=NULL,
+		  terminal_at=$1,updated_at=$1,error_code='request_deadline_expired'
+		  WHERE job_id=$2 AND lease_fence=$3`, now.UTC(), lease.JobID, lease.Fence)
+		if err != nil {
+			return ExecutionReservation{}, false, fmt.Errorf("mediajob: expire dispatch request: %w", err)
+		}
+		if err := s.sourceTerminalTx(ctx, tx, lease.Scope, lease.JobID); err != nil {
+			return ExecutionReservation{}, false, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return ExecutionReservation{}, false, fmt.Errorf("mediajob: commit expired dispatch: %w", err)
+		}
+		s.observeSourceTerminalJobs(ctx, []sourceTerminalJob{{scope: lease.Scope, id: lease.JobID}})
+		return ExecutionReservation{}, false, ErrCancelled
 	}
 	tag, err := tx.Exec(ctx, `
 		INSERT INTO async_media_limit_reservations (
@@ -625,6 +686,30 @@ func (s *PostgresStore) CreateOrGet(
 	if !record.AllowCreate {
 		return Job{}, false, domainError(ErrUnavailable, "async_media_admission_disabled")
 	}
+	if s.contentPolicy != nil {
+		if record.RequestTTL < time.Hour || record.RequestTTL > 72*time.Hour || record.RequestTTL%time.Hour != 0 {
+			return Job{}, false, domainError(ErrInvalid, "request_ttl_invalid")
+		}
+		principal := contentcapture.CapturePrincipal{APIKeyID: live.APIKey.ID, KeyType: live.APIKey.KeyType}
+		if live.APIKey.OwnerUserID != nil {
+			principal.OwnerUserID = *live.APIKey.OwnerUserID
+		}
+		policy, policyErr := s.contentPolicy.ExecutionStorageForCommitTx(ctx, tx, principal, job.Scope.OrgID, job.Scope.ProjectID)
+		if policyErr != nil {
+			return Job{}, false, domainError(ErrUnavailable, "content_policy_unavailable")
+		}
+		if policy.ExecutionStorageMode == contentcapture.ExecutionStorageStrict {
+			return Job{}, false, domainError(ErrForbidden, "execution_storage_strict")
+		}
+		if policy.ExecutionStorageMode != contentcapture.ExecutionStorageTemporary {
+			return Job{}, false, domainError(ErrUnavailable, "execution_storage_unsupported")
+		}
+		job.RequestExpiresAt = utcTimePointerFunc(job.CreatedAt.Add(record.RequestTTL))
+		job.ExecutionStorageMode = policy.ExecutionStorageMode
+		job.ContentPolicyRef = policy.PolicyRef
+		job.ContentPolicyVersion = policy.Effective.PolicyVersion
+		job.ContentPolicyVector = policy.Vector
+	}
 	var projectOutstanding, orgOutstanding int
 	if err := tx.QueryRow(ctx, `
 		SELECT
@@ -652,10 +737,13 @@ func (s *PostgresStore) CreateOrGet(
 		    request_ciphertext, admission_state, queue_state, lease_state,
 		    execution_state, provider_outcome, cancellation_state, object_state,
 		    settlement_state, attempt, max_attempts, lease_fence,
-		    next_attempt_at, created_at, updated_at
+		    next_attempt_at, created_at, updated_at,
+		    request_expires_at, execution_storage_mode, content_policy_ref,
+		    content_policy_version, content_policy_vector
 		) VALUES (
 		    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
-		    $18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33
+		    $18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,
+		    $34,$35,$36,$37,$38::jsonb
 		)
 		ON CONFLICT (org_id, project_id, idempotency_subject_type,
 		             idempotency_subject_id, idempotency_hash)
@@ -670,6 +758,8 @@ func (s *PostgresStore) CreateOrGet(
 		job.Lifecycle.Outcome, job.Lifecycle.Cancellation, job.Lifecycle.Object,
 		job.Lifecycle.Settlement, job.Attempt, job.MaxAttempts, job.LeaseFence,
 		job.NextAttemptAt, job.CreatedAt, job.UpdatedAt,
+		job.RequestExpiresAt, nullMediaText(job.ExecutionStorageMode), nullMediaText(job.ContentPolicyRef),
+		nullMediaPolicyVersion(job.ContentPolicyVersion), nullMediaText(job.ContentPolicyVector),
 	)
 	if err != nil {
 		return Job{}, false, fmt.Errorf("mediajob: insert: %w", err)

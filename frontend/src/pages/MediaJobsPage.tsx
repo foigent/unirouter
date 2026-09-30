@@ -63,6 +63,11 @@ interface MediaJob {
   routing_model: string;
   mapped_model?: string;
   request_sha256: string;
+  request_expires_at?: string;
+  request_cleared_at?: string;
+  execution_storage_mode?: string;
+  content_policy_ref?: string;
+  content_policy_version?: string;
   lifecycle: Lifecycle;
   attempt: number;
   max_attempts: number;
@@ -452,6 +457,9 @@ export default function MediaJobsPage() {
                   { key: '供应商模型', value: selected.mapped_model || '—' },
                   { key: '尝试', value: `${selected.attempt} / ${selected.max_attempts}` },
                   { key: '请求摘要', value: selected.request_sha256 },
+                  { key: '执行暂存', value: selected.request_expires_at ? `${selected.execution_storage_mode || '—'} · ${selected.content_policy_ref || '—'} v${selected.content_policy_version || '—'}` : '旧任务：原生命周期' },
+                  { key: '请求截止', value: selected.request_expires_at ? `${displayTime(selected.request_expires_at)}${!selected.request_cleared_at && Date.parse(selected.request_expires_at) <= clock ? ' · 已逾期，等待 worker 清理' : ''}` : '旧任务：无固定截止' },
+                  { key: '请求密文实际清空', value: selected.request_cleared_at ? displayTime(selected.request_cleared_at) : '尚未确认' },
                   { key: '终态时间', value: displayTime(selected.terminal_at) },
                 ]}
               />

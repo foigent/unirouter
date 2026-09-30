@@ -14,6 +14,7 @@ type Observation struct {
 	OrgID, ProjectID                                            int64
 	RequestID, Protocol, ObservationPoint, AttemptID, MediaType string
 	OccurredAt                                                  time.Time
+	Principal                                                   CapturePrincipal
 }
 
 type Starter interface {

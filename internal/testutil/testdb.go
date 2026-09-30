@@ -86,6 +86,18 @@ func SetupMigratedTestDB(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
+// SetupMigratedThroughTestDB installs an exact historical compatible-expand
+// prefix in an isolated database, for testing one later migration's backfill.
+func SetupMigratedThroughTestDB(t *testing.T, ceiling string) *pgxpool.Pool {
+	t.Helper()
+	pool := SetupIsolatedTestDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	require.NoError(t, runStrictTestArtifactInstallThrough(ctx, pool, MigrationsDir(t), ceiling))
+	TruncateAll(t, pool)
+	return pool
+}
+
 // EnableMigratedTestDBTemplate makes SetupMigratedTestDB migrate and clean one
 // process-scoped template database, then clone it for each test. The caller must
 // invoke CleanupMigratedTestDBTemplate after the package test run completes.
@@ -246,6 +258,10 @@ func testDatabaseUnavailable(t *testing.T, format string, args ...any) {
 }
 
 func runStrictTestArtifactInstall(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
+	return runStrictTestArtifactInstallThrough(ctx, pool, migrationsDir, schemaauthority.LatestSupportedMigration)
+}
+
+func runStrictTestArtifactInstallThrough(ctx context.Context, pool *pgxpool.Pool, migrationsDir, ceiling string) error {
 	artifactLedger, err := schemaauthority.ExpectedLedger(migrationsDir)
 	if err != nil {
 		return err
@@ -308,7 +324,10 @@ func runStrictTestArtifactInstall(ctx context.Context, pool *pgxpool.Pool, migra
 	}
 	// This test-only caller owns an isolated database with no serving fleet.
 	// Exercise the same explicit expand owner; ordinary startup cannot apply it.
-	for _, expandVersion := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead} {
+	for _, expandVersion := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.XInsightPolicyExpandHead} {
+		if expandVersion > ceiling {
+			break
+		}
 		present := false
 		for _, version := range artifactLedger {
 			if version == expandVersion {
@@ -352,6 +371,16 @@ func runStrictTestArtifactInstall(ctx context.Context, pool *pgxpool.Pool, migra
 			return err
 		}
 	}
+	if ceiling != schemaauthority.LatestSupportedMigration {
+		var actual string
+		if err := pool.QueryRow(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&actual); err != nil {
+			return err
+		}
+		if actual != ceiling {
+			return fmt.Errorf("test artifact prefix got %s, want %s", actual, ceiling)
+		}
+		return nil
+	}
 	// Apply any trailing ordinary migrations. A missed declaration-owned
 	// migration still fails closed in migrate.Run instead of being bypassed.
 	if err := migrate.Run(ctx, pool, migrationsDir); err != nil {
@@ -376,7 +405,7 @@ func InstallExactTestArtifact(ctx context.Context, pool *pgxpool.Pool, migration
 // RewindEmptyBudgetSnapshotsForLegacyTest must run before a legacy fixture
 // creates projects or other D history. It uses the guarded product down.
 func RewindEmptyBudgetSnapshotsForLegacyTest(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
-	for _, version := range []string{schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.BudgetSnapshotExpandHead} {
+	for _, version := range []string{schemaauthority.XInsightPolicyExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.BudgetSnapshotExpandHead} {
 		var applied bool
 		if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, version).Scan(&applied); err != nil {
 			return err
@@ -398,7 +427,7 @@ func RewindEmptyBudgetSnapshotsForLegacyTest(ctx context.Context, pool *pgxpool.
 // RewindEmptySourceFactsForLegacyTest restores the real M115 predecessor using
 // guarded product downs without erasing data-bearing source evidence.
 func RewindEmptySourceFactsForLegacyTest(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
-	for _, version := range []string{schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.SourceFactsExpandHead} {
+	for _, version := range []string{schemaauthority.XInsightPolicyExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.SourceFactsExpandHead} {
 		var applied bool
 		if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, version).Scan(&applied); err != nil {
 			return err
@@ -421,6 +450,8 @@ func RewindCapabilityPublicationsForLegacyMigrationTest(ctx context.Context, poo
 		migrationID string
 		kind        string
 	}{
+		{migrationID: "000123_xinsight_policy_delegation", kind: "unused X-Insight machine delegation expand test artifact"},
+		{migrationID: "000122_scoped_content_policy", kind: "unused scoped content expand test artifact"},
 		{migrationID: "000121_gateway_pre_dispatch_terminal", kind: "unused pre-dispatch terminal expand test artifact"},
 		{migrationID: "000120_unpublished_content_reclamation", kind: "unused content reclamation expand test artifact"},
 		{migrationID: "000119_execution_content_capture", kind: "empty content capture expand test artifact"},

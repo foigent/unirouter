@@ -23,7 +23,11 @@ func CaptureContent(starter contentcapture.Starter) func(http.Handler) http.Hand
 				next.ServeHTTP(w, r)
 				return
 			}
-			id := contentcapture.Observation{OrgID: key.OrgID, ProjectID: *key.ProjectID, RequestID: GetRequestIDFromContext(r.Context()), Protocol: string(operation.ID), MediaType: r.Header.Get("Content-Type")}
+			principal := contentcapture.CapturePrincipal{APIKeyID: key.ID, KeyType: key.KeyType}
+			if key.OwnerUserID != nil {
+				principal.OwnerUserID = *key.OwnerUserID
+			}
+			id := contentcapture.Observation{OrgID: key.OrgID, ProjectID: *key.ProjectID, RequestID: GetRequestIDFromContext(r.Context()), Protocol: string(operation.ID), MediaType: r.Header.Get("Content-Type"), Principal: principal}
 			contentcapture.ObserveBytes(r.Context(), starter, id, body)
 			wrapped, finish := contentcapture.ObserveResponse(r.Context(), starter, id, w)
 			completed := false

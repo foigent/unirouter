@@ -35,6 +35,8 @@ function actionColor(action: string): TagColor {
 interface AuditFilters {
   project_id?: string;
   actor_id?: string;
+  actor_kind?: string;
+  actor_ref?: string;
   action?: string;
   resource?: string;
   resource_id?: string;
@@ -53,6 +55,10 @@ interface AuditLog {
   project_name?: string;
   actor_id?: number;
   actor_name?: string;
+  actor_kind?: 'human' | 'service' | 'system';
+  actor_ref?: string;
+  actor?: { kind: 'human' | 'service' | 'system'; ref: string; display_name: string };
+  user_id?: number | null;
   action: string;
   resource?: string;
   resource_id?: string;
@@ -70,6 +76,8 @@ interface AuditLog {
 const auditFilterKeys = [
   'project_id',
   'actor_id',
+  'actor_kind',
+  'actor_ref',
   'action',
   'resource',
   'resource_id',
@@ -144,6 +152,9 @@ function scopedIdentity(name: string | undefined, id: number | null | undefined,
 }
 
 function actorIdentity(row: any) {
+  if (row.actor?.kind === 'service') return `${row.actor.display_name || 'X-Insight service'} (${row.actor.ref})`;
+  if (row.actor?.kind === 'system') return row.actor.display_name || '系统';
+  if (row.actor?.kind === 'human') return scopedIdentity(row.actor.display_name, row.user_id, '用户');
   if (row.actor_id === 0 && row.source === 'system') return '系统';
   return scopedIdentity(row.actor_name, row.actor_id, '用户');
 }
@@ -336,6 +347,10 @@ export default function AuditLogsPage() {
         <div className="ur-audit-filter-grid">
           <Input aria-label="项目 ID 筛选" prefix="项目" placeholder="项目 ID" value={draftFilters.project_id || ''} onChange={(v) => updateFilter('project_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
           <Input aria-label="操作者 ID 筛选" prefix="操作者" placeholder="操作者 ID" value={draftFilters.actor_id || ''} onChange={(v) => updateFilter('actor_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
+          <Select aria-label="操作者类型筛选" placeholder="操作者类型" value={draftFilters.actor_kind || undefined} onChange={(v) => updateFilter('actor_kind', v as string)} style={{ width: '100%' }} showClear>
+            <Select.Option value="human">UR 用户</Select.Option><Select.Option value="service">服务</Select.Option><Select.Option value="system">系统</Select.Option>
+          </Select>
+          <Input aria-label="操作者引用筛选" placeholder="操作者引用" value={draftFilters.actor_ref || ''} onChange={(v) => updateFilter('actor_ref', v)} onEnterPress={() => commitFilters(draftFilters)} />
           <Input aria-label="审计动作筛选" placeholder="动作" value={draftFilters.action || ''} onChange={(v) => updateFilter('action', v)} onEnterPress={() => commitFilters(draftFilters)} />
           <Input aria-label="目标类型筛选" placeholder="目标类型" value={draftFilters.resource || ''} onChange={(v) => updateFilter('resource', v)} onEnterPress={() => commitFilters(draftFilters)} />
           <Input aria-label="目标 ID 筛选" placeholder="目标 ID" value={draftFilters.resource_id || ''} onChange={(v) => updateFilter('resource_id', v)} onEnterPress={() => commitFilters(draftFilters)} />

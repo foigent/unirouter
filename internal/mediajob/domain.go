@@ -155,23 +155,29 @@ type ChargeFact struct {
 }
 
 type Job struct {
-	ContractVersion        string `json:"contract_version"`
-	JobID                  string `json:"job_id"`
-	Scope                  Scope  `json:"scope"`
-	APIKeyID               int64  `json:"-"`
-	AccessGrantID          *int64 `json:"-"`
-	AccessCredentialID     *int64 `json:"-"`
-	CredentialRef          string `json:"-"`
-	IdempotencySubjectType string `json:"-"`
-	IdempotencySubjectID   int64  `json:"-"`
-	RequestID              string `json:"request_id"`
-	ClientRequestID        string `json:"client_request_id,omitempty"`
-	Operation              string `json:"operation"`
-	ProfileID              string `json:"profile_id"`
-	RequestedModel         string `json:"requested_model"`
-	RoutingModel           string `json:"routing_model"`
-	MappedModel            string `json:"mapped_model,omitempty"`
-	RequestSHA256          string `json:"request_sha256"`
+	ContractVersion        string     `json:"contract_version"`
+	JobID                  string     `json:"job_id"`
+	Scope                  Scope      `json:"scope"`
+	APIKeyID               int64      `json:"-"`
+	AccessGrantID          *int64     `json:"-"`
+	AccessCredentialID     *int64     `json:"-"`
+	CredentialRef          string     `json:"-"`
+	IdempotencySubjectType string     `json:"-"`
+	IdempotencySubjectID   int64      `json:"-"`
+	RequestID              string     `json:"request_id"`
+	ClientRequestID        string     `json:"client_request_id,omitempty"`
+	Operation              string     `json:"operation"`
+	ProfileID              string     `json:"profile_id"`
+	RequestedModel         string     `json:"requested_model"`
+	RoutingModel           string     `json:"routing_model"`
+	MappedModel            string     `json:"mapped_model,omitempty"`
+	RequestSHA256          string     `json:"request_sha256"`
+	RequestExpiresAt       *time.Time `json:"request_expires_at,omitempty"`
+	RequestClearedAt       *time.Time `json:"request_cleared_at,omitempty"`
+	ExecutionStorageMode   string     `json:"execution_storage_mode,omitempty"`
+	ContentPolicyRef       string     `json:"content_policy_ref,omitempty"`
+	ContentPolicyVersion   string     `json:"content_policy_version,omitempty"`
+	ContentPolicyVector    string     `json:"content_policy_vector,omitempty"`
 
 	IdempotencyHash   string     `json:"-"`
 	RequestCiphertext string     `json:"-"`
@@ -216,6 +222,7 @@ type CreateRecord struct {
 	Job                  Job
 	AllowCreate          bool
 	ExpectedLimitSubject limitpolicy.Subject
+	RequestTTL           time.Duration
 }
 
 type IdempotencyLookup struct {

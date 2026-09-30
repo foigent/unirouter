@@ -75,6 +75,71 @@ func TestContentPolicyHTTPDefaultPendingCASAndDeploymentStopIntegration(t *testi
 	require.Equal(t, 2, auditCount)
 }
 
+func TestScopedPolicyHTTPEnterpriseAndProjectCASIntegration(t *testing.T) {
+	f := newSourceControlFixture(t)
+	contentPolicyIntegrationStore(t, f, contentcapture.ModeMetadataOnly)
+	callEnterprise := func(method string, body any, expected int) contentcapture.ScopedManagementView {
+		r := f.request(t, "scoped-enterprise", body)
+		r.Method = method
+		r.SetPathValue("org_id", stringInt64(f.orgID))
+		w := httptest.NewRecorder()
+		if method == "PUT" {
+			f.handler.PutEnterprisePayloadPolicyV2(w, r)
+		} else {
+			f.handler.GetEnterprisePayloadPolicyV2(w, r)
+		}
+		require.Equal(t, expected, w.Code, w.Body.String())
+		var view contentcapture.ScopedManagementView
+		if expected == 200 {
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &view))
+		}
+		return view
+	}
+	callProject := func(method string, body any, expected int) contentcapture.ScopedManagementView {
+		r := f.request(t, "scoped-project", body)
+		r.Method = method
+		r.SetPathValue("id", stringInt64(f.projectID))
+		w := httptest.NewRecorder()
+		if method == "PUT" {
+			f.handler.PutProjectPayloadPolicyV2(w, r)
+		} else {
+			f.handler.GetProjectPayloadPolicyV2(w, r)
+		}
+		require.Equal(t, expected, w.Code, w.Body.String())
+		var view contentcapture.ScopedManagementView
+		if expected == 200 {
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &view))
+		}
+		return view
+	}
+	initial := callEnterprise("GET", nil, 200)
+	require.Equal(t, `{"enterprise":0}`, initial.VersionVector)
+	require.False(t, initial.Enterprise.Explicit)
+	require.Equal(t, []string{"openai.chat"}, initial.PolicyCapabilities.SupportedProtocols)
+	require.Equal(t, []string{"client_request"}, initial.PolicyCapabilities.ObservationPoints)
+	disabled := contentcapture.PolicyConfig{Mode: contentcapture.ModeDisabled, SupportedProtocols: []string{"openai.chat"}, ObservationPoints: []string{"client_request"}, AllowedPurposes: []string{}}
+	quota := int64(1024)
+	enterprisePut := contentcapture.ScopedManagementPut{SchemaVersion: contentcapture.ScopedPolicyManagementSchema,
+		ExpectedPolicyRef: initial.Enterprise.PolicyRef, ExpectedVersion: "0", ExpectedVector: initial.VersionVector,
+		Desired: disabled, ExecutionStorageMode: contentcapture.ExecutionStorageStrict, ProjectQuotaBytes: &quota}
+	enterprise := callEnterprise("PUT", enterprisePut, 200)
+	require.Equal(t, "1", enterprise.Enterprise.Effective.PolicyVersion)
+	callEnterprise("PUT", enterprisePut, 409)
+	project := callProject("GET", nil, 200)
+	require.Equal(t, initial.PolicyCapabilities, project.PolicyCapabilities)
+	require.Equal(t, contentcapture.PolicyScopeEnterprise, project.Effective.Scope)
+	require.Equal(t, contentcapture.ExecutionStorageStrict, project.Effective.ExecutionStorageMode)
+	projectPut := contentcapture.ScopedManagementPut{SchemaVersion: contentcapture.ScopedPolicyManagementSchema,
+		ExpectedPolicyRef: project.Project.PolicyRef, ExpectedVersion: "0", ExpectedVector: project.VersionVector,
+		Desired: disabled, ExecutionStorageMode: contentcapture.ExecutionStorageTemporary, ProjectQuotaBytes: &quota}
+	updated := callProject("PUT", projectPut, 200)
+	require.Equal(t, contentcapture.PolicyScopeProject, updated.Effective.Scope)
+	require.Equal(t, contentcapture.ExecutionStorageTemporary, updated.Effective.ExecutionStorageMode)
+	var audits int
+	require.NoError(t, f.pool.QueryRow(t.Context(), `SELECT count(*) FROM audit_logs WHERE action IN ('content.policy.enterprise.update','content.policy.scoped.update') AND org_id=$1`, f.orgID).Scan(&audits))
+	require.Equal(t, 2, audits)
+}
+
 func TestContentPolicyHTTPAuditFailureRollsBackIntegration(t *testing.T) {
 	f := newSourceControlFixture(t)
 	contentPolicyIntegrationStore(t, f, contentcapture.ModeMetadataOnly)

@@ -23,6 +23,22 @@ import (
 )
 
 func reclaimMigrationDown(ctx context.Context, pool *pgxpool.Pool, dir string) error {
+	for _, version := range []string{schemaauthority.XInsightPolicyExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.PreDispatchExpandHead} {
+		var applied bool
+		if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, version).Scan(&applied); err != nil {
+			return err
+		}
+		if !applied {
+			continue
+		}
+		wire, err := os.ReadFile(filepath.Join(dir, version+".down.sql"))
+		if err != nil {
+			return err
+		}
+		if _, err := pool.Exec(ctx, string(wire)); err != nil {
+			return err
+		}
+	}
 	wire, err := os.ReadFile(filepath.Join(dir, schemaauthority.ContentReclaimExpandHead+".down.sql"))
 	if err != nil {
 		return err

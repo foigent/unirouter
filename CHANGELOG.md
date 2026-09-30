@@ -4,6 +4,24 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.8.0] - 2026-09-29
+
+- 增加按精确 X-Insight Installation 绑定的策略管理与 A/C 自动供数独立机器凭据、人类委托、当前及未来项目发现、事务性策略 CAS/审计/回执，以及新项目 A/C 项目凭据注册与读时撤权检查。
+- A/C 注册的幂等 200 回读保留首次 201 的 `registration_hash`，供 XI 按同一凭据和注册摘要核对；本地 UR↔XI 隔离 HTTPS/PG 联合用例覆盖首次接入、前向起点后的事实与正文消费。
+- 审计 V2 区分人类、服务和系统身份，V1 保留兼容投影；管理页提供委托、供数授权与凭据生命周期入口，OpenAPI 记录机器合同。既有人工 A/C 连接需由 UR 管理员按精确前态显式纳入，旧 token 与游标不变，纳入后仍须 XI 实际读取验收；本条仅为本地候选，未发布或部署。
+- Exact Response Cache 仅在有效策略允许 `openai.chat_completions.v1` 协议及 `provider_response`、`client_response` 两个响应观测点时读取命中或提交新条目；提供方调用返回后的提交会重新读取策略，任一条件被移除即释放预留并跳过写入。
+
+## [1.7.0] - 2026-09-29
+
+- 增加企业默认、项目显式覆盖和个人密钥例外的内容策略 V2 管理与运行解析，按已认证主体冻结作用域、策略身份和版本向量，并共用项目正文额度；旧项目策略保留显式覆盖语义。
+- Exact Response Cache 在正文禁存时跳过命中与新提交；新异步媒体任务按有效执行暂存策略准入，固定请求密文截止时间，过期未派发任务在 worker 恢复时清空，并回读实际清空时间。旧异步任务不回填截止时间。
+- 新增 M122 非滚动扩展及回滚拒绝条件，管理界面展示三层解析和执行暂存状态；本地候选尚未发布或部署。
+
+## [1.6.3] - 2026-09-29
+
+- Adapter 解析、上游响应读取及全部路由失败时，应用日志保留失败阶段，不再附带可能含有 Provider 控制正文的错误文本；覆盖非流响应与流式 chunk 路径。网关响应、Provider 调用及财务终态不变。
+- 当前为本地修复候选；定向日志负向测试与包级回归不代表所有 writer、CI、Target 或正式制品已验收。
+
 ## [1.6.2] - 2026-09-28
 
 - 修复带数据 Release 的模型请求在来源观测开启时可能因 Profile definition digest 格式不符而被拒绝：仅在写入观测引用时补齐 `sha256:` 前缀，保留 Release 原始 digest、严格校验及原有调度事务回滚边界。

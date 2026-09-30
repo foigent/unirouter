@@ -585,9 +585,12 @@ func ClassifyTable(name string) (scope, action, reason string) {
 	switch name {
 	case "execution_content_streams", "execution_source_content_scopes",
 		"execution_source_content_bindings", "execution_source_content_operations",
-		"execution_content_policies", "execution_content_manifests",
+		"execution_content_policies", "execution_content_enterprise_policies", "execution_content_user_policies",
+		"xinsight_machine_credentials", "xinsight_policy_delegations", "xinsight_policy_operations",
+		"xinsight_source_enrollments", "xinsight_source_enrollment_bindings", "xinsight_source_enrollment_exclusions",
+		"execution_content_manifests",
 		"execution_content_objects", "execution_content_health":
-		return ScopeReviewRequired, ActionPreserveAll, "content lifecycle requires a separately reviewed reset contract; preserve all and refuse apply"
+		return ScopeReviewRequired, ActionPreserveAll, "content or X-Insight machine authority lifecycle requires a separately reviewed reset contract; preserve all and refuse apply"
 	case "schema_migrations":
 		return ScopeSchemaLedger, ActionPreserveAll, "migration ledger is immutable reset infrastructure"
 	case "settings":

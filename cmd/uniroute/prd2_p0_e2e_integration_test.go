@@ -20,6 +20,11 @@ import (
 	"github.com/uniroute/unirouter/internal/filter"
 	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/modelexecution"
+	"github.com/uniroute/unirouter/internal/modelrouting"
+	"github.com/uniroute/unirouter/internal/models"
+	"github.com/uniroute/unirouter/internal/payloadpolicy"
+	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -54,7 +59,7 @@ func TestPRD2P0DeveloperProjectKeyGatewayE2E_Integration(t *testing.T) {
 	seedPRD2P0Channel(t, pool, upstream.URL, "gpt-4o")
 
 	h := admin.NewHandler(pool, prd2E2EJWTSecret, prd2E2EEncryptionKey, nil)
-	createBody := []byte(`{"org_id":` + jsonNumber(orgID) + `,"project_id":` + jsonNumber(projectID) + `,"name":"developer-project-key","allowed_models":"company-chat","rpm_limit":60,"qps_limit":10}`)
+	createBody := []byte(`{"org_id":` + jsonNumber(orgID) + `,"project_id":` + jsonNumber(projectID) + `,"name":"developer-project-key","allowed_models":"company-chat,gpt-4o-mini,legacy-model","rpm_limit":60,"qps_limit":10}`)
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/keys", bytes.NewReader(createBody))
 	createReq.Header.Set("Content-Type", "application/json")
 	createReq.Header.Set("Authorization", "Bearer "+mustJWT(t, pool, userID, orgID, auth.RoleDeveloper))
@@ -77,7 +82,7 @@ func TestPRD2P0DeveloperProjectKeyGatewayE2E_Integration(t *testing.T) {
 	require.NotEmpty(t, createResp.CredentialRef)
 	require.Equal(t, projectID, createResp.ProjectID)
 
-	relay := gateway.NewRelay(pool, nil, gateway.NewRouter(pool), billing.NewBilling(pool, nil), filter.NewDFAFilter(nil), prd2E2EEncryptionKey)
+	relay := newPRD2P0Relay(t, pool)
 	chatHandler := middleware.GatewayAuth(pool, prd2E2EJWTSecret)(middleware.IdempotencyGuard(
 		middleware.NewPostgresIdempotencyStore(pool), prd2E2EJWTSecret, newGatewayChatHandler(pool, relay),
 	))
@@ -150,15 +155,18 @@ func TestPRD2P0DeveloperProjectKeyGatewayE2E_Integration(t *testing.T) {
 	require.Contains(t, deniedRec.Body.String(), `"code":"auth_error.model_not_allowed"`)
 
 	var deniedEventType, deniedStage, deniedCaptureGap, deniedDecisionKind, deniedDecisionResult, deniedDecisionReason string
+	var deniedModel, deniedRequestedModel, deniedProvider, deniedChannel string
 	var deniedStatusCode int
 	err = pool.QueryRow(ctx,
-		`SELECT event_type, stage, status_code, capture_gap, decision_kind, decision_result, decision_reason
+		`SELECT event_type, stage, status_code, capture_gap, decision_kind, decision_result, decision_reason,
+		        model, requested_model, provider, channel
 		 FROM request_trace_events
 		 WHERE request_id = $1
 		 ORDER BY id
 		 LIMIT 1`,
 		deniedOperationID,
-	).Scan(&deniedEventType, &deniedStage, &deniedStatusCode, &deniedCaptureGap, &deniedDecisionKind, &deniedDecisionResult, &deniedDecisionReason)
+	).Scan(&deniedEventType, &deniedStage, &deniedStatusCode, &deniedCaptureGap, &deniedDecisionKind, &deniedDecisionResult, &deniedDecisionReason,
+		&deniedModel, &deniedRequestedModel, &deniedProvider, &deniedChannel)
 	require.NoError(t, err)
 	require.Equal(t, "auth.model_not_allowed", deniedEventType)
 	require.Equal(t, "auth", deniedStage)
@@ -167,12 +175,98 @@ func TestPRD2P0DeveloperProjectKeyGatewayE2E_Integration(t *testing.T) {
 	require.Equal(t, "auth", deniedDecisionKind)
 	require.Equal(t, "rejected", deniedDecisionResult)
 	require.Equal(t, "auth_error.model_not_allowed", deniedDecisionReason)
+	require.Empty(t, deniedModel, "an ingress denial has not resolved a private target")
+	require.Equal(t, "company-other", deniedRequestedModel)
+	require.Empty(t, deniedProvider)
+	require.Empty(t, deniedChannel)
+	var deniedTraceCount int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM request_trace_events WHERE request_id = $1`, deniedOperationID).Scan(&deniedTraceCount))
+	require.Equal(t, 1, deniedTraceCount)
 
 	var deniedCallLogs, deniedFreezes int
 	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM call_logs WHERE request_id = $1`, deniedOperationID).Scan(&deniedCallLogs))
 	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM freeze_idempotency WHERE request_id = $1`, deniedOperationID).Scan(&deniedFreezes))
 	require.Zero(t, deniedCallLogs)
 	require.Zero(t, deniedFreezes)
+	require.Equal(t, 1, upstreamCalls, "denied Chat request dispatched to provider")
+
+	embeddingsHandler := middleware.GatewayAuth(pool, prd2E2EJWTSecret)(newGatewayEmbeddingsHandler(pool, relay))
+	embeddingsReq := httptest.NewRequest(http.MethodPost, "/v1/embeddings", bytes.NewReader([]byte(`{"model":"company-other","input":"hello"}`)))
+	embeddingsReq.Header.Set("Authorization", "Bearer "+createResp.Key)
+	embeddingsReq.Header.Set("Content-Type", "application/json")
+	embeddingsRec := httptest.NewRecorder()
+	embeddingsHandler.ServeHTTP(embeddingsRec, embeddingsReq)
+	require.Equal(t, http.StatusForbidden, embeddingsRec.Code, "body: %s", embeddingsRec.Body.String())
+	require.Contains(t, embeddingsRec.Body.String(), `"code":"auth_error.model_not_allowed"`)
+	require.NotContains(t, embeddingsRec.Body.String(), "company-other")
+	embeddingsOperationID := embeddingsRec.Header().Get(middleware.OperationIDHeader)
+	require.True(t, strings.HasPrefix(embeddingsOperationID, "op_"), embeddingsOperationID)
+	var embeddingsEventType, embeddingsModel, embeddingsRequestedModel, embeddingsCaptureGap, embeddingsDecisionReason string
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT event_type, model, requested_model, capture_gap, decision_reason
+		 FROM request_trace_events WHERE request_id = $1`, embeddingsOperationID,
+	).Scan(&embeddingsEventType, &embeddingsModel, &embeddingsRequestedModel, &embeddingsCaptureGap, &embeddingsDecisionReason))
+	require.Equal(t, "auth.model_not_allowed", embeddingsEventType)
+	require.Empty(t, embeddingsModel)
+	require.Equal(t, "company-other", embeddingsRequestedModel)
+	require.Equal(t, "permission_denied", embeddingsCaptureGap)
+	require.Equal(t, "auth_error.model_not_allowed", embeddingsDecisionReason)
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM call_logs WHERE request_id = $1`, embeddingsOperationID).Scan(&deniedCallLogs))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM freeze_idempotency WHERE request_id = $1`, embeddingsOperationID).Scan(&deniedFreezes))
+	require.Zero(t, deniedCallLogs)
+	require.Zero(t, deniedFreezes)
+	require.Equal(t, 1, upstreamCalls, "denied Embeddings request dispatched to provider")
+
+	preflightBody := payloadpolicy.RequestMiddleware(payloadpolicy.MustNewBudget(payloadpolicy.DefaultLimits()), payloadpolicy.ProfileChatRequest, nil)
+	preflightHandler := chatPreflightOperation(middleware.GatewayAuthAcrossBufferedBody(
+		middleware.GatewayAuth(pool, prd2E2EJWTSecret), preflightBody,
+	)(middleware.StrictJSONIngress(newGatewayChatPreflightHandler(pool, relay))))
+	preflightReq := httptest.NewRequest(http.MethodPost, "/v1/chat/completions/preflight", bytes.NewReader([]byte(`{"model":"company-other","messages":[]}`)))
+	preflightReq.Header.Set("Authorization", "Bearer "+createResp.Key)
+	preflightReq.Header.Set("Content-Type", "application/json")
+	preflightRec := httptest.NewRecorder()
+	preflightHandler.ServeHTTP(preflightRec, preflightReq)
+	require.Equal(t, http.StatusForbidden, preflightRec.Code, "body: %s", preflightRec.Body.String())
+	preflightOperationID := preflightRec.Header().Get(middleware.OperationIDHeader)
+	require.True(t, strings.HasPrefix(preflightOperationID, "op_"), preflightOperationID)
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM request_trace_events WHERE request_id = $1`, preflightOperationID).Scan(&deniedTraceCount))
+	require.Zero(t, deniedTraceCount, "preflight must not write execution-denial evidence")
+	require.Equal(t, 1, upstreamCalls, "denied preflight dispatched to provider")
+
+	// A public Responses ingress denial must precede governance even if its
+	// project database is unavailable; only the already-authorized Relay writes evidence.
+	const publicOperationID = "op_prd2_scope_public_denied"
+	publicReq := httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader([]byte(`{"model":"company-other","input":"hello"}`)))
+	publicCtx := context.WithValue(publicReq.Context(), middleware.CtxAPIKey, &models.ApiKey{
+		ID: createResp.ID, OrgID: orgID, ProjectID: &projectID, AllowedModels: "company-chat",
+	})
+	publicCtx = context.WithValue(publicCtx, middleware.CtxOrgID, orgID)
+	publicCtx = context.WithValue(publicCtx, middleware.CtxProjectID, projectID)
+	publicCtx = context.WithValue(publicCtx, middleware.CtxKeyID, createResp.ID)
+	publicCtx = context.WithValue(publicCtx, middleware.CtxRequestID, publicOperationID)
+	publicReq = publicReq.WithContext(publicCtx)
+	publicRec := httptest.NewRecorder()
+	publicGuard := payloadpolicy.RequestMiddlewareWithMax(
+		payloadpolicy.MustNewBudget(payloadpolicy.DefaultLimits()), 8*payloadpolicy.MiB, nil,
+	)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		governed, ok := prepareGatewayPublicModelRequest(w, r, nil, relay, nil)
+		require.False(t, ok)
+		require.Nil(t, governed)
+	}))
+	publicGuard.ServeHTTP(publicRec, publicReq)
+	require.Equal(t, http.StatusForbidden, publicRec.Code, "body: %s", publicRec.Body.String())
+	require.NotContains(t, publicRec.Body.String(), "company-other")
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT event_type, model, requested_model FROM request_trace_events WHERE request_id = $1`, publicOperationID,
+	).Scan(&deniedEventType, &deniedModel, &deniedRequestedModel))
+	require.Equal(t, "auth.model_not_allowed", deniedEventType)
+	require.Empty(t, deniedModel)
+	require.Equal(t, "company-other", deniedRequestedModel)
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM call_logs WHERE request_id = $1`, publicOperationID).Scan(&deniedCallLogs))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM freeze_idempotency WHERE request_id = $1`, publicOperationID).Scan(&deniedFreezes))
+	require.Zero(t, deniedCallLogs)
+	require.Zero(t, deniedFreezes)
+	require.Equal(t, 1, upstreamCalls, "denied public request dispatched to provider")
 
 	var idemStatus string
 	err = pool.QueryRow(ctx,
@@ -233,7 +327,7 @@ func TestGatewayUnregisteredModelAllowedButAudited_Integration(t *testing.T) {
 	require.NoError(t, json.Unmarshal(createRec.Body.Bytes(), &createResp))
 	require.NotEmpty(t, createResp.Key)
 
-	relay := gateway.NewRelay(pool, nil, gateway.NewRouter(pool), billing.NewBilling(pool, nil), filter.NewDFAFilter(nil), prd2E2EEncryptionKey)
+	relay := newPRD2P0Relay(t, pool)
 	chatHandler := middleware.GatewayAuth(pool, prd2E2EJWTSecret)(newGatewayChatHandler(pool, relay))
 
 	requestID := "batch20-unregistered-model"
@@ -415,6 +509,21 @@ func seedProject(t *testing.T, pool *pgxpool.Pool, orgID int64, slug string) int
 	).Scan(&projectID)
 	require.NoError(t, err)
 	return projectID
+}
+
+func newPRD2P0Relay(t *testing.T, pool *pgxpool.Pool) *gateway.Relay {
+	t.Helper()
+	b := billing.NewBilling(pool, nil)
+	relay := gateway.NewRelay(pool, nil, gateway.NewRouter(pool), b, filter.NewDFAFilter(nil), prd2E2EEncryptionKey)
+	policy := routingpolicy.Default()
+	planner, err := modelrouting.NewPlanner(pool, policy)
+	require.NoError(t, err)
+	executionConfig, err := modelexecution.ConfigFromRoutingPolicy(policy)
+	require.NoError(t, err)
+	coordinator, err := modelexecution.New(pool, b, executionConfig)
+	require.NoError(t, err)
+	require.NoError(t, relay.SetModelExecutionRuntime(modelrouting.ModeLegacy, planner, coordinator, policy))
+	return relay
 }
 
 func seedPRD2P0ModelGovernance(t *testing.T, pool *pgxpool.Pool, orgID, projectID int64) {

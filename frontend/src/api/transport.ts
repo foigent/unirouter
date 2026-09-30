@@ -38,7 +38,7 @@ async function parseResponse(res: Response): Promise<unknown> {
 // Every domain client must name its response contract. The legacy aggregate
 // client keeps its compatibility boundary locally instead of weakening the
 // transport used by new or migrated domains.
-export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function request<T>(path: string, options: RequestInit = {}, version: 'v1' | 'v2' = 'v1'): Promise<T> {
   const token = localStorage.getItem('token');
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -46,7 +46,7 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+  const res = await fetch(`${version === 'v2' ? '/api/v2' : BASE_URL}${path}`, { ...options, headers });
   const payload = await parseResponse(res);
 
   if (res.status === 401) {

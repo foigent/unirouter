@@ -2051,6 +2051,77 @@ M121 的 `runtime-observation.v2` 是独立 profile；升级和 schema 支持不
 feed；B/D v1 和 C v2 继续按各自已支持合同及显式 profile 注册交付。
 接收端是否实际支持须另按其当前 schema/FPV 与正式注册读回确认。
 
+#### 9.10.3 M122/M123 本地扩展候选（尚不可执行 Target）
+
+2026-09-29 的 1.8.0/M123 是未提交、未发布的工作树候选。Go 侧
+`schemaauthority`、`runtime-generation` 和 `compatible-expand` 已识别准确的
+M122、M123 头；两份 up SQL 均有显式兼容扩展标记。本地候选现已把
+`scripts/compatible-expand.py` 的有限有序 `HEADS` 和
+`scripts/internal-target-rollout.py` 的同一个 `BRIDGE_HEADS` 扩至 M123，
+但仍未形成正式 Artifact、Target 实时前态、发布/恢复证据或部署批准。
+因此**不得**将本节当作当前可执行的 M121→M123 或 M115/M116→M123
+Target 步骤，更不得绕开包装器直接运行 Go owner、通用 `migrate up`、
+SQL 或 fresh-install。
+
+本候选只允许从经当前只读检查证实的、完整账本与旧 Artifact 完全一致的
+M115–M122 某一受支持头出发。最近一次协调者报告（2026-09-27）称日常
+Target 为 1.5.2/M116，且旧进程代次的退役仍有历史证据边界；这不是本次
+实时 Target 读回。若当前事实仍为 M116，SQL 后缀须依次为
+M117→M118→M119→M120→M121→M122→M123；若已到较新受支持头，
+只取其后完整有序后缀。M118 的原始预算认证必须在其原事务内成立；
+后续 M119–M123 仅验证并保留该认证，不重造或改写历史账本。任何保留的
+非 stopped 恢复代、当前 stable/canary 或迁移前态不能支持目标头时，
+对应扩展必须拒绝。旧 1.5.2/M116 镜像不能在 M123 账本上被假定为
+可用回退镜像。
+
+本地实现与审查边界如下；每一头仍须单独按准确 up 摘要执行
+`compatible-expand.py` 的默认 `check`，核对账本与业务数据不变后才可
+在另行获准的目标环境执行 `--apply`，并回读准确新头。主机 `check` 会
+获取生命周期/入口锁且可能创建锁文件，不能称为零文件操作。
+
+1. 主机包装器的有限 `HEADS` 已精确追加
+   `000122_scoped_content_policy`、`000123_xinsight_policy_delegation`，
+   保留全部前缀、旧实现与 Artifact/ingress/进程证据门；M121 及后续
+   全部继承 `source_observations:unirouter.source-observation.v2`；M122 额外核对
+   `source_content:unirouter.content-policy.v2`、
+   `media_request:unirouter.media-request-expiry.v1`，M123 再核对
+   `xinsight_policy:unirouter.xinsight.policy-write.v1`、
+   `xinsight_source_enrollment:unirouter.xinsight.source-enrollment.v1`。
+   未带 `--apply` 的主机调用只向二进制传 `check`，不得写入或偷换目标头。
+2. 同一个 `schema_bridge_expand_carrier` 的有限后缀已扩至 M123，使准确的
+   M115–M122 前态均能声明到 M123 的完整 up/down 字节摘要；仍拒绝旧迁移修改、
+   缺项、错序、未知新增项和启用状态的 source/storage 默认值，不创建
+   第二个发布控制器或允许多头跳跃。相应更新
+   `scripts/test-capability-carrier.py`、`scripts/test-internal-target-rollout.py`
+   对缺失的继承合同、缺项、错序、未知项、错摘要和旧迁移修改有负例；
+   `scripts/test-artifact-owner-docker.py` 的 CI 读夹具已绑定 M122/M123。
+3. 既有 `internal/migrate/m115_to_m121_chain_integration_test.go` 的真实
+   PG 链现从 M115 定向覆盖至 M123，验证 M121 不能跳过 M122、错摘要、
+   迁移前启动不写账本、旧 key/账本保留及 M123 新审计历史拒绝 down。
+   `cmd/uniroute/compatible_expand_recovery_integration_test.go` 从真实
+   M116 测试前态核对 M122/M123 的保留恢复代门，比较调用前后账本、
+   项目、旧 key、代次和支持清单不变；缺失目标实现的负例由现有
+   `compatible_expand_cli_test.go` 逐项覆盖。这些门的测试不代替主机和
+   Target 的实际 `check`/`apply` 证据。
+
+回退与恢复仍是独立门。M122 down 在新作用域策略、期限任务或活跃代次
+存在时拒绝；M123 down 在机器凭据/委托/绑定、服务审计或活跃代次存在时
+拒绝。已提交且承载这些事实的账本应使用经验证兼容的候选向前修复，
+或在所有读写者停止后从准确备份离线恢复，并按原恢复手册执行同事务的
+D 认证/C epoch rebase；不能以 down SQL 当作旧二进制回滚。当前
+`scripts/source-budget-restore-rebase.sql` 为 7,748 字节，SHA-256
+`a3facfd093a2e588fa9cc1a4c6a6bd3ec04c99b98141820c38818c6a481c82a9`，
+现有 customer README 已声明 M123；本次不修改脚本、摘要、签名或恢复
+边界，正式制品仍须按准确字节和离线恢复演练核对。
+
+进入 P3/Target 前，还须先完成 P2 的 UR/XI 本地合同和实际消费收口、
+上述主机路径的独立审查与定向验证、适用的 release/CI/exact-main
+证据；再重新只读核对目标账本、系统身份、完整旧迁移字节、两台运行与
+全部恢复代、入口/Compose/TLS、容量、准确备份及恢复入口、XI 当前
+接收合同和所需权限。之后才能形成带精确前态、制品、SQL 摘要、逐头
+动作和止损条件的 P3 操作方案并取得对应部署批准。本段没有发起
+Target、XI 或凭据写入，也不代表 P3 已具备执行资格。
+
 所有长期 Compose 服务默认使用 Docker `json-file` 日志轮转：单文件 20 MiB、最多
 3 个文件。可通过 `DOCKER_LOG_MAX_SIZE` 和 `DOCKER_LOG_MAX_FILES` 在部署环境调整，
 但不能留空或移除 `logging` 合同。日志参数只在容器创建时生效；修改后必须按

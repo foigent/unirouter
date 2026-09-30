@@ -118,6 +118,9 @@ func prepareGatewayAuthorizedModelRequest(
 		return nil, false
 	}
 	if !apiKeyAllowsRequestedModel(apiKey, requestedModel) {
+		if recordCall {
+			relay.RecordModelScopeDenial(r.Context(), requestID, requestedModel)
+		}
 		writeError(http.StatusForbidden, "auth_error.model_not_allowed", "The requested model is not allowed for this API key")
 		return nil, false
 	}
@@ -234,6 +237,7 @@ func prepareGatewayModelRequest(w http.ResponseWriter, r *http.Request, pool *pg
 	if req.Model != "" {
 		requestedModel := strings.TrimSpace(req.Model)
 		if !apiKeyAllowsRequestedModel(apiKey, requestedModel) {
+			relay.RecordModelScopeDenial(r.Context(), middleware.GetRequestIDFromContext(r.Context()), requestedModel)
 			writeGatewayModelScopeDenied(w)
 			return nil, false
 		}
@@ -267,7 +271,7 @@ func prepareGatewayModelRequest(w http.ResponseWriter, r *http.Request, pool *pg
 		r = r.WithContext(context.WithValue(r.Context(), middleware.CtxModelAlias, requestedModel))
 	}
 
-	// Relay owns API-key model denial so correlation and decision evidence are emitted.
+	// Relay retains defense-in-depth model authorization after ingress checks.
 	var replaceErr error
 	r, replaceErr = payloadpolicy.ReplaceRequestBody(r, bodyBytes)
 	if replaceErr != nil {

@@ -6,13 +6,34 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
+	"github.com/uniroute/unirouter/internal/schemaauthority"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
+
+// These M44-M46 rollback cases must create their business rows in the schema
+// they actually test. A current-head project would already have M118's
+// irreversible budget-definition history before the rollback begins.
+func setupM46RollbackPrestate(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	const head = "000046_v1_async_media_image_jobs"
+	pool, _ := setupMigratedThrough(t, head+".up.sql")
+	want, err := schemaauthority.ExpectedLedger(testutil.MigrationsDir(t))
+	require.NoError(t, err)
+	index := slices.Index(want, head)
+	require.GreaterOrEqual(t, index, 0)
+	var got []string
+	require.NoError(t, pool.QueryRow(t.Context(),
+		`SELECT array_agg(version::text ORDER BY version) FROM schema_migrations`,
+	).Scan(&got))
+	require.Equal(t, want[:index+1], got, "the fixture must have exactly the historical M46 prefix")
+	return pool
+}
 
 var enterpriseFinanceDownMigrations = []string{
 	"000051_prd8_enterprise_finance_allocation_close.down.sql",
@@ -181,6 +202,14 @@ func rollbackEmptyPRD8Migrations(t *testing.T, pool *pgxpool.Pool) {
 func rollbackAsyncMediaImageMigration(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	rollbackEmptyPRD8Migrations(t, pool)
+	rollbackAsyncMediaImageFromM46Prestate(t, pool)
+}
+
+func rollbackAsyncMediaImageFromM46Prestate(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	var head string
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT max(version)::text FROM schema_migrations`).Scan(&head))
+	require.Equal(t, "000046_v1_async_media_image_jobs", head)
 	downSQL, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t),
 		"000046_v1_async_media_image_jobs.down.sql",

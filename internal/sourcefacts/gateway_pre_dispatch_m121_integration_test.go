@@ -27,6 +27,8 @@ func TestGatewayPreDispatchM121ProfileExpansionPG(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := t.Context()
 	migrations := testutil.MigrationsDir(t)
+	require.NoError(t, sourceBudgetFixtureDownIfPresent(t, pool, schemaauthority.XInsightPolicyExpandHead))
+	require.NoError(t, sourceBudgetFixtureDownIfPresent(t, pool, schemaauthority.ScopedContentExpandHead))
 	down, err := os.ReadFile(filepath.Join(migrations, schemaauthority.PreDispatchExpandHead+".down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
@@ -53,7 +55,7 @@ func TestGatewayPreDispatchM121ProfileExpansionPG(t *testing.T) {
 	require.NoError(t, err)
 	hooks := migrate.CompatibleExpandHooks{Version: schemaauthority.PreDispatchExpandHead, ExpectedSHA256: fmt.Sprintf("sha256:%x", sha256.Sum256(up)), Before: func(context.Context, *pgxpool.Conn) error { return nil }, After: func(context.Context, pgx.Tx) error { return nil }}
 	for _, variant := range []struct {
-		name, digit string
+		name, digit                      string
 		removeHead, removeImplementation bool
 	}{
 		{name: "old", digit: "b", removeHead: true, removeImplementation: true},

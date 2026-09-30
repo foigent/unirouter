@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/uniroute/unirouter/internal/contentcapture"
+	"github.com/uniroute/unirouter/internal/modeloperation"
 )
 
 type ContentCaptureIdentity = contentcapture.Observation
@@ -72,6 +73,31 @@ func (s *ContentCaptureService) PolicyStore() *contentcapture.PolicyStore {
 	}
 	return s.policy
 }
+
+// CachePersistenceAllowed is a fresh, authenticated policy read for the exact
+// response cache. Cache hits and writes are optional; an unavailable policy
+// observation therefore safely disables the optimization for this request.
+func (s *ContentCaptureService) CachePersistenceAllowed(ctx context.Context, principal contentcapture.CapturePrincipal, orgID, projectID int64) (bool, error) {
+	if s == nil || s.policy == nil {
+		return false, ErrContentJournalDisabled
+	}
+	ready, err := s.Readiness(ctx)
+	if err != nil {
+		return false, err
+	}
+	view, scoped, err := s.policy.ViewForCapture(ctx, principal, orgID, projectID, ready.StorageStatus)
+	if err != nil {
+		return false, err
+	}
+	if scoped != nil && scoped.ExecutionStorageMode != contentcapture.ExecutionStorageTemporary {
+		return false, nil
+	}
+	config := view.Effective.Config
+	return config.Mode == contentcapture.ModeFullContent &&
+		slices.Contains(config.SupportedProtocols, string(modeloperation.IDChatCompletions)) &&
+		slices.Contains(config.ObservationPoints, "provider_response") &&
+		slices.Contains(config.ObservationPoints, "client_response"), nil
+}
 func (s *ContentCaptureService) Close(ctx context.Context) error {
 	if s == nil {
 		return nil
@@ -104,7 +130,7 @@ func (s *ContentCaptureService) Begin(ctx context.Context, id ContentCaptureIden
 	ctx, cancel := context.WithTimeout(ctx, s.config.StartTimeout)
 	defer cancel()
 	ready, _ := s.Readiness(ctx)
-	view, err := s.policy.Get(ctx, id.OrgID, id.ProjectID, ready.StorageStatus)
+	view, scoped, err := s.policy.ViewForCapture(ctx, id.Principal, id.OrgID, id.ProjectID, ready.StorageStatus)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +180,13 @@ func (s *ContentCaptureService) Begin(ctx context.Context, id ContentCaptureIden
 		if *config.RetentionSeconds <= int64(leaseTTL/time.Second) {
 			leaseTTL = time.Duration(*config.RetentionSeconds) * time.Second
 		}
-		reservation, err := s.reserve(prepareCtx, s.files, contentcapture.ReservationRequest{OrgID: id.OrgID, ProjectID: id.ProjectID, ContentRef: "uc1_" + hex.EncodeToString(nonce[:]), SourceFactID: m.SourceFactID, Revision: 2, ExpectedPolicyVersion: view.Effective.PolicyVersion, ExpectedRecoveryEpoch: epoch, Protocol: id.Protocol, ObservationPoint: id.ObservationPoint, MaxSavedBytes: *config.MaxSavedBytes, LeaseOwner: s.config.LeaseOwner, LeaseTTL: leaseTTL})
+		input := contentcapture.ReservationRequest{OrgID: id.OrgID, ProjectID: id.ProjectID, ContentRef: "uc1_" + hex.EncodeToString(nonce[:]), SourceFactID: m.SourceFactID, Revision: 2, ExpectedPolicyVersion: view.Effective.PolicyVersion, ExpectedRecoveryEpoch: epoch, Protocol: id.Protocol, ObservationPoint: id.ObservationPoint, MaxSavedBytes: *config.MaxSavedBytes, LeaseOwner: s.config.LeaseOwner, LeaseTTL: leaseTTL}
+		if scoped != nil {
+			input.Principal = id.Principal
+			input.ExpectedPolicyRef = scoped.PolicyRef
+			input.ExpectedPolicyVector = scoped.Vector
+		}
+		reservation, err := s.reserve(prepareCtx, s.files, input)
 		if err != nil {
 			prepared.safeGap = knownCaptureRejection(err)
 			prepared.rejectReason = captureRejectionReason(err)

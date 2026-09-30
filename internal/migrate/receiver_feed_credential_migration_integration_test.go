@@ -13,7 +13,7 @@ import (
 )
 
 func TestReceiverFeedCredentialMigrationContractAndDownRefusal(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := setupM46RollbackPrestate(t)
 	ctx := context.Background()
 	var orgID, projectID int64
 	require.NoError(t, pool.QueryRow(ctx,
@@ -78,7 +78,7 @@ func TestReceiverFeedCredentialMigrationContractAndDownRefusal(t *testing.T) {
 	_, err = pool.Exec(ctx, string(downSQL))
 	require.ErrorContains(t, err, "later migrations must be reversed first")
 
-	rollbackAsyncMediaImageMigration(t, pool)
+	rollbackAsyncMediaImageFromM46Prestate(t, pool)
 	_, err = pool.Exec(ctx, string(downSQL))
 	require.ErrorContains(t, err, "serving or staged receiver credentials exist")
 

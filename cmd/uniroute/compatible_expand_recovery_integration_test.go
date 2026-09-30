@@ -5,8 +5,6 @@ package main
 import (
 	"crypto/sha256"
 	"fmt"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -19,20 +17,21 @@ import (
 )
 
 func TestSourceCompatibleExpandRetainsOnlySupportedDormantGenerations(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupMigratedThroughTestDB(t, schemaauthority.SourceFactsExpandHead)
 	ctx := t.Context()
 	dir := testutil.MigrationsDir(t)
-	for _, head := range []string{schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ObservationExpandHead} {
-		wire, err := os.ReadFile(filepath.Join(dir, head+".down.sql"))
-		require.NoError(t, err)
-		_, err = pool.Exec(ctx, string(wire))
-		require.NoError(t, err)
-	}
 	var head string
 	require.NoError(t, pool.QueryRow(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&head))
 	require.Equal(t, schemaauthority.SourceFactsExpandHead, head)
 	ledger, err := schemaauthority.ExpectedLedger(dir)
 	require.NoError(t, err)
+	org := testutil.NewTestOrg(t, pool)
+	var project, key int64
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO projects(org_id,name,slug,status,budget_period)
+		VALUES($1,'Recovery check project','recovery-check','active','none') RETURNING id`, org).Scan(&project))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO api_keys(org_id,project_id,key_type,name,key_hash,key_prefix,status,
+		allowed_ips,allowed_models) VALUES($1,$2,'service','Recovery check key',$3,'recovery-check','active','','') RETURNING id`,
+		org, project, strings.Repeat("e", 64)).Scan(&key))
 	full := runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads())
 	artifact := "sha256:" + strings.Repeat("a", 64)
 	old := runtimegeneration.Identity{Instance: "uri_" + strings.Repeat("a", 32), Artifact: artifact}
@@ -54,13 +53,21 @@ func TestSourceCompatibleExpandRetainsOnlySupportedDormantGenerations(t *testing
 	defer conn.Release()
 	snapshot := func() string {
 		var data string
-		require.NoError(t, conn.QueryRow(ctx, `SELECT jsonb_build_object('generations',(SELECT jsonb_agg(to_jsonb(g) ORDER BY instance_id) FROM runtime_generations g),'manifests',(SELECT jsonb_agg(to_jsonb(m) ORDER BY artifact_digest) FROM runtime_support_manifests m))::text`).Scan(&data))
+		require.NoError(t, conn.QueryRow(ctx, `SELECT jsonb_build_object(
+			'ledger',(SELECT jsonb_agg(version ORDER BY version) FROM schema_migrations),
+			'project',(SELECT to_jsonb(p) FROM projects p WHERE id=$1),
+			'key',(SELECT to_jsonb(k) FROM api_keys k WHERE id=$2),
+			'generations',(SELECT jsonb_agg(to_jsonb(g) ORDER BY instance_id) FROM runtime_generations g),
+			'manifests',(SELECT jsonb_agg(to_jsonb(m) ORDER BY artifact_digest) FROM runtime_support_manifests m))::text`, project, key).Scan(&data))
 		return data
 	}
 	verify := func(wantError string) {
 		t.Helper()
 		before := snapshot()
-		for _, target := range []string{schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead} {
+		for _, target := range []string{schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead,
+			schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead,
+			schemaauthority.PreDispatchExpandHead, schemaauthority.ScopedContentExpandHead,
+			schemaauthority.XInsightPolicyExpandHead} {
 			err := verifyCompatibleRecoveryFleet(ctx, conn, target, instances)
 			if wantError == "" {
 				require.NoError(t, err)
@@ -68,7 +75,7 @@ func TestSourceCompatibleExpandRetainsOnlySupportedDormantGenerations(t *testing
 				require.ErrorContains(t, err, wantError)
 			}
 		}
-		require.Equal(t, before, snapshot(), "check must not retire or mutate any identity or manifest")
+		require.Equal(t, before, snapshot(), "recovery check must not mutate ledger, project, key, generation or manifest")
 	}
 	verify("")
 	_, err = conn.Exec(ctx, `UPDATE runtime_generations SET lease_expires_at=clock_timestamp()+interval '1 hour' WHERE instance_id=$1`, old.Instance)

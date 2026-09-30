@@ -13,7 +13,7 @@ import (
 )
 
 func TestXInsightFeedControlMigrationEnforcesStagedAndRollbackLifecycle(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := setupM46RollbackPrestate(t)
 	ctx := context.Background()
 	var orgID, projectID int64
 	require.NoError(t, pool.QueryRow(ctx,
@@ -48,7 +48,7 @@ func TestXInsightFeedControlMigrationEnforcesStagedAndRollbackLifecycle(t *testi
 		"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 	), "one project cannot have two staged replacements")
 
-	rollbackAsyncMediaImageMigration(t, pool)
+	rollbackAsyncMediaImageFromM46Prestate(t, pool)
 	receiverDownSQL, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t),
 		"000045_v1_receiver_feed_credential.down.sql",

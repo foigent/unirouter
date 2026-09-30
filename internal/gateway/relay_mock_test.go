@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -2659,6 +2660,34 @@ func TestRelayStreamRequest_AnthropicNativeMissingUsageFallsBack(t *testing.T) {
 	}
 	if !strings.Contains(body, `"content":"fallback text"`) {
 		t.Fatalf("expected normalized fallback content chunk, got %s", body)
+	}
+}
+
+func TestRelayStreamAdapterErrorDoesNotLogProviderValue(t *testing.T) {
+	const sentinel = "provider-private-content-type"
+	var logged bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(previous) })
+
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{})
+	stream := `event: content_block_start` + "\n" +
+		`data: {"type":"content_block_start","index":0,"content_block":{"type":"` + sentinel + `"}}` + "\n\n"
+	response := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(stream))}
+	route := &RouteResult{
+		Channel:     models.Channel{ID: 1, Name: "anthropic", Provider: "anthropic", AdapterType: adapters.TypeAnthropicNative},
+		MappedModel: "claude-3-5-sonnet-20241022",
+	}
+	ctx := contextWithAttemptID(context.Background(), "att-private-adapter-error")
+	relay.relayStreamRequest(ctx, httptest.NewRecorder(), response, route,
+		"req-private-adapter-error", 1, 1, "company-chat", "company-chat", "127.0.0.1", nil,
+		logger.New(logger.Fields{RequestID: "req-private-adapter-error"}), time.Now(), 64,
+		adapters.NewAnthropicNative(), "")
+	if !strings.Contains(logged.String(), "Failed to normalize stream chunk") {
+		t.Fatalf("adapter failure was not logged: %s", logged.String())
+	}
+	if strings.Contains(logged.String(), sentinel) {
+		t.Fatalf("provider-controlled value reached application log: %s", logged.String())
 	}
 }
 

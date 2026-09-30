@@ -67,7 +67,7 @@ func (t *contentAuthorityTestTx) Query(_ context.Context, sql string, args ...an
 	t.queries = append(t.queries, sql)
 	t.keyLookup = args[2].(int64)
 	v := t.access
-	return &contentAuthorityTestRows{index: -1, rows: []contentAuthorityTestRow{{values: []any{v.keyID, v.org, v.project, v.keyStatus, v.ips, v.scope, v.instance, v.global, v.registrationHash, v.prefix, v.keyHash, v.operation, v.profiles, v.hasScope, v.local, v.generation, v.safety, v.epoch, v.high, v.coverage, v.streamInstance, v.coverageTime, v.purposes}}}}, nil
+	return &contentAuthorityTestRows{index: -1, rows: []contentAuthorityTestRow{{values: []any{v.keyID, v.org, v.project, v.keyStatus, v.ips, v.scope, v.instance, v.global, v.registrationHash, v.prefix, v.keyHash, v.operation, v.profiles, v.hasScope, v.local, v.generation, v.safety, v.epoch, v.high, v.coverage, v.streamInstance, v.coverageTime, v.purposes, v.policyLabel}}}}, nil
 }
 func (t *contentAuthorityTestTx) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
 	t.queries = append(t.queries, sql)
