@@ -41,6 +41,9 @@ func (h *sourceHTTPContentHarness) Begin(ctx context.Context, id contentcapture.
 	}
 	return c, err
 }
+func (h *sourceHTTPContentHarness) CachePersistenceAllowed(ctx context.Context, principal contentcapture.CapturePrincipal, orgID, projectID int64) (bool, error) {
+	return h.runtime.service.CachePersistenceAllowed(ctx, principal, orgID, projectID)
+}
 func newSourceHTTPContentHarness(t *testing.T, pool *pgxpool.Pool, source *sourcefacts.Service, org, project int64, fixtures ...*p3SourceFixture) *sourceHTTPContentHarness {
 	t.Helper()
 	var interop *p3SourceFixture

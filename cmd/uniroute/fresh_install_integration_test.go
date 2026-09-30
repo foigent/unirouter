@@ -228,18 +228,26 @@ func TestFreshInstallProcessRecoveryIntegration(t *testing.T) {
 	assertHead(schemaauthority.ObservationExpandHead)
 	run("expand_committed:"+schemaauthority.BudgetSnapshotExpandHead, false)
 	s = assertHead(schemaauthority.BudgetSnapshotExpandHead)
-	require.Equal(t, "active", s.Record.State, "M118 certifies budgets but cannot complete an M119 installation")
+	require.Equal(t, "active", s.Record.State, "M118 certifies budgets but cannot complete the current installation")
 	var originalBudgetProof string
 	require.NoError(t, pool.QueryRow(ctx, `SELECT to_jsonb(c)::text FROM execution_source_budget_coverage c WHERE ended_at IS NULL`).Scan(&originalBudgetProof))
 	_, err = runtimegeneration.ReadBudgetCoverage(ctx, pool)
 	require.NoError(t, err, "M118 original certification must be valid before the next expansion")
 	run("expand_committed:"+schemaauthority.ContentCaptureExpandHead, false)
 	s = assertHead(schemaauthority.ContentCaptureExpandHead)
-	require.Equal(t, "active", s.Record.State, "M119 cannot complete an M120 installation")
+	require.Equal(t, "active", s.Record.State, "M119 cannot complete the current installation")
 	run("expand_committed:"+schemaauthority.ContentReclaimExpandHead, false)
 	var retainedBudgetProof string
 	require.NoError(t, pool.QueryRow(ctx, `SELECT to_jsonb(c)::text FROM execution_source_budget_coverage c WHERE ended_at IS NULL`).Scan(&retainedBudgetProof))
 	require.Equal(t, originalBudgetProof, retainedBudgetProof, "M119 must not rewrite the original budget certification")
+	s = assertHead(schemaauthority.ContentReclaimExpandHead)
+	require.Equal(t, "active", s.Record.State, "M120 cannot complete the current installation")
+	for _, head := range []string{schemaauthority.PreDispatchExpandHead, schemaauthority.ScopedContentExpandHead} {
+		run("expand_committed:"+head, false)
+		s = assertHead(head)
+		require.Equal(t, "active", s.Record.State, "an installation below M123 must remain incomplete")
+	}
+	run("expand_committed:"+schemaauthority.XInsightPolicyExpandHead, false)
 	s, err = installstate.RequireOrdinary(ctx, pool)
 	require.NoError(t, err)
 	require.Equal(t, "completed", s.Record.State)

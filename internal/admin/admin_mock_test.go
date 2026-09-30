@@ -2801,22 +2801,24 @@ func TestListAuditLogs_Success(t *testing.T) {
 						*dest[0].(*int64) = 1
 						*dest[1].(*int64) = 3
 						*dest[2].(*int64) = 9
-						*dest[3].(*int64) = 7
-						*dest[4].(*string) = "Example Org"
-						*dest[5].(*string) = "Core Project"
-						*dest[6].(*string) = "operator"
-						*dest[7].(*string) = "channel.create"
-						*dest[8].(*string) = "channel"
-						*dest[9].(*string) = "1"
-						*dest[10].(*[]byte) = []byte(`{"key":"value"}`)
-						*dest[11].(*[]byte) = []byte(`{"status":"old"}`)
-						*dest[12].(*[]byte) = []byte(`{"status":"new"}`)
-						*dest[13].(*string) = "127.0.0.1"
-						*dest[14].(*string) = "agent"
-						*dest[15].(*string) = "req-1"
-						*dest[16].(*string) = "admin_console"
-						*dest[17].(*string) = "client-1"
-						*dest[18].(*time.Time) = now
+						*dest[3].(*stdsql.NullInt64) = stdsql.NullInt64{Int64: 7, Valid: true}
+						*dest[4].(*string) = "human"
+						*dest[5].(*string) = "user:7"
+						*dest[6].(*string) = "Example Org"
+						*dest[7].(*string) = "Core Project"
+						*dest[8].(*string) = "operator"
+						*dest[9].(*string) = "channel.create"
+						*dest[10].(*string) = "channel"
+						*dest[11].(*string) = "1"
+						*dest[12].(*[]byte) = []byte(`{"key":"value"}`)
+						*dest[13].(*[]byte) = []byte(`{"status":"old"}`)
+						*dest[14].(*[]byte) = []byte(`{"status":"new"}`)
+						*dest[15].(*string) = "127.0.0.1"
+						*dest[16].(*string) = "agent"
+						*dest[17].(*string) = "req-1"
+						*dest[18].(*string) = "admin_console"
+						*dest[19].(*string) = "client-1"
+						*dest[20].(*time.Time) = now
 						return nil
 					},
 				},

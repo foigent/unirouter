@@ -22,7 +22,20 @@ BEGIN
     LOCK TABLE schema_migrations IN SHARE MODE;
     SELECT array_agg(version::text ORDER BY version) INTO ledger FROM schema_migrations;
     certified_ledger := ledger;
-    IF ledger[cardinality(ledger)]='000121_gateway_pre_dispatch_terminal' THEN
+    IF ledger[cardinality(ledger)]='000123_xinsight_policy_delegation' THEN
+      IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000122_scoped_content_policy'
+         OR ledger[cardinality(ledger)-2] IS DISTINCT FROM '000121_gateway_pre_dispatch_terminal'
+         OR ledger[cardinality(ledger)-3] IS DISTINCT FROM '000120_unpublished_content_reclamation'
+         OR ledger[cardinality(ledger)-4] IS DISTINCT FROM '000119_execution_content_capture' THEN
+        RAISE EXCEPTION 'restored budget coverage proof is invalid: machine policy predecessor'; END IF;
+      certified_ledger := ledger[:cardinality(ledger)-5];
+    ELSIF ledger[cardinality(ledger)]='000122_scoped_content_policy' THEN
+      IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000121_gateway_pre_dispatch_terminal'
+         OR ledger[cardinality(ledger)-2] IS DISTINCT FROM '000120_unpublished_content_reclamation'
+         OR ledger[cardinality(ledger)-3] IS DISTINCT FROM '000119_execution_content_capture' THEN
+        RAISE EXCEPTION 'restored budget coverage proof is invalid: scoped content predecessor'; END IF;
+      certified_ledger := ledger[:cardinality(ledger)-4];
+    ELSIF ledger[cardinality(ledger)]='000121_gateway_pre_dispatch_terminal' THEN
       IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000120_unpublished_content_reclamation'
          OR ledger[cardinality(ledger)-2] IS DISTINCT FROM '000119_execution_content_capture' THEN
         RAISE EXCEPTION 'restored budget coverage proof is invalid: pre-dispatch predecessor'; END IF;
@@ -64,12 +77,14 @@ BEGIN
       'execution_content_objects','execution_content_health']) AS t(name)
       WHERE to_regclass('public.' || name) IS NOT NULL;
     IF head IS DISTINCT FROM '000119_execution_content_capture' AND head IS DISTINCT FROM '000120_unpublished_content_reclamation'
-       AND head IS DISTINCT FROM '000121_gateway_pre_dispatch_terminal' THEN
+       AND head IS DISTINCT FROM '000121_gateway_pre_dispatch_terminal'
+       AND head IS DISTINCT FROM '000122_scoped_content_policy'
+       AND head IS DISTINCT FROM '000123_xinsight_policy_delegation' THEN
       IF present<>0 THEN RAISE EXCEPTION 'restored C tables require the exact M119 ledger'; END IF;
       RETURN;
     END IF;
     IF present<>8 THEN RAISE EXCEPTION 'restored C schema is incomplete'; END IF;
-    IF head IN ('000120_unpublished_content_reclamation','000121_gateway_pre_dispatch_terminal') THEN
+    IF head IN ('000120_unpublished_content_reclamation','000121_gateway_pre_dispatch_terminal','000122_scoped_content_policy','000123_xinsight_policy_delegation') THEN
       IF NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='execution_content_objects'::regclass AND attname='reclaimed_at' AND NOT attisdropped AND atttypid='timestamptz'::regtype AND NOT attnotnull) THEN
         RAISE EXCEPTION 'restored content reclamation schema mismatch'; END IF;
     ELSIF EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='execution_content_objects'::regclass AND attname='reclaimed_at' AND NOT attisdropped) THEN

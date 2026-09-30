@@ -29,6 +29,9 @@ type ReservationRequest struct {
 	ContentRef, SourceFactID   string
 	Revision                   int64
 	ExpectedPolicyVersion      string
+	ExpectedPolicyRef          string
+	ExpectedPolicyVector       string
+	Principal                  CapturePrincipal
 	ExpectedRecoveryEpoch      int64
 	Protocol, ObservationPoint string
 	MaxSavedBytes              int64
@@ -44,16 +47,17 @@ type ReservationRequest struct {
 // RecoveryEpoch is the allocation snapshot; the stream remains its authority.
 // Effective must stay attached to this capture, even after a later policy PUT.
 type Reservation struct {
-	OrgID, ProjectID          int64
-	ContentRef, SourceFactID  string
-	Revision, RecoveryEpoch   int64
-	Effective                 PolicyVersion
-	EffectiveAt               string
-	Binding                   StoreBinding
-	ObjectName                string
-	ReservedBytes             int64
-	LeaseOwner                string
-	LeaseExpiresAt, ExpiresAt time.Time
+	OrgID, ProjectID                     int64
+	ContentRef, SourceFactID             string
+	Revision, RecoveryEpoch              int64
+	Effective                            PolicyVersion
+	EffectiveAt                          string
+	PolicyRef, PolicyScope, PolicyVector string
+	Binding                              StoreBinding
+	ObjectName                           string
+	ReservedBytes                        int64
+	LeaseOwner                           string
+	LeaseExpiresAt, ExpiresAt            time.Time
 }
 
 // Reserve owns a new top-level pool transaction. There is no caller-Tx API and
@@ -97,6 +101,18 @@ func (s *PolicyStore) Reserve(ctx context.Context, files *FileStore, input Reser
 		return result, err
 	}
 	defer tx.Rollback(context.Background())
+	scoped, err := s.scopedSchemaActive(ctx)
+	if err != nil {
+		return result, err
+	}
+	if scoped {
+		if input.ExpectedPolicyRef == "" || input.ExpectedPolicyVector == "" || input.Principal.APIKeyID <= 0 {
+			return result, ErrReservationInvalid
+		}
+		if err := lockCapturePrincipal(ctx, tx, input.Principal, input.OrgID, input.ProjectID); err != nil {
+			return result, err
+		}
+	}
 	if input.CreateStream {
 		_, err = tx.Exec(ctx, `INSERT INTO execution_content_streams(org_id,project_id,source_instance) VALUES($1,$2,$3) ON CONFLICT(org_id,project_id) DO NOTHING`, input.OrgID, input.ProjectID, s.options.SourceInstance)
 		if err != nil {
@@ -117,28 +133,57 @@ func (s *PolicyStore) Reserve(ctx context.Context, files *FileStore, input Reser
 		return result, ErrReservationScope
 	}
 	var row storedPolicyRow
-	var reserved, stored int64
+	var reserved, stored, ledgerVersion int64
 	var now time.Time
-	err = tx.QueryRow(ctx, `SELECT desired_version,effective_version,desired_config,effective_config,effective_at,application_status,application_reason,reserved_bytes,stored_bytes
+	var effective PolicyVersion
+	var effectiveAt, policyRef, policyScope, policyVector string
+	if scoped {
+		defaultBytes, err := encodeStoredPolicyConfig(s.defaultConfig)
+		if err != nil {
+			return result, err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO execution_content_policies(org_id,project_id,desired_version,effective_version,desired_config,effective_config,effective_at,application_status,application_reason,explicit_override)
+SELECT p.org_id,p.id,1,1,$3,$3,p.created_at,'applied','none',false FROM projects p WHERE p.org_id=$1 AND p.id=$2
+ON CONFLICT(org_id,project_id) DO NOTHING`, input.OrgID, input.ProjectID, defaultBytes)
+		if err != nil {
+			return result, err
+		}
+		snapshot, err := s.readScopedEffectiveTx(ctx, tx, input.Principal, input.OrgID, input.ProjectID, "ready", true, false)
+		if err != nil {
+			return result, err
+		}
+		if snapshot.PolicyRef != input.ExpectedPolicyRef || snapshot.Effective.PolicyVersion != input.ExpectedPolicyVersion || snapshot.Vector != input.ExpectedPolicyVector {
+			return result, ErrPolicyVersionConflict
+		}
+		effective, effectiveAt = snapshot.Effective, snapshot.EffectiveAt
+		policyRef, policyScope, policyVector = snapshot.PolicyRef, snapshot.Scope, snapshot.Vector
+		err = tx.QueryRow(ctx, `SELECT effective_version,reserved_bytes,stored_bytes FROM execution_content_policies WHERE org_id=$1 AND project_id=$2`, input.OrgID, input.ProjectID).Scan(&ledgerVersion, &reserved, &stored)
+	} else {
+		err = tx.QueryRow(ctx, `SELECT desired_version,effective_version,desired_config,effective_config,effective_at,application_status,application_reason,reserved_bytes,stored_bytes
 FROM execution_content_policies WHERE org_id=$1 AND project_id=$2 FOR UPDATE`, input.OrgID, input.ProjectID).Scan(&row.desiredVersion, &row.effectiveVersion, &row.desiredConfig, &row.effectiveConfig, &row.effectiveAt, &row.applicationStatus, &row.applicationReason, &reserved, &stored)
+		if err == nil {
+			view, viewErr := s.rowView(input.OrgID, input.ProjectID, "ready", row)
+			if viewErr != nil {
+				return result, viewErr
+			}
+			effective, effectiveAt = view.Effective, view.EffectiveAt
+			ledgerVersion = *row.effectiveVersion
+		}
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return result, ErrPolicyInactive
 	}
 	if err != nil {
 		return result, err
 	}
-	view, err := s.rowView(input.OrgID, input.ProjectID, "ready", row)
-	if err != nil {
-		return result, err
-	}
-	config := view.Effective.Config
+	config := effective.Config
 	if config.Mode != ModeFullContent {
 		return result, ErrPolicyInactive
 	}
 	if err := s.validateSupportedConfig(config); err != nil {
 		return result, fmt.Errorf("%w: unsupported effective policy", ErrPolicyInactive)
 	}
-	if input.ExpectedPolicyVersion != view.Effective.PolicyVersion {
+	if input.ExpectedPolicyVersion != effective.PolicyVersion {
 		return result, ErrPolicyVersionConflict
 	}
 	if !slices.Contains(config.SupportedProtocols, input.Protocol) || !slices.Contains(config.ObservationPoints, input.ObservationPoint) {
@@ -176,26 +221,31 @@ FROM execution_content_policies WHERE org_id=$1 AND project_id=$2 FOR UPDATE`, i
 	if !reservationFitsQuota(reserved, stored, input.MaxSavedBytes, *config.QuotaBytes) {
 		return result, ErrReservationQuota
 	}
-	policyVersion, _ := strconv.ParseInt(view.Effective.PolicyVersion, 10, 64)
-	policyConfig, err := encodeStoredPolicyConfig(view.Effective.Config)
+	policyVersion, _ := strconv.ParseInt(effective.PolicyVersion, 10, 64)
+	policyConfig, err := encodeStoredPolicyConfig(effective.Config)
 	if err != nil {
 		return result, err
 	}
-	policyEffectiveAt, err := time.Parse(time.RFC3339Nano, view.EffectiveAt)
+	policyEffectiveAt, err := time.Parse(time.RFC3339Nano, effectiveAt)
 	if err != nil {
 		return result, err
 	}
 	// The subtraction above proves this addition cannot overflow. Updating before
 	// insertion also makes insertion/constraint failures exercise atomic rollback.
-	tag, err := tx.Exec(ctx, `UPDATE execution_content_policies SET reserved_bytes=reserved_bytes+$3 WHERE org_id=$1 AND project_id=$2 AND effective_version=$4 AND reserved_bytes=$5 AND stored_bytes=$6`, input.OrgID, input.ProjectID, input.MaxSavedBytes, policyVersion, reserved, stored)
+	tag, err := tx.Exec(ctx, `UPDATE execution_content_policies SET reserved_bytes=reserved_bytes+$3 WHERE org_id=$1 AND project_id=$2 AND effective_version=$4 AND reserved_bytes=$5 AND stored_bytes=$6`, input.OrgID, input.ProjectID, input.MaxSavedBytes, ledgerVersion, reserved, stored)
 	if err != nil {
 		return result, err
 	}
 	if tag.RowsAffected() != 1 {
 		return result, ErrPolicyVersionConflict
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO execution_content_objects(content_ref,org_id,project_id,source_fact_id,revision,policy_version,recovery_epoch,storage_identity,storage_binding_token,relative_path,state,reserved_bytes,saved_bytes,expires_at,lease_owner,lease_expires_at,policy_config,policy_effective_at)
+	if scoped {
+		_, err = tx.Exec(ctx, `INSERT INTO execution_content_objects(content_ref,org_id,project_id,source_fact_id,revision,policy_version,recovery_epoch,storage_identity,storage_binding_token,relative_path,state,reserved_bytes,saved_bytes,expires_at,lease_owner,lease_expires_at,policy_config,policy_effective_at,policy_ref,policy_scope,policy_vector)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'reserved',$11,0,$12,$13,$14,$15,$16,$17,$18,$19::jsonb)`, input.ContentRef, input.OrgID, input.ProjectID, input.SourceFactID, input.Revision, policyVersion, epoch, binding.Identity, binding.Token, objectName, input.MaxSavedBytes, expires, input.LeaseOwner, leaseEnd, policyConfig, policyEffectiveAt, policyRef, policyScope, policyVector)
+	} else {
+		_, err = tx.Exec(ctx, `INSERT INTO execution_content_objects(content_ref,org_id,project_id,source_fact_id,revision,policy_version,recovery_epoch,storage_identity,storage_binding_token,relative_path,state,reserved_bytes,saved_bytes,expires_at,lease_owner,lease_expires_at,policy_config,policy_effective_at)
 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'reserved',$11,0,$12,$13,$14,$15,$16)`, input.ContentRef, input.OrgID, input.ProjectID, input.SourceFactID, input.Revision, policyVersion, epoch, binding.Identity, binding.Token, objectName, input.MaxSavedBytes, expires, input.LeaseOwner, leaseEnd, policyConfig, policyEffectiveAt)
+	}
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -207,7 +257,7 @@ VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'reserved',$11,0,$12,$13,$14,$15,$16)`, in
 		return result, err
 	}
 	return Reservation{OrgID: input.OrgID, ProjectID: input.ProjectID, ContentRef: input.ContentRef, SourceFactID: input.SourceFactID, Revision: input.Revision, RecoveryEpoch: epoch,
-		Effective: view.Effective, EffectiveAt: view.EffectiveAt, Binding: binding, ObjectName: objectName, ReservedBytes: input.MaxSavedBytes,
+		Effective: effective, EffectiveAt: effectiveAt, PolicyRef: policyRef, PolicyScope: policyScope, PolicyVector: policyVector, Binding: binding, ObjectName: objectName, ReservedBytes: input.MaxSavedBytes,
 		LeaseOwner: input.LeaseOwner, LeaseExpiresAt: leaseEnd, ExpiresAt: expires}, nil
 }
 

@@ -24,13 +24,13 @@ func budgetCoverageRows(t *testing.T, pool *pgxpool.Pool) string {
 func TestSourceBudgetRestoreRejectsUnprovedLedger(t *testing.T) {
 	helper, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "..", "scripts", "source-budget-restore-rebase.sql"))
 	require.NoError(t, err)
-	for _, fault := range []struct{ name, sql string }{
-		{"future", `INSERT INTO schema_migrations(version) VALUES('000122_unknown_future')`},
-		{"missing_budget", `DELETE FROM schema_migrations WHERE version='000118_source_budget_snapshots'`},
-		{"missing_prefix", `DELETE FROM schema_migrations WHERE version=(SELECT min(version) FROM schema_migrations)`},
-		{"replaced_prefix", `UPDATE schema_migrations SET version='000001_replaced' WHERE version=(SELECT min(version) FROM schema_migrations)`},
-		{"extra_prefix", `INSERT INTO schema_migrations(version) VALUES('000118_spurious')`},
-		{"empty", `DELETE FROM schema_migrations`},
+	for _, fault := range []struct{ name, sql, commitError string }{
+		{"future", `INSERT INTO schema_migrations(version) VALUES('000122_unknown_future')`, "requires exact M123 predecessor"},
+		{"missing_budget", `DELETE FROM schema_migrations WHERE version='000118_source_budget_snapshots'`, "requires verified support proof"},
+		{"missing_prefix", `DELETE FROM schema_migrations WHERE version=(SELECT min(version) FROM schema_migrations)`, "requires verified support proof"},
+		{"replaced_prefix", `UPDATE schema_migrations SET version='000001_replaced' WHERE version=(SELECT min(version) FROM schema_migrations)`, "requires verified support proof"},
+		{"extra_prefix", `INSERT INTO schema_migrations(version) VALUES('000118_spurious')`, "requires verified support proof"},
+		{"empty", `DELETE FROM schema_migrations`, "requires verified support proof"},
 	} {
 		t.Run(fault.name, func(t *testing.T) {
 			pool := testutil.SetupMigratedTestDB(t)
@@ -43,9 +43,9 @@ func TestSourceBudgetRestoreRejectsUnprovedLedger(t *testing.T) {
 			require.NoError(t, err)
 			_, err = tx.Exec(t.Context(), `UPDATE execution_source_budget_coverage SET ended_at=clock_timestamp() WHERE ended_at IS NULL`)
 			require.NoError(t, err)
-			require.ErrorContains(t, tx.Commit(t.Context()), "requires verified support proof")
+			require.ErrorContains(t, tx.Commit(t.Context()), fault.commitError)
 			require.Equal(t, before, budgetCoverageRows(t, pool))
-			assertSourceFixtureLedger(t, pool, schemaauthority.PreDispatchExpandHead)
+			assertSourceFixtureLedger(t, pool, schemaauthority.XInsightPolicyExpandHead)
 
 			_, err = pool.Exec(t.Context(), fault.sql)
 			require.NoError(t, err)

@@ -209,6 +209,10 @@ func TestInitialGapPGFrozenEpochAndLostCommit(t *testing.T) {
 			if strings.HasPrefix(mode, "first_use") {
 				oldProject := p.identity.ProjectID
 				require.NoError(t, p.pool.QueryRow(t.Context(), `INSERT INTO projects(org_id,name,slug,status,budget_period) VALUES($1,'Gap first use','gap-first-use','active','none') RETURNING id`, p.identity.OrgID).Scan(&p.identity.ProjectID))
+				var keyID int64
+				require.NoError(t, p.pool.QueryRow(t.Context(), `INSERT INTO api_keys(org_id,project_id,name,key_hash,key_prefix,status)
+                  VALUES($1,$2,'gap-first-use',repeat('e',64),'ur-gap-first-use','active') RETURNING id`, p.identity.OrgID, p.identity.ProjectID).Scan(&keyID))
+				p.identity.Principal = contentcapture.CapturePrincipal{APIKeyID: keyID, KeyType: "shared"}
 				_, err := p.pool.Exec(t.Context(), `INSERT INTO execution_content_policies(org_id,project_id,desired_version,effective_version,desired_config,effective_config,effective_at,application_status,application_reason) SELECT org_id,$3,desired_version,effective_version,desired_config,effective_config,effective_at,application_status,application_reason FROM execution_content_policies WHERE org_id=$1 AND project_id=$2`, p.identity.OrgID, oldProject, p.identity.ProjectID)
 				require.NoError(t, err)
 			}

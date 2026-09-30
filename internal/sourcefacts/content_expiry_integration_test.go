@@ -40,7 +40,7 @@ func expiryPolicy(t *testing.T, p contentPublishPG) *contentcapture.PolicyStore 
 	return policy
 }
 func expiryRequest(p contentPublishPG) contentcapture.ReservationRequest {
-	return contentcapture.ReservationRequest{OrgID: p.reservation.OrgID, ProjectID: p.reservation.ProjectID, ContentRef: "uc1_" + strings.Repeat("b", 64), SourceFactID: p.reservation.SourceFactID, Revision: 1, ExpectedPolicyVersion: "1", ExpectedRecoveryEpoch: 1, Protocol: p.manifest.Protocol, ObservationPoint: p.manifest.ObservationPoint, MaxSavedBytes: 128, LeaseOwner: "expiry-recapture", LeaseTTL: time.Second}
+	return contentcapture.ReservationRequest{OrgID: p.reservation.OrgID, ProjectID: p.reservation.ProjectID, ContentRef: "uc1_" + strings.Repeat("b", 64), SourceFactID: p.reservation.SourceFactID, Revision: 1, ExpectedPolicyVersion: p.reservation.Effective.PolicyVersion, ExpectedPolicyRef: p.reservation.PolicyRef, ExpectedPolicyVector: p.reservation.PolicyVector, Principal: p.principal, ExpectedRecoveryEpoch: 1, Protocol: p.manifest.Protocol, ObservationPoint: p.manifest.ObservationPoint, MaxSavedBytes: 128, LeaseOwner: "expiry-recapture", LeaseTTL: time.Second}
 }
 func TestContentExpiryPGPublishedOriginalDeadlineAndQuota(t *testing.T) {
 	for _, body := range [][]byte{nil, []byte("body")} {
@@ -251,7 +251,15 @@ func TestContentExpiryPGMultipleProjectsBoundedBatch(t *testing.T) {
 	request.ProjectID = project
 	request.SourceFactID = m.SourceFactID
 	request.ContentRef = m.ContentRef
-	reservation, err := expiryPolicy(t, p).Reserve(t.Context(), p.files, request)
+	var secondKeyID int64
+	require.NoError(t, p.pool.QueryRow(t.Context(), `INSERT INTO api_keys(org_id,project_id,name,key_hash,key_prefix,status)
+      VALUES($1,$2,'expiry-second',repeat('f',64),'ur-expiry-second','active') RETURNING id`, org, project).Scan(&secondKeyID))
+	request.Principal = contentcapture.CapturePrincipal{APIKeyID: secondKeyID, KeyType: "shared"}
+	secondPolicy := expiryPolicy(t, p)
+	snapshot, err := secondPolicy.EffectiveScopedForCapture(t.Context(), request.Principal, org, project, "ready")
+	require.NoError(t, err)
+	request.ExpectedPolicyRef, request.ExpectedPolicyVersion, request.ExpectedPolicyVector = snapshot.PolicyRef, snapshot.Effective.PolicyVersion, snapshot.Vector
+	reservation, err := secondPolicy.Reserve(t.Context(), p.files, request)
 	require.NoError(t, err)
 	receipt, err := p.files.SaveReservation(t.Context(), reservation, strings.NewReader("body"), p.limits)
 	require.NoError(t, err)

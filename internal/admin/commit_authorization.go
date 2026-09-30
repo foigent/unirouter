@@ -29,6 +29,7 @@ type committingActorProjectRequirement struct {
 // user-mutation lock order; they never grant authority.
 type committingActorRequirement struct {
 	TargetOrgID                             int64
+	OrganizationForUpdate                   bool
 	AllowedOrganizationRoles                []string
 	Project                                 *committingActorProjectRequirement
 	AllowSelfRequestWithoutMembershipUserID int64
@@ -147,7 +148,11 @@ func (h *Handler) reauthorizeCommittingActorTx(
 			return state, errCommittingActorScopeNotFound
 		}
 		var targetOrganizationStatus string
-		if err := tx.QueryRow(ctx, `SELECT status FROM orgs WHERE id=$1 FOR SHARE`, requirement.TargetOrgID).Scan(&targetOrganizationStatus); err != nil {
+		orgLock := "FOR SHARE"
+		if requirement.OrganizationForUpdate {
+			orgLock = "FOR UPDATE"
+		}
+		if err := tx.QueryRow(ctx, `SELECT status FROM orgs WHERE id=$1 `+orgLock, requirement.TargetOrgID).Scan(&targetOrganizationStatus); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return state, errCommittingActorScopeNotFound
 			}

@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,14 @@ import (
 )
 
 func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
+	h.listAuditLogs(w, r, false)
+}
+
+func (h *Handler) ListAuditLogsV2(w http.ResponseWriter, r *http.Request) {
+	h.listAuditLogs(w, r, true)
+}
+
+func (h *Handler) listAuditLogs(w http.ResponseWriter, r *http.Request, v2 bool) {
 	page, pageSize := parsePagination(r)
 	offset := paginationOffset(page, pageSize)
 
@@ -86,6 +95,18 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	if !addIntFilter("actor_id", "a.user_id") || !addIntFilter("user_id", "a.user_id") {
 		return
 	}
+	if v2 {
+		if kind := strings.TrimSpace(r.URL.Query().Get("actor_kind")); kind != "" {
+			if kind != "human" && kind != "service" && kind != "system" {
+				writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid actor_kind"})
+				return
+			}
+			addCondition("a.actor_kind", kind)
+		}
+		if ref := strings.TrimSpace(r.URL.Query().Get("actor_ref")); ref != "" {
+			addCondition("a.actor_ref", ref)
+		}
+	}
 	addStringFilter := func(queryKey, column string) {
 		value := strings.TrimSpace(r.URL.Query().Get(queryKey))
 		if value == "" {
@@ -143,7 +164,7 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := fmt.Sprintf(
-		`SELECT a.id, a.org_id, COALESCE(a.project_id, 0), a.user_id,
+		`SELECT a.id, a.org_id, COALESCE(a.project_id, 0), a.user_id, a.actor_kind, a.actor_ref,
 		        COALESCE(o.name, ''), COALESCE(p.name, ''), COALESCE(u.username, ''),
 		        a.action, a.resource, a.resource_id,
 		        a.detail, COALESCE(a.before_state, '{}'::jsonb), COALESCE(a.after_state, '{}'::jsonb),
@@ -165,11 +186,13 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 
 	logs := make([]map[string]interface{}, 0)
 	for rows.Next() {
-		var id, orgID, projectID, userID int64
+		var id, orgID, projectID int64
+		var userID sql.NullInt64
+		var actorKind, actorRef string
 		var orgName, projectName, actorName, action, resource, resourceID, ip, userAgent, requestID, source, clientRequestID string
 		var detail, beforeState, afterState []byte
 		var createdAt time.Time
-		if err := rows.Scan(&id, &orgID, &projectID, &userID, &orgName, &projectName, &actorName, &action, &resource, &resourceID, &detail, &beforeState, &afterState, &ip, &userAgent, &requestID, &source, &clientRequestID, &createdAt); err != nil {
+		if err := rows.Scan(&id, &orgID, &projectID, &userID, &actorKind, &actorRef, &orgName, &projectName, &actorName, &action, &resource, &resourceID, &detail, &beforeState, &afterState, &ip, &userAgent, &requestID, &source, &clientRequestID, &createdAt); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
 		}
@@ -177,20 +200,46 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 		if projectID > 0 {
 			projectValue = projectID
 		}
-		logs = append(logs, map[string]interface{}{
+		legacyActorID := int64(0)
+		if actorKind == "human" && userID.Valid {
+			legacyActorID = userID.Int64
+		} else if actorKind == "service" {
+			actorName = "X-Insight service"
+		} else if actorKind == "system" {
+			actorName = "System"
+		}
+		entry := map[string]interface{}{
 			"id": id, "org_id": orgID, "org_name": orgName, "project_id": projectValue, "project_name": projectName,
-			"actor_id": userID, "actor_name": actorName, "user_id": userID,
+			"actor_id": legacyActorID, "actor_name": actorName, "user_id": legacyActorID,
+			"actor_kind": actorKind, "actor_ref": actorRef,
 			"action": action, "resource": resource, "resource_id": resourceID,
 			"detail": json.RawMessage(detail), "before": json.RawMessage(beforeState), "after": json.RawMessage(afterState),
 			"ip": ip, "user_agent": userAgent, "request_id": requestID, "client_request_id": clientRequestID,
 			"source": normalizeAuditSource(source), "created_at": createdAt,
-		})
+		}
+		if v2 {
+			var typedUserID interface{}
+			if actorKind == "human" && userID.Valid {
+				typedUserID = userID.Int64
+			}
+			entry["user_id"] = typedUserID
+			entry["actor"] = map[string]interface{}{"kind": actorKind, "ref": actorRef, "display_name": actorName}
+			delete(entry, "actor_id")
+		} else {
+			entry["coverage"] = "all_records_legacy_actor_projection"
+		}
+		logs = append(logs, entry)
 	}
 	if err := rows.Err(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Rows failed"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": logs, "total": total, "page": page, "page_size": pageSize})
+	response := map[string]interface{}{"data": logs, "total": total, "page": page, "page_size": pageSize}
+	if !v2 {
+		response["coverage"] = "all_records_legacy_actor_projection"
+		response["actor_identity_note"] = "actor_id/user_id zero denotes a non-human actor; use /api/v2/audit-logs for typed actor identity"
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 // --- Cleanup ---
@@ -340,7 +389,7 @@ func normalizeAuditSource(source string) string {
 
 func isValidAuditSource(source string) bool {
 	switch normalizeAuditSource(source) {
-	case "admin_console", "developer_console", "gateway_api", "system":
+	case "admin_console", "developer_console", "gateway_api", "system", "xinsight_integration":
 		return true
 	default:
 		return false

@@ -14,7 +14,7 @@ import (
 )
 
 func TestAsyncMediaImageMigrationContractAndRollbackGuard(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := setupM46RollbackPrestate(t)
 	ctx := context.Background()
 
 	var tables, constraints, ledger int
@@ -85,8 +85,6 @@ func TestAsyncMediaImageMigrationContractAndRollbackGuard(t *testing.T) {
 		"hmac-sha256:"+strings.Repeat("c", 64),
 	)
 	require.NoError(t, err)
-	rollbackEmptyPRD8Migrations(t, pool)
-
 	downSQL, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t),
 		"000046_v1_async_media_image_jobs.down.sql",

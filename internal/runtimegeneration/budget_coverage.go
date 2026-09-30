@@ -100,23 +100,27 @@ func ReadBudgetCoverage(ctx context.Context, q coverageReader) (BudgetCoverage, 
 	return c, nil
 }
 
-// M119 through M121 retain the exact M118 proof. A known additive suffix does not
+// M119 through M122 retain the exact M118 proof. A known additive suffix does not
 // recertify history or replace the original migration/manifest/ledger identity.
 func verifyBudgetCoverageLedger(ledger []string, certifiedHead, certifiedDigest string) error {
 	if certifiedHead != schemaauthority.BudgetSnapshotExpandHead || !artifactPattern.MatchString("sha256:"+certifiedDigest) || len(ledger) == 0 {
 		return fmt.Errorf("budget coverage schema head mismatch")
 	}
 	head := ledger[len(ledger)-1]
-	if head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead {
+	if head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead && (head != schemaauthority.ScopedContentExpandHead && head != schemaauthority.XInsightPolicyExpandHead) {
 		return fmt.Errorf("budget coverage schema head mismatch")
 	}
 	if err := schemaauthority.VerifyRuntimeLedger(ledger, ledger); err != nil {
 		return fmt.Errorf("budget coverage schema ledger: %w", err)
 	}
 	prefix := ledger
-	if head == schemaauthority.ContentCaptureExpandHead || head == schemaauthority.ContentReclaimExpandHead || head == schemaauthority.PreDispatchExpandHead {
+	if head == schemaauthority.ContentCaptureExpandHead || head == schemaauthority.ContentReclaimExpandHead || head == schemaauthority.PreDispatchExpandHead || (head == schemaauthority.ScopedContentExpandHead || head == schemaauthority.XInsightPolicyExpandHead) {
 		prefix = ledger[:len(ledger)-1]
-		if head == schemaauthority.PreDispatchExpandHead {
+		if head == schemaauthority.XInsightPolicyExpandHead {
+			prefix = ledger[:len(ledger)-5]
+		} else if head == schemaauthority.ScopedContentExpandHead {
+			prefix = ledger[:len(ledger)-4]
+		} else if head == schemaauthority.PreDispatchExpandHead {
 			prefix = ledger[:len(ledger)-3]
 		} else if head == schemaauthority.ContentReclaimExpandHead {
 			prefix = ledger[:len(ledger)-2]
@@ -126,8 +130,11 @@ func verifyBudgetCoverageLedger(ledger []string, certifiedHead, certifiedDigest 
 		return fmt.Errorf("budget coverage certified predecessor mismatch")
 	}
 	refs := BudgetCoverageRequirements()
-	if head == schemaauthority.ContentCaptureExpandHead || head == schemaauthority.ContentReclaimExpandHead || head == schemaauthority.PreDispatchExpandHead {
+	if head == schemaauthority.ContentCaptureExpandHead || head == schemaauthority.ContentReclaimExpandHead || head == schemaauthority.PreDispatchExpandHead || (head == schemaauthority.ScopedContentExpandHead || head == schemaauthority.XInsightPolicyExpandHead) {
 		refs = append(refs, ContentLifecycleRequirements()...)
+	}
+	if head == schemaauthority.XInsightPolicyExpandHead {
+		refs = append(refs, XInsightPolicyRequirements()...)
 	}
 	return CurrentManifest(schemaauthority.SupportedSchemaHeads()).Require(head, refs)
 }

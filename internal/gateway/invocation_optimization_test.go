@@ -11,12 +11,47 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
+	"github.com/uniroute/unirouter/internal/contentcapture"
 	"github.com/uniroute/unirouter/internal/invocationopt"
 	"github.com/uniroute/unirouter/internal/logger"
+	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/responsecache"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
+
+type deniedCacheContentCapture struct{}
+
+func (*deniedCacheContentCapture) Begin(context.Context, contentcapture.Observation) (*contentcapture.Capture, error) {
+	return nil, nil
+}
+
+func (*deniedCacheContentCapture) CachePersistenceAllowed(context.Context, contentcapture.CapturePrincipal, int64, int64) (bool, error) {
+	return false, nil
+}
+
+func TestResponseCacheBypassesWhenEffectiveContentPolicyDeniesStorage(t *testing.T) {
+	draft := invocationopt.DefaultDraft()
+	draft.OrgID, draft.ProjectID = 7, 11
+	draft.PolicyRef, draft.DisplayName = "cache-content-denied", "Cache content denied"
+	draft.ResponseCacheTarget, draft.ResponseCacheCanaryBPS = invocationopt.TargetCanary, 1000
+	draft.ResponseCachePersistence = true
+	policy := invocationopt.Policy{ID: 1, ContractVersion: invocationopt.PolicyContractVersion, Draft: draft,
+		Stage: invocationopt.StageCanary, Revision: 1, CreatedBy: 3, UpdatedBy: 3}
+	relay := &Relay{invocationOptimization: canaryCompressionManager(t, policy), contentCapture: &deniedCacheContentCapture{}}
+	route := &RouteResult{Channel: models.Channel{ID: 19}, ChannelKey: models.ChannelKey{ID: 23}}
+	upstream, err := http.NewRequest(http.MethodPost, "https://example.invalid/v1/chat/completions",
+		bytes.NewReader([]byte(`{"model":"example","messages":[]}`)))
+	require.NoError(t, err)
+	ctx := context.WithValue(context.Background(), middleware.CtxProjectID, int64(11))
+	decision := relay.evaluateResponseCache(ctx, http.Header{}, "op_0123456789abcdef0123456789abcdef", "example",
+		&models.ApiKey{ID: 31, OrgID: 7, KeyType: "shared", AuthEpoch: 1},
+		invocationOptimizationState{policy: policy, found: true}, route, upstream, "price-v1", nil)
+	require.Equal(t, responsecache.ReasonPersistenceDenied, decision.reason)
+	require.Nil(t, decision.hit)
+	require.Nil(t, decision.miss)
+	require.False(t, decision.reject)
+}
 
 func canaryCompressionManager(t *testing.T, policy invocationopt.Policy) *invocationopt.Manager {
 	t.Helper()

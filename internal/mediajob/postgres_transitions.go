@@ -219,6 +219,23 @@ func (s *PostgresStore) Claim(
 	if err != nil {
 		return nil, fmt.Errorf("mediajob: expire exhausted output recovery: %w", err)
 	}
+	// A fixed request deadline only applies to newly admitted jobs. Pending
+	// work has not reached the provider; running and unknown outcomes retain
+	// their existing recovery path and are never relabeled not_started here.
+	err = s.updateTerminalJobs(ctx, tx, &terminalJobs, `
+		UPDATE async_media_jobs
+		   SET queue_state='terminal',lease_state='released',execution_state='terminal',
+		       provider_outcome='not_started',object_state='not_created',
+		       cancellation_state=CASE WHEN cancellation_state='requested' THEN 'accepted' ELSE cancellation_state END,
+		       settlement_state='not_eligible',request_ciphertext=NULL,
+		       lease_owner='',lease_expires_at=NULL,terminal_at=$1,updated_at=$1,
+		       error_code='request_deadline_expired'
+		 WHERE request_expires_at IS NOT NULL AND request_expires_at <= $1
+		   AND request_ciphertext IS NOT NULL AND execution_state='pending'
+		   AND provider_outcome='pending' AND queue_state IN ('queued','leased')`, now)
+	if err != nil {
+		return nil, fmt.Errorf("mediajob: expire pending request: %w", err)
+	}
 
 	var jobID string
 	var scope Scope
@@ -233,6 +250,7 @@ func (s *PostgresStore) Claim(
 		     )
 		   )
 		   AND attempt < max_attempts
+		   AND (request_expires_at IS NULL OR request_expires_at > $1 OR provider_outcome='succeeded')
 		   AND (
 		     (provider_outcome='pending' AND execution_state='pending')
 		     OR

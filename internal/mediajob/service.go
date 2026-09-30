@@ -25,6 +25,7 @@ type Service struct {
 	runtimeEnabled   bool
 	admissionEnabled bool
 	limits           LimitPolicyRuntime
+	requestTTL       time.Duration
 }
 
 type ServiceOptions struct {
@@ -34,6 +35,7 @@ type ServiceOptions struct {
 	RuntimeEnabled   bool
 	AdmissionEnabled bool
 	LimitPolicy      LimitPolicyRuntime
+	RequestTTL       time.Duration
 }
 
 type SubmitInput struct {
@@ -83,12 +85,19 @@ func NewService(
 	if options.Now == nil {
 		options.Now = time.Now
 	}
+	if options.RequestTTL == 0 {
+		options.RequestTTL = 24 * time.Hour
+	}
+	if options.RequestTTL < time.Hour || options.RequestTTL > 72*time.Hour || options.RequestTTL%time.Hour != 0 {
+		return nil, domainError(ErrInvalid, "request_ttl_invalid")
+	}
 	return &Service{
 		store: store, objects: objects, cipher: cipher, authorizer: authorizer,
 		idempotencyKey: append([]byte(nil), idempotencyKey...),
 		retention:      options.Retention, maxAttempts: options.MaxAttempts,
 		now: options.Now, runtimeEnabled: options.RuntimeEnabled,
 		admissionEnabled: options.AdmissionEnabled, limits: options.LimitPolicy,
+		requestTTL: options.RequestTTL,
 	}, nil
 }
 
@@ -191,6 +200,7 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (CreateResult, 
 	record := CreateRecord{
 		AllowCreate:          s.admissionEnabled,
 		ExpectedLimitSubject: limitSubject,
+		RequestTTL:           s.requestTTL,
 		Job: Job{
 			ContractVersion: ContractVersion,
 			JobID:           jobID, Scope: input.Scope, APIKeyID: input.APIKeyID,

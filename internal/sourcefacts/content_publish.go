@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"reflect"
 	"slices"
 	"strconv"
 	"time"
@@ -95,8 +96,13 @@ func (s *Service) PublishReservedContent(ctx context.Context, files *contentcapt
 		return result, err
 	}
 	var row contentPublicationRow
-	err = tx.QueryRow(ctx, `SELECT policy_version,policy_config,policy_effective_at,recovery_epoch,storage_identity,storage_binding_token,relative_path,state,reserved_bytes,saved_bytes,digest,expires_at,lease_owner,lease_expires_at
+	if reservation.PolicyRef != "" {
+		err = tx.QueryRow(ctx, `SELECT policy_version,policy_config,policy_effective_at,recovery_epoch,storage_identity,storage_binding_token,relative_path,state,reserved_bytes,saved_bytes,digest,expires_at,lease_owner,lease_expires_at,policy_ref,policy_scope,policy_vector
+FROM execution_content_objects WHERE content_ref=$1 AND org_id=$2 AND project_id=$3 AND source_fact_id=$4 AND revision=$5 FOR UPDATE`, reservation.ContentRef, reservation.OrgID, reservation.ProjectID, reservation.SourceFactID, reservation.Revision).Scan(&row.policyVersion, &row.policyConfig, &row.policyEffectiveAt, &row.epoch, &row.binding.Identity, &row.binding.Token, &row.name, &row.state, &row.reserved, &row.saved, &row.digest, &row.expires, &row.leaseOwner, &row.leaseExpires, &row.policyRef, &row.policyScope, &row.policyVector)
+	} else {
+		err = tx.QueryRow(ctx, `SELECT policy_version,policy_config,policy_effective_at,recovery_epoch,storage_identity,storage_binding_token,relative_path,state,reserved_bytes,saved_bytes,digest,expires_at,lease_owner,lease_expires_at
 FROM execution_content_objects WHERE content_ref=$1 AND org_id=$2 AND project_id=$3 AND source_fact_id=$4 AND revision=$5 FOR UPDATE`, reservation.ContentRef, reservation.OrgID, reservation.ProjectID, reservation.SourceFactID, reservation.Revision).Scan(&row.policyVersion, &row.policyConfig, &row.policyEffectiveAt, &row.epoch, &row.binding.Identity, &row.binding.Token, &row.name, &row.state, &row.reserved, &row.saved, &row.digest, &row.expires, &row.leaseOwner, &row.leaseExpires)
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return result, ErrContentPublishBinding
 	}
@@ -174,9 +180,13 @@ func validateContentPublication(r contentcapture.Reservation, receipt contentcap
 		return ErrContentPublishBinding
 	}
 	c := r.Effective.Config
+	policyRef := r.PolicyRef
+	if policyRef == "" {
+		policyRef = fmt.Sprintf("content-policy:%d:%d", r.OrgID, r.ProjectID)
+	}
 	if c.Validate() != nil || c.Mode != contentcapture.ModeFullContent || r.ReservedBytes > *c.MaxSavedBytes ||
 		!slices.Contains(c.SupportedProtocols, m.Protocol) || !slices.Contains(c.ObservationPoints, m.ObservationPoint) ||
-		m.Capture.Mode != c.Mode || m.Capture.PolicyRef != fmt.Sprintf("content-policy:%d:%d", r.OrgID, r.ProjectID) || m.Capture.PolicyVersion != r.Effective.PolicyVersion || m.Capture.PolicyEffectiveAt != r.EffectiveAt {
+		m.Capture.Mode != c.Mode || m.Capture.PolicyRef != policyRef || m.Capture.PolicyVersion != r.Effective.PolicyVersion || m.Capture.PolicyEffectiveAt != r.EffectiveAt {
 		return ErrContentPublishBinding
 	}
 	expires, err := time.Parse(time.RFC3339Nano, m.ExpiresAt)
@@ -187,16 +197,18 @@ func validateContentPublication(r contentcapture.Reservation, receipt contentcap
 }
 
 type contentPublicationRow struct {
-	policyVersion, epoch int64
-	policyConfig         []byte
-	policyEffectiveAt    time.Time
-	binding              contentcapture.StoreBinding
-	name, state          string
-	reserved, saved      int64
-	digest               *string
-	expires              time.Time
-	leaseOwner           string
-	leaseExpires         time.Time
+	policyVersion, epoch   int64
+	policyConfig           []byte
+	policyEffectiveAt      time.Time
+	policyRef, policyScope *string
+	policyVector           []byte
+	binding                contentcapture.StoreBinding
+	name, state            string
+	reserved, saved        int64
+	digest                 *string
+	expires                time.Time
+	leaseOwner             string
+	leaseExpires           time.Time
 }
 
 func (p contentPublicationRow) validate(r contentcapture.Reservation, receipt contentcapture.StoredReceipt) error {
@@ -216,6 +228,11 @@ func (p contentPublicationRow) validate(r contentcapture.Reservation, receipt co
 		p.epoch != r.RecoveryEpoch || p.binding != r.Binding || p.name != r.ObjectName || p.reserved != r.ReservedBytes || !p.expires.Equal(r.ExpiresAt) || p.leaseOwner != r.LeaseOwner || !p.leaseExpires.Equal(r.LeaseExpiresAt) {
 		return ErrContentPublishBinding
 	}
+	if r.PolicyRef != "" {
+		if p.policyRef == nil || p.policyScope == nil || *p.policyRef != r.PolicyRef || *p.policyScope != r.PolicyScope || !equalPolicyVector(p.policyVector, []byte(r.PolicyVector)) {
+			return ErrContentPublishBinding
+		}
+	}
 	if p.state == "ready" {
 		if p.saved != receipt.SavedBytes || p.digest == nil || *p.digest != receipt.SHA256 {
 			return ErrContentPublishBinding
@@ -224,6 +241,11 @@ func (p contentPublicationRow) validate(r contentcapture.Reservation, receipt co
 		return ErrContentPublishBinding
 	}
 	return nil
+}
+
+func equalPolicyVector(left, right []byte) bool {
+	var a, b map[string]json.RawMessage
+	return json.Unmarshal(left, &a) == nil && json.Unmarshal(right, &b) == nil && a != nil && reflect.DeepEqual(a, b)
 }
 
 func contentPublishedAccounting(reserved, stored, allocation, saved int64) (int64, int64, error) {

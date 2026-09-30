@@ -112,6 +112,7 @@ const auditSourceLabels: Record<string, string> = {
   developer_console: '开发者工作台',
   gateway_api: '网关 API',
   system: '系统任务',
+  xinsight_integration: 'X-Insight 集成',
 };
 
 export const auditSourceOptions: SelectOption[] = [
@@ -119,6 +120,7 @@ export const auditSourceOptions: SelectOption[] = [
   { label: '开发者工作台', value: 'developer_console' },
   { label: '网关 API', value: 'gateway_api' },
   { label: '系统任务', value: 'system' },
+  { label: 'X-Insight 集成', value: 'xinsight_integration' },
 ];
 
 export function auditSourceLabel(value?: string) {

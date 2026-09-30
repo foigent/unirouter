@@ -479,13 +479,16 @@ export const api = {
   // Audit Logs
   getAuditLogs: (page = 1, pageSize = 20, filters?: {
     org_id?: string; project_id?: string; actor_id?: string; action?: string; resource?: string; resource_id?: string;
+    actor_kind?: string; actor_ref?: string;
     request_id?: string; client_request_id?: string; source?: string; start_time?: string; end_time?: string;
-  }) => legacyRequest(appendParams('/audit-logs', {
+  }) => typedRequest<LegacyApiResponse>(appendParams('/audit-logs', {
     page,
     page_size: pageSize,
     org_id: filters?.org_id,
     project_id: filters?.project_id,
     actor_id: filters?.actor_id,
+    actor_kind: filters?.actor_kind,
+    actor_ref: filters?.actor_ref,
     action: filters?.action,
     resource: filters?.resource,
     resource_id: filters?.resource_id,
@@ -494,7 +497,7 @@ export const api = {
     source: filters?.source,
     start_time: filters?.start_time,
     end_time: filters?.end_time,
-  })),
+  }), {}, 'v2'),
 
   // Org Model Prices
   getOrgModelPrices: (page = 1, pageSize = 20, orgId?: number) =>

@@ -78,7 +78,7 @@ func runRuntimeGenerationCLI(ctx context.Context, args []string, cfg *config.Con
 		return err
 	}
 	head := actual[len(actual)-1]
-	if head != schemaauthority.CapabilityExpandHead && head != schemaauthority.StreamCounterExpandHead && head != schemaauthority.SourceFactsExpandHead && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead {
+	if head != schemaauthority.CapabilityExpandHead && head != schemaauthority.StreamCounterExpandHead && head != schemaauthority.SourceFactsExpandHead && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead && (head != schemaauthority.ScopedContentExpandHead && head != schemaauthority.XInsightPolicyExpandHead) {
 		return fmt.Errorf("runtime generation owner requires the exact expanded schema")
 	}
 	var result any

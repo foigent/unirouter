@@ -223,8 +223,10 @@ BUDGET_HEAD = "000118_source_budget_snapshots"
 CONTENT_HEAD = "000119_execution_content_capture"
 RECLAIM_HEAD = "000120_unpublished_content_reclamation"
 PRE_DISPATCH_HEAD = "000121_gateway_pre_dispatch_terminal"
+SCOPED_CONTENT_HEAD = "000122_scoped_content_policy"
+XINSIGHT_POLICY_HEAD = "000123_xinsight_policy_delegation"
 CAPABILITY_HEAD = "000114_capability_delivery_expand"
-BRIDGE_HEADS = (COUNTER_HEAD, SOURCE_HEAD, OBSERVATION_HEAD, BUDGET_HEAD, CONTENT_HEAD, RECLAIM_HEAD, PRE_DISPATCH_HEAD)
+BRIDGE_HEADS = (COUNTER_HEAD, SOURCE_HEAD, OBSERVATION_HEAD, BUDGET_HEAD, CONTENT_HEAD, RECLAIM_HEAD, PRE_DISPATCH_HEAD, SCOPED_CONTENT_HEAD, XINSIGHT_POLICY_HEAD)
 SOURCE_DEFAULTS = {"SOURCE_FACTS_ENABLED": "false", "SOURCE_OBSERVATIONS_ENABLED": "false",
                    "SOURCE_BUDGET_SNAPSHOTS_ENABLED": "false", "SOURCE_CONTENT_ENABLED": "false",
                    "SOURCE_CONTENT_FULL_ENABLED": "false", "SOURCE_CONTENT_STORAGE_ROOT": "",
@@ -536,7 +538,7 @@ class Rollout:
                     all(containers[role]["Image"] == self.spec["images"]["frontend" if role == "frontend" else "backend"]["digest"] for role in CONTAINERS),
                     "writer transition requires the same exact Artifact")
             writer_head = self.sql("SELECT max(version) FROM schema_migrations")
-            require(writer_head in BRIDGE_HEADS, "writer transition requires an exact supported M115–M121 head")
+            require(writer_head in BRIDGE_HEADS[:BRIDGE_HEADS.index(SCOPED_CONTENT_HEAD)], "writer transition requires an exact supported M115–M121 head")
             for role in ("stable", "canary"):
                 require(environment(containers[role]["Config"]["Env"]).get("STREAM_COUNTER_VERSION", COUNTER_V2) == transition["from"], "mixed writer predecessor")
                 manifest = load(run(["docker", "exec", CONTAINERS[role], "./uniroute", "runtime-generation", "support"]))

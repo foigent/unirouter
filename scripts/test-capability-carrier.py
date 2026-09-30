@@ -5,7 +5,11 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
+import sys
+import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -128,10 +132,11 @@ class CarrierTrustTests(unittest.TestCase):
                     with self.assertRaises(RuntimeError):
                         bridge.verify_bridge(runtime, backend, wire, bridge.HEADS[3])
 
-    def test_m119_through_m121_require_exact_prefix_and_new_implementations(self):
+    def test_m119_through_m123_require_exact_prefix_and_inherited_implementations(self):
         required = (bridge.COUNTERS + [bridge.SOURCE_FACTS, bridge.SOURCE_OBSERVATIONS,
                     bridge.SOURCE_DISPATCH, *bridge.BUDGET_REQUIREMENTS, bridge.CONTENT_LIFECYCLE,
-                    bridge.PRE_DISPATCH_OBSERVATIONS])
+                    bridge.PRE_DISPATCH_OBSERVATIONS, *bridge.SCOPED_CONTENT,
+                    *bridge.XINSIGHT_POLICY])
         for end in range(6, len(bridge.HEADS) + 1):
             with self.subTest(end=end):
                 manifest = {"schema_heads": bridge.HEADS[:end], "implementations": required}
@@ -150,13 +155,64 @@ class CarrierTrustTests(unittest.TestCase):
                         [bridge.SOURCE_FACTS, bridge.SOURCE_OBSERVATIONS, bridge.SOURCE_DISPATCH,
                          *bridge.BUDGET_REQUIREMENTS] or
                         (end >= 7 and missing == bridge.CONTENT_LIFECYCLE) or
-                        (end == 9 and missing == bridge.PRE_DISPATCH_OBSERVATIONS))
+                        (end >= 9 and missing == bridge.PRE_DISPATCH_OBSERVATIONS) or
+                        (end >= 10 and missing in bridge.SCOPED_CONTENT) or
+                        (end >= 11 and missing in bridge.XINSIGHT_POLICY))
                     if required_for_head:
                         with self.assertRaises(RuntimeError):
                             bridge.verify_bridge(reduced_runtime, backend, reduced_wire, bridge.HEADS[end - 1])
                 if end < len(bridge.HEADS):
                     with self.assertRaises(RuntimeError):
                         bridge.verify_bridge(runtime, backend, wire, bridge.HEADS[end])
+
+    def test_host_check_invokes_only_readonly_owner_action(self):
+        implementations = (bridge.COUNTERS + [bridge.SOURCE_FACTS, bridge.SOURCE_OBSERVATIONS,
+                           bridge.SOURCE_DISPATCH, *bridge.BUDGET_REQUIREMENTS, bridge.CONTENT_LIFECYCLE,
+                           bridge.PRE_DISPATCH_OBSERVATIONS, *bridge.SCOPED_CONTENT, *bridge.XINSIGHT_POLICY])
+        manifest = {"schema_heads": bridge.HEADS, "implementations": implementations}
+        wire = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
+        sha = "a" * 64
+        image = "sha256:" + "b" * 64
+        runtime = {"support_manifest_digest": hashlib.sha256(wire).hexdigest(),
+                   "supported_schema_heads": bridge.HEADS,
+                   "compatibility_epoch": "unirouter.runtime-compatibility.v1", "artifact_digest": image}
+        backend = {"Image": image, "HostConfig": {"PortBindings": {}}}
+        snapshot = {"before": {}, "configuration_sha256": sha,
+                    "health": {role: runtime for role in bridge.ingress.HOSTS}}
+
+        def host_read(command):
+            if command == ["hostname"]:
+                return b"isolated-fixture"
+            if command[:2] == ["docker", "inspect"]:
+                return json.dumps([backend]).encode()
+            self.fail(f"unexpected host command: {command}")
+
+        def container_read(host, *command):
+            if command[:1] == ("sh",):
+                return b""
+            self.assertEqual(("./uniroute", "runtime-generation", "support"), command)
+            return wire
+
+        with tempfile.TemporaryDirectory(prefix="ur-expand-check-") as directory:
+            argv = ["compatible-expand.py", "--directory", directory, "--expected-container-id", sha,
+                    "--expected-hostname", "isolated-fixture", "--expected-system-identifier", "123",
+                    "--environment", "test", "--migration-digest", "sha256:" + sha,
+                    "--target-version", bridge.HEADS[-1], "--expected-config-sha256", sha,
+                    "--expected-nginx-sha256", sha]
+            owner = SimpleNamespace(returncode=0, stdout=b'{"status":"check"}')
+            with patch.object(sys, "argv", argv), patch.object(Path, "open", side_effect=lambda *args, **kwargs: open(os.devnull, "a")), \
+                 patch.object(bridge.fcntl, "flock"), patch.object(bridge.ingress, "run", side_effect=host_read), \
+                 patch.object(bridge.ingress, "docker_exec", side_effect=container_read), \
+                 patch.object(bridge.ingress, "snapshot", return_value=snapshot), \
+                 patch.object(bridge.ingress, "digest", return_value=sha), \
+                 patch.object(bridge, "verify_recovery_process_inventory"), \
+                 patch.object(bridge.subprocess, "run", return_value=owner) as execute, \
+                 patch("builtins.print"):
+                bridge.main()
+            self.assertEqual(1, execute.call_count)
+            self.assertEqual(["docker", "exec", "-i", bridge.ingress.HOSTS["stable"],
+                              "./uniroute", "compatible-expand", "check"], execute.call_args.args[0])
+            self.assertEqual("test", json.loads(execute.call_args.kwargs["input"])["environment"])
 
 
 if __name__ == "__main__":

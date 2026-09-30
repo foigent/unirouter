@@ -105,7 +105,7 @@ func contentDownForBudgetFixture(t *testing.T, pool *pgxpool.Pool) error {
 	t.Helper()
 	// Later additive migrations must be reversed in actual schema order before
 	// establishing the named historical fixture, including repeated M118 calls.
-	for _, version := range []string{schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead} {
+	for _, version := range []string{schemaauthority.XInsightPolicyExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead} {
 		if err := sourceBudgetFixtureDownIfPresent(t, pool, version); err != nil {
 			return err
 		}
@@ -195,23 +195,28 @@ func TestSourceBudgetMigrationRequiresCertificateAndPreservesHistory(t *testing.
 }
 
 func TestSourceBudgetRestoreAlwaysRebasesAndReadinessDoesNotWrite(t *testing.T) {
-	for _, head := range []string{schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead} {
+	for _, head := range []string{schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ScopedContentExpandHead} {
 		t.Run(head, func(t *testing.T) {
 			pool := testutil.SetupMigratedTestDB(t)
+			require.NoError(t, sourceBudgetFixtureDownIfPresent(t, pool, schemaauthority.XInsightPolicyExpandHead))
 			if head == schemaauthority.BudgetSnapshotExpandHead {
 				require.NoError(t, contentDownForBudgetFixture(t, pool))
 			} else if head == schemaauthority.ContentCaptureExpandHead {
+				require.NoError(t, sourceBudgetFixtureDownIfPresent(t, pool, schemaauthority.ScopedContentExpandHead))
 				require.NoError(t, sourceBudgetFixtureDownIfPresent(t, pool, schemaauthority.PreDispatchExpandHead))
 				require.NoError(t, sourceBudgetFixtureDownIfPresent(t, pool, schemaauthority.ContentReclaimExpandHead))
 			} else if head == schemaauthority.ContentReclaimExpandHead {
+				require.NoError(t, sourceBudgetFixtureDownIfPresent(t, pool, schemaauthority.ScopedContentExpandHead))
 				require.NoError(t, sourceBudgetFixtureDownIfPresent(t, pool, schemaauthority.PreDispatchExpandHead))
+			} else if head == schemaauthority.PreDispatchExpandHead {
+				require.NoError(t, sourceBudgetFixtureDownIfPresent(t, pool, schemaauthority.ScopedContentExpandHead))
 			}
 			assertSourceFixtureLedger(t, pool, head)
 			var contentObjects, reclaimedColumn bool
 			require.NoError(t, pool.QueryRow(t.Context(), `SELECT to_regclass('execution_content_objects') IS NOT NULL,
 EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('execution_content_objects') AND attname='reclaimed_at' AND NOT attisdropped)`).Scan(&contentObjects, &reclaimedColumn))
 			require.Equal(t, head != schemaauthority.BudgetSnapshotExpandHead, contentObjects)
-			require.Equal(t, head == schemaauthority.ContentReclaimExpandHead || head == schemaauthority.PreDispatchExpandHead, reclaimedColumn)
+			require.Equal(t, head == schemaauthority.ContentReclaimExpandHead || head == schemaauthority.PreDispatchExpandHead || head == schemaauthority.ScopedContentExpandHead, reclaimedColumn)
 			pool, s, org, project := setupSourceDBWithPool(t, pool)
 			s.options.ObservationsEnabled = true
 			ctx := t.Context()

@@ -34,6 +34,7 @@ fi
 # This checks source metadata only; CI/build jobs still execute the toolchains.
 python3 - <<'PY'
 from pathlib import Path
+import hashlib
 import re
 import sys
 
@@ -98,6 +99,16 @@ for workflow in (
 ):
     check_workflow(workflow, "setup-go", "go-version", toolchain)
 check_workflow(".github/workflows/ci.yml", "setup-node", "node-version", node_major)
+
+# The restore helper is a declared customer-package artifact. Keep its
+# documented immutable identity tied to the bytes actually shipped.
+restore_path = "scripts/source-budget-restore-rebase.sql"
+restore_bytes = Path(restore_path).read_bytes()
+readme_path = "deploy/customer/README.md"
+restore_sha = one(readme_path, r"^- SHA-256: `([0-9a-f]{64})`$", "restore helper SHA-256")
+restore_size = one(readme_path, r"^- Bytes: `([0-9]+)`$", "restore helper byte count")
+if restore_sha != hashlib.sha256(restore_bytes).hexdigest() or int(restore_size) != len(restore_bytes):
+    fail(readme_path, f"declared restore helper identity differs from {restore_path}")
 PY
 
 base_sha="${BASE_SHA:-}"

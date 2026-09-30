@@ -101,25 +101,26 @@ type Relay struct {
 	outbox                    *outbox.Service
 	traceExporter             TraceExporter
 
-	traceEventsEnabled         bool
-	traceEventSampleRate       float64
-	payloadCaptureMode         string
-	evidenceContextTrustSecret string
-	streamPolicy               streampolicy.Config
-	streamCounterVersion       string
-	payloadBudget              *payloadpolicy.Budget
-	guardrail                  *guardrail.Service
-	freezeSafetyFactor         string
-	minFreezeCents             int64
-	modelAuthorization         *modelauthz.Evaluator
-	invocationOptimization     *invocationopt.Manager
-	responseCache              *responsecache.Service
-	runtimeVersion             string
-	runtimeCommit              string
-	runtimeEnvironment         string
-	modelExecution             *modelExecutionRuntime
-	providerHTTPDoer           adapters.HTTPDoer
-	contentCapture             contentcapture.Starter
+	traceEventsEnabled            bool
+	traceEventSampleRate          float64
+	payloadCaptureMode            string
+	evidenceContextTrustSecret    string
+	streamPolicy                  streampolicy.Config
+	streamCounterVersion          string
+	payloadBudget                 *payloadpolicy.Budget
+	guardrail                     *guardrail.Service
+	freezeSafetyFactor            string
+	minFreezeCents                int64
+	modelAuthorization            *modelauthz.Evaluator
+	invocationOptimization        *invocationopt.Manager
+	responseCache                 *responsecache.Service
+	runtimeVersion                string
+	runtimeCommit                 string
+	runtimeEnvironment            string
+	modelExecution                *modelExecutionRuntime
+	providerHTTPDoer              adapters.HTTPDoer
+	contentCapture                contentcapture.Starter
+	contentPolicyRequiredForCache bool
 }
 
 // SetStreamCounterVersion is a startup-only selection. Schema compatibility is
@@ -807,10 +808,20 @@ func modelAllowedForAPIKey(apiKey *models.ApiKey, model, requestedModel string) 
 	return false
 }
 
-func (relay *Relay) rejectModelNotAllowed(w http.ResponseWriter, ctx context.Context, requestID, model, requestedModel string, requestStart time.Time) {
-	relay.recordTraceEvent(ctx, requestID, "auth.model_not_allowed", "auth", "warning", model, requestedModel, nil, http.StatusForbidden, elapsedMilliseconds(requestStart), map[string]interface{}{
+func (relay *Relay) recordModelNotAllowed(ctx context.Context, requestID, model, requestedModel string, latencyMs int) {
+	relay.recordTraceEvent(ctx, requestID, "auth.model_not_allowed", "auth", "warning", model, requestedModel, nil, http.StatusForbidden, latencyMs, map[string]interface{}{
 		"error_code": "auth_error.model_not_allowed",
 	})
+}
+
+// RecordModelScopeDenial records an ingress rejection before the public model
+// has been resolved. The caller-supplied name is never treated as a target.
+func (relay *Relay) RecordModelScopeDenial(ctx context.Context, requestID, requestedModel string) {
+	relay.recordModelNotAllowed(ctx, requestID, "", requestedModel, 0)
+}
+
+func (relay *Relay) rejectModelNotAllowed(w http.ResponseWriter, ctx context.Context, requestID, model, requestedModel string, requestStart time.Time) {
+	relay.recordModelNotAllowed(ctx, requestID, model, requestedModel, elapsedMilliseconds(requestStart))
 	writeError(w, http.StatusForbidden, "permission_error", "auth_error.model_not_allowed",
 		fmt.Sprintf("Model '%s' is not allowed for this API key", model))
 }
@@ -1371,7 +1382,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if lastErr != nil {
-		reqLog.Error("All upstream channels failed, last error: %v", lastErr)
+		reqLog.Error("All upstream channels failed after dispatch")
 	}
 	// Log the failed request
 	if lastRoute != nil {
@@ -1396,7 +1407,7 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 	body, releaseResponsePayload, err := relay.responsePayload(ctx, resp.Body)
 	if err != nil {
 		status, errorType, errorCode, message, failureKind := payloadReadFailure(err)
-		reqLog.Error("Failed to read bounded response body: %v", err)
+		reqLog.Error("Failed to read bounded provider response body")
 		stopProbeLease()
 		healthAuthorityFailed := false
 		if !errors.Is(err, payloadpolicy.ErrPayloadTooLarge) && !errors.Is(err, payloadpolicy.ErrBudgetExceeded) {
@@ -1448,7 +1459,9 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 		OperationProtocolProfileVersion: route.OperationProtocolProfileVersion,
 	})
 	if err != nil {
-		reqLog.Error("Failed to parse adapter response: %v", err)
+		// Adapter errors may quote provider-controlled response values. Keep the
+		// failure classification without copying those values into application logs.
+		reqLog.Error("Failed to parse adapter response")
 		stopProbeLease()
 		healthAuthorityFailed := false
 		if healthErr := relay.applyRouteHealth(context.WithoutCancel(ctx), route, executionHealthProviderFailure); healthErr != nil {
@@ -2636,7 +2649,8 @@ streamLoop:
 				State:             streamState,
 			})
 			if err != nil {
-				reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Failed to normalize stream chunk: %v", err)
+				// Stream adapter errors may include provider-controlled frame values.
+				reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Failed to normalize stream chunk")
 				streamPayloadInvalid = true
 				streamTerminationCode = "upstream_stream_invalid_frame"
 				done = true
@@ -2860,7 +2874,7 @@ streamLoop:
 		}
 	}
 	if scanErr != nil && !preOutputBillingFailure {
-		reqLog.Error("Upstream stream ended with a read error: %v", scanErr)
+		reqLog.Error("Upstream stream ended with a read error")
 		if errors.Is(scanErr, errStreamResourceLimit) {
 			streamTerminationCode = "stream_resource_limit_exceeded"
 		} else if errors.Is(scanErr, bufio.ErrTooLong) {
@@ -4143,7 +4157,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if lastErr != nil {
-		reqLog.Error("All upstream embeddings channels failed: %v", lastErr)
+		reqLog.Error("All upstream embeddings channels failed after dispatch")
 	}
 	if lastRoute != nil {
 		relay.recordRequest(lastAttemptCtx, requestID, orgID, keyID, lastRoute.Channel.ID, lastRoute.Channel.Provider, lastRoute.Channel.Name, req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, lastStatusCode, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceUpstreamFailed, inputTokens, lastUpstreamRequestID)

@@ -63,22 +63,22 @@ func (s *Service) NewContentBodyAuthority(resolver middleware.ClientIPResolver) 
 }
 
 type contentBodyAccess struct {
-	keyID, org, project                                                                   int64
-	keyStatus, ips, scope, instance, global, registrationHash, prefix, keyHash, operation string
-	profiles                                                                              []string
-	hasScope                                                                              bool
-	local                                                                                 string
-	generation, safety, epoch, high, coverage                                             int64
-	streamInstance                                                                        string
-	coverageTime                                                                          *time.Time
-	purposes                                                                              []string
+	keyID, org, project                                                                                int64
+	keyStatus, ips, scope, instance, global, registrationHash, prefix, keyHash, operation, policyLabel string
+	profiles                                                                                           []string
+	hasScope                                                                                           bool
+	local                                                                                              string
+	generation, safety, epoch, high, coverage                                                          int64
+	streamInstance                                                                                     string
+	coverageTime                                                                                       *time.Time
+	purposes                                                                                           []string
 }
 
 const contentBodyAccessSQL = `SELECT ak.id,ak.org_id,ak.project_id,ak.status,ak.allowed_ips,ak.source_lifecycle_scope,
 c.source_instance,c.status,sc.registration_sha256,ak.key_prefix,ak.key_hash,ak.registration_operation_id,sc.profiles,
 cs.project_id IS NOT NULL,COALESCE(cs.status,''),COALESCE(cs.access_generation,0),c.content_safety_version,
 COALESCE(st.recovery_epoch,0),COALESCE(st.high_sequence,0),COALESCE(b.coverage_after_sequence,-1),
-COALESCE(st.source_instance,''),b.coverage_time,COALESCE(b.allowed_purposes,ARRAY[]::text[])
+COALESCE(st.source_instance,''),b.coverage_time,COALESCE(b.allowed_purposes,ARRAY[]::text[]),ak.policy_labels
 FROM api_keys ak
 JOIN execution_source_credentials sc ON sc.api_key_id=ak.id AND sc.org_id=ak.org_id AND sc.project_id=ak.project_id AND sc.source_lifecycle_scope=ak.source_lifecycle_scope
 JOIN execution_source_connections c ON c.org_id=ak.org_id AND c.project_id=ak.project_id
@@ -105,7 +105,7 @@ func (a *contentBodyDBAuthority) readAccess(ctx context.Context, tx pgx.Tx, hash
 		if count > 1 {
 			return contentBodyAccess{}, contentBodyDenied()
 		}
-		err = rows.Scan(&result.keyID, &result.org, &result.project, &result.keyStatus, &result.ips, &result.scope, &result.instance, &result.global, &result.registrationHash, &result.prefix, &result.keyHash, &result.operation, &result.profiles, &result.hasScope, &result.local, &result.generation, &result.safety, &result.epoch, &result.high, &result.coverage, &result.streamInstance, &result.coverageTime, &result.purposes)
+		err = rows.Scan(&result.keyID, &result.org, &result.project, &result.keyStatus, &result.ips, &result.scope, &result.instance, &result.global, &result.registrationHash, &result.prefix, &result.keyHash, &result.operation, &result.profiles, &result.hasScope, &result.local, &result.generation, &result.safety, &result.epoch, &result.high, &result.coverage, &result.streamInstance, &result.coverageTime, &result.purposes, &result.policyLabel)
 		if err != nil {
 			return contentBodyAccess{}, contentBodyUnavailable()
 		}
@@ -114,6 +114,13 @@ func (a *contentBodyDBAuthority) readAccess(ctx context.Context, tx pgx.Tx, hash
 		return contentBodyAccess{}, contentBodyUnavailable()
 	}
 	if count != 1 {
+		return contentBodyAccess{}, contentBodyDenied()
+	}
+	allowed, err := enrollmentReadAllowedTx(ctx, tx, result.keyID, result.org, result.project, result.instance, "content", result.policyLabel)
+	if err != nil {
+		return contentBodyAccess{}, contentBodyUnavailable()
+	}
+	if !allowed {
 		return contentBodyAccess{}, contentBodyDenied()
 	}
 	return result, nil

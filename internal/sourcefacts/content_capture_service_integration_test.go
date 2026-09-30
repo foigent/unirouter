@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/contentcapture"
+	"github.com/uniroute/unirouter/internal/modeloperation"
 )
 
 type captureServicePG struct {
@@ -63,7 +64,10 @@ func setupCaptureServicePG(t *testing.T, mode string, limit int64, protocols ...
 		defer cancel()
 		require.NoError(t, service.Close(ctx))
 	})
-	return captureServicePG{pool, service, ContentCaptureIdentity{OrgID: org, ProjectID: project, RequestID: "synthetic-capture", Protocol: "openai.chat", ObservationPoint: "client_request", MediaType: "application/json; charset=utf-8", OccurredAt: time.Now().UTC()}, config, root}
+	var keyID int64
+	require.NoError(t, pool.QueryRow(t.Context(), `INSERT INTO api_keys(org_id,project_id,name,key_hash,key_prefix,status)
+VALUES($1,$2,'synthetic-capture',repeat('c',64),'ur-capture-scope','active') RETURNING id`, org, project).Scan(&keyID))
+	return captureServicePG{pool, service, ContentCaptureIdentity{OrgID: org, ProjectID: project, RequestID: "synthetic-capture", Protocol: "openai.chat", ObservationPoint: "client_request", MediaType: "application/json; charset=utf-8", OccurredAt: time.Now().UTC(), Principal: contentcapture.CapturePrincipal{APIKeyID: keyID, KeyType: "shared"}}, config, root}
 }
 
 func (p captureServicePG) manifests(t *testing.T) []ContentManifest {
@@ -172,6 +176,120 @@ func TestContentCaptureServicePGTransitions(t *testing.T) {
 			p.counts(t, 1, 0, int64(len(expected)), 2, 0)
 		})
 	}
+}
+
+func TestScopedContentEnterpriseInheritedCapture(t *testing.T) {
+	p := setupCaptureServicePG(t, contentcapture.ModeFullContent, 128, string(modeloperation.IDChatCompletions), "openai.chat")
+	ctx := t.Context()
+	_, err := p.pool.Exec(ctx, `DELETE FROM execution_content_policies WHERE org_id=$1 AND project_id=$2`, p.identity.OrgID, p.identity.ProjectID)
+	require.NoError(t, err)
+	wire, err := json.Marshal(p.config)
+	require.NoError(t, err)
+	_, err = p.pool.Exec(ctx, `INSERT INTO execution_content_enterprise_policies
+      (org_id,desired_version,effective_version,desired_config,effective_config,
+       desired_execution_storage_mode,effective_execution_storage_mode,
+       desired_default_project_quota_bytes,effective_default_project_quota_bytes,
+       effective_at,application_status,application_reason)
+      VALUES($1,1,1,$2,$2,'temporary_allowed','temporary_allowed',1024,1024,clock_timestamp(),'applied','none')`, p.identity.OrgID, wire)
+	require.NoError(t, err)
+	allowed, err := p.service.CachePersistenceAllowed(ctx, p.identity.Principal, p.identity.OrgID, p.identity.ProjectID)
+	require.NoError(t, err)
+	require.True(t, allowed)
+	c, err := p.service.Begin(ctx, p.identity)
+	require.NoError(t, err)
+	require.NotNil(t, c)
+	require.NoError(t, c.Offer(ctx, []byte("enterprise inherited capture")))
+	require.NoError(t, c.Finish("none"))
+	result := waitCaptureService(t, c)
+	require.NoError(t, result.FinalizeError)
+	manifests := p.manifests(t)
+	require.Len(t, manifests, 2)
+	require.Equal(t, fmt.Sprintf("content-policy:%d:enterprise", p.identity.OrgID), manifests[1].Capture.PolicyRef)
+	require.Equal(t, "1", manifests[1].Capture.PolicyVersion)
+	require.Equal(t, "complete", manifests[1].Capture.Completeness)
+	var explicit bool
+	var reserved, stored int64
+	var quota *int64
+	require.NoError(t, p.pool.QueryRow(ctx, `SELECT explicit_override,reserved_bytes,stored_bytes,project_quota_bytes
+      FROM execution_content_policies WHERE org_id=$1 AND project_id=$2`, p.identity.OrgID, p.identity.ProjectID).
+		Scan(&explicit, &reserved, &stored, &quota))
+	require.False(t, explicit)
+	require.Zero(t, reserved)
+	require.Equal(t, int64(len("enterprise inherited capture")), stored)
+	require.Nil(t, quota, "inherited quota remains owned by the enterprise policy")
+	var ref, scope, vector string
+	require.NoError(t, p.pool.QueryRow(ctx, `SELECT policy_ref,policy_scope,policy_vector::text
+      FROM execution_content_objects WHERE org_id=$1 AND project_id=$2`, p.identity.OrgID, p.identity.ProjectID).
+		Scan(&ref, &scope, &vector))
+	require.Equal(t, manifests[1].Capture.PolicyRef, ref)
+	require.Equal(t, contentcapture.PolicyScopeEnterprise, scope)
+	require.Contains(t, vector, `"enterprise": 1`)
+	disabled := contentcapture.PolicyConfig{Mode: contentcapture.ModeDisabled, SupportedProtocols: p.config.SupportedProtocols,
+		ObservationPoints: p.config.ObservationPoints, AllowedPurposes: []string{}}
+	disabledWire, err := json.Marshal(disabled)
+	require.NoError(t, err)
+	_, err = p.pool.Exec(ctx, `UPDATE execution_content_enterprise_policies SET desired_version=2,effective_version=2,
+      desired_config=$2,effective_config=$2,desired_execution_storage_mode='strict_no_persist',
+      effective_execution_storage_mode='strict_no_persist',effective_at=clock_timestamp()
+      WHERE org_id=$1`, p.identity.OrgID, disabledWire)
+	require.NoError(t, err)
+	allowed, err = p.service.CachePersistenceAllowed(ctx, p.identity.Principal, p.identity.OrgID, p.identity.ProjectID)
+	require.NoError(t, err)
+	require.False(t, allowed)
+}
+
+func TestContentPolicyCacheResponsePointsIntegration(t *testing.T) {
+	p := setupCaptureServicePG(t, contentcapture.ModeFullContent, 128, string(modeloperation.IDChatCompletions), "openai.chat")
+	ctx := t.Context()
+	for _, tc := range []struct {
+		name    string
+		points  []string
+		allowed bool
+	}{
+		{"both responses", []string{"provider_response", "client_response"}, true},
+		{"all observations", p.config.ObservationPoints, true},
+		{"requests only", []string{"client_request", "provider_request"}, false},
+		{"provider response only", []string{"client_request", "provider_response"}, false},
+		{"client response only", []string{"client_request", "client_response"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			config := p.config
+			config.ObservationPoints = tc.points
+			wire, err := json.Marshal(config)
+			require.NoError(t, err)
+			_, err = p.pool.Exec(ctx, `UPDATE execution_content_policies SET desired_version=desired_version+1,
+				effective_version=effective_version+1,desired_config=$3,effective_config=$3
+				WHERE org_id=$1 AND project_id=$2`, p.identity.OrgID, p.identity.ProjectID, wire)
+			require.NoError(t, err)
+			allowed, err := p.service.CachePersistenceAllowed(ctx, p.identity.Principal, p.identity.OrgID, p.identity.ProjectID)
+			require.NoError(t, err)
+			require.Equal(t, tc.allowed, allowed)
+		})
+	}
+	// A requested policy change has no authority until it becomes effective.
+	desired, err := json.Marshal(p.config)
+	require.NoError(t, err)
+	_, err = p.pool.Exec(ctx, `UPDATE execution_content_policies SET desired_version=effective_version+1,
+		desired_config=$3,application_status='pending',application_reason='awaiting_activation'
+		WHERE org_id=$1 AND project_id=$2`, p.identity.OrgID, p.identity.ProjectID, desired)
+	require.NoError(t, err)
+	allowed, err := p.service.CachePersistenceAllowed(ctx, p.identity.Principal, p.identity.OrgID, p.identity.ProjectID)
+	require.NoError(t, err)
+	require.False(t, allowed, "desired response points must not authorize cache while effective policy omits one")
+	// A full-content policy for another protocol cannot authorize Chat cache.
+	otherProtocol := p.config
+	otherProtocol.SupportedProtocols = []string{"openai.chat"}
+	otherProtocol.ObservationPoints = p.config.ObservationPoints
+	otherWire, err := json.Marshal(otherProtocol)
+	require.NoError(t, err)
+	_, err = p.pool.Exec(ctx, `UPDATE execution_content_policies SET desired_version=desired_version+1,
+		effective_version=desired_version+1,desired_config=$3,effective_config=$3,
+		application_status='applied',application_reason='none' WHERE org_id=$1 AND project_id=$2`,
+		p.identity.OrgID, p.identity.ProjectID, otherWire)
+	require.NoError(t, err)
+	allowed, err = p.service.CachePersistenceAllowed(ctx, p.identity.Principal, p.identity.OrgID, p.identity.ProjectID)
+	require.NoError(t, err)
+	require.False(t, allowed, "response points alone do not authorize an unsupported Chat protocol")
 }
 
 func TestContentCaptureServicePGNoBodyModesAndQuota(t *testing.T) {

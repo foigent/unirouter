@@ -27,9 +27,27 @@ const ManifestSchemaV1 = "unirouter.runtime-support.v1"
 const CompatibilityEpoch = modelprofile.DefinitionRuntimeEpoch
 const MaximumManifestBytes = 1 << 20
 const SourceContentLifecycleContract = "unirouter.source-content-lifecycle.v1"
+const ScopedContentPolicyContract = "unirouter.content-policy.v2"
+const XInsightPolicyManagementContract = "unirouter.xinsight.policy-write.v1"
+const XInsightSourceEnrollmentContract = "unirouter.xinsight.source-enrollment.v1"
+const MediaRequestExpiryContract = "unirouter.media-request-expiry.v1"
 
 func ContentLifecycleRequirements() []modelprofile.ImplementationReference {
 	return []modelprofile.ImplementationReference{{Kind: "source_content", ID: SourceContentLifecycleContract}}
+}
+
+func ScopedContentRequirements() []modelprofile.ImplementationReference {
+	return []modelprofile.ImplementationReference{
+		{Kind: "source_content", ID: ScopedContentPolicyContract},
+		{Kind: "media_request", ID: MediaRequestExpiryContract},
+	}
+}
+
+func XInsightPolicyRequirements() []modelprofile.ImplementationReference {
+	return []modelprofile.ImplementationReference{
+		{Kind: "xinsight_policy", ID: XInsightPolicyManagementContract},
+		{Kind: "xinsight_source_enrollment", ID: XInsightSourceEnrollmentContract},
+	}
 }
 
 type Manifest struct {
@@ -48,6 +66,10 @@ func CurrentManifest(schemaHeads []string) Manifest {
 	implementations = append(implementations,
 		modelprofile.ImplementationReference{Kind: "source_facts", ID: sourceassets.SchemaVersion},
 		modelprofile.ImplementationReference{Kind: "source_content", ID: SourceContentLifecycleContract},
+		modelprofile.ImplementationReference{Kind: "source_content", ID: ScopedContentPolicyContract},
+		modelprofile.ImplementationReference{Kind: "xinsight_policy", ID: XInsightPolicyManagementContract},
+		modelprofile.ImplementationReference{Kind: "xinsight_source_enrollment", ID: XInsightSourceEnrollmentContract},
+		modelprofile.ImplementationReference{Kind: "media_request", ID: MediaRequestExpiryContract},
 		modelprofile.ImplementationReference{Kind: "source_budgets", ID: budgetassets.SchemaVersion},
 		modelprofile.ImplementationReference{Kind: "financial_journal", ID: budgetassets.WriterContract},
 		modelprofile.ImplementationReference{Kind: "source_observations", ID: observationassets.SchemaVersion},

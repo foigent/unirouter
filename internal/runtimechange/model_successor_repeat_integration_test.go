@@ -102,17 +102,15 @@ func executeRepeatMigration(t *testing.T, pool *pgxpool.Pool, direction string) 
 }
 
 func TestRepeatedModelSuccessorContinuousHistoryIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupMigratedThroughTestDB(t, schemaauthority.LegacyCapabilityHead)
 	ctx := context.Background()
 	// This round-trip exercises M112 against its supported schema ceiling.
-	// Remove later, unattached test artifacts through their guarded downs in
-	// reverse order. Every product down guard remains authoritative above M112.
-	for _, migration := range []string{"000121_gateway_pre_dispatch_terminal", "000120_unpublished_content_reclamation", "000119_execution_content_capture", "000118_source_budget_snapshots", "000117_execution_observations", "000116_execution_source_facts", "000115_stream_counter_version", "000114_capability_delivery_expand", "000113_glm_stream_function_tools_qualification"} {
-		body, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), migration+".down.sql"))
-		require.NoError(t, err)
-		_, err = pool.Exec(ctx, string(body))
-		require.NoError(t, err, migration)
-	}
+	// The strict historical install includes the M113 Publication; its guarded
+	// down restores the exact M112 predecessor before creating test history.
+	body, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), schemaauthority.LegacyCapabilityHead+".down.sql"))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(body))
+	require.NoError(t, err, schemaauthority.LegacyCapabilityHead)
 	artifactLedger, err := schemaauthority.ExpectedLedger(testutil.MigrationsDir(t))
 	require.NoError(t, err)
 	var expectedLedger []string

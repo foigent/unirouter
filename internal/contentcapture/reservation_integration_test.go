@@ -11,13 +11,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 )
 
 // These tests use the existing isolated, migrated M119 fixture. Compile-only
 // validation does not establish any PostgreSQL behavior or real authorization.
-func reservationPGInput(org, project int64, label string) ReservationRequest {
+func reservationPGInput(t *testing.T, pool *pgxpool.Pool, policy *PolicyStore, org, project int64, label string) ReservationRequest {
+	t.Helper()
 	r := reservationTestRequest()
 	r.OrgID = org
 	r.ProjectID = project
@@ -25,6 +27,17 @@ func reservationPGInput(org, project int64, label string) ReservationRequest {
 	r.ContentRef = "uc1_" + hex.EncodeToString(sum[:])
 	sum = sha256.Sum256([]byte("synthetic-reservation-fact:" + label))
 	r.SourceFactID = "uf1_" + hex.EncodeToString(sum[:])
+	var keyID int64
+	err := pool.QueryRow(t.Context(), `SELECT id FROM api_keys WHERE org_id=$1 AND project_id=$2 AND key_prefix='ur-reservation-scope'`, org, project).Scan(&keyID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		err = pool.QueryRow(t.Context(), `INSERT INTO api_keys(org_id,project_id,name,key_hash,key_prefix,status)
+          VALUES($1,$2,'reservation-scope',repeat('9',64),'ur-reservation-scope','active') RETURNING id`, org, project).Scan(&keyID)
+	}
+	require.NoError(t, err)
+	r.Principal = CapturePrincipal{APIKeyID: keyID, KeyType: "shared"}
+	snapshot, err := policy.EffectiveScopedForCapture(t.Context(), r.Principal, org, project, "ready")
+	require.NoError(t, err)
+	r.ExpectedPolicyVersion, r.ExpectedPolicyRef, r.ExpectedPolicyVector = snapshot.Effective.PolicyVersion, snapshot.PolicyRef, snapshot.Vector
 	return r
 }
 
@@ -58,7 +71,7 @@ func TestReservationPGRequiresExplicitEffectiveFullPolicy(t *testing.T) {
 			case "pending_full":
 				reservationPGPolicy(t, pool, s, org, project, testFullPolicy(), "1", false)
 			}
-			_, err := s.Reserve(t.Context(), files, reservationPGInput(org, project, mode))
+			_, err := s.Reserve(t.Context(), files, reservationPGInput(t, pool, s, org, project, mode))
 			require.ErrorIs(t, err, ErrPolicyInactive)
 			reserved, stored, objects, streams := reservationPGCounts(t, pool, org, project)
 			require.Zero(t, reserved)
@@ -76,7 +89,7 @@ func TestReservationPGPersistsExactBindingAndNoReadAuthority(t *testing.T) {
 	pool, s, org, project := setupPolicyStorePG(t)
 	files, root, binding := testFileStore(t)
 	policy := reservationPGPolicy(t, pool, s, org, project, testFullPolicy(), "1", true)
-	input := reservationPGInput(org, project, "binding")
+	input := reservationPGInput(t, pool, s, org, project, "binding")
 	reservation, err := s.Reserve(t.Context(), files, input)
 	require.NoError(t, err)
 	require.Equal(t, policy.Effective, reservation.Effective)
@@ -108,13 +121,13 @@ func TestReservationPGPersistsExactBindingAndNoReadAuthority(t *testing.T) {
 	var scopes, keys int64
 	require.NoError(t, pool.QueryRow(t.Context(), `SELECT (SELECT count(*) FROM execution_source_content_scopes WHERE org_id=$1 AND project_id=$2),(SELECT count(*) FROM api_keys WHERE org_id=$1 AND project_id=$2)`, org, project).Scan(&scopes, &keys))
 	require.Zero(t, scopes)
-	require.Zero(t, keys)
+	require.EqualValues(t, 1, keys, "the scoped reservation fixture uses one authenticated shared key")
 	entries, err := os.ReadDir(root)
 	require.NoError(t, err)
 	require.Len(t, entries, 1, "reservation creates no object or temporary file")
 	_, err = s.Reserve(t.Context(), files, input)
 	require.ErrorIs(t, err, ErrReservationConflict)
-	input.ContentRef = reservationPGInput(org, project, "different-ref").ContentRef
+	input.ContentRef = reservationPGInput(t, pool, s, org, project, "different-ref").ContentRef
 	_, err = s.Reserve(t.Context(), files, input)
 	require.ErrorIs(t, err, ErrReservationConflict, "same fact/revision cannot reserve twice")
 	reserved, stored, objects, streams := reservationPGCounts(t, pool, org, project)
@@ -149,7 +162,7 @@ func TestReservationPGConcurrentQuotaCountsReservedAndStored(t *testing.T) {
 	start := make(chan struct{})
 	results := make(chan error, 2)
 	for _, label := range []string{"quota-one", "quota-two"} {
-		input := reservationPGInput(org, project, label)
+		input := reservationPGInput(t, pool, s, org, project, label)
 		go func() { <-start; _, err := s.Reserve(ctx, files, input); results <- err }()
 	}
 	close(start)
@@ -178,7 +191,7 @@ func TestReservationPGConcurrentQuotaCountsReservedAndStored(t *testing.T) {
 	// the explicitly separate reconciliation owner handles it.
 	_, err = pool.Exec(t.Context(), `UPDATE execution_content_objects SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE org_id=$1 AND project_id=$2`, org, project)
 	require.NoError(t, err)
-	_, err = s.Reserve(t.Context(), files, reservationPGInput(org, project, "expired-lease-still-counts"))
+	_, err = s.Reserve(t.Context(), files, reservationPGInput(t, pool, s, org, project, "expired-lease-still-counts"))
 	require.ErrorIs(t, err, ErrReservationQuota)
 }
 
@@ -186,6 +199,7 @@ func TestReservationPGRereadsPolicyAfterCompetingCAS(t *testing.T) {
 	pool, s, org, project := setupPolicyStorePG(t)
 	files, _, _ := testFileStore(t)
 	reservationPGPolicy(t, pool, s, org, project, testFullPolicy(), "1", true)
+	staleInput := reservationPGInput(t, pool, s, org, project, "policy-race")
 	tx := policyStorePGTx(t, pool, org, project)
 	config := testFullPolicy()
 	config.QuotaBytes = policyNumber(512)
@@ -195,13 +209,13 @@ func TestReservationPGRereadsPolicyAfterCompetingCAS(t *testing.T) {
 	defer cancel()
 	result := make(chan error, 1)
 	go func() {
-		_, err := s.Reserve(ctx, files, reservationPGInput(org, project, "policy-race"))
+		_, err := s.Reserve(ctx, files, staleInput)
 		result <- err
 	}()
 	// Observe the actual row-lock wait before committing the competing policy.
 	require.Eventually(t, func() bool {
 		var waiting bool
-		err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%application_reason,reserved_bytes,stored_bytes%')`).Scan(&waiting)
+		err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%execution_content_policies%')`).Scan(&waiting)
 		return err == nil && waiting
 	}, 5*time.Second, 10*time.Millisecond)
 	require.NoError(t, tx.Commit(t.Context()))
@@ -222,7 +236,7 @@ func TestReservationPGChecksSourceEpochAndPolicyLimits(t *testing.T) {
 	pool, s, org, project := setupPolicyStorePG(t)
 	files, _, _ := testFileStore(t)
 	reservationPGPolicy(t, pool, s, org, project, testFullPolicy(), "1", true)
-	input := reservationPGInput(org, project, "scope")
+	input := reservationPGInput(t, pool, s, org, project, "scope")
 	input.CreateStream = false
 	_, err := s.Reserve(t.Context(), files, input)
 	require.ErrorIs(t, err, ErrReservationUnconfigured)
@@ -269,7 +283,7 @@ func TestReservationPGObjectFailureRollsBackQuotaAndNewStream(t *testing.T) {
 	})
 	_, err = pool.Exec(t.Context(), `CREATE TRIGGER synthetic_reservation_insert_failure BEFORE INSERT ON execution_content_objects FOR EACH ROW EXECUTE FUNCTION synthetic_reservation_insert_failure()`)
 	require.NoError(t, err)
-	input := reservationPGInput(org, project, "rollback")
+	input := reservationPGInput(t, pool, s, org, project, "rollback")
 	_, err = s.Reserve(t.Context(), files, input)
 	require.ErrorContains(t, err, "synthetic reservation insert failure")
 	require.NoError(t, pool.QueryRow(t.Context(), `SELECT to_jsonb(p)::text FROM execution_content_policies p WHERE org_id=$1 AND project_id=$2`, org, project).Scan(&after))

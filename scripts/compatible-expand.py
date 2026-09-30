@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Finite M113–M121 dev/test bridge owner; does not roll containers or publish data.
+"""Finite M113–M123 dev/test bridge owner; does not roll containers or publish data.
 
 Run on the verified Target after storage/backup and both bridge rollouts. The
 installed ingress lock excludes the ordinary controller for the whole check/apply.
@@ -20,7 +20,7 @@ sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location("runtime_ingress", Path(__file__).with_name("runtime-ingress.py"))
 ingress = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ingress)
-HEADS = ["000113_glm_stream_function_tools_qualification", "000114_capability_delivery_expand", "000115_stream_counter_version", "000116_execution_source_facts", "000117_execution_observations", "000118_source_budget_snapshots", "000119_execution_content_capture", "000120_unpublished_content_reclamation", "000121_gateway_pre_dispatch_terminal"]
+HEADS = ["000113_glm_stream_function_tools_qualification", "000114_capability_delivery_expand", "000115_stream_counter_version", "000116_execution_source_facts", "000117_execution_observations", "000118_source_budget_snapshots", "000119_execution_content_capture", "000120_unpublished_content_reclamation", "000121_gateway_pre_dispatch_terminal", "000122_scoped_content_policy", "000123_xinsight_policy_delegation"]
 COUNTERS = [{"kind": "stream_counter", "id": "unirouter.stream-counter.v2"}, {"kind": "stream_counter", "id": "unirouter.stream-counter.v3"}]
 SOURCE_OBSERVATIONS = {"kind": "source_observations", "id": "unirouter.source-observation.v1"}
 SOURCE_DISPATCH = {"kind": "source_dispatch", "id": "unirouter.source-dispatch-outbox.v1"}
@@ -28,6 +28,8 @@ SOURCE_FACTS = {"kind": "source_facts", "id": "unirouter.source-fact.v1"}
 BUDGET_REQUIREMENTS = [{"kind":"source_budgets","id":"unirouter.budget-snapshot.v1"},{"kind":"financial_journal","id":"unirouter.gateway-financial-journal.v2"}]
 CONTENT_LIFECYCLE = {"kind": "source_content", "id": "unirouter.source-content-lifecycle.v1"}
 PRE_DISPATCH_OBSERVATIONS = {"kind": "source_observations", "id": "unirouter.source-observation.v2"}
+SCOPED_CONTENT = [{"kind": "source_content", "id": "unirouter.content-policy.v2"}, {"kind": "media_request", "id": "unirouter.media-request-expiry.v1"}]
+XINSIGHT_POLICY = [{"kind": "xinsight_policy", "id": "unirouter.xinsight.policy-write.v1"}, {"kind": "xinsight_source_enrollment", "id": "unirouter.xinsight.source-enrollment.v1"}]
 
 
 def verify_bridge(runtime, backend, manifest_wire, target_version=HEADS[1]):
@@ -41,7 +43,9 @@ def verify_bridge(runtime, backend, manifest_wire, target_version=HEADS[1]):
             or (target_version in HEADS[4:] and any(ref not in manifest.get("implementations", []) for ref in [SOURCE_OBSERVATIONS, SOURCE_DISPATCH]))
             or (target_version in HEADS[5:] and any(ref not in manifest.get("implementations", []) for ref in BUDGET_REQUIREMENTS))
             or (target_version in HEADS[6:] and CONTENT_LIFECYCLE not in manifest.get("implementations", []))
-            or (target_version == HEADS[8] and PRE_DISPATCH_OBSERVATIONS not in manifest.get("implementations", []))
+            or (target_version in HEADS[8:] and PRE_DISPATCH_OBSERVATIONS not in manifest.get("implementations", []))
+            or (target_version in HEADS[9:] and any(ref not in manifest.get("implementations", []) for ref in SCOPED_CONTENT))
+            or (target_version in HEADS[10:] and any(ref not in manifest.get("implementations", []) for ref in XINSIGHT_POLICY))
             or runtime.get("compatibility_epoch") != "unirouter.runtime-compatibility.v1"
             or runtime.get("artifact_digest") != backend["Image"]):
         raise RuntimeError("running image/support manifest does not match the exact bridge")

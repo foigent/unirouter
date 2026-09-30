@@ -199,6 +199,25 @@ FROM execution_content_policies WHERE org_id=$1 AND project_id=$2 FOR UPDATE`, o
 	if err != nil {
 		return PolicyView{}, err
 	}
+	scoped, err := s.scopedSchemaActive(ctx)
+	if err != nil {
+		return PolicyView{}, err
+	}
+	if scoped {
+		var explicit bool
+		var executionMode string
+		if err := tx.QueryRow(ctx, `SELECT explicit_override,effective_execution_storage_mode FROM execution_content_policies WHERE org_id=$1 AND project_id=$2`, orgID, projectID).Scan(&explicit, &executionMode); err != nil {
+			return PolicyView{}, err
+		}
+		// V1's numeric CAS cannot bind an inherited enterprise source. New scoped
+		// writes use a scope-qualified ref/vector; fail closed here.
+		if !explicit {
+			return PolicyView{}, ErrPolicyVersionConflict
+		}
+		if put.Desired.Mode == ModeFullContent && executionMode == ExecutionStorageStrict {
+			return PolicyView{}, invalidPolicy("full review content conflicts with strict no-persist")
+		}
+	}
 	current, err := s.rowView(orgID, projectID, application.StorageStatus, row)
 	if err != nil {
 		return PolicyView{}, err

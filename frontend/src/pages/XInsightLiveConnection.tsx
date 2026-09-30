@@ -10,6 +10,7 @@ import { customerOrganizationDisplayName } from '../utils/customerContext';
 import { projectDisplayName } from '../utils/projectDisplay';
 import XInsightSourceConnection from './XInsightSourceConnection';
 import XInsightContentManagement from './XInsightContentManagement';
+import XInsightMachineDelegationManagement from './XInsightMachineDelegationManagement';
 
 const { Text, Title } = Typography;
 
@@ -705,6 +706,13 @@ export default function XInsightLiveConnection({
 
       {projectID && <XInsightSourceConnection key={projectID} projectId={projectID} orgId={selectedProject?.org_id} expansionAllowed={expansionEnabled} budgetReadAllowed={['platform_admin', 'org_admin', 'billing_admin'].includes(user?.organization_role ?? user?.role ?? '')} budgetWriteAllowed={['platform_admin', 'billing_admin'].includes(user?.organization_role ?? user?.role ?? '')} />}
       {projectID && <XInsightContentManagement key={`content-${projectID}`} projectId={projectID} expansionAllowed={expansionEnabled} />}
+      {projectID && selectedProject?.org_id && status?.connector_installation && <XInsightMachineDelegationManagement
+        key={`machine-${status.connector_installation.installation_id}`}
+        orgId={selectedProject.org_id} projectId={projectID}
+        installationId={status.connector_installation.installation_id}
+        deploymentId={status.connector_installation.x_deployment_id}
+        sourceInstance={status.connector_installation.source_instance}
+        orgAdmin={['platform_admin', 'org_admin'].includes(user?.organization_role ?? user?.role ?? '')} />}
     </div>
   );
 }

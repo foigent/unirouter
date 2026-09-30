@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Banner, Button, Descriptions, Input, Popconfirm, Select, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
 import { ApiError } from '../api/transport';
+import { api } from '../api/client';
 import {
   contentManagementApi, parseContentRegistration,
   type ContentAction, type ContentConnection, type ContentControlRequest,
-  type ContentControlResult, type PayloadConfig, type PayloadMode, type PayloadPolicy,
+  type ContentControlResult, type PayloadConfig, type PayloadMode, type PayloadScope,
+  type ExecutionStorageMode, type ScopedPayloadPolicy, type ScopedPolicyLayer,
 } from '../api/contentManagement';
 
 const { Text, Title } = Typography;
@@ -87,7 +89,15 @@ function confirmControlResult(action: ContentAction, request: ContentControlRequ
 }
 
 export default function XInsightContentManagement({ projectId, expansionAllowed }: { projectId: number; expansionAllowed: boolean }) {
-  const [policy, setPolicy] = useState<PayloadPolicy | null>(null);
+  const [policy, setPolicy] = useState<ScopedPayloadPolicy | null>(null);
+  const [scope, setScope] = useState<PayloadScope>('project');
+  const [userID, setUserID] = useState('');
+  const [memberQuery, setMemberQuery] = useState('');
+  const [memberOptions, setMemberOptions] = useState<Array<{ value: string; label: string }>>([]);
+  const [memberError, setMemberError] = useState('');
+  const [orgID, setOrgID] = useState<number>();
+  const [executionMode, setExecutionMode] = useState<ExecutionStorageMode>('temporary_allowed');
+  const [baseConfig, setBaseConfig] = useState<PayloadConfig | null>(null);
   const [connection, setConnection] = useState<ContentConnection | null>(null);
   const [policyError, setPolicyError] = useState('');
   const [connectionError, setConnectionError] = useState('');
@@ -98,17 +108,58 @@ export default function XInsightContentManagement({ projectId, expansionAllowed 
   const [registration, setRegistration] = useState('');
   const [allowedIP, setAllowedIP] = useState('');
   const [busy, setBusy] = useState(false);
+  const recommendedMaxSaved = Math.min(recommended.maxSaved, policy?.limits.max_saved_bytes ?? recommended.maxSaved);
+
+  const readMembers = useCallback(async (query = '') => {
+    try {
+      const response = await api.getProjectMembers(projectId, 1, 100, query) as { data?: Array<{ user_id: number; username: string; email?: string; status: string }> };
+      setMemberOptions((response.data || []).filter(member => member.status === 'active').map(member => ({
+        value: String(member.user_id), label: `${member.username}${member.email ? ` (${member.email})` : ''} · ${member.user_id}`,
+      })));
+      setMemberError('');
+    } catch (error) {
+      setMemberOptions([]);
+      setMemberError(error instanceof Error ? error.message : '项目成员加载失败');
+    }
+  }, [projectId]);
+
+  useEffect(() => { if (scope === 'user') void readMembers(); }, [scope, readMembers]);
 
   const readPolicy = useCallback(async () => {
-    const next = await contentManagementApi.getPolicy(projectId);
+    if (scope === 'user' && (!/^[1-9][0-9]*$/.test(userID) || !Number.isSafeInteger(Number(userID)))) {
+      throw new Error('请填写当前项目中的有效用户 ID');
+    }
+    const projectView = scope === 'enterprise' ? await contentManagementApi.getScopedPolicy(projectId) : null;
+    const next = scope === 'enterprise'
+      ? await contentManagementApi.getEnterprisePolicy(Number(projectView!.org_id))
+      : await contentManagementApi.getScopedPolicy(projectId, scope === 'user' ? Number(userID) : undefined);
+    setOrgID(Number(next.org_id));
+    const layer = scope === 'enterprise' ? next.enterprise : scope === 'user' ? next.user : next.project;
+    const capabilities = next.policy_capabilities;
+    const recommendFull = scope === 'enterprise' && !layer?.desired && !layer?.effective &&
+      next.full_content_enabled && next.deployment_mode !== 'disabled' && next.storage_status === 'ready' &&
+      !!capabilities?.supported_protocols.length && !!capabilities.observation_points.length;
+    const enterpriseDraft: PayloadConfig | undefined = scope === 'enterprise' && capabilities
+      ? recommendFull
+        ? { mode: 'full_content', supported_protocols: [...capabilities.supported_protocols],
+          observation_points: [...capabilities.observation_points], allowed_purposes: ['human_review'],
+          retention_seconds: recommended.retention, quota_bytes: recommended.quota,
+          max_saved_bytes: Math.min(recommended.maxSaved, next.limits.max_saved_bytes), on_limit: 'record_capture_gap' }
+        : { mode: 'disabled', supported_protocols: [...capabilities.supported_protocols],
+          observation_points: [...capabilities.observation_points], allowed_purposes: [] }
+      : undefined;
+    const config = layer?.desired?.config ?? next.effective?.effective.config ?? next.enterprise.effective?.config ?? enterpriseDraft;
+    if (!config) throw new Error('缺少可编辑的策略基线');
     setPolicy(next);
-    setMode(next.desired.config.mode);
-    setRetention(fromStored(next.desired.config.retention_seconds, recommended.retention, '天', DAY, '秒'));
-    setQuota(fromStored(next.desired.config.quota_bytes, recommended.quota, 'GiB', GIB, '字节'));
-    setMaxSaved(fromStored(next.desired.config.max_saved_bytes, recommended.maxSaved, 'MiB', MIB, '字节'));
+    setBaseConfig(config);
+    setMode(config.mode);
+    setExecutionMode(layer?.desired_execution_storage_mode ?? next.effective?.execution_storage_mode ?? 'temporary_allowed');
+    setRetention(fromStored(config.retention_seconds, recommended.retention, '天', DAY, '秒'));
+    setQuota(fromStored(layer?.project_quota_bytes ?? layer?.desired_default_project_quota_bytes ?? next.effective?.project_quota_bytes ?? config.quota_bytes, recommended.quota, 'GiB', GIB, '字节'));
+    setMaxSaved(fromStored(config.max_saved_bytes, Math.min(recommended.maxSaved, next.limits.max_saved_bytes), 'MiB', MIB, '字节'));
     setPolicyError('');
     return next;
-  }, [projectId]);
+  }, [projectId, scope, userID]);
 
   const readConnection = useCallback(async () => {
     const next = await contentManagementApi.getConnection(projectId);
@@ -131,7 +182,7 @@ export default function XInsightContentManagement({ projectId, expansionAllowed 
   const resetRecommended = () => {
     setRetention({ value: '30', unit: '天' });
     setQuota({ value: '5', unit: 'GiB' });
-    setMaxSaved({ value: '32', unit: 'MiB' });
+    setMaxSaved(fromStored(undefined, recommendedMaxSaved, 'MiB', MIB, '字节'));
     setPolicyError('');
   };
 
@@ -145,8 +196,9 @@ export default function XInsightContentManagement({ projectId, expansionAllowed 
     try {
       quantityValue(retention, recommended.retention, '保留期限');
       quantityValue(quota, recommended.quota, '项目容量');
-      quantityValue(maxSaved, recommended.maxSaved, '单项上限');
-      savePreview = `保存将使用：保留期限 ${retention.value || '30'} ${retention.value ? retention.unit : '天'}；项目容量 ${quota.value || '5'} ${quota.value ? quota.unit : 'GiB'}；单项上限 ${maxSaved.value || '32'} ${maxSaved.value ? maxSaved.unit : 'MiB'}`;
+      quantityValue(maxSaved, recommendedMaxSaved, '单项上限');
+      const savedPreview = maxSaved.value ? maxSaved : fromStored(undefined, recommendedMaxSaved, 'MiB', MIB, '字节');
+      savePreview = `保存将使用：保留期限 ${retention.value || '30'} ${retention.value ? retention.unit : '天'}；项目容量 ${quota.value || '5'} ${quota.value ? quota.unit : 'GiB'}；单项上限 ${savedPreview.value} ${savedPreview.unit}`;
     } catch { savePreview = '保存前请修正无效的期限或容量'; }
   }
 
@@ -155,29 +207,42 @@ export default function XInsightContentManagement({ projectId, expansionAllowed 
     setBusy(true);
     setPolicyError('');
     try {
+      const layer: ScopedPolicyLayer | undefined = scope === 'enterprise' ? policy.enterprise : scope === 'user' ? policy.user : policy.project;
+      if (!layer || !orgID) throw new Error('策略目标不完整，请刷新');
+      const base = layer.desired?.config ?? baseConfig;
+      if (!base) throw new Error('策略基线不可用，请刷新');
+      if (executionMode === 'strict_no_persist' && mode === 'full_content') throw new Error('严格不持久化不能同时保存完整正文');
       const desired: PayloadConfig = {
         mode,
-        supported_protocols: [...policy.desired.config.supported_protocols],
-        observation_points: [...policy.desired.config.observation_points],
+        supported_protocols: [...base.supported_protocols],
+        observation_points: [...base.observation_points],
         allowed_purposes: [],
       };
+      const quotaBytes = quantityValue(quota, recommended.quota, '项目容量');
       if (mode === 'full_content') {
         desired.retention_seconds = quantityValue(retention, recommended.retention, '保留期限');
-        desired.quota_bytes = quantityValue(quota, recommended.quota, '项目容量');
-        desired.max_saved_bytes = quantityValue(maxSaved, recommended.maxSaved, '单项上限');
-        if (desired.max_saved_bytes > desired.quota_bytes) throw new Error('单项上限不得超过项目容量');
+        if (scope !== 'user') desired.quota_bytes = quotaBytes;
+        desired.max_saved_bytes = quantityValue(maxSaved, recommendedMaxSaved, '单项上限');
+        if (desired.max_saved_bytes > quotaBytes) throw new Error('单项上限不得超过项目容量');
         if (desired.max_saved_bytes > policy.limits.max_saved_bytes) throw new Error('单项上限不得超过部署上限');
         desired.allowed_purposes = ['human_review'];
         desired.on_limit = 'record_capture_gap';
       }
-      const updated = await contentManagementApi.putPolicy(projectId, policy.desired.policy_version, desired);
+      const updated = await contentManagementApi.putScopedPolicy(scope, orgID, projectId, scope === 'user' ? Number(userID) : undefined, {
+        schema_version: 'unirouter.payload-policy.v2', expected_policy_ref: layer.policy_ref,
+        expected_version: layer.desired?.policy_version ?? '0', expected_vector: policy.version_vector,
+        desired, execution_storage_mode: executionMode,
+        ...(scope !== 'user' ? { project_quota_bytes: quotaBytes } : {}),
+      });
       const fresh = await readPolicy();
-      if (updated.desired.policy_version === policy.desired.policy_version ||
-        fresh.desired.policy_version !== updated.desired.policy_version ||
-        JSON.stringify(fresh.desired.config) !== JSON.stringify(updated.desired.config)) {
+      const updatedLayer = scope === 'enterprise' ? updated.enterprise : scope === 'user' ? updated.user : updated.project;
+      const freshLayer = scope === 'enterprise' ? fresh.enterprise : scope === 'user' ? fresh.user : fresh.project;
+      if (!updatedLayer?.desired || updatedLayer.desired.policy_version === layer.desired?.policy_version ||
+        freshLayer?.desired?.policy_version !== updatedLayer.desired.policy_version ||
+        JSON.stringify(freshLayer.desired.config) !== JSON.stringify(updatedLayer.desired.config)) {
         throw new Error('策略保存响应与回读不一致，请刷新核对');
       }
-      Toast.success(fresh.application_status === 'applied' ? '项目策略已生效' : '项目策略已保存，尚未生效');
+      Toast.success(freshLayer.application_status === 'applied' ? '策略已生效' : '策略已保存，尚未生效');
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) await refreshPolicy();
       setPolicyError(error instanceof Error ? error.message : '正文策略保存失败');
@@ -220,35 +285,51 @@ export default function XInsightContentManagement({ projectId, expansionAllowed 
 
   return <section aria-label="项目正文管理" style={{ display: 'grid', gap: 14, borderTop: '1px solid var(--semi-color-border)', paddingTop: 18 }}>
     <Title heading={5} style={{ margin: 0 }}>项目正文管理</Title>
-    <Text>正文策略覆盖当前项目全部新请求；修改期限不会延长已有正文。查看或刷新不会启用正文；容量满时记录采集缺口。此处设置 UniRouter 留存；X-Insight 目前从 UniRouter 读取，UniRouter 正文到期后 X-Insight 也无法打开原文，尚未独立保存。</Text>
-    <div className="ur-toolbar"><Text strong>项目正文策略</Text><Button disabled={busy} onClick={() => void refreshPolicy()}>刷新策略</Button></div>
+    <Text>正文策略按企业、项目、个人密钥依次选择最具体的显式配置；共享密钥不使用个人例外。完整正文共用项目容量。执行必需暂存单独受严格模式约束；已有任务与正文不会因修改期限自动延长或删除。</Text>
+    <div className="ur-toolbar" style={{ flexWrap: 'wrap' }}>
+      <Text strong>正文与执行暂存策略</Text>
+      <Select aria-label="策略作用域" value={scope} optionList={[{ value: 'enterprise', label: '企业默认' }, { value: 'project', label: '项目覆盖' }, { value: 'user', label: '个人例外' }]} onChange={value => { setPolicy(null); setScope(value as PayloadScope); }} disabled={busy} style={{ width: 140 }} />
+      {scope === 'user' && <>
+        <Input aria-label="搜索项目成员" value={memberQuery} onChange={setMemberQuery} placeholder="用户名或邮箱" disabled={busy} style={{ width: 170 }} />
+        <Button disabled={busy} onClick={() => void readMembers(memberQuery)}>搜索成员</Button>
+        <Select aria-label="选择项目成员" value={userID} optionList={memberOptions} onChange={value => { setPolicy(null); setUserID(String(value)); }} placeholder="选择当前项目成员" disabled={busy} filter style={{ width: 230 }} />
+      </>}
+      <Button disabled={busy} onClick={() => void refreshPolicy()}>刷新策略</Button>
+    </div>
     {policyError && <Banner type="warning" description={policyError} closeIcon={null} />}
+    {memberError && scope === 'user' && <Banner type="warning" description={memberError} closeIcon={null} />}
     {policy && <>
+      {scope === 'enterprise' && !policy.enterprise.explicit && <Banner type="info" description={`企业默认尚未设置；以下是未保存的${mode === 'full_content' ? '完整正文推荐' : '关闭模式'}草稿，协议与观测点来自当前来源能力。请核对模式、执行暂存及每项目配额后保存。`} closeIcon={null} />}
       <Descriptions row data={[
-        { key: '项目 / 来源', value: `${policy.project_id} / ${policy.source_instance}` },
-        { key: '期望 / 生效', value: `${modeLabels[policy.desired.config.mode]} v${policy.desired.policy_version} / ${modeLabels[policy.effective.config.mode]} v${policy.effective.policy_version}` },
-        { key: '应用状态', value: `${policy.application_status} · ${policy.application_reason}` },
+        { key: '企业 / 项目 / 用户', value: `${policy.org_id} / ${policy.project_id || '—'} / ${policy.user_id || '—'}` },
+        { key: '企业默认', value: policy.enterprise.effective ? `${modeLabels[policy.enterprise.effective.config.mode]} v${policy.enterprise.effective.policy_version} · ${policy.enterprise.effective_execution_storage_mode}` : '未显式设置' },
+        { key: '项目覆盖', value: policy.project?.explicit && policy.project.effective ? `${modeLabels[policy.project.effective.config.mode]} v${policy.project.effective.policy_version} · ${policy.project.effective_execution_storage_mode}` : '继承企业默认' },
+        { key: '个人例外', value: policy.user?.explicit && policy.user.effective ? `${modeLabels[policy.user.effective.config.mode]} v${policy.user.effective.policy_version} · ${policy.user.effective_execution_storage_mode}` : '无个人例外' },
+        { key: '当前解析结果', value: policy.effective ? `${policy.effective.scope} / ${modeLabels[policy.effective.effective.config.mode]} v${policy.effective.effective.policy_version} / ${policy.effective.execution_storage_mode}` : '企业层设置' },
+        { key: '期望 / 生效', value: (() => { const layer = scope === 'enterprise' ? policy.enterprise : scope === 'user' ? policy.user : policy.project; return `${layer?.desired ? `${modeLabels[layer.desired.config.mode]} v${layer.desired.policy_version}` : '继承'} / ${layer?.effective ? `${modeLabels[layer.effective.config.mode]} v${layer.effective.policy_version}` : '继承'}`; })() },
+        { key: '应用状态', value: (() => { const layer = scope === 'enterprise' ? policy.enterprise : scope === 'user' ? policy.user : policy.project; return `${layer?.application_status || 'inherited'} · ${layer?.application_reason || 'none'}`; })() },
         { key: '存储状态', value: policy.storage_status },
         { key: '正文脱敏', value: '不脱敏（当前版本尚不支持脱敏）' },
         { key: '部署单项上限', value: formatQuantity(policy.limits.max_saved_bytes, 'MiB', MIB, '字节') },
-        { key: '协议 / 观测点', value: `${policy.desired.config.supported_protocols.join(', ')} / ${policy.desired.config.observation_points.join(', ')}` },
+        { key: '协议 / 观测点', value: `${baseConfig?.supported_protocols.join(', ') || '—'} / ${baseConfig?.observation_points.join(', ') || '—'}` },
       ]} />
       <div className="ur-toolbar" style={{ flexWrap: 'wrap' }}>
         <Select aria-label="正文策略模式" value={mode} optionList={Object.entries(modeLabels).map(([value, label]) => ({ value, label }))} onChange={value => setMode(value as PayloadMode)} disabled={busy} style={{ width: 150 }} />
+        <Select aria-label="执行暂存模式" value={executionMode} optionList={[{ value: 'temporary_allowed', label: '允许执行必需暂存' }, { value: 'strict_no_persist', label: '严格不持久化' }]} onChange={value => setExecutionMode(value as ExecutionStorageMode)} disabled={busy} style={{ width: 180 }} />
         {mode === 'full_content' && <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Text>保留期限</Text>
             <Input aria-label="正文保留期限" value={retention.value} onChange={value => setRetention({ ...retention, value })} disabled={busy || !expansionAllowed} style={{ width: 100 }} />
             <Select aria-label="正文保留期限单位" value={retention.unit} optionList={['天', '小时', '秒'].map(value => ({ value, label: value }))} onChange={value => selectUnit(retention, value as Unit, recommended.retention, '保留期限', setRetention)} disabled={busy || !expansionAllowed} style={{ width: 80 }} /></div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Text>项目容量</Text>
+          {scope !== 'user' && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Text>项目容量</Text>
             <Input aria-label="正文项目容量" value={quota.value} onChange={value => setQuota({ ...quota, value })} disabled={busy || !expansionAllowed} style={{ width: 100 }} />
-            <Select aria-label="正文项目容量单位" value={quota.unit} optionList={['GiB', 'MiB', '字节'].map(value => ({ value, label: value }))} onChange={value => selectUnit(quota, value as Unit, recommended.quota, '项目容量', setQuota)} disabled={busy || !expansionAllowed} style={{ width: 90 }} /></div>
+            <Select aria-label="正文项目容量单位" value={quota.unit} optionList={['GiB', 'MiB', '字节'].map(value => ({ value, label: value }))} onChange={value => selectUnit(quota, value as Unit, recommended.quota, '项目容量', setQuota)} disabled={busy || !expansionAllowed} style={{ width: 90 }} /></div>}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Text>单项上限</Text>
             <Input aria-label="正文单项上限" value={maxSaved.value} onChange={value => setMaxSaved({ ...maxSaved, value })} disabled={busy || !expansionAllowed} style={{ width: 100 }} />
-            <Select aria-label="正文单项上限单位" value={maxSaved.unit} optionList={['MiB', '字节'].map(value => ({ value, label: value }))} onChange={value => selectUnit(maxSaved, value as Unit, recommended.maxSaved, '单项上限', setMaxSaved)} disabled={busy || !expansionAllowed} style={{ width: 90 }} /></div>
+            <Select aria-label="正文单项上限单位" value={maxSaved.unit} optionList={['MiB', '字节'].map(value => ({ value, label: value }))} onChange={value => selectUnit(maxSaved, value as Unit, recommendedMaxSaved, '单项上限', setMaxSaved)} disabled={busy || !expansionAllowed} style={{ width: 90 }} /></div>
           <Button disabled={busy || !expansionAllowed} onClick={resetRecommended}>使用推荐设置</Button>
         </>}
-        <Popconfirm title={mode === 'full_content' ? `确认提交完整正文策略？${savePreview}。是否生效以服务端回读为准。` : '确认更新当前项目的正文策略？'} onConfirm={() => void savePolicy()}>
-          <Button type="primary" disabled={busy || !expansionAllowed && mode !== 'disabled'}>保存项目策略</Button>
+        <Popconfirm title={mode === 'full_content' ? `确认提交${scope}完整正文策略？${savePreview}。以服务端回读为准。` : `确认更新${scope}作用域策略？`} onConfirm={() => void savePolicy()}>
+          <Button type="primary" disabled={busy || !expansionAllowed && mode !== 'disabled'}>保存作用域策略</Button>
         </Popconfirm>
       </div>
       {mode === 'full_content' && <Text>{savePreview}。留空的项目按推荐值计算。</Text>}
