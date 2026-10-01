@@ -4,6 +4,10 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.8.2] - 2026-10-01
+
+- 修复 M121→M123 日常升级的 canary Compose 配置：与 stable 一样显式提供异步媒体关闭时的默认请求期限 24 小时，使两实例通过既有严格桥接校验；保留采集、生产者、正文绑定及 Connector Agent 单写者边界。
+
 ## [1.8.1] - 2026-09-30
 
 - development/test 日常 M121→M123 正式升级载体保留原 A/B/C 采集、生产者与正文存储绑定；M115–M120 仍要求采集关闭。仅在旧媒体服务已关闭、旧配置无该项时，允许新 Compose 增加默认 24 小时的媒体请求期限设置；其他环境、挂载、身份及迁移字节漂移继续拒绝。
