@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -28,17 +29,45 @@ type sourceHTTPContentHarness struct {
 	runtime      *contentRuntime
 	mu           sync.Mutex
 	captures     []*contentcapture.Capture
+	begins       []sourceHTTPCaptureBegin
 	j1CloseOnce  sync.Once
 	j1CloseError error
 }
 
-func (h *sourceHTTPContentHarness) Begin(ctx context.Context, id contentcapture.Observation) (*contentcapture.Capture, error) {
-	c, err := h.runtime.service.Begin(ctx, id)
-	if c != nil {
-		h.mu.Lock()
-		h.captures = append(h.captures, c)
-		h.mu.Unlock()
+type sourceHTTPCaptureBegin struct {
+	requestID, point string
+	capture          *contentcapture.Capture
+	beginErr         error
+	callerErr        error
+	elapsed          time.Duration
+}
+
+func sourceHTTPCaptureErrorClass(err error) string {
+	switch {
+	case err == nil:
+		return "none"
+	case errors.Is(err, context.Canceled):
+		return "context_canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "deadline_exceeded"
+	case errors.Is(err, contentcapture.ErrCaptureCapacity):
+		return "capture_capacity"
+	case errors.Is(err, contentcapture.ErrCaptureClosed):
+		return "capture_closed"
+	default:
+		return "other"
 	}
+}
+
+func (h *sourceHTTPContentHarness) Begin(ctx context.Context, id contentcapture.Observation) (*contentcapture.Capture, error) {
+	started := time.Now()
+	c, err := h.runtime.service.Begin(ctx, id)
+	h.mu.Lock()
+	h.begins = append(h.begins, sourceHTTPCaptureBegin{requestID: id.RequestID, point: id.ObservationPoint, capture: c, beginErr: err, callerErr: ctx.Err(), elapsed: time.Since(started)})
+	if c != nil {
+		h.captures = append(h.captures, c)
+	}
+	h.mu.Unlock()
 	return c, err
 }
 func (h *sourceHTTPContentHarness) CachePersistenceAllowed(ctx context.Context, principal contentcapture.CapturePrincipal, orgID, projectID int64) (bool, error) {
@@ -133,12 +162,35 @@ func newSourceHTTPContentHarness(t *testing.T, pool *pgxpool.Pool, source *sourc
 func (h *sourceHTTPContentHarness) assertRequest(t *testing.T, request, clientBody string, clientResponse []byte, operation string, attempts int) {
 	t.Helper()
 	h.mu.Lock()
-	captures := append([]*contentcapture.Capture(nil), h.captures...)
+	begins := append([]sourceHTTPCaptureBegin(nil), h.begins...)
 	h.mu.Unlock()
+	type waitDiagnostic struct {
+		requestID, point, wait, prepare, storage, finalize string
+	}
+	var waited []waitDiagnostic
+	defer func() {
+		if !t.Failed() {
+			return
+		}
+		for _, entry := range begins {
+			if entry.requestID == request || entry.beginErr != nil {
+				t.Logf("capture begin diagnostic request=%q observation_point=%q capture_present=%t begin_elapsed=%s begin_error_class=%s caller_context_error_class=%s", entry.requestID, entry.point, entry.capture != nil, entry.elapsed, sourceHTTPCaptureErrorClass(entry.beginErr), sourceHTTPCaptureErrorClass(entry.callerErr))
+			}
+		}
+		for _, entry := range waited {
+			if entry.requestID == request || entry.wait != "none" || entry.prepare != "none" || entry.storage != "none" || entry.finalize != "none" {
+				t.Logf("capture result diagnostic request=%q observation_point=%q wait_error_class=%s prepare_error_class=%s storage_error_class=%s finalize_error_class=%s", entry.requestID, entry.point, entry.wait, entry.prepare, entry.storage, entry.finalize)
+			}
+		}
+	}()
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	for _, c := range captures {
-		result, err := c.Wait(ctx)
+	for _, entry := range begins {
+		if entry.capture == nil {
+			continue
+		}
+		result, err := entry.capture.Wait(ctx)
+		waited = append(waited, waitDiagnostic{entry.requestID, entry.point, sourceHTTPCaptureErrorClass(err), sourceHTTPCaptureErrorClass(result.Outcome.PrepareError), sourceHTTPCaptureErrorClass(result.Outcome.StorageError), sourceHTTPCaptureErrorClass(result.FinalizeError)})
 		require.NoError(t, err)
 		require.NoError(t, result.FinalizeError)
 	}

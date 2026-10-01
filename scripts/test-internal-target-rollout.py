@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -210,6 +211,41 @@ class CounterTransitionTests(unittest.TestCase):
 
 
 class SchemaBridgeTransitionTests(unittest.TestCase):
+    def test_m121_bridge_values_are_present_in_both_compose_service_environments(self):
+        # Read the shipped Compose service maps, not a duplicate hand-written
+        # environment fixture. The fixed indentation is their current format.
+        root = Path(__file__).resolve().parent.parent
+
+        def service_environment(filename, service):
+            lines = (root / filename).read_text().splitlines()
+            start = lines.index(f"  {service}:") + 1
+            end = next((i for i in range(start, len(lines))
+                        if re.fullmatch(r"  [a-z][a-z0-9-]*:", lines[i])), len(lines))
+            section = lines[start:end]
+            self.assertEqual(1, section.count("    environment:"))
+            env_start = section.index("    environment:") + 1
+            values = {}
+            for line in section[env_start:]:
+                if line and not line.lstrip().startswith("#") and not line.startswith("      "):
+                    break
+                match = re.fullmatch(r"      ([A-Z][A-Z0-9_]*):\s*(.*?)\s*", line)
+                if match:
+                    self.assertNotIn(match[1], values)
+                    values[match[1]] = match[2]
+            return values
+
+        stable = service_environment("docker-compose.yml", "backend")
+        canary = service_environment("docker-compose.canary.yml", "backend-canary")
+        bridged = (*rollout.SOURCE_DEFAULTS, "COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE",
+                   "ASYNC_MEDIA_ENABLED", "ASYNC_MEDIA_REQUEST_TTL_HOURS")
+        for key in bridged:
+            with self.subTest(key=key):
+                self.assertIn(key, stable)
+                self.assertEqual(stable[key], canary.get(key))
+        self.assertEqual("${ASYNC_MEDIA_REQUEST_TTL_HOURS:-24}",
+                         stable["ASYNC_MEDIA_REQUEST_TTL_HOURS"])
+        self.assertEqual('"false"', canary["XINSIGHT_CONNECTOR_AGENT_ENABLED"])
+
     def test_every_exact_m115_to_m122_suffix_and_predecessor(self):
         for index, head in enumerate(rollout.BRIDGE_HEADS[:-1]):
             with self.subTest(head=head), tempfile.TemporaryDirectory() as directory:
