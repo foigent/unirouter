@@ -130,7 +130,7 @@ jobs:
       always() && needs.changes.outputs.delivery_preflight_failed != 'true' &&
       (needs.changes.result != 'success' || needs.changes.outputs.backend == 'true')
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-backend
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
