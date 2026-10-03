@@ -25,7 +25,7 @@ spec.loader.exec_module(r)
 def carrier_read_ledgers(migrations, historical=False):
     versions=sorted(p.name[:-7] for p in migrations.glob("*.up.sql"))
     expected=(["000117_execution_observations","000118_source_budget_snapshots"] if historical else
-              ["000122_scoped_content_policy","000123_xinsight_policy_delegation"])
+              ["000123_xinsight_policy_delegation","000124_xinsight_receiver_adoption"])
     if versions[-2:] != expected:
         raise RuntimeError("carrier read fixture requires exact reviewed artifact heads")
     return [("bridge",versions[:-1]),("current",versions)]

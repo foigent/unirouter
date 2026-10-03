@@ -52,22 +52,24 @@ type xInsightFeedCredential struct {
 }
 
 type xInsightConnectorInstallationSummary struct {
-	SchemaVersion          string     `json:"schema_version"`
-	InstallationID         string     `json:"installation_id"`
-	XDeploymentID          string     `json:"x_deployment_id"`
-	EventScope             string     `json:"event_scope"`
-	SourceInstance         string     `json:"source_instance"`
-	SourceBindingSHA256    string     `json:"source_binding_sha256"`
-	DesiredState           string     `json:"desired_state"`
-	ObservedState          string     `json:"observed_state"`
-	StateRevision          int64      `json:"state_revision"`
-	ControlFence           int64      `json:"control_fence"`
-	BootstrapReceiptSHA256 string     `json:"bootstrap_receipt_sha256,omitempty"`
-	LastSuccessfulSyncAt   *time.Time `json:"last_successful_sync_at,omitempty"`
-	LastErrorCode          string     `json:"last_error_code,omitempty"`
-	LastErrorAt            *time.Time `json:"last_error_at,omitempty"`
-	ConsentedAt            time.Time  `json:"consented_at"`
-	UpdatedAt              time.Time  `json:"updated_at"`
+	DeliveredMachineCandidates []deliveredMachineCandidate `json:"delivered_machine_candidates"`
+	ReceiverAdoption           *receiverAdoptionSummary    `json:"receiver_adoption,omitempty"`
+	SchemaVersion              string                      `json:"schema_version"`
+	InstallationID             string                      `json:"installation_id"`
+	XDeploymentID              string                      `json:"x_deployment_id"`
+	EventScope                 string                      `json:"event_scope"`
+	SourceInstance             string                      `json:"source_instance"`
+	SourceBindingSHA256        string                      `json:"source_binding_sha256"`
+	DesiredState               string                      `json:"desired_state"`
+	ObservedState              string                      `json:"observed_state"`
+	StateRevision              int64                       `json:"state_revision"`
+	ControlFence               int64                       `json:"control_fence"`
+	BootstrapReceiptSHA256     string                      `json:"bootstrap_receipt_sha256,omitempty"`
+	LastSuccessfulSyncAt       *time.Time                  `json:"last_successful_sync_at,omitempty"`
+	LastErrorCode              string                      `json:"last_error_code,omitempty"`
+	LastErrorAt                *time.Time                  `json:"last_error_at,omitempty"`
+	ConsentedAt                time.Time                   `json:"consented_at"`
+	UpdatedAt                  time.Time                   `json:"updated_at"`
 }
 
 type xInsightConnectorOperationSummary struct {
@@ -124,7 +126,8 @@ type prepareXInsightFeedRotationRequest struct {
 }
 
 type installXInsightConnectorRequest struct {
-	Invitation xinsightconnector.FrozenInvitationV1 `json:"invitation"`
+	ReceiverMode string                               `json:"receiver_mode,omitempty"`
+	Invitation   xinsightconnector.FrozenInvitationV1 `json:"invitation"`
 }
 
 type installXInsightConnectorResponse struct {
@@ -208,7 +211,7 @@ func (h *Handler) InstallXInsightConnector(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	result, err := h.xInsightConnectorIntake.Accept(r.Context(), xinsightconnector.InvitationIntakeInput{
-		Invitation: request.Invitation, OrgID: orgID, ProjectID: projectID,
+		ReceiverMode: request.ReceiverMode, Invitation: request.Invitation, OrgID: orgID, ProjectID: projectID,
 		ConsentedByUserID: actorID,
 	})
 	if err != nil {
@@ -863,6 +866,9 @@ func (h *Handler) readXInsightFeedConnectionStatus(ctx context.Context, projectI
 		}
 		if connectorState.Installation != nil {
 			result.ConnectorInstallation = summarizeXInsightConnectorInstallation(*connectorState.Installation)
+			if err := h.readConnectorV3PublicDetails(ctx, result.ConnectorInstallation, orgID, projectID); err != nil {
+				return xInsightFeedConnectionStatus{}, err
+			}
 		}
 		if connectorState.LatestOperation != nil {
 			result.ConnectorLatestOperation = summarizeXInsightConnectorOperation(*connectorState.LatestOperation)
@@ -917,7 +923,8 @@ func summarizeXInsightConnectorInstallation(
 	value xinsightconnector.Installation,
 ) *xInsightConnectorInstallationSummary {
 	return &xInsightConnectorInstallationSummary{
-		SchemaVersion: value.SchemaVersion, InstallationID: value.InstallationID,
+		DeliveredMachineCandidates: []deliveredMachineCandidate{},
+		SchemaVersion:              value.SchemaVersion, InstallationID: value.InstallationID,
 		XDeploymentID: value.XDeploymentID, EventScope: value.EventScope,
 		SourceInstance: value.SourceInstance, SourceBindingSHA256: value.SourceBindingSHA256,
 		DesiredState: value.DesiredState, ObservedState: value.ObservedState,

@@ -105,7 +105,7 @@ func contentDownForBudgetFixture(t *testing.T, pool *pgxpool.Pool) error {
 	t.Helper()
 	// Later additive migrations must be reversed in actual schema order before
 	// establishing the named historical fixture, including repeated M118 calls.
-	for _, version := range []string{schemaauthority.XInsightPolicyExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead} {
+	for _, version := range []string{schemaauthority.XInsightAdoptionExpandHead, schemaauthority.XInsightPolicyExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead} {
 		if err := sourceBudgetFixtureDownIfPresent(t, pool, version); err != nil {
 			return err
 		}
@@ -116,6 +116,11 @@ func contentDownForBudgetFixture(t *testing.T, pool *pgxpool.Pool) error {
 
 func sourceBudgetFixtureDownIfPresent(t *testing.T, pool *pgxpool.Pool, version string) error {
 	t.Helper()
+	if version == schemaauthority.XInsightPolicyExpandHead {
+		if err := sourceBudgetFixtureDownIfPresent(t, pool, schemaauthority.XInsightAdoptionExpandHead); err != nil {
+			return err
+		}
+	}
 	var present bool
 	require.NoError(t, pool.QueryRow(t.Context(), `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, version).Scan(&present))
 	if present {

@@ -79,6 +79,11 @@ func (journal *PostgresPhaseJournal) PrepareRedeem(
 	if err != nil {
 		return PreparedInvitationRedeem{}, err
 	}
+	mode, modeErr := readReceiverMode(ctx, tx, installationID)
+	if modeErr != nil || (mode == ReceiverModeAdoptExisting) != (len(binding.adoptionBootstrapCanonical) > 0) {
+		return PreparedInvitationRedeem{}, ErrConflict
+	}
+
 	if binding.invitationTokenEnc == "" {
 		return PreparedInvitationRedeem{}, ErrConflict
 	}
@@ -105,8 +110,8 @@ func (journal *PostgresPhaseJournal) PrepareRedeem(
 			return PreparedInvitationRedeem{}, err
 		}
 		expiresAt := now.Add(connectorControlBearerLifetime)
-		request, canonical, requestSHA, err := buildRedeemRequest(
-			installation, invitation, controlProjectID, controlToken, expiresAt,
+		request, canonical, requestSHA, err := buildRedeemRequestForBinding(
+			installation, binding, invitation, controlProjectID, controlToken, expiresAt,
 		)
 		if err != nil || request.ControlToken != controlToken {
 			return PreparedInvitationRedeem{}, ErrInvalid
@@ -175,6 +180,21 @@ func (journal *PostgresPhaseJournal) FinalizeRedeem(
 	prepared PreparedInvitationRedeem,
 	canonicalResult []byte,
 ) error {
+	return journal.finalizeRedeem(ctx, prepared, canonicalResult, "")
+}
+
+// FinalizeRedeemFromOrigin binds actual fixed-origin transport to the same
+// committed redeem result. Historical originless results cannot be promoted.
+func (journal *PostgresPhaseJournal) FinalizeRedeemFromOrigin(ctx context.Context,
+	prepared PreparedInvitationRedeem, canonicalResult []byte, origin string) error {
+	if !validFrozenHTTPSOrigin(origin) {
+		return ErrInvalid
+	}
+	return journal.finalizeRedeem(ctx, prepared, canonicalResult, origin)
+}
+
+func (journal *PostgresPhaseJournal) finalizeRedeem(ctx context.Context,
+	prepared PreparedInvitationRedeem, canonicalResult []byte, origin string) error {
 	if journal == nil || journal.db == nil || journal.cipher == nil || journal.now == nil ||
 		!validExactExternalIdentity(prepared.InstallationID) ||
 		!validExactDeploymentIdentity(prepared.XDeploymentID) ||
@@ -196,16 +216,19 @@ func (journal *PostgresPhaseJournal) FinalizeRedeem(
 	if err != nil {
 		return err
 	}
-	canonicalResult, err = canonicalizeRegistrationResult(
-		canonicalResult, installation, binding.controlProjectID,
-	)
+	if len(binding.adoptionBootstrapCanonical) != 0 {
+		canonicalResult, err = canonicalizeAdoptionRedeemResult(canonicalResult, installation, binding)
+	} else {
+		canonicalResult, err = canonicalizeRegistrationResult(canonicalResult, installation, binding.controlProjectID)
+	}
 	if err != nil {
 		return err
 	}
 	resultSHA := hashBytes(canonicalResult)
 	if binding.invitationTokenEnc == "" {
 		if binding.redeemRequestSHA256 != prepared.RequestSHA256 ||
-			binding.redeemResultSHA256 != resultSHA {
+			binding.redeemResultSHA256 != resultSHA ||
+			(origin != "" && binding.expanded && binding.redeemedOrigin != origin) {
 			return ErrConflict
 		}
 		return commitConnectorTx(ctx, tx, "invitation redeem finalization replay")
@@ -226,7 +249,7 @@ func (journal *PostgresPhaseJournal) FinalizeRedeem(
 		!reconstructed.ControlTokenExpiresAt.Equal(prepared.ControlTokenExpiresAt) {
 		return ErrConflict
 	}
-	request, err := decodeRedeemRequest(prepared.CanonicalRequest)
+	request, err := decodeRedeemRequestForBinding(prepared.CanonicalRequest, binding)
 	if err != nil {
 		return err
 	}
@@ -235,16 +258,24 @@ func (journal *PostgresPhaseJournal) FinalizeRedeem(
 		return ErrConflict
 	}
 	now := journal.now().UTC().Truncate(time.Microsecond)
+	originAssignment := ""
+	arguments := []any{installation.InstallationID, resultSHA, now, prepared.RequestSHA256}
+	if binding.expanded {
+		originAssignment = ",redeemed_origin=$5"
+		var savedOrigin any
+		if origin != "" {
+			savedOrigin = origin
+		}
+		arguments = append(arguments, savedOrigin)
+	}
 	tag, err := tx.Exec(ctx, `
 UPDATE xinsight_connector_control_bindings
-SET invitation_token_enc=NULL,redeem_result_sha256=$2,updated_at=$3
+SET invitation_token_enc=NULL,redeem_result_sha256=$2,updated_at=$3`+originAssignment+`
 WHERE installation_id=$1
   AND invitation_token_enc IS NOT NULL
   AND control_token_enc IS NOT NULL
   AND redeem_request_sha256=$4
-  AND redeem_result_sha256 IS NULL`,
-		installation.InstallationID, resultSHA, now, prepared.RequestSHA256,
-	)
+  AND redeem_result_sha256 IS NULL`, arguments...)
 	if err != nil || tag.RowsAffected() != 1 {
 		return fmt.Errorf("%w: finalize invitation redeem", ErrConflict)
 	}
@@ -273,8 +304,8 @@ func (journal *PostgresPhaseJournal) reconstructPendingRedeem(
 		binding.controlTokenSHA256 != hashBytes([]byte(controlToken)) {
 		return PreparedInvitationRedeem{}, ErrConflict
 	}
-	_, canonical, requestSHA, err := buildRedeemRequest(
-		installation, invitation, binding.controlProjectID, controlToken,
+	_, canonical, requestSHA, err := buildRedeemRequestForBinding(
+		installation, binding, invitation, binding.controlProjectID, controlToken,
 		binding.controlTokenExpiresAt.Time,
 	)
 	if err != nil || requestSHA != binding.redeemRequestSHA256 {

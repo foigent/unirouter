@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -26,20 +28,61 @@ func waitForBindExistingLocks(t *testing.T, f sourceControlFixture, minimum int)
 }
 
 func TestXInsightBindExistingFactsAndContentIntegration(t *testing.T) {
+	for _, profiles := range [][]string{{sourcefacts.ContextProfile}, sourceEnrollmentEightProfiles()} {
+		t.Run(strconv.Itoa(len(profiles))+"_profiles", func(t *testing.T) {
+			testXInsightBindExistingProfiles(t, profiles)
+		})
+	}
+}
+
+func testXInsightBindExistingProfiles(t *testing.T, profiles []string) {
+	t.Helper()
 	f := newContentControlIntegrationFixture(t)
+	enableEnrollmentObservations(t, &f)
 	ctx := context.Background()
-	legacy, factsToken := contentIntegrationLegacy(t, f, "bind-existing-facts")
+	legacy, factsToken := f.registration(t, "bind-existing-facts", profiles)
+	key := f.control(t, "prepare", map[string]any{"allowed_ip": "127.0.0.1/32", "registration": legacy}, 200)
+	f.control(t, "activate", map[string]any{"credential_id": key["credential_id"]}, 200)
+	f.control(t, "resume", map[string]any{}, 200)
+	resolverBefore, err := middleware.NewClientIPResolver(nil)
+	require.NoError(t, err)
+	readOriginal := func(profile, cursor string) *httptest.ResponseRecorder {
+		t.Helper()
+		f.reader = f.source.Handler(resolverBefore)
+		target := sourceReadPath + "?profile=" + profile
+		if !sourcefacts.ValidProfile(profile) {
+			f.reader = f.source.ObservationHandler(resolverBefore)
+			target = "/api/v1/integrations/xinsight/source/v2/events?profile=" + profile
+		}
+		if cursor != "" {
+			target += "&cursor=" + url.QueryEscape(cursor)
+		}
+		return f.read(t, factsToken, target, "127.0.0.1:3000", 200)
+	}
+	cursors := map[string]string{}
+	for _, profile := range profiles {
+		cursors[profile] = sourcePage(t, readOriginal(profile, "")).NextCursor
+	}
+	f.capture(t, "original-before-adoption")
+	f.reader = f.source.Handler(resolverBefore)
+	readIdentity := func() string {
+		t.Helper()
+		var identity string
+		require.NoError(t, f.pool.QueryRow(ctx, `SELECT jsonb_build_object('key_id',ak.id,'hash',ak.key_hash,'prefix',ak.key_prefix,'registration',ak.registration_operation_id,'ips',ak.allowed_ips,'state',ak.status,'credential_profiles',sc.profiles,'connection_profiles',c.profiles,'generation',c.scope_generation)::text FROM api_keys ak JOIN execution_source_credentials sc ON sc.api_key_id=ak.id JOIN execution_source_connections c ON c.org_id=sc.org_id AND c.project_id=sc.project_id WHERE ak.id=$1`, key["credential_id"]).Scan(&identity))
+		return identity
+	}
+	originalIdentity := readIdentity()
 	prepareContent, contentToken := contentIntegrationPrepare(t, f, "bind-existing-content")
 	stagedContent := contentIntegrationHTTP(t, f, "prepare", prepareContent, 200)
 	activeContent := contentIntegrationHTTP(t, f, "activate", contentIntegrationTarget("bind-existing-activate", "1", stagedContent), 200)
 	const installation = "xci_eeeeeeeeeeeeeeeeeeeeee"
-	_, err := f.pool.Exec(ctx, `INSERT INTO xinsight_connector_installations
+	_, err = f.pool.Exec(ctx, `INSERT INTO xinsight_connector_installations
  (installation_id,org_id,project_id,x_deployment_id,invitation_sha256,event_scope,source_instance,source_binding_sha256,
  desired_state,observed_state,consented_by) VALUES($1,$2,$3,'xdep_bind_existing',$4,'model.request.completed',$5,$6,'active','connected',$7)`,
 		installation, f.orgID, f.projectID, "sha256:"+strings.Repeat("a", 64), "synthetic-source-control", "sha256:"+strings.Repeat("b", 64), f.actorID)
 	require.NoError(t, err)
 	grant := sourceEnrollmentInput{InstallationID: installation, Coverage: "exact", ProjectID: stringInt64(f.projectID),
-		Profiles: []string{sourcefacts.ContextProfile}, IncludeContent: true}
+		Profiles: profiles, IncludeContent: true}
 	r := f.request(t, "bind-existing-grant", grant)
 	r.SetPathValue("org_id", stringInt64(f.orgID))
 	w := httptest.NewRecorder()
@@ -73,6 +116,35 @@ func TestXInsightBindExistingFactsAndContentIntegration(t *testing.T) {
 			f.handler.BindExistingXInsightSourceEnrollment(response, req)
 		}
 		return response
+	}
+	if len(profiles) == 8 {
+		mismatchGrant := grant
+		mismatchGrant.Profiles = profiles[:len(profiles)-1]
+		req := f.request(t, "bind-existing-mismatched-profile-grant", mismatchGrant)
+		req.SetPathValue("org_id", stringInt64(f.orgID))
+		response := httptest.NewRecorder()
+		f.handler.CreateXInsightSourceEnrollment(response, req)
+		require.Equal(t, 201, response.Code, response.Body.String())
+		var mismatchBody map[string]any
+		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &mismatchBody))
+		correctGrantID := grantID
+		grantID = mismatchBody["enrollment_id"].(string)
+		preview := request("GET", "bind-existing-mismatched-preview", map[string]any{})
+		require.Equal(t, 200, preview.Code, preview.Body.String())
+		var mismatchCandidates struct {
+			Data []bindExistingCandidate `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(preview.Body.Bytes(), &mismatchCandidates))
+		for _, candidate := range mismatchCandidates.Data {
+			if candidate.Kind == "facts" {
+				require.Equal(t, 409, request("POST", "bind-existing-mismatched-profile-reject", bindExistingInput{
+					SchemaVersion: "unirouter.xinsight.bind-existing.v1", Kind: "facts", CredentialID: candidate.Keys[0].CredentialID,
+					ExpectedStateSHA256: candidate.StateSHA256, OperationID: contentIntegrationOperation("bind-existing-mismatched-profile-reject"),
+				}).Code)
+			}
+		}
+		require.Equal(t, originalIdentity, readIdentity())
+		grantID = correctGrantID
 	}
 	_, err = f.pool.Exec(ctx, `UPDATE xinsight_connector_installations SET source_instance='other-source' WHERE installation_id=$1`, installation)
 	require.NoError(t, err)
@@ -266,6 +338,11 @@ func TestXInsightBindExistingFactsAndContentIntegration(t *testing.T) {
 		require.NoError(t, f.pool.QueryRow(ctx, `SELECT policy_labels FROM api_keys WHERE id=$1`, input.CredentialID).Scan(&label))
 		require.Equal(t, sourcefacts.AutoEnrollmentPolicyLabel, label)
 	}
+	require.Equal(t, originalIdentity, readIdentity(), "binding must preserve the original key, registration, IP, profiles and scope generation")
+	for _, profile := range profiles {
+		readOriginal(profile, cursors[profile])
+	}
+	f.reader = f.source.Handler(resolverBefore)
 	f.read(t, factsToken, sourceReadPath+"/capabilities", "127.0.0.1:3000", 200)
 	var contentBinding int
 	require.NoError(t, f.pool.QueryRow(ctx, `SELECT count(*) FROM xinsight_source_enrollment_bindings WHERE enrollment_id=$1 AND state='active'`,

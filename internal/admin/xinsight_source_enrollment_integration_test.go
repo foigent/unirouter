@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -19,8 +20,42 @@ import (
 	"github.com/uniroute/unirouter/internal/sourcefacts"
 )
 
+func sourceEnrollmentEightProfiles() []string {
+	return []string{"unirouter.attempt-observation.v1", "unirouter.capability-snapshot.v1", "unirouter.cost-basis.v1", "unirouter.destination-observation.v1", "unirouter.execution-context.v1", "unirouter.execution-identity.v1", "unirouter.policy-observation.v1", "unirouter.runtime-observation.v1"}
+}
+
+func enableEnrollmentObservations(t *testing.T, f *sourceControlFixture) {
+	t.Helper()
+	var err error
+	f.source, err = sourcefacts.New(f.pool, sourcefacts.Options{Enabled: true, ContentEnabled: true, ObservationsEnabled: true, SourceInstance: "synthetic-source-control", CursorSecret: syntheticSourceControlSecret})
+	require.NoError(t, err)
+	require.NoError(t, f.source.CheckReady(t.Context()))
+	f.handler.SetSourceFactsController(f.source)
+	resolver, err := middleware.NewClientIPResolver(nil)
+	require.NoError(t, err)
+	f.reader = f.source.Handler(resolver)
+}
+
 func TestXInsightFutureSourceEnrollmentACReadAndRevokeIntegration(t *testing.T) {
+	for _, profiles := range [][]string{sourcefacts.Profiles(), sourceEnrollmentEightProfiles()} {
+		t.Run(strconv.Itoa(len(profiles))+"_profiles", func(t *testing.T) {
+			testXInsightFutureSourceEnrollmentProfiles(t, profiles)
+		})
+	}
+}
+
+func testXInsightFutureSourceEnrollmentProfiles(t *testing.T, profiles []string) {
+	t.Helper()
+	slices.Sort(profiles)
 	f := newContentControlIntegrationFixture(t)
+	if len(profiles) == 8 {
+		req := f.request(t, "observations-disabled", sourceEnrollmentInput{InstallationID: "xci_bbbbbbbbbbbbbbbbbbbbbb", Coverage: "all_current_future", Profiles: profiles})
+		req.SetPathValue("org_id", stringInt64(f.orgID))
+		response := httptest.NewRecorder()
+		f.handler.CreateXInsightSourceEnrollment(response, req)
+		require.Equal(t, 503, response.Code, response.Body.String())
+	}
+	enableEnrollmentObservations(t, &f)
 	ctx := context.Background()
 	const installation = "xci_bbbbbbbbbbbbbbbbbbbbbb"
 	_, err := f.pool.Exec(ctx, `INSERT INTO xinsight_connector_installations
@@ -46,7 +81,6 @@ func TestXInsightFutureSourceEnrollmentACReadAndRevokeIntegration(t *testing.T) 
 	w = httptest.NewRecorder()
 	f.handler.ActivateXInsightMachineCredential(w, r)
 	require.Equal(t, 200, w.Code, w.Body.String())
-	profiles := []string{sourcefacts.Profiles()[0]}
 	grant := sourceEnrollmentInput{InstallationID: installation, Coverage: "all_current_future", Profiles: profiles, IncludeContent: true}
 	r = f.request(t, "source-enrollment-grant", grant)
 	r.SetPathValue("org_id", stringInt64(f.orgID))
@@ -75,6 +109,9 @@ func TestXInsightFutureSourceEnrollmentACReadAndRevokeIntegration(t *testing.T) 
 	require.Equal(t, 200, discovered.Code, discovered.Body.String())
 	require.Contains(t, discovered.Body.String(), `"project_id":"`+strconv.FormatInt(projectID, 10)+`"`)
 	require.Contains(t, discovered.Body.String(), `"facts_status":"pending"`)
+	expectedProfiles, err := json.Marshal(profiles)
+	require.NoError(t, err)
+	require.Contains(t, discovered.Body.String(), `"profiles":`+string(expectedProfiles))
 	registerTarget := func(targetProject int64, kind string, sourceRegistration sourcefacts.Registration) *httptest.ResponseRecorder {
 		t.Helper()
 		body, _ := json.Marshal(machineEnrollmentRegistration{EnrollmentID: grantID, Kind: kind, Registration: sourceRegistration})
@@ -101,6 +138,14 @@ func TestXInsightFutureSourceEnrollmentACReadAndRevokeIntegration(t *testing.T) 
 	require.Equal(t, 400, registerTarget(otherProject, "facts", wrongOrg).Code)
 	wrongOrg.OrgID = strconv.FormatInt(f.orgID, 10)
 	require.Equal(t, 403, registerTarget(otherProject, "facts", wrongOrg).Code)
+	for _, invalid := range [][]string{{"unirouter.unknown.v1"}, {sourcefacts.ContextProfile, sourcefacts.ContextProfile}, nil} {
+		malformed := factsRegistration
+		malformed.Profiles = invalid
+		require.Equal(t, 400, register("facts", malformed).Code)
+	}
+	mismatch := factsRegistration
+	mismatch.Profiles = []string{sourcefacts.ContextProfile}
+	require.Equal(t, 409, register("facts", mismatch).Code)
 	require.Equal(t, 201, register("facts", factsRegistration).Code)
 	replay := register("facts", factsRegistration)
 	require.Equal(t, 200, replay.Code, replay.Body.String())
@@ -121,6 +166,32 @@ func TestXInsightFutureSourceEnrollmentACReadAndRevokeIntegration(t *testing.T) 
 		return response
 	}
 	require.Equal(t, 200, readFacts().Code, readFacts().Body.String())
+	readProfile := func(profile string) *httptest.ResponseRecorder {
+		t.Helper()
+		handler, target := f.source.Handler(resolver), sourceReadPath+"?profile="+profile
+		if !sourcefacts.ValidProfile(profile) {
+			handler, target = f.source.ObservationHandler(resolver), "/api/v1/integrations/xinsight/source/v2/events?profile="+profile
+		}
+		req := httptest.NewRequest("GET", target, nil)
+		req.Header.Set("Authorization", "Bearer "+factsToken)
+		req.RemoteAddr = "127.0.0.1:55555"
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		return response
+	}
+	for _, profile := range profiles {
+		response := readProfile(profile)
+		require.Equal(t, 200, response.Code, response.Body.String())
+	}
+
+	if len(profiles) == 3 {
+		req := httptest.NewRequest("GET", "/api/v1/integrations/xinsight/source/v2/events?profile="+sourcefacts.RuntimeProfile, nil)
+		req.Header.Set("Authorization", "Bearer "+factsToken)
+		req.RemoteAddr = "127.0.0.1:55555"
+		response := httptest.NewRecorder()
+		f.source.ObservationHandler(resolver).ServeHTTP(response, req)
+		require.Equal(t, 403, response.Code, response.Body.String())
+	}
 	contentAuthority, err := f.source.NewContentBodyAuthority(resolver)
 	require.NoError(t, err)
 	contentRequest := httptest.NewRequest("GET", "/api/v1/integrations/xinsight/source-content", nil)
@@ -178,6 +249,10 @@ func TestXInsightFutureSourceEnrollmentACReadAndRevokeIntegration(t *testing.T) 
 	w = httptest.NewRecorder()
 	f.handler.RevokeXInsightSourceEnrollment(w, r)
 	require.Equal(t, 200, w.Code, w.Body.String())
+	for _, profile := range profiles {
+		response := readProfile(profile)
+		require.Equal(t, 401, response.Code, response.Body.String())
+	}
 	require.Equal(t, 401, readFacts().Code)
 	_, failure = contentAuthority.Authenticate(ctx, contentRequest)
 	require.NotNil(t, failure)

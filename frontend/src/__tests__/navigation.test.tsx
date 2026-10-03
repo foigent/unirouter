@@ -81,7 +81,7 @@ const scenarios: Record<string, { authz: AuthzContext; routes: string[] }> = {
 	routes: [
 		'/', '/channels', '/model-governance', '/model-readiness', '/access-review', '/applications', '/organization-members', '/agent-trust', '/limit-policies', '/guardrail-policies', '/audit-logs',
       '/logs', '/media-jobs', '/usage-analytics', '/notifications', '/status',
-      '/model-prices', '/cost-optimization', '/docs',
+      '/model-prices', '/cost-optimization', '/docs', '/integrations',
     ],
   },
   billing: {
@@ -272,7 +272,10 @@ describe('two-axis navigation boundaries', () => {
     expect(isRouteAllowedForAuthz('/deployment', context('org_admin'))).toBe(false);
     expect(isRouteAllowedForAuthz('/data-exchange', context('org_admin'))).toBe(false);
     expect(isRouteAllowedForAuthz('/connectors/x-insight/install', context('platform_admin'))).toBe(true);
-    expect(isRouteAllowedForAuthz('/connectors/x-insight/install', context('org_admin'))).toBe(false);
+    expect(isRouteAllowedForAuthz('/connectors/x-insight/install', context('org_admin'))).toBe(true);
+    expect(isRouteAllowedForAuthz('/integrations', context('org_admin'))).toBe(true);
+    ['/connectors','/connectors/other/install','/connectors/x-insight/install/extra'].forEach(path=>expect(isRouteAllowedForAuthz(path,context('org_admin'))).toBe(false));
+    ['member','billing_admin','org_viewer'].forEach(role=>expect(isRouteAllowedForAuthz('/connectors/x-insight/install',context(role as OrganizationRole))).toBe(false));
     expect(isRouteAllowedForAuthz('/risk-control', context('billing_admin'))).toBe(false);
   });
 

@@ -290,13 +290,13 @@ artifact with its size and SHA-256 in the signed upgrade manifest, alongside thi
 restoration instruction. This source template does not itself sign or release it.
 
 - Repository/package path: `scripts/source-budget-restore-rebase.sql`
-- SHA-256: `a3facfd093a2e588fa9cc1a4c6a6bd3ec04c99b98141820c38818c6a481c82a9`
-- Bytes: `7748`
+- SHA-256: `8204fb5e5fab583f17ea3315c91160e31d6e11de19c5aadb3885552fe92e043a`
+- Bytes: `9617`
 
 After every supported SQL restore, while all database readers/writers are still
 stopped, run this helper with `psql -v ON_ERROR_STOP=1 -f` before restart. It retains
 the former D coverage epoch and records the database restore boundary. With the
-exact M119, M120, M121, M122 or M123 schema it also changes each C recovery epoch in the same transaction,
+exact M119, M120, M121, M122, M123 or M124 schema it also changes each C recovery epoch in the same transaction,
 invalidating old C cursors and in-flight grants. It does not change money,
 credentials, source identity, A/B cursors, C registration, manifests or object
 allocation epochs. Any helper failure

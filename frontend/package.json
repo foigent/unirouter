@@ -1,18 +1,19 @@
 {
   "name": "uniroute-frontend",
   "private": true,
-  "version": "1.8.2",
+  "version": "1.9.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && npm run check:api-contracts && npm run check:react-compat && vite build && node scripts/check-bundle-budget.mjs",
+    "build": "npm run check:toolchain && tsc && npm run check:api-contracts && npm run check:react-compat && vite build && node scripts/check-bundle-budget.mjs",
     "check:bundle": "node scripts/check-bundle-budget.mjs",
     "check:api-contracts": "node scripts/check-api-contract-debt.mjs",
     "check:react-compat": "node scripts/check-react-compatibility.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "type-check": "tsc --noEmit && npm run check:api-contracts && npm run check:react-compat"
+    "type-check": "npm run check:toolchain && tsc --noEmit && npm run check:api-contracts && npm run check:react-compat",
+    "check:toolchain": "node scripts/check-toolchain.mjs"
   },
   "dependencies": {
     "@douyinfe/semi-icons": "^2.100.0",
@@ -42,5 +43,10 @@
     "typescript": "^5.4.5",
     "vite": "^6.4.3",
     "vitest": "^3.2.6"
-  }
+  },
+  "engines": {
+    "node": "24.19.0",
+    "npm": "11.17.0"
+  },
+  "packageManager": "npm@11.17.0"
 }

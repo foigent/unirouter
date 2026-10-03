@@ -3,6 +3,7 @@ package xinsightconnector
 import (
 	"context"
 	"fmt"
+	"github.com/jackc/pgx/v5"
 	"net/url"
 	"regexp"
 	"strings"
@@ -36,6 +37,7 @@ type FrozenInvitationV1 struct {
 }
 
 type InvitationIntakeInput struct {
+	ReceiverMode      string
 	Invitation        FrozenInvitationV1
 	OrgID             int64
 	ProjectID         int64
@@ -109,6 +111,7 @@ func (intake *InvitationIntake) Accept(
 		return InvitationIntakeResult{}, err
 	}
 	installation, operation, err := intake.creator.CreateInstallation(ctx, Consent{
+		ReceiverMode:      input.ReceiverMode,
 		InstallationID:    input.Invitation.InstallationID,
 		XDeploymentID:     input.Invitation.DeploymentID,
 		InvitationSHA256:  validated.tokenSHA256,
@@ -203,4 +206,31 @@ func validFrozenHTTPSOrigin(raw string) bool {
 		parsed.RawPath == "" && parsed.RawQuery == "" && !parsed.ForceQuery &&
 		parsed.Fragment == "" && parsed.String() == raw &&
 		!strings.Contains(parsed.Host, "@")
+}
+
+// AcceptTransaction is the normal setup's atomic composition of the existing
+// frozen invitation validator, installation creator and encrypted journal.
+func (intake *InvitationIntake) AcceptTransaction(ctx context.Context, tx pgx.Tx, input InvitationIntakeInput) (InvitationIntakeResult, error) {
+	manager, ok := intake.creator.(*Manager)
+	journal, journalOK := intake.stager.(*PostgresPhaseJournal)
+	if !ok || !journalOK || intake.runtimeRole != "stable" || intake.expectedXInsightOrigin == "" {
+		return InvitationIntakeResult{}, ErrUnavailable
+	}
+	v, err := validateFrozenInvitation(input.Invitation, intake.expectedXInsightOrigin, intake.now().UTC())
+	if err != nil {
+		return InvitationIntakeResult{}, err
+	}
+	i, op, err := manager.CreateInstallationTx(ctx, tx, Consent{ReceiverMode: input.ReceiverMode, InstallationID: input.Invitation.InstallationID, XDeploymentID: input.Invitation.DeploymentID, InvitationSHA256: v.tokenSHA256, OrgID: input.OrgID, ProjectID: input.ProjectID, EventScope: EventScopeModelCompleted, IdempotencyKey: v.idempotencyKey, ConsentedByUserID: input.ConsentedByUserID})
+	if err != nil {
+		return InvitationIntakeResult{}, err
+	}
+	if err = journal.StageInvitationTx(ctx, tx, i.InstallationID, v.token); err != nil {
+		return InvitationIntakeResult{}, err
+	}
+	return InvitationIntakeResult{Installation: i, Operation: op}, nil
+}
+
+func ValidateSetupInvitation(inv FrozenInvitationV1, origin string, now time.Time) (string, error) {
+	v, err := validateFrozenInvitation(inv, origin, now)
+	return v.token, err
 }

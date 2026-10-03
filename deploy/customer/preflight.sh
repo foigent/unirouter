@@ -277,14 +277,19 @@ case "${connector_agent_enabled}" in
     for connector_key in \
       XINSIGHT_CONNECTOR_CONTROL_ORIGIN \
       XINSIGHT_CONNECTOR_POLL_MILLISECONDS \
-      XINSIGHT_CONNECTOR_REQUEST_TIMEOUT_MILLISECONDS \
-      XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON; do
+      XINSIGHT_CONNECTOR_REQUEST_TIMEOUT_MILLISECONDS; do
       load_effective_value "${connector_key}" true
-      if [[ -z "${effective_value}" || ( "${connector_key}" == "XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON" && "${effective_value}" == "[]" ) ]]; then
+      if [[ -z "${effective_value}" ]]; then
         echo "customer preflight: ${connector_key} is required when Connector agent is enabled" >&2
         exit 1
       fi
     done
+    load_effective_value XINSIGHT_CONNECTOR_STATIC_PEER_JSON true
+    connector_static_peer="${effective_value}"
+    load_effective_value XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON true
+    if [[ -z "${connector_static_peer}" && ( -z "${effective_value}" || "${effective_value}" == "[]" ) ]]; then
+      echo "customer preflight: no new-receiver authority; only existing receiver adoption is eligible until formal xinsight-peer preparation" >&2
+    fi
     ;;
   *)
     echo "customer preflight: XINSIGHT_CONNECTOR_AGENT_ENABLED must be true or false" >&2
@@ -394,6 +399,7 @@ unset response_cache_index_bytes
 unset response_cache_encryption_bytes
 unset connector_agent_enabled
 unset connector_key
+unset connector_static_peer
 unset billing_mode
 unset request_pricing_authority
 unset docker_log_max_size

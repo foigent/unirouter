@@ -107,6 +107,7 @@ type Config struct {
 	XInsightConnectorPollMilliseconds           int
 	XInsightConnectorRequestTimeoutMilliseconds int
 	XInsightConnectorReceiverBindings           []XInsightConnectorReceiverBinding
+	XInsightConnectorStaticPeer                 *XInsightConnectorStaticPeer
 	OTelExportEnabled                           bool
 	OTelExportEndpoint                          string
 	OTelExportQueueSize                         int
@@ -587,7 +588,7 @@ var (
 func (c *Config) validateXInsightConnector() error {
 	configured := c.XInsightConnectorAgentEnabled || c.XInsightConnectorControlOrigin != "" ||
 		c.XInsightConnectorPollMilliseconds != 0 || c.XInsightConnectorRequestTimeoutMilliseconds != 0 ||
-		len(c.XInsightConnectorReceiverBindings) != 0
+		len(c.XInsightConnectorReceiverBindings) != 0 || c.XInsightConnectorStaticPeer != nil
 	if !configured {
 		return nil
 	}
@@ -611,6 +612,14 @@ func (c *Config) validateXInsightConnector() error {
 		}
 	}
 	seen := make(map[string]struct{}, len(c.XInsightConnectorReceiverBindings))
+	if c.XInsightConnectorStaticPeer != nil {
+		if err := c.XInsightConnectorStaticPeer.Validate(); err != nil {
+			return err
+		}
+		if c.XInsightConnectorStaticPeer.XInsightOrigin != c.XInsightConnectorControlOrigin {
+			return fmt.Errorf("static peer origin must match XINSIGHT_CONNECTOR_CONTROL_ORIGIN")
+		}
+	}
 	for index, binding := range c.XInsightConnectorReceiverBindings {
 		if !xInsightConnectorInstallationPattern.MatchString(binding.InstallationID) {
 			return fmt.Errorf("XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON[%d].installation_id is invalid", index)
@@ -644,9 +653,9 @@ func (c *Config) validateXInsightConnector() error {
 		if c.XInsightConnectorControlOrigin == "" {
 			return fmt.Errorf("XINSIGHT_CONNECTOR_CONTROL_ORIGIN is required when Connector agent is enabled")
 		}
-		if len(c.XInsightConnectorReceiverBindings) == 0 {
-			return fmt.Errorf("XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON requires at least one binding when Connector agent is enabled")
-		}
+		// Adoption uses the already-approved active feed's exact DB binding.
+		// New v2 receivers still require the original exact resolver at execution.
+
 	}
 	return nil
 }
@@ -741,6 +750,10 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	xInsightConnectorStaticPeer, err := parseXInsightConnectorStaticPeer(getEnvStr("XINSIGHT_CONNECTOR_STATIC_PEER_JSON", ""))
+	if err != nil {
+		return nil, err
+	}
 	cfg := &Config{
 		ListenPort:          getEnvInt("LISTEN_PORT", 8080),
 		LogLevel:            getEnvStr("LOG_LEVEL", "info"),
@@ -808,6 +821,7 @@ func Load() (*Config, error) {
 		XInsightConnectorPollMilliseconds:           xInsightConnectorPollMilliseconds,
 		XInsightConnectorRequestTimeoutMilliseconds: xInsightConnectorRequestTimeoutMilliseconds,
 		XInsightConnectorReceiverBindings:           xInsightConnectorReceiverBindings,
+		XInsightConnectorStaticPeer:                 xInsightConnectorStaticPeer,
 		OTelExportEnabled:                           getEnvBool("UNIROUTE_OTEL_EXPORT_ENABLED", false),
 		OTelExportEndpoint:                          strings.TrimSpace(getEnvStr("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")),
 		OTelExportQueueSize:                         getEnvInt("UNIROUTE_OTEL_EXPORT_QUEUE_SIZE", 256),

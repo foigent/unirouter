@@ -93,6 +93,7 @@ type Handler struct {
 	contentPolicyReadiness       contentPolicyReadiness
 	xInsightConnectorManager     *xinsightconnector.Manager
 	xInsightConnectorIntake      xInsightConnectorInvitationIntake
+	xInsightSetup                *xInsightSetupRuntime
 	modelAuthorizationEvaluator  *modelauthz.Evaluator
 	runtimeChangeManager         *runtimechange.Manager
 	deploymentLifecycleManager   deploymentLifecycleApplication

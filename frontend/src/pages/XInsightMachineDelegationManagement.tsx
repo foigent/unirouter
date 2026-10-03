@@ -1,21 +1,25 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Banner, Button, Descriptions, Input, Popconfirm, Select, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Banner, Button, Descriptions, Input, Popconfirm, Select, Toast, Typography } from '@douyinfe/semi-ui';
 import { api } from '../api/client';
+import { sourceConnectionsApi, type SourceConnection } from '../api/sourceConnections';
 import {
-  xInsightMachineApi, type BindExistingCandidate, type MachineCredential, type MachineCredentialRegistration, type MachinePurpose,
+  xInsightMachineApi, type BindExistingCandidate, type MachineCredential, type DeliveredMachineCandidate, type MachinePurpose,
   type PolicyDelegation, type SourceEnrollment,
 } from '../api/xInsightMachine';
 
 const { Text, Title } = Typography;
-const factProfiles = [
-  'unirouter.execution-context.v1',
-  'unirouter.execution-identity.v1',
-  'unirouter.cost-basis.v1',
-];
 const profileNames: Record<string, string> = {
   'unirouter.execution-context.v1': '调用事实',
   'unirouter.execution-identity.v1': '账号归属',
   'unirouter.cost-basis.v1': '费用依据',
+  'unirouter.runtime-observation.v1': '运行观测',
+  'unirouter.attempt-observation.v1': '尝试观测',
+  'unirouter.capability-snapshot.v1': '能力快照',
+  'unirouter.policy-observation.v1': '策略观测',
+  'unirouter.destination-observation.v1': '目标观测',
+  'unirouter.budget-definition.v1': '预算定义',
+  'unirouter.budget-period-summary.v1': '预算周期汇总',
+  'unirouter.budget-alert.v1': '预算告警',
 };
 const policyKindNames: Record<PolicyDelegation['target_kind'], string> = {
   enterprise_default: '企业默认策略',
@@ -36,10 +40,10 @@ const credentialStateName = (status: string) => {
 };
 
 export default function XInsightMachineDelegationManagement({
-  orgId, projectId, installationId, deploymentId, sourceInstance, orgAdmin,
+  orgId, projectId, installationId, deploymentId, sourceInstance, orgAdmin, deliveredCandidates = [], onRefreshCandidates,
 }: {
   orgId: number; projectId: number; installationId: string; deploymentId: string;
-  sourceInstance: string; orgAdmin: boolean;
+  sourceInstance: string; orgAdmin: boolean; deliveredCandidates?: DeliveredMachineCandidate[]; onRefreshCandidates?: () => Promise<void>;
 }) {
   const [grants, setGrants] = useState<PolicyDelegation[]>([]);
   const [enrollments, setEnrollments] = useState<SourceEnrollment[]>([]);
@@ -52,10 +56,11 @@ export default function XInsightMachineDelegationManagement({
   const [memberQuery, setMemberQuery] = useState('');
   const [members, setMembers] = useState<Array<{ value: string; label: string }>>([]);
   const [enrollmentCoverage, setEnrollmentCoverage] = useState<SourceEnrollment['coverage']>(orgAdmin ? 'all_current_future' : 'exact');
-  const [facts, setFacts] = useState<string[]>(factProfiles);
+  const [facts, setFacts] = useState<string[]>([]);
+  const [sourceConnection, setSourceConnection] = useState<SourceConnection>();
+  const [sourceError, setSourceError] = useState('');
+  const factsEdited = useRef(false);
   const [content, setContent] = useState(true);
-  const [purpose, setPurpose] = useState<MachinePurpose>('xinsight.policy.manage');
-  const [registration, setRegistration] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -73,6 +78,31 @@ export default function XInsightMachineDelegationManagement({
   }, [orgId, projectId, installationId, orgAdmin]);
 
   useEffect(() => { void refresh().catch(e => setError(e instanceof Error ? e.message : '授权状态读取失败')); }, [refresh]);
+
+  useEffect(() => {
+    let cancelled = false;
+    factsEdited.current = false;
+    setSourceConnection(undefined);
+    setSourceError('');
+    setFacts([]);
+    void sourceConnectionsApi.get(projectId).then(connection => {
+      if (cancelled) return;
+      if (connection.source_instance !== sourceInstance) throw new Error('供数来源与当前安装不匹配');
+      setSourceConnection(connection);
+      if (!factsEdited.current) {
+        // Keep an existing exact selection visible, including disabled items.
+        // Never silently narrow it or add newly published profiles on refresh.
+        setFacts(connection.profiles?.length ? [...connection.profiles]
+          : [...(connection.default_profiles ?? [])]);
+      }
+    }).catch(e => {
+      if (!cancelled) setSourceError(e instanceof Error ? e.message : '供数字段读取失败');
+    });
+    return () => { cancelled = true; };
+  }, [orgId, projectId, installationId, sourceInstance]);
+
+  const availableProfiles: readonly string[] = sourceConnection?.available_profiles ?? [];
+  const profileOptions = [...new Set([...availableProfiles, ...facts])].sort();
 
   const readMembers = async () => {
     try {
@@ -110,6 +140,8 @@ export default function XInsightMachineDelegationManagement({
   }, '策略访问已授权；仍须 X-Insight 实际接线和读取');
 
   const createEnrollment = () => run(() => {
+    if (!sourceConnection || sourceConnection.capture_enabled === false) throw new Error('供数字段尚未读取或采集未启用');
+    if (facts.some(profile => !availableProfiles.includes(profile))) throw new Error('所选字段采集未启用；请核对原字段范围后明确选择');
     if (facts.length === 0 && !content) throw new Error('请选择至少一种事实或完整正文');
     return xInsightMachineApi.createSourceEnrollment(orgId, {
       installation_id: installationId, coverage: enrollmentCoverage,
@@ -118,20 +150,19 @@ export default function XInsightMachineDelegationManagement({
     });
   }, '数据读取已授权；仍须 X-Insight 实际接线和读取');
 
-  const registerCredential = () => run(async () => {
-    let parsed: MachineCredentialRegistration;
-    try { parsed = JSON.parse(registration) as MachineCredentialRegistration; }
-    catch { throw new Error('注册信息必须是 JSON'); }
-    const keys = Object.keys(parsed || {}).sort();
-    if (JSON.stringify(keys) !== JSON.stringify([
-      'allowed_ip', 'installation_id', 'key_prefix', 'operation_id', 'purpose', 'verifier_sha256',
-    ]) || parsed.installation_id !== installationId || parsed.purpose !== purpose ||
-      !/^[0-9a-f]{64}$/.test(parsed.verifier_sha256) || !/^[0-9a-f]{32}$/.test(parsed.operation_id)) {
-      throw new Error('注册信息的字段、用途或安装实例不匹配');
+  const registerCandidate = (candidate: DeliveredMachineCandidate) => run(async () => {
+    if (candidate.delivery !== 'public_candidate_delivered' || candidate.activation !== 'not_asserted' ||
+      candidate.registration.installation_id !== installationId || candidate.registration.purpose !== candidate.purpose) {
+      throw new Error('公开候选与当前安装或用途不匹配；请刷新核对');
     }
-    await xInsightMachineApi.registerCredential(orgId, parsed);
-    setRegistration('');
-  }, '机器凭据已登记为待激活');
+    await xInsightMachineApi.registerCredential(orgId, candidate.registration);
+  }, '公开候选已核对并登记；激活与授权须分别确认');
+  const refreshAll = async () => {
+    setBusy(true);
+    try { await onRefreshCandidates?.(); await refresh(); }
+    catch (e) { setError(e instanceof Error ? e.message : '候选或授权状态读取失败'); }
+    finally { setBusy(false); }
+  };
 
   const inspectExisting = async (grant: SourceEnrollment) => {
     setBusy(true);
@@ -151,7 +182,7 @@ export default function XInsightMachineDelegationManagement({
 
   return <section aria-label="X-Insight 策略与数据接入授权" style={{ display: 'grid', gap: 14, borderTop: '1px solid var(--semi-color-border)', paddingTop: 18 }}>
     <Title heading={5} style={{ margin: 0 }}>X-Insight 策略与数据接入授权</Title>
-    <Text>在这里决定 X-Insight 可以管理哪些策略、读取哪些数据。组织管理员默认选择当前及未来项目，并预选三类调用事实和完整正文；创建授权后，仍需 X-Insight 完成凭据配对与实际读取，不能仅凭授权认定接入成功。项目管理员只能授权当前项目。</Text>
+    <Text>在这里决定 X-Insight 可以管理哪些策略、读取哪些数据。组织管理员默认选择当前及未来项目，并保留已有字段选择；新连接根据服务端当前资格预选事实与观测和完整正文，实际范围以所选字段为准；创建授权后，仍需 X-Insight 完成凭据配对与实际读取，不能仅凭授权认定接入成功。项目管理员只能授权当前项目。</Text>
     <details>
       <summary>查看安装与来源标识</summary>
       <Descriptions row data={[
@@ -161,7 +192,7 @@ export default function XInsightMachineDelegationManagement({
         { key: '当前项目 ID', value: String(projectId) },
       ]} />
     </details>
-    {error && <Banner type="warning" description={error} closeIcon={null} />}
+    {(error || sourceError) && <Banner type="warning" description={error || sourceError} closeIcon={null} />}
     <div className="ur-toolbar" style={{ flexWrap: 'wrap' }}>
       <Text strong>策略访问</Text>
       <Select aria-label="策略目标" value={kind} optionList={[
@@ -214,14 +245,15 @@ export default function XInsightMachineDelegationManagement({
         { value: 'exact', label: '当前项目' },
         ...(orgAdmin ? [{ value: 'all_current_future', label: '当前及未来项目' }] : []),
       ]} onChange={value => setEnrollmentCoverage(value as SourceEnrollment['coverage'])} style={{ width: 190 }} />
-      <Select aria-label="选择调用事实" multiple value={facts} optionList={factProfiles.map(value => ({ value, label: profileNames[value] }))}
-        onChange={value => setFacts(value as string[])} style={{ minWidth: 280 }} />
+      <Select aria-label="选择调用事实" multiple value={facts} disabled={busy || !sourceConnection}
+        optionList={profileOptions.map(value => ({ value, label: profileNames[value] || value, disabled: !availableProfiles.includes(value) }))}
+        onChange={value => { factsEdited.current = true; setFacts(value as string[]); }} style={{ minWidth: 280 }} />
       <Select aria-label="完整正文读取" value={content ? 'yes' : 'no'} optionList={[
         { value: 'no', label: '不授权完整正文' }, { value: 'yes', label: '授权完整正文供人工核查' },
       ]} onChange={value => setContent(value === 'yes')} style={{ width: 160 }} />
       <Popconfirm title={enrollmentCoverage === 'all_current_future' ? '确认允许 X-Insight 为当前及未来项目分别注册所选数据读取凭据？已有人工连接不会自动迁移。' : '确认授权 X-Insight 读取当前项目所选数据？'}
         onConfirm={() => void createEnrollment()}>
-        <Button type="primary" disabled={busy}>授权数据读取</Button>
+        <Button type="primary" disabled={busy || !sourceConnection}>授权数据读取</Button>
       </Popconfirm>
     </div>
     {enrollments.length === 0 && <Text type="tertiary">尚未授权数据读取。</Text>}
@@ -274,19 +306,33 @@ export default function XInsightMachineDelegationManagement({
     {orgAdmin && <>
       <Text strong>接入凭据</Text>
       <Text>策略管理和数据接入需要分别配对凭据。授权创建后，还需完成凭据登记与激活，再由 X-Insight 实际读取；待激活凭据不能使用。</Text>
-      <div className="ur-toolbar">
-        <Select aria-label="机器凭据用途" value={purpose} optionList={[
-          { value: 'xinsight.policy.manage', label: '策略管理' },
-          { value: 'xinsight.source.enroll', label: '数据接入' },
-        ]} onChange={value => setPurpose(value as MachinePurpose)} style={{ width: 190 }} />
-        <Button onClick={() => void refresh()} disabled={busy}>刷新授权与凭据</Button>
-      </div>
+      <Button onClick={() => void refreshAll()} disabled={busy}>刷新候选、授权与凭据</Button>
+      {deliveredCandidates.length === 0 && <Text type="tertiary">等待 X-Insight 安全准备并交付两种用途的公开候选；当前没有可登记的候选。</Text>}
+      {deliveredCandidates.map(candidate => {
+        const otherCredential = credentials.some(key => key.purpose === candidate.purpose &&
+          ['feed_active', 'feed_staged'].includes(key.status) && key.operation_id !== candidate.registration.operation_id);
+        return <div key={candidate.control_operation_id} style={{ display: 'grid', gap: 6 }}>
+          <Text strong>{credentialPurposeName(candidate.purpose)} · 公开候选已交付，激活尚未确认</Text>
+          <Text>允许出口：{candidate.registration.allowed_ip} · 凭据前缀：{candidate.registration.key_prefix}</Text>
+          {otherCredential && <Text type="warning">同用途已有其他活动或待激活凭据；本次配对不会自动轮换，请先核对现有凭据。</Text>}
+          <details><summary>查看公开候选身份</summary><Descriptions row data={[
+            { key: '安装', value: candidate.registration.installation_id },
+            { key: '用途', value: candidate.purpose },
+            { key: '登记摘要', value: candidate.registration_sha256 },
+            { key: '交付操作', value: candidate.control_operation_id },
+          ]} /></details>
+          <Popconfirm title={`确认将已交付的${credentialPurposeName(candidate.purpose)}公开候选登记到当前安装？凭据保管在 X-Insight；此步不激活、不授予策略或数据权限。`}
+            onConfirm={() => void registerCandidate(candidate)}>
+            <Button disabled={busy || otherCredential}>登记{credentialPurposeName(candidate.purpose)}候选</Button>
+          </Popconfirm>
+        </div>;
+      })}
       {credentials.length === 0 && <Text type="tertiary">尚无已登记的接入凭据。</Text>}
       {credentials.map(key => <div key={key.key_id} style={{ display: 'grid', gap: 6 }}>
         <div className="ur-toolbar" style={{ flexWrap: 'wrap' }}>
           <Text>{credentialPurposeName(key.purpose)} · {credentialStateName(key.status)}</Text>
           {key.status === 'feed_staged' && <Popconfirm title="确认 X-Insight 已安全保存这份新凭据？激活会立即撤销同用途的旧凭据。" onConfirm={() => void run(() => xInsightMachineApi.changeCredential(orgId, key.key_id, 'activate'), '接入凭据已激活')}>
-          <Button size="small" disabled={busy}>激活</Button>
+          <Button size="small" disabled={busy || credentials.some(other => other.purpose === key.purpose && other.key_id !== key.key_id && other.status === 'feed_active')}>激活</Button>
         </Popconfirm>}
           {key.status !== 'feed_revoked' && <Popconfirm title="撤销后这份凭据立即失效。" onConfirm={() => void run(() => xInsightMachineApi.changeCredential(orgId, key.key_id, 'revoke'), '接入凭据已撤销')}>
           <Button size="small" type="danger" disabled={busy}>撤销</Button>
@@ -303,15 +349,6 @@ export default function XInsightMachineDelegationManagement({
           ]} />
         </details>
       </div>)}
-      <details>
-        <summary>高级：手工登记公开验证信息</summary>
-        <Text>仅在配对自动登记不可用时使用。这里不接收实际凭据；登记后还需单独激活。</Text>
-        <TextArea aria-label="机器凭据公开注册信息" value={registration} onChange={setRegistration} rows={4}
-          placeholder='{"installation_id":"xci_...","purpose":"xinsight.policy.manage","key_prefix":"ur-xpm1-...","verifier_sha256":"...","operation_id":"...","allowed_ip":"127.0.0.1/32"}' />
-        <Popconfirm title={`确认将这份公开验证信息登记到当前安装，供${credentialPurposeName(purpose)}使用？`} onConfirm={() => void registerCredential()}>
-          <Button disabled={busy || !registration}>登记待激活凭据</Button>
-        </Popconfirm>
-      </details>
     </>}
   </section>;
 }

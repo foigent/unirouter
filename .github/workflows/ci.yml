@@ -380,12 +380,12 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version-file: 'frontend/package.json'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
       
       - name: Install dependencies
-        run: npm ci
+        run: node scripts/check-toolchain.mjs && npm ci
       
       - name: Type check
         run: npm run type-check
@@ -465,7 +465,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version-file: 'frontend/package.json'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
@@ -474,7 +474,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm ci
+        run: node scripts/check-toolchain.mjs && npm ci
 
       - name: Build exact-head frontend
         working-directory: frontend

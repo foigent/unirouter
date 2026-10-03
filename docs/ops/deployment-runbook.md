@@ -2146,6 +2146,96 @@ release/CI/exact-main 和最终 Artifact 证据，重新只读核对目标账本
 动作和止损条件的 P3 操作方案并取得对应部署批准。本段没有发起
 Target、XI 或凭据写入，也不代表 P3 已具备执行资格。
 
+#### 9.10.4 M123→M124 1.9.0 本地候选（尚非 Target 交付）
+
+2026-10-03 的 1.9.0/M124 候选沿用上述正式主机控制器，不新增升级入口。
+若当前完整旧账本与准确旧 Artifact 均为 1.8.2/M123，
+`schema_bridge_expand_carrier` 的 `from_head` 为
+`000123_xinsight_policy_delegation`，唯一有序 `migration_pairs` 项为
+`000124_xinsight_receiver_adoption`：up SHA-256
+`b60a62fa3b980299b7ccb1f8bfa361e5157023e9d9219346908ab8fca27ce509`，down SHA-256
+`4286ac4a2812e9065cd31151814d90295b0365b71577ab44bb55185ca40aa473`。
+正式 rollout 的 `plan/prepare/apply` 仍使用完整精确输入；载体先在旧头运行，
+保留撤流、旧进程退出、替换和重新接流证据，再用同一 rollout input 执行
+`runtime-generation-retire.py check/apply --role canary` 和 `--role stable`。
+仅租约过期或 schema check 通过不能替代旧实例退役。
+
+随后使用原 `compatible-expand.py`，显式提供
+`--target-version 000124_xinsight_receiver_adoption` 和
+`--migration-digest sha256:b60a62fa3b980299b7ccb1f8bfa361e5157023e9d9219346908ab8fca27ce509`，
+以及当次核对的 `--directory`、`--container`、`--expected-container-id`、
+`--expected-hostname`、`--expected-system-identifier`、`--environment`、
+`--expected-config-sha256`、`--expected-nginx-sha256`。默认执行 `check`；
+相同输入加 `--apply` 才执行事务性扩展。不得省略显式目标而使用默认 M114，
+也不得绕开主机包装器直接执行通用 migration。未知结果先读回准确账本和 fleet。
+M124 的 runtime-generation CLI 使用既有完整 ledger 验证与有限头白名单，
+支持同一 `inspect/read/prepare/complete/stop-check/stop-apply` 合同；未知或缺项
+账本仍拒绝。M124 down 在已形成接管、操作历史或非 stopped 运行代时拒绝，
+不能作为承载新事实后的旧镜像回滚入口。
+
+此候选恢复 helper 的准确身份为 `scripts/source-budget-restore-rebase.sql`，
+9,617 字节，SHA-256
+`8204fb5e5fab583f17ea3315c91160e31d6e11de19c5aadb3885552fe92e043a`；
+`deploy/customer/README.md` 已声明 M124。9.10.3 的旧摘要保留为该次 M123
+候选的历史身份，不能用于本候选恢复。所有 SQL 恢复继续在读写者全部停止时，
+用 `psql -v ON_ERROR_STOP=1 -f scripts/source-budget-restore-rebase.sql` 完成
+同事务 D coverage/C epoch rebase，然后核对原绑定、样本正文及摘要、旧 C cursor
+拒绝和新授权读取，再恢复进程。正文恢复仍须 4.1–4.2 的同停写窗口成对数据库与
+准确正文根/marker，保留原 token/identity；rollout prepare 的 SQL dump 不包含正文。
+
+本节记录支持入口和候选字节，不提供未核实的 Target 参数或部署授权，也不证明
+CI、正式 Artifact、Target 或 Production 已通过。交付前保留 Change Routing、
+全部适用 Backend Tests/Frontend Build/Docker Build、浏览器路由判定和 exact-main
+协议证据，并按实际 commit、镜像及当前前态重新核对完整操作输入。
+
+#### 9.10.5 静态受信对端与普通管理员接入
+
+本候选在 M124 原安装表保存非秘密同意及进度，并在原 control binding 的真实 redeem
+事务记录 `redeemed_origin`。历史 originless 安装不回填或提升为静态信任；旧 exact
+installation binding 仍受支持。M124 down 在存在设置、实际 origin 或接管事实时拒绝。
+恢复 helper 同时核对设置身份列/不可变 trigger，不能将恢复的历史安装当作新运行权限。
+
+运维仅在已核对两端正式 HTTPS origin、XI 固定 deployment ID 和实际接收端单主机
+CIDR 后使用随候选交付的正式 CLI。以下非秘密参数须换为当次核实值；输出路径必须
+是现有非别名父目录中的**新绝对文件**，不得覆盖原配置。`prepare` 独占生成 0600
+信任片段，`check` 只读回读字节/身份；两者不读取凭据、不连对端、不修改数据库：
+
+```bash
+./uniroute xinsight-peer prepare --xi-origin https://xi.example.com --xi-deployment-id xid_AAAAAAAAAAAAAAAAAAAAAA --ur-origin https://ur.example.com --receiver-ip 192.0.2.10/32 --out /opt/unirouter/xinsight-static-peer.env
+./uniroute xinsight-peer check --file /opt/unirouter/xinsight-static-peer.env
+```
+
+片段中的 `XINSIGHT_CONNECTOR_CONTROL_ORIGIN` 与
+`XINSIGHT_CONNECTOR_STATIC_PEER_JSON` 须纳入当次已批准的精确运行配置；不要当作 shell
+脚本执行。此工具不启用 Agent 或采集、不重新注册动态 installation ID。日常向导的
+运维前提仍是稳定实例启用原 Connector Agent、相应供数/正文能力与有效 Data Exchange
+权利，canary 单写者禁用规则保留。配置变化和实例重建仍走原 rollout 与 runtime
+资格检查，不能以 CLI 成功代替运行状态。
+
+之后管理员在 UR 普通接入页核对 XI 地址，由 XI 自身同源登录者确认保管，再沿原
+邀请 fragment 返回 UR。UR 只向已固定的 resolve 路径发送来令 token，校验原邀请包、
+两端 origin、deployment、同意 canonical SHA 及原有效期。邀请不得进入普通日志或
+浏览器持久存储；页面接收后清除 fragment。最终确认提交前，仅保存按真实账号、组织、
+项目绑定的非秘密 installation ID 作为读回提示；响应丢失或刷新后仍由原状态 GET
+重新校验资格和是否实际提交，404 不视为成功，也不自动重新授权。
+UR 最终同意显示供数范围、原来源纳入、UR 初始策略及后续企业/项目/成员策略权限。
+企业和全项目策略管理不受供数排除缩小；既有显式项目/成员例外保留。初始策略 CAS
+使用目标层合同：企业写入的 expected_version 为该层 desired 版本，expected_vector
+仅含该层 effective 版本；项目写入仍使用项目有效向量，不互换。后台每步重新
+核真实确认者、fence、候选及 CAS，复用原机器目的/委托/绑定 writer 与审计；相同请求
+重放不重复授权，撤权、不同活动 key 或事实漂移转为需要处理，不自动替换旧凭据。
+
+读取 `GET /api/v2/organizations/{org_id}/xinsight/setups/{installation_id}` 核对当前状态。
+`configuration_ready` 与真实接收分别报告；空来源为 `waiting_data`，真实同步开始
+才为 `ready`。正文副本接收和受保护服务端授权/解密/摘要验证/审计时间单独展示，
+不推断浏览器完整收到了正文。后续企业关闭/恢复沿原 joint policy API，并以当前
+两端有效策略和实际接收回读验收，不能用最初的设置 snapshot 锁死正常策略变化。
+
+前端交付的唯一工具链由 `frontend/package.json` 精确 engines/包管理器版本约束：
+Node 24.19.0、npm 11.17.0。CI setup-node 读取同一文件，Docker 使用相同 Node
+版本的已固定 alpine3.23 多平台镜像摘要；`npm run type-check` 与 `npm run build`
+首先运行真实工具链检查。该一致性不替代 Docker Build、Browser E2E 或 Target 验收。
+
 所有长期 Compose 服务默认使用 Docker `json-file` 日志轮转：单文件 20 MiB、最多
 3 个文件。可通过 `DOCKER_LOG_MAX_SIZE` 和 `DOCKER_LOG_MAX_FILES` 在部署环境调整，
 但不能留空或移除 `logging` 合同。日志参数只在容器创建时生效；修改后必须按

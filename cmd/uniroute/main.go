@@ -68,6 +68,12 @@ var (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "xinsight-peer" {
+		if err := runXInsightPeerCLI(os.Args[2:], os.Stdout); err != nil {
+			log.Fatalf("X-Insight peer preparation failed: %v", err)
+		}
+		return
+	}
 	// Local storage administration needs no JWT/provider/license or DB config.
 	// Invalid subcommands terminate here and cannot fall through to HTTP startup.
 	if len(os.Args) > 1 && os.Args[1] == "content-store" {
@@ -564,6 +570,16 @@ func main() {
 		log.Fatalf("Failed to initialize X-Insight Connector invitation intake: %v", err)
 	}
 	adminHandler.SetXInsightConnectorInvitationIntake(xInsightConnectorIntake)
+	if err = adminHandler.SetXInsightSetupPeer(cfg.XInsightConnectorStaticPeer, nil, func(ctx context.Context, id, deployment string) ([]byte, error) {
+		counterpart, err := xinsightconnector.NewHTTPControlCounterpart(cfg.XInsightConnectorControlOrigin, xinsightconnector.RuntimeInstallationDescriptor{InstallationID: id, XDeploymentID: deployment}, xInsightConnectorJournal, nil, time.Duration(cfg.XInsightConnectorRequestTimeoutMilliseconds)*time.Millisecond)
+		if err != nil {
+			return nil, err
+		}
+		return counterpart.ReadSetupStatus(ctx)
+	}); err != nil {
+		log.Fatalf("Failed to initialize X-Insight setup peer: %v", err)
+	}
+
 	xInsightConnectorRuntime, err := newProductionXInsightConnectorRuntimeSupervisor(
 		cfg, postgres.Pool, encKey, adminHandler, log.Printf,
 	)
@@ -786,6 +802,8 @@ func main() {
 		"GET /api/v1/integrations/xinsight/completed-executions",
 		completedFeedAuth(completedFeedSvc.Handler()),
 	)
+	mux.Handle("GET /api/v1/integrations/xinsight/connector-installations/{installation_id}/source-binding",
+		completedFeedAuth(adminHandler.XInsightSourceDescriptorHandler(configuredXInsightReceiverBindingResolver{config: cfg})))
 	mux.Handle("GET /api/v1/integrations/xinsight/source-facts", sourceFactsSvc.Handler(clientIPResolver))
 	mux.Handle("GET /api/v1/integrations/xinsight/source-facts/capabilities", sourceFactsSvc.Handler(clientIPResolver))
 	mux.Handle("GET /api/v1/integrations/xinsight/source/v2/events", sourceFactsSvc.ObservationHandler(clientIPResolver))
@@ -922,6 +940,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">POST</td><td><code>/v1/agent-capabilities/refresh</code></td><td>Refresh a five-minute Agent capability</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/agent-capabilities/revoke</code></td><td>Revoke a workflow for new admissions</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/integrations/xinsight/completed-executions</code></td><td>Private final completed-execution metadata feed for X-Insight</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/integrations/xinsight/connector-installations/{installation_id}/source-binding</code></td><td>Read-only consent-bound source identity after original v2 new installation</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/integrations/xinsight/source-facts</code></td><td>Immutable fixed-profile execution context, identity or cost basis</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/integrations/xinsight/source-facts/capabilities</code></td><td>Authorized source profiles and explicit coverage boundaries</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/auth/login</code></td><td>Admin login</td></tr>
@@ -1020,6 +1039,10 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">POST</td><td><code>/api/v1/data-exchange/exchanges/{id}/deliveries</code></td><td>Record exchange handoff or re-delivery</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/data-exchange/exchanges/{id}/receipts</code></td><td>Record X-Insight import receipt</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/data-exchange/exchanges/{id}/artifact-delete</code></td><td>Mark exchange artifact deleted in ledger</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v2/organizations/{org_id}/xinsight/setup-peer</code></td><td>Read installer-pinned XI peer</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v2/organizations/{org_id}/xinsight/setup-previews</code></td><td>Resolve original invitation link and preview actual setup</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v2/organizations/{org_id}/xinsight/setups</code></td><td>Save explicit human consent atomically</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v2/organizations/{org_id}/xinsight/setups/{installation_id}</code></td><td>Read current setup and genuine receiving projection</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/data-exchange/xinsight/connections/{project_id}</code></td><td>X-Insight live feed connection status</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/data-exchange/xinsight/connections/{project_id}/pause</code></td><td>Pause live feed delivery without disabling its credential</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/data-exchange/xinsight/connections/{project_id}/resume</code></td><td>Resume live feed delivery</td></tr>
@@ -1265,6 +1288,10 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 
 	mux.Handle("GET /api/v1/audit-logs", organizationRoleRoute(adminHandler.ListAuditLogs, auth.RolePlatformAdmin, auth.RoleOrgAdmin))
 	mux.Handle("GET /api/v2/audit-logs", organizationRoleRoute(adminHandler.ListAuditLogsV2, auth.RolePlatformAdmin, auth.RoleOrgAdmin))
+	mux.Handle("GET /api/v2/organizations/{org_id}/xinsight/setup-peer", adminRoute(adminHandler.GetXInsightSetupPeer))
+	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight/setup-previews", adminRoute(adminHandler.PreviewXInsightSetup))
+	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight/setups", licensedRoute(licensing.FeatureDataExchange, adminRoute)(adminHandler.CreateXInsightSetup))
+	mux.Handle("GET /api/v2/organizations/{org_id}/xinsight/setups/{installation_id}", adminRoute(adminHandler.GetXInsightSetupStatus))
 	mux.Handle("GET /api/v2/organizations/{org_id}/xinsight-policy-delegations", adminRoute(adminHandler.ListXInsightPolicyDelegations))
 	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight-policy-delegations", adminRoute(adminHandler.CreateXInsightPolicyDelegation))
 	mux.Handle("PUT /api/v2/organizations/{org_id}/xinsight-policy-delegations/{delegation_id}", adminRoute(adminHandler.UpdateXInsightPolicyDelegation))

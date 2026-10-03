@@ -139,6 +139,10 @@ func (h *Handler) reauthorizeCommittingActorTx(
 		return state, fmt.Errorf("read committing actor session: %w", err)
 	}
 
+	return authorizeCommittingActorScopeTx(ctx, tx, state, requirement)
+}
+
+func authorizeCommittingActorScopeTx(ctx context.Context, tx pgx.Tx, state committingActorState, requirement committingActorRequirement) (committingActorState, error) {
 	if requirement.Project == nil {
 		if requirement.TargetOrgID <= 0 {
 			return state, errCommittingActorScopeNotFound
@@ -199,7 +203,7 @@ func (h *Handler) reauthorizeCommittingActorTx(
 	// membership produces first_cross_project; a live viewer membership is
 	// returned to policy evaluation so promotion produces role_elevation. An
 	// existing caller falls through to the ordinary live-membership gate.
-	if requirement.AllowSelfRequestWithoutMembershipUserID == actorUserID &&
+	if requirement.AllowSelfRequestWithoutMembershipUserID == state.UserID &&
 		state.OrganizationRole == auth.RoleMember {
 		var projectStatus string
 		err := tx.QueryRow(ctx, `
@@ -223,7 +227,7 @@ func (h *Handler) reauthorizeCommittingActorTx(
 		err = tx.QueryRow(ctx, `
 			SELECT role FROM project_members
 			 WHERE project_id=$1 AND user_id=$2
-			 FOR SHARE`, projectRequirement.ProjectID, actorUserID).Scan(&storedRole)
+			 FOR SHARE`, projectRequirement.ProjectID, state.UserID).Scan(&storedRole)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return state, nil
 		}
@@ -250,7 +254,7 @@ func (h *Handler) reauthorizeCommittingActorTx(
 		 WHERE p.id=$1 AND p.org_id=$3
 		   AND ($4::bigint=0 OR p.org_id=$4)
 		   AND pm.role=ANY($5::text[])
-		 FOR UPDATE OF p FOR SHARE OF o, pm`, projectRequirement.ProjectID, actorUserID, state.OrgID,
+		 FOR UPDATE OF p FOR SHARE OF o, pm`, projectRequirement.ProjectID, state.UserID, state.OrgID,
 		requirement.TargetOrgID, acceptedRoles).Scan(&state.TargetOrgID, &projectStatus, &storedProjectRole)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return state, errCommittingActorScopeNotFound

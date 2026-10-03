@@ -9,6 +9,29 @@ export interface MachineCredentialRegistration {
   operation_id: string;
   allowed_ip: string;
 }
+export interface DeliveredMachineCandidate {
+ control_operation_id: string;
+ control_request_sha256: string;
+ control_result_sha256: string;
+ purpose: MachinePurpose;
+ registration: MachineCredentialRegistration;
+ registration_sha256: string;
+ custody_receipt_sha256: string;
+ delivery: 'public_candidate_delivered';
+ activation: 'not_asserted';
+ observed_at: string;
+}
+export interface ReceiverAdoption {
+ bind_operation_id: string;
+ candidate_sha256: string;
+ adoption_binding_sha256: string;
+ feed_key_id: string;
+ status: 'bound' | 'confirmed';
+ confirm_operation_id?: string;
+ confirm_result_sha256?: string;
+ xi_adoption_receipt_sha256?: string;
+ feed_read_receipt_sha256?: string;
+}
 export interface MachineCredential {
   key_id: string;
   key_prefix: string;
