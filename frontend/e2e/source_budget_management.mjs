@@ -37,6 +37,7 @@ try {
   await clickAndResponse(page.getByRole('button', { name: '登录', exact: true }), '/api/v1/auth/login');
   await page.waitForURL(url => url.pathname !== '/login');
   await page.goto('/integrations?tab=xinsight');
+  await page.locator('summary').filter({ hasText: /^维护与技术详情$/ }).click();
   const source = page.getByRole('region', { name: '来源事实连接' });
   await waitVisible(source.getByText('未配置 · 来源 synthetic-source-browser', { exact: true }));
   await fs.writeFile(path.join(output, 'initial-ui.txt'), await source.innerText());
