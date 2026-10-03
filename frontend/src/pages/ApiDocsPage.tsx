@@ -102,6 +102,7 @@ const endpointGroups: EndpointGroup[] = [
     area: 'Private Integration',
     endpoints: [
       ['GET', '/api/v1/integrations/xinsight/completed-executions', 'X-Insight 使用项目绑定、网络绑定且不可调用模型的专用 service key 拉取终态执行元数据'],
+      ['GET', '/api/v1/integrations/xinsight/connector-installations/{installation_id}/source-binding', '原 v2 新安装成功后，用原 feed 凭据只读核验与安装同意一致的来源身份和出口约束；不改变同步进度或授予机器权限'],
       ['GET', '/api/v1/integrations/xinsight/source-facts', '按独立授权的固定 profile 拉取执行上下文、身份或费用依据；费用依据不重复计费，游标保留七天'],
       ['GET', '/api/v1/integrations/xinsight/source-facts/capabilities', '读取当前源凭据获准的 profile 与覆盖边界；不启用凭据或证明下游可查询'],
     ],
@@ -294,6 +295,10 @@ const endpointGroups: EndpointGroup[] = [
       ['POST', '/api/v1/data-exchange/exchanges/{id}/deliveries', '登记交付或重投'],
       ['POST', '/api/v1/data-exchange/exchanges/{id}/receipts', '登记 X-Insight 回执'],
       ['POST', '/api/v1/data-exchange/exchanges/{id}/artifact-delete', '标记制品已删除'],
+      ['GET', '/api/v2/organizations/{org_id}/xinsight/setup-peer', '以 project_id 查询当前项目的安装工具受信 XI 对端'],
+      ['POST', '/api/v2/organizations/{org_id}/xinsight/setup-previews', '从原邀请链接 token 预览实际范围及两端确认'],
+      ['POST', '/api/v2/organizations/{org_id}/xinsight/setups', '保存明确人类同意，由原后台继续接入'],
+      ['GET', '/api/v2/organizations/{org_id}/xinsight/setups/{installation_id}', '只读当前策略、配置进度及真实接收状态'],
       ['GET', '/api/v1/data-exchange/xinsight/connections/{project_id}', '读取项目级 X-Insight 实时连接状态'],
       ['GET', '/api/v1/data-exchange/xinsight/source-connections/{project_id}', '读取独立来源连接与获准字段；仅平台管理员'],
       ['POST', '/api/v1/data-exchange/xinsight/source-connections/{project_id}/prepare', '注册专用来源凭据；只接收绑定来源、项目、字段的非秘密注册包'],

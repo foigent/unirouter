@@ -61,6 +61,25 @@ func NewManager(database db.DBQuerier, authorizer CommitAuthorizer, source Sourc
 // The commit authorizer rechecks the live local actor/project authority before
 // the project and Source scope become durable.
 func (m *Manager) CreateInstallation(ctx context.Context, input Consent) (Installation, Operation, error) {
+	tx, err := m.db.Begin(ctx)
+	if err != nil {
+		return Installation{}, Operation{}, ErrUnavailable
+	}
+	defer tx.Rollback(ctx)
+	installation, operation, err := m.CreateInstallationTx(ctx, tx, input)
+	if err != nil {
+		return Installation{}, Operation{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return Installation{}, Operation{}, ErrUnavailable
+	}
+	return installation, operation, nil
+}
+
+// CreateInstallationTx retains the original live-human authorization and exact
+// replay identity, allowing the bounded setup consent and invitation to commit
+// with the installation rather than depending on an open browser.
+func (m *Manager) CreateInstallationTx(ctx context.Context, tx pgx.Tx, input Consent) (Installation, Operation, error) {
 	sourceInstance := m.source.SourceInstance()
 	if !m.source.Enabled() || !validSourceInstance(sourceInstance) {
 		return Installation{}, Operation{}, fmt.Errorf("%w: completed feed Source authority is unavailable", ErrUnavailable)
@@ -70,11 +89,6 @@ func (m *Manager) CreateInstallation(ctx context.Context, input Consent) (Instal
 		return Installation{}, Operation{}, err
 	}
 	now := m.now().UTC().Truncate(time.Microsecond)
-	tx, err := m.db.Begin(ctx)
-	if err != nil {
-		return Installation{}, Operation{}, fmt.Errorf("%w: begin installation: %v", ErrUnavailable, err)
-	}
-	defer tx.Rollback(ctx)
 	if err := m.authorizer.AuthorizeConnectorControl(
 		ctx, tx, input.ConsentedByUserID, input.OrgID, input.ProjectID, ActionConnect,
 	); err != nil {
@@ -90,12 +104,13 @@ func (m *Manager) CreateInstallation(ctx context.Context, input Consent) (Instal
 			existing.SourceBindingSHA256 != sourceBindingSHA {
 			return Installation{}, Operation{}, ErrConflict
 		}
+		mode, modeErr := readReceiverMode(ctx, tx, existing.InstallationID)
+		if modeErr != nil || mode != input.ReceiverMode {
+			return Installation{}, Operation{}, ErrConflict
+		}
 		operation, operationErr := readOperationByInstallationAction(ctx, tx, input.InstallationID, ActionConnect)
 		if operationErr != nil {
 			return Installation{}, Operation{}, operationErr
-		}
-		if commitErr := tx.Commit(ctx); commitErr != nil {
-			return Installation{}, Operation{}, fmt.Errorf("%w: commit installation replay: %v", ErrUnavailable, commitErr)
 		}
 		return existing, operation, nil
 	}
@@ -103,23 +118,32 @@ func (m *Manager) CreateInstallation(ctx context.Context, input Consent) (Instal
 		return Installation{}, Operation{}, err
 	}
 
+	if input.ReceiverMode == ReceiverModeAdoptExisting {
+		if err := validateAdoptionIntentTx(ctx, tx, input.OrgID, input.ProjectID); err != nil {
+			return Installation{}, Operation{}, err
+		}
+	}
 	if _, err := tx.Exec(ctx, `
 INSERT INTO completed_execution_feed_connections (org_id, project_id, status)
 VALUES ($1,$2,'paused')
 ON CONFLICT (org_id, project_id) DO NOTHING`, input.OrgID, input.ProjectID); err != nil {
 		return Installation{}, Operation{}, fmt.Errorf("%w: ensure paused Source: %v", ErrUnavailable, err)
 	}
-	_, err = tx.Exec(ctx, `
-INSERT INTO xinsight_connector_installations (
-    installation_id, org_id, project_id, x_deployment_id, invitation_sha256,
-    event_scope, source_instance, source_binding_sha256, desired_state,
-    observed_state, state_revision, control_fence, consented_by,
-    consented_at, created_at, updated_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active','provisioning',1,1,$9,$10,$10,$10)`,
-		input.InstallationID, input.OrgID, input.ProjectID, input.XDeploymentID,
-		input.InvitationSHA256, input.EventScope, sourceBinding.SourceInstance,
-		sourceBindingSHA, input.ConsentedByUserID, now,
-	)
+	insert := `INSERT INTO xinsight_connector_installations (
+ installation_id,org_id,project_id,x_deployment_id,invitation_sha256,event_scope,source_instance,source_binding_sha256,desired_state,observed_state,state_revision,control_fence,consented_by,consented_at,created_at,updated_at)
+ VALUES($1,$2,$3,$4,$5,$6,$7,$8,'active','provisioning',1,1,$9,$10,$10,$10)`
+	args := []any{input.InstallationID, input.OrgID, input.ProjectID, input.XDeploymentID, input.InvitationSHA256, input.EventScope, sourceBinding.SourceInstance, sourceBindingSHA, input.ConsentedByUserID, now}
+	if input.ReceiverMode == ReceiverModeAdoptExisting {
+		var expanded bool
+		if tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version='000124_xinsight_receiver_adoption')`).Scan(&expanded) != nil || !expanded {
+			return Installation{}, Operation{}, ErrConflict
+		}
+		insert = strings.Replace(insert, "created_at,updated_at)", "created_at,updated_at,receiver_mode)", 1)
+		insert = strings.Replace(insert, "$10,$10,$10)", "$10,$10,$10,$11)", 1)
+		args = append(args, input.ReceiverMode)
+	}
+	_, err = tx.Exec(ctx, insert, args...)
+
 	if err != nil {
 		return Installation{}, Operation{}, classifyWriteError(err)
 	}
@@ -143,9 +167,6 @@ VALUES ($1,$2,$3,$4,'connect',$5,'active','queued',1,1,0,$6,$7,$6,$6)`,
 	operation, err := readOperation(ctx, tx, operationRef, false)
 	if err != nil {
 		return Installation{}, Operation{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return Installation{}, Operation{}, fmt.Errorf("%w: commit installation: %v", ErrUnavailable, err)
 	}
 	return installation, operation, nil
 }

@@ -105,14 +105,7 @@ func (h *Handler) enterprisePayloadPolicyV2(w http.ResponseWriter, r *http.Reque
 	}
 	var view contentcapture.ScopedManagementView
 	if update {
-		view, err = controller.PutEnterpriseTx(r.Context(), tx, actor.TargetOrgID, put, application)
-		if err == nil {
-			err = insertAuditEntry(r.Context(), tx, "content.policy.enterprise.update", "organization", strconv.FormatInt(orgID, 10),
-				map[string]any{"policy_ref": view.Enterprise.PolicyRef, "desired": view.Enterprise.Desired,
-					"effective": view.Enterprise.Effective, "execution_storage_mode": view.Enterprise.EffectiveExecutionMode,
-					"default_project_quota_bytes": view.Enterprise.EffectiveDefaultProjectQuota},
-				requestAuditMeta(r, orgID, 0))
-		}
+		view, err = h.putScopedPolicyForActorTx(r.Context(), tx, controller, contentcapture.PolicyScopeEnterprise, actor.TargetOrgID, 0, 0, put, application, actor.UserID, requestAuditMeta(r, orgID, 0))
 	} else {
 		view, err = controller.EnterpriseManagementTx(r.Context(), tx, actor.TargetOrgID, application.StorageStatus)
 	}
@@ -170,14 +163,7 @@ func (h *Handler) projectPayloadPolicyV2(w http.ResponseWriter, r *http.Request,
 	}
 	var view contentcapture.ScopedManagementView
 	if update {
-		view, err = controller.PutScopedTx(r.Context(), tx, scope, actor.TargetOrgID, projectID, userID, put, application)
-		if err == nil {
-			detail := map[string]any{"scope": scope, "policy_ref": put.ExpectedPolicyRef,
-				"desired": put.Desired, "execution_storage_mode": put.ExecutionStorageMode,
-				"project_quota_bytes": put.ProjectQuotaBytes}
-			err = insertAuditEntry(r.Context(), tx, "content.policy.scoped.update", scope,
-				strconv.FormatInt(projectID, 10), detail, requestAuditMeta(r, actor.TargetOrgID, projectID))
-		}
+		view, err = h.putScopedPolicyForActorTx(r.Context(), tx, controller, scope, actor.TargetOrgID, projectID, userID, put, application, actor.UserID, requestAuditMeta(r, actor.TargetOrgID, projectID))
 	} else {
 		view, err = controller.ScopedManagementTx(r.Context(), tx, actor.TargetOrgID, projectID, userID, application.StorageStatus)
 	}
@@ -189,4 +175,21 @@ func (h *Handler) projectPayloadPolicyV2(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	writeJSON(w, http.StatusOK, view)
+}
+
+func (h *Handler) putScopedPolicyForActorTx(ctx context.Context, tx pgx.Tx, controller scopedContentPolicyController, scope string, orgID, projectID, userID int64, put contentcapture.ScopedManagementPut, application contentcapture.PolicyApplication, actorID int64, meta auditMeta) (contentcapture.ScopedManagementView, error) {
+	var view contentcapture.ScopedManagementView
+	var err error
+	if scope == contentcapture.PolicyScopeEnterprise {
+		view, err = controller.PutEnterpriseTx(ctx, tx, orgID, put, application)
+		if err == nil {
+			err = insertAuditEntryForActor(ctx, tx, actorID, "content.policy.enterprise.update", "organization", strconv.FormatInt(orgID, 10), map[string]any{"policy_ref": view.Enterprise.PolicyRef, "desired": view.Enterprise.Desired, "effective": view.Enterprise.Effective, "execution_storage_mode": view.Enterprise.EffectiveExecutionMode, "default_project_quota_bytes": view.Enterprise.EffectiveDefaultProjectQuota}, meta)
+		}
+	} else {
+		view, err = controller.PutScopedTx(ctx, tx, scope, orgID, projectID, userID, put, application)
+		if err == nil {
+			err = insertAuditEntryForActor(ctx, tx, actorID, "content.policy.scoped.update", scope, strconv.FormatInt(projectID, 10), map[string]any{"scope": scope, "policy_ref": put.ExpectedPolicyRef, "desired": put.Desired, "execution_storage_mode": put.ExecutionStorageMode, "project_quota_bytes": put.ProjectQuotaBytes}, meta)
+		}
+	}
+	return view, err
 }

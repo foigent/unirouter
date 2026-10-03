@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/config"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/xinsightconnector"
 )
@@ -33,6 +34,40 @@ type XInsightReceiverBindingResolver interface {
 		string,
 		string,
 	) (XInsightReceiverBinding, error)
+}
+
+// Static-peer resolution additionally needs the committed redeem authority in
+// this product transaction, avoiding a second connection or stale outside read.
+type XInsightReceiverBindingTxResolver interface {
+	ResolveXInsightReceiverBindingTx(context.Context, xinsightconnector.PhaseProductTx,
+		string, string, string) (XInsightReceiverBinding, error)
+}
+
+func (executor *XInsightConnectorActivationExecutor) resolveReceiverBindingTx(ctx context.Context,
+	tx xinsightconnector.PhaseProductTx, installationID, deploymentID, digest string) (XInsightReceiverBinding, error) {
+	return resolveXInsightReceiverBindingTx(ctx, tx, executor.binding, installationID, deploymentID, digest)
+}
+
+func resolveXInsightReceiverBindingTx(ctx context.Context, tx xinsightconnector.PhaseProductTx,
+	binding XInsightReceiverBindingResolver, installationID, deploymentID, digest string) (XInsightReceiverBinding, error) {
+	if resolver, ok := binding.(XInsightReceiverBindingTxResolver); ok {
+		return resolver.ResolveXInsightReceiverBindingTx(ctx, tx, installationID, deploymentID, digest)
+	}
+	return binding.ResolveXInsightReceiverBinding(ctx, installationID, deploymentID, digest)
+}
+
+// ResolveStaticXInsightReceiverBindingTx shares the production static peer
+// qualification with the integration fixture. It does not admit a pending or
+// historical originless redeem and performs no network I/O.
+func ResolveStaticXInsightReceiverBindingTx(ctx context.Context, tx xinsightconnector.PhaseProductTx, peer *config.XInsightConnectorStaticPeer, installationID, deploymentID, digest string) (XInsightReceiverBinding, error) {
+	if peer == nil || peer.Validate() != nil || peer.XDeploymentID != deploymentID || peer.NetworkBindingSHA256 != digest {
+		return XInsightReceiverBinding{}, xinsightconnector.ErrConflict
+	}
+	origin, err := xinsightconnector.ReadCompletedRedeemOriginTx(ctx, tx, installationID, deploymentID)
+	if err != nil || origin != peer.XInsightOrigin {
+		return XInsightReceiverBinding{}, xinsightconnector.ErrConflict
+	}
+	return XInsightReceiverBinding{BindingSHA256: digest, AllowedIP: peer.AllowedIP}, nil
 }
 
 // XInsightConnectorActivationExecutor composes the frozen three phases with
@@ -167,8 +202,8 @@ func (executor *XInsightConnectorActivationExecutor) registerReceiverTx(
 	if !ok || request.SourceInstance != input.Installation.SourceInstance {
 		return xinsightconnector.ControlResultV2{}, xinsightconnector.ErrConflict
 	}
-	binding, err := executor.binding.ResolveXInsightReceiverBinding(
-		ctx,
+	binding, err := executor.resolveReceiverBindingTx(
+		ctx, tx,
 		input.Installation.InstallationID,
 		input.Installation.XDeploymentID,
 		request.NetworkBinding.BindingSHA256,
@@ -249,8 +284,8 @@ func (executor *XInsightConnectorActivationExecutor) resumeSourceTx(
 	if !ok {
 		return xinsightconnector.ControlResultV2{}, xinsightconnector.ErrConflict
 	}
-	binding, err := executor.binding.ResolveXInsightReceiverBinding(
-		ctx,
+	binding, err := executor.resolveReceiverBindingTx(
+		ctx, tx,
 		input.Installation.InstallationID,
 		input.Installation.XDeploymentID,
 		request.NetworkBindingSHA256,

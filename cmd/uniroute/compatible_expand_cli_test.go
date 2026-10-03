@@ -36,7 +36,7 @@ func TestCompatibleExpandRejectsStaleOrUnsupportedReceiver(t *testing.T) {
 }
 
 func TestCompatibleExpandDormantManifestRequiresCompleteTargetContract(t *testing.T) {
-	for _, target := range []string{schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.XInsightPolicyExpandHead} {
+	for _, target := range []string{schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.XInsightPolicyExpandHead, schemaauthority.XInsightAdoptionExpandHead} {
 		t.Run(target, func(t *testing.T) {
 			full := runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads())
 			wire, err := full.CanonicalBytes()
@@ -63,20 +63,23 @@ func TestCompatibleExpandDormantManifestRequiresCompleteTargetContract(t *testin
 				})
 			}
 			refs := []modelprofile.ImplementationReference{{Kind: "stream_counter", ID: metering.GatewayCounterEstimateVersionV2}, {Kind: "stream_counter", ID: metering.GatewayCounterEstimateVersionV3}, {Kind: "source_facts", ID: "unirouter.source-fact.v1"}, {Kind: "source_observations", ID: "unirouter.source-observation.v1"}, {Kind: "source_dispatch", ID: "unirouter.source-dispatch-outbox.v1"}}
-			if target == schemaauthority.BudgetSnapshotExpandHead || target == schemaauthority.ContentCaptureExpandHead || target == schemaauthority.ContentReclaimExpandHead || target == schemaauthority.PreDispatchExpandHead || target == schemaauthority.ScopedContentExpandHead || target == schemaauthority.XInsightPolicyExpandHead {
+			if target == schemaauthority.BudgetSnapshotExpandHead || target == schemaauthority.ContentCaptureExpandHead || target == schemaauthority.ContentReclaimExpandHead || target == schemaauthority.PreDispatchExpandHead || target == schemaauthority.ScopedContentExpandHead || (target == schemaauthority.XInsightPolicyExpandHead || target == schemaauthority.XInsightAdoptionExpandHead) {
 				refs = append(refs, runtimegeneration.BudgetCoverageRequirements()...)
 			}
-			if target == schemaauthority.ContentCaptureExpandHead || target == schemaauthority.ContentReclaimExpandHead || target == schemaauthority.PreDispatchExpandHead || target == schemaauthority.ScopedContentExpandHead || target == schemaauthority.XInsightPolicyExpandHead {
+			if target == schemaauthority.ContentCaptureExpandHead || target == schemaauthority.ContentReclaimExpandHead || target == schemaauthority.PreDispatchExpandHead || target == schemaauthority.ScopedContentExpandHead || (target == schemaauthority.XInsightPolicyExpandHead || target == schemaauthority.XInsightAdoptionExpandHead) {
 				refs = append(refs, runtimegeneration.ContentLifecycleRequirements()...)
 			}
-			if target == schemaauthority.PreDispatchExpandHead || target == schemaauthority.ScopedContentExpandHead || target == schemaauthority.XInsightPolicyExpandHead {
+			if target == schemaauthority.PreDispatchExpandHead || target == schemaauthority.ScopedContentExpandHead || (target == schemaauthority.XInsightPolicyExpandHead || target == schemaauthority.XInsightAdoptionExpandHead) {
 				refs = append(refs, modelprofile.ImplementationReference{Kind: "source_observations", ID: "unirouter.source-observation.v2"})
 			}
-			if target == schemaauthority.ScopedContentExpandHead || target == schemaauthority.XInsightPolicyExpandHead {
+			if target == schemaauthority.ScopedContentExpandHead || (target == schemaauthority.XInsightPolicyExpandHead || target == schemaauthority.XInsightAdoptionExpandHead) {
 				refs = append(refs, runtimegeneration.ScopedContentRequirements()...)
 			}
-			if target == schemaauthority.XInsightPolicyExpandHead {
+			if target == schemaauthority.XInsightPolicyExpandHead || target == schemaauthority.XInsightAdoptionExpandHead {
 				refs = append(refs, runtimegeneration.XInsightPolicyRequirements()...)
+			}
+			if target == schemaauthority.XInsightAdoptionExpandHead {
+				refs = append(refs, runtimegeneration.XInsightAdoptionRequirements()...)
 			}
 			for _, missing := range refs {
 				t.Run("missing_"+missing.Kind+"_"+missing.ID, func(t *testing.T) {

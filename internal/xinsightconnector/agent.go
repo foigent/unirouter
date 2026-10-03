@@ -120,6 +120,16 @@ func (agent *Agent) RunOnce(ctx context.Context) (processed bool, err error) {
 		return false, err
 	}
 
+	version, err := ControlSchemaVersion(rawOperation)
+	if err != nil {
+		return true, err
+	}
+	if version == ControlOperationV3Schema {
+		return true, agent.runV3(ctx, rawOperation)
+	}
+	if version != ControlOperationV2Schema {
+		return true, ErrInvalid
+	}
 	operation, err := DecodeControlOperationV2(rawOperation)
 	if err != nil {
 		return true, err
@@ -249,4 +259,33 @@ func decodeAgentCanonicalResult(raw []byte) (ControlResultV2, error) {
 		return ControlResultV2{}, controlV2Error("result_noncanonical", nil)
 	}
 	return result, nil
+}
+
+func (agent *Agent) runV3(ctx context.Context, raw []byte) error {
+	if agent.transactionalJournal == nil || agent.transactionalExecutor == nil {
+		return ErrUnavailable
+	}
+	executor, ok := agent.transactionalExecutor.(PhaseTxExecutorV3)
+	if !ok {
+		return ErrUnavailable
+	}
+	o, e := DecodeControlOperationV3(raw)
+	if e != nil {
+		return e
+	}
+	if o.InstallationID != agent.installationID {
+		return ErrConflict
+	}
+	b, e := o.CanonicalJSON()
+	if e != nil || !bytes.Equal(b, raw) {
+		return ErrInvalid
+	}
+	result, digest, e := agent.transactionalJournal.ExecuteV3(ctx, o, executor)
+	if e != nil {
+		return e
+	}
+	if e = agent.counterpart.Acknowledge(ctx, bytes.Clone(result)); e != nil {
+		return e
+	}
+	return agent.transactionalJournal.MarkAcknowledgedV3(ctx, o, digest)
 }

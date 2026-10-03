@@ -35,6 +35,7 @@ fi
 python3 - <<'PY'
 from pathlib import Path
 import hashlib
+import json
 import re
 import sys
 
@@ -73,11 +74,19 @@ backend_tag = one("Dockerfile", r"^FROM[ \t]+golang:([^ \t\r\n]+)", "Go builder 
 if backend_tag != f"{toolchain}-alpine":
     fail("Dockerfile", f"Go builder {backend_tag} does not match go.mod toolchain go{toolchain}")
 
+frontend_path = "frontend/package.json"
+try:
+    node_version = json.loads(read(frontend_path))["engines"]["node"]
+except (ValueError, KeyError, TypeError):
+    fail(frontend_path, "engines.node must declare an exact Node version")
+if not isinstance(node_version, str) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", node_version):
+    fail(frontend_path, "engines.node must declare an exact Node version")
 frontend_tag = one("frontend/Dockerfile", r"^FROM[ \t]+node:([^ \t\r\n]+)", "Node builder image")
-node_match = re.fullmatch(r"([0-9]+)-alpine", frontend_tag)
+node_match = re.fullmatch(r"([0-9]+\.[0-9]+\.[0-9]+)-alpine([0-9]+\.[0-9]+)@sha256:([0-9a-f]{64})", frontend_tag)
 if not node_match:
-    fail("frontend/Dockerfile", f"Node builder {frontend_tag} must declare a major-version Alpine tag")
-node_major = node_match.group(1)
+    fail("frontend/Dockerfile", f"Node builder {frontend_tag} must declare an exact Node/Alpine tag and SHA-256 digest")
+if node_match.group(1) != node_version:
+    fail("frontend/Dockerfile", f"Node builder {node_match.group(1)} does not match frontend/package.json engines.node {node_version}")
 
 
 def check_workflow(path, action, key, expected):
@@ -88,7 +97,7 @@ def check_workflow(path, action, key, expected):
         fail(path, f"expected one {key} pin per {action} step; found {len(pins)} pins for {len(steps)} steps")
     for pin in pins:
         if pin != expected:
-            authority = "go.mod toolchain" if key == "go-version" else "frontend/Dockerfile Node major"
+            authority = "go.mod toolchain" if key == "go-version" else "frontend/package.json toolchain authority"
             fail(path, f"{key} {pin} does not match {authority} {expected}")
 
 
@@ -98,7 +107,9 @@ for workflow in (
     ".github/workflows/foigent-protocol-conformance.yml",
 ):
     check_workflow(workflow, "setup-go", "go-version", toolchain)
-check_workflow(".github/workflows/ci.yml", "setup-node", "node-version", node_major)
+check_workflow(".github/workflows/ci.yml", "setup-node", "node-version-file", frontend_path)
+if re.search(r"^[ \t]*node-version:", read(".github/workflows/ci.yml"), re.MULTILINE):
+    fail(".github/workflows/ci.yml", "setup-node must use only the frontend/package.json version file")
 
 # The restore helper is a declared customer-package artifact. Keep its
 # documented immutable identity tied to the bytes actually shipped.

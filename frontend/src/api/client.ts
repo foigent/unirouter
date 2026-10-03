@@ -190,7 +190,7 @@ export const api = {
     legacyRequest(`/data-exchange/exchanges/${id}/artifact-delete`, { method: 'POST' }),
   getXInsightFeedConnection: (projectId: number) =>
     legacyRequest(`/data-exchange/xinsight/connections/${projectId}`),
-  installXInsightConnector: (projectId: number, data: { invitation: unknown }) =>
+  installXInsightConnector: (projectId: number, data: { invitation: unknown; receiver_mode?: 'new_install' | 'adopt_existing' }) =>
     legacyRequest(`/data-exchange/xinsight/connections/${projectId}/install`, {
       method: 'POST',
       body: JSON.stringify(data),

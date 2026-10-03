@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Banner, Button, Descriptions, Input, Popconfirm, Select, Spin, Tag, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconRefresh } from '@douyinfe/semi-icons';
+import { canonicalOrganizationRole } from '../navigation';
 import { api } from '../api/client';
+import type { DeliveredMachineCandidate, ReceiverAdoption } from '../api/xInsightMachine';
 import { formatDateTime } from '../utils/formatDate';
 import { loadAllPages } from '../utils/loadAllPages';
 import { StatusTag } from '../ui';
 import { useAuthStore } from '../store/auth';
 import { customerOrganizationDisplayName } from '../utils/customerContext';
 import { projectDisplayName } from '../utils/projectDisplay';
+import XInsightSetup from './XInsightSetup';
 import XInsightSourceConnection from './XInsightSourceConnection';
 import XInsightContentManagement from './XInsightContentManagement';
 import XInsightMachineDelegationManagement from './XInsightMachineDelegationManagement';
@@ -56,6 +59,8 @@ interface FeedConnectionStatus {
   cursor_outside_retention: boolean;
   connector_product_status: 'not_connected' | 'connecting' | 'connected' | 'paused' | 'abnormal';
   connector_installation?: {
+    delivered_machine_candidates?: DeliveredMachineCandidate[];
+    receiver_adoption?: ReceiverAdoption;
     schema_version: 'unirouter.xinsight.connector-installation.v1';
     installation_id: string;
     x_deployment_id: string;
@@ -264,6 +269,8 @@ export default function XInsightLiveConnection({
   expansionRestriction = '',
 }: XInsightLiveConnectionProps) {
   const user = useAuthStore((state) => state.user);
+  const normalOnly = canonicalOrganizationRole(user?.organization_role, user?.role) === 'org_admin';
+  const projectCacheKey = `xinsight.setup-project:${user?.id}:${user?.org_id}`;
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectID, setProjectID] = useState<number>();
   const [status, setStatus] = useState<FeedConnectionStatus | null>(null);
@@ -279,15 +286,16 @@ export default function XInsightLiveConnection({
     try {
       const next = await loadAllPages<Project>((page, pageSize) => api.getProjects(page, pageSize));
       setProjects(next);
-      setProjectID(current => current || next[0]?.id);
+      const saved=Number(sessionStorage.getItem(projectCacheKey));
+ setProjectID(next.find(p=>p.id===saved)?.id || next[0]?.id);
     } catch (error: any) {
       setProjects([]);
       setProjectLoadError(`无法读取可用于 X-Insight 的项目${error?.message ? `：${error.message}` : ''}`);
     }
-  }, []);
+  }, [projectCacheKey]);
 
   const loadStatus = useCallback(async () => {
-    if (!projectID) {
+    if (!projectID || normalOnly) {
       setStatus(null);
       return;
     }
@@ -301,7 +309,7 @@ export default function XInsightLiveConnection({
     } finally {
       setLoading(false);
     }
-  }, [projectID]);
+  }, [projectID, normalOnly]);
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
   useEffect(() => { loadStatus(); }, [loadStatus]);
@@ -363,12 +371,12 @@ export default function XInsightLiveConnection({
         new Date(),
         window.location.hash,
       );
-      await api.installXInsightConnector(projectID, { invitation });
+      await api.installXInsightConnector(projectID, { invitation, ...(status?.connection_status === 'active' ? { receiver_mode: 'adopt_existing' as const } : {}) });
       setInvitationJSON('');
       if (window.location.hash) {
         window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
       }
-      Toast.success('Connector invitation 已登记；agent 仍保持禁用，未发送任何流量');
+      Toast.success(status?.connection_status === 'active' ? '接管申请已登记；原连接、凭据和同步进度保留，等待接管验证完成' : 'Connector invitation 已登记，等待连接验证完成');
       await loadStatus();
     } catch (error: any) {
       Toast.error(`Connector invitation 登记失败${error?.message ? `：${error.message}` : ''}`);
@@ -398,7 +406,7 @@ export default function XInsightLiveConnection({
       return false;
     }
   }, [registrationJSON]);
-  const linkedInvitationFragment = typeof window === 'undefined' ? '' : window.location.hash;
+  const [linkedInvitationFragment] = useState(() => typeof window === 'undefined' ? '' : window.location.hash);
   const parsedInvitation = useMemo(() => {
     try {
       return parseFrozenConnectorInvitation(invitationJSON, new Date(), linkedInvitationFragment);
@@ -412,6 +420,12 @@ export default function XInsightLiveConnection({
     if (projectLoadError) return <Banner type="warning" description={projectLoadError} />;
     return <Spin tip="正在读取可用项目…" />;
   }
+
+  if (normalOnly) return <div style={{display:'grid',gap:18}}>
+    <Select aria-label="实时连接项目" value={projectID} optionList={projectOptions} onChange={value=>setProjectID(Number(value))} style={{width:320}} />
+    {expansionRestriction && <Banner type="warning" description={expansionRestriction} />}
+    {projectID && selectedProject?.org_id && user && <XInsightSetup key={`setup-${user.id}-${selectedProject.org_id}-${projectID}`} actorId={user.id} actorOrgId={user.org_id} orgId={selectedProject.org_id} projectId={projectID} projectName={selectedProject.name} projects={projects} invitationFragment={linkedInvitationFragment} enabled={expansionEnabled} onSaved={()=>{}} />}
+  </div>;
 
   return (
     <div style={{ display: 'grid', gap: 18 }}>
@@ -433,6 +447,8 @@ export default function XInsightLiveConnection({
         closeIcon={null}
       />}
 
+      {projectID && selectedProject?.org_id && <XInsightSetup key={`setup-${user?.id}-${selectedProject.org_id}-${projectID}`} actorId={user?.id} actorOrgId={user?.org_id} orgId={selectedProject.org_id} projectId={projectID} projectName={selectedProject.name} projects={projects} invitationFragment={linkedInvitationFragment} installationId={status?.connector_installation?.installation_id} enabled={connectorIntakeEnabled} onSaved={()=>{setInvitationJSON('');void loadStatus();}} />}
+      <details><summary>维护与技术详情</summary>
       <div className="ur-chip-row">
         <Tag color="green">metadata only</Tag>
         <Tag color="blue">project-bound</Tag>
@@ -472,11 +488,11 @@ export default function XInsightLiveConnection({
             />
           )}
           <Popconfirm
-            title="确认将该 X-Insight installation 绑定到当前 UniRouter 项目。此步只登记 installation 与加密 invitation，不启用 agent、不发送流量。"
+            title={status.connection_status === 'active' ? `接管当前项目的现有连接，保留原凭据 ${status.active_credential?.key_prefix || ''} 和同步进度。` : '确认将 X-Insight 绑定到当前项目，登记邀请与项目范围。'}
             onConfirm={installConnector}
           >
-            <Button type="primary" disabled={!parsedInvitation || !connectorIntakeEnabled || loading}>
-              确认项目范围并登记 invitation
+            <Button type="primary" disabled={!parsedInvitation || !connectorIntakeEnabled || loading || (status.connection_status === 'active' && (!status.active_credential || !!status.staged_credential || status.active_credential.verifier_scheme !== 'receiver_sha256_v1' || !status.active_credential.operation_id))}>
+              {status.connection_status === 'active' ? '接管现有连接' : '确认项目范围并登记 invitation'}
             </Button>
           </Popconfirm>
           {!status.global_enabled || !status.source_instance ? (
@@ -525,6 +541,11 @@ export default function XInsightLiveConnection({
             },
           ]}
         />
+        {status?.connector_installation?.receiver_adoption && <Text>
+          接管现有连接：{status.connector_installation.receiver_adoption.status === 'confirmed'
+            ? '已完成双方接管与原链读取确认；当前健康以上方实时状态为准'
+            : 'UniRouter 已绑定；等待 X-Insight 持久接管及原链读取确认，原连接继续运行'}
+        </Text>}
         <Text type="tertiary">Connector 配对状态只反映自动配对；手工 Feed 的真实连接和凭据状态以上方 Feed 字段为准。</Text>
         {status?.connector_installation?.last_error_code && (
           <div style={{ marginTop: 8 }}>
@@ -711,8 +732,11 @@ export default function XInsightLiveConnection({
         orgId={selectedProject.org_id} projectId={projectID}
         installationId={status.connector_installation.installation_id}
         deploymentId={status.connector_installation.x_deployment_id}
+        deliveredCandidates={status.connector_installation.delivered_machine_candidates}
+        onRefreshCandidates={loadStatus}
         sourceInstance={status.connector_installation.source_instance}
         orgAdmin={['platform_admin', 'org_admin'].includes(user?.organization_role ?? user?.role ?? '')} />}
+      </details>
     </div>
   );
 }

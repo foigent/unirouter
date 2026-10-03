@@ -263,7 +263,7 @@ const orgAdminRoutes = new Set([
 	'/', '/channels', '/model-governance', '/model-readiness', '/risk-control', '/access-review', '/applications', '/organization-members', '/project-management', '/member-lifecycle', '/agent-trust', '/agent-trust-evidence', '/limit-policies', '/guardrail-policies', '/users',
   '/logs', '/provenance-passport', '/usage-analytics', '/notifications', '/status', '/audit-logs',
   '/media-jobs',
-  '/model-prices', '/cost-optimization', '/docs',
+  '/model-prices', '/cost-optimization', '/docs', '/integrations',
 ]);
 const billingRoutes = new Set([
   '/', '/usage-analytics',
@@ -474,6 +474,8 @@ function projectRouteAllowed(path: string, authz: AuthzContext) {
 }
 
 export function isRouteAllowedForAuthz(path: string, authz: AuthzContext) {
+  const pathname = path.split(/[?#]/)[0];
+  if (pathname === '/connectors/x-insight/install') return isOrgAdminRole(authz.organizationRole);
   const route = firstSegmentPath(path);
   if (route === '/login') return true;
   if (route === '/access') return !authz.organizationRole || authz.organizationRole === 'member';
@@ -521,6 +523,7 @@ export function isRouteAllowedForAuthz(path: string, authz: AuthzContext) {
       '/model-prices',
       '/cost-optimization',
       '/org-model-prices',
+      '/integrations',
     ].includes(route);
   }
 

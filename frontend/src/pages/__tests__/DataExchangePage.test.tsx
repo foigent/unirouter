@@ -18,6 +18,8 @@ const createFeedCredential = vi.fn();
 const installConnector = vi.fn();
 const getPayloadPolicy = vi.fn();
 const getContentConnection = vi.fn();
+const setupPeer = vi.fn();
+vi.mock('../../api/xInsightSetup',()=>({xInsightSetupApi:{peer:(...args:unknown[])=>setupPeer(...args),status:vi.fn(),preview:vi.fn(),create:vi.fn(),members:vi.fn()}}));
 
 vi.mock('../../api/contentManagement', async original => ({
   ...await original<typeof import('../../api/contentManagement')>(),
@@ -67,6 +69,26 @@ vi.mock('../../api/client', () => ({
     markDataExchangeArtifactDeleted: vi.fn(),
   },
 }));
+
+describe('organization administrator normal entry',()=>{
+  afterEach(()=>{sessionStorage.clear();vi.clearAllMocks();});
+  it('loads real projects and setup peer without mounting platform maintenance or ledger',async()=>{
+    useAuthStore.setState({user:{id:91,username:'org',role:'org_admin',organization_role:'org_admin',org_id:2,license_access:licensedAccess}});
+    getProjects.mockResolvedValue({data:[{id:11,org_id:2,name:'Project',status:'active'}],total:1});
+    setupPeer.mockResolvedValue({schema_version:'unirouter.xinsight.setup-peer.v1',trust_ready:true,xi_origin:'https://xi.example',xi_setup_url:'https://xi.example/setup'});
+    render(<DataExchangePage/>);
+    await screen.findByLabelText('XI 地址');
+    expect(setupPeer).toHaveBeenCalledWith(2,11);
+    expect(getFeedConnection).not.toHaveBeenCalled();expect(getItems).not.toHaveBeenCalled();expect(getExchanges).not.toHaveBeenCalled();expect(getPayloadPolicy).not.toHaveBeenCalled();expect(getContentConnection).not.toHaveBeenCalled();
+    expect(screen.queryByText('维护与技术详情')).not.toBeInTheDocument();expect(screen.queryByText('刷新历史账本')).not.toBeInTheDocument();
+  });
+  it('keeps expansion disabled without the Data Exchange license',async()=>{
+    useAuthStore.setState({user:{id:92,username:'org',role:'org_admin',org_id:2,license_access:{...licensedAccess,features:{...licensedAccess.features,data_exchange:false}}}});
+    getProjects.mockResolvedValue({data:[{id:11,org_id:2,name:'Project',status:'active'}],total:1});
+    setupPeer.mockResolvedValue({schema_version:'unirouter.xinsight.setup-peer.v1',trust_ready:true,xi_origin:'https://xi.example',xi_setup_url:'https://xi.example/setup'});
+    render(<DataExchangePage/>);expect(await screen.findByLabelText('XI 地址')).toBeDisabled();expect(screen.getByRole('button',{name:'在 XI 登录并确认'})).toBeDisabled();expect(getFeedConnection).not.toHaveBeenCalled();
+  });
+});
 
 describe('DataExchangePage', () => {
   afterEach(async () => {
@@ -345,6 +367,23 @@ describe('DataExchangePage', () => {
 
     await waitFor(() => expect(installConnector).toHaveBeenCalledWith(22, { invitation }));
     expect((input as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('discovers the original active receiver for adoption without manual identity or IP input', async () => {
+    getFeedConnection.mockResolvedValue({ project_id: 22, project_name: 'Development', project_status: 'active',
+      global_configured: true, global_enabled: true, source_instance: 'unirouter-dev-149a8220bf1e',
+      connection_status: 'active', active_credential: { id: 105, key_prefix: 'ur-xf1-0123456789abc',
+        lifecycle: 'active', verifier_scheme: 'receiver_sha256_v1', operation_id: 'b'.repeat(32) },
+      staged_credential: null, pending_item_count: 7, connector_product_status: 'not_connected', connector_installation: null });
+    const invitation=frozenConnectorInvitation(new Date(Date.now()+10*60*1000).toISOString());
+    render(<DataExchangePage />);
+    const input=await screen.findByLabelText('Frozen X-Insight Connector invitation');
+    fireEvent.change(input,{target:{value:JSON.stringify(invitation)}});
+    fireEvent.click(screen.getByRole('button',{name:'接管现有连接'}));
+    fireEvent.click(await screen.findByRole('button',{name:'确定'}));
+    await waitFor(()=>expect(installConnector).toHaveBeenCalledWith(22,{invitation,receiver_mode:'adopt_existing'}));
+    expect(screen.queryByLabelText('原凭据 ID')).toBeNull();
+    expect(screen.queryByLabelText('原凭据 IP')).toBeNull();
   });
 
   it('keeps the manual approval flow in a clearly historical tab', async () => {

@@ -83,6 +83,24 @@ var (
 	_ xInsightConnectorRuntimeAgent = (*xinsightconnector.Agent)(nil)
 )
 
+func (resolver configuredXInsightReceiverBindingResolver) ResolveXInsightReceiverBindingTx(
+	ctx context.Context, tx xinsightconnector.PhaseProductTx,
+	installationID, deploymentID, digest string,
+) (admin.XInsightReceiverBinding, error) {
+	// Preserve the explicitly pinned installation path, without upgrading it.
+	if binding, err := resolver.ResolveXInsightReceiverBinding(ctx, installationID, deploymentID, digest); err == nil {
+		return binding, nil
+	}
+	if resolver.config == nil || resolver.config.XInsightConnectorStaticPeer == nil {
+		return admin.XInsightReceiverBinding{}, xinsightconnector.ErrConflict
+	}
+	peer := resolver.config.XInsightConnectorStaticPeer
+	if peer.XInsightOrigin != resolver.config.XInsightConnectorControlOrigin {
+		return admin.XInsightReceiverBinding{}, xinsightconnector.ErrConflict
+	}
+	return admin.ResolveStaticXInsightReceiverBindingTx(ctx, tx, peer, installationID, deploymentID, digest)
+}
+
 func newXInsightConnectorTransactionalAgentFactory(
 	journal *xinsightconnector.PostgresPhaseJournal,
 	executor xinsightconnector.PhaseTxExecutor,
@@ -179,7 +197,12 @@ func newProductionXInsightConnectorRuntimeSupervisor(
 		},
 		agentFactory: newXInsightConnectorTransactionalAgentFactory(journal, executor),
 	}
-	return newConfiguredXInsightConnectorRuntimeSupervisor(cfg, dependencies, logf)
+	supervisor, err := newConfiguredXInsightConnectorRuntimeSupervisor(cfg, dependencies, logf)
+	if err == nil {
+		supervisor.setupAdvance = adminHandler.AdvanceXInsightSetups
+		supervisor.setupAllowed = adminHandler.CheckXInsightSetupControlAuthority
+	}
+	return supervisor, err
 }
 
 // xInsightConnectorRuntimeSupervisor is deliberately a one-lane, same-process
@@ -188,6 +211,8 @@ func newProductionXInsightConnectorRuntimeSupervisor(
 // active installation. A fresh redeem cannot cross into Poll in the same cycle.
 type xInsightConnectorRuntimeSupervisor struct {
 	enabled            bool
+	setupAdvance       func(context.Context, int) error
+	setupAllowed       func(context.Context, string) error
 	pollInterval       time.Duration
 	installations      xInsightConnectorRuntimeInstallationSource
 	redeemerFactory    xInsightConnectorRuntimeRedeemerFactory
@@ -296,6 +321,12 @@ func (supervisor *xInsightConnectorRuntimeSupervisor) runCycle(ctx context.Conte
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		if supervisor.setupAllowed != nil {
+			if err := supervisor.setupAllowed(ctx, descriptor.InstallationID); err != nil {
+				redeemFailures++
+				continue
+			}
+		}
 		redeemer, err := supervisor.redeemerFactory(ctx, descriptor)
 		if err == nil && redeemer == nil {
 			err = fmt.Errorf("redeem client is unavailable")
@@ -329,6 +360,11 @@ func (supervisor *xInsightConnectorRuntimeSupervisor) runCycle(ctx context.Conte
 			operationFailures, len(runnable),
 		))
 	}
+	if supervisor.setupAdvance != nil {
+		if err := supervisor.setupAdvance(ctx, xInsightConnectorRuntimeDiscoveryLimit); err != nil {
+			cycleErrors = append(cycleErrors, err)
+		}
+	}
 	return errors.Join(cycleErrors...)
 }
 
@@ -336,6 +372,11 @@ func (supervisor *xInsightConnectorRuntimeSupervisor) runInstallation(
 	ctx context.Context,
 	descriptor xinsightconnector.RuntimeInstallationDescriptor,
 ) error {
+	if supervisor.setupAllowed != nil {
+		if err := supervisor.setupAllowed(ctx, descriptor.InstallationID); err != nil {
+			return err
+		}
+	}
 	counterpart, err := supervisor.counterpartFactory(ctx, descriptor)
 	if err != nil {
 		return fmt.Errorf("initialize control counterpart: %w", err)

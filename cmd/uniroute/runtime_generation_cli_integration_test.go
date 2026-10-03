@@ -45,11 +45,11 @@ func invokeGenerationCLI(t *testing.T, cfg *config.Config, action string, input 
 }
 
 func TestRuntimeGenerationCLIExpandedLedgerLifecycleIntegration(t *testing.T) {
-	for _, head := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead} {
+	for _, head := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.XInsightPolicyExpandHead, schemaauthority.XInsightAdoptionExpandHead} {
 		t.Run(head, func(t *testing.T) {
 			pool := testutil.SetupMigratedTestDB(t)
 			dir := testutil.MigrationsDir(t)
-			for _, successor := range []string{schemaauthority.XInsightPolicyExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ObservationExpandHead} {
+			for _, successor := range []string{schemaauthority.XInsightAdoptionExpandHead, schemaauthority.XInsightPolicyExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ObservationExpandHead} {
 				if head < successor {
 					wire, err := os.ReadFile(filepath.Join(dir, successor+".down.sql"))
 					require.NoError(t, err)
@@ -105,29 +105,43 @@ func TestRuntimeGenerationCLIExpandedLedgerLifecycleIntegration(t *testing.T) {
 func TestRuntimeGenerationCLIRejectsUnapprovedLedgersIntegration(t *testing.T) {
 	for _, kind := range []string{"legacy", "gap", "future"} {
 		t.Run(kind, func(t *testing.T) {
-			pool := testutil.SetupMigratedTestDB(t)
+			head := schemaauthority.XInsightAdoptionExpandHead
+			if kind == "legacy" {
+				head = schemaauthority.LegacyCapabilityHead
+			}
+			pool := testutil.SetupMigratedThroughTestDB(t, head)
 			var query string
 			switch kind {
 			case "legacy":
-				query = `DELETE FROM schema_migrations WHERE version IN ('000114_capability_delivery_expand','000115_stream_counter_version','000116_execution_source_facts','000117_execution_observations','000118_source_budget_snapshots','000119_execution_content_capture','000120_unpublished_content_reclamation','000121_gateway_pre_dispatch_terminal')`
+				var actualHead string
+				require.NoError(t, pool.QueryRow(t.Context(), `SELECT max(version) FROM schema_migrations`).Scan(&actualHead))
+				require.Equal(t, schemaauthority.LegacyCapabilityHead, actualHead)
 			case "gap":
 				query = `DELETE FROM schema_migrations WHERE version='000114_capability_delivery_expand'`
 			case "future":
-				query = `INSERT INTO schema_migrations(version) VALUES ('000122_unapproved_future')`
+				query = `INSERT INTO schema_migrations(version) VALUES ('000125_unapproved_future')`
 			}
-			_, err := pool.Exec(t.Context(), query)
-			require.NoError(t, err)
+			if query != "" {
+				_, err := pool.Exec(t.Context(), query)
+				require.NoError(t, err)
+			}
 			cfg := &config.Config{DB_DSN: pool.Config().ConnString(), DBMaxConnections: 3, MigrationsDir: testutil.MigrationsDir(t)}
 			for _, action := range []string{"inspect", "read", "prepare", "complete"} {
-				_, err = invokeGenerationCLI(t, cfg, action, map[string]any{})
+				_, err := invokeGenerationCLI(t, cfg, action, map[string]any{})
 				require.Error(t, err)
 				if kind == "legacy" {
-					require.ErrorContains(t, err, "M123 runtime compatibility bridge")
+					require.ErrorContains(t, err, "runtime generation owner requires the exact expanded schema")
 				}
 			}
-			var count int
-			require.NoError(t, pool.QueryRow(t.Context(), `SELECT count(*) FROM runtime_ingress_changes`).Scan(&count))
-			require.Zero(t, count)
+			if kind == "legacy" {
+				var absent bool
+				require.NoError(t, pool.QueryRow(t.Context(), `SELECT to_regclass('public.runtime_ingress_changes') IS NULL`).Scan(&absent))
+				require.True(t, absent, "legacy rejection must not create the expanded schema")
+			} else {
+				var count int
+				require.NoError(t, pool.QueryRow(t.Context(), `SELECT count(*) FROM runtime_ingress_changes`).Scan(&count))
+				require.Zero(t, count)
+			}
 		})
 	}
 }

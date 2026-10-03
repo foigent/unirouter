@@ -29,6 +29,7 @@ const MaximumManifestBytes = 1 << 20
 const SourceContentLifecycleContract = "unirouter.source-content-lifecycle.v1"
 const ScopedContentPolicyContract = "unirouter.content-policy.v2"
 const XInsightPolicyManagementContract = "unirouter.xinsight.policy-write.v1"
+const XInsightConnectorControlContract = "unirouter.xinsight.connector-control.v3"
 const XInsightSourceEnrollmentContract = "unirouter.xinsight.source-enrollment.v1"
 const MediaRequestExpiryContract = "unirouter.media-request-expiry.v1"
 
@@ -41,6 +42,10 @@ func ScopedContentRequirements() []modelprofile.ImplementationReference {
 		{Kind: "source_content", ID: ScopedContentPolicyContract},
 		{Kind: "media_request", ID: MediaRequestExpiryContract},
 	}
+}
+
+func XInsightAdoptionRequirements() []modelprofile.ImplementationReference {
+	return []modelprofile.ImplementationReference{{Kind: "xinsight_connector", ID: XInsightConnectorControlContract}}
 }
 
 func XInsightPolicyRequirements() []modelprofile.ImplementationReference {
@@ -69,6 +74,7 @@ func CurrentManifest(schemaHeads []string) Manifest {
 		modelprofile.ImplementationReference{Kind: "source_content", ID: ScopedContentPolicyContract},
 		modelprofile.ImplementationReference{Kind: "xinsight_policy", ID: XInsightPolicyManagementContract},
 		modelprofile.ImplementationReference{Kind: "xinsight_source_enrollment", ID: XInsightSourceEnrollmentContract},
+		modelprofile.ImplementationReference{Kind: "xinsight_connector", ID: XInsightConnectorControlContract},
 		modelprofile.ImplementationReference{Kind: "media_request", ID: MediaRequestExpiryContract},
 		modelprofile.ImplementationReference{Kind: "source_budgets", ID: budgetassets.SchemaVersion},
 		modelprofile.ImplementationReference{Kind: "financial_journal", ID: budgetassets.WriterContract},

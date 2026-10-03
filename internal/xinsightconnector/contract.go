@@ -80,6 +80,7 @@ type SourceBinding struct {
 }
 
 type Consent struct {
+	ReceiverMode      string
 	InstallationID    string
 	XDeploymentID     string
 	InvitationSHA256  string
@@ -179,6 +180,12 @@ type OperationOutcome struct {
 }
 
 func normalizeConsent(input Consent, sourceInstance string) (Consent, SourceBinding, string, error) {
+	if input.ReceiverMode == "" {
+		input.ReceiverMode = ReceiverModeNewInstall
+	}
+	if input.ReceiverMode != ReceiverModeNewInstall && input.ReceiverMode != ReceiverModeAdoptExisting {
+		return Consent{}, SourceBinding{}, "", ErrInvalid
+	}
 	input.InvitationSHA256 = strings.TrimSpace(strings.ToLower(input.InvitationSHA256))
 	input.EventScope = strings.TrimSpace(input.EventScope)
 	input.IdempotencyKey = strings.TrimSpace(strings.ToLower(input.IdempotencyKey))

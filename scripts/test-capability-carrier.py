@@ -132,11 +132,11 @@ class CarrierTrustTests(unittest.TestCase):
                     with self.assertRaises(RuntimeError):
                         bridge.verify_bridge(runtime, backend, wire, bridge.HEADS[3])
 
-    def test_m119_through_m123_require_exact_prefix_and_inherited_implementations(self):
+    def test_m119_through_m124_require_exact_prefix_and_inherited_implementations(self):
         required = (bridge.COUNTERS + [bridge.SOURCE_FACTS, bridge.SOURCE_OBSERVATIONS,
                     bridge.SOURCE_DISPATCH, *bridge.BUDGET_REQUIREMENTS, bridge.CONTENT_LIFECYCLE,
                     bridge.PRE_DISPATCH_OBSERVATIONS, *bridge.SCOPED_CONTENT,
-                    *bridge.XINSIGHT_POLICY])
+                    *bridge.XINSIGHT_POLICY, *bridge.XINSIGHT_ADOPTION])
         for end in range(6, len(bridge.HEADS) + 1):
             with self.subTest(end=end):
                 manifest = {"schema_heads": bridge.HEADS[:end], "implementations": required}
@@ -157,10 +157,13 @@ class CarrierTrustTests(unittest.TestCase):
                         (end >= 7 and missing == bridge.CONTENT_LIFECYCLE) or
                         (end >= 9 and missing == bridge.PRE_DISPATCH_OBSERVATIONS) or
                         (end >= 10 and missing in bridge.SCOPED_CONTENT) or
-                        (end >= 11 and missing in bridge.XINSIGHT_POLICY))
+                        (end >= 11 and missing in bridge.XINSIGHT_POLICY) or
+                        (end >= 12 and missing in bridge.XINSIGHT_ADOPTION))
                     if required_for_head:
                         with self.assertRaises(RuntimeError):
                             bridge.verify_bridge(reduced_runtime, backend, reduced_wire, bridge.HEADS[end - 1])
+                    else:
+                        bridge.verify_bridge(reduced_runtime, backend, reduced_wire, bridge.HEADS[end - 1])
                 if end < len(bridge.HEADS):
                     with self.assertRaises(RuntimeError):
                         bridge.verify_bridge(runtime, backend, wire, bridge.HEADS[end])
@@ -168,7 +171,7 @@ class CarrierTrustTests(unittest.TestCase):
     def test_host_check_invokes_only_readonly_owner_action(self):
         implementations = (bridge.COUNTERS + [bridge.SOURCE_FACTS, bridge.SOURCE_OBSERVATIONS,
                            bridge.SOURCE_DISPATCH, *bridge.BUDGET_REQUIREMENTS, bridge.CONTENT_LIFECYCLE,
-                           bridge.PRE_DISPATCH_OBSERVATIONS, *bridge.SCOPED_CONTENT, *bridge.XINSIGHT_POLICY])
+                           bridge.PRE_DISPATCH_OBSERVATIONS, *bridge.SCOPED_CONTENT, *bridge.XINSIGHT_POLICY, *bridge.XINSIGHT_ADOPTION])
         manifest = {"schema_heads": bridge.HEADS, "implementations": implementations}
         wire = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
         sha = "a" * 64

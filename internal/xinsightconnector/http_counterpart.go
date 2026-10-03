@@ -92,7 +92,7 @@ func (counterpart *HTTPControlCounterpart) Redeem(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return counterpart.journal.FinalizeRedeem(ctx, prepared, body)
+	return counterpart.journal.FinalizeRedeemFromOrigin(ctx, prepared, body, counterpart.origin)
 }
 
 func (counterpart *HTTPControlCounterpart) Poll(
@@ -128,6 +128,24 @@ func (counterpart *HTTPControlCounterpart) Poll(
 	if err != nil {
 		return nil, false, err
 	}
+	version, err := ControlSchemaVersion(body)
+	if err != nil {
+		return nil, false, err
+	}
+	if version == ControlOperationV3Schema {
+		operation, err := DecodeControlOperationV3(body)
+		if err != nil {
+			return nil, false, err
+		}
+		canonical, err := operation.CanonicalJSON()
+		if err != nil || operation.InstallationID != counterpart.installation.InstallationID || operation.ProjectID != counterpart.installation.ControlProjectID {
+			return nil, false, ErrConflict
+		}
+		return canonical, true, nil
+	}
+	if version != ControlOperationV2Schema {
+		return nil, false, ErrInvalid
+	}
 	operation, err := DecodeControlOperationV2(body)
 	if err != nil {
 		return nil, false, err
@@ -144,12 +162,63 @@ func (counterpart *HTTPControlCounterpart) Poll(
 	return canonical, true, nil
 }
 
+// ReadSetupStatus is a separate bounded, read-only projection using the
+// original installation control bearer. It does not extend Poll/ACK wire.
+func (counterpart *HTTPControlCounterpart) ReadSetupStatus(ctx context.Context) ([]byte, error) {
+	tx, err := counterpart.journal.db.Begin(ctx)
+	if err != nil {
+		return nil, ErrUnavailable
+	}
+	defer tx.Rollback(ctx)
+	origin, err := ReadCompletedRedeemOriginTx(ctx, tx, counterpart.installation.InstallationID, counterpart.installation.XDeploymentID)
+	if err != nil || origin != counterpart.origin {
+		return nil, ErrConflict
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, ErrUnavailable
+	}
+	bearer, err := counterpart.journal.controlToken(ctx, counterpart.installation.InstallationID)
+	if err != nil {
+		return nil, err
+	}
+	response, err := counterpart.request(ctx, http.MethodGet, "/api/v1/connector-control/installations/"+url.PathEscape(counterpart.installation.InstallationID)+"/setup", nil, bearer)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, connectorHTTPStatusError("setup status", response.StatusCode)
+	}
+	if requireConnectorJSONContentType(response.Header) != nil {
+		return nil, ErrInvalid
+	}
+	return readConnectorHTTPBody(response.Body)
+}
+
 func (counterpart *HTTPControlCounterpart) Acknowledge(
 	ctx context.Context,
 	canonicalResult []byte,
 ) error {
 	if counterpart == nil || counterpart.journal == nil || counterpart.client == nil {
 		return ErrUnavailable
+	}
+	version, err := ControlSchemaVersion(canonicalResult)
+	if err != nil {
+		return err
+	}
+	if version == ControlResultV3Schema {
+		result, err := DecodeControlResultV3(canonicalResult)
+		if err != nil {
+			return err
+		}
+		canonical, err := result.CanonicalJSON()
+		if err != nil || !bytes.Equal(canonical, canonicalResult) || result.InstallationID != counterpart.installation.InstallationID {
+			return ErrConflict
+		}
+		return counterpart.acknowledgeV3(ctx, result.OperationID, canonicalResult)
+	}
+	if version != ControlResultV2Schema {
+		return ErrInvalid
 	}
 	result, err := DecodeControlResultV2(canonicalResult)
 	if err != nil {
@@ -253,4 +322,21 @@ func connectorHTTPStatusError(action string, status int) error {
 	default:
 		return fmt.Errorf("%w: Connector control %s returned unexpected status %d", ErrUnavailable, action, status)
 	}
+}
+
+func (counterpart *HTTPControlCounterpart) acknowledgeV3(ctx context.Context, operationID string, canonical []byte) error {
+	bearer, err := counterpart.journal.controlToken(ctx, counterpart.installation.InstallationID)
+	if err != nil {
+		return err
+	}
+	response, err := counterpart.request(ctx, http.MethodPost, connectorOperationsPath+"/"+url.PathEscape(operationID), canonical, bearer)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return connectorHTTPStatusError("acknowledge", response.StatusCode)
+	}
+	_, err = readConnectorHTTPBody(response.Body)
+	return err
 }

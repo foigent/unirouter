@@ -225,8 +225,9 @@ RECLAIM_HEAD = "000120_unpublished_content_reclamation"
 PRE_DISPATCH_HEAD = "000121_gateway_pre_dispatch_terminal"
 SCOPED_CONTENT_HEAD = "000122_scoped_content_policy"
 XINSIGHT_POLICY_HEAD = "000123_xinsight_policy_delegation"
+XINSIGHT_ADOPTION_HEAD = "000124_xinsight_receiver_adoption"
 CAPABILITY_HEAD = "000114_capability_delivery_expand"
-BRIDGE_HEADS = (COUNTER_HEAD, SOURCE_HEAD, OBSERVATION_HEAD, BUDGET_HEAD, CONTENT_HEAD, RECLAIM_HEAD, PRE_DISPATCH_HEAD, SCOPED_CONTENT_HEAD, XINSIGHT_POLICY_HEAD)
+BRIDGE_HEADS = (COUNTER_HEAD, SOURCE_HEAD, OBSERVATION_HEAD, BUDGET_HEAD, CONTENT_HEAD, RECLAIM_HEAD, PRE_DISPATCH_HEAD, SCOPED_CONTENT_HEAD, XINSIGHT_POLICY_HEAD, XINSIGHT_ADOPTION_HEAD)
 SOURCE_DEFAULTS = {"SOURCE_FACTS_ENABLED": "false", "SOURCE_OBSERVATIONS_ENABLED": "false",
                    "SOURCE_BUDGET_SNAPSHOTS_ENABLED": "false", "SOURCE_CONTENT_ENABLED": "false",
                    "SOURCE_CONTENT_FULL_ENABLED": "false", "SOURCE_CONTENT_STORAGE_ROOT": "",
@@ -302,6 +303,34 @@ def preserve_m121_source_config(expected_env, actual_env, new_env, image_env):
             "M121 bridge permits only the new disabled-media TTL default")
     expected_env[ttl] = "24"
     return tuple(expected_env[key] for key in preserved)
+
+
+def preserve_m123_source_config(expected_env, actual_env, new_env, image_env):
+    """Carry M124 without disabling an already qualified M123 source."""
+    effective_new = environment(image_env)
+    effective_new.update({key: str(value) for key, value in new_env.items() if value is not None})
+    preserved = (*SOURCE_DEFAULTS, "COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE")
+    require(all(key in expected_env and key in new_env and
+                expected_env[key] == actual_env.get(key) == effective_new.get(key)
+                for key in preserved), "M123 source identity or capture configuration differs")
+    require(expected_env["SOURCE_FACTS_ENABLED"] != "true" or
+            expected_env["COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE"] != "",
+            "enabled M123 source requires its original producer identity")
+    return tuple(expected_env[key] for key in preserved)
+
+
+def admit_inert_static_peer_default(expected_env, actual_env, new_env, image_env):
+    """A software carrier may add only the disabled empty peer default."""
+    key = "XINSIGHT_CONNECTOR_STATIC_PEER_JSON"
+    if key in expected_env:
+        return
+    if key not in new_env and key not in actual_env and key not in environment(image_env):
+        return
+    effective_new = environment(image_env)
+    effective_new.update({name: str(value) for name, value in new_env.items() if value is not None})
+    require(key not in actual_env and new_env.get(key) == effective_new.get(key) == "",
+            "schema carrier cannot introduce static peer authority")
+    expected_env[key] = ""
 
 
 def validate_pending_counter_carrier(old_source, new_source, transition, actual_ledger):
@@ -586,8 +615,18 @@ class Rollout:
                     require(environment(containers[role]["Config"]["Env"]).get("SOURCE_BUDGET_SNAPSHOTS_ENABLED", "false") == "false", "budget expansion bridge requires D snapshots disabled")
                     expected["services"][service]["environment"]["SOURCE_BUDGET_SNAPSHOTS_ENABLED"] = "false"
                 if transition and transition["kind"] == "schema_bridge_expand_carrier":
+                    admit_inert_static_peer_default(expected["services"][service]["environment"],
+                                                   environment(containers[role]["Config"]["Env"]),
+                                                   new_config["services"][service]["environment"],
+                                                   images["backend"]["Config"].get("Env"))
                     if transition["from_head"] == PRE_DISPATCH_HEAD:
                         m121_sources.append(preserve_m121_source_config(
+                            expected["services"][service]["environment"],
+                            environment(containers[role]["Config"]["Env"]),
+                            new_config["services"][service]["environment"],
+                            images["backend"]["Config"].get("Env")))
+                    elif transition["from_head"] == XINSIGHT_POLICY_HEAD:
+                        m121_sources.append(preserve_m123_source_config(
                             expected["services"][service]["environment"],
                             environment(containers[role]["Config"]["Env"]),
                             new_config["services"][service]["environment"],

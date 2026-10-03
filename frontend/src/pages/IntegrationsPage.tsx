@@ -66,9 +66,9 @@ export default function IntegrationsPage() {
             <IntegrationCard
               title="X-Insight 执行记录订阅"
               state="available"
-              description="向 X-Insight 提供已完成请求的元数据订阅；不包含原始 Prompt、响应、供应商错误或管理员凭证。"
+              description="提供执行来源事实；可另行明确授权同步可用正文。完成请求摘要通道仅含元数据，不授予模型或管理员权限。"
               boundary="UniRouter 只提供来源事实；X-Insight 独立负责存储、分析与调查。"
-              action="在“X-Insight”页签查看连接状态和维护凭证"
+              action="在“X-Insight”页签确认接入并查看同步状态"
             />
             <IntegrationCard
               title="飞书企业机器人"

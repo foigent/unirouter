@@ -79,17 +79,12 @@ func (h *Handler) GetXInsightSourceConnection(w http.ResponseWriter, r *http.Req
 	var instance, status string
 	var generation int64
 	var profiles []string
-	availableProfiles := []string{}
-	for _, profile := range append(append(sourcefacts.Profiles(), sourcefacts.ObservationProfiles()...), sourcefacts.BudgetProfiles()...) {
-		if h.sourceFactsController.ProfilesEnabled([]string{profile}) {
-			availableProfiles = append(availableProfiles, profile)
-		}
-	}
-	slices.Sort(availableProfiles)
+	availableProfiles := sourcefacts.EnabledProfiles(h.sourceFactsController)
+	defaultProfiles := sourcefacts.DefaultEnrollmentProfiles(availableProfiles)
 	e = h.db.QueryRow(r.Context(), `SELECT source_instance,status,scope_generation,profiles FROM execution_source_connections WHERE org_id=$1 AND project_id=$2`, org, project).Scan(&instance, &status, &generation, &profiles)
 	if errors.Is(e, pgx.ErrNoRows) || e == nil && len(profiles) == 0 {
 		w.Header().Set("Cache-Control", "no-store")
-		writeJSON(w, 200, map[string]any{"status": "not_configured", "source_instance": h.sourceFactsController.SourceInstance(), "capture_enabled": h.sourceFactsController.Enabled(), "available_profiles": availableProfiles})
+		writeJSON(w, 200, map[string]any{"status": "not_configured", "source_instance": h.sourceFactsController.SourceInstance(), "capture_enabled": h.sourceFactsController.Enabled(), "available_profiles": availableProfiles, "default_profiles": defaultProfiles})
 		return
 	}
 	if e != nil {
@@ -120,7 +115,7 @@ func (h *Handler) GetXInsightSourceConnection(w http.ResponseWriter, r *http.Req
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, 200, map[string]any{"schema_version": "unirouter.source-connection.v1", "source_instance": instance, "org_id": strconv.FormatInt(org, 10), "project_id": strconv.FormatInt(project, 10), "status": status, "scope_generation": strconv.FormatInt(generation, 10), "profiles": profiles, "credentials": keys, "bootstrap": "forward_only", "timeline_complete": false, "capture_enabled": h.sourceFactsController.Enabled(), "available_profiles": availableProfiles})
+	writeJSON(w, 200, map[string]any{"schema_version": "unirouter.source-connection.v1", "source_instance": instance, "org_id": strconv.FormatInt(org, 10), "project_id": strconv.FormatInt(project, 10), "status": status, "scope_generation": strconv.FormatInt(generation, 10), "profiles": profiles, "credentials": keys, "bootstrap": "forward_only", "timeline_complete": false, "capture_enabled": h.sourceFactsController.Enabled(), "available_profiles": availableProfiles, "default_profiles": defaultProfiles})
 }
 
 // Local product implementation of accepted plan section 3.1. Merely compiling

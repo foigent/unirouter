@@ -2,11 +2,11 @@ package admin
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -80,11 +80,6 @@ func (input sourceEnrollmentInput) scope() (int64, *time.Time, bool) {
 		if !sourcefacts.ValidateProfiles(input.Profiles) {
 			return 0, nil, false
 		}
-		for _, profile := range input.Profiles {
-			if !slices.Contains(sourcefacts.Profiles(), profile) {
-				return 0, nil, false
-			}
-		}
 	}
 	var expiry *time.Time
 	if input.ExpiresAt != "" {
@@ -134,33 +129,43 @@ func (h *Handler) CreateXInsightSourceEnrollment(w http.ResponseWriter, r *http.
 		writeJSON(w, 403, map[string]any{"error": "Source enrollment denied"})
 		return
 	}
+	id, err := h.createXInsightSourceEnrollmentTx(r.Context(), tx, orgID, input, projectID, expiry, actorID, requestAuditMeta(r, orgID, projectID))
+	if err != nil {
+		writeMachineDomainError(w, err)
+		return
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		writeJSON(w, 503, map[string]any{"error": "Grant create failed"})
+		return
+	}
+	writeJSON(w, 201, map[string]any{"enrollment_id": "xise_" + strconv.FormatInt(id, 10), "revision": "1", "state": "active"})
+}
+
+func (h *Handler) createXInsightSourceEnrollmentTx(ctx context.Context, tx pgx.Tx, orgID int64, input sourceEnrollmentInput, projectID int64, expiry *time.Time, actorID int64, meta auditMeta) (int64, error) {
+	var err error
+
 	var anchor int64
 	var source string
-	err = tx.QueryRow(r.Context(), `SELECT project_id,source_instance FROM xinsight_connector_installations
+	err = tx.QueryRow(ctx, `SELECT project_id,source_instance FROM xinsight_connector_installations
  WHERE installation_id=$1 AND org_id=$2 AND desired_state='active' AND observed_state<>'disconnected' FOR UPDATE`,
 		input.InstallationID, orgID).Scan(&anchor, &source)
 	if err != nil || source != h.sourceFactsController.SourceInstance() {
-		writeJSON(w, 409, map[string]any{"error": "Installation unavailable"})
-		return
+		return 0, &machineDomainError{409, "Installation unavailable"}
 	}
 	var id int64
-	err = tx.QueryRow(r.Context(), `INSERT INTO xinsight_source_enrollments
+	err = tx.QueryRow(ctx, `INSERT INTO xinsight_source_enrollments
  (installation_id,org_id,anchor_project_id,coverage,exact_project_id,profiles,include_content,grantor_user_id,expires_at)
  VALUES($1,$2,$3,$4,NULLIF($5,0),$6,$7,$8,$9) RETURNING id`, input.InstallationID, orgID, anchor,
 		input.Coverage, projectID, input.Profiles, input.IncludeContent, actorID, expiry).Scan(&id)
 	if err == nil {
-		err = insertAuditEntry(r.Context(), tx, "data_exchange.xinsight.source_enrollment.create", "xinsight_source_enrollment",
+		err = insertAuditEntryForActor(ctx, tx, actorID, "data_exchange.xinsight.source_enrollment.create", "xinsight_source_enrollment",
 			strconv.FormatInt(id, 10), map[string]any{"installation_id": input.InstallationID, "coverage": input.Coverage,
-				"project_id": input.ProjectID, "profiles": input.Profiles, "include_content": input.IncludeContent}, requestAuditMeta(r, orgID, projectID))
-	}
-	if err == nil {
-		err = tx.Commit(r.Context())
+				"project_id": input.ProjectID, "profiles": input.Profiles, "include_content": input.IncludeContent}, meta)
 	}
 	if err != nil {
-		writeJSON(w, 503, map[string]any{"error": "Source enrollment create failed"})
-		return
+		return 0, &machineDomainError{503, "Source enrollment create failed"}
 	}
-	writeJSON(w, 201, map[string]any{"enrollment_id": "xise_" + strconv.FormatInt(id, 10), "revision": "1", "state": "active"})
+	return id, nil
 }
 
 func (h *Handler) ListXInsightSourceEnrollments(w http.ResponseWriter, r *http.Request) {
@@ -388,21 +393,7 @@ func (h *Handler) PutXInsightSourceEnrollmentExclusion(w http.ResponseWriter, r 
 		writeJSON(w, 409, map[string]any{"error": "Exclusion changed"})
 		return
 	}
-	if prior == 0 {
-		_, err = tx.Exec(r.Context(), `INSERT INTO xinsight_source_enrollment_exclusions
- (enrollment_id,org_id,project_id,excluded,updated_by) VALUES($1,$2,$3,$4,$5)`,
-			enrollmentID, orgID, projectID, *input.Excluded, actorID)
-	} else {
-		_, err = tx.Exec(r.Context(), `UPDATE xinsight_source_enrollment_exclusions
- SET excluded=$3,revision=revision+1,updated_by=$4,updated_at=NOW()
- WHERE enrollment_id=$1 AND project_id=$2`, enrollmentID, projectID, *input.Excluded, actorID)
-	}
-	if err == nil {
-		err = insertAuditEntry(r.Context(), tx, "data_exchange.xinsight.source_enrollment.exclusion",
-			"xinsight_source_enrollment", strconv.FormatInt(enrollmentID, 10),
-			map[string]any{"project_id": strconv.FormatInt(projectID, 10), "excluded": *input.Excluded,
-				"previous_revision": expected}, requestAuditMeta(r, orgID, projectID))
-	}
+	err = putXInsightSourceEnrollmentExclusionTx(r.Context(), tx, enrollmentID, orgID, projectID, prior, *input.Excluded, actorID, requestAuditMeta(r, orgID, projectID))
 	if err == nil {
 		err = tx.Commit(r.Context())
 	}
@@ -413,4 +404,26 @@ func (h *Handler) PutXInsightSourceEnrollmentExclusion(w http.ResponseWriter, r 
 	writeJSON(w, 200, map[string]any{"enrollment_id": "xise_" + strconv.FormatInt(enrollmentID, 10),
 		"project_id": strconv.FormatInt(projectID, 10), "excluded": *input.Excluded,
 		"revision": strconv.FormatInt(expected+1, 10)})
+}
+
+// Caller owns current grant/principal qualification and revision locks. Both
+// ordinary human edits and saved explicit setup use the same write and audit.
+func putXInsightSourceEnrollmentExclusionTx(ctx context.Context, tx pgx.Tx, enrollmentID, orgID, projectID, prior int64, excluded bool, actorID int64, meta auditMeta) error {
+	var err error
+	if prior == 0 {
+		_, err = tx.Exec(ctx, `INSERT INTO xinsight_source_enrollment_exclusions
+ (enrollment_id,org_id,project_id,excluded,updated_by) VALUES($1,$2,$3,$4,$5)`,
+			enrollmentID, orgID, projectID, excluded, actorID)
+	} else {
+		_, err = tx.Exec(ctx, `UPDATE xinsight_source_enrollment_exclusions
+ SET excluded=$3,revision=revision+1,updated_by=$4,updated_at=NOW()
+ WHERE enrollment_id=$1 AND project_id=$2`, enrollmentID, projectID, excluded, actorID)
+	}
+	if err == nil {
+		err = insertAuditEntryForActor(ctx, tx, actorID, "data_exchange.xinsight.source_enrollment.exclusion",
+			"xinsight_source_enrollment", strconv.FormatInt(enrollmentID, 10),
+			map[string]any{"project_id": strconv.FormatInt(projectID, 10), "excluded": excluded,
+				"previous_revision": prior}, meta)
+	}
+	return err
 }

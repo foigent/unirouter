@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/eventconnector"
+	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/sourcefacts"
 )
 
@@ -118,7 +119,7 @@ func (h *Handler) bindExistingAuthorityTx(ctx context.Context, tx pgx.Tx, orgID,
 	var candidate bindExistingCandidate
 	var grantor, exactProject, anchor int64
 	var coverage, installation string
-	err := h.db.QueryRow(ctx, `SELECT grantor_user_id,COALESCE(exact_project_id,0),coverage,installation_id,anchor_project_id
+	err := tx.QueryRow(ctx, `SELECT grantor_user_id,COALESCE(exact_project_id,0),coverage,installation_id,anchor_project_id
  FROM xinsight_source_enrollments WHERE id=$1 AND org_id=$2`, enrollmentID, orgID).
 		Scan(&grantor, &exactProject, &coverage, &installation, &anchor)
 	if err != nil {
@@ -350,9 +351,35 @@ func (h *Handler) BindExistingXInsightSourceEnrollment(w http.ResponseWriter, r 
 		return
 	}
 	defer tx.Rollback(r.Context())
-	if input.Kind == "facts" && len(profiles) == 0 || input.Kind == "content" && !content {
-		writeJSON(w, 403, map[string]any{"error": "Kind not granted"})
+	org, _ := strconv.ParseInt(candidate.OrgID, 10, 64)
+	project, _ := strconv.ParseInt(candidate.ProjectID, 10, 64)
+	replayed, err := bindExistingXInsightSourceEnrollmentTx(r.Context(), tx, candidate, profiles, content, input, middleware.GetUserIDFromContext(r.Context()), requestAuditMeta(r, org, project))
+	if err == nil {
+		err = tx.Commit(r.Context())
+	}
+	if err != nil {
+		code := 503
+		if errors.Is(err, errCommittingActorAuthorizationChanged) {
+			code = 403
+		}
+		if errors.Is(err, errXInsightFeedConflict) {
+			code = 409
+		}
+		writeJSON(w, code, map[string]any{"error": "Bind-existing qualification failed"})
 		return
+	}
+	result := map[string]any{"enrollment_id": candidate.EnrollmentID, "project_id": candidate.ProjectID, "kind": input.Kind, "credential_id": input.CredentialID, "operation_id": input.OperationID, "status": "bound"}
+	if replayed {
+		result["replayed"] = true
+	}
+	writeJSON(w, 200, result)
+}
+
+// Caller owns original live principal, installation and enrollment authority.
+// This function preserves the original precise CAS, replay, writer and audit.
+func bindExistingXInsightSourceEnrollmentTx(ctx context.Context, tx pgx.Tx, candidate bindExistingCandidate, profiles []string, content bool, input bindExistingInput, actorID int64, meta auditMeta) (bool, error) {
+	if input.Kind == "facts" && len(profiles) == 0 || input.Kind == "content" && !content {
+		return false, errCommittingActorAuthorizationChanged
 	}
 	candidate.Kind = input.Kind
 	requestDigest := bindDigest(struct {
@@ -364,82 +391,43 @@ func (h *Handler) BindExistingXInsightSourceEnrollment(w http.ResponseWriter, r 
 	enrollmentID, _ := sourceEnrollmentPathID(candidate.EnrollmentID)
 	var existingKey int64
 	var priorDigest string
-	err := tx.QueryRow(r.Context(), `SELECT api_key_id,bind_request_sha256 FROM xinsight_source_enrollment_bindings
- WHERE enrollment_id=$1 AND bind_operation_id=$2 FOR UPDATE`, enrollmentID, input.OperationID).Scan(&existingKey, &priorDigest)
+	err := tx.QueryRow(ctx, `SELECT api_key_id,bind_request_sha256 FROM xinsight_source_enrollment_bindings WHERE enrollment_id=$1 AND bind_operation_id=$2 FOR UPDATE`, enrollmentID, input.OperationID).Scan(&existingKey, &priorDigest)
 	if err == nil {
 		if priorDigest != requestDigest || input.CredentialID != strconv.FormatInt(existingKey, 10) {
-			writeJSON(w, 409, map[string]any{"error": "Bind operation body changed"})
-			return
+			return false, errXInsightFeedConflict
 		}
-		if err = tx.Commit(r.Context()); err != nil {
-			writeJSON(w, 503, map[string]any{"error": "Bind receipt unavailable"})
-			return
-		}
-		writeJSON(w, 200, map[string]any{"enrollment_id": candidate.EnrollmentID, "project_id": candidate.ProjectID,
-			"kind": input.Kind, "credential_id": input.CredentialID, "operation_id": input.OperationID, "status": "bound", "replayed": true})
-		return
+		return true, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
-		writeJSON(w, 503, map[string]any{"error": "Bind receipt unavailable"})
-		return
+		return false, err
 	}
-	current, err := readBindExistingCandidateTx(r.Context(), tx, candidate)
+	current, err := readBindExistingCandidateTx(ctx, tx, candidate)
 	if err != nil {
-		if errors.Is(err, errXInsightFeedConflict) {
-			writeJSON(w, 409, map[string]any{"error": "Existing connection unavailable"})
-		} else {
-			writeJSON(w, 503, map[string]any{"error": "Existing connection read failed"})
-		}
-		return
+		return false, err
 	}
-	if current.StateSHA256 != input.ExpectedStateSHA256 {
-		writeJSON(w, 409, map[string]any{"error": "Existing connection changed"})
-		return
+	if current.StateSHA256 != input.ExpectedStateSHA256 || input.Kind == "facts" && !slices.Equal(current.ConnectionProfiles, profiles) {
+		return false, errXInsightFeedConflict
 	}
-	if input.Kind == "facts" && !slices.Equal(current.ConnectionProfiles, profiles) {
-		writeJSON(w, 409, map[string]any{"error": "Fact profiles differ from grant"})
-		return
-	}
-	if len(current.Keys) != 1 || current.Keys[0].CredentialID != input.CredentialID ||
-		current.Keys[0].Status != "feed_active" || current.Keys[0].PolicyLabels != "" ||
-		current.Keys[0].VerifierScheme != auth.ReceiverFeedVerifierScheme ||
-		!exactHostNetworkBinding(current.Keys[0].AllowedIP) ||
-		input.Kind == "facts" && !slices.Equal(current.Keys[0].Profiles, profiles) ||
-		input.Kind == "content" && !slices.Equal(current.Keys[0].Profiles, []string{sourcefacts.ContentProfile}) {
-		writeJSON(w, 409, map[string]any{"error": "Existing credential changed"})
-		return
+	if len(current.Keys) != 1 || current.Keys[0].CredentialID != input.CredentialID || current.Keys[0].Status != "feed_active" || current.Keys[0].PolicyLabels != "" || current.Keys[0].VerifierScheme != auth.ReceiverFeedVerifierScheme || !exactHostNetworkBinding(current.Keys[0].AllowedIP) || input.Kind == "facts" && !slices.Equal(current.Keys[0].Profiles, profiles) || input.Kind == "content" && !slices.Equal(current.Keys[0].Profiles, []string{sourcefacts.ContentProfile}) {
+		return false, errXInsightFeedConflict
 	}
 	keyID, _ := strconv.ParseInt(input.CredentialID, 10, 64)
 	var bound bool
-	err = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM xinsight_source_enrollment_bindings WHERE api_key_id=$1)`, keyID).Scan(&bound)
-	if err != nil || bound {
-		writeJSON(w, 409, map[string]any{"error": "Credential already bound"})
-		return
+	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM xinsight_source_enrollment_bindings WHERE api_key_id=$1)`, keyID).Scan(&bound)
+	if err != nil {
+		return false, err
 	}
-	_, err = tx.Exec(r.Context(), `UPDATE api_keys SET policy_labels=$2 WHERE id=$1 AND status='feed_active'`,
-		keyID, sourcefacts.AutoEnrollmentPolicyLabel)
+	if bound {
+		return false, errXInsightFeedConflict
+	}
+	_, err = tx.Exec(ctx, `UPDATE api_keys SET policy_labels=$2 WHERE id=$1 AND status='feed_active'`, keyID, sourcefacts.AutoEnrollmentPolicyLabel)
 	if err == nil {
-		orgID, _ := strconv.ParseInt(candidate.OrgID, 10, 64)
-		projectID, _ := strconv.ParseInt(candidate.ProjectID, 10, 64)
-		_, err = tx.Exec(r.Context(), `INSERT INTO xinsight_source_enrollment_bindings
- (enrollment_id,org_id,project_id,kind,api_key_id,source_instance,operation_id,bind_operation_id,bind_request_sha256,state)
- VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'active')`, enrollmentID, orgID, projectID, input.Kind,
-			keyID, candidate.SourceInstance, current.Keys[0].RegistrationID, input.OperationID, requestDigest)
+		org, _ := strconv.ParseInt(candidate.OrgID, 10, 64)
+		project, _ := strconv.ParseInt(candidate.ProjectID, 10, 64)
+		_, err = tx.Exec(ctx, `INSERT INTO xinsight_source_enrollment_bindings(enrollment_id,org_id,project_id,kind,api_key_id,source_instance,operation_id,bind_operation_id,bind_request_sha256,state) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'active')`, enrollmentID, org, project, input.Kind, keyID, candidate.SourceInstance, current.Keys[0].RegistrationID, input.OperationID, requestDigest)
 		if err == nil {
-			err = insertAuditEntry(r.Context(), tx, "xinsight.source_enrollment.bind_existing",
-				"xinsight_source_enrollment", strconv.FormatInt(enrollmentID, 10),
-				map[string]any{"installation_id": candidate.InstallationID, "project_id": candidate.ProjectID,
-					"kind": input.Kind, "credential_id": input.CredentialID, "operation_id": input.OperationID,
-					"state_sha256": input.ExpectedStateSHA256}, requestAuditMeta(r, orgID, projectID))
+			err = insertAuditEntryForActor(ctx, tx, actorID, "xinsight.source_enrollment.bind_existing", "xinsight_source_enrollment", strconv.FormatInt(enrollmentID, 10), map[string]any{"installation_id": candidate.InstallationID, "project_id": candidate.ProjectID, "kind": input.Kind, "credential_id": input.CredentialID, "operation_id": input.OperationID, "state_sha256": input.ExpectedStateSHA256}, meta)
 		}
 	}
-	if err == nil {
-		err = tx.Commit(r.Context())
-	}
-	if err != nil {
-		writeJSON(w, 503, map[string]any{"error": "Bind-existing failed"})
-		return
-	}
-	writeJSON(w, 200, map[string]any{"enrollment_id": candidate.EnrollmentID, "project_id": candidate.ProjectID,
-		"kind": input.Kind, "credential_id": input.CredentialID, "operation_id": input.OperationID, "status": "bound"})
+	return false, err
 }

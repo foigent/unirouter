@@ -2,6 +2,7 @@ package admin
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -173,28 +174,38 @@ func (h *Handler) CreateXInsightPolicyDelegation(w http.ResponseWriter, r *http.
 		writeJSON(w, 403, map[string]any{"error": "Delegation denied"})
 		return
 	}
-	var anchor int64
-	err = tx.QueryRow(r.Context(), `SELECT project_id FROM xinsight_connector_installations
- WHERE installation_id=$1 AND org_id=$2 AND desired_state='active' AND observed_state<>'disconnected' FOR UPDATE`, input.InstallationID, orgID).Scan(&anchor)
+	id, err := h.createXInsightPolicyDelegationTx(r.Context(), tx, orgID, input, projectID, userID, expires, actorID, requestAuditMeta(r, orgID, projectID))
 	if err != nil {
-		writeJSON(w, 409, map[string]any{"error": "Installation unavailable"})
+		writeMachineDomainError(w, err)
 		return
 	}
-	var id int64
-	err = tx.QueryRow(r.Context(), `INSERT INTO xinsight_policy_delegations
- (installation_id,org_id,anchor_project_id,target_kind,coverage,exact_project_id,exact_user_id,can_read,can_write,grantor_user_id,expires_at)
- VALUES($1,$2,$3,$4,$5,NULLIF($6,0),NULLIF($7,0),$8,$9,$10,$11) RETURNING id`, input.InstallationID, orgID, anchor, input.TargetKind, input.Coverage, projectID, userID, input.Read, input.Write, actorID, expires).Scan(&id)
-	if err == nil {
-		err = insertAuditEntry(r.Context(), tx, "content.policy.delegation.create", "xinsight_policy_delegation", strconv.FormatInt(id, 10), map[string]any{"installation_id": input.InstallationID, "target_kind": input.TargetKind, "coverage": input.Coverage, "project_id": input.ProjectID, "user_id": input.UserID, "read": input.Read, "write": input.Write}, requestAuditMeta(r, orgID, projectID))
-	}
-	if err == nil {
-		err = tx.Commit(r.Context())
-	}
-	if err != nil {
-		writeJSON(w, 503, map[string]any{"error": "Delegation create failed"})
+	if err = tx.Commit(r.Context()); err != nil {
+		writeJSON(w, 503, map[string]any{"error": "Grant create failed"})
 		return
 	}
 	writeJSON(w, 201, map[string]any{"delegation_id": "xipg_" + strconv.FormatInt(id, 10), "revision": "1", "state": "active"})
+}
+
+func (h *Handler) createXInsightPolicyDelegationTx(ctx context.Context, tx pgx.Tx, orgID int64, input policyDelegationInput, projectID, userID int64, expires *time.Time, actorID int64, meta auditMeta) (int64, error) {
+	var err error
+
+	var anchor int64
+	err = tx.QueryRow(ctx, `SELECT project_id FROM xinsight_connector_installations
+ WHERE installation_id=$1 AND org_id=$2 AND desired_state='active' AND observed_state<>'disconnected' FOR UPDATE`, input.InstallationID, orgID).Scan(&anchor)
+	if err != nil {
+		return 0, &machineDomainError{409, "Installation unavailable"}
+	}
+	var id int64
+	err = tx.QueryRow(ctx, `INSERT INTO xinsight_policy_delegations
+ (installation_id,org_id,anchor_project_id,target_kind,coverage,exact_project_id,exact_user_id,can_read,can_write,grantor_user_id,expires_at)
+ VALUES($1,$2,$3,$4,$5,NULLIF($6,0),NULLIF($7,0),$8,$9,$10,$11) RETURNING id`, input.InstallationID, orgID, anchor, input.TargetKind, input.Coverage, projectID, userID, input.Read, input.Write, actorID, expires).Scan(&id)
+	if err == nil {
+		err = insertAuditEntryForActor(ctx, tx, actorID, "content.policy.delegation.create", "xinsight_policy_delegation", strconv.FormatInt(id, 10), map[string]any{"installation_id": input.InstallationID, "target_kind": input.TargetKind, "coverage": input.Coverage, "project_id": input.ProjectID, "user_id": input.UserID, "read": input.Read, "write": input.Write}, meta)
+	}
+	if err != nil {
+		return 0, &machineDomainError{503, "Delegation create failed"}
+	}
+	return id, nil
 }
 
 func (h *Handler) ListXInsightPolicyDelegations(w http.ResponseWriter, r *http.Request) {

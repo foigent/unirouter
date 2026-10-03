@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -71,10 +72,21 @@ func NewPostgresPhaseJournal(database db.DBQuerier, encryptionRoot []byte) (*Pos
 
 // StageInvitation persists only a purpose-encrypted invitation after proving
 // it matches the local consent digest. Exact replay is a no-op.
-func (journal *PostgresPhaseJournal) StageInvitation(
-	ctx context.Context,
-	installationID, invitationToken string,
-) error {
+func (journal *PostgresPhaseJournal) StageInvitation(ctx context.Context, installationID, invitationToken string) error {
+	tx, err := journal.db.Begin(ctx)
+	if err != nil {
+		return ErrUnavailable
+	}
+	defer tx.Rollback(ctx)
+	if err = journal.StageInvitationTx(ctx, tx, installationID, invitationToken); err != nil {
+		return err
+	}
+	return commitConnectorTx(ctx, tx, "stage invitation")
+}
+
+// StageInvitationTx persists only the original purpose-encrypted token in the
+// caller's installation transaction.
+func (journal *PostgresPhaseJournal) StageInvitationTx(ctx context.Context, tx pgx.Tx, installationID, invitationToken string) error {
 	if journal == nil || journal.db == nil || journal.cipher == nil ||
 		!validExactExternalIdentity(installationID) || !validConnectorSecret(invitationToken) {
 		return ErrInvalid
@@ -83,11 +95,6 @@ func (journal *PostgresPhaseJournal) StageInvitation(
 	if err != nil {
 		return err
 	}
-	tx, err := journal.db.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("%w: begin invitation binding: %v", ErrUnavailable, err)
-	}
-	defer tx.Rollback(ctx)
 	installation, err := readInstallationByIdentity(ctx, tx, installationID, true)
 	if err != nil {
 		return err
@@ -107,22 +114,38 @@ func (journal *PostgresPhaseJournal) StageInvitation(
 		if openErr != nil || !exactSecretEqual(plaintext, invitationToken) {
 			return ErrConflict
 		}
-		return commitConnectorTx(ctx, tx, "invitation replay")
+		return nil
 	}
 	if !errors.Is(err, ErrNotFound) {
 		return err
 	}
+	mode, err := readReceiverMode(ctx, tx, installationID)
+	if err != nil {
+		return err
+	}
+	var bootstrapCanonical []byte
+	var bootstrapSHA any
+	if mode == ReceiverModeAdoptExisting {
+		bootstrap, err := readAdoptionBootstrap(ctx, tx, installation)
+		if err != nil {
+			return err
+		}
+		bootstrapCanonical, err = json.Marshal(bootstrap)
+		if err != nil {
+			return ErrInvalid
+		}
+		bootstrapSHA = hashBytes(bootstrapCanonical)
+	}
 	now := journal.now().UTC().Truncate(time.Microsecond)
-	_, err = tx.Exec(ctx, `
-INSERT INTO xinsight_connector_control_bindings (
-    installation_id,org_id,project_id,invitation_token_enc,created_at,updated_at)
-VALUES ($1,$2,$3,$4,$5,$5)`,
-		installation.InstallationID, installation.OrgID, installation.ProjectID, sealed, now,
-	)
+	if mode == ReceiverModeAdoptExisting {
+		_, err = tx.Exec(ctx, `INSERT INTO xinsight_connector_control_bindings(installation_id,org_id,project_id,invitation_token_enc,created_at,updated_at,receiver_adoption_bootstrap_canonical,receiver_adoption_bootstrap_sha256) VALUES($1,$2,$3,$4,$5,$5,$6,$7)`, installation.InstallationID, installation.OrgID, installation.ProjectID, sealed, now, bootstrapCanonical, bootstrapSHA)
+	} else {
+		_, err = tx.Exec(ctx, `INSERT INTO xinsight_connector_control_bindings(installation_id,org_id,project_id,invitation_token_enc,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$5)`, installation.InstallationID, installation.OrgID, installation.ProjectID, sealed, now)
+	}
 	if err != nil {
 		return classifyWriteError(err)
 	}
-	return commitConnectorTx(ctx, tx, "stage invitation")
+	return nil
 }
 
 // controlToken is package-private so plaintext authority can only be wired by
@@ -749,13 +772,17 @@ func (journal *PostgresPhaseJournal) readAndValidatePredecessorState(
 }
 
 type controlBindingRecord struct {
-	invitationTokenEnc    string
-	controlTokenEnc       string
-	controlTokenSHA256    string
-	controlProjectID      string
-	controlTokenExpiresAt sql.NullTime
-	redeemRequestSHA256   string
-	redeemResultSHA256    string
+	expanded                   bool
+	redeemedOrigin             string
+	invitationTokenEnc         string
+	controlTokenEnc            string
+	controlTokenSHA256         string
+	controlProjectID           string
+	controlTokenExpiresAt      sql.NullTime
+	adoptionBootstrapCanonical []byte
+	adoptionBootstrapSHA256    string
+	redeemRequestSHA256        string
+	redeemResultSHA256         string
 }
 
 func readControlBinding(ctx context.Context, q interface {
@@ -765,16 +792,25 @@ func readControlBinding(ctx context.Context, q interface {
 	if forUpdate {
 		lock = " FOR UPDATE"
 	}
+	var expanded bool
+	if err := q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version='000124_xinsight_receiver_adoption')`).Scan(&expanded); err != nil {
+		return controlBindingRecord{}, ErrUnavailable
+	}
+	bootstrapProjection := "NULL::bytea,''::text,''::text"
+	if expanded {
+		bootstrapProjection = "receiver_adoption_bootstrap_canonical,COALESCE(receiver_adoption_bootstrap_sha256,''),COALESCE(redeemed_origin,'')"
+	}
 	var invitation, control, controlSHA, controlProject sql.NullString
 	var requestSHA, resultSHA sql.NullString
 	var record controlBindingRecord
 	err := q.QueryRow(ctx, `
 SELECT invitation_token_enc,control_token_enc,control_token_sha256,control_project_id,
-       control_token_expires_at,redeem_request_sha256,redeem_result_sha256
+       control_token_expires_at,redeem_request_sha256,redeem_result_sha256,
+ `+bootstrapProjection+`
 FROM xinsight_connector_control_bindings
 WHERE installation_id=$1`+lock, installationID).Scan(
 		&invitation, &control, &controlSHA, &controlProject,
-		&record.controlTokenExpiresAt, &requestSHA, &resultSHA,
+		&record.controlTokenExpiresAt, &requestSHA, &resultSHA, &record.adoptionBootstrapCanonical, &record.adoptionBootstrapSHA256, &record.redeemedOrigin,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return controlBindingRecord{}, ErrNotFound
@@ -788,6 +824,7 @@ WHERE installation_id=$1`+lock, installationID).Scan(
 	record.controlProjectID = controlProject.String
 	record.redeemRequestSHA256 = requestSHA.String
 	record.redeemResultSHA256 = resultSHA.String
+	record.expanded = expanded
 	return record, nil
 }
 

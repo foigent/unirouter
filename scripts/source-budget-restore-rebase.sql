@@ -22,6 +22,20 @@ BEGIN
     LOCK TABLE schema_migrations IN SHARE MODE;
     SELECT array_agg(version::text ORDER BY version) INTO ledger FROM schema_migrations;
     certified_ledger := ledger;
+    IF ledger[cardinality(ledger)]='000124_xinsight_receiver_adoption' THEN
+      IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000123_xinsight_policy_delegation'
+         OR to_regclass('public.xinsight_receiver_adoptions') IS NULL
+         OR NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='xinsight_connector_installations'::regclass AND attname='receiver_mode' AND NOT attisdropped AND attnotnull)
+         OR NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='xinsight_connector_control_bindings'::regclass AND attname='receiver_adoption_bootstrap_canonical' AND NOT attisdropped AND atttypid='bytea'::regtype)
+         OR NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='xinsight_connector_control_bindings'::regclass AND attname='receiver_adoption_bootstrap_sha256' AND NOT attisdropped)
+         OR NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='xinsight_connector_control_bindings'::regclass AND attname='redeemed_origin' AND NOT attisdropped AND atttypid='varchar'::regtype)
+         OR NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='xinsight_connector_control_bindings'::regclass AND tgname='xinsight_redeemed_origin_identity' AND NOT tgisinternal)
+         OR NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='xinsight_connector_installations'::regclass AND attname='setup_consent_canonical' AND NOT attisdropped AND atttypid='bytea'::regtype)
+         OR NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='xinsight_connector_installations'::regclass AND tgname='xinsight_setup_consent_identity' AND NOT tgisinternal) THEN
+        RAISE EXCEPTION 'M124 restore requires exact adoption schema and M123 predecessor'; END IF;
+      ledger := ledger[1:cardinality(ledger)-1];
+      certified_ledger := ledger;
+    END IF;
     IF ledger[cardinality(ledger)]='000123_xinsight_policy_delegation' THEN
       IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000122_scoped_content_policy'
          OR ledger[cardinality(ledger)-2] IS DISTINCT FROM '000121_gateway_pre_dispatch_terminal'
@@ -79,12 +93,13 @@ BEGIN
     IF head IS DISTINCT FROM '000119_execution_content_capture' AND head IS DISTINCT FROM '000120_unpublished_content_reclamation'
        AND head IS DISTINCT FROM '000121_gateway_pre_dispatch_terminal'
        AND head IS DISTINCT FROM '000122_scoped_content_policy'
-       AND head IS DISTINCT FROM '000123_xinsight_policy_delegation' THEN
+       AND head IS DISTINCT FROM '000123_xinsight_policy_delegation'
+       AND head IS DISTINCT FROM '000124_xinsight_receiver_adoption' THEN
       IF present<>0 THEN RAISE EXCEPTION 'restored C tables require the exact M119 ledger'; END IF;
       RETURN;
     END IF;
     IF present<>8 THEN RAISE EXCEPTION 'restored C schema is incomplete'; END IF;
-    IF head IN ('000120_unpublished_content_reclamation','000121_gateway_pre_dispatch_terminal','000122_scoped_content_policy','000123_xinsight_policy_delegation') THEN
+    IF head IN ('000120_unpublished_content_reclamation','000121_gateway_pre_dispatch_terminal','000122_scoped_content_policy','000123_xinsight_policy_delegation','000124_xinsight_receiver_adoption') THEN
       IF NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='execution_content_objects'::regclass AND attname='reclaimed_at' AND NOT attisdropped AND atttypid='timestamptz'::regtype AND NOT attnotnull) THEN
         RAISE EXCEPTION 'restored content reclamation schema mismatch'; END IF;
     ELSIF EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='execution_content_objects'::regclass AND attname='reclaimed_at' AND NOT attisdropped) THEN

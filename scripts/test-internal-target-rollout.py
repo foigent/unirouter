@@ -314,6 +314,31 @@ class SchemaBridgeTransitionTests(unittest.TestCase):
                     rollout.add_disabled_source_defaults(expected,dict(actual,**{key:enabled}))
                 self.assertEqual(previous,expected)
 
+    def test_m123_carrier_keeps_live_capture_and_only_adds_inert_peer_default(self):
+        original = {**rollout.SOURCE_DEFAULTS, "SOURCE_FACTS_ENABLED": "true",
+                    "SOURCE_OBSERVATIONS_ENABLED": "true", "SOURCE_CONTENT_ENABLED": "true",
+                    "SOURCE_CONTENT_FULL_ENABLED": "true", "SOURCE_CONTENT_STORAGE_ROOT": "/data/content",
+                    "SOURCE_CONTENT_STORAGE_IDENTITY": "original-store",
+                    "SOURCE_CONTENT_STORAGE_TOKEN_FILE": "/run/secrets/original.token",
+                    "COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE": "original-source"}
+        future = dict(original, XINSIGHT_CONNECTOR_STATIC_PEER_JSON="")
+        expected = dict(original)
+        before = copy.deepcopy((original, future))
+        rollout.admit_inert_static_peer_default(expected, original, future, [])
+        fingerprint = rollout.preserve_m123_source_config(expected, original, future, [])
+        self.assertEqual("true", expected["SOURCE_CONTENT_FULL_ENABLED"])
+        self.assertEqual(tuple(original[key] for key in (*rollout.SOURCE_DEFAULTS,
+                         "COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE")), fingerprint)
+        self.assertEqual(before, (original, future))
+        with self.assertRaisesRegex(RuntimeError, "introduce static peer authority"):
+            rollout.admit_inert_static_peer_default(dict(original), original,
+                dict(future, XINSIGHT_CONNECTOR_STATIC_PEER_JSON='{"enabled":true}'), [])
+        for key, value in (("SOURCE_FACTS_ENABLED", "false"),
+                           ("SOURCE_CONTENT_STORAGE_IDENTITY", "other-store"),
+                           ("COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE", "other-source")):
+            with self.subTest(key=key), self.assertRaisesRegex(RuntimeError, "M123 source"):
+                rollout.preserve_m123_source_config(expected, original, dict(future, **{key:value}), [])
+
     def test_m121_carrier_preserves_live_source_and_only_adds_disabled_media_ttl(self):
         original = {"SOURCE_FACTS_ENABLED":"true", "SOURCE_OBSERVATIONS_ENABLED":"true",
                     "SOURCE_BUDGET_SNAPSHOTS_ENABLED":"false", "SOURCE_CONTENT_ENABLED":"true",
@@ -495,6 +520,18 @@ class CounterBridgeTests(unittest.TestCase):
             with self.assertRaises(RuntimeError): e.verify_bridge(dict(runtime,support_manifest_digest=rollout.digest(bad)),backend,bad,e.HEADS[2])
         backend["HostConfig"]["PortBindings"]["8080/tcp"][0]["HostIp"]="0.0.0.0"
         with self.assertRaises(RuntimeError): e.verify_bridge(runtime,backend,wire,e.HEADS[2])
+
+    def test_m124_requires_receiver_adoption_and_retains_prior_contracts(self):
+        e=self.expand
+        refs=e.COUNTERS+[e.SOURCE_FACTS,e.SOURCE_OBSERVATIONS,e.SOURCE_DISPATCH]+e.BUDGET_REQUIREMENTS+[e.CONTENT_LIFECYCLE,e.PRE_DISPATCH_OBSERVATIONS]+e.SCOPED_CONTENT+e.XINSIGHT_POLICY+e.XINSIGHT_ADOPTION
+        manifest={"schema_heads":e.HEADS,"implementations":refs}
+        wire=json.dumps(manifest,sort_keys=True,separators=(",",":")).encode()
+        backend={"Image":"sha256:"+"a"*64,"HostConfig":{"PortBindings":{}}}
+        runtime={"artifact_digest":backend["Image"],"supported_schema_heads":e.HEADS,"compatibility_epoch":"unirouter.runtime-compatibility.v1","support_manifest_digest":rollout.digest(wire)}
+        e.verify_bridge(runtime,backend,wire,e.HEADS[-1])
+        for missing in e.XINSIGHT_ADOPTION+e.XINSIGHT_POLICY+e.BUDGET_REQUIREMENTS:
+            bad=json.dumps(dict(manifest,implementations=[r for r in refs if r!=missing]),sort_keys=True,separators=(",",":")).encode()
+            with self.assertRaises(RuntimeError):e.verify_bridge(dict(runtime,support_manifest_digest=rollout.digest(bad)),backend,bad,e.HEADS[-1])
 
     def test_actual_process_inventory_includes_absent_or_expired_actors(self):
         e=self.expand
@@ -1096,8 +1133,8 @@ class ArtifactOwnerReadFixtureTests(unittest.TestCase):
         bridge,current=self.load_carrier().carrier_read_ledgers(migrations)
         self.assertEqual(bridge[0],"bridge")
         self.assertEqual(current[0],"current")
-        self.assertEqual(bridge[1][-1],rollout.SCOPED_CONTENT_HEAD)
-        self.assertEqual(current[1][-1],rollout.XINSIGHT_POLICY_HEAD)
+        self.assertEqual(bridge[1][-1],rollout.XINSIGHT_POLICY_HEAD)
+        self.assertEqual(current[1][-1],rollout.XINSIGHT_ADOPTION_HEAD)
         self.assertEqual(current[1],sorted(p.name[:-7] for p in migrations.glob("*.up.sql")))
         self.assertEqual(bridge[1],current[1][:-1])
 

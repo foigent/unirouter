@@ -267,9 +267,12 @@ function renderWorkspace(overrides: Partial<Parameters<typeof ModelReleaseWorksp
 }
 
 describe('ModelReleaseWorkspace', () => {
-  afterEach(() => {
+  afterEach(async () => {
     vi.restoreAllMocks();
-    Modal.destroyAll();
+    await act(async () => {
+      Modal.destroyAll();
+      Toast.destroyAll();
+    });
   });
 
   beforeEach(() => {

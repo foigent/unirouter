@@ -40,6 +40,34 @@ func ValidateProfiles(profiles []string) bool {
 	return true
 }
 
+// EnabledProfiles uses the same capture qualification as registration and
+// enrollment writes. The result describes availability, never an authorization.
+func EnabledProfiles(controller interface{ ProfilesEnabled([]string) bool }) []string {
+	result := []string{}
+	if controller == nil {
+		return result
+	}
+	for _, profile := range append(append(Profiles(), ObservationProfiles()...), BudgetProfiles()...) {
+		if controller.ProfilesEnabled([]string{profile}) {
+			result = append(result, profile)
+		}
+	}
+	slices.Sort(result)
+	return result
+}
+
+// DefaultEnrollmentProfiles preserves the accepted facts/observations scope.
+// Budget capture availability does not itself consent to budget enrollment.
+func DefaultEnrollmentProfiles(enabled []string) []string {
+	result := []string{}
+	for _, profile := range enabled {
+		if ValidProfile(profile) || slices.Contains(v1ObservationProfiles(), profile) {
+			result = append(result, profile)
+		}
+	}
+	return result
+}
+
 // Validate binds the receiver's non-secret verifier registration to one exact
 // producer, project, and fixed profile set. It never accepts a bearer token.
 func (r Registration) Validate() error {

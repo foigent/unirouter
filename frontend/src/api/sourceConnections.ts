@@ -29,6 +29,7 @@ export interface SourceRegistration {
 export interface SourceConnection {
   capture_enabled?: boolean;
   available_profiles?: SourceProfile[];
+  default_profiles?: SourceProfile[];
   status: 'not_configured' | 'paused' | 'active' | 'revoked';
   source_instance: string;
   scope_generation?: string;

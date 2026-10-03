@@ -14,8 +14,9 @@ const ContentReclaimExpandHead = "000120_unpublished_content_reclamation"
 const PreDispatchExpandHead = "000121_gateway_pre_dispatch_terminal"
 const ScopedContentExpandHead = "000122_scoped_content_policy"
 const XInsightPolicyExpandHead = "000123_xinsight_policy_delegation"
-const LatestSupportedMigration = XInsightPolicyExpandHead
+const XInsightAdoptionExpandHead = "000124_xinsight_receiver_adoption"
+const LatestSupportedMigration = XInsightAdoptionExpandHead
 
 func SupportedSchemaHeads() []string {
-	return []string{LegacyCapabilityHead, CapabilityExpandHead, StreamCounterExpandHead, SourceFactsExpandHead, ObservationExpandHead, BudgetSnapshotExpandHead, ContentCaptureExpandHead, ContentReclaimExpandHead, PreDispatchExpandHead, ScopedContentExpandHead, XInsightPolicyExpandHead}
+	return []string{LegacyCapabilityHead, CapabilityExpandHead, StreamCounterExpandHead, SourceFactsExpandHead, ObservationExpandHead, BudgetSnapshotExpandHead, ContentCaptureExpandHead, ContentReclaimExpandHead, PreDispatchExpandHead, ScopedContentExpandHead, XInsightPolicyExpandHead, XInsightAdoptionExpandHead}
 }

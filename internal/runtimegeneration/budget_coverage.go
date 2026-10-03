@@ -107,6 +107,15 @@ func verifyBudgetCoverageLedger(ledger []string, certifiedHead, certifiedDigest 
 		return fmt.Errorf("budget coverage schema head mismatch")
 	}
 	head := ledger[len(ledger)-1]
+	if head == schemaauthority.XInsightAdoptionExpandHead {
+		if err := schemaauthority.VerifyRuntimeLedger(ledger, ledger); err != nil {
+			return err
+		}
+		if err := CurrentManifest(schemaauthority.SupportedSchemaHeads()).Require(head, XInsightAdoptionRequirements()); err != nil {
+			return err
+		}
+		return verifyBudgetCoverageLedger(ledger[:len(ledger)-1], certifiedHead, certifiedDigest)
+	}
 	if head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead && (head != schemaauthority.ScopedContentExpandHead && head != schemaauthority.XInsightPolicyExpandHead) {
 		return fmt.Errorf("budget coverage schema head mismatch")
 	}

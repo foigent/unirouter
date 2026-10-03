@@ -324,7 +324,7 @@ func runStrictTestArtifactInstallThrough(ctx context.Context, pool *pgxpool.Pool
 	}
 	// This test-only caller owns an isolated database with no serving fleet.
 	// Exercise the same explicit expand owner; ordinary startup cannot apply it.
-	for _, expandVersion := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.XInsightPolicyExpandHead} {
+	for _, expandVersion := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.XInsightPolicyExpandHead, schemaauthority.XInsightAdoptionExpandHead} {
 		if expandVersion > ceiling {
 			break
 		}
@@ -405,7 +405,7 @@ func InstallExactTestArtifact(ctx context.Context, pool *pgxpool.Pool, migration
 // RewindEmptyBudgetSnapshotsForLegacyTest must run before a legacy fixture
 // creates projects or other D history. It uses the guarded product down.
 func RewindEmptyBudgetSnapshotsForLegacyTest(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
-	for _, version := range []string{schemaauthority.XInsightPolicyExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.BudgetSnapshotExpandHead} {
+	for _, version := range []string{schemaauthority.XInsightAdoptionExpandHead, schemaauthority.XInsightPolicyExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.BudgetSnapshotExpandHead} {
 		var applied bool
 		if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, version).Scan(&applied); err != nil {
 			return err
@@ -427,7 +427,7 @@ func RewindEmptyBudgetSnapshotsForLegacyTest(ctx context.Context, pool *pgxpool.
 // RewindEmptySourceFactsForLegacyTest restores the real M115 predecessor using
 // guarded product downs without erasing data-bearing source evidence.
 func RewindEmptySourceFactsForLegacyTest(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
-	for _, version := range []string{schemaauthority.XInsightPolicyExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.SourceFactsExpandHead} {
+	for _, version := range []string{schemaauthority.XInsightAdoptionExpandHead, schemaauthority.XInsightPolicyExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.SourceFactsExpandHead} {
 		var applied bool
 		if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, version).Scan(&applied); err != nil {
 			return err
@@ -450,6 +450,7 @@ func RewindCapabilityPublicationsForLegacyMigrationTest(ctx context.Context, poo
 		migrationID string
 		kind        string
 	}{
+		{migrationID: "000124_xinsight_receiver_adoption", kind: "unused X-Insight receiver adoption expand test artifact"},
 		{migrationID: "000123_xinsight_policy_delegation", kind: "unused X-Insight machine delegation expand test artifact"},
 		{migrationID: "000122_scoped_content_policy", kind: "unused scoped content expand test artifact"},
 		{migrationID: "000121_gateway_pre_dispatch_terminal", kind: "unused pre-dispatch terminal expand test artifact"},

@@ -53,13 +53,13 @@ class ReleasePolicyTests(unittest.TestCase):
         for name in ('package.json', 'package-lock.json'):
             # Match real manifests with a trailing comma after the version.
             self.write('frontend/' + name, json.dumps(
-                {'version': version, 'private': True}, indent=2) + '\n')
+                {'version': version, 'private': True, 'engines': {'node': '24.19.0'}}, indent=2) + '\n')
         self.write('CHANGELOG.md', f'# Changelog\n\n## [{version}] - 2026-09-07\n\nFixture.\n')
 
     def write_toolchains(self):
         self.write('go.mod', 'module example.invalid/fixture\n\ngo 1.25.0\n\ntoolchain go1.25.12\n')
         self.write('Dockerfile', 'FROM golang:1.25.12-alpine AS builder\n')
-        self.write('frontend/Dockerfile', 'FROM node:24-alpine AS builder\n')
+        self.write('frontend/Dockerfile', 'FROM node:24.19.0-alpine3.23@sha256:' + 'a' * 64 + ' AS builder\n')
         self.write('.github/workflows/ci.yml',
                    "      - uses: actions/setup-go@v7\n"
                    "        with:\n"
@@ -69,10 +69,10 @@ class ReleasePolicyTests(unittest.TestCase):
                    "          go-version: '1.25.12'\n"
                    "      - uses: actions/setup-node@v7\n"
                    "        with:\n"
-                   "          node-version: '24'\n"
+                   "          node-version-file: 'frontend/package.json'\n"
                    "      - uses: actions/setup-node@v7\n"
                    "        with:\n"
-                   "          node-version: '24'\n")
+                   "          node-version-file: 'frontend/package.json'\n")
         for name in ('capability-bundle.yml', 'foigent-protocol-conformance.yml'):
             self.write('.github/workflows/' + name,
                    "      - uses: actions/setup-go@v7\n"
@@ -156,9 +156,13 @@ class ReleasePolicyTests(unittest.TestCase):
             ('.github/workflows/ci.yml', "go-version: '1.25.12'", "go-version: '1.25.11'", '.github/workflows/ci.yml'),
             ('.github/workflows/capability-bundle.yml', "go-version: '1.25.12'", "go-version: '1.25.11'", '.github/workflows/capability-bundle.yml'),
             ('.github/workflows/foigent-protocol-conformance.yml', "go-version: '1.25.12'", "go-version: '1.25.11'", '.github/workflows/foigent-protocol-conformance.yml'),
-            ('frontend/Dockerfile', 'node:24-alpine', 'node:22-alpine', 'frontend/Dockerfile'),
-            ('.github/workflows/ci.yml', "node-version: '24'", "node-version: '22'", '.github/workflows/ci.yml'),
-            ('.github/workflows/ci.yml', "node-version: '24'\n", '', '.github/workflows/ci.yml'),
+            ('frontend/Dockerfile', 'node:24.19.0-alpine3.23', 'node:24.18.0-alpine3.23', 'frontend/Dockerfile'),
+            ('frontend/Dockerfile', '@sha256:' + 'a' * 64, '', 'frontend/Dockerfile'),
+            ('frontend/Dockerfile', '@sha256:' + 'a' * 64, '@sha256:invalid', 'frontend/Dockerfile'),
+            ('frontend/package.json', '"node": "24.19.0"', '"node": "24"', 'frontend/package.json'),
+            ('frontend/package.json', '"node": "24.19.0"', '"node": "24.18.0"', 'frontend/Dockerfile'),
+            ('.github/workflows/ci.yml', "node-version-file: 'frontend/package.json'", "node-version-file: 'other/package.json'", '.github/workflows/ci.yml'),
+            ('.github/workflows/ci.yml', "node-version-file: 'frontend/package.json'\n", '', '.github/workflows/ci.yml'),
         )
         for path, old, new, error in cases:
             with self.subTest(path=path, old=old, new=new):
@@ -167,6 +171,14 @@ class ReleasePolicyTests(unittest.TestCase):
                 self.assertIn(old, source)
                 self.write(path, source.replace(old, new, 1))
                 self.check(base='', failed=True, error=error)
+
+    def test_node_version_file_rejects_competing_pin(self):
+        self.check(base='', mode='current')
+        workflow = (self.repo / '.github/workflows/ci.yml').read_text()
+        self.write('.github/workflows/ci.yml', workflow.replace(
+            "node-version-file: 'frontend/package.json'",
+            "node-version-file: 'frontend/package.json'\n          node-version: '22'", 1))
+        self.check(base='', failed=True, error='must use only')
 
     def test_restore_helper_identity_drift_fails_in_current_mode(self):
         self.check(base='', mode='current')

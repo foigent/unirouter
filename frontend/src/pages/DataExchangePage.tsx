@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Descriptions, Form, Popconfirm, Select, SideSheet, Table, Tabs, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconDelete, IconEyeOpened, IconPlus, IconRefresh, IconSendStroked, IconUpload } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { hasLicensedFeature, licenseRestrictionMessage } from '../navigation';
+import { canonicalOrganizationRole, hasLicensedFeature, licenseRestrictionMessage } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { formatDateTime } from '../utils/formatDate';
 import { PageHeader, StatusTag, Surface } from '../ui';
@@ -104,6 +104,14 @@ export function receiptPayload(raw: string) {
 }
 
 export default function DataExchangePage() {
+  const user = useAuthStore(state => state.user);
+  if (canonicalOrganizationRole(user?.organization_role, user?.role) !== 'org_admin') return <HistoricalDataExchangePage />;
+  const licensed = hasLicensedFeature(user?.license_access, 'data_exchange');
+  const restriction = user?.license_access && !licensed ? licenseRestrictionMessage(user.license_access, 'data_exchange') : '';
+  return <div className="ur-page ur-page-wide"><PageHeader eyebrow="系统与集成" title="X-Insight 接入" description="确认两端设置、供数范围和后续管理权限；正文仅按明确授权同步。" /><Surface><XInsightLiveConnection expansionAllowed={licensed} expansionRestriction={restriction} /></Surface></div>;
+}
+
+function HistoricalDataExchangePage() {
   const licenseAccess = useAuthStore((state) => state.user?.license_access);
   const dataExchangeLicensed = hasLicensedFeature(licenseAccess, 'data_exchange');
   const dataExchangeRestriction = licenseAccess && !dataExchangeLicensed

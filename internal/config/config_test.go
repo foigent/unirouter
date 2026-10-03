@@ -1280,6 +1280,11 @@ func TestValidateXInsightConnectorFailsClosed(t *testing.T) {
 		t.Fatalf("valid Connector config: %v", err)
 	}
 
+	empty := base()
+	empty.XInsightConnectorReceiverBindings = nil
+	if err := empty.validateXInsightConnector(); err != nil {
+		t.Fatalf("adoption does not require static new-install bindings: %v", err)
+	}
 	for _, testCase := range []struct {
 		name   string
 		mutate func(*Config)
@@ -1287,7 +1292,6 @@ func TestValidateXInsightConnectorFailsClosed(t *testing.T) {
 		{name: "feed disabled", mutate: func(cfg *Config) { cfg.CompletedExecutionFeedEnabled = false }},
 		{name: "canary writer", mutate: func(cfg *Config) { cfg.RuntimeDeploymentRole = "canary" }},
 		{name: "origin missing", mutate: func(cfg *Config) { cfg.XInsightConnectorControlOrigin = "" }},
-		{name: "binding missing", mutate: func(cfg *Config) { cfg.XInsightConnectorReceiverBindings = nil }},
 		{name: "http origin", mutate: func(cfg *Config) { cfg.XInsightConnectorControlOrigin = "http://control.example.test" }},
 		{name: "origin path", mutate: func(cfg *Config) { cfg.XInsightConnectorControlOrigin = "https://control.example.test/api" }},
 		{name: "origin trailing slash", mutate: func(cfg *Config) { cfg.XInsightConnectorControlOrigin = "https://control.example.test/" }},

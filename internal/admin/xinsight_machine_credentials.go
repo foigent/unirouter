@@ -2,6 +2,7 @@ package admin
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/eventconnector"
+	"github.com/uniroute/unirouter/internal/middleware"
 )
 
 const (
@@ -110,7 +112,7 @@ func (h *Handler) RegisterXInsightMachineCredential(w http.ResponseWriter, r *ht
 	if !ok {
 		return
 	}
-	verifier, err := auth.DecodeReceiverFeedVerifier(input.VerifierSHA256)
+	_, err := auth.DecodeReceiverFeedVerifier(input.VerifierSHA256)
 	if err != nil || !machineCredentialPrefixValid(input.Purpose, input.KeyPrefix) ||
 		!machineOperationIDPattern.MatchString(input.OperationID) || !exactHostNetworkBinding(input.AllowedIP) || input.InstallationID == "" {
 		writeJSON(w, 400, map[string]any{"error": "Invalid credential registration"})
@@ -132,14 +134,57 @@ func (h *Handler) RegisterXInsightMachineCredential(w http.ResponseWriter, r *ht
 		writeJSON(w, 403, map[string]any{"error": "Credential registration denied"})
 		return
 	}
+	outcome, err := h.registerXInsightMachineCredentialTx(r.Context(), tx, orgID, input, middleware.GetUserIDFromContext(r.Context()), requestAuditMeta(r, orgID, 0))
+	if err != nil {
+		writeMachineDomainError(w, err)
+		return
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		writeJSON(w, 503, map[string]any{"error": "Credential registration failed"})
+		return
+	}
+	code := 200
+	if outcome.Created {
+		code = 201
+	}
+	writeJSON(w, code, map[string]any{"key_id": strconv.FormatInt(outcome.KeyID, 10), "key_prefix": outcome.KeyPrefix, "status": outcome.Status, "purpose": outcome.Purpose})
+}
+
+type machineCredentialOutcome struct {
+	KeyID                      int64
+	KeyPrefix, Status, Purpose string
+	Created                    bool
+}
+type machineDomainError struct {
+	status  int
+	message string
+}
+
+func (e *machineDomainError) Error() string { return e.message }
+func writeMachineDomainError(w http.ResponseWriter, err error) {
+	code := 503
+	message := "Credential operation unavailable"
+	var typed *machineDomainError
+	if errors.As(err, &typed) {
+		code = typed.status
+		message = typed.message
+	}
+	writeJSON(w, code, map[string]any{"error": message})
+}
+
+func (h *Handler) registerXInsightMachineCredentialTx(ctx context.Context, tx pgx.Tx, orgID int64, input machineCredentialRegistration, actorID int64, meta auditMeta) (machineCredentialOutcome, error) {
+	verifier, err := auth.DecodeReceiverFeedVerifier(input.VerifierSHA256)
+	if err != nil || !machineCredentialPrefixValid(input.Purpose, input.KeyPrefix) || !machineOperationIDPattern.MatchString(input.OperationID) || !exactHostNetworkBinding(input.AllowedIP) || h.apiKeyHashSecret == "" {
+		return machineCredentialOutcome{}, &machineDomainError{400, "Invalid credential registration"}
+	}
+
 	var anchor int64
 	var deployment, instance, binding, desired, observed string
-	err = tx.QueryRow(r.Context(), `SELECT project_id,x_deployment_id,source_instance,source_binding_sha256,desired_state,observed_state
+	err = tx.QueryRow(ctx, `SELECT project_id,x_deployment_id,source_instance,source_binding_sha256,desired_state,observed_state
  FROM xinsight_connector_installations WHERE installation_id=$1 AND org_id=$2 FOR UPDATE`, input.InstallationID, orgID).Scan(&anchor, &deployment, &instance, &binding, &desired, &observed)
 	if err != nil || desired != "active" || observed == "disconnected" || h.sourceFactsController == nil ||
 		instance != h.sourceFactsController.SourceInstance() || binding == "" {
-		writeJSON(w, 409, map[string]any{"error": "Installation binding unavailable"})
-		return
+		return machineCredentialOutcome{}, &machineDomainError{409, "Installation binding unavailable"}
 	}
 	hash := auth.HashReceiverFeedVerifier(verifier, h.apiKeyHashSecret)
 	canonical, _ := json.Marshal(input)
@@ -147,50 +192,38 @@ func (h *Handler) RegisterXInsightMachineCredential(w http.ResponseWriter, r *ht
 	registrationSHA := "sha256:" + hex.EncodeToString(digest[:])
 	var priorID int64
 	var priorSHA, priorInstallation, priorStatus string
-	err = tx.QueryRow(r.Context(), `SELECT ak.id,COALESCE(mc.registration_sha256,''),COALESCE(mc.installation_id,''),ak.status
+	err = tx.QueryRow(ctx, `SELECT ak.id,COALESCE(mc.registration_sha256,''),COALESCE(mc.installation_id,''),ak.status
  FROM api_keys ak LEFT JOIN xinsight_machine_credentials mc ON mc.api_key_id=ak.id
  WHERE ak.org_id=$1 AND ak.project_id=$2 AND ak.purpose=$3 AND ak.registration_operation_id=$4 FOR UPDATE OF ak`,
 		orgID, anchor, input.Purpose, input.OperationID).Scan(&priorID, &priorSHA, &priorInstallation, &priorStatus)
 	if err == nil {
 		if priorSHA != registrationSHA || priorInstallation != input.InstallationID {
-			writeJSON(w, 409, map[string]any{"error": "registration_operation_changed"})
-			return
+			return machineCredentialOutcome{}, &machineDomainError{409, "registration_operation_changed"}
 		}
-		if err = tx.Commit(r.Context()); err != nil {
-			writeJSON(w, 503, map[string]any{"error": "Credential read failed"})
-			return
-		}
-		writeJSON(w, 200, map[string]any{"key_id": strconv.FormatInt(priorID, 10), "key_prefix": input.KeyPrefix, "status": priorStatus, "purpose": input.Purpose})
-		return
+		return machineCredentialOutcome{KeyID: priorID, KeyPrefix: input.KeyPrefix, Status: priorStatus, Purpose: input.Purpose}, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
-		writeJSON(w, 503, map[string]any{"error": "Credential read failed"})
-		return
+		return machineCredentialOutcome{}, &machineDomainError{503, "Credential read failed"}
 	}
 	var keyID int64
-	err = tx.QueryRow(r.Context(), `INSERT INTO api_keys(org_id,project_id,key_type,name,key_hash,key_prefix,status,
+	err = tx.QueryRow(ctx, `INSERT INTO api_keys(org_id,project_id,key_type,name,key_hash,key_prefix,status,
  rpm_limit,qps_limit,budget_limit,allowed_ips,allowed_models,policy_labels,purpose,verifier_scheme,registration_operation_id)
  VALUES($1,$2,'service','X-Insight machine scope',$3,$4,'feed_staged',60,1,0,$5,'','',$6,$7,$8) RETURNING id`,
 		orgID, anchor, hash, input.KeyPrefix, input.AllowedIP, input.Purpose, auth.ReceiverFeedVerifierScheme, input.OperationID).Scan(&keyID)
 	if err != nil {
-		writeJSON(w, 409, map[string]any{"error": "Credential registration conflict"})
-		return
+		return machineCredentialOutcome{}, &machineDomainError{409, "Credential registration conflict"}
 	}
-	_, err = tx.Exec(r.Context(), `INSERT INTO xinsight_machine_credentials
+	_, err = tx.Exec(ctx, `INSERT INTO xinsight_machine_credentials
  (api_key_id,installation_id,org_id,anchor_project_id,x_deployment_id,source_instance,purpose,registration_sha256)
  VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, keyID, input.InstallationID, orgID, anchor, deployment, instance, input.Purpose, registrationSHA)
 	if err == nil {
-		err = insertAuditEntry(r.Context(), tx, "data_exchange.xinsight.machine_credential.register", "api_key", strconv.FormatInt(keyID, 10),
-			map[string]any{"installation_id": input.InstallationID, "purpose": input.Purpose, "key_prefix": input.KeyPrefix}, requestAuditMeta(r, orgID, anchor))
-	}
-	if err == nil {
-		err = tx.Commit(r.Context())
+		err = insertAuditEntryForActor(ctx, tx, actorID, "data_exchange.xinsight.machine_credential.register", "api_key", strconv.FormatInt(keyID, 10),
+			map[string]any{"installation_id": input.InstallationID, "purpose": input.Purpose, "key_prefix": input.KeyPrefix}, meta)
 	}
 	if err != nil {
-		writeJSON(w, 503, map[string]any{"error": "Credential registration failed"})
-		return
+		return machineCredentialOutcome{}, &machineDomainError{503, "Credential registration failed"}
 	}
-	writeJSON(w, 201, map[string]any{"key_id": strconv.FormatInt(keyID, 10), "key_prefix": input.KeyPrefix, "status": "feed_staged", "purpose": input.Purpose})
+	return machineCredentialOutcome{KeyID: keyID, KeyPrefix: input.KeyPrefix, Status: "feed_staged", Purpose: input.Purpose, Created: true}, nil
 }
 
 func (h *Handler) ListXInsightMachineCredentials(w http.ResponseWriter, r *http.Request) {
@@ -277,25 +310,43 @@ func (h *Handler) changeXInsightMachineCredential(w http.ResponseWriter, r *http
 		writeJSON(w, 403, map[string]any{"error": "Credential change denied"})
 		return
 	}
-	var desired, observed string
-	err = tx.QueryRow(r.Context(), `SELECT desired_state,observed_state FROM xinsight_connector_installations
- WHERE installation_id=$1 AND org_id=$2 AND project_id=$3 FOR UPDATE`, installation, orgID, anchor).Scan(&desired, &observed)
-	if err != nil || activate && (desired != "active" || observed == "disconnected") {
-		writeJSON(w, 409, map[string]any{"error": "Installation unavailable"})
+	next, err := h.changeXInsightMachineCredentialTx(r.Context(), tx, orgID, anchor, keyID, installation, purpose, activate, false, middleware.GetUserIDFromContext(r.Context()), requestAuditMeta(r, orgID, anchor))
+	if err != nil {
+		writeMachineDomainError(w, err)
 		return
 	}
+	if tx.Commit(r.Context()) != nil {
+		writeJSON(w, 503, map[string]any{"error": "Credential change failed"})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"key_id": strconv.FormatInt(keyID, 10), "status": next})
+}
+
+// refuseRotation is used only by the saved-consent controller. It reuses the
+// original activation mutation while refusing to replace a different key.
+func (h *Handler) changeXInsightMachineCredentialTx(ctx context.Context, tx pgx.Tx, orgID, anchor, keyID int64, installation, purpose string, activate, refuseRotation bool, actorID int64, meta auditMeta) (string, error) {
+
+	var desired, observed string
+	err := tx.QueryRow(ctx, `SELECT desired_state,observed_state FROM xinsight_connector_installations
+ WHERE installation_id=$1 AND org_id=$2 AND project_id=$3 FOR UPDATE`, installation, orgID, anchor).Scan(&desired, &observed)
+	if err != nil || activate && (desired != "active" || observed == "disconnected") {
+		return "", &machineDomainError{409, "Installation unavailable"}
+	}
 	var status string
-	rows, err := tx.Query(r.Context(), `SELECT id,status FROM api_keys WHERE org_id=$1 AND project_id=$2 AND purpose=$3
+	var differentActive bool
+	rows, err := tx.Query(ctx, `SELECT id,status FROM api_keys WHERE org_id=$1 AND project_id=$2 AND purpose=$3
  AND (id=$4 OR status='feed_active') ORDER BY id FOR UPDATE`, orgID, anchor, purpose, keyID)
 	if err != nil {
-		writeJSON(w, 503, map[string]any{"error": "Credential lock failed"})
-		return
+		return "", &machineDomainError{503, "Credential lock failed"}
 	}
 	for rows.Next() {
 		var id int64
 		var current string
 		if err = rows.Scan(&id, &current); err != nil {
 			break
+		}
+		if id != keyID && current == "feed_active" {
+			differentActive = true
 		}
 		if id == keyID {
 			status = current
@@ -305,13 +356,20 @@ func (h *Handler) changeXInsightMachineCredential(w http.ResponseWriter, r *http
 		err = rows.Err()
 	}
 	rows.Close()
+	if err == nil && activate && refuseRotation {
+		if differentActive {
+			return "", &machineDomainError{409, "different_active_machine_credential"}
+		}
+		if status == "feed_active" {
+			return status, nil
+		}
+	}
 	if err != nil || status == "" || activate && status != "feed_staged" || !activate && status == "feed_revoked" {
-		writeJSON(w, 409, map[string]any{"error": "Credential state conflict"})
-		return
+		return "", &machineDomainError{409, "Credential state conflict"}
 	}
 	if activate {
 		// Exact purpose rotation replaces the previous active credential atomically.
-		_, err = tx.Exec(r.Context(), `UPDATE api_keys SET status='feed_revoked',updated_at=NOW()
+		_, err = tx.Exec(ctx, `UPDATE api_keys SET status='feed_revoked',updated_at=NOW()
  WHERE org_id=$1 AND project_id=$2 AND purpose=$3 AND status='feed_active'`, orgID, anchor, purpose)
 	}
 	if err == nil {
@@ -319,28 +377,23 @@ func (h *Handler) changeXInsightMachineCredential(w http.ResponseWriter, r *http
 		if activate {
 			next = "feed_active"
 		}
-		_, err = tx.Exec(r.Context(), `UPDATE api_keys SET status=$2,updated_at=NOW() WHERE id=$1`, keyID, next)
+		_, err = tx.Exec(ctx, `UPDATE api_keys SET status=$2,updated_at=NOW() WHERE id=$1`, keyID, next)
 	}
 	if err == nil {
 		action := "data_exchange.xinsight.machine_credential.revoke"
 		if activate {
 			action = "data_exchange.xinsight.machine_credential.activate"
 		}
-		err = insertAuditEntry(r.Context(), tx, action, "api_key", strconv.FormatInt(keyID, 10),
-			map[string]any{"installation_id": installation, "purpose": purpose}, requestAuditMeta(r, orgID, anchor))
-	}
-	if err == nil {
-		err = tx.Commit(r.Context())
+		err = insertAuditEntryForActor(ctx, tx, actorID, action, "api_key", strconv.FormatInt(keyID, 10),
+			map[string]any{"installation_id": installation, "purpose": purpose}, meta)
 	}
 	if err != nil {
-		writeJSON(w, 503, map[string]any{"error": "Credential change failed"})
-		return
+		return "", &machineDomainError{503, "Credential change failed"}
 	}
-	next := "feed_revoked"
 	if activate {
-		next = "feed_active"
+		return "feed_active", nil
 	}
-	writeJSON(w, 200, map[string]any{"key_id": strconv.FormatInt(keyID, 10), "status": next})
+	return "feed_revoked", nil
 }
 
 func (h *Handler) ActivateXInsightMachineCredential(w http.ResponseWriter, r *http.Request) {
