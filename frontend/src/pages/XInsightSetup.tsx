@@ -23,7 +23,36 @@ const issueNames: Record<string, string> = {
   ur_policy_changed: 'UR 策略或其生效条件已变化，后台未覆盖新策略，请重新核对。',
   machine_activation_conflict: '现有机器授权冲突，后台未替换其他有效凭据。',
   xi_status_unavailable: 'XI 当前状态暂不可读，稍后刷新核对；不会重新提交授权。',
+  installation_authority_changed: '接入身份或授权已变化。请由两端管理员核对当前连接及授权，再决定是否重新发起。',
+  redeem_origin_changed: '邀请对应的 XI 地址已变化。请管理员核对受信对端，并从 XI 重新发起邀请。',
+  machine_candidate_changed: '待登记的连接身份已变化。请 UR 组织管理员核对当前机器登记后重新预览。',
+  machine_network_changed: '受信网络条件已变化。请 UR 管理员与运维核对当前允许地址后重新预览。',
+  policy_grant_invalid: '正文管理授权不再有效。请 UR 管理员核对授予范围及权限后重新预览。',
+  policy_grant_authority_changed: '正文管理授权的确认者权限已变化。请有权限的 UR 管理员重新核对授权。',
+  policy_grant_conflict: '当前正文管理授权与本次确认冲突。请 UR 管理员核对已有授权，后台不会覆盖它。',
+  source_qualification_changed: '当前来源已不符合接入条件。请 UR 管理员核对来源身份、范围和授权后重新预览。',
+  source_enrollment_conflict: '当前供数授权与本次确认冲突。请 UR 管理员核对已有供数授权，避免重复接入。',
+  machine_authority_revoked: '连接的机器授权已撤销。请 UR 组织管理员核对撤销原因及是否允许重新接入。',
+  policy_grant_changed: '正文管理授权已被修改。请 UR 管理员核对当前授权，后台不会恢复旧授权。',
+  source_grant_changed: '供数授权已被修改。请 UR 管理员核对当前供数范围，后台不会恢复旧授权。',
+  installation_inactive: 'XI 连接已暂停或停用。请 XI 管理员核对当前连接是否应恢复，再重新读取状态。',
+  invitation_expired: '邀请已到期，尚未完成两端连接确认。请从 XI 重新发起邀请，并核对当前设置。',
+  custody_unavailable: 'XI 正文保管设置暂不可用。请 XI 管理员核对已生效的保管设置后重新读取状态。',
+  current_custody_pending: 'XI 正在应用当前正文保管设置。请稍后重新读取状态，无需重复确认；若持续未完成，请 XI 管理员核对设置。',
+  custody_loading: 'XI 正在加载正文保管设置。请稍后重新读取状态，无需重复确认；若持续未完成，请 XI 管理员核对设置是否已加载。',
+  xi_actor_permission_changed: 'XI 确认者的权限已变化。请有权限的 XI 管理员核对保管设置及接入授权。',
+  custody_revision_changed: 'XI 保管设置在确认后已变化。请 XI 管理员核对当前设置，并从 XI 重新发起邀请。',
+
 };
+function issueDescription(code: string) {
+  return Object.prototype.hasOwnProperty.call(issueNames, code) ? issueNames[code] : '尚无法解释此接入条件。请重新读取或预览；若持续存在，请将接入诊断提供给管理员。';
+}
+function IssueDiagnostic({ code, installation }: { code: string; installation: string }) {
+  if (Object.prototype.hasOwnProperty.call(issueNames, code)) return null;
+  const publicCode = /^[a-z][a-z0-9_]{0,63}$/.test(code) && !/^(xiiv1_|ur_xf1_)/.test(code) ? code : '诊断代码不可用';
+  const locator = /^xci_[A-Za-z0-9_-]{22}$/.test(installation) ? installation : '接入编号不可用';
+  return <details><summary>接入诊断</summary><p>诊断代码：{publicCode}；接入编号：{locator}</p></details>;
+}
 const stateNames: Record<string, string> = { waiting_consent: '等待确认', provisioning: '正在配置', needs_action: '需要处理', waiting_data: '等待首次真实数据', ready: '已开始同步', failed: '接入失败' };
 const kindNames: Record<SetupPolicyAccess['target_kind'], string> = { enterprise_default: '企业正文默认策略', project_policy: '项目正文策略', user_exception: '成员正文例外' };
 
@@ -188,15 +217,16 @@ export default function XInsightSetup({ actorId, actorOrgId, orgId, projectId, p
         </div>;
       })}
       {!enterpriseWrite && <p role="status">{issueNames.enterprise_joint_management_not_granted}</p>}
-      {preview.issues.map(i => <p key={i.code} role={i.requires_choice ? 'alert' : 'status'}>{issueNames[i.code] || '当前范围需要核对，请使用维护详情处理后重新预览。'}</p>)}
+      {preview.issues.map((i, index) => <div key={index}><p role={i.requires_choice ? 'alert' : 'status'}>{issueDescription(i.code)}</p><IssueDiagnostic code={i.code} installation={preview.installation_id} /></div>)}
       <label style={{ display: 'block', marginTop: 12 }}><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />我确认上述两端设置、供数范围及实际策略管理权限。</label>
       <button onClick={() => { void save(); }} disabled={!enabled || !confirmed || !profiles.length || preview.issues.some(i => i.requires_choice) || access.some(a => !a.read && !a.write || a.target_kind === 'user_exception' && a.coverage === 'exact' && !a.user_id)}>确认并连接</button>
     </fieldset>}
     {submitted && !status && <div><p>此请求已保留。先读回；重试使用完全相同的确认，不重复扩大授权。</p><button onClick={()=>{void xInsightSetupApi.status(orgId,submitted.invitation.installation_id).then(receiveStatus).catch(()=>setError('此请求状态尚未确认，可使用同一确认重试。'));}}>读取确认结果</button><button disabled={busy} onClick={()=>{void save();}}>重试同一确认</button></div>}
     {status && <>
+      {status.consent_revision > 0 && <p>本次确认已登记。重新读取只核对状态，不会重复授权。</p>}
       <p role="status">{stateNames[status.state]}。配置{status.configuration_ready ? '已就绪' : '尚未就绪'}。</p>
       {status.xi && <><p>已收到：{status.xi.receiving.profiles_received.map(p => profileNames[p] || '其他类别').join('、') || '尚无实际数据'}。尚未出现的事件类别不会被当作错误。</p><p>正文副本：{status.xi.receiving.content_received_at ? '已有实际副本' : '尚未收到'}；受保护读取：{status.xi.receiving.content_read_verified_at ? '已有服务端授权读取验证' : '尚无实际读取验证'}。</p></>}
-      {status.issues.map(i => <p key={i.code} role={i.requires_choice ? 'alert' : 'status'}>{issueNames[i.code] || '接入条件发生变化，请核对维护详情。'}</p>)}
+      {status.issues.map((i, index) => <div key={index}><p role={i.requires_choice ? 'alert' : 'status'}>{issueDescription(i.code)}</p><IssueDiagnostic code={i.code} installation={status.installation_id} /></div>)}
       <button onClick={() => { if (currentInstallation) void xInsightSetupApi.status(orgId, currentInstallation).then(receiveStatus).catch(() => setError('状态读取失败，请稍后重试。')); }}>重新读取接入状态</button>
     </>}
   </section>;

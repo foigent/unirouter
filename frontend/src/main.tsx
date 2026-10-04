@@ -1,12 +1,13 @@
 import React, { lazy, Suspense } from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { Button, LocaleProvider, Spin } from '@douyinfe/semi-ui'
+import { LocaleProvider, Spin } from '@douyinfe/semi-ui'
 import zh_CN from '@douyinfe/semi-ui/lib/es/locale/source/zh_CN'
 import './index.css'
 import { ROUTER_FUTURE_FLAGS } from './routing/routerFuture'
 import ErrorBoundary from './components/ErrorBoundary'
-import { profileNeedsRefresh, useAuthStore } from './store/auth'
+import { useAuthStore } from './store/auth'
+import ProtectedRoute from './routing/ProtectedRoute'
 import { authzContextForUser, getDefaultPathForAuthz, isPlatformAdminRole, isRouteAllowedForAuthz } from './navigation'
 
 const App = lazy(() => import('./App'))
@@ -51,34 +52,6 @@ function RouteLoading() {
       <span>正在加载页面…</span>
     </div>
   )
-}
-
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
-  const user = useAuthStore((s) => s.user)
-  const profileLoading = useAuthStore((s) => s.profileLoading)
-  const profileError = useAuthStore((s) => s.profileError)
-  const loadProfile = useAuthStore((s) => s.loadProfile)
-  const profileNeedsLoad = profileNeedsRefresh(user)
-
-  React.useEffect(() => {
-    if (isAuthenticated && profileNeedsLoad && !profileLoading && !profileError) {
-      loadProfile().catch(() => {})
-    }
-  }, [isAuthenticated, loadProfile, profileError, profileLoading, profileNeedsLoad])
-
-  if (!isAuthenticated) return <Navigate to="/login" replace />
-  if (profileNeedsLoad && profileError) {
-    return (
-      <div className="ur-route-error" role="alert">
-        <strong>暂时无法验证登录状态</strong>
-        <span>{profileError}</span>
-        <Button theme="solid" onClick={() => loadProfile().catch(() => {})}>重试</Button>
-      </div>
-    )
-  }
-  if (profileNeedsLoad) return <RouteLoading />
-  return <>{children}</>
 }
 
 function RoleRoute({ children }: { children: React.ReactNode }) {

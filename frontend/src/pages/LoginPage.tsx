@@ -5,6 +5,7 @@ import { IconBolt, IconHistogram, IconShield, IconServer } from '@douyinfe/semi-
 import { api } from '../api/client';
 import { useAuthStore } from '../store/auth';
 import { authzContextForUser, getDefaultPathForAuthz } from '../navigation';
+import { clearXInsightLoginContinuation, continueXInsightAfterProfile, hasXInsightLoginContinuation } from '../routing/xInsightLoginContinuation';
 import { PasswordField } from '../ui';
 
 const { Title, Text } = Typography;
@@ -14,6 +15,7 @@ export default function LoginPage() {
   const login = useAuthStore((s) => s.login);
   const loadProfile = useAuthStore((s) => s.loadProfile);
   const [loading, setLoading] = useState(false);
+  const [profileRetry, setProfileRetry] = useState(false);
   const [oidcLoading, setOIDCLoading] = useState(false);
   const [oidcConfig, setOIDCConfig] = useState<{ enabled?: boolean; provider_name?: string } | null>(null);
   const [oidcConfigState, setOIDCConfigState] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -43,20 +45,30 @@ export default function LoginPage() {
     };
   }, [loadOIDCConfig]);
 
+  const reportProfileFailure = () => {
+    const authenticated = useAuthStore.getState().isAuthenticated;
+    setProfileRetry(authenticated);
+    setError(authenticated ? '暂时无法验证登录状态。请重试核对；邀请仅保留在当前页面。' : '登录状态已失效，请重新登录；本次邀请仍保留在当前页面。');
+  };
+
   const handleSubmit = async (values: Record<string, any>) => {
+    if (loading || profileRetry) return;
     setLoading(true);
     setError('');
     try {
       await login(values.username, values.password);
       try {
         const user = await loadProfile();
-        navigate(getDefaultPathForAuthz(authzContextForUser(user)));
+        if (hasXInsightLoginContinuation()) navigate(continueXInsightAfterProfile(user), { replace: true });
+        else navigate(getDefaultPathForAuthz(authzContextForUser(user)));
       } catch {
         // The session exists, but protected routes must not choose an entry
         // point from the intentionally incomplete login response. The root
         // gate renders the existing retry state and redirects only after /me
         // supplies the authoritative role, license and project projection.
-        navigate('/');
+        if (hasXInsightLoginContinuation()) {
+          reportProfileFailure();
+        } else navigate('/');
       }
     } catch (e: any) {
       setError(e.message || '登录失败');
@@ -65,7 +77,18 @@ export default function LoginPage() {
     }
   };
 
+  const retryProfile = async () => {
+    setLoading(true); setError('');
+    try {
+      const user = await loadProfile();
+      navigate(continueXInsightAfterProfile(user), { replace: true });
+    } catch {
+      reportProfileFailure();
+    } finally { setLoading(false); }
+  };
+
   const handleOIDCLogin = () => {
+    clearXInsightLoginContinuation();
     setOIDCLoading(true);
     window.location.assign(api.getOIDCStartURL('/'));
   };
@@ -136,10 +159,12 @@ export default function LoginPage() {
               {error}
             </div>
           )}
+          {hasXInsightLoginContinuation() && <p role="status">登录后将继续本次 X-Insight 邀请，并重新核对当前账号权限。刷新页面或使用企业登录后，请从 XI 重新打开邀请。</p>}
+          {profileRetry && <Button disabled={loading} onClick={() => { void retryProfile(); }}>重试核对登录状态</Button>}
           <Form onSubmit={handleSubmit} className="ur-login-form">
             <Form.Input field="username" label="用户名" placeholder="请输入用户名" autoComplete="username" rules={[{ required: true, message: '请输入用户名' }]} />
             <PasswordField field="password" label="密码" placeholder="请输入密码" autoComplete="current-password" rules={[{ required: true, message: '请输入密码' }]} />
-            <Button htmlType="submit" theme="solid" block loading={loading} className="ur-primary-action">登录</Button>
+            <Button htmlType="submit" theme="solid" block loading={loading} disabled={profileRetry} className="ur-primary-action">登录</Button>
           </Form>
           {oidcConfig?.enabled && (
             <Button

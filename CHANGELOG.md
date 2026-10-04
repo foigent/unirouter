@@ -4,6 +4,11 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.9.1] - 2026-10-05
+
+- 修复 X-Insight 邀请在密码登录、过期会话或登录状态暂不可读时丢失的问题：在当前页面内存保留固定接入目的，重新核对当前账号及项目权限后继续原邀请预览和最终确认；刷新或企业登录后需从 XI 重新打开邀请。
+- 补齐接入状态说明：区分等待 XI 加载正文保管设置与需管理员处理的条件，提供受限诊断编号；保留双端实际状态，重新读取不会重复确认或授权。
+
 ## [1.9.0] - 2026-10-03
 
 - 增加 M124 与显式 Connector control v3：管理员可接管现有活动连接，保留原凭据、出口约束、同步进度和历史；邀请兑换 v2 冻结原接收端公开身份，旧邀请与新安装 v2 合同保持独立。

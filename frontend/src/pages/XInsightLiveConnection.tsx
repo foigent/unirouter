@@ -1,3 +1,4 @@
+import { finishXInsightLoginContinuation } from '../routing/xInsightLoginContinuation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Banner, Button, Descriptions, Input, Popconfirm, Select, Spin, Tag, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconRefresh } from '@douyinfe/semi-icons';
@@ -407,6 +408,7 @@ export default function XInsightLiveConnection({
     }
   }, [registrationJSON]);
   const [linkedInvitationFragment] = useState(() => typeof window === 'undefined' ? '' : window.location.hash);
+  useEffect(() => { finishXInsightLoginContinuation(linkedInvitationFragment); }, [linkedInvitationFragment]);
   const parsedInvitation = useMemo(() => {
     try {
       return parseFrozenConnectorInvitation(invitationJSON, new Date(), linkedInvitationFragment);
