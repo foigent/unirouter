@@ -7,6 +7,8 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
@@ -21,6 +23,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -60,6 +63,29 @@ type jointHTTPFixture struct {
 	publishOnce       *sync.Once
 	bootstrapOnce     *sync.Once
 	registrationOnce  *sync.Once
+}
+
+// This mode is confined to the disposable Linux qualification VM. It changes
+// only the joint test transport and child driver, never UR production routes.
+type installedXIJointInput struct {
+	SchemaVersion        string `json:"schema_version"`
+	Mode                 string `json:"mode"`
+	FutureProject        bool   `json:"future_project"`
+	XIOrigin             string `json:"xi_origin"`
+	XIDeploymentID       string `json:"xi_deployment_id"`
+	URListen             string `json:"ur_listen"`
+	ReceiverAllowedIP    string `json:"receiver_allowed_ip"`
+	TLSCertFile          string `json:"tls_cert_file"`
+	TLSKeyFile           string `json:"tls_key_file"`
+	TLSCAFile            string `json:"tls_ca_file"`
+	XICAFile             string `json:"xi_ca_file"`
+	XIAdminUsername      string `json:"xi_admin_username"`
+	XIAdminPasswordFile  string `json:"xi_admin_password_file"`
+	XIReaderUsername     string `json:"xi_reader_username"`
+	XIReaderPasswordFile string `json:"xi_reader_password_file"`
+	XIReaderSubjectID    string `json:"xi_reader_subject_id"`
+	XIAdminDSNFile       string `json:"xi_admin_dsn_file"`
+	TimeoutSeconds       int    `json:"timeout_seconds"`
 }
 
 type jointContentObject struct {
@@ -463,14 +489,42 @@ func newJointHTTPFixtureWithManaged(t *testing.T, holdContentRegistration bool, 
 	mux.Handle("GET "+sourcefacts.ContentCapabilitiesPath, reads.Capabilities)
 	mux.Handle("GET "+sourcefacts.ContentManifestsPath, reads.Manifests)
 	mux.Handle("GET "+sourcefacts.ContentEndpointTemplate, body)
-	f.server = httptest.NewTLSServer(mux)
+	if managed != nil && managed.installed != nil {
+		installed := managed.installed
+		certificate, err := tls.LoadX509KeyPair(installed.TLSCertFile, installed.TLSKeyFile)
+		require.NoError(t, err)
+		f.server = httptest.NewUnstartedServer(mux)
+		require.NoError(t, f.server.Listener.Close())
+		f.server.Listener, err = net.Listen("tcp4", installed.URListen)
+		require.NoError(t, err, "bind exact qualification receiver address")
+		f.server.TLS = &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{certificate}}
+		f.server.StartTLS()
+	} else {
+		f.server = httptest.NewTLSServer(mux)
+	}
 	if managed != nil {
 		managed.pinOrigin(f.server.URL)
 		if managed.normalSetup {
-			peer := &config.XInsightConnectorStaticPeer{XInsightOrigin: managed.origin, XDeploymentID: "xid_AAAAAAAAAAAAAAAAAAAAAA", UROrigin: f.server.URL, AllowedIP: "127.0.0.1/32", NetworkBindingSHA256: managed.network.BindingSHA256}
+			deployment, allowedIP := "xid_AAAAAAAAAAAAAAAAAAAAAA", "127.0.0.1/32"
+			if managed.installed != nil {
+				deployment, allowedIP = managed.installed.XIDeploymentID, managed.installed.ReceiverAllowedIP
+			}
+			peer := &config.XInsightConnectorStaticPeer{XInsightOrigin: managed.origin, XDeploymentID: deployment, UROrigin: f.server.URL, AllowedIP: allowedIP, NetworkBindingSHA256: managed.network.BindingSHA256}
 			managed.peer = peer
-			require.NoError(t, f.handler.SetXInsightSetupPeer(peer, f.server.Client(), func(ctx context.Context, id, deployment string) ([]byte, error) {
-				counterpart, err := xinsightconnector.NewHTTPControlCounterpart(managed.origin, xinsightconnector.RuntimeInstallationDescriptor{InstallationID: id, XDeploymentID: deployment}, managed.journal, f.server.Client(), 10*time.Second)
+			client := f.server.Client()
+			if managed.installed != nil {
+				ca, readErr := os.ReadFile(managed.installed.XICAFile)
+				require.NoError(t, readErr)
+				roots := x509.NewCertPool()
+				require.True(t, roots.AppendCertsFromPEM(ca), "XI HTTPS CA must contain a certificate")
+				transport := client.Transport.(*http.Transport).Clone()
+				transport.TLSClientConfig = transport.TLSClientConfig.Clone()
+				transport.TLSClientConfig.RootCAs = roots
+				client = &http.Client{Transport: transport, Timeout: 20 * time.Second}
+			}
+			managed.counterpartClient = client
+			require.NoError(t, f.handler.SetXInsightSetupPeer(peer, client, func(ctx context.Context, id, deployment string) ([]byte, error) {
+				counterpart, err := xinsightconnector.NewHTTPControlCounterpart(managed.origin, xinsightconnector.RuntimeInstallationDescriptor{InstallationID: id, XDeploymentID: deployment}, managed.journal, client, 10*time.Second)
 				if err != nil {
 					return nil, err
 				}
@@ -726,23 +780,122 @@ func TestXInsightJointConsumerIntegration(t *testing.T) {
 	require.NoError(t, err, "XI consumer failed: %s", redact(childOutput.String()))
 }
 
+// TestXInsightInstalledXIIntegration is a stdin-only CI entry point. The
+// fixture owns UR's migrated test database; XI is an independently installed
+// process on the same disposable Linux host.
+func TestXInsightInstalledXIIntegration(t *testing.T) {
+	if os.Getenv("XINSIGHT_CI_INSTALLED_JOINT") != "1" {
+		t.Skip("installed XI qualification requires explicit opt-in")
+	}
+	if runtime.GOOS != "linux" || os.Getenv("GITHUB_ACTIONS") != "true" || os.Getenv("XINSIGHT_CI_EPHEMERAL_HOST") != "1" {
+		t.Fatal("installed XI joint qualification requires an explicit disposable Linux CI host")
+	}
+	decoder := json.NewDecoder(io.LimitReader(os.Stdin, 16<<10))
+	decoder.DisallowUnknownFields()
+	var input installedXIJointInput
+	require.NoError(t, decoder.Decode(&input), "decode installed XI qualification input")
+	var trailing any
+	require.ErrorIs(t, decoder.Decode(&trailing), io.EOF, "installed XI qualification accepts exactly one JSON document")
+	require.NoError(t, input.validate())
+	runManagedJointConsumerWithInstalled(t, input.Mode, &input)
+}
+
+func (input installedXIJointInput) validate() error {
+	if input.SchemaVersion != "xinsight.ci-installed-joint.v1" ||
+		input.Mode != "new_install" && input.Mode != "adopt_existing" ||
+		input.FutureProject && input.Mode != "new_install" ||
+		input.TimeoutSeconds < 120 || input.TimeoutSeconds > 1200 {
+		return errors.New("invalid installed joint schema, mode or timeout")
+	}
+	origin, err := url.Parse(input.XIOrigin)
+	if err != nil || origin.Scheme != "https" || origin.Host == "" || origin.User != nil || origin.Path != "" || origin.RawQuery != "" || origin.Fragment != "" {
+		return errors.New("invalid XI HTTPS origin")
+	}
+	if !regexp.MustCompile(`^xid_[A-Za-z0-9_-]{22}$`).MatchString(input.XIDeploymentID) {
+		return errors.New("invalid installed XI deployment identity")
+	}
+	bindIP, port, err := net.SplitHostPort(input.URListen)
+	if err != nil || port == "" {
+		return errors.New("invalid UR listen address")
+	}
+	ip := net.ParseIP(bindIP)
+	if ip == nil || ip.To4() == nil || ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() {
+		return errors.New("UR test receiver must bind an explicit nonbaseline IPv4 address")
+	}
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1024 || portNumber > 65535 {
+		return errors.New("invalid UR test receiver port")
+	}
+	allowedIP, allowedCIDR, err := net.ParseCIDR(input.ReceiverAllowedIP)
+	if err != nil || allowedIP.To4() == nil || allowedCIDR.String() != allowedIP.String()+"/32" ||
+		allowedIP.IsLoopback() || allowedIP.IsPrivate() || allowedIP.IsLinkLocalUnicast() {
+		return errors.New("receiver allowed IP must be an exact nonbaseline IPv4 /32")
+	}
+	// A local route probe gives an independently observed source address for
+	// connections to this receiver; never infer it from the listener address.
+	route, err := net.DialTimeout("udp4", input.URListen, 2*time.Second)
+	if err != nil {
+		return errors.New("receiver route source unavailable")
+	}
+	routeSource := route.LocalAddr().(*net.UDPAddr).IP
+	_ = route.Close()
+	if !routeSource.Equal(allowedIP) {
+		return errors.New("receiver allowed IP differs from observed route source")
+	}
+	for _, path := range []string{input.TLSCertFile, input.TLSKeyFile, input.TLSCAFile, input.XICAFile, input.XIAdminPasswordFile, input.XIReaderPasswordFile, input.XIAdminDSNFile} {
+		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+			return errors.New("installed joint credential and trust paths must be absolute and normalized")
+		}
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			return errors.New("installed joint credential or trust file unavailable")
+		}
+	}
+	if input.XIAdminUsername == "" || input.XIReaderUsername == "" || input.XIAdminUsername == input.XIReaderUsername ||
+		!regexp.MustCompile(`^xs_[a-z0-9]{16,64}$`).MatchString(input.XIReaderSubjectID) {
+		return errors.New("installed joint requires separate admin and reader identities")
+	}
+	cert, err := tls.LoadX509KeyPair(input.TLSCertFile, input.TLSKeyFile)
+	if err != nil || len(cert.Certificate) == 0 {
+		return errors.New("UR test receiver certificate/key unavailable")
+	}
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil || leaf.VerifyHostname(ip.String()) != nil {
+		return errors.New("UR test receiver certificate does not cover the bound IP")
+	}
+	caPEM, err := os.ReadFile(input.TLSCAFile)
+	if err != nil {
+		return errors.New("UR test receiver CA unavailable")
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(caPEM) {
+		return errors.New("UR test receiver CA invalid")
+	}
+	if _, err = leaf.Verify(x509.VerifyOptions{Roots: roots, DNSName: ip.String()}); err != nil {
+		return errors.New("UR test receiver certificate is not signed by configured CA")
+	}
+	return nil
+}
+
 // jointManagedControl is fixture wiring around the real durable control journal,
 // HTTP counterpart and transactional Agent. It never creates a phase/result or
 // feed/machine bearer. Only the synthetic human's accepted installation can be
 // admitted to the fixture's independently fixed receiver network scope.
 type jointManagedControl struct {
-	origin        string
-	journal       *xinsightconnector.PostgresPhaseJournal
-	executor      *XInsightConnectorActivationExecutor
-	mu            sync.RWMutex
-	identities    map[string]string
-	projects      map[int64]bool
-	futureProject bool
-	normalSetup   bool
-	contentReady  func(context.Context) error
-	handler       *Handler
-	peer          *config.XInsightConnectorStaticPeer
-	network       xinsightconnector.ReceiverNetworkBindingV2
+	origin            string
+	installed         *installedXIJointInput
+	journal           *xinsightconnector.PostgresPhaseJournal
+	executor          *XInsightConnectorActivationExecutor
+	mu                sync.RWMutex
+	identities        map[string]string
+	projects          map[int64]bool
+	futureProject     bool
+	normalSetup       bool
+	contentReady      func(context.Context) error
+	handler           *Handler
+	peer              *config.XInsightConnectorStaticPeer
+	counterpartClient *http.Client
+	network           xinsightconnector.ReceiverNetworkBindingV2
 }
 
 func (m *jointManagedControl) pinOrigin(origin string) {
@@ -1181,25 +1334,53 @@ func (f jointHTTPFixture) logManagedEnrollmentState(t *testing.T) {
 }
 
 func runManagedJointConsumer(t *testing.T, mode string) {
+	runManagedJointConsumerWithInstalled(t, mode, nil)
+}
+
+func runManagedJointConsumerWithInstalled(t *testing.T, mode string, installed *installedXIJointInput) {
 	t.Helper()
 	require.Contains(t, []string{"new_install", "adopt_existing"}, mode)
 	checkout, xiDSN := os.Getenv("XI_JOINT_TEST_CHECKOUT"), os.Getenv("XI_JOINT_POSTGRES_DSN")
 	if checkout == "" {
+		if installed != nil {
+			t.Fatal("installed joint requires XI_JOINT_TEST_CHECKOUT")
+		}
 		t.Skip("managed joint test requires XI_JOINT_TEST_CHECKOUT")
 	}
-	require.NotEmpty(t, xiDSN, "managed joint test requires isolated XI_JOINT_POSTGRES_DSN")
+	if installed == nil {
+		require.NotEmpty(t, xiDSN, "managed joint test requires isolated XI_JOINT_POSTGRES_DSN")
+	} else {
+		require.Empty(t, xiDSN, "installed XI driver reads the protected DSN file directly")
+		require.True(t, filepath.IsAbs(checkout) && filepath.Clean(checkout) == checkout, "installed XI checkout must be absolute and normalized")
+	}
 	require.FileExists(t, filepath.Join(checkout, "go.mod"))
-	binary := filepath.Join(t.TempDir(), "xi-joint.test")
-	build := exec.CommandContext(t.Context(), "go", "test", "-tags", "integration", "-c", "-o", binary, "./internal/db")
+	binary := filepath.Join(t.TempDir(), "xi-joint-driver")
+	var build *exec.Cmd
+	if installed == nil {
+		build = exec.CommandContext(t.Context(), "go", "test", "-tags", "integration", "-c", "-o", binary, "./internal/db")
+	} else {
+		build = exec.CommandContext(t.Context(), "go", "build", "-o", binary, "./scripts/ci-fpv15-installed-joint")
+	}
 	build.Dir = checkout
 	output, err := build.CombinedOutput()
 	require.NoError(t, err, "compile XI managed joint helper: %s", string(output))
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
-	require.NoError(t, err)
-	defer listener.Close()
+	var listener net.Listener
+	if installed == nil {
+		listener, err = net.Listen("tcp4", "127.0.0.1:0")
+		require.NoError(t, err)
+		defer listener.Close()
+	}
 	future := os.Getenv("XI_JOINT_FUTURE_PROJECT") == "1"
+	if installed != nil {
+		future = installed.FutureProject
+	}
 	require.False(t, future && mode != "new_install", "minimal future-project variant uses new_install only")
-	managed := &jointManagedControl{origin: "https://" + listener.Addr().String(), futureProject: future, normalSetup: os.Getenv("XI_JOINT_NORMAL_SETUP") == "1"}
+	managed := &jointManagedControl{futureProject: future, normalSetup: os.Getenv("XI_JOINT_NORMAL_SETUP") == "1", installed: installed}
+	if installed == nil {
+		managed.origin = "https://" + listener.Addr().String()
+	} else {
+		managed.origin, managed.normalSetup = installed.XIOrigin, true
+	}
 	f := newJointHTTPFixtureWithManaged(t, true, managed)
 	defer func() {
 		if t.Failed() {
@@ -1229,29 +1410,50 @@ func runManagedJointConsumer(t *testing.T, mode string) {
 			RequestID string `json:"request_id"`
 			SHA256    string `json:"sha256"`
 		} `json:"expected_content"`
+		Installed *installedXIJointInput `json:"installed,omitempty"`
 	}{ManagedMode: mode, FutureProject: future, NormalSetup: managed.normalSetup, XIControlOrigin: managed.origin, ReceiverNetworkBinding: managed.network,
-		ReceiverAllowedIP: "127.0.0.1/32", Profiles: sourceEnrollmentEightProfiles(),
+		ReceiverAllowedIP: "127.0.0.1/32", Profiles: sourceEnrollmentEightProfiles(), Installed: installed,
 		BaseURL: f.server.URL, TLSCAPEM: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: f.server.Certificate().Raw})),
 		SourceInstance: f.source.SourceInstance(), OrgID: stringInt64(f.orgID), ProjectID: stringInt64(f.projectID),
 		ForeignProjectID: stringInt64(f.foreignProjectID), PostgresDSN: xiDSN}
+	if installed != nil {
+		input.ReceiverAllowedIP = installed.ReceiverAllowedIP
+	}
 	input.ExpectedContent.RequestID, input.ExpectedContent.SHA256 = requestID, hex.EncodeToString(digest[:])
 	wire, err := json.Marshal(input)
 	require.NoError(t, err)
-	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	timeout := 2 * time.Minute
+	if installed != nil {
+		timeout = time.Duration(installed.TimeoutSeconds) * time.Second
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), timeout)
 	defer cancel()
-	child := exec.CommandContext(ctx, binary, "-test.run=^TestXIJointURConsumer$", "-test.v")
-	child.Dir = filepath.Join(checkout, "internal", "db")
-	child.Env = append(os.Environ(), "XINSIGHT_JOINT_UR_CONSUMER=1", "XINSIGHT_POSTGRES_DSN="+xiDSN)
+	var child *exec.Cmd
+	if installed == nil {
+		child = exec.CommandContext(ctx, binary, "-test.run=^TestXIJointURConsumer$", "-test.v")
+		child.Dir = filepath.Join(checkout, "internal", "db")
+		child.Env = append(os.Environ(), "XINSIGHT_JOINT_UR_CONSUMER=1", "XINSIGHT_POSTGRES_DSN="+xiDSN)
+	} else {
+		child = exec.CommandContext(ctx, binary)
+		child.Dir = checkout
+		child.Env = []string{"PATH=" + os.Getenv("PATH"), "GITHUB_ACTIONS=true", "XINSIGHT_CI_EPHEMERAL_HOST=1", "XINSIGHT_CI_INSTALLED_JOINT=1"}
+	}
 	child.Stdin = bytes.NewReader(wire)
 	var childOutput bytes.Buffer
 	child.Stdout, child.Stderr = &childOutput, &childOutput
 	// Both httptest TLS endpoints use the Go test certificate explicitly pinned
 	// in stdin and this client. XI must use httptest.StartTLS, never insecure TLS.
-	require.NoError(t, listener.Close())
+	if listener != nil {
+		require.NoError(t, listener.Close())
+	}
 	require.NoError(t, child.Start())
 	finished, runtimeDone := make(chan error, 1), make(chan error, 1)
 	go func() { finished <- child.Wait() }()
-	go func() { runtimeDone <- managed.run(ctx, f.server.Client(), t.Logf) }()
+	counterpartClient := f.server.Client()
+	if managed.counterpartClient != nil {
+		counterpartClient = managed.counterpartClient
+	}
+	go func() { runtimeDone <- managed.run(ctx, counterpartClient, t.Logf) }()
 	completed, runtimeCompleted := false, false
 	defer func() {
 		cancel()
@@ -1263,7 +1465,37 @@ func runManagedJointConsumer(t *testing.T, mode string) {
 		}
 	}()
 	redact := func(raw string) string {
-		raw = strings.ReplaceAll(raw, xiDSN, "[redacted]")
+		if installed != nil {
+			var safe []string
+			for _, line := range strings.Split(raw, "\n") {
+				if line == "" {
+					continue
+				}
+				var receipt struct {
+					SchemaVersion   string `json:"schema_version"`
+					Stage           string `json:"stage"`
+					State           string `json:"state"`
+					ElapsedMS       int64  `json:"elapsed_ms"`
+					FailureCategory string `json:"failure_category"`
+				}
+				if json.Unmarshal([]byte(line), &receipt) != nil ||
+					!strings.HasPrefix(receipt.SchemaVersion, "xinsight.ci-installed-joint-") ||
+					!regexp.MustCompile(`^[a-z_]{1,40}$`).MatchString(receipt.Stage) ||
+					!regexp.MustCompile(`^(passed|failed)$`).MatchString(receipt.State) ||
+					receipt.ElapsedMS < 0 || receipt.ElapsedMS > 1200000 ||
+					receipt.FailureCategory != "" && !regexp.MustCompile(`^[a-z_]{1,60}$`).MatchString(receipt.FailureCategory) {
+					return "installed_driver_output_unavailable"
+				}
+				safe = append(safe, fmt.Sprintf("%s/%s/%s/%d/%s", receipt.SchemaVersion, receipt.Stage, receipt.State, receipt.ElapsedMS, receipt.FailureCategory))
+			}
+			if len(safe) == 0 || len(safe) > 24 {
+				return "installed_driver_output_unavailable"
+			}
+			return strings.Join(safe, ";")
+		}
+		if xiDSN != "" {
+			raw = strings.ReplaceAll(raw, xiDSN, "[redacted]")
+		}
 		// XI owns new bearer generation; do not assume UR knows their values.
 		return regexp.MustCompile(`(?:ur-x(?:f|pm|se)1-|xiiv1_|xib_)[A-Za-z0-9_-]{21,}`).ReplaceAllString(raw, "[redacted]")
 	}
@@ -1287,12 +1519,22 @@ func runManagedJointConsumer(t *testing.T, mode string) {
 		case <-signal:
 		case err := <-finished:
 			completed = true
+			if installed != nil {
+				t.Fatalf("installed joint failed before %s category=xi_driver_exit receipts=%s", description, redact(childOutput.String()))
+			}
 			t.Fatalf("XI managed helper exited before %s: %v; output: %s", description, err, redact(childOutput.String()))
 		case err := <-runtimeDone:
 			runtimeCompleted = true
 			childErr := childCompletion()
+			if installed != nil {
+				t.Fatalf("installed joint failed before %s category=ur_control_failed receipts=%s", description, redact(childOutput.String()))
+			}
 			t.Fatalf("UR managed control failed before %s: %v; XI child: %v; output: %s", description, err, childErr, redact(childOutput.String()))
 		case <-ctx.Done():
+			if installed != nil {
+				_ = childCompletion()
+				t.Fatalf("installed joint failed before %s category=deadline receipts=%s", description, redact(childOutput.String()))
+			}
 			t.Fatalf("managed joint %s: %v", description, ctx.Err())
 		}
 	}
@@ -1304,14 +1546,27 @@ func runManagedJointConsumer(t *testing.T, mode string) {
 	select {
 	case err = <-finished:
 		completed = true
+		if installed != nil && err != nil {
+			t.Fatalf("installed joint category=xi_driver_exit receipts=%s", redact(childOutput.String()))
+		}
 		require.NoError(t, err, "XI managed helper failed: %s", redact(childOutput.String()))
+		if installed != nil {
+			t.Logf("XI installed stage receipts: %s", redact(childOutput.String()))
+		}
 	case err = <-runtimeDone:
 		runtimeCompleted = true
 		childErr := childCompletion()
 		if childErr != nil {
+			if installed != nil {
+				t.Fatalf("installed joint category=ur_control_failed receipts=%s", redact(childOutput.String()))
+			}
 			t.Fatalf("UR managed control failed: %v; XI child: %v; output: %s", err, childErr, redact(childOutput.String()))
 		}
 	case <-ctx.Done():
+		if installed != nil {
+			_ = childCompletion()
+			t.Fatalf("installed joint category=deadline receipts=%s", redact(childOutput.String()))
+		}
 		t.Fatalf("managed joint completion: %v", ctx.Err())
 	}
 	// Confirm real UR terminal/credential/grant records rather than treating a
