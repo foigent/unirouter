@@ -104,6 +104,7 @@ Fixes #45"
 3. 当前授权覆盖时创建 PR；适用 CI 通过且合并获准后才合并，不得绕过分支保护或 required CI。
 4. `Change Routing` 对变更分类；适用的 `Backend Tests`、`Frontend Build`、`Docker Build` 必须成功。纯文档 PR 可以由路由明确跳过昂贵任务。
 5. 合并后，以 `origin/main` 的实际提交为准更新状态；已授权的非生产部署仍需记录版本、健康、回滚和目标证据。
+6. 长任务完成前按 [Agent 协议 6.4](./docs/agent-workflows/AGENT-PROTOCOL.md#64-长任务完成复盘) 复盘；当前验收必需的入口改进须落实并验证，再报告完成。独立优化留待单独批次。
 
 **关键文件**：
 - `docs/agent-workflows/AGENT-PROTOCOL.md` — 当前授权、风险、证据和合并规则

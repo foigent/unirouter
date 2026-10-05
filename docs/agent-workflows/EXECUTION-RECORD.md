@@ -1,5 +1,47 @@
 # Current Execution Record
 
+## Long-task retrospective entrypoint — 2026-10-06
+
+**Baseline and scope.** This documentation branch
+`codex/long-task-retro-docs-20261006` starts from verified main
+`7ab84f1de23c4361939977fc5a0c0f7369619e5e` (PR #430 merged).
+Exact-main CI run `37338248954` completed successfully for that commit.
+PR #430 changed only `internal/admin/xinsight_joint_http_integration_test.go`
+relative to deployed `37fe231df464f387a0f0582d809aef1672f3f4e1`;
+the source VERSION remains 1.9.1. The coordinator reports the existing
+development Target remains 1.9.1/`37fe231d`/M124; this documentation task
+did not read or change Target. PR #430's new installed-XI test selector is
+opt-in, so UR main CI success alone is not installed XI or external integration
+acceptance.
+
+**Retrospective and applied entrypoint.** The goal was to connect the approved
+UR/XI flow while preserving original scopes and evidence. The bounded UR
+runtime delivery is complete per the coordinator; XI's actual installed
+controller, source worker, custody and future-project chain remains a separate
+acceptance. The observed XI Target failure was an EROFS host permission error
+while publishing the controller's systemd drop-in. The mistaken test
+assumption was that real PostgreSQL and HTTPS plus a simulated systemd runner
+covered installed service permissions; the controller never ran in its actual
+mount namespace, so the local check could not intercept this failure. PR #430
+added the explicit installed-service UR test entrypoint while preserving the
+original local test. Its main CI verifies the test code but does not exercise
+that opt-in path. The matching XI Linux qualification must run the released
+services in both new-install and restored FPV14 predecessor states; only its
+actual result can establish an old-failure/new-pass check, and Target recovery
+still needs separate readback. The process correction in
+[AGENT-PROTOCOL.md](AGENT-PROTOCOL.md#64-长任务完成复盘) requires a long-task
+closeout to check the original missed entrypoint and complete necessary
+changes before declaring the whole task done. No extra UR production change,
+test framework or new model-adaptation lesson is introduced here.
+
+**Remaining owner/action.** The XI owner must finish its Linux qualification
+and actual Target connection, loaded custody, source facts and body readback;
+the overall coordinator reconciles both projects' exact evidence and
+authorization. This document update changes no runtime behavior,
+required CI, permission, credential or deployment state. Its scope, relative
+links and `git diff --check` were reviewed by the coordinator before delivery.
+Earlier entries below retain their historical cutoffs.
+
 ## P3 step 2 — M121→M123 daily UR source-to-Target boundary — 2026-09-30
 
 This bounded source review uses merged main `11052bb539903022713d3676222f7fda6a4cd957`,

@@ -1,5 +1,20 @@
 # UniRouter Current Status
 
+## Current source and retrospective handoff — 2026-10-06
+
+Merged PR #430 is main `7ab84f1de23c4361939977fc5a0c0f7369619e5e`;
+its exact-main CI run `37338248954` passed. The only source difference from
+the existing deployed `37fe231d` is an opt-in installed-XI integration test
+entrypoint. The coordinator reports the development Target remains
+1.9.1/`37fe231d`/M124; this documentation batch did not redeploy or independently
+read that Target. XI installed-service and real data acceptance remain
+separate. The current [execution record](../agent-workflows/EXECUTION-RECORD.md)
+identifies the missed host-boundary test, its original entrypoint and remaining
+owner/action. [Agent protocol 6.4](../agent-workflows/AGENT-PROTOCOL.md#64-长任务完成复盘)
+now makes that five-part retrospective and necessary entrypoint correction part
+of long-task closeout. Older status entries below retain their original dates
+and evidence boundaries.
+
 ## Durable test handoff and bounded optimization — 2026-09-14
 
 The a84/1.4.1 source is restored at
