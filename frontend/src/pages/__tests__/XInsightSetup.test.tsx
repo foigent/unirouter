@@ -112,3 +112,66 @@ describe('normal X-Insight setup', () => {
     await waitFor(() => expect(screen.getByLabelText('供数项目范围')).toBeEnabled()); expect(screen.getByLabelText('我确认上述两端设置、供数范围及实际策略管理权限。')).not.toBeChecked();
   });
 });
+
+describe('setup diagnostics preserve server facts', () => {
+  it('keeps an expired invitation rejected by the original server preview without creating a grant', async () => {
+    prepare(); vi.mocked(xInsightSetupApi.preview).mockRejectedValue(new ApiError('invitation_expired', 409, {}));
+    render(<XInsightSetup {...props} invitationFragment={invitationFragment} />);
+    await screen.findByText('邀请预览未确认。请在 XI 重新读取本次确认，勿粘贴凭据或手工登记。');
+    expect(screen.queryByRole('button', { name: '确认并连接' })).not.toBeInTheDocument();
+    expect(xInsightSetupApi.create).not.toHaveBeenCalled();
+  });
+
+  it.each(['needs_action', 'provisioning'] as const)('explains custody loading without promoting %s to ready or repeating consent', async state => {
+    prepare();
+    vi.mocked(xInsightSetupApi.status).mockResolvedValue({ ...status, state, configuration_ready: false, issues: [{ code: 'custody_loading', requires_choice: false }] });
+    render(<XInsightSetup {...props} installationId={invitation.installation_id} />);
+    await screen.findByText('本次确认已登记。重新读取只核对状态，不会重复授权。');
+    expect(screen.getByText(/XI 正在加载正文保管设置/)).toHaveAttribute('role', 'status');
+    expect(screen.getByText(state === 'needs_action' ? '需要处理。配置尚未就绪。' : '正在配置。配置尚未就绪。')).toBeInTheDocument();
+    expect(screen.queryByText(/已开始同步|接入条件发生变化/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '确认并连接' })).not.toBeInTheDocument();
+    const user = userEvent.setup(); await user.click(screen.getByRole('button', { name: '重新读取接入状态' }));
+    await waitFor(() => expect(xInsightSetupApi.status).toHaveBeenCalledTimes(2));
+    expect(xInsightSetupApi.create).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['installation_authority_changed', /两端管理员/], ['redeem_origin_changed', /受信对端/],
+    ['machine_candidate_changed', /组织管理员/], ['machine_network_changed', /允许地址/],
+    ['policy_grant_invalid', /UR 管理员/], ['policy_grant_authority_changed', /UR 管理员/],
+    ['policy_grant_conflict', /不会覆盖/], ['source_qualification_changed', /来源身份/],
+    ['source_enrollment_conflict', /已有供数授权/], ['machine_authority_revoked', /撤销原因/],
+    ['policy_grant_changed', /不会恢复旧授权/], ['source_grant_changed', /不会恢复旧授权/],
+    ['installation_inactive', /XI 管理员/], ['invitation_expired', /重新发起邀请/],
+    ['custody_unavailable', /XI 管理员/], ['current_custody_pending', /无需重复确认/],
+    ['xi_actor_permission_changed', /XI 管理员/], ['custody_revision_changed', /从 XI 重新发起/],
+  ])('gives a human next action for %s', async (code, message) => {
+    prepare(); vi.mocked(xInsightSetupApi.status).mockResolvedValue({ ...status, state: 'needs_action', configuration_ready: false, issues: [{ code: code as string, requires_choice: true }] });
+    render(<XInsightSetup {...props} installationId={invitation.installation_id} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    expect(screen.getByText('需要处理。配置尚未就绪。')).toBeInTheDocument();
+    expect(screen.queryByText(/接入条件发生变化|尚无法解释/)).not.toBeInTheDocument();
+    expect(xInsightSetupApi.create).not.toHaveBeenCalled();
+  });
+  it('keeps preview blockers actionable and requires a new final confirmation', async () => {
+    prepare(); vi.mocked(xInsightSetupApi.preview).mockResolvedValue({ ...preview, issues: [{ code: 'policy_grant_conflict', requires_choice: true }] });
+    render(<XInsightSetup {...props} invitationFragment={invitationFragment} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('后台不会覆盖它');
+    expect(screen.getByLabelText('我确认上述两端设置、供数范围及实际策略管理权限。')).not.toBeChecked();
+    expect(screen.getByRole('button', { name: '确认并连接' })).toBeDisabled();
+    expect(screen.queryByText('本次确认已登记。重新读取只核对状态，不会重复授权。')).not.toBeInTheDocument();
+  });
+  it('provides bounded public support identifiers for an unknown code without claiming a changed condition', async () => {
+    prepare(); vi.mocked(xInsightSetupApi.status).mockResolvedValue({ ...status, state: 'needs_action', configuration_ready: false, issues: [{ code: 'future_setup_condition', requires_choice: true }] });
+    render(<XInsightSetup {...props} installationId={invitation.installation_id} />);
+    await screen.findByRole('alert'); expect(screen.getByText('诊断代码：future_setup_condition；接入编号：' + invitation.installation_id)).toBeInTheDocument();
+    expect(screen.getByText(/尚无法解释此接入条件/)).toBeInTheDocument();
+    expect(screen.queryByText(/接入条件发生变化/)).not.toBeInTheDocument();
+  });
+  it.each(['xiiv1_' + 'a'.repeat(43), 'xiiv1_' + 'A'.repeat(43), 'secret:' + 'A'.repeat(200), '<script>private</script>', '__proto__'])('hides malformed diagnostic data %s', async code => {
+    prepare(); vi.mocked(xInsightSetupApi.status).mockResolvedValue({ ...status, issues: [{ code, requires_choice: true }] });
+    render(<XInsightSetup {...props} installationId={invitation.installation_id} />);
+    await screen.findByRole('alert'); expect(screen.getByText(/诊断代码：诊断代码不可用/)).toBeInTheDocument();
+    expect(screen.queryByText(code, { exact: false })).not.toBeInTheDocument();
+  });
+});

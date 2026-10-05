@@ -4,6 +4,7 @@ import { Toast } from '@douyinfe/semi-ui';
 import DataExchangePage, { receiptPayload } from '../DataExchangePage';
 import { parseFrozenConnectorInvitation, parseReceiverRegistrationBundle } from '../XInsightLiveConnection';
 import { useAuthStore } from '../../store/auth';
+import { captureXInsightLoginContinuation, clearXInsightLoginContinuation, continueXInsightAfterProfile } from '../../routing/xInsightLoginContinuation';
 
 const getItems = vi.fn();
 const getExchanges = vi.fn();
@@ -19,7 +20,9 @@ const installConnector = vi.fn();
 const getPayloadPolicy = vi.fn();
 const getContentConnection = vi.fn();
 const setupPeer = vi.fn();
-vi.mock('../../api/xInsightSetup',()=>({xInsightSetupApi:{peer:(...args:unknown[])=>setupPeer(...args),status:vi.fn(),preview:vi.fn(),create:vi.fn(),members:vi.fn()}}));
+const setupPreview = vi.fn();
+const setupCreate = vi.fn();
+vi.mock('../../api/xInsightSetup',()=>({xInsightSetupApi:{peer:(...args:unknown[])=>setupPeer(...args),status:vi.fn(),preview:(...args:unknown[])=>setupPreview(...args),create:(...args:unknown[])=>setupCreate(...args),members:vi.fn()}}));
 
 vi.mock('../../api/contentManagement', async original => ({
   ...await original<typeof import('../../api/contentManagement')>(),
@@ -71,7 +74,7 @@ vi.mock('../../api/client', () => ({
 }));
 
 describe('organization administrator normal entry',()=>{
-  afterEach(()=>{sessionStorage.clear();vi.clearAllMocks();});
+  afterEach(()=>{sessionStorage.clear();clearXInsightLoginContinuation();window.history.replaceState(null,'','/');vi.clearAllMocks();});
   it('loads real projects and setup peer without mounting platform maintenance or ledger',async()=>{
     useAuthStore.setState({user:{id:91,username:'org',role:'org_admin',organization_role:'org_admin',org_id:2,license_access:licensedAccess}});
     getProjects.mockResolvedValue({data:[{id:11,org_id:2,name:'Project',status:'active'}],total:1});
@@ -81,6 +84,25 @@ describe('organization administrator normal entry',()=>{
     expect(setupPeer).toHaveBeenCalledWith(2,11);
     expect(getFeedConnection).not.toHaveBeenCalled();expect(getItems).not.toHaveBeenCalled();expect(getExchanges).not.toHaveBeenCalled();expect(getPayloadPolicy).not.toHaveBeenCalled();expect(getContentConnection).not.toHaveBeenCalled();
     expect(screen.queryByText('维护与技术详情')).not.toBeInTheDocument();expect(screen.queryByText('刷新历史账本')).not.toBeInTheDocument();
+  });
+  it('hands the invitation to the original setup with fresh projects for a different logged-in administrator',async()=>{
+    const token='xiiv1_'+'A'.repeat(43);
+    const fragment='#'+new URLSearchParams({invitation:token,xinsight_origin:'https://xi.example'});
+    sessionStorage.setItem('xinsight.setup-project:91:2','11');
+    sessionStorage.setItem('xinsight.setup-installation:91:2:11','xci_AAAAAAAAAAAAAAAAAAAAAA');
+    window.history.replaceState(null,'','/connectors/x-insight/install'+fragment);captureXInsightLoginContinuation();
+    const user={id:92,username:'current',role:'org_admin',organization_role:'org_admin',org_id:3,license_access:licensedAccess};
+    useAuthStore.setState({user});
+    window.history.replaceState(null,'',continueXInsightAfterProfile(user));
+    getProjects.mockResolvedValue({data:[{id:33,org_id:3,name:'Current project',status:'active'}],total:1});
+    setupPeer.mockResolvedValue({schema_version:'unirouter.xinsight.setup-peer.v1',trust_ready:true,xi_origin:'https://xi.example',xi_setup_url:'https://xi.example/setup'});
+    setupPreview.mockReturnValue(new Promise(()=>{}));
+    render(<DataExchangePage/>);
+    await waitFor(()=>expect(setupPreview).toHaveBeenCalledWith(3,33,token));
+    expect(setupPeer).toHaveBeenCalledWith(3,33);expect(getProjects).toHaveBeenCalled();
+    expect(window.location.hash).toBe('');expect(setupCreate).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button',{name:'确认并连接'})).not.toBeInTheDocument();
+    expect(Object.values(sessionStorage).join('')).not.toContain(token);
   });
   it('keeps expansion disabled without the Data Exchange license',async()=>{
     useAuthStore.setState({user:{id:92,username:'org',role:'org_admin',org_id:2,license_access:{...licensedAccess,features:{...licensedAccess.features,data_exchange:false}}}});

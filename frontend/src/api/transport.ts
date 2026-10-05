@@ -1,3 +1,5 @@
+import { preservesXInsightLoginOn401 } from '../routing/xInsightLoginContinuation';
+
 const BASE_URL = '/api/v1';
 
 export class ApiError extends Error {
@@ -51,7 +53,7 @@ export async function request<T>(path: string, options: RequestInit = {}, versio
 
   if (res.status === 401) {
     localStorage.removeItem('token');
-    window.location.href = '/login';
+    if (!preservesXInsightLoginOn401(path, (options.method || 'GET').toUpperCase(), version)) window.location.href = '/login';
     throw new ApiError(getErrorMessage(payload, 'Unauthorized'), res.status, payload);
   }
   if (!res.ok) {
