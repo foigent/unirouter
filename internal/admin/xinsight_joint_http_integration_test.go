@@ -1126,7 +1126,7 @@ func (m *jointManagedControl) registerRoutes(t *testing.T, f *jointHTTPFixture, 
 
 // jointControlTransport observes only the last actual HTTP outcome. The production
 // supervisor lives in package main and cannot be imported here. Keep this existing
-// fixture loop's next-pass recovery limited to HTTP 503 and typed transient network
+// fixture loop's next-pass recovery limited to HTTP 502/503/504 and typed transient network
 // failures; decoding, authentication, scope and journal errors still stop the test.
 // No URL, headers, body, credential or installation identity is recorded.
 type jointControlTransport struct {
@@ -1164,8 +1164,11 @@ func (r *jointControlTransport) RoundTrip(request *http.Request) (*http.Response
 			(errors.As(err, &networkError) && (networkError.Timeout() || networkError.Temporary())) {
 			r.recovery = "transient transport failure"
 		}
-	} else if response.StatusCode == http.StatusServiceUnavailable {
-		r.recovery = "HTTP 503"
+	} else if response.StatusCode == http.StatusBadGateway || response.StatusCode == http.StatusServiceUnavailable || response.StatusCode == http.StatusGatewayTimeout {
+		// A real TLS proxy returns 502 while the installed XI process restarts.
+		// Production already retries failed cycles; do not turn that supported
+		// lifecycle into a fixture-only terminal failure.
+		r.recovery = fmt.Sprintf("HTTP %d", response.StatusCode)
 	}
 	return response, err
 }
@@ -1179,14 +1182,14 @@ func TestXInsightManagedJointRecoveryBoundaryIntegration(t *testing.T) {
 	transport := &jointControlTransport{base: server.Client().Transport}
 	request, err := http.NewRequest(http.MethodGet, server.URL, nil)
 	require.NoError(t, err)
-	for _, candidate := range []int{http.StatusServiceUnavailable, http.StatusBadRequest,
+	for _, candidate := range []int{http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout, http.StatusInternalServerError, http.StatusBadRequest,
 		http.StatusUnauthorized, http.StatusForbidden, http.StatusConflict, http.StatusGone, http.StatusOK} {
 		status = candidate
 		response, err := transport.RoundTrip(request)
 		require.NoError(t, err)
 		require.NoError(t, response.Body.Close())
-		if candidate == http.StatusServiceUnavailable {
-			require.Equal(t, "HTTP 503", transport.recovery)
+		if candidate == http.StatusBadGateway || candidate == http.StatusServiceUnavailable || candidate == http.StatusGatewayTimeout {
+			require.Equal(t, fmt.Sprintf("HTTP %d", candidate), transport.recovery)
 		} else {
 			require.Empty(t, transport.recovery, "authentication/scope/contract outcomes must not inherit a prior 503")
 		}
