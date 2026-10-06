@@ -1,6 +1,6 @@
 # Current Execution Record
 
-## M124→M125 installed-upgrade correction, UR Local candidate — 2026-10-06
+## M124→M125 installed-upgrade correction, source/CI closeout — 2026-10-07
 
 **Scope and cause.** The 1.9.2/M125 source had a working M123→M124 active-source
 helper, but `Rollout.plan()` selected it only for M123. An active M124 source
@@ -34,10 +34,44 @@ PG16.14 at `127.0.0.1:55437` returned `server_version_num=160014`. Against
 this explicit DSN, the real CLI check/apply and nonadjacent rejection passed
 with `-race`, as did the original three-package early M125 CI selector. The
 Python rollout suite passed 81 tests; release metadata and integration-runner
-policy suites passed 19 and 9 tests respectively. These are Local results.
-CI, immutable Artifact, Target upgrade, external XI installed lifecycle and
-Production remain unverified; no Target, credential or traffic change occurred
-in this correction.
+policy suites passed 19 and 9 tests respectively. These were Local results
+before the source/CI closeout below.
+
+**Exact source and CI closeout.** PR #433 head
+`7cc255c6416080609c54bca0c1243888e23c0e09` passed all five applicable
+checks in [run 37489026277](https://github.com/foigent/unirouter/actions/runs/37489026277):
+Change Routing, Backend Tests, Frontend Build, PR4 Browser E2E and Docker Build.
+Its normal merge produced main `5412769528de1d63328900663d938a96e9dc5aad`;
+both commits have tree `015f53dbce56cf509abb000bf0ea58a42da605fe`
+and an empty diff. The separate exact-main
+[protocol run 37496389077](https://github.com/foigent/unirouter/actions/runs/37496389077)
+passed on that main commit. This documents source and CI acceptance only, not
+an immutable runtime Artifact or Target success. The document-only closeout
+that records these facts leaves runtime source bytes unchanged; the approved
+runtime delivery identity remains `54127695`, without a new Artifact build.
+
+**Long-task retrospective.** First, the upgrade tests had exercised the M123
+source-preservation helper but omitted the real active M124 `Rollout.plan()`
+entrance; the new original-entry regression now fails if that exact capture,
+producer, storage, static-peer or stable/canary preservation is lost. Second,
+`REQUIRE_TEST_DATABASE=1` still allowed an implicit default DSN, so the initial
+CLI red reproduction reached the user's PostgreSQL 18 instead of the intended
+task-owned PG16. The existing required-test entrances now demand an explicit
+`TEST_DATABASE_URL` and check PostgreSQL 16 before isolated database CREATE,
+migrated template CREATE, clone CREATE and shared-table TRUNCATE; tests lock
+those write-before-preflight orders and preserve optional developer behavior.
+Third, the accepted CI-efficiency contract already removed automatic duplicate
+post-merge full CI. For an identical PR/main tree, future closeout should
+verify the exact tree, reuse all applicable successful PR checks without
+reducing their coverage, and retain the separately required exact-main protocol
+evidence; a full main dispatch is not added merely by habit.
+
+**External boundary.** The 2026-10-06 read-only Target receipts show UR
+1.9.1/M124 and XI FPV15/schema44. Version 1.9.3 has not been signed or deployed;
+the original installed XI connection has not been recovered. Target upgrade,
+external installed lifecycle and Production remain separate pending evidence,
+and this documentation closeout grants no deployment, credential or traffic
+authority.
 
 ## X-Insight control credential lifecycle, UR Local candidate — 2026-10-06
 
