@@ -3,16 +3,18 @@
 ## X-Insight control credential lifecycle — PR candidate, 2026-10-06
 
 Version 1.9.2/M125 on `codex/ur-xi-control-lifecycle-20261006` is under PR
-#432. Its latest completed head `cadfca4e` passed protocol CI `37445690343`;
-main CI `37445690260` passed Change Routing, Browser E2E and Frontend but failed
-Backend admin integration because M125's credential journal was absent from
-the first-customer exact schema inventory. Docker stopped at that failed
-prerequisite without building an image. The local correction has passed focused
-inventory and PostgreSQL 16 checks. A separate local test-only CI redaction
-fix preserves bounded installed stage receipts when adopt emits more than 24;
+#432. Its latest CI head `d798af83` passed protocol run `37452146640`;
+main run `37452146716` passed Change Routing, Browser E2E and Frontend but
+failed Backend's ordinary test suite because the new installed-receipt test
+name omitted the required `Integration` suffix. Docker stopped at that failed
+prerequisite without building an image. The previous first-customer inventory
+failure was corrected locally with PostgreSQL 16 verification, and Backend's
+early M125 check now passes in CI. A local test-only correction has renamed
+the receipt test and added the existing naming guard to that early check;
 [the execution record](../agent-workflows/EXECUTION-RECORD.md) holds the exact
-run, cause, fix and verification boundary. No merge, signed Artifact, Target,
-Production or installed XI lifecycle result is claimed.
+run, cause, fix and verification boundary. That correction has not run in CI.
+No merge, signed Artifact, Target, Production or installed XI lifecycle result
+is claimed.
 
 At the earlier Local cutoff, PG16.14 credential and production-loop tests
 passed with `-race`. The managed new-install UR/XI Local joint test passed

@@ -1764,7 +1764,7 @@ func redactInstalledJointReceipts(raw string) string {
 	return strings.Join(safe, ";")
 }
 
-func TestRedactInstalledJointReceipts(t *testing.T) {
+func TestRedactInstalledJointReceiptsIntegration(t *testing.T) {
 	receipt := func(schema, stage, state string, elapsed int64, category string) string {
 		body, err := json.Marshal(map[string]any{
 			"schema_version": schema, "stage": stage, "state": state,

@@ -364,9 +364,12 @@ class ReleasePolicyTests(unittest.TestCase):
         backend = workflow.split('\n  backend:\n', 1)[1].split('\n  frontend:', 1)[0]
         self.assertIn('TestEveryCurrentMigrationTableHasAnExplicitResetClassification', backend)
         self.assertIn("go test ./internal/admin -run '^TestFirstCustomerInventory' -count=1", backend)
+        self.assertIn("go test ./internal/admin -run '^TestAdminIntegrationFilesUseIntegrationSuffix$' -count=1", backend)
         self.assertLess(backend.index('TestEveryCurrentMigrationTableHasAnExplicitResetClassification'),
                         backend.index('      - name: Run tests\n'))
         self.assertLess(backend.index("go test ./internal/admin -run '^TestFirstCustomerInventory' -count=1"),
+                        backend.index('      - name: Run tests\n'))
+        self.assertLess(backend.index("go test ./internal/admin -run '^TestAdminIntegrationFilesUseIntegrationSuffix$' -count=1"),
                         backend.index('      - name: Run tests\n'))
 
 

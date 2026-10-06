@@ -186,9 +186,24 @@ focused integration-tagged unit test covers 19, 30 and 61 valid lines, result
 retention, fake schema, invalid bounds and private noise. It does not change
 the product runtime or the XI-owned receipt protocol.
 
-These are Local results on a correction not yet run in CI; they do not
-establish Docker Artifact, installed XI lifecycle, Target or Production
-acceptance.
+The resulting PR head `d798af8323543c6dcca346cb62827cd278e206f5`
+passed protocol CI `37452146640`. Main CI `37452146716` passed Change
+Routing, Browser E2E, Frontend, Backend's early M125 check and `go vet`, but
+Backend `Run tests` failed only `TestAdminIntegrationFilesUseIntegrationSuffix`:
+the new `TestRedactInstalledJointReceipts` in an integration-tagged file lacked
+the required `Integration` suffix. Docker stopped at its failed Backend
+prerequisite without building an image. The author's focused
+`-run '^TestRedactInstalledJointReceipts$'` invocation had passed because it
+selected only the new test, bypassing the existing ordinary naming guard; the
+formal admin integration lane selects `-run 'Integration$'` and would omit it.
+The previous early check ran migration, inventory and credential selectors but
+not the naming guard. The local correction renames the test and runs the
+existing guard in that early step. The guard failed on the prior head and now
+passes; the renamed test passes with `-race`, appears in the formal
+`Integration$` test list, and all 19 release-metadata policy tests including
+the updated early wiring check pass. The current correction has not run in CI;
+none of these results establish Docker Artifact, installed XI lifecycle,
+Target or Production acceptance.
 
 ## Long-task retrospective entrypoint — 2026-10-06
 
