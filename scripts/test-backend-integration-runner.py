@@ -78,6 +78,8 @@ class RunnerTests(unittest.TestCase):
             "TestReceiverFeedCredentialMigrationContractAndDownRefusal",
             "TestXInsightFeedControlMigrationEnforcesStagedAndRollbackLifecycle",
             "TestM115ToM125CompatibleExpandPreservesExistingKey",
+            "TestM124ToM125CompatibleExpandCLIIntegration",
+            "TestM125CompatibleExpandCLIRejectsNonadjacentPredecessorIntegration",
             "TestControlCredentialLifecyclePostgresIntegration",
             "TestControlCredentialExpiredPendingRecoveryPostgresIntegration",
             "TestSourceCompatibleExpandRetainsOnlySupportedDormantGenerations",

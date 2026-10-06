@@ -1,5 +1,44 @@
 # Current Execution Record
 
+## M124→M125 installed-upgrade correction, UR Local candidate — 2026-10-06
+
+**Scope and cause.** The 1.9.2/M125 source had a working M123→M124 active-source
+helper, but `Rollout.plan()` selected it only for M123. An active M124 source
+therefore reached the disabled-source fallback and the development/test plan
+refused. The compatible-expand CLI's manually accumulated predecessor
+conditions selected M123 for target M125, so an actual M124 ledger was rejected.
+The earlier tests checked the helper and domain migration separately, missing
+these two original entrances. Independent read-only pre-code review validated
+both blockers. The M125 migration SQL and XI wire contracts were not changed.
+
+**Original failures and correction.** A new `Rollout.plan()` regression with
+stable/canary active A/B/C/full capture, original producer, content storage and
+static peer first failed on the unmodified branch with `schema bridge requires
+disabled source capture and empty storage settings`. A real CLI check on an
+M124 ledger first failed with `expansion predecessor differs`; that first
+reproduction accidentally used the default local PostgreSQL 18 and is only a
+code-path failure, not PG16 acceptance evidence. The repair reuses the M123
+source-preservation check for M124, retaining exact environment and role parity
+and rejecting capture, identity, storage or static-peer drift. CLI predecessor
+selection now uses the ordered `SupportedSchemaHeads()` authority; an M123→M125
+jump remains rejected. Version 1.9.3 and the operator version were updated.
+
+**Database gate and current evidence.** The PostgreSQL 18 drift exposed that
+`REQUIRE_TEST_DATABASE=1` did not require `TEST_DATABASE_URL` or a server
+version check before creating test databases. The required path now refuses an
+implicit DSN and verifies PostgreSQL 16 before isolated CREATE, migrated
+template/clone CREATE and ordinary test-table TRUNCATE; optional developer
+tests keep their previous fallback. Unit checks cover missing DSN, PG18
+rejection, optional behavior and write-before-preflight wiring. The task-owned
+PG16.14 at `127.0.0.1:55437` returned `server_version_num=160014`. Against
+this explicit DSN, the real CLI check/apply and nonadjacent rejection passed
+with `-race`, as did the original three-package early M125 CI selector. The
+Python rollout suite passed 81 tests; release metadata and integration-runner
+policy suites passed 19 and 9 tests respectively. These are Local results.
+CI, immutable Artifact, Target upgrade, external XI installed lifecycle and
+Production remain unverified; no Target, credential or traffic change occurred
+in this correction.
+
 ## X-Insight control credential lifecycle, UR Local candidate — 2026-10-06
 
 **1. Goal and evidence.** Preserve one installed connection and its original

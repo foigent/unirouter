@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
@@ -30,10 +31,44 @@ func DSN() string {
 	return dsn
 }
 
+func Required() bool {
+	required := strings.TrimSpace(os.Getenv("REQUIRE_TEST_DATABASE"))
+	return required == "1" || strings.EqualFold(required, "true")
+}
+
+// PreflightDSN refuses an implicit local database when the caller requires
+// integration tests to run. Call this before opening any connection.
+func PreflightDSN() (string, error) {
+	if Required() && strings.TrimSpace(os.Getenv("TEST_DATABASE_URL")) == "" {
+		return "", errors.New("REQUIRE_TEST_DATABASE requires explicit TEST_DATABASE_URL")
+	}
+	return DSN(), nil
+}
+
+type versionReader interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
+// PreflightServer runs before CREATE DATABASE or TRUNCATE in required mode.
+func PreflightServer(ctx context.Context, server versionReader) error {
+	if !Required() {
+		return nil
+	}
+	var version int
+	if err := server.QueryRow(ctx, "SELECT current_setting('server_version_num')::int").Scan(&version); err != nil {
+		return fmt.Errorf("read required test database version: %w", err)
+	}
+	if version/10000 != 16 {
+		return fmt.Errorf("required test database is PostgreSQL %d; expected PostgreSQL 16", version/10000)
+	}
+	return nil
+}
+
 // SetupIsolated creates one empty temporary PostgreSQL database.
 func SetupIsolated(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	baseDSN := DSN()
+	baseDSN, err := PreflightDSN()
+	require.NoError(t, err)
 	adminDSN, tempDSN, dbName, err := TempDatabaseDSNs(baseDSN)
 	require.NoError(t, err, "build temporary database DSN")
 
@@ -46,6 +81,10 @@ func SetupIsolated(t *testing.T) *pgxpool.Pool {
 	if err := adminPool.Ping(ctx); err != nil {
 		adminPool.Close()
 		Unavailable(t, "cannot ping PostgreSQL admin database: %v", err)
+	}
+	if err := PreflightServer(ctx, adminPool); err != nil {
+		adminPool.Close()
+		Unavailable(t, "%v", err)
 	}
 	if _, err := adminPool.Exec(ctx, `CREATE DATABASE `+QuoteIdent(dbName)); err != nil {
 		adminPool.Close()
@@ -147,8 +186,7 @@ func (e *dropError) Unwrap() error { return e.cause }
 
 func Unavailable(t *testing.T, format string, args ...any) {
 	t.Helper()
-	required := strings.TrimSpace(os.Getenv("REQUIRE_TEST_DATABASE"))
-	if required == "1" || strings.EqualFold(required, "true") {
+	if Required() {
 		t.Fatalf(format, args...)
 	}
 	t.Skipf(format, args...)

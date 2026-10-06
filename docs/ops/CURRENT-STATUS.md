@@ -1,8 +1,23 @@
 # UniRouter Current Status
 
-## X-Insight control credential lifecycle — PR candidate, 2026-10-06
+## M124→M125 installed upgrade correction — Local 1.9.3 candidate, 2026-10-06
 
-Version 1.9.2/M125 on `codex/ur-xi-control-lifecycle-20261006` is under PR
+The current local branch `codex/ur-xi-control-lifecycle-20261006`, based on
+`8f1b39242e2202e774b0531d5fdd23577995af62`, corrects two M125 upgrade
+entrances: the development/test rollout plan now preserves an active M124
+source's stable/canary capture, producer, storage and static peer; the real
+compatible-expand CLI derives the M125 predecessor from the ordered supported
+schema heads and rejects a nonadjacent predecessor. The required integration
+database path now needs an explicit test DSN and PostgreSQL 16 before database
+creation or truncation. Local plan tests and the original early PG16.14/race
+selector passed. [The execution record](../agent-workflows/EXECUTION-RECORD.md)
+contains the original failures, correction and exact evidence boundary.
+This local candidate has not been pushed, run in CI, installed on Target or
+accepted by the external XI installed lifecycle.
+
+## X-Insight control credential lifecycle — historical PR cutoff, 2026-10-06
+
+At this cutoff, version 1.9.2/M125 on `codex/ur-xi-control-lifecycle-20261006` was under PR
 #432. Head `41e580c0` passed protocol CI `37456231777`; main CI
 `37456231759` was still running at this local cutoff. Its Backend early M125
 check, ordinary Go suite and admin integration suite had passed. The prior

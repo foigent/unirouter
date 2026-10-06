@@ -365,7 +365,7 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn('TestEveryCurrentMigrationTableHasAnExplicitResetClassification', backend)
         self.assertIn("go test ./internal/admin -run '^TestFirstCustomerInventory' -count=1", backend)
         self.assertIn("go test ./internal/admin -run '^(TestAdminIntegrationFilesUseIntegrationSuffix|TestXInsightAuditActionLiteralsFitSchema)$' -count=1", backend)
-        credential_selector = "go test -tags=integration -race ./internal/xinsightconnector ./internal/admin ./cmd/uniroute -run '^(TestControlCredential.*PostgresIntegration|TestXInsightCredentialRuntimePostgresIntegration|TestXInsightCredentialRecoveryScopeTechnicalOrgPostgresIntegration|TestXInsightCredentialRecoveryConfirmPostgresIntegration|TestRuntimeGenerationCLIExpandedLedgerLifecycleIntegration)$' -count=1 -timeout=5m"
+        credential_selector = "go test -tags=integration -race ./internal/xinsightconnector ./internal/admin ./cmd/uniroute -run '^(TestControlCredential.*PostgresIntegration|TestXInsightCredentialRuntimePostgresIntegration|TestXInsightCredentialRecoveryScopeTechnicalOrgPostgresIntegration|TestXInsightCredentialRecoveryConfirmPostgresIntegration|TestRuntimeGenerationCLIExpandedLedgerLifecycleIntegration|TestM124ToM125CompatibleExpandCLIIntegration|TestM125CompatibleExpandCLIRejectsNonadjacentPredecessorIntegration)$' -count=1 -timeout=5m"
         self.assertIn(credential_selector, backend)
         self.assertLess(backend.index('TestEveryCurrentMigrationTableHasAnExplicitResetClassification'),
                         backend.index('      - name: Run tests\n'))

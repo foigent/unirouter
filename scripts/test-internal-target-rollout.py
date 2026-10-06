@@ -211,6 +211,117 @@ class CounterTransitionTests(unittest.TestCase):
 
 
 class SchemaBridgeTransitionTests(unittest.TestCase):
+    def test_m124_active_source_plan_preserves_exact_existing_configuration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            old_source, new_source = root / "old", root / "new"
+            old_source.mkdir(); new_source.mkdir()
+            overlay = root / "runtime.yml"
+            old_commit, new_commit = "a" * 40, "b" * 40
+            old_tree, new_tree = "c" * 40, "d" * 40
+            old_image, new_image = "sha256:" + "1" * 64, "sha256:" + "2" * 64
+            old_frontend, new_frontend = "sha256:" + "3" * 64, "sha256:" + "4" * 64
+            old_runtime = {"RUNTIME_VERSION": "1.9.1", "RUNTIME_COMMIT": old_commit,
+                           "RUNTIME_TREE": old_tree, "RUNTIME_IMAGE_DIGEST": old_image}
+            new_runtime = {"RUNTIME_VERSION": "1.9.3", "RUNTIME_COMMIT": new_commit,
+                           "RUNTIME_TREE": new_tree, "RUNTIME_IMAGE_DIGEST": new_image}
+            source = dict(rollout.SOURCE_DEFAULTS, SOURCE_FACTS_ENABLED="true",
+                          SOURCE_OBSERVATIONS_ENABLED="true", SOURCE_CONTENT_ENABLED="true",
+                          SOURCE_CONTENT_FULL_ENABLED="true", SOURCE_CONTENT_STORAGE_ROOT="/original/content",
+                          SOURCE_CONTENT_STORAGE_IDENTITY="original-store",
+                          SOURCE_CONTENT_STORAGE_TOKEN_FILE="/original/token",
+                          COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE="original-producer",
+                          XINSIGHT_CONNECTOR_STATIC_PEER_JSON='{"origin":"original-peer"}')
+            overlay.write_text("\n".join(old_runtime.values()))
+            transition = {"kind": "schema_bridge_expand_carrier", "from_head": rollout.XINSIGHT_ADOPTION_HEAD,
+                          "migration_pairs": [{"version": rollout.XINSIGHT_CREDENTIAL_HEAD,
+                                               "up_sha256": "e" * 64, "down_sha256": "f" * 64}]}
+            spec = {"source": {"directory": str(new_source), "commit": new_commit,
+                               "tree": new_tree, "version": "1.9.3"},
+                    "target": {"project": "unirouter", "environment": "development",
+                               "overlay": str(overlay), "tls_overlay": str(root / "tls.yml"),
+                               "ingress_directory": str(root), "nginx_container_id": "nginx-old"},
+                    "images": {"backend": {"tag": "new-backend", "digest": new_image},
+                               "frontend": {"tag": "new-frontend", "digest": new_frontend}},
+                    "evidence_directory": str(root / "evidence"),
+                    "transition": transition}
+            owner = rollout.Rollout(spec)
+            old_chain = owner.chain(old_source)
+            old_env = dict(source, **old_runtime)
+            old_config = {"services": {
+                "backend": {"image": "old-backend", "environment": dict(old_env),
+                            "volumes": [{"source": str(old_source / "migrations"), "target": "/app/migrations"}]},
+                "backend-canary": {"image": "old-backend", "environment": dict(old_env),
+                                   "volumes": [{"source": str(old_source / "migrations"), "target": "/app/migrations"}]},
+                "frontend": {"image": "old-frontend", "environment": {}, "volumes": []}}}
+            new_config = copy.deepcopy(old_config)
+            for service in ("backend", "backend-canary"):
+                new_config["services"][service]["image"] = "new-backend"
+                new_config["services"][service]["environment"].update(new_runtime)
+                new_config["services"][service]["volumes"][0]["source"] = str(new_source / "migrations")
+            new_config["services"]["frontend"]["image"] = "new-frontend"
+
+            def container(role):
+                component = "frontend" if role == "frontend" else "backend"
+                return {"Id": role + "-old", "Image": old_frontend if role == "frontend" else old_image,
+                        "State": {"Running": True},
+                        "Config": {"Image": "old-frontend" if role == "frontend" else "old-backend",
+                                   "Env": [key + "=" + value for key, value in
+                                           (old_runtime if role == "frontend" else old_env).items()],
+                                   "Labels": {"com.docker.compose.project.config_files": ",".join(old_chain)}}}
+
+            containers = {role: container(role) for role in rollout.CONTAINERS}
+            old_images = {old_image: {"Id": old_image, "Config": {"Labels": {
+                "org.opencontainers.image.revision": old_commit, "org.opencontainers.image.version": "1.9.1",
+                "io.unirouter.component": "backend"}}},
+                old_frontend: {"Id": old_frontend, "Config": {"Labels": {
+                "org.opencontainers.image.revision": old_commit, "org.opencontainers.image.version": "1.9.1",
+                "io.unirouter.component": "frontend"}}}}
+            new_images = {"backend": {"Id": new_image, "Config": {"Env": []}},
+                          "frontend": {"Id": new_frontend, "Config": {"Env": []}}}
+
+            def command(argv, **_):
+                if argv[:3] == ["docker", "image", "inspect"]:
+                    return json.dumps([old_images[argv[3]]]).encode()
+                if argv[:2] == ["git", "-C"] and argv[3:5] == ["rev-parse", "HEAD:migrations"]:
+                    return (b"old" if argv[2] == str(old_source) else b"new")
+                if argv[:2] == ["git", "-C"] and argv[3] == "rev-parse":
+                    return b"same"
+                self.fail(f"unexpected command: {argv}")
+
+            owner.ingress.snapshot = lambda _: {"before_state": "both", "configuration_sha256": "nginx",
+                                                "health": {"stable": {"instance": "old-stable"},
+                                                           "canary": {"instance": "old-canary"}}}
+            owner.ingress.owner_command = lambda *_: {"head_status": "applied", "head": "current-head"}
+            ledger = json.dumps([rollout.XINSIGHT_ADOPTION_HEAD])
+            def run_plan(candidate):
+                with patch.object(owner, "identity"), patch.object(owner, "images", return_value=new_images), \
+                        patch.object(rollout, "check_source"), \
+                        patch.object(owner, "sources"), patch.object(owner, "config", side_effect=[old_config, candidate]), \
+                        patch.object(owner, "pins", return_value={}), patch.object(owner, "ingress_static_digest", return_value="static"), \
+                        patch.object(owner, "sql", return_value=ledger), patch.object(rollout, "inspect", side_effect=lambda name: containers[next(role for role, host in rollout.CONTAINERS.items() if host == name)]), \
+                        patch.object(rollout, "run", side_effect=command), patch.object(rollout, "check_service"), \
+                        patch.object(rollout, "validate_pending_counter_carrier") as carrier:
+                    result = owner.plan()
+                self.assertEqual(2, carrier.call_count)
+                return result
+
+            plan, _, _ = run_plan(new_config)
+            self.assertEqual({"stable": "old-stable", "canary": "old-canary"}, plan["old_instances"])
+            self.assertEqual(rollout.digest(rollout.canonical(new_config)), plan["new_config_digest"])
+            for key, changed in (("SOURCE_FACTS_ENABLED", "false"),
+                                 ("SOURCE_CONTENT_FULL_ENABLED", "false"),
+                                 ("SOURCE_CONTENT_STORAGE_IDENTITY", "other-store"),
+                                 ("COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE", "other-producer")):
+                candidate = copy.deepcopy(new_config)
+                candidate["services"]["backend"]["environment"][key] = changed
+                with self.subTest(drift=key), self.assertRaisesRegex(RuntimeError, "qualified source"):
+                    run_plan(candidate)
+            candidate = copy.deepcopy(new_config)
+            candidate["services"]["backend-canary"]["environment"]["XINSIGHT_CONNECTOR_STATIC_PEER_JSON"] = '{"origin":"other-peer"}'
+            with self.assertRaisesRegex(RuntimeError, "effective configuration delta"):
+                run_plan(candidate)
+
     def test_m121_bridge_values_are_present_in_both_compose_service_environments(self):
         # Read the shipped Compose service maps, not a duplicate hand-written
         # environment fixture. The fixed indentation is their current format.
@@ -336,7 +447,7 @@ class SchemaBridgeTransitionTests(unittest.TestCase):
         for key, value in (("SOURCE_FACTS_ENABLED", "false"),
                            ("SOURCE_CONTENT_STORAGE_IDENTITY", "other-store"),
                            ("COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE", "other-source")):
-            with self.subTest(key=key), self.assertRaisesRegex(RuntimeError, "M123 source"):
+            with self.subTest(key=key), self.assertRaisesRegex(RuntimeError, "qualified source"):
                 rollout.preserve_m123_source_config(expected, original, dict(future, **{key:value}), [])
 
     def test_m121_carrier_preserves_live_source_and_only_adds_disabled_media_ttl(self):
