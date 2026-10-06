@@ -1704,6 +1704,124 @@ func (f jointHTTPFixture) logManagedEnrollmentState(t *testing.T) {
 	}
 }
 
+// Only the two installed-driver receipt shapes may reach CI logs. Keep a
+// bounded tail for long adopt runs and preserve the last result if it precedes
+// that tail; no untrusted child text is copied into the diagnostic.
+func redactInstalledJointReceipts(raw string) string {
+	const maxReceipts = 48
+	stagePattern := regexp.MustCompile(`^[a-z_]{1,40}$`)
+	categoryPattern := regexp.MustCompile(`^[a-z_]{1,60}$`)
+	var safe []string
+	valid, invalid, lastResultIndex := 0, 0, -1
+	lastResult := ""
+	for _, line := range strings.Split(raw, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var receipt struct {
+			SchemaVersion   string `json:"schema_version"`
+			Stage           string `json:"stage"`
+			State           string `json:"state"`
+			ElapsedMS       int64  `json:"elapsed_ms"`
+			FailureCategory string `json:"failure_category"`
+		}
+		decoder := json.NewDecoder(strings.NewReader(line))
+		decoder.DisallowUnknownFields()
+		if decoder.Decode(&receipt) != nil ||
+			decoder.Decode(new(any)) != io.EOF ||
+			(receipt.SchemaVersion != "xinsight.ci-installed-joint-stage.v1" && receipt.SchemaVersion != "xinsight.ci-installed-joint-result.v1") ||
+			!stagePattern.MatchString(receipt.Stage) ||
+			(receipt.State != "passed" && receipt.State != "failed") ||
+			receipt.ElapsedMS < 0 || receipt.ElapsedMS > 1200000 ||
+			receipt.FailureCategory != "" && !categoryPattern.MatchString(receipt.FailureCategory) {
+			invalid++
+			continue
+		}
+		formatted := fmt.Sprintf("%s/%s/%s/%d/%s", receipt.SchemaVersion, receipt.Stage, receipt.State, receipt.ElapsedMS, receipt.FailureCategory)
+		if receipt.SchemaVersion == "xinsight.ci-installed-joint-result.v1" {
+			lastResultIndex, lastResult = valid, formatted
+		}
+		valid++
+		if len(safe) < maxReceipts {
+			safe = append(safe, formatted)
+		} else {
+			copy(safe, safe[1:])
+			safe[maxReceipts-1] = formatted
+		}
+	}
+	if len(safe) == 0 {
+		return "installed_driver_output_unavailable"
+	}
+	if lastResultIndex >= 0 && lastResultIndex < valid-len(safe) {
+		safe[0] = lastResult
+	}
+	if valid > len(safe) {
+		safe = append(safe, fmt.Sprintf("truncated_valid_receipts=%d", valid-len(safe)))
+	}
+	if invalid > 0 {
+		safe = append(safe, fmt.Sprintf("invalid_rows_omitted=%d", invalid))
+	}
+	return strings.Join(safe, ";")
+}
+
+func TestRedactInstalledJointReceipts(t *testing.T) {
+	receipt := func(schema, stage, state string, elapsed int64, category string) string {
+		body, err := json.Marshal(map[string]any{
+			"schema_version": schema, "stage": stage, "state": state,
+			"elapsed_ms": elapsed, "failure_category": category,
+		})
+		require.NoError(t, err)
+		return string(body)
+	}
+	stageSchema, resultSchema := "xinsight.ci-installed-joint-stage.v1", "xinsight.ci-installed-joint-result.v1"
+	t.Run("ordinary and more than 24 receipts", func(t *testing.T) {
+		var lines []string
+		for i := 0; i < 29; i++ {
+			lines = append(lines, receipt(stageSchema, "credential_rotation", "passed", int64(i), ""))
+		}
+		ordinary := redactInstalledJointReceipts(strings.Join(lines[:19], "\n"))
+		require.Equal(t, 19, strings.Count(ordinary, "xinsight.ci-installed-joint-"))
+		require.NotContains(t, ordinary, "truncated_valid_receipts")
+		lines = append(lines, receipt(resultSchema, "credential_offline_expiry", "failed", 31, "server_error"))
+		output := redactInstalledJointReceipts(strings.Join(lines, "\n") + "\n")
+		require.Equal(t, 30, strings.Count(output, "xinsight.ci-installed-joint-"))
+		require.Contains(t, output, "credential_offline_expiry/failed/31/server_error")
+		require.NotContains(t, output, "truncated_valid_receipts")
+	})
+	t.Run("bounded tail retains preceding terminal result", func(t *testing.T) {
+		lines := []string{receipt(resultSchema, "installed_joint", "failed", 1, "server_error")}
+		for i := 0; i < 60; i++ {
+			lines = append(lines, receipt(stageSchema, "credential_rotation", "passed", int64(i), ""))
+		}
+		output := redactInstalledJointReceipts(strings.Join(lines, "\n"))
+		require.Equal(t, 48, strings.Count(output, "xinsight.ci-installed-joint-"))
+		require.Contains(t, output, "xinsight.ci-installed-joint-result.v1/installed_joint/failed/1/server_error")
+		require.Contains(t, output, "truncated_valid_receipts=13")
+		require.Contains(t, output, "credential_rotation/passed/59/")
+	})
+	t.Run("invalid and private lines omit only those lines", func(t *testing.T) {
+		const secret = "private-token-keep-out"
+		valid := receipt(stageSchema, "credential_rotation", "passed", 3, "")
+		invalid := []string{
+			secret,
+			receipt("xinsight.ci-installed-joint-fake.v1", "credential_rotation", "passed", 3, ""),
+			receipt(stageSchema, "credential_rotation", "failed", 1200001, ""),
+			receipt(resultSchema, "installed_joint", "failed", 2, "secret-"+secret),
+			`{"schema_version":"xinsight.ci-installed-joint-stage.v1","stage":"credential_rotation","state":"passed","elapsed_ms":1,"failure_category":"","private":"` + secret + `"}`,
+		}
+		lines := append([]string{valid}, invalid...)
+		lines = append(lines, receipt(resultSchema, "installed_joint", "failed", 4, "server_error"))
+		output := redactInstalledJointReceipts(strings.Join(lines, "\n"))
+		require.Contains(t, output, "credential_rotation/passed/3/")
+		require.Contains(t, output, "installed_joint/failed/4/server_error")
+		require.Contains(t, output, "invalid_rows_omitted=5")
+		require.NotContains(t, output, secret)
+		require.NotContains(t, output, "fake.v1")
+		require.Equal(t, "installed_driver_output_unavailable", redactInstalledJointReceipts(strings.Join(invalid, "\n")))
+		require.NotContains(t, redactInstalledJointReceipts(valid+"\n"+receipt(resultSchema, "installed_joint", "passed", 1, secret)), "/installed_joint/passed/")
+	})
+}
+
 func runManagedJointConsumer(t *testing.T, mode string) {
 	runManagedJointConsumerWithInstalled(t, mode, nil)
 }
@@ -1842,32 +1960,7 @@ func runManagedJointConsumerWithInstalled(t *testing.T, mode string, installed *
 	}()
 	redact := func(raw string) string {
 		if installed != nil {
-			var safe []string
-			for _, line := range strings.Split(raw, "\n") {
-				if line == "" {
-					continue
-				}
-				var receipt struct {
-					SchemaVersion   string `json:"schema_version"`
-					Stage           string `json:"stage"`
-					State           string `json:"state"`
-					ElapsedMS       int64  `json:"elapsed_ms"`
-					FailureCategory string `json:"failure_category"`
-				}
-				if json.Unmarshal([]byte(line), &receipt) != nil ||
-					!strings.HasPrefix(receipt.SchemaVersion, "xinsight.ci-installed-joint-") ||
-					!regexp.MustCompile(`^[a-z_]{1,40}$`).MatchString(receipt.Stage) ||
-					!regexp.MustCompile(`^(passed|failed)$`).MatchString(receipt.State) ||
-					receipt.ElapsedMS < 0 || receipt.ElapsedMS > 1200000 ||
-					receipt.FailureCategory != "" && !regexp.MustCompile(`^[a-z_]{1,60}$`).MatchString(receipt.FailureCategory) {
-					return "installed_driver_output_unavailable"
-				}
-				safe = append(safe, fmt.Sprintf("%s/%s/%s/%d/%s", receipt.SchemaVersion, receipt.Stage, receipt.State, receipt.ElapsedMS, receipt.FailureCategory))
-			}
-			if len(safe) == 0 || len(safe) > 24 {
-				return "installed_driver_output_unavailable"
-			}
-			return strings.Join(safe, ";")
+			return redactInstalledJointReceipts(raw)
 		}
 		if xiDSN != "" {
 			raw = strings.ReplaceAll(raw, xiDSN, "[redacted]")

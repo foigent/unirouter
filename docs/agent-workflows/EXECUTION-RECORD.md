@@ -136,6 +136,60 @@ loopback bind, not by a product assertion. No corrected PR/CI, Docker Artifact,
 installed XI lifecycle, Target or Production result is claimed by these Local
 checks.
 
+**7. PR #432 first-customer schema inventory correction.** The exact
+`cadfca4e01f3ce2d8708c1ce46795457a14c7b72` PR head passed protocol run
+`37445690343`. In main CI `37445690260`, Change Routing, Browser E2E and
+Frontend passed. Backend's early M125 PostgreSQL/reset check, `go vet`, carrier
+check, full ordinary Go suite, Neutral N1, source-evidence PostgreSQL and
+X-Insight snapshot checks also passed. Its admin integration step failed on
+`check exact public table inventory: got 158 want 157`; Docker then stopped at
+its Backend prerequisite without building an image. The several FirstCustomer
+HTTP 409 and negative-test failures in that step share the same precheck cause.
+
+M125 created `xinsight_connector_credential_operations`, but the
+first-customer exact public-table and zero-state inventory did not include it.
+The previous reset correction covered resetplan's separate migration-table
+enumeration; its unit test did not exercise the first-customer inventory. The
+first-customer unit test compared its own static expected list and cardinality
+against the same stale product list, so it missed the new migration table.
+Independent read-only pre-code review required treating the journal as
+X-Insight machine authority: all three first-customer checkpoints may accept
+it only when empty, while resetplan still preserves history and refuses apply.
+The local correction adds the exact table to their shared inventory, changes
+the independent count to 158, and compares the inventory with actual CREATE
+TABLE declarations from current migration files. The existing Backend early
+Go step now runs those inventory tests before its full suite. No unknown-table
+allowance, automatic journal deletion, reset-scope expansion, new job or timeout
+was added.
+
+Local evidence: the two inventory unit tests passed. The task-owned isolated
+PostgreSQL 16.14 on `127.0.0.1:55437` ran all 17 `TestFirstCustomer...`
+integration selectors with `REQUIRE_TEST_DATABASE=1` and `-race`: PASS in
+22.924 seconds. The new nonempty-journal test inserts a valid parent
+installation and pending operation, proves the read-only runtime checkpoint
+rejects the journal, and proves both normal and dry-run bootstrap requests
+return 409 without changing the installation or journal rows. The separate
+single-test run passed in 5.449 seconds. The Backend early wiring check and
+release metadata policy suite passed (19 tests), as did the release metadata
+shell check, admin `go vet`, and `git diff --check`.
+
+The same CI investigation found a separate installed-joint diagnostic defect:
+UR's safety redactor discarded *all* XI stage receipts when more than 24 valid
+lines arrived. XI's new-install run had 19 receipts, while adopt's longer
+predecessor and credential sequence crossed that bound and the UR failure
+reported `receipts=[]`. This is a diagnostic information loss, not evidence of
+the underlying adopt failure cause. The local test-only correction accepts
+only the exact installed stage/result v1 schemas and existing safe fields,
+ignores malformed or private lines independently, retains at most 48 valid
+receipts (including the last earlier result), and marks omitted counts. A
+focused integration-tagged unit test covers 19, 30 and 61 valid lines, result
+retention, fake schema, invalid bounds and private noise. It does not change
+the product runtime or the XI-owned receipt protocol.
+
+These are Local results on a correction not yet run in CI; they do not
+establish Docker Artifact, installed XI lifecycle, Target or Production
+acceptance.
+
 ## Long-task retrospective entrypoint — 2026-10-06
 
 **Baseline and scope.** This documentation branch

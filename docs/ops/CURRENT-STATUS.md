@@ -1,28 +1,27 @@
 # UniRouter Current Status
 
-## X-Insight control credential lifecycle — Local candidate, 2026-10-06
+## X-Insight control credential lifecycle — PR candidate, 2026-10-06
 
-The isolated `codex/ur-xi-control-lifecycle-20261006` worktree starts at
-`a831e6bc33ca25edd7ccb07f8a036d84f5bae591` and carries a **working diff**, not
-a commit or release. Candidate version 1.9.2 adds M125, original-connection
-credential rotation/recovery, recovery admin API/UI, and the bounded runtime
-loop. The recovery page resolves the original business organization locally
-before sending a ticket, including when a platform administrator belongs to
-a distinct technical organization. [Administrator/API behavior](XINSIGHT-CONTROL-CREDENTIAL-LIFECYCLE.md)
-and the [execution record](../agent-workflows/EXECUTION-RECORD.md) describe
-the exact scope and evidence. PG16.14 Local credential and production-loop
-tests passed with `-race`; affected Go suites, frontend type/build/route
-checks, metadata and migration checks passed. The original cross-product
-managed **new-install Local joint test now passes** on isolated PG16.14 after
-XI fixed its fixture's deployment identity. It exercises real UR/XI HTTPS,
-eight source profiles, C manifests, encrypted body acceptance and independent
-XI body readback. Earlier failure showed `effective_policy_disabled` in XI
-because its setup policy was not applied; that failed run remains separate
-evidence. The passing Local test does not exercise the new installed Linux
-credential lifecycle assertions. No CI, signed Artifact, Target,
-Production or real external integration result is claimed. Both project owners
-must complete the installed joint lifecycle before closure. Earlier
-status entries retain their original evidence cutoffs.
+Version 1.9.2/M125 on `codex/ur-xi-control-lifecycle-20261006` is under PR
+#432. Its latest completed head `cadfca4e` passed protocol CI `37445690343`;
+main CI `37445690260` passed Change Routing, Browser E2E and Frontend but failed
+Backend admin integration because M125's credential journal was absent from
+the first-customer exact schema inventory. Docker stopped at that failed
+prerequisite without building an image. The local correction has passed focused
+inventory and PostgreSQL 16 checks. A separate local test-only CI redaction
+fix preserves bounded installed stage receipts when adopt emits more than 24;
+[the execution record](../agent-workflows/EXECUTION-RECORD.md) holds the exact
+run, cause, fix and verification boundary. No merge, signed Artifact, Target,
+Production or installed XI lifecycle result is claimed.
+
+At the earlier Local cutoff, PG16.14 credential and production-loop tests
+passed with `-race`. The managed new-install UR/XI Local joint test passed
+after XI corrected its fixture deployment identity, exercising real HTTPS,
+eight source profiles, C manifests, encrypted body acceptance and XI readback.
+That historical Local result does not cover the installed Linux credential
+lifecycle. [Administrator/API behavior](XINSIGHT-CONTROL-CREDENTIAL-LIFECYCLE.md)
+remains the operator reference; earlier status entries retain their original
+evidence cutoffs.
 
 ## Current source and retrospective handoff — 2026-10-06
 
