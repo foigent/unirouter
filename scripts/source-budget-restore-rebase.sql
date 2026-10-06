@@ -22,6 +22,16 @@ BEGIN
     LOCK TABLE schema_migrations IN SHARE MODE;
     SELECT array_agg(version::text ORDER BY version) INTO ledger FROM schema_migrations;
     certified_ledger := ledger;
+    IF ledger[cardinality(ledger)]='000125_xinsight_control_credential_lifecycle' THEN
+      IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000124_xinsight_receiver_adoption'
+         OR to_regclass('public.xinsight_connector_credential_operations') IS NULL
+         OR NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='xinsight_connector_credential_operations'::regclass AND attname='request_enc' AND NOT attisdropped AND atttypid='text'::regtype AND attnotnull)
+         OR NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='xinsight_connector_credential_operations'::regclass AND attname='replacement_token_enc' AND NOT attisdropped AND atttypid='text'::regtype AND attnotnull)
+         OR NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='runtime_generations'::regclass AND tgname='runtime_generation_xinsight_control_credential_support' AND NOT tgisinternal) THEN
+        RAISE EXCEPTION 'M125 restore requires exact credential journal, runtime guard and M124 predecessor'; END IF;
+      ledger := ledger[1:cardinality(ledger)-1];
+      certified_ledger := ledger;
+    END IF;
     IF ledger[cardinality(ledger)]='000124_xinsight_receiver_adoption' THEN
       IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000123_xinsight_policy_delegation'
          OR to_regclass('public.xinsight_receiver_adoptions') IS NULL
@@ -94,12 +104,13 @@ BEGIN
        AND head IS DISTINCT FROM '000121_gateway_pre_dispatch_terminal'
        AND head IS DISTINCT FROM '000122_scoped_content_policy'
        AND head IS DISTINCT FROM '000123_xinsight_policy_delegation'
-       AND head IS DISTINCT FROM '000124_xinsight_receiver_adoption' THEN
+       AND head IS DISTINCT FROM '000124_xinsight_receiver_adoption'
+       AND head IS DISTINCT FROM '000125_xinsight_control_credential_lifecycle' THEN
       IF present<>0 THEN RAISE EXCEPTION 'restored C tables require the exact M119 ledger'; END IF;
       RETURN;
     END IF;
     IF present<>8 THEN RAISE EXCEPTION 'restored C schema is incomplete'; END IF;
-    IF head IN ('000120_unpublished_content_reclamation','000121_gateway_pre_dispatch_terminal','000122_scoped_content_policy','000123_xinsight_policy_delegation','000124_xinsight_receiver_adoption') THEN
+    IF head IN ('000120_unpublished_content_reclamation','000121_gateway_pre_dispatch_terminal','000122_scoped_content_policy','000123_xinsight_policy_delegation','000124_xinsight_receiver_adoption','000125_xinsight_control_credential_lifecycle') THEN
       IF NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='execution_content_objects'::regclass AND attname='reclaimed_at' AND NOT attisdropped AND atttypid='timestamptz'::regtype AND NOT attnotnull) THEN
         RAISE EXCEPTION 'restored content reclamation schema mismatch'; END IF;
     ELSIF EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='execution_content_objects'::regclass AND attname='reclaimed_at' AND NOT attisdropped) THEN

@@ -53,6 +53,27 @@ export interface SetupStatus {
   purpose_status: { policy_manage: string; source_enroll: string };
   ur_policy_status: { state: 'pending' | 'effective' | 'blocked'; policy_ref: string; policy_version: string; version_vector: string };
   xi: SetupXIStatus | null; issues: SetupIssue[];
+  credential?: CredentialLocalStatus;
+}
+export interface CredentialLocalStatus {
+  state: 'healthy' | 'rotation_due' | 'rotation_pending' | 'committed_unpromoted' | 'expired_recovery_required' | 'revoked' | 'credential_unavailable';
+  current_token_sha256: string; current_expires_at: string;
+  pending_operation_id?: string; pending_state?: string; pending_replacement_sha256?: string;
+}
+export interface CredentialRecoveryPreview {
+  schema_version: 'unirouter.xinsight.credential-recovery-preview.v1';
+  installation_id: string; deployment_id: string; project_id: string;
+  final_event_scope: string[]; source_binding_sha256: string;
+  xinsight_origin: string; unirouter_origin: string; recovery_id: string;
+  expires_at: string; credential: CredentialLocalStatus;
+}
+export interface CredentialRecoveryScope {
+  schema_version: 'unirouter.xinsight.credential-recovery-scope.v1';
+  installation_id: string; org_id: number;
+}
+export interface CredentialRecoveryAccepted {
+  schema_version: 'unirouter.xinsight.credential-recovery-accepted.v1';
+  installation_id: string; operation_id: string; state: 'pending';
 }
 export interface SetupProjectMember { user_id: number; username: string; status: string }
 export const xInsightSetupApi = {
@@ -64,4 +85,12 @@ export const xInsightSetupApi = {
     `/organizations/${org}/xinsight/setups`, { method: 'POST', body: JSON.stringify(put) }, 'v2'),
   status: (org: number, installation: string) => request<SetupStatus>(
     `/organizations/${org}/xinsight/setups/${encodeURIComponent(installation)}`, {}, 'v2'),
+  recoveryScope: (installation: string) => request<CredentialRecoveryScope>(
+    `/xinsight/setups/${encodeURIComponent(installation)}/credential-recovery-scope`, {}, 'v2'),
+  recoveryPreview: (org: number, installation: string, ticket: string) => request<CredentialRecoveryPreview>(
+    `/organizations/${org}/xinsight/setups/${encodeURIComponent(installation)}/credential-recovery/preview`,
+    { method: 'POST', body: JSON.stringify({recovery_ticket: ticket}) }, 'v2'),
+  recoveryConfirm: (org: number, installation: string, ticket: string) => request<CredentialRecoveryAccepted>(
+    `/organizations/${org}/xinsight/setups/${encodeURIComponent(installation)}/credential-recovery`,
+    { method: 'POST', body: JSON.stringify({recovery_ticket: ticket}) }, 'v2'),
 };

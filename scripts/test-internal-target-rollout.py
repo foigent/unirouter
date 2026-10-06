@@ -528,8 +528,20 @@ class CounterBridgeTests(unittest.TestCase):
         wire=json.dumps(manifest,sort_keys=True,separators=(",",":")).encode()
         backend={"Image":"sha256:"+"a"*64,"HostConfig":{"PortBindings":{}}}
         runtime={"artifact_digest":backend["Image"],"supported_schema_heads":e.HEADS,"compatibility_epoch":"unirouter.runtime-compatibility.v1","support_manifest_digest":rollout.digest(wire)}
-        e.verify_bridge(runtime,backend,wire,e.HEADS[-1])
+        e.verify_bridge(runtime,backend,wire,e.HEADS[-2])
         for missing in e.XINSIGHT_ADOPTION+e.XINSIGHT_POLICY+e.BUDGET_REQUIREMENTS:
+            bad=json.dumps(dict(manifest,implementations=[r for r in refs if r!=missing]),sort_keys=True,separators=(",",":")).encode()
+            with self.assertRaises(RuntimeError):e.verify_bridge(dict(runtime,support_manifest_digest=rollout.digest(bad)),backend,bad,e.HEADS[-2])
+
+    def test_m125_requires_credential_lifecycle_while_retaining_prior_contracts(self):
+        e=self.expand
+        refs=e.COUNTERS+[e.SOURCE_FACTS,e.SOURCE_OBSERVATIONS,e.SOURCE_DISPATCH]+e.BUDGET_REQUIREMENTS+[e.CONTENT_LIFECYCLE,e.PRE_DISPATCH_OBSERVATIONS]+e.SCOPED_CONTENT+e.XINSIGHT_POLICY+e.XINSIGHT_ADOPTION+e.XINSIGHT_CREDENTIAL
+        manifest={"schema_heads":e.HEADS,"implementations":refs}
+        wire=json.dumps(manifest,sort_keys=True,separators=(",",":")).encode()
+        backend={"Image":"sha256:"+"a"*64,"HostConfig":{"PortBindings":{}}}
+        runtime={"artifact_digest":backend["Image"],"supported_schema_heads":e.HEADS,"compatibility_epoch":"unirouter.runtime-compatibility.v1","support_manifest_digest":rollout.digest(wire)}
+        e.verify_bridge(runtime,backend,wire,e.HEADS[-1])
+        for missing in e.XINSIGHT_CREDENTIAL+e.XINSIGHT_ADOPTION+e.XINSIGHT_POLICY+e.BUDGET_REQUIREMENTS:
             bad=json.dumps(dict(manifest,implementations=[r for r in refs if r!=missing]),sort_keys=True,separators=(",",":")).encode()
             with self.assertRaises(RuntimeError):e.verify_bridge(dict(runtime,support_manifest_digest=rollout.digest(bad)),backend,bad,e.HEADS[-1])
 
@@ -1133,8 +1145,8 @@ class ArtifactOwnerReadFixtureTests(unittest.TestCase):
         bridge,current=self.load_carrier().carrier_read_ledgers(migrations)
         self.assertEqual(bridge[0],"bridge")
         self.assertEqual(current[0],"current")
-        self.assertEqual(bridge[1][-1],rollout.XINSIGHT_POLICY_HEAD)
-        self.assertEqual(current[1][-1],rollout.XINSIGHT_ADOPTION_HEAD)
+        self.assertEqual(bridge[1][-1],rollout.XINSIGHT_ADOPTION_HEAD)
+        self.assertEqual(current[1][-1],rollout.XINSIGHT_CREDENTIAL_HEAD)
         self.assertEqual(current[1],sorted(p.name[:-7] for p in migrations.glob("*.up.sql")))
         self.assertEqual(bridge[1],current[1][:-1])
 

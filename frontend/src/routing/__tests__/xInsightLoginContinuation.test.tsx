@@ -8,7 +8,7 @@ import LoginPage from '../../pages/LoginPage';
 import { useAuthStore, type UserProfile } from '../../store/auth';
 import { request } from '../../api/transport';
 import { ROUTER_FUTURE_FLAGS } from '../routerFuture';
-import { captureXInsightLoginContinuation, clearXInsightLoginContinuation, finishXInsightLoginContinuation, hasXInsightLoginContinuation, isXInsightInvitationLocation, preservesXInsightLoginOn401 } from '../xInsightLoginContinuation';
+import { captureXInsightLoginContinuation, clearXInsightLoginContinuation, finishXInsightLoginContinuation, hasXInsightLoginContinuation, isXInsightInvitationLocation, isXInsightRecoveryLocation, preservesXInsightLoginOn401 } from '../xInsightLoginContinuation';
 
 // Tooltip visibility is covered by LoginPage/PasswordField tests. Keep this
 // auth/routing suite independent of Semi's known tooltip compatibility debt.
@@ -49,6 +49,7 @@ function app(path: string, strict = true) {
   const routes = <BrowserRouter future={ROUTER_FUTURE_FLAGS}><Routes>
     <Route path="/login" element={<LoginPage />} />
     <Route path={install} element={gate(<InstallRedirect />)} />
+    <Route path="/connectors/x-insight/recover" element={gate(<Wizard />)} />
     <Route path="/integrations" element={gate(<Wizard />)} />
     <Route path="/" element={<p>默认入口</p>} />
     <Route path="/access" element={<p>成员入口</p>} />
@@ -79,6 +80,24 @@ beforeEach(() => {
 });
 afterEach(() => { clearXInsightLoginContinuation(); vi.unstubAllGlobals(); window.history.replaceState(null, '', '/'); });
 describe('fixed password invitation continuation', () => {
+  it('keeps a recovery ticket in memory through login and rejects changed recovery destinations', async () => {
+    const recoveryPath = '/connectors/x-insight/recover';
+    const ticket = `xirt_${'A'.repeat(43)}`;
+    const recoveryFragment = '#' + new URLSearchParams({ xinsight_origin: 'https://xi.example', installation_id: `xci_${'A'.repeat(22)}`, recovery_id: `xrr_${'B'.repeat(22)}`, recovery_ticket: ticket });
+    expect(isXInsightRecoveryLocation(recoveryPath, '', recoveryFragment)).toBe(true);
+    expect(isXInsightRecoveryLocation(recoveryPath, '', recoveryFragment + '&recovery_ticket=extra')).toBe(false);
+    expect(isXInsightRecoveryLocation(recoveryPath, '', recoveryFragment.replace('https%3A%2F%2Fxi.example', 'https%3A%2F%2Fevil.example%2Fpath'))).toBe(false);
+    app(recoveryPath + recoveryFragment);
+    await screen.findByPlaceholderText('请输入用户名');
+    expect(window.location.hash).toBe('');
+    expect(hasXInsightLoginContinuation()).toBe(true);
+    await submit();
+    await screen.findByText('向导当前账号 92：已收到邀请');
+    expect(window.location.pathname).toBe(recoveryPath);
+    expect(observations.every(value => value === recoveryFragment)).toBe(true);
+    expect(Object.values(localStorage).join('') + Object.values(sessionStorage).join('')).not.toContain(ticket);
+    expect(fetchMock.mock.calls.every(([path]) => !path.includes(ticket))).toBe(true);
+  });
   it('preserves a signed-out invitation through real login and fresh /me, without storing it', async () => {
     app(install + fragment); await screen.findByPlaceholderText('请输入用户名');
     expect(window.location.hash).toBe(''); expect(hasXInsightLoginContinuation()).toBe(true);

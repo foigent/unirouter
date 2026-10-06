@@ -1,5 +1,101 @@
 # Current Execution Record
 
+## X-Insight control credential lifecycle, UR Local candidate — 2026-10-06
+
+**1. Goal and evidence.** Preserve one installed connection and its original
+installation/deployment, control project, completed-event scope, source binding,
+origins, fence, permissions, history and ACKs across 24-hour bearer renewal and
+administrator-approved post-expiry recovery; revoked connections remain final.
+The shared approved contract is the 2026-10-06 P3 control credential lifecycle
+document (SHA-256 `60073ab48c36599bd21193c76f0daf9f7090fd88e8044f6c888648f5acf2518c`).
+The UR source candidate is uncommitted on
+`codex/ur-xi-control-lifecycle-20261006`, base
+`a831e6bc33ca25edd7ccb07f8a036d84f5bae591`. Version 1.9.2/M125 adds
+purpose-separated encrypted pending operations and receipts, fixed-origin
+rotate/query/confirm and recovery, production-loop due discovery ahead of
+Poll, original/current administrator reauthorization, local status and a
+recovery page. The page first uses a local, ticket-free lookup of the globally
+unique installation ID to find the original business organization, rechecking
+both current and saved setup actor authority; it does not assume the current
+platform administrator's technical `org_id` is the business organization.
+[Operator and API instructions](../ops/XINSIGHT-CONTROL-CREDENTIAL-LIFECYCLE.md)
+are in this repository; OpenAPI has the exact admin routes.
+
+**2. Actual result by layer.** Local PG16.14 `-race` selectors for
+`TestControlCredential.*PostgresIntegration` and
+`TestXInsightCredentialRuntimePostgresIntegration` and
+`TestXInsightCredentialRecoveryScopeTechnicalOrgPostgresIntegration` passed.
+The runtime test uses the
+actual production `runCycle` and PostgreSQL journal: healthy Poll, due-before-
+Poll, same pending operation after reconstructing journal and supervisor over
+the durable database, and revoked exclusion. It simulates the XI response
+loss; it is not a real process restart or two-product proof. The credential
+journal tests also cross the actual saved replacement receipt expiry with a
+controlled clock, reconstruct the journal, and recover the original connection
+from prepared or XI-committed/UR-unpromoted states. A pending operation without
+a receipt remains undecided even when the old current expires. The recovery test
+uses a platform actor from a distinct technical organization with the original
+business customer context, rejects foreign/mismatched scopes, and asserts zero
+XI outbound calls on denied local authorization. The affected Go package
+suites, frontend TypeScript/Vite and 23 routing/recovery tests, migration/budget
+and release metadata checks passed. The restore helper delivered with M125 is
+`scripts/source-budget-restore-rebase.sql`, 10,838 bytes, SHA-256
+`d9939ccad3bd962e23a2f8ee2123d8efbe265d74e13352c3bc6c31171f20ff62`;
+`check-release-metadata.sh` verifies these README-declared bytes. The isolated
+PG16.14 cluster was task-owned under
+`/private/tmp/ur-xi-control-lifecycle-pg-20261006`, port 55437. Before the
+final joint run, its `PG_VERSION` read `16`, the exact
+`/opt/homebrew/opt/postgresql@16/bin/pg_ctl --version` read `16.14`, and a
+read-only SQL connection confirmed the live server was PostgreSQL 16.14.
+The same PG16 `pg_ctl` stopped the task-owned cluster, and its `status`
+confirmed no server running; no existing
+database or Target was modified. CI, immutable Artifact, Target, Production
+and real external integration remain unverified.
+
+The original managed new-install UR/XI Local joint test subsequently passed
+on isolated PG16.14 in 42.51 seconds, with real HTTPS, all eight profiles,
+post-registration C manifests, XI accepted encrypted body, and independent
+XI body readback. Its successful assertions do not substitute for the
+unexecuted installed Linux lifecycle driver.
+
+**3. Deviation and failure class.** The first optional managed UR/XI joint
+run failed in XI's local host fixture before source enrollment with “target
+network publication is incomplete.” After XI fixed that fixture, the second
+run reached all eight successful source profile polls and active UR A/C
+enrollment. In the latest run, XI fetched C manifests three times after
+publication with HTTP 200 and stored the expected complete manifest, but its
+body copy was excluded with `effective_policy_disabled`; XI's setup policy was
+not applied and its effective review-capture default was absent. The 100-second
+child context then expired without a body GET or accepted/readable copy. The
+failure was at XI custody setup, not the UR C cursor or credential lifecycle.
+XI fixed the missing fixture deployment identity and the original new-install
+joint entrypoint passed on rerun. That does not prove a successful credential
+lifecycle. The installed joint driver remains
+unexecuted; its separate Linux service and credential assertions are not
+claimed. Failed evidence is retained in task-local logs.
+
+**4. Original assumption and correction.** Standalone PG lifecycle tests
+cannot substitute for XI's service-auth HTTP, persisted XI identity and actual
+worker readback. The UR joint fixture now discovers credential due/pending
+before Poll and uses real UR handlers and encrypted journal, while a new
+`cmd/uniroute` integration test covers the production supervisor rather than
+relying on fixture scheduling alone. The initial network fixture failure is
+old-fail/new-progress evidence only; neither it nor successful first worker
+polls satisfy the original C or lifecycle exit conditions. C's empty cursor
+starts at registration `coverage_from`, not the first-read high watermark;
+the server-half test proves a manifest published after C registration but before
+its first read appears in that initial page. No extra scheduler
+or synthetic `loaded`/`completed` result was added.
+
+**5. Remaining owner and action.** XI owner runs the installed Linux joint
+driver's credential lifecycle scenarios on the exact isolation; UR responds
+to any verified cross-product contract failure. UR owner finishes independent diff review and
+repository preflight; the coordinator then reconciles Local versus CI,
+Artifact and Target separately. No push, merge, deployment, service change,
+real credential write, paid call or real traffic action occurred. The model
+adaptation experience file needs no change: this batch adds no model,
+Provider, Profile, usage or pricing result.
+
 ## Long-task retrospective entrypoint — 2026-10-06
 
 **Baseline and scope.** This documentation branch

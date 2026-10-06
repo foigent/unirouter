@@ -29,6 +29,10 @@ func scopedContentMigrationWire(t *testing.T, suffix string) []byte {
 func TestScopedContentMigrationPreservesOldPolicyAndRefusesNewHistoryRollback(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := t.Context()
+	credentialDown, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), schemaauthority.XInsightCredentialExpandHead+".down.sql"))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(credentialDown))
+	require.NoError(t, err)
 	adoptionDown, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), schemaauthority.XInsightAdoptionExpandHead+".down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(adoptionDown))

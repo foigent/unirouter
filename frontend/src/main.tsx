@@ -35,6 +35,7 @@ const ApiDocsPage = lazy(() => import('./pages/ApiDocsPage'))
 const AccessStatePage = lazy(() => import('./pages/AccessStatePage'))
 const DeploymentNetworkPage = lazy(() => import('./pages/DeploymentNetworkPage'))
 const IntegrationsPage = lazy(() => import('./pages/IntegrationsPage'))
+const XInsightCredentialRecoveryPage = lazy(() => import('./pages/XInsightCredentialRecoveryPage'))
 const LimitPoliciesPage = lazy(() => import('./pages/LimitPoliciesPage'))
 const GuardrailPoliciesPage = lazy(() => import('./pages/GuardrailPoliciesPage'))
 const GovernanceSimulationPage = lazy(() => import('./pages/GovernanceSimulationPage'))
@@ -135,6 +136,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="deployment" element={<RoleRoute><DeploymentNetworkPage /></RoleRoute>} />
               <Route path="integrations" element={<RoleRoute><IntegrationsPage /></RoleRoute>} />
               <Route path="connectors/x-insight/install" element={<RoleRoute><XInsightConnectorInstallRoute /></RoleRoute>} />
+              <Route path="connectors/x-insight/recover" element={<RoleRoute><XInsightCredentialRecoveryPage /></RoleRoute>} />
               <Route path="reconciliation" element={<RoleRoute><ReconciliationPage /></RoleRoute>} />
               <Route path="usage-analytics" element={<RoleRoute><UsageAnalyticsPage /></RoleRoute>} />
               <Route path="cost-optimization" element={<RoleRoute><CostOptimizationPage /></RoleRoute>} />

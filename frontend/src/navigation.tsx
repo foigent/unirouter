@@ -475,7 +475,7 @@ function projectRouteAllowed(path: string, authz: AuthzContext) {
 
 export function isRouteAllowedForAuthz(path: string, authz: AuthzContext) {
   const pathname = path.split(/[?#]/)[0];
-  if (pathname === '/connectors/x-insight/install') return isOrgAdminRole(authz.organizationRole);
+  if (pathname === '/connectors/x-insight/install' || pathname === '/connectors/x-insight/recover') return isOrgAdminRole(authz.organizationRole);
   const route = firstSegmentPath(path);
   if (route === '/login') return true;
   if (route === '/access') return !authz.organizationRole || authz.organizationRole === 'member';

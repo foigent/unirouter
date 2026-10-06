@@ -148,6 +148,7 @@ type xInsightSetupStatus struct {
 		PolicyVersion string `json:"policy_version"`
 		VersionVector string `json:"version_vector"`
 	} `json:"ur_policy_status"`
-	XI     *xInsightSetupXIStatus `json:"xi"`
-	Issues []xInsightSetupIssue   `json:"issues"`
+	XI         *xInsightSetupXIStatus                   `json:"xi"`
+	Credential *xinsightconnector.CredentialLocalStatus `json:"credential,omitempty"`
+	Issues     []xInsightSetupIssue                     `json:"issues"`
 }

@@ -1,5 +1,29 @@
 # UniRouter Current Status
 
+## X-Insight control credential lifecycle — Local candidate, 2026-10-06
+
+The isolated `codex/ur-xi-control-lifecycle-20261006` worktree starts at
+`a831e6bc33ca25edd7ccb07f8a036d84f5bae591` and carries a **working diff**, not
+a commit or release. Candidate version 1.9.2 adds M125, original-connection
+credential rotation/recovery, recovery admin API/UI, and the bounded runtime
+loop. The recovery page resolves the original business organization locally
+before sending a ticket, including when a platform administrator belongs to
+a distinct technical organization. [Administrator/API behavior](XINSIGHT-CONTROL-CREDENTIAL-LIFECYCLE.md)
+and the [execution record](../agent-workflows/EXECUTION-RECORD.md) describe
+the exact scope and evidence. PG16.14 Local credential and production-loop
+tests passed with `-race`; affected Go suites, frontend type/build/route
+checks, metadata and migration checks passed. The original cross-product
+managed **new-install Local joint test now passes** on isolated PG16.14 after
+XI fixed its fixture's deployment identity. It exercises real UR/XI HTTPS,
+eight source profiles, C manifests, encrypted body acceptance and independent
+XI body readback. Earlier failure showed `effective_policy_disabled` in XI
+because its setup policy was not applied; that failed run remains separate
+evidence. The passing Local test does not exercise the new installed Linux
+credential lifecycle assertions. No CI, signed Artifact, Target,
+Production or real external integration result is claimed. Both project owners
+must complete the installed joint lifecycle before closure. Earlier
+status entries retain their original evidence cutoffs.
+
 ## Current source and retrospective handoff — 2026-10-06
 
 Merged PR #430 is main `7ab84f1de23c4361939977fc5a0c0f7369619e5e`;

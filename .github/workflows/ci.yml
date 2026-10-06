@@ -269,6 +269,11 @@ jobs:
       
       - name: Download dependencies
         run: go mod download
+
+      - name: Verify X-Insight control credential lifecycle on PostgreSQL 16
+        env:
+          REQUIRE_TEST_DATABASE: "1"
+        run: go test -tags=integration -race ./internal/xinsightconnector ./internal/admin ./cmd/uniroute -run '^(TestControlCredential.*PostgresIntegration|TestXInsightCredentialRuntimePostgresIntegration|TestXInsightCredentialRecoveryScopeTechnicalOrgPostgresIntegration)$' -count=1 -timeout=5m
       
       - name: Run go vet
         run: go vet ./...

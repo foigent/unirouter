@@ -23,13 +23,13 @@ import (
 // This exercises the candidate binary's complete real-PG schema chain with an
 // existing M115 key. The Target's actual backup, process fleet and host controller
 // are separate deployment gates; this test never treats a synthetic DB as those.
-func TestM115ToM124CompatibleExpandPreservesExistingKey(t *testing.T) {
+func TestM115ToM125CompatibleExpandPreservesExistingKey(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	dir := testutil.MigrationsDir(t)
 	ctx := t.Context()
 	artifact, err := schemaauthority.ExpectedLedger(dir)
 	require.NoError(t, err)
-	require.Equal(t, schemaauthority.XInsightAdoptionExpandHead, artifact[len(artifact)-1])
+	require.Equal(t, schemaauthority.XInsightCredentialExpandHead, artifact[len(artifact)-1])
 	require.NoError(t, testutil.RewindEmptySourceFactsForLegacyTest(ctx, pool, dir))
 	ledger := contentMigrationLedger(t, pool)
 	require.Equal(t, schemaauthority.StreamCounterExpandHead, ledger[len(ledger)-1])
@@ -54,7 +54,7 @@ func TestM115ToM124CompatibleExpandPreservesExistingKey(t *testing.T) {
 	for _, version := range []string{schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead,
 		schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead,
 		schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead,
-		schemaauthority.ScopedContentExpandHead, schemaauthority.XInsightPolicyExpandHead, schemaauthority.XInsightAdoptionExpandHead} {
+		schemaauthority.ScopedContentExpandHead, schemaauthority.XInsightPolicyExpandHead, schemaauthority.XInsightAdoptionExpandHead, schemaauthority.XInsightCredentialExpandHead} {
 		t.Run(version, func(t *testing.T) {
 			before := contentMigrationLedger(t, pool)
 			require.NoError(t, migrate.RunRuntime(ctx, pool, dir), "candidate startup must preserve pending explicit expansion")
@@ -97,6 +97,11 @@ func TestM115ToM124CompatibleExpandPreservesExistingKey(t *testing.T) {
 	}
 	require.Equal(t, artifact, contentMigrationLedger(t, pool))
 	require.Equal(t, keyHash, readKey())
+	down125, err := os.ReadFile(filepath.Join(dir, schemaauthority.XInsightCredentialExpandHead+".down.sql"))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(down125))
+	require.NoError(t, err)
+	artifact = artifact[:len(artifact)-1]
 	down124, err := os.ReadFile(filepath.Join(dir, schemaauthority.XInsightAdoptionExpandHead+".down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down124))

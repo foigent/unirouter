@@ -4,6 +4,11 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.9.2] - 2026-10-06
+
+- 为既有 X-Insight Connector 增加控制凭据到期前轮换与双端管理员确认的过期恢复；按原 installation、identity、origin、scope 和来源绑定接续，并保存加密操作日志和回执。撤销的连接不进入恢复路径。
+- 增加 M125 扩展、运行时资格与预算恢复证明支持，安装状态展示凭据代际；原业务 ACK、control fence 与历史不重置。本条记录本地候选，尚未发布或部署。
+
 ## [1.9.1] - 2026-10-05
 
 - 修复 X-Insight 邀请在密码登录、过期会话或登录状态暂不可读时丢失的问题：在当前页面内存保留固定接入目的，重新核对当前账号及项目权限后继续原邀请预览和最终确认；刷新或企业登录后需从 XI 重新打开邀请。
