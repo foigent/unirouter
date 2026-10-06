@@ -10,8 +10,9 @@ and frontend digest
 Both backends were ready and serving. The former `37fe` stable/canary pair and
 historical `93ef`/`9db` instances were formally retired. On the original
 PostgreSQL system ID `7655821080247336993`, the M125 compatible-expand check
-and apply succeeded: the authorized body snapshot was unchanged before and
-after, while only `schema_migrations` changed.
+and apply succeeded: the authorized body snapshot was unchanged across the
+check, and only `schema_migrations` changed in the compared table-data snapshot
+after apply. M125 also installed its declared tables, functions and triggers.
 
 XI was upgraded to FPV16/schema45. The original XI installation
 `xci_khXsqM6fp6PzPAbV5VDAAw` was recovered via the two-administrator UI
@@ -25,21 +26,24 @@ a matching digest. These are bounded Target/external-integration observations,
 not a 24-hour continuity result or two-model acceptance; no new model request
 was made in this batch.
 
-The temporary ingress window was closed by 07:00 CST: both UR/XI security-
-group rules and all three XI UFW rules were removed, with unrelated rules
-unchanged. A durable non-secret result receipt records the exact identities,
-readbacks and remaining boundaries; its location and digest are in the
-execution record.
+The temporary ingress window was closed by 07:00 CST: one UR security-group
+rule, one XI security-group rule and one XI UFW rule were removed, three rules
+in total, with unrelated rules unchanged. A durable non-secret result receipt
+records the exact identities, readbacks and remaining boundaries; its location
+and digest are in the execution record.
 
 The approved acceptance project org2/project87 and development application
 `app_generated_b541fae2032288f9fc261753` exist. No access Grant or application
 Key was created: the formal application-access flow needs a real Sponsor, and
-this new project had no selectable business member. Reuse of existing user 41
-with a specified project role is awaiting the User's decision. The application
-Key UI also lacks RPM/RPS inputs; exact limits are available through the
-supported Grant-bound API after the Sponsor and rate scope are settled. The
-[execution record](../agent-workflows/EXECUTION-RECORD.md) separates these
-completed observations from the remaining acceptance and credential decisions.
+this new project had no selectable business member. The 10 RPM, 1 RPS and
+concurrency 1 limits and the credential-custody scope were already approved;
+the application Key UI lacks RPM/RPS inputs, so the supported Grant-bound API
+is the path for those limits after authorization. Still awaiting the User's
+authorization to add existing user 41 as project87 `project_user` and Sponsor,
+plus browser invitation confirmation and the M4 private download path; no
+invitation was created. The [execution record](../agent-workflows/EXECUTION-RECORD.md)
+separates these completed observations from the remaining Sponsor and invitation
+decisions.
 
 ## M124→M125 installed upgrade correction — historical source/CI cutoff, 2026-10-07
 
