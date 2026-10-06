@@ -232,8 +232,12 @@ audit, same-ticket reentry 202 with the same operation and a second audit,
 and foreign resolution 409 without another operation or audit. A direct
 literal scan of production X-Insight admin actions found no other action over
 50 characters after the fix; an AST-based length guard now runs in Backend's
-existing early check. Admin `go vet`, that early check, all 19 release-policy
-tests, release metadata and `git diff --check` passed locally. This local patch
+existing early check. The new real-PG confirmation test is also included in
+that early PG selector; `go test -tags=integration -race ./internal/admin -list`
+with its exact selector listed both recovery-scope and confirmation tests, and
+the release-policy test verifies the workflow wiring. Admin `go vet`, the
+static early check, all 19 release-policy tests, release metadata and
+`git diff --check` passed locally. This local patch
 has not been pushed or run in CI, and it does not establish XI rerun, Target
 or Production success.
 
