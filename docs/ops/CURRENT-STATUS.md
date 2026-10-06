@@ -16,22 +16,24 @@ Production or installed XI lifecycle result is claimed.
 
 At the earlier Local cutoff, PG16.14 credential and production-loop tests
 passed with `-race`. The managed new-install UR/XI Local joint test passed
-after XI corrected its fixture deployment identity, exercising real HTTPS,
+after XI fixed v1 current-credential initialization and the fixture deployment
+identity, exercising real HTTPS,
 eight source profiles, C manifests, encrypted body acceptance and XI readback.
 That historical Local result does not cover the installed Linux credential
 lifecycle. [Administrator/API behavior](XINSIGHT-CONTROL-CREDENTIAL-LIFECYCLE.md)
 remains the operator reference; earlier status entries retain their original
 evidence cutoffs.
 
-## Current source and retrospective handoff — 2026-10-06
+## Historical source and retrospective handoff — PR #430 cutoff, 2026-10-06
 
-Merged PR #430 is main `7ab84f1de23c4361939977fc5a0c0f7369619e5e`;
-its exact-main CI run `37338248954` passed. The only source difference from
-the existing deployed `37fe231d` is an opt-in installed-XI integration test
-entrypoint. The coordinator reports the development Target remains
-1.9.1/`37fe231d`/M124; this documentation batch did not redeploy or independently
-read that Target. XI installed-service and real data acceptance remain
-separate. The current [execution record](../agent-workflows/EXECUTION-RECORD.md)
+At this historical cutoff, merged PR #430 was main
+`7ab84f1de23c4361939977fc5a0c0f7369619e5e`; its exact-main CI run
+`37338248954` passed. The only source difference from the then-deployed
+`37fe231d` was an opt-in installed-XI integration test entrypoint. The
+coordinator reported development Target 1.9.1/`37fe231d`/M124; that
+documentation batch did not redeploy or independently read the Target. XI
+installed-service and real data acceptance remained separate. The
+[execution record](../agent-workflows/EXECUTION-RECORD.md)
 identifies the missed host-boundary test, its original entrypoint and remaining
 owner/action. [Agent protocol 6.4](../agent-workflows/AGENT-PROTOCOL.md#64-长任务完成复盘)
 now makes that five-part retrospective and necessary entrypoint correction part
