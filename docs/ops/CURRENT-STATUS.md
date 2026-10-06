@@ -1,19 +1,29 @@
 # UniRouter Current Status
 
-## M124→M125 installed upgrade correction — Local 1.9.3 candidate, 2026-10-06
+## M124→M125 installed upgrade correction — source/CI closed, Target pending, 2026-10-07
 
-The current local branch `codex/ur-xi-control-lifecycle-20261006`, based on
-`8f1b39242e2202e774b0531d5fdd23577995af62`, corrects two M125 upgrade
-entrances: the development/test rollout plan now preserves an active M124
-source's stable/canary capture, producer, storage and static peer; the real
-compatible-expand CLI derives the M125 predecessor from the ordered supported
-schema heads and rejects a nonadjacent predecessor. The required integration
-database path now needs an explicit test DSN and PostgreSQL 16 before database
-creation or truncation. Local plan tests and the original early PG16.14/race
-selector passed. [The execution record](../agent-workflows/EXECUTION-RECORD.md)
-contains the original failures, correction and exact evidence boundary.
-This local candidate has not been pushed, run in CI, installed on Target or
-accepted by the external XI installed lifecycle.
+Version 1.9.3/M125 is merged as main
+`5412769528de1d63328900663d938a96e9dc5aad`, tree
+`015f53dbce56cf509abb000bf0ea58a42da605fe`. PR #433 head
+`7cc255c6416080609c54bca0c1243888e23c0e09` has the same tree; its
+[CI run 37489026277](https://github.com/foigent/unirouter/actions/runs/37489026277)
+passed Change Routing, Backend Tests, Frontend Build, PR4 Browser E2E and Docker
+Build. The separately required
+[exact-main protocol run 37496389077](https://github.com/foigent/unirouter/actions/runs/37496389077)
+passed on `54127695`. No duplicate full main CI was dispatched for the identical
+tree; the complete PR checks retain their original coverage.
+
+The correction preserves active M124 stable/canary capture, producer, content
+storage and static peer through the development/test rollout plan; the actual
+compatible-expand CLI accepts the adjacent M124→M125 ledger and rejects a
+nonadjacent predecessor. Required database tests now reject an implicit DSN or
+non-PostgreSQL-16 server before their CREATE/TRUNCATE entrances. Original red
+cases, PG16.14 Local green results and the retrospective are in
+[the execution record](../agent-workflows/EXECUTION-RECORD.md).
+
+The latest 2026-10-06 read-only Target receipts still show UR 1.9.1/M124 and
+XI FPV15/schema44. No 1.9.3 signed Artifact, Target upgrade, Production
+deployment or recovery of the original installed XI connection is claimed.
 
 ## X-Insight control credential lifecycle — historical PR cutoff, 2026-10-06
 
