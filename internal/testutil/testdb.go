@@ -42,7 +42,8 @@ func TestDB_DSN() string {
 func SetupTestDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 
-	dsn := TestDB_DSN()
+	dsn, err := testdb.PreflightDSN()
+	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -54,6 +55,10 @@ func SetupTestDB(t *testing.T) *pgxpool.Pool {
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
 		testDatabaseUnavailable(t, "cannot ping test DB: %v", err)
+	}
+	if err := testdb.PreflightServer(ctx, pool); err != nil {
+		pool.Close()
+		testDatabaseUnavailable(t, "%v", err)
 	}
 
 	// Truncate all business tables in dependency order
@@ -149,13 +154,17 @@ func migratedTestDBTemplateEnabled() bool {
 
 func setupMigratedTestDBFromTemplate(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	baseDSN := TestDB_DSN()
+	baseDSN, err := testdb.PreflightDSN()
+	require.NoError(t, err)
 	adminPool, templateName := ensureMigratedTestDBTemplate(t, baseDSN)
 	_, cloneDSN, cloneName, err := tempDatabaseDSNs(baseDSN)
 	require.NoError(t, err, "build cloned test database DSN")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	if err := testdb.PreflightServer(ctx, adminPool); err != nil {
+		testDatabaseUnavailable(t, "%v", err)
+	}
 	_, err = adminPool.Exec(ctx, `CREATE DATABASE `+quoteIdent(cloneName)+` TEMPLATE `+quoteIdent(templateName))
 	if err != nil {
 		testDatabaseUnavailable(t, "cannot clone migrated test database %s: %v", cloneName, err)
@@ -203,6 +212,10 @@ func ensureMigratedTestDBTemplate(t *testing.T, baseDSN string) (*pgxpool.Pool, 
 	if err := adminPool.Ping(ctx); err != nil {
 		adminPool.Close()
 		testDatabaseUnavailable(t, "cannot ping PostgreSQL admin database for migrated template: %v", err)
+	}
+	if err := testdb.PreflightServer(ctx, adminPool); err != nil {
+		adminPool.Close()
+		testDatabaseUnavailable(t, "%v", err)
 	}
 	if _, err := adminPool.Exec(ctx, `CREATE DATABASE `+quoteIdent(templateName)); err != nil {
 		adminPool.Close()

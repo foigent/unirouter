@@ -1,4 +1,4 @@
-# X-Insight Connector 控制凭据生命周期（1.9.2 / M125）
+# X-Insight Connector 控制凭据生命周期（1.9.3 / M125）
 
 适用对象是**已经完成原邀请兑换和正常 setup 的同一个连接**。其原 `installation_id`、`deployment_id`、控制项目、完成事件范围、来源绑定、双向 HTTPS origin、`control_fence`、历史操作及 ACK 保持原值。本功能不创建新连接，不扩大原授权，也不恢复已经撤销的连接。当前源代码中的 [OpenAPI](../tech-ref/05-openapi-spec.yaml) 定义 UR 管理员接口；XI 的控制端点由 XI 自身的合同和鉴权实现负责。此文档描述源代码交付行为，不代表任一 Target 已升级。
 
@@ -27,4 +27,4 @@ UR 管理员 API：
 
 ## 核对与证据边界
 
-先确认 UR 版本/迁移头为 1.9.2/M125、原 setup 与运行循环已启用，再分别读取本地 `credential` 状态、XI 对应 operation/identity 状态和该连接的实际 Poll/ACK 与 Feed 接收。`healthy` 仅说明本地凭据代际；收到完成请求、来源事实与正文仍需分别核验真实结果。Local 单产品测试、双产品合成联合测试、CI、签名 Artifact、Target、Production 是不同证据层，不得相互替代。失败时保留 operation ID、请求/回执摘要及状态；**不记录票据、bearer、请求密文或 DSN**。回退 M125 必须遵守迁移的历史保留与拒绝条件，不删除已产生的代际日志。
+先确认 UR 版本/迁移头为 1.9.3/M125、原 setup 与运行循环已启用，再分别读取本地 `credential` 状态、XI 对应 operation/identity 状态和该连接的实际 Poll/ACK 与 Feed 接收。`healthy` 仅说明本地凭据代际；收到完成请求、来源事实与正文仍需分别核验真实结果。Local 单产品测试、双产品合成联合测试、CI、签名 Artifact、Target、Production 是不同证据层，不得相互替代。失败时保留 operation ID、请求/回执摘要及状态；**不记录票据、bearer、请求密文或 DSN**。回退 M125 必须遵守迁移的历史保留与拒绝条件，不删除已产生的代际日志。

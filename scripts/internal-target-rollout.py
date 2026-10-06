@@ -307,16 +307,16 @@ def preserve_m121_source_config(expected_env, actual_env, new_env, image_env):
 
 
 def preserve_m123_source_config(expected_env, actual_env, new_env, image_env):
-    """Carry M124 without disabling an already qualified M123 source."""
+    """Carry M124/M125 without disabling an already qualified source."""
     effective_new = environment(image_env)
     effective_new.update({key: str(value) for key, value in new_env.items() if value is not None})
     preserved = (*SOURCE_DEFAULTS, "COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE")
     require(all(key in expected_env and key in new_env and
                 expected_env[key] == actual_env.get(key) == effective_new.get(key)
-                for key in preserved), "M123 source identity or capture configuration differs")
+                for key in preserved), "qualified source identity or capture configuration differs")
     require(expected_env["SOURCE_FACTS_ENABLED"] != "true" or
             expected_env["COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE"] != "",
-            "enabled M123 source requires its original producer identity")
+            "enabled source requires its original producer identity")
     return tuple(expected_env[key] for key in preserved)
 
 
@@ -626,7 +626,7 @@ class Rollout:
                             environment(containers[role]["Config"]["Env"]),
                             new_config["services"][service]["environment"],
                             images["backend"]["Config"].get("Env")))
-                    elif transition["from_head"] == XINSIGHT_POLICY_HEAD:
+                    elif transition["from_head"] in (XINSIGHT_POLICY_HEAD, XINSIGHT_ADOPTION_HEAD):
                         m121_sources.append(preserve_m123_source_config(
                             expected["services"][service]["environment"],
                             environment(containers[role]["Config"]["Env"]),

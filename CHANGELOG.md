@@ -4,6 +4,11 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.9.3] - 2026-10-06
+
+- 修复 development/test 已启用来源采集的 M124→M125 升级：沿既有严格桥接保留 stable/canary 原采集、生产者、正文存储及静态对端绑定，拒绝配置漂移；兼容扩展 CLI 从受支持迁移头顺序确定准确前驱，允许 M124→M125 且拒绝跳级。
+- 必需数据库测试须显式指定测试 DSN，并在创建或清空数据库前核对 PostgreSQL 16，避免默默回退到其他本机实例。本条为本地修复候选，尚未发布或部署。
+
 ## [1.9.2] - 2026-10-06
 
 - 为既有 X-Insight Connector 增加控制凭据到期前轮换与双端管理员确认的过期恢复；按原 installation、identity、origin、scope 和来源绑定接续，并保存加密操作日志和回执。撤销的连接不进入恢复路径。
