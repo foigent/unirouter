@@ -528,10 +528,10 @@ class CounterBridgeTests(unittest.TestCase):
         wire=json.dumps(manifest,sort_keys=True,separators=(",",":")).encode()
         backend={"Image":"sha256:"+"a"*64,"HostConfig":{"PortBindings":{}}}
         runtime={"artifact_digest":backend["Image"],"supported_schema_heads":e.HEADS,"compatibility_epoch":"unirouter.runtime-compatibility.v1","support_manifest_digest":rollout.digest(wire)}
-        e.verify_bridge(runtime,backend,wire,e.HEADS[-2])
+        e.verify_bridge(runtime,backend,wire,rollout.XINSIGHT_ADOPTION_HEAD)
         for missing in e.XINSIGHT_ADOPTION+e.XINSIGHT_POLICY+e.BUDGET_REQUIREMENTS:
             bad=json.dumps(dict(manifest,implementations=[r for r in refs if r!=missing]),sort_keys=True,separators=(",",":")).encode()
-            with self.assertRaises(RuntimeError):e.verify_bridge(dict(runtime,support_manifest_digest=rollout.digest(bad)),backend,bad,e.HEADS[-2])
+            with self.assertRaises(RuntimeError):e.verify_bridge(dict(runtime,support_manifest_digest=rollout.digest(bad)),backend,bad,rollout.XINSIGHT_ADOPTION_HEAD)
 
     def test_m125_requires_credential_lifecycle_while_retaining_prior_contracts(self):
         e=self.expand
@@ -540,10 +540,10 @@ class CounterBridgeTests(unittest.TestCase):
         wire=json.dumps(manifest,sort_keys=True,separators=(",",":")).encode()
         backend={"Image":"sha256:"+"a"*64,"HostConfig":{"PortBindings":{}}}
         runtime={"artifact_digest":backend["Image"],"supported_schema_heads":e.HEADS,"compatibility_epoch":"unirouter.runtime-compatibility.v1","support_manifest_digest":rollout.digest(wire)}
-        e.verify_bridge(runtime,backend,wire,e.HEADS[-1])
+        e.verify_bridge(runtime,backend,wire,rollout.XINSIGHT_CREDENTIAL_HEAD)
         for missing in e.XINSIGHT_CREDENTIAL+e.XINSIGHT_ADOPTION+e.XINSIGHT_POLICY+e.BUDGET_REQUIREMENTS:
             bad=json.dumps(dict(manifest,implementations=[r for r in refs if r!=missing]),sort_keys=True,separators=(",",":")).encode()
-            with self.assertRaises(RuntimeError):e.verify_bridge(dict(runtime,support_manifest_digest=rollout.digest(bad)),backend,bad,e.HEADS[-1])
+            with self.assertRaises(RuntimeError):e.verify_bridge(dict(runtime,support_manifest_digest=rollout.digest(bad)),backend,bad,rollout.XINSIGHT_CREDENTIAL_HEAD)
 
     def test_actual_process_inventory_includes_absent_or_expired_actors(self):
         e=self.expand
@@ -1145,8 +1145,8 @@ class ArtifactOwnerReadFixtureTests(unittest.TestCase):
         bridge,current=self.load_carrier().carrier_read_ledgers(migrations)
         self.assertEqual(bridge[0],"bridge")
         self.assertEqual(current[0],"current")
-        self.assertEqual(bridge[1][-1],rollout.XINSIGHT_ADOPTION_HEAD)
-        self.assertEqual(current[1][-1],rollout.XINSIGHT_CREDENTIAL_HEAD)
+        self.assertEqual(bridge[1][-1],rollout.BRIDGE_HEADS[-2])
+        self.assertEqual(current[1][-1],rollout.BRIDGE_HEADS[-1])
         self.assertEqual(current[1],sorted(p.name[:-7] for p in migrations.glob("*.up.sql")))
         self.assertEqual(bridge[1],current[1][:-1])
 
