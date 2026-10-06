@@ -1,6 +1,47 @@
 # UniRouter Current Status
 
-## M124→M125 installed upgrade correction — source/CI closed, Target pending, 2026-10-07
+## UR 1.9.3/M125 development Target and original XI recovery — 2026-10-07
+
+The operator's completed development rollout readback identifies UR 1.9.3 at
+source `5412769528de1d63328900663d938a96e9dc5aad`, backend digest
+`c6fe51387ba8c44766ebe97e2017cf3dfc8e8a1c8430cabeeb63e4c635aacd21`
+and frontend digest
+`3cfeab27240da9fa08cbb0fe879d6579766cb04c1c58b883bae8d4baa43ff277`.
+Both backends were ready and serving. The former `37fe` stable/canary pair and
+historical `93ef`/`9db` instances were formally retired. On the original
+PostgreSQL system ID `7655821080247336993`, the M125 compatible-expand check
+and apply succeeded: the authorized body snapshot was unchanged before and
+after, while only `schema_migrations` changed.
+
+XI was upgraded to FPV16/schema45. The original XI installation
+`xci_khXsqM6fp6PzPAbV5VDAAw` was recovered via the two-administrator UI
+flow. The UR page showed the recovered connection; XI recovery
+`xcr_W4PBgwe2Cr_BNENdTdsJ7w` was committed, UR marked it promoted, and the
+old token was revoked. The replacement token's reported expiry was
+`2026-10-07T22:44:46.898667Z`. The original connection identity was retained.
+All eight original project86 streams were active; ten content-body copies were
+accepted, and the original reviewer read 1,817 bytes through formal HTTPS with
+a matching digest. These are bounded Target/external-integration observations,
+not a 24-hour continuity result or two-model acceptance; no new model request
+was made in this batch.
+
+The temporary ingress window was closed by 07:00 CST: both UR/XI security-
+group rules and all three XI UFW rules were removed, with unrelated rules
+unchanged. A durable non-secret result receipt records the exact identities,
+readbacks and remaining boundaries; its location and digest are in the
+execution record.
+
+The approved acceptance project org2/project87 and development application
+`app_generated_b541fae2032288f9fc261753` exist. No access Grant or application
+Key was created: the formal application-access flow needs a real Sponsor, and
+this new project had no selectable business member. Reuse of existing user 41
+with a specified project role is awaiting the User's decision. The application
+Key UI also lacks RPM/RPS inputs; exact limits are available through the
+supported Grant-bound API after the Sponsor and rate scope are settled. The
+[execution record](../agent-workflows/EXECUTION-RECORD.md) separates these
+completed observations from the remaining acceptance and credential decisions.
+
+## M124→M125 installed upgrade correction — historical source/CI cutoff, 2026-10-07
 
 Version 1.9.3/M125 is merged as main
 `5412769528de1d63328900663d938a96e9dc5aad`, tree
@@ -21,9 +62,10 @@ non-PostgreSQL-16 server before their CREATE/TRUNCATE entrances. Original red
 cases, PG16.14 Local green results and the retrospective are in
 [the execution record](../agent-workflows/EXECUTION-RECORD.md).
 
-The latest 2026-10-06 read-only Target receipts still show UR 1.9.1/M124 and
-XI FPV15/schema44. No 1.9.3 signed Artifact, Target upgrade, Production
-deployment or recovery of the original installed XI connection is claimed.
+At that cutoff, the latest 2026-10-06 read-only Target receipts showed UR
+1.9.1/M124 and XI FPV15/schema44. No 1.9.3 signed Artifact, Target upgrade,
+Production deployment or recovery of the original installed XI connection is
+claimed.
 
 ## X-Insight control credential lifecycle — historical PR cutoff, 2026-10-06
 

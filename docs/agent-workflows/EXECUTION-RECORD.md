@@ -1,5 +1,72 @@
 # Current Execution Record
 
+## UR 1.9.3/M125 development Target rollout and original XI recovery — 2026-10-07
+
+**Target identity and upgrade.** The executing operator reported completed
+development rollout of source
+`5412769528de1d63328900663d938a96e9dc5aad` (UR 1.9.3), backend digest
+`c6fe51387ba8c44766ebe97e2017cf3dfc8e8a1c8430cabeeb63e4c635aacd21`
+and frontend digest
+`3cfeab27240da9fa08cbb0fe879d6579766cb04c1c58b883bae8d4baa43ff277`.
+The original PostgreSQL system ID was `7655821080247336993`. The formal M125
+compatible-expand check and apply succeeded. The authorized body
+snapshot matched before and after the check; apply changed only
+`schema_migrations`. Both backend instances were ready and serving after
+rollout. The preceding `37fe` stable/canary pair and historical `93ef`/`9db`
+instances were formally retired. This is a development Target result, not a
+Production deployment or a new signed Artifact claim.
+
+**Original installed XI connection.** XI FPV16/schema45 upgrade operation
+`20261006T223634Z-17c39ac28f348993` completed. The two-administrator UI
+recovery kept installation `xci_khXsqM6fp6PzPAbV5VDAAw` and its original
+identity. The UR page showed an effective connection and its control recovery reached
+`promoted`; XI recovery `xcr_W4PBgwe2Cr_BNENdTdsJ7w` reached `committed`.
+The old control token was revoked. The new token was valid at the readback and
+had reported expiry
+`2026-10-07T22:44:46.898667Z`; this timestamp is not evidence of subsequent
+renewal. The original project86 had eight active streams. XI accepted ten
+content-body copies, and the original reviewer read 1,817 bytes through the
+formal HTTPS path with matching SHA-256
+`aac8b1b38735df22395e0c00ed6f9fe2624b89b652630b4902502bda04c67ce0`.
+These observations establish the
+bounded installed recovery and real source/content read path. They do not
+establish uninterrupted operation across 24 hours, a new model invocation,
+or two-model acceptance. No new model request was made in this batch.
+
+**Ingress closure and retained evidence.** At 07:00 CST the temporary UR and
+XI security-group rules were revoked and all three XI UFW rules were closed;
+the readback found other rules unchanged. The durable non-secret receipt is
+`/Users/m4/Desktop/projects/About Me/library/reports/企业AI工作事实平台-目标拆解与验收-2026-09-05/supporting/20260929-formal-ingress/p3-fpv16-original-connection-result-20261007.json`
+(SHA-256 `efc1b1cc033a23865b99e5a7d33475c979bd1f67c5f6b4b620d64576a0f4524f`,
+recorded `2026-10-06T22:59:51Z`). It also records the original protected files
+and historical row sets unchanged, and distinguishes the HTTPS protected-body
+API read from browser rendering. This document uses the operator's Target
+readback and that receipt; no new Target action was made for the documentation
+update.
+
+**Separate model-acceptance setup and current blocker.** The approved org2
+project87 and development Application
+`app_generated_b541fae2032288f9fc261753` were created through the formal
+UI. No Grant or Key was created. Its access form requires an effective Sponsor
+from the customer/project; project87 had no selectable member. The User was
+asked to decide whether existing user 41 may be added with an exact project
+role and used as Sponsor. No platform-administrator identity was substituted,
+and no direct SQL or credential workaround was used. The application-Key UI
+does not expose RPM/RPS fields. The supported Grant-bound credential API does,
+but cannot widen the approved Grant; exact rate choices and custody remain part
+of the one pending credential decision. Existing project86 XI feed/source keys
+are purpose-bound and cannot substitute for a project87 model-calling Key.
+
+**Retrospective and evidence boundary.** Earlier guidance named `/projects`,
+which the 1.9.3 router does not register; its wildcard redirects to the user's
+default route. The actual project tab is
+`/organization-members?section=projects`, and `/applications` is the guarded
+Application route. The correction was established from the route table before
+further UI work. Sponsor eligibility and the Key form/API rate difference were
+then checked together before any Grant or secret creation. This batch changes
+only the two existing status documents; it does not change frozen runtime
+source, create credentials, repeat full CI or operate the Target.
+
 ## M124→M125 installed-upgrade correction, source/CI closeout — 2026-10-07
 
 **Scope and cause.** The 1.9.2/M125 source had a working M123→M124 active-source
