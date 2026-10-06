@@ -3,18 +3,19 @@
 ## X-Insight control credential lifecycle — PR candidate, 2026-10-06
 
 Version 1.9.2/M125 on `codex/ur-xi-control-lifecycle-20261006` is under PR
-#432. Its latest CI head `d798af83` passed protocol run `37452146640`;
-main run `37452146716` passed Change Routing, Browser E2E and Frontend but
-failed Backend's ordinary test suite because the new installed-receipt test
-name omitted the required `Integration` suffix. Docker stopped at that failed
-prerequisite without building an image. The previous first-customer inventory
-failure was corrected locally with PostgreSQL 16 verification, and Backend's
-early M125 check now passes in CI. A local test-only correction has renamed
-the receipt test and added the existing naming guard to that early check;
+#432. Head `41e580c0` passed protocol CI `37456231777`; main CI
+`37456231759` was still running at this local cutoff. Its Backend early M125
+check, ordinary Go suite and admin integration suite had passed. The prior
+first-customer inventory and installed-receipt naming failures were corrected.
+XI's separate installed new-install CI `37456275687` then reached offline
+credential expiry and human confirmation but received UR HTTP 503 on recovery
+confirmation. Local PostgreSQL 16 reproduction isolated a 58-character audit
+action exceeding `audit_logs.action VARCHAR(50)`; the local source fix uses a
+50-character action and passes a real-DB HTTP success/reentry/refusal test
+with `-race`. It has not been pushed or run in CI;
 [the execution record](../agent-workflows/EXECUTION-RECORD.md) holds the exact
-run, cause, fix and verification boundary. That correction has not run in CI.
-No merge, signed Artifact, Target, Production or installed XI lifecycle result
-is claimed.
+run, cause, fix and verification boundary. No merge, signed Artifact, Target,
+Production or completed installed XI lifecycle result is claimed.
 
 At the earlier Local cutoff, PG16.14 credential and production-loop tests
 passed with `-race`. The managed new-install UR/XI Local joint test passed

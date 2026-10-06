@@ -249,7 +249,7 @@ func (h *Handler) ConfirmXInsightCredentialRecovery(w http.ResponseWriter, r *ht
 		writeSetupError(w, err)
 		return
 	}
-	if err = insertAuditEntry(r.Context(), tx, "data_exchange.xinsight.control_credential.recovery_confirm", "xinsight_connector_installation", resolution.InstallationID,
+	if err = insertAuditEntry(r.Context(), tx, "data_exchange.xinsight.credential.recovery_confirm", "xinsight_connector_installation", resolution.InstallationID,
 		map[string]any{"operation_id": opID, "recovery_id": resolution.RecoveryID, "actor_id": strconv.FormatInt(actor.UserID, 10)}, requestAuditMeta(r, org, project)); err != nil {
 		writeSetupError(w, err)
 		return

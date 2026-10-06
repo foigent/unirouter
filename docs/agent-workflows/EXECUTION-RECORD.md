@@ -201,9 +201,41 @@ not the naming guard. The local correction renames the test and runs the
 existing guard in that early step. The guard failed on the prior head and now
 passes; the renamed test passes with `-race`, appears in the formal
 `Integration$` test list, and all 19 release-metadata policy tests including
-the updated early wiring check pass. The current correction has not run in CI;
-none of these results establish Docker Artifact, installed XI lifecycle,
-Target or Production acceptance.
+the updated early wiring check pass. The pushed correction is head
+`41e580c08fafc4d3ed193784620566934785c01f`; protocol CI
+`37456231777` passed. Main CI `37456231759` was still running at this
+record's local cutoff; none of these results establish Docker Artifact,
+installed XI lifecycle, Target or Production acceptance.
+
+**8. Installed XI new-install credential-recovery failure and local UR fix.**
+XI's installed new-install CI `37456275687` passed its credential offline
+expiry and human-confirmation preview stages, then UR's
+`POST /api/v2/organizations/<org>/xinsight/setups/<installation>/credential-recovery`
+returned 503. XI's safe stage receipts contain 19 entries with zero truncated
+or invalid entries; the failure stage is
+`credential_offline_expiry/failed/lifecycle_ur_human_confirmation`. This is
+external integration evidence for the failure, not a completed installed
+lifecycle qualification.
+
+The UR confirmation handler inserted
+`data_exchange.xinsight.control_credential.recovery_confirm` (58 characters)
+into `audit_logs.action VARCHAR(50)`. The audit insert error reached the
+generic setup-error writer as 503 and rolled back the credential-operation
+transaction. On task-owned isolated PostgreSQL 16.14, the original handler
+returned 503 after a successful preview, and a direct insert of the same
+action returned SQLSTATE `22001`; no credential operation was committed. The
+local fix uses the 50-character action
+`data_exchange.xinsight.credential.recovery_confirm`, preserving the audit
+write and transaction. The new PostgreSQL HTTP integration test passes with
+`-race`: preview 200, confirmation 202 with one pending operation and one
+audit, same-ticket reentry 202 with the same operation and a second audit,
+and foreign resolution 409 without another operation or audit. A direct
+literal scan of production X-Insight admin actions found no other action over
+50 characters after the fix; an AST-based length guard now runs in Backend's
+existing early check. Admin `go vet`, that early check, all 19 release-policy
+tests, release metadata and `git diff --check` passed locally. This local patch
+has not been pushed or run in CI, and it does not establish XI rerun, Target
+or Production success.
 
 ## Long-task retrospective entrypoint — 2026-10-06
 
