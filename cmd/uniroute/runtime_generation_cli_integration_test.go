@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -45,29 +44,13 @@ func invokeGenerationCLI(t *testing.T, cfg *config.Config, action string, input 
 }
 
 func TestRuntimeGenerationCLIExpandedLedgerLifecycleIntegration(t *testing.T) {
-	for _, head := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.XInsightPolicyExpandHead, schemaauthority.XInsightAdoptionExpandHead} {
+	for _, head := range schemaauthority.SupportedSchemaHeads() {
+		if head == schemaauthority.LegacyCapabilityHead {
+			continue // The runtime-generation CLI requires an expanded schema.
+		}
 		t.Run(head, func(t *testing.T) {
-			pool := testutil.SetupMigratedTestDB(t)
+			pool := testutil.SetupMigratedThroughTestDB(t, head)
 			dir := testutil.MigrationsDir(t)
-			for _, successor := range []string{schemaauthority.XInsightAdoptionExpandHead, schemaauthority.XInsightPolicyExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ObservationExpandHead} {
-				if head < successor {
-					wire, err := os.ReadFile(filepath.Join(dir, successor+".down.sql"))
-					require.NoError(t, err)
-					_, err = pool.Exec(t.Context(), string(wire))
-					require.NoError(t, err)
-				}
-			}
-			if head < schemaauthority.SourceFactsExpandHead {
-				require.NoError(t, testutil.RewindEmptySourceFactsForLegacyTest(t.Context(), pool, dir))
-			}
-			if head == schemaauthority.CapabilityExpandHead {
-				wire, err := os.ReadFile(filepath.Join(dir, schemaauthority.StreamCounterExpandHead+".down.sql"))
-				require.NoError(t, err)
-				_, err = pool.Exec(t.Context(), string(wire))
-				require.NoError(t, err)
-				_, err = pool.Exec(t.Context(), `DELETE FROM schema_migrations WHERE version=$1`, schemaauthority.StreamCounterExpandHead)
-				require.NoError(t, err)
-			}
 			var actualHead string
 			require.NoError(t, pool.QueryRow(t.Context(), `SELECT max(version) FROM schema_migrations`).Scan(&actualHead))
 			require.Equal(t, head, actualHead, "each CLI case must run on its named actual schema")
