@@ -26,6 +26,12 @@ type xInsightConnectorRuntimeInstallationSource interface {
 	) ([]xinsightconnector.RuntimeInstallationDescriptor, error)
 }
 
+type xInsightCredentialDueSource interface {
+	ListCredentialDueInstallations(context.Context, int) ([]xinsightconnector.RuntimeInstallationDescriptor, error)
+}
+
+type xInsightCredentialRunner interface{ RunCredential(context.Context) error }
+
 type xInsightConnectorRuntimeRedeemer interface {
 	Redeem(context.Context) error
 }
@@ -300,11 +306,19 @@ func (supervisor *xInsightConnectorRuntimeSupervisor) runCycle(ctx context.Conte
 	pending, pendingErr := supervisor.installations.ListRedeemPendingInstallations(
 		ctx, xInsightConnectorRuntimeDiscoveryLimit,
 	)
+	var credentialDue []xinsightconnector.RuntimeInstallationDescriptor
+	var credentialErr error
+	if source, ok := supervisor.installations.(xInsightCredentialDueSource); ok {
+		credentialDue, credentialErr = source.ListCredentialDueInstallations(ctx, xInsightConnectorRuntimeDiscoveryLimit)
+	}
 	if len(runnable) > xInsightConnectorRuntimeDiscoveryLimit {
 		return fmt.Errorf("runnable installation source exceeded bounded limit")
 	}
 	if len(pending) > xInsightConnectorRuntimeDiscoveryLimit {
 		return fmt.Errorf("redeem-pending installation source exceeded bounded limit")
+	}
+	if len(credentialDue) > xInsightConnectorRuntimeDiscoveryLimit {
+		return fmt.Errorf("credential-due installation source exceeded bounded limit")
 	}
 	cycleErrors := make([]error, 0, 4)
 	if runnableErr != nil {
@@ -314,6 +328,40 @@ func (supervisor *xInsightConnectorRuntimeSupervisor) runCycle(ctx context.Conte
 	if pendingErr != nil {
 		cycleErrors = append(cycleErrors, fmt.Errorf("discover redeem-pending installation: %w", pendingErr))
 		pending = nil
+	}
+	if credentialErr != nil {
+		cycleErrors = append(cycleErrors, fmt.Errorf("discover credential-due installation: %w", credentialErr))
+		credentialDue = nil
+	}
+
+	// The original one-lane loop resumes encrypted pending operations first.
+	// Even after a successful local promotion, business Poll waits for the next
+	// discovery cycle, where it obtains the promoted current bearer.
+	credentialBlocked := make(map[string]bool, len(credentialDue))
+	credentialFailures := 0
+	for _, descriptor := range credentialDue {
+		credentialBlocked[descriptor.InstallationID] = true
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if supervisor.setupAllowed != nil && supervisor.setupAllowed(ctx, descriptor.InstallationID) != nil {
+			credentialFailures++
+			continue
+		}
+		counterpart, err := supervisor.counterpartFactory(ctx, descriptor)
+		if err == nil {
+			if runner, ok := counterpart.(xInsightCredentialRunner); ok {
+				err = runner.RunCredential(ctx)
+			} else {
+				err = fmt.Errorf("credential runner is unavailable")
+			}
+		}
+		if err != nil {
+			credentialFailures++
+		}
+	}
+	if credentialFailures != 0 {
+		cycleErrors = append(cycleErrors, fmt.Errorf("credential lifecycle failed for %d of %d due installations", credentialFailures, len(credentialDue)))
 	}
 
 	redeemFailures := 0
@@ -349,6 +397,9 @@ func (supervisor *xInsightConnectorRuntimeSupervisor) runCycle(ctx context.Conte
 	for _, descriptor := range runnable {
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		if credentialBlocked[descriptor.InstallationID] {
+			continue
 		}
 		if err := supervisor.runInstallation(ctx, descriptor); err != nil {
 			operationFailures++

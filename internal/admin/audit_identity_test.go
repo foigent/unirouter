@@ -3,8 +3,13 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -14,6 +19,39 @@ import (
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
+
+// audit_logs.action is VARCHAR(50). Check the direct X-Insight action literals
+// before an integration run reaches the transactional audit writer.
+func TestXInsightAuditActionLiteralsFitSchema(t *testing.T) {
+	paths, err := filepath.Glob("xinsight*.go")
+	require.NoError(t, err)
+	require.NotEmpty(t, paths)
+	fileSet := token.NewFileSet()
+	found := 0
+	for _, path := range paths {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fileSet, path, nil, 0)
+		require.NoError(t, err)
+		ast.Inspect(file, func(node ast.Node) bool {
+			literal, ok := node.(*ast.BasicLit)
+			if !ok || literal.Kind != token.STRING {
+				return true
+			}
+			value, err := strconv.Unquote(literal.Value)
+			if err != nil || !strings.HasPrefix(value, "data_exchange.xinsight.") {
+				return true
+			}
+			found++
+			if len(value) > 50 {
+				t.Errorf("%s: X-Insight audit action length %d exceeds audit_logs.action VARCHAR(50)", fileSet.Position(literal.Pos()), len(value))
+			}
+			return true
+		})
+	}
+	require.Positive(t, found)
+}
 
 func TestP6F17AuditSeparatesServerOperationAndClientCorrelation(t *testing.T) {
 	var auditArgs []any

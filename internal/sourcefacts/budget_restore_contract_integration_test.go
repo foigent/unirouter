@@ -45,7 +45,7 @@ func TestSourceBudgetRestoreRejectsUnprovedLedger(t *testing.T) {
 			require.NoError(t, err)
 			require.ErrorContains(t, tx.Commit(t.Context()), fault.commitError)
 			require.Equal(t, before, budgetCoverageRows(t, pool))
-			assertSourceFixtureLedger(t, pool, schemaauthority.XInsightAdoptionExpandHead)
+			assertSourceFixtureLedger(t, pool, schemaauthority.XInsightCredentialExpandHead)
 
 			_, err = pool.Exec(t.Context(), fault.sql)
 			require.NoError(t, err)

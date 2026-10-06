@@ -1,5 +1,246 @@
 # Current Execution Record
 
+## X-Insight control credential lifecycle, UR Local candidate — 2026-10-06
+
+**1. Goal and evidence.** Preserve one installed connection and its original
+installation/deployment, control project, completed-event scope, source binding,
+origins, fence, permissions, history and ACKs across 24-hour bearer renewal and
+administrator-approved post-expiry recovery; revoked connections remain final.
+The shared approved contract is the 2026-10-06 P3 control credential lifecycle
+document (SHA-256 `60073ab48c36599bd21193c76f0daf9f7090fd88e8044f6c888648f5acf2518c`).
+At the initial Local cutoff, the UR source candidate was uncommitted on
+`codex/ur-xi-control-lifecycle-20261006`, base
+`a831e6bc33ca25edd7ccb07f8a036d84f5bae591`. Version 1.9.2/M125 adds
+purpose-separated encrypted pending operations and receipts, fixed-origin
+rotate/query/confirm and recovery, production-loop due discovery ahead of
+Poll, original/current administrator reauthorization, local status and a
+recovery page. The page first uses a local, ticket-free lookup of the globally
+unique installation ID to find the original business organization, rechecking
+both current and saved setup actor authority; it does not assume the current
+platform administrator's technical `org_id` is the business organization.
+[Operator and API instructions](../ops/XINSIGHT-CONTROL-CREDENTIAL-LIFECYCLE.md)
+are in this repository; OpenAPI has the exact admin routes.
+
+**2. Actual result by layer.** Local PG16.14 `-race` selectors for
+`TestControlCredential.*PostgresIntegration` and
+`TestXInsightCredentialRuntimePostgresIntegration` and
+`TestXInsightCredentialRecoveryScopeTechnicalOrgPostgresIntegration` passed.
+The runtime test uses the
+actual production `runCycle` and PostgreSQL journal: healthy Poll, due-before-
+Poll, same pending operation after reconstructing journal and supervisor over
+the durable database, and revoked exclusion. It simulates the XI response
+loss; it is not a real process restart or two-product proof. The credential
+journal tests also cross the actual saved replacement receipt expiry with a
+controlled clock, reconstruct the journal, and recover the original connection
+from prepared or XI-committed/UR-unpromoted states. A pending operation without
+a receipt remains undecided even when the old current expires. The recovery test
+uses a platform actor from a distinct technical organization with the original
+business customer context, rejects foreign/mismatched scopes, and asserts zero
+XI outbound calls on denied local authorization. The affected Go package
+suites, frontend TypeScript/Vite and 23 routing/recovery tests, migration/budget
+and release metadata checks passed. The restore helper delivered with M125 is
+`scripts/source-budget-restore-rebase.sql`, 10,838 bytes, SHA-256
+`d9939ccad3bd962e23a2f8ee2123d8efbe265d74e13352c3bc6c31171f20ff62`;
+`check-release-metadata.sh` verifies these README-declared bytes. The isolated
+PG16.14 cluster was task-owned under
+`/private/tmp/ur-xi-control-lifecycle-pg-20261006`, port 55437. Before the
+final joint run, its `PG_VERSION` read `16`, the exact
+`/opt/homebrew/opt/postgresql@16/bin/pg_ctl --version` read `16.14`, and a
+read-only SQL connection confirmed the live server was PostgreSQL 16.14.
+The same PG16 `pg_ctl` stopped the task-owned cluster, and its `status`
+confirmed no server running; no existing
+database or Target was modified. CI, immutable Artifact, Target, Production
+and real external integration remain unverified.
+
+The original managed new-install UR/XI Local joint test subsequently passed
+on isolated PG16.14 in 42.51 seconds, with real HTTPS, all eight profiles,
+post-registration C manifests, XI accepted encrypted body, and independent
+XI body readback. Its successful assertions do not substitute for the
+unexecuted installed Linux lifecycle driver.
+
+**3. Deviation and failure class.** The first optional managed UR/XI joint
+run failed in XI's local host fixture before source enrollment with “target
+network publication is incomplete.” After XI fixed that fixture, the second
+run reached all eight successful source profile polls and active UR A/C
+enrollment. In the latest run, XI fetched C manifests three times after
+publication with HTTP 200 and stored the expected complete manifest, but its
+body copy was excluded with `effective_policy_disabled`; XI's setup policy was
+not applied and its effective review-capture default was absent. The 100-second
+child context then expired without a body GET or accepted/readable copy. The
+failure was at XI custody setup, not the UR C cursor or credential lifecycle.
+XI fixed the missing fixture deployment identity and the original new-install
+joint entrypoint passed on rerun. That does not prove a successful credential
+lifecycle. The installed joint driver remains
+unexecuted; its separate Linux service and credential assertions are not
+claimed. Failed evidence is retained in task-local logs.
+
+**4. Original assumption and correction.** Standalone PG lifecycle tests
+cannot substitute for XI's service-auth HTTP, persisted XI identity and actual
+worker readback. The UR joint fixture now discovers credential due/pending
+before Poll and uses real UR handlers and encrypted journal, while a new
+`cmd/uniroute` integration test covers the production supervisor rather than
+relying on fixture scheduling alone. The initial network fixture failure is
+old-fail/new-progress evidence only; neither it nor successful first worker
+polls satisfy the original C or lifecycle exit conditions. C's empty cursor
+starts at registration `coverage_from`, not the first-read high watermark;
+the server-half test proves a manifest published after C registration but before
+its first read appears in that initial page. No extra scheduler
+or synthetic `loaded`/`completed` result was added.
+
+**5. Remaining owner and action at the initial Local cutoff.** XI owner runs
+the installed Linux joint driver's credential lifecycle scenarios on the exact
+isolation; UR responds to any verified cross-product contract failure. UR
+owner finishes independent diff review and repository preflight; the
+coordinator then reconciles Local versus CI,
+Artifact and Target separately. At that cutoff, no push, merge, deployment,
+service change, real credential write, paid call or real traffic action occurred.
+The model adaptation experience file needs no change: this batch adds no model,
+Provider, Profile, usage or pricing result.
+
+**6. PR #432 CI failure classification and original-entrypoint correction.**
+The first PR Backend run (`37440417973`, job `112192673575`) failed in
+`scripts/test-capability-carrier.py`: two fixtures targeted the current M125
+head but still supplied only M124 implementations. The prior local selected
+rollout tests covered M125, while Change Routing's existing Docker-classified
+`delivery_preflight` ran rollout, ingress and image-build fixtures but omitted
+the already existing carrier test. Thus that original short entrypoint did not
+intercept the omission before the expensive Backend job. The carrier fixtures
+now include M125's exact implementation and a missing-implementation negative
+case. The same existing `delivery_preflight` now executes
+`test-capability-carrier.py`, with a release-policy test guarding its wiring;
+the routing category, job set and full required Backend suite are unchanged.
+
+The next PR run (`37441809132`, Backend job `112197221665`) passed the Backend
+runtime-ingress/carrier short check and the M125 PostgreSQL lifecycle selector,
+then failed the full Go suite at `internal/resetplan`'s
+`TestEveryCurrentMigrationTableHasAnExplicitResetClassification`:
+`xinsight_connector_credential_operations` was absent from the explicit reset
+classification. This is a new M125 schema lifecycle omission, not a stale test
+expectation. The encrypted credential-generation journal has a restrictive FK
+to its installation and the M125 down migration refuses nonempty history. An
+independent read-only pre-code review found it must follow the existing
+X-Insight machine-authority rule: `review_required`/`preserve_all` and refuse
+reset apply, including when empty. The local fix adds exactly that classification
+and an isolated 0/1-row negative test for retained rows, zero deletion, absent
+delete-order entry and failed apply validation. The original Backend early Go
+step now runs the existing migration-table enumeration and this negative test
+before the full suite; no new job or reset deletion scope was introduced.
+
+Local evidence after the corrections: Change Routing's four Python test commands
+passed in workflow order (80, 13, 10 and 6 tests); its final host
+`environment-check` could not run here because this macOS sandbox has no Docker
+CLI. The targeted reset classification tests and full `internal/resetplan`
+`-race` suite passed; the release-policy suite passed 19 tests. A local
+`internal/resetexec` test attempt was blocked by sandbox denial of miniredis's
+loopback bind, not by a product assertion. No corrected PR/CI, Docker Artifact,
+installed XI lifecycle, Target or Production result is claimed by these Local
+checks.
+
+**7. PR #432 first-customer schema inventory correction.** The exact
+`cadfca4e01f3ce2d8708c1ce46795457a14c7b72` PR head passed protocol run
+`37445690343`. In main CI `37445690260`, Change Routing, Browser E2E and
+Frontend passed. Backend's early M125 PostgreSQL/reset check, `go vet`, carrier
+check, full ordinary Go suite, Neutral N1, source-evidence PostgreSQL and
+X-Insight snapshot checks also passed. Its admin integration step failed on
+`check exact public table inventory: got 158 want 157`; Docker then stopped at
+its Backend prerequisite without building an image. The several FirstCustomer
+HTTP 409 and negative-test failures in that step share the same precheck cause.
+
+M125 created `xinsight_connector_credential_operations`, but the
+first-customer exact public-table and zero-state inventory did not include it.
+The previous reset correction covered resetplan's separate migration-table
+enumeration; its unit test did not exercise the first-customer inventory. The
+first-customer unit test compared its own static expected list and cardinality
+against the same stale product list, so it missed the new migration table.
+Independent read-only pre-code review required treating the journal as
+X-Insight machine authority: all three first-customer checkpoints may accept
+it only when empty, while resetplan still preserves history and refuses apply.
+The local correction adds the exact table to their shared inventory, changes
+the independent count to 158, and compares the inventory with actual CREATE
+TABLE declarations from current migration files. The existing Backend early
+Go step now runs those inventory tests before its full suite. No unknown-table
+allowance, automatic journal deletion, reset-scope expansion, new job or timeout
+was added.
+
+Local evidence: the two inventory unit tests passed. The task-owned isolated
+PostgreSQL 16.14 on `127.0.0.1:55437` ran all 17 `TestFirstCustomer...`
+integration selectors with `REQUIRE_TEST_DATABASE=1` and `-race`: PASS in
+22.924 seconds. The new nonempty-journal test inserts a valid parent
+installation and pending operation, proves the read-only runtime checkpoint
+rejects the journal, and proves both normal and dry-run bootstrap requests
+return 409 without changing the installation or journal rows. The separate
+single-test run passed in 5.449 seconds. The Backend early wiring check and
+release metadata policy suite passed (19 tests), as did the release metadata
+shell check, admin `go vet`, and `git diff --check`.
+
+The same CI investigation found a separate installed-joint diagnostic defect:
+UR's safety redactor discarded *all* XI stage receipts when more than 24 valid
+lines arrived. XI's new-install run had 19 receipts, while adopt's longer
+predecessor and credential sequence crossed that bound and the UR failure
+reported `receipts=[]`. This is a diagnostic information loss, not evidence of
+the underlying adopt failure cause. The local test-only correction accepts
+only the exact installed stage/result v1 schemas and existing safe fields,
+ignores malformed or private lines independently, retains at most 48 valid
+receipts (including the last earlier result), and marks omitted counts. A
+focused integration-tagged unit test covers 19, 30 and 61 valid lines, result
+retention, fake schema, invalid bounds and private noise. It does not change
+the product runtime or the XI-owned receipt protocol.
+
+The resulting PR head `d798af8323543c6dcca346cb62827cd278e206f5`
+passed protocol CI `37452146640`. Main CI `37452146716` passed Change
+Routing, Browser E2E, Frontend, Backend's early M125 check and `go vet`, but
+Backend `Run tests` failed only `TestAdminIntegrationFilesUseIntegrationSuffix`:
+the new `TestRedactInstalledJointReceipts` in an integration-tagged file lacked
+the required `Integration` suffix. Docker stopped at its failed Backend
+prerequisite without building an image. The author's focused
+`-run '^TestRedactInstalledJointReceipts$'` invocation had passed because it
+selected only the new test, bypassing the existing ordinary naming guard; the
+formal admin integration lane selects `-run 'Integration$'` and would omit it.
+The previous early check ran migration, inventory and credential selectors but
+not the naming guard. The local correction renames the test and runs the
+existing guard in that early step. The guard failed on the prior head and now
+passes; the renamed test passes with `-race`, appears in the formal
+`Integration$` test list, and all 19 release-metadata policy tests including
+the updated early wiring check pass. The pushed correction is head
+`41e580c08fafc4d3ed193784620566934785c01f`; protocol CI
+`37456231777` passed. Main CI `37456231759` was still running at this
+record's local cutoff; none of these results establish Docker Artifact,
+installed XI lifecycle, Target or Production acceptance.
+
+**8. Installed XI new-install credential-recovery failure and local UR fix.**
+XI's installed new-install CI `37456275687` passed its credential offline
+expiry and human-confirmation preview stages, then UR's
+`POST /api/v2/organizations/<org>/xinsight/setups/<installation>/credential-recovery`
+returned 503. XI's safe stage receipts contain 19 entries with zero truncated
+or invalid entries; the failure stage is
+`credential_offline_expiry/failed/lifecycle_ur_human_confirmation`. This is
+external integration evidence for the failure, not a completed installed
+lifecycle qualification.
+
+The UR confirmation handler inserted
+`data_exchange.xinsight.control_credential.recovery_confirm` (58 characters)
+into `audit_logs.action VARCHAR(50)`. The audit insert error reached the
+generic setup-error writer as 503 and rolled back the credential-operation
+transaction. On task-owned isolated PostgreSQL 16.14, the original handler
+returned 503 after a successful preview, and a direct insert of the same
+action returned SQLSTATE `22001`; no credential operation was committed. The
+local fix uses the 50-character action
+`data_exchange.xinsight.credential.recovery_confirm`, preserving the audit
+write and transaction. The new PostgreSQL HTTP integration test passes with
+`-race`: preview 200, confirmation 202 with one pending operation and one
+audit, same-ticket reentry 202 with the same operation and a second audit,
+and foreign resolution 409 without another operation or audit. A direct
+literal scan of production X-Insight admin actions found no other action over
+50 characters after the fix; an AST-based length guard now runs in Backend's
+existing early check. The new real-PG confirmation test is also included in
+that early PG selector; `go test -tags=integration -race ./internal/admin -list`
+with its exact selector listed both recovery-scope and confirmation tests, and
+the release-policy test verifies the workflow wiring. Admin `go vet`, the
+static early check, all 19 release-policy tests, release metadata and
+`git diff --check` passed locally. This local patch
+has not been pushed or run in CI, and it does not establish XI rerun, Target
+or Production success.
+
 ## Long-task retrospective entrypoint — 2026-10-06
 
 **Baseline and scope.** This documentation branch

@@ -2842,6 +2842,18 @@ paths:
     parameters: [{"name":"org_id","in":"path","required":true,"schema":{"type":"integer","format":"int64"}},{"name":"installation_id","in":"path","required":true,"schema":{"type":"string"}}]
     get: {"tags":["Admin"],"summary":"Read current setup, policy and actual XI receiving state","description":"Current actual organization/project management authority is rechecked. Fixed installer peer only; no caller URL or ambient identity is forwarded. Responses are no-store; invitation material must stay in request/page memory. Final save alone requires Data Exchange entitlement. Pure supply may omit policy management. Current/future policy scope is independent of source exclusions. Configuration readiness and genuine receiving/authorized server-side body read are separate.","security":[{"bearerAuth":[]}],"responses":{"200":{"description":"Exact current projection","content":{"application/json":{"schema":{"$ref":"#/components/schemas/XInsightSetupStatus"}}}},"400":{"$ref":"#/components/responses/Error"},"403":{"$ref":"#/components/responses/Error"},"409":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}}}
 
+  /api/v2/xinsight/setups/{installation_id}/credential-recovery-scope:
+    parameters: [{name: installation_id, in: path, required: true, schema: {type: string}}]
+    get: {tags: [Admin], summary: Resolve original authorized organization for a recovery handoff without sending the ticket to X-Insight, security: [{bearerAuth: []}], responses: {'200': {description: 'Original organization after current and saved setup actor reauthorization', content: {application/json: {schema: {$ref: '#/components/schemas/XInsightCredentialRecoveryScope'}}}}, '404': {$ref: '#/components/responses/Error'}}}
+
+  /api/v2/organizations/{org_id}/xinsight/setups/{installation_id}/credential-recovery/preview:
+    parameters: [{name: org_id, in: path, required: true, schema: {type: integer, format: int64}}, {name: installation_id, in: path, required: true, schema: {type: string}}]
+    post: {tags: [Admin], summary: Preview recovery of the original X-Insight control credential, security: [{bearerAuth: []}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/XInsightCredentialRecoveryInput'}}}}, responses: {'200': {description: 'Original fixed scope and local credential status', content: {application/json: {schema: {$ref: '#/components/schemas/XInsightCredentialRecoveryPreview'}}}}, '403': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}}}
+
+  /api/v2/organizations/{org_id}/xinsight/setups/{installation_id}/credential-recovery:
+    parameters: [{name: org_id, in: path, required: true, schema: {type: integer, format: int64}}, {name: installation_id, in: path, required: true, schema: {type: string}}]
+    post: {tags: [Admin], summary: Confirm recovery and durably prepare the original connection credential, security: [{bearerAuth: []}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/XInsightCredentialRecoveryInput'}}}}, responses: {'202': {description: 'Encrypted operation prepared for the original connector runtime', content: {application/json: {schema: {$ref: '#/components/schemas/XInsightCredentialRecoveryAccepted'}}}}, '403': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}}}
+
   /api/v2/organizations/{org_id}/xinsight-policy-delegations:
     description: Human JWT management of exact or current-and-future policy grants for one installed XI deployment. Project administrators may request a project_id filter and see only exact grants they can manage.
     parameters:
@@ -8796,7 +8808,57 @@ components:
     XInsightSetupPreview: {"type":"object","additionalProperties":false,"required":["schema_version","preview_sha256","installation_id","invitation","xi_consent","available_profiles","default_profiles","existing_profiles","content_available","receiver_mode","existing_binding_sha256","ur_policy","allowed_coverage","allowed_policy_scopes","allowed_policy_access","issues"],"properties":{"schema_version":{"type":"string","enum":["unirouter.xinsight.setup-preview.v1"]},"preview_sha256":{"type":"string","pattern":"^sha256:[a-f0-9]{64}$"},"installation_id":{"type":"string"},"invitation":{"$ref":"#/components/schemas/XInsightConnectorInvitationV1"},"xi_consent":{"$ref":"#/components/schemas/XInsightSetupXIConsent"},"available_profiles":{"type":"array","items":{"type":"string"}},"default_profiles":{"type":"array","items":{"type":"string"}},"existing_profiles":{"type":"array","items":{"type":"string"}},"content_available":{"type":"boolean"},"receiver_mode":{"type":"string","enum":["new_install","adopt_existing"]},"existing_binding_sha256":{"allOf":[{"type":"string","pattern":"^sha256:[a-f0-9]{64}$"}],"nullable":true},"ur_policy":{"$ref":"#/components/schemas/ScopedPayloadPolicyView"},"allowed_coverage":{"type":"array","items":{"type":"string","enum":["exact","all_current_future"]}},"allowed_policy_scopes":{"type":"array","items":{"type":"string","enum":["enterprise","project"]}},"allowed_policy_access":{"type":"array","items":{"$ref":"#/components/schemas/XInsightSetupPolicyAccess"}},"issues":{"type":"array","items":{"$ref":"#/components/schemas/XInsightSetupIssue"}}}}
     XInsightSetupConsent: {"type":"object","additionalProperties":false,"required":["schema_version","request_id","project_id","invitation","expected_preview_sha256","expected_xi_consent_sha256","receiver_mode","existing_binding_sha256","coverage","excluded_project_ids","profiles","include_content","policy_access","ur_policy"],"properties":{"schema_version":{"type":"string","enum":["unirouter.xinsight.setup-consent.v1"]},"request_id":{"type":"string","format":"uuid"},"project_id":{"type":"string","pattern":"^[1-9][0-9]*$"},"invitation":{"$ref":"#/components/schemas/XInsightConnectorInvitationV1"},"expected_preview_sha256":{"type":"string","pattern":"^sha256:[a-f0-9]{64}$"},"expected_xi_consent_sha256":{"type":"string","pattern":"^sha256:[a-f0-9]{64}$"},"receiver_mode":{"type":"string","enum":["new_install","adopt_existing"]},"existing_binding_sha256":{"allOf":[{"type":"string","pattern":"^sha256:[a-f0-9]{64}$"}],"nullable":true},"coverage":{"type":"string","enum":["exact","all_current_future"]},"excluded_project_ids":{"type":"array","items":{"type":"string","pattern":"^[1-9][0-9]*$"}},"profiles":{"type":"array","items":{"type":"string"}},"include_content":{"type":"boolean"},"policy_access":{"type":"array","items":{"$ref":"#/components/schemas/XInsightSetupPolicyAccess"},"maxItems":3},"ur_policy":{"allOf":[{"type":"object","additionalProperties":false,"required":["scope","put"],"properties":{"scope":{"type":"string","enum":["enterprise","project"]},"put":{"$ref":"#/components/schemas/ScopedPayloadPolicyUpdate"}}}],"nullable":true}}}
     XInsightSetupXIStatus: {"type":"object","additionalProperties":false,"required":["schema_version","installation_id","deployment_id","consent_revision","state","custody","receiving","issues"],"properties":{"schema_version":{"type":"string","enum":["xinsight.connector-setup-status.v1"]},"installation_id":{"type":"string"},"deployment_id":{"type":"string"},"consent_revision":{"type":"integer","format":"int64"},"state":{"type":"string","enum":["waiting_consent","provisioning","needs_action","waiting_data","ready","failed"]},"custody":{"type":"object","additionalProperties":false,"required":["desired_revision","effective_revision","loaded","settings"],"properties":{"desired_revision":{"type":"integer","format":"int64"},"effective_revision":{"type":"integer","format":"int64"},"loaded":{"type":"boolean"},"settings":{"allOf":[{"$ref":"#/components/schemas/XInsightSetupCustody"}],"nullable":true}}},"receiving":{"type":"object","additionalProperties":false,"required":["last_success_at","profiles_received","content_received_at","content_read_verified_at"],"properties":{"last_success_at":{"allOf":[{"type":"string","format":"date-time"}],"nullable":true},"profiles_received":{"type":"array","items":{"type":"string"}},"content_received_at":{"allOf":[{"type":"string","format":"date-time"}],"nullable":true},"content_read_verified_at":{"allOf":[{"type":"string","format":"date-time"}],"nullable":true}}},"issues":{"type":"array","items":{"$ref":"#/components/schemas/XInsightSetupIssue"}}}}
-    XInsightSetupStatus: {"type":"object","additionalProperties":false,"required":["schema_version","installation_id","consent_revision","state","configuration_ready","purpose_status","ur_policy_status","xi","issues"],"properties":{"schema_version":{"type":"string","enum":["unirouter.xinsight.setup-status.v1"]},"installation_id":{"type":"string"},"consent_revision":{"type":"integer","format":"int64"},"state":{"type":"string","enum":["waiting_consent","provisioning","needs_action","waiting_data","ready","failed"]},"configuration_ready":{"type":"boolean"},"purpose_status":{"type":"object","additionalProperties":false,"required":["policy_manage","source_enroll"],"properties":{"policy_manage":{"type":"string","enum":["waiting_candidate","not_requested","active","granted"]},"source_enroll":{"type":"string","enum":["waiting_candidate","active","granted"]}}},"ur_policy_status":{"type":"object","additionalProperties":false,"required":["state","policy_ref","policy_version","version_vector"],"properties":{"state":{"type":"string","enum":["pending","effective","blocked"]},"policy_ref":{"type":"string"},"policy_version":{"type":"string"},"version_vector":{"type":"string"}}},"xi":{"allOf":[{"$ref":"#/components/schemas/XInsightSetupXIStatus"}],"nullable":true},"issues":{"type":"array","items":{"$ref":"#/components/schemas/XInsightSetupIssue"}}}}
+    XInsightSetupStatus: {"type":"object","additionalProperties":false,"required":["schema_version","installation_id","consent_revision","state","configuration_ready","purpose_status","ur_policy_status","xi","issues"],"properties":{"schema_version":{"type":"string","enum":["unirouter.xinsight.setup-status.v1"]},"installation_id":{"type":"string"},"consent_revision":{"type":"integer","format":"int64"},"state":{"type":"string","enum":["waiting_consent","provisioning","needs_action","waiting_data","ready","failed"]},"configuration_ready":{"type":"boolean"},"purpose_status":{"type":"object","additionalProperties":false,"required":["policy_manage","source_enroll"],"properties":{"policy_manage":{"type":"string","enum":["waiting_candidate","not_requested","active","granted"]},"source_enroll":{"type":"string","enum":["waiting_candidate","active","granted"]}}},"ur_policy_status":{"type":"object","additionalProperties":false,"required":["state","policy_ref","policy_version","version_vector"],"properties":{"state":{"type":"string","enum":["pending","effective","blocked"]},"policy_ref":{"type":"string"},"policy_version":{"type":"string"},"version_vector":{"type":"string"}}},"xi":{"allOf":[{"$ref":"#/components/schemas/XInsightSetupXIStatus"}],"nullable":true},"issues":{"type":"array","items":{"$ref":"#/components/schemas/XInsightSetupIssue"}},"credential":{"$ref":"#/components/schemas/XInsightCredentialLocalStatus"}}}
+    XInsightCredentialRecoveryScope:
+      type: object
+      additionalProperties: false
+      required: [schema_version, installation_id, org_id]
+      properties:
+        schema_version: {type: string, enum: [unirouter.xinsight.credential-recovery-scope.v1]}
+        installation_id: {type: string}
+        org_id: {type: integer, format: int64}
+    XInsightCredentialRecoveryInput:
+      type: object
+      additionalProperties: false
+      required: [recovery_ticket]
+      properties:
+        recovery_ticket: {type: string, pattern: '^xirt_[A-Za-z0-9_-]{43}$'}
+    XInsightCredentialLocalStatus:
+      type: object
+      additionalProperties: false
+      required: [state, current_token_sha256, current_expires_at]
+      properties:
+        state: {type: string, enum: [healthy, rotation_due, rotation_pending, committed_unpromoted, expired_recovery_required, revoked, credential_unavailable]}
+        current_token_sha256: {type: string}
+        current_expires_at: {type: string, format: date-time}
+        pending_operation_id: {type: string}
+        pending_state: {type: string}
+        pending_replacement_sha256: {type: string}
+    XInsightCredentialRecoveryPreview:
+      type: object
+      additionalProperties: false
+      required: [schema_version, installation_id, deployment_id, project_id, final_event_scope, source_binding_sha256, xinsight_origin, unirouter_origin, recovery_id, expires_at, credential]
+      properties:
+        schema_version: {type: string, enum: [unirouter.xinsight.credential-recovery-preview.v1]}
+        installation_id: {type: string}
+        deployment_id: {type: string}
+        project_id: {type: string}
+        final_event_scope: {type: array, items: {type: string}}
+        source_binding_sha256: {type: string}
+        xinsight_origin: {type: string, format: uri}
+        unirouter_origin: {type: string, format: uri}
+        recovery_id: {type: string}
+        expires_at: {type: string, format: date-time}
+        credential: {$ref: '#/components/schemas/XInsightCredentialLocalStatus'}
+    XInsightCredentialRecoveryAccepted:
+      type: object
+      additionalProperties: false
+      required: [schema_version, installation_id, operation_id, state]
+      properties:
+        schema_version: {type: string, enum: [unirouter.xinsight.credential-recovery-accepted.v1]}
+        installation_id: {type: string}
+        operation_id: {type: string}
+        state: {type: string, enum: [pending]}
     XInsightConnectorInvitationV1:
       type: object
       additionalProperties: false

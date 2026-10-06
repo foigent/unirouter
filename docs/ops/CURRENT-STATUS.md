@@ -1,14 +1,42 @@
 # UniRouter Current Status
 
-## Current source and retrospective handoff — 2026-10-06
+## X-Insight control credential lifecycle — PR candidate, 2026-10-06
 
-Merged PR #430 is main `7ab84f1de23c4361939977fc5a0c0f7369619e5e`;
-its exact-main CI run `37338248954` passed. The only source difference from
-the existing deployed `37fe231d` is an opt-in installed-XI integration test
-entrypoint. The coordinator reports the development Target remains
-1.9.1/`37fe231d`/M124; this documentation batch did not redeploy or independently
-read that Target. XI installed-service and real data acceptance remain
-separate. The current [execution record](../agent-workflows/EXECUTION-RECORD.md)
+Version 1.9.2/M125 on `codex/ur-xi-control-lifecycle-20261006` is under PR
+#432. Head `41e580c0` passed protocol CI `37456231777`; main CI
+`37456231759` was still running at this local cutoff. Its Backend early M125
+check, ordinary Go suite and admin integration suite had passed. The prior
+first-customer inventory and installed-receipt naming failures were corrected.
+XI's separate installed new-install CI `37456275687` then reached offline
+credential expiry and human confirmation but received UR HTTP 503 on recovery
+confirmation. Local PostgreSQL 16 reproduction isolated a 58-character audit
+action exceeding `audit_logs.action VARCHAR(50)`; the local source fix uses a
+50-character action and passes a real-DB HTTP success/reentry/refusal test
+with `-race`. It has not been pushed or run in CI;
+[the execution record](../agent-workflows/EXECUTION-RECORD.md) holds the exact
+run, cause, fix and verification boundary. No merge, signed Artifact, Target,
+Production or completed installed XI lifecycle result is claimed.
+
+At the earlier Local cutoff, PG16.14 credential and production-loop tests
+passed with `-race`. The managed new-install UR/XI Local joint test passed
+after XI fixed v1 current-credential initialization and the fixture deployment
+identity, exercising real HTTPS,
+eight source profiles, C manifests, encrypted body acceptance and XI readback.
+That historical Local result does not cover the installed Linux credential
+lifecycle. [Administrator/API behavior](XINSIGHT-CONTROL-CREDENTIAL-LIFECYCLE.md)
+remains the operator reference; earlier status entries retain their original
+evidence cutoffs.
+
+## Historical source and retrospective handoff — PR #430 cutoff, 2026-10-06
+
+At this historical cutoff, merged PR #430 was main
+`7ab84f1de23c4361939977fc5a0c0f7369619e5e`; its exact-main CI run
+`37338248954` passed. The only source difference from the then-deployed
+`37fe231d` was an opt-in installed-XI integration test entrypoint. The
+coordinator reported development Target 1.9.1/`37fe231d`/M124; that
+documentation batch did not redeploy or independently read the Target. XI
+installed-service and real data acceptance remained separate. The
+[execution record](../agent-workflows/EXECUTION-RECORD.md)
 identifies the missed host-boundary test, its original entrypoint and remaining
 owner/action. [Agent protocol 6.4](../agent-workflows/AGENT-PROTOCOL.md#64-长任务完成复盘)
 now makes that five-part retrospective and necessary entrypoint correction part

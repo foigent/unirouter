@@ -1,6 +1,7 @@
 package resetplan
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -398,6 +399,43 @@ func TestContentTablesPreserveAllAndRefuseResetEvenWhenEmpty(t *testing.T) {
 	}
 	if scope, action, _ := ClassifyTable("future_unknown"); scope != ScopeReviewRequired || action != "" {
 		t.Fatal("unknown tables must remain unclassified")
+	}
+}
+
+func TestXInsightCredentialJournalPreservesHistoryAndRefusesReset(t *testing.T) {
+	const name = "xinsight_connector_credential_operations"
+	for _, rows := range []int64{0, 1} {
+		t.Run(fmt.Sprintf("rows_%d", rows), func(t *testing.T) {
+			if scope, action, reason := ClassifyTable(name); scope != ScopeReviewRequired || action != ActionPreserveAll || reason == "" {
+				t.Fatalf("credential journal classification: %s %s %s", scope, action, reason)
+			}
+			snapshot := syntheticClassifiedSnapshot()
+			snapshot.Tables = append(snapshot.Tables, TableInventory{Name: name, RowCount: rows})
+			plan, err := Build(snapshot, testTarget(), "source-a", "source-b", time.Unix(0, 0))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if plan.ScopeComplete || plan.Summary.ReviewRequiredCount != 1 || plan.ActionAuthorized || plan.MutationPerformed || Validate(plan) == nil {
+				t.Fatalf("credential journal entered reset authority: %+v", plan.Summary)
+			}
+			found := false
+			for _, table := range plan.Tables {
+				if table.Name == name {
+					found = true
+					if table.Action != ActionPreserveAll || table.ExpectedDeletedRows != 0 || table.ExpectedRetainedRows != rows {
+						t.Fatalf("credential journal rows not retained: %+v", table)
+					}
+				}
+			}
+			if !found {
+				t.Fatal("credential journal missing from reset preview")
+			}
+			for _, step := range plan.DeleteOrder {
+				if step.Table == name {
+					t.Fatalf("credential journal entered deletion order: %s", step.Table)
+				}
+			}
+		})
 	}
 }
 

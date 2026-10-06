@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
@@ -24,6 +25,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -63,6 +65,70 @@ type jointHTTPFixture struct {
 	publishOnce       *sync.Once
 	bootstrapOnce     *sync.Once
 	registrationOnce  *sync.Once
+	contentReads      *jointContentReadObserver
+}
+
+// Keep only aggregate response outcomes. The XI-owned source bearer, cursor,
+// request identity and body never enter the diagnostic output.
+type jointContentReadObserver struct {
+	mu     sync.Mutex
+	counts map[string]int
+}
+
+type jointContentStatusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *jointContentStatusWriter) WriteHeader(status int) {
+	if w.status == 0 {
+		w.status = status
+	}
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *jointContentStatusWriter) Write(body []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.ResponseWriter.Write(body)
+}
+
+func (w *jointContentStatusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+func (o *jointContentReadObserver) observe(kind string, published <-chan struct{}, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		phase := "before_publish"
+		select {
+		case <-published:
+			phase = "after_publish"
+		default:
+		}
+		tracked := &jointContentStatusWriter{ResponseWriter: w}
+		next.ServeHTTP(tracked, r)
+		status := tracked.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		o.mu.Lock()
+		o.counts[fmt.Sprintf("%s/%s/%d", kind, phase, status)]++
+		o.mu.Unlock()
+	})
+}
+
+func (o *jointContentReadObserver) snapshot() string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	keys := make([]string, 0, len(o.counts))
+	for key := range o.counts {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%d", key, o.counts[key]))
+	}
+	return strings.Join(parts, ",")
 }
 
 // This mode is confined to the disposable Linux qualification VM. It changes
@@ -86,6 +152,36 @@ type installedXIJointInput struct {
 	XIReaderSubjectID    string `json:"xi_reader_subject_id"`
 	XIAdminDSNFile       string `json:"xi_admin_dsn_file"`
 	TimeoutSeconds       int    `json:"timeout_seconds"`
+}
+
+type jointLifecycleRequest struct {
+	Action         string     `json:"action"`
+	InstallationID string     `json:"installation_id"`
+	ExpiresAt      *time.Time `json:"expires_at,omitempty"`
+	DropResponse   string     `json:"drop_response,omitempty"`
+}
+
+type jointLifecycleState struct {
+	Paused                   bool      `json:"paused"`
+	CurrentTokenSHA256       string    `json:"current_token_sha256"`
+	CurrentExpiresAt         time.Time `json:"current_expires_at"`
+	PendingOperationID       string    `json:"pending_operation_id"`
+	PendingState             string    `json:"pending_state"`
+	PendingReplacementSHA256 string    `json:"pending_replacement_sha256"`
+	DroppedResponse          string    `json:"dropped_response"`
+	RequestID                string    `json:"request_id"`
+	SHA256                   string    `json:"sha256"`
+}
+
+type jointLifecycleCommand struct {
+	ctx     context.Context
+	request jointLifecycleRequest
+	reply   chan jointLifecycleResult
+}
+
+type jointLifecycleResult struct {
+	state jointLifecycleState
+	err   error
 }
 
 type jointContentObject struct {
@@ -275,7 +371,9 @@ func newJointHTTPFixtureWithManaged(t *testing.T, holdContentRegistration bool, 
 	t.Helper()
 	f := jointHTTPFixture{sourceControlFixture: newContentControlIntegrationFixture(t),
 		contentRegistered: make(chan struct{}), aBootstrapped: make(chan struct{}),
-		contentPublished: make(chan struct{}), publishOnce: &sync.Once{}, bootstrapOnce: &sync.Once{}, registrationOnce: &sync.Once{}}
+		contentPublished: make(chan struct{}), publishOnce: &sync.Once{},
+		bootstrapOnce: &sync.Once{}, registrationOnce: &sync.Once{},
+		contentReads: &jointContentReadObserver{counts: make(map[string]int)}}
 	var err error
 	if managed != nil {
 		f.handler = NewHandler(f.pool, syntheticSourceControlSecret, []byte("0123456789abcdef0123456789abcdef"), nil)
@@ -487,8 +585,8 @@ func newJointHTTPFixtureWithManaged(t *testing.T, holdContentRegistration bool, 
 		RequestTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second})
 	require.NoError(t, err)
 	mux.Handle("GET "+sourcefacts.ContentCapabilitiesPath, reads.Capabilities)
-	mux.Handle("GET "+sourcefacts.ContentManifestsPath, reads.Manifests)
-	mux.Handle("GET "+sourcefacts.ContentEndpointTemplate, body)
+	mux.Handle("GET "+sourcefacts.ContentManifestsPath, f.contentReads.observe("manifest", f.contentPublished, reads.Manifests))
+	mux.Handle("GET "+sourcefacts.ContentEndpointTemplate, f.contentReads.observe("body", f.contentPublished, body))
 	if managed != nil && managed.installed != nil {
 		installed := managed.installed
 		certificate, err := tls.LoadX509KeyPair(installed.TLSCertFile, installed.TLSKeyFile)
@@ -524,7 +622,7 @@ func newJointHTTPFixtureWithManaged(t *testing.T, holdContentRegistration bool, 
 			}
 			managed.counterpartClient = client
 			require.NoError(t, f.handler.SetXInsightSetupPeer(peer, client, func(ctx context.Context, id, deployment string) ([]byte, error) {
-				counterpart, err := xinsightconnector.NewHTTPControlCounterpart(managed.origin, xinsightconnector.RuntimeInstallationDescriptor{InstallationID: id, XDeploymentID: deployment}, managed.journal, client, 10*time.Second)
+				counterpart, err := xinsightconnector.NewHTTPControlCounterpart(managed.origin, xinsightconnector.RuntimeInstallationDescriptor{InstallationID: id, XDeploymentID: deployment}, managed.journalSnapshot(), client, 10*time.Second)
 				if err != nil {
 					return nil, err
 				}
@@ -628,14 +726,22 @@ func TestXInsightJointServerHalfIntegration(t *testing.T) {
 	}
 	require.NoError(t, json.NewDecoder(bootstrapFacts.Body).Decode(&factsBoot))
 	require.NotEmpty(t, factsBoot.NextCursor)
+	// C coverage begins at registration, so a manifest published before its
+	// first empty-cursor request must be returned on that first page. Unlike A,
+	// C does not establish a new forward-only watermark at first read.
+	preBootstrapID := "joint-pre-c-bootstrap-" + jointRandomHex(t, 8)
+	preBootstrap := f.emitSourceContent(t, preBootstrapID, []byte(`{"role":"assistant","content":"before C first read"}`))
 	bootstrapContent := f.machineHTTP(t, http.MethodGet,
 		sourcefacts.ContentManifestsPath+"?purpose=human_review&limit=10", contentBearer, nil)
 	require.Equal(t, http.StatusOK, bootstrapContent.StatusCode)
-	var contentBoot struct {
-		NextCursor string `json:"next_cursor"`
-	}
+	var contentBoot sourcefacts.ContentManifestPage
 	require.NoError(t, json.NewDecoder(bootstrapContent.Body).Decode(&contentBoot))
 	require.NotEmpty(t, contentBoot.NextCursor)
+	require.Len(t, contentBoot.Items, 2, "pending and complete revisions must both remain visible")
+	for _, item := range contentBoot.Items {
+		require.Equal(t, preBootstrap.RequestID, item.Document.RequestID)
+	}
+	require.Equal(t, "complete", contentBoot.Items[1].Document.Capture.Completeness)
 
 	requestID := "joint-" + jointRandomHex(t, 12)
 	payload := []byte(`{"role":"assistant","content":"joint synthetic answer"}`)
@@ -882,20 +988,63 @@ func (input installedXIJointInput) validate() error {
 // feed/machine bearer. Only the synthetic human's accepted installation can be
 // admitted to the fixture's independently fixed receiver network scope.
 type jointManagedControl struct {
-	origin            string
-	installed         *installedXIJointInput
-	journal           *xinsightconnector.PostgresPhaseJournal
-	executor          *XInsightConnectorActivationExecutor
-	mu                sync.RWMutex
-	identities        map[string]string
-	projects          map[int64]bool
-	futureProject     bool
-	normalSetup       bool
-	contentReady      func(context.Context) error
-	handler           *Handler
-	peer              *config.XInsightConnectorStaticPeer
-	counterpartClient *http.Client
-	network           xinsightconnector.ReceiverNetworkBindingV2
+	origin             string
+	installed          *installedXIJointInput
+	journal            *xinsightconnector.PostgresPhaseJournal
+	executor           *XInsightConnectorActivationExecutor
+	mu                 sync.RWMutex
+	identities         map[string]string
+	projects           map[int64]bool
+	futureProject      bool
+	normalSetup        bool
+	contentReady       func(context.Context) error
+	handler            *Handler
+	peer               *config.XInsightConnectorStaticPeer
+	counterpartClient  *http.Client
+	network            xinsightconnector.ReceiverNetworkBindingV2
+	lifecycleNonce     string
+	lifecycleCommands  chan jointLifecycleCommand
+	lifecyclePublish   chan jointLifecycleCommand
+	lifecyclePaused    bool // read and written only by the single fixture loop
+	lifecycleAuthority *jointLifecycleAuthoritySnapshot
+}
+
+func (m *jointManagedControl) journalSnapshot() *xinsightconnector.PostgresPhaseJournal {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.journal
+}
+
+type jointLifecycleAuthoritySnapshot struct {
+	installation                string
+	orgID, projectID, fence     int64
+	deployment, eventScope      string
+	sourceBinding, redeemSHA256 string
+}
+
+func (m *jointManagedControl) checkLifecycleAuthority(ctx context.Context, id string, establish bool) error {
+	current := jointLifecycleAuthoritySnapshot{installation: id}
+	err := m.handler.db.QueryRow(ctx, `SELECT i.org_id,i.project_id,i.control_fence,i.x_deployment_id,
+		i.event_scope,i.source_binding_sha256,b.redeem_result_sha256
+		FROM xinsight_connector_installations i JOIN xinsight_connector_control_bindings b USING(installation_id)
+		WHERE i.installation_id=$1 AND i.setup_request_id IS NOT NULL`, id).Scan(&current.orgID, &current.projectID,
+		&current.fence, &current.deployment, &current.eventScope, &current.sourceBinding, &current.redeemSHA256)
+	if err != nil || current.deployment == "" || current.sourceBinding == "" || current.redeemSHA256 == "" {
+		return xinsightconnector.ErrConflict
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.lifecycleAuthority == nil {
+		if !establish {
+			return xinsightconnector.ErrConflict
+		}
+		m.lifecycleAuthority = &current
+		return nil
+	}
+	if *m.lifecycleAuthority != current {
+		return xinsightconnector.ErrConflict
+	}
+	return nil
 }
 
 func (m *jointManagedControl) pinOrigin(origin string) {
@@ -974,6 +1123,52 @@ func (m *jointManagedControl) registerRoutes(t *testing.T, f *jointHTTPFixture, 
 	}
 	m.journal, err = xinsightconnector.NewPostgresPhaseJournal(f.pool, f.handler.encKey)
 	require.NoError(t, err)
+	f.handler.SetXInsightCredentialJournal(m.journal)
+	if m.installed != nil {
+		mux.Handle("POST /__joint/credential-lifecycle", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Joint-Lifecycle-Nonce")), []byte(m.lifecycleNonce)) != 1 {
+				http.Error(w, "joint fixture denied", http.StatusNotFound)
+				return
+			}
+			var request jointLifecycleRequest
+			decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024))
+			decoder.DisallowUnknownFields()
+			if decoder.Decode(&request) != nil || decoder.Decode(new(any)) != io.EOF ||
+				!regexp.MustCompile(`^xci_[A-Za-z0-9_-]{22}$`).MatchString(request.InstallationID) {
+				http.Error(w, "joint fixture invalid", http.StatusBadRequest)
+				return
+			}
+			var owned bool
+			if err := f.pool.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM xinsight_connector_installations
+				WHERE installation_id=$1 AND org_id=$2 AND project_id=$3 AND x_deployment_id=$4
+				AND setup_request_id IS NOT NULL AND desired_state='active')`, request.InstallationID, f.orgID, f.projectID,
+				m.installed.XIDeploymentID).Scan(&owned); err != nil || !owned {
+				http.Error(w, "joint fixture scope denied", http.StatusForbidden)
+				return
+			}
+			command := jointLifecycleCommand{ctx: r.Context(), request: request, reply: make(chan jointLifecycleResult, 1)}
+			queue := m.lifecycleCommands
+			if request.Action == "publish" {
+				queue = m.lifecyclePublish
+			}
+			select {
+			case queue <- command:
+			case <-r.Context().Done():
+				return
+			}
+			select {
+			case result := <-command.reply:
+				if result.err != nil {
+					http.Error(w, "joint fixture action failed", http.StatusConflict)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Cache-Control", "no-store")
+				_ = json.NewEncoder(w).Encode(result.state)
+			case <-r.Context().Done():
+			}
+		}))
+	}
 	intake, err := xinsightconnector.NewInvitationIntake(manager, m.journal, m.origin, "stable")
 	require.NoError(t, err)
 	f.handler.SetXInsightConnectorInvitationIntake(intake)
@@ -1102,6 +1297,8 @@ func (m *jointManagedControl) registerRoutes(t *testing.T, f *jointHTTPFixture, 
 		mux.Handle("POST "+org+"/xinsight/setup-previews", human(f.handler.PreviewXInsightSetup, false, false))
 		mux.Handle("POST "+org+"/xinsight/setups", human(f.handler.CreateXInsightSetup, false, false))
 		mux.Handle("GET "+org+"/xinsight/setups/{installation_id}", human(f.handler.GetXInsightSetupStatus, false, false))
+		mux.Handle("POST "+org+"/xinsight/setups/{installation_id}/credential-recovery/preview", human(f.handler.PreviewXInsightCredentialRecovery, false, false))
+		mux.Handle("POST "+org+"/xinsight/setups/{installation_id}/credential-recovery", human(f.handler.ConfirmXInsightCredentialRecovery, false, false))
 	}
 	mux.Handle("POST "+org+"/xinsight-policy-credentials", human(f.handler.RegisterXInsightMachineCredential, false, false))
 	mux.Handle("GET "+org+"/xinsight-policy-credentials", human(f.handler.ListXInsightMachineCredentials, false, false))
@@ -1130,9 +1327,12 @@ func (m *jointManagedControl) registerRoutes(t *testing.T, f *jointHTTPFixture, 
 // failures; decoding, authentication, scope and journal errors still stop the test.
 // No URL, headers, body, credential or installation identity is recorded.
 type jointControlTransport struct {
-	base     http.RoundTripper
-	recovery string
-	ackPhase string
+	base            http.RoundTripper
+	recovery        string
+	ackPhase        string
+	dropResponse    string
+	droppedResponse string
+	onDrop          func()
 }
 
 func (r *jointControlTransport) RoundTrip(request *http.Request) (*http.Response, error) {
@@ -1157,6 +1357,25 @@ func (r *jointControlTransport) RoundTrip(request *http.Request) (*http.Response
 		}
 	}
 	response, err := r.base.RoundTrip(request)
+	if err == nil && response != nil && response.StatusCode == http.StatusOK && request.Method == http.MethodPost &&
+		strings.Contains(request.URL.Path, "/credentials/") {
+		phase := ""
+		switch {
+		case strings.HasSuffix(request.URL.Path, "/rotate") || strings.HasSuffix(request.URL.Path, "/recover"):
+			phase = "prepare"
+		case strings.HasSuffix(request.URL.Path, "/confirm"):
+			phase = "confirm"
+		}
+		if phase != "" && r.dropResponse == phase {
+			r.dropResponse, r.droppedResponse = "", phase
+			_ = response.Body.Close()
+			r.recovery = "transient transport failure"
+			if r.onDrop != nil {
+				r.onDrop()
+			}
+			return nil, io.EOF
+		}
+	}
 	if err != nil {
 		var networkError net.Error
 		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
@@ -1208,14 +1427,116 @@ func TestXInsightManagedJointRecoveryBoundaryIntegration(t *testing.T) {
 			require.Empty(t, transport.ackPhase)
 		}
 	}
+	for _, phase := range []string{"prepare", "confirm"} {
+		transport.dropResponse = phase
+		dropped := false
+		transport.onDrop = func() { dropped = true }
+		path := "/api/v1/connector-control/installations/xci_AAAAAAAAAAAAAAAAAAAAAA/credentials/rotate"
+		if phase == "confirm" {
+			path = "/api/v1/connector-control/installations/xci_AAAAAAAAAAAAAAAAAAAAAA/credentials/operations/xcr_AAAAAAAAAAAAAAAAAAAAAA/confirm"
+		}
+		post, err := http.NewRequest(http.MethodPost, server.URL+path, nil)
+		require.NoError(t, err)
+		response, err := transport.RoundTrip(post)
+		require.ErrorIs(t, err, io.EOF)
+		require.Nil(t, response)
+		require.True(t, dropped)
+		require.Equal(t, phase, transport.droppedResponse)
+		require.Empty(t, transport.dropResponse)
+		response, err = transport.RoundTrip(post)
+		require.NoError(t, err, "only the first successful response may be lost")
+		require.NoError(t, response.Body.Close())
+	}
 	server.Close()
 	_, err = transport.RoundTrip(request)
 	require.Error(t, err)
 	require.Equal(t, "transient transport failure", transport.recovery)
 }
 
+// The installed fixture command is serialized with the existing supervisor
+// pass. A pause reply therefore proves that no UR credential cycle is in
+// flight before XI arranges its matching synthetic expiry.
+func (m *jointManagedControl) lifecycleCommand(ctx context.Context, request jointLifecycleRequest, transport *jointControlTransport) jointLifecycleResult {
+	result := jointLifecycleResult{}
+	if m.installed == nil || m.handler == nil || m.journal == nil || !m.normalSetup || !m.admits(xinsightconnector.RuntimeInstallationDescriptor{
+		InstallationID: request.InstallationID, XDeploymentID: m.installed.XIDeploymentID,
+	}) {
+		result.err = xinsightconnector.ErrConflict
+		return result
+	}
+	switch request.Action {
+	case "pause":
+		if request.ExpiresAt != nil || request.DropResponse != "" {
+			result.err = xinsightconnector.ErrInvalid
+			return result
+		}
+		m.lifecyclePaused = true
+		if err := m.checkLifecycleAuthority(ctx, request.InstallationID, true); err != nil {
+			result.err = err
+			return result
+		}
+	case "status":
+		if request.ExpiresAt != nil || request.DropResponse != "" {
+			result.err = xinsightconnector.ErrInvalid
+			return result
+		}
+	case "expire_current":
+		if !m.lifecyclePaused || request.ExpiresAt == nil || request.ExpiresAt.IsZero() || request.DropResponse != "" ||
+			request.ExpiresAt.Before(time.Now().Add(-24*time.Hour)) || request.ExpiresAt.After(time.Now().Add(24*time.Hour)) {
+			result.err = xinsightconnector.ErrInvalid
+			return result
+		}
+		status, err := m.journal.CredentialStatus(ctx, request.InstallationID)
+		if err != nil || status.CurrentTokenSHA256 == "" {
+			result.err = xinsightconnector.ErrConflict
+			return result
+		}
+		tag, err := m.handler.db.Exec(ctx, `UPDATE xinsight_connector_control_bindings SET control_token_expires_at=$3
+			WHERE installation_id=$1 AND control_token_sha256=$2`, request.InstallationID, status.CurrentTokenSHA256, request.ExpiresAt.UTC())
+		if err != nil || tag.RowsAffected() != 1 {
+			result.err = xinsightconnector.ErrConflict
+			return result
+		}
+	case "resume":
+		if !m.lifecyclePaused || request.ExpiresAt != nil || request.DropResponse != "" && request.DropResponse != "prepare" && request.DropResponse != "confirm" {
+			result.err = xinsightconnector.ErrInvalid
+			return result
+		}
+		journal, err := xinsightconnector.NewPostgresPhaseJournal(m.handler.db, m.handler.encKey)
+		if err != nil {
+			result.err = err
+			return result
+		}
+		m.mu.Lock()
+		m.journal = journal
+		m.mu.Unlock()
+		m.handler.SetXInsightCredentialJournal(journal)
+		transport.dropResponse = request.DropResponse
+		transport.droppedResponse = ""
+		m.lifecyclePaused = false
+	default:
+		result.err = xinsightconnector.ErrInvalid
+		return result
+	}
+	if err := m.checkLifecycleAuthority(ctx, request.InstallationID, false); err != nil {
+		result.err = err
+		return result
+	}
+	status, err := m.journal.CredentialStatus(ctx, request.InstallationID)
+	if err != nil {
+		result.err = err
+		return result
+	}
+	result.state = jointLifecycleState{Paused: m.lifecyclePaused, CurrentTokenSHA256: status.CurrentTokenSHA256,
+		CurrentExpiresAt: status.CurrentExpiresAt, PendingOperationID: status.PendingOperationID,
+		PendingState: status.PendingState, PendingReplacementSHA256: status.PendingReplacementSHA256,
+		DroppedResponse: transport.droppedResponse}
+	return result
+}
+
 func (m *jointManagedControl) run(ctx context.Context, client *http.Client, logf func(string, ...any)) error {
 	transport := &jointControlTransport{base: client.Transport}
+	transport.onDrop = func() { m.lifecyclePaused = true }
 	observedClient := *client
 	observedClient.Transport = transport
 	client = &observedClient
@@ -1225,7 +1546,17 @@ func (m *jointManagedControl) run(ctx context.Context, client *http.Client, logf
 		select {
 		case <-ctx.Done():
 			return nil
+		case command := <-m.lifecycleCommands:
+			if err := command.ctx.Err(); err != nil {
+				command.reply <- jointLifecycleResult{err: err}
+			} else {
+				command.reply <- m.lifecycleCommand(command.ctx, command.request, transport)
+			}
+			continue
 		case <-ticker.C:
+		}
+		if m.lifecyclePaused {
+			continue
 		}
 		// Match the production supervisor's frozen runnable discovery: a redeem
 		// completed in this pass cannot be polled until a later discovery pass.
@@ -1236,6 +1567,40 @@ func (m *jointManagedControl) run(ctx context.Context, client *http.Client, logf
 		pending, err := m.journal.ListRedeemPendingInstallations(ctx, 10)
 		if err != nil {
 			return err
+		}
+		credentialDue, err := m.journal.ListCredentialDueInstallations(ctx, 10)
+		if err != nil {
+			return err
+		}
+		credentialBlocked := make(map[string]bool, len(credentialDue))
+		for _, d := range credentialDue {
+			credentialBlocked[d.InstallationID] = true
+			if !m.admits(d) {
+				continue
+			}
+			if m.normalSetup {
+				if err := m.handler.CheckXInsightSetupControlAuthority(ctx, d.InstallationID); err != nil {
+					return fmt.Errorf("joint credential outgoing authority: %w", err)
+				}
+			}
+			counterpart, err := xinsightconnector.NewHTTPControlCounterpart(m.origin, d, m.journal, client, 10*time.Second)
+			if err != nil {
+				return err
+			}
+			transport.recovery = ""
+			if err = counterpart.RunCredential(ctx); err != nil {
+				if ctx.Err() == nil && transport.recovery != "" {
+					logf("joint UR credential pending after %s; next pass retains encrypted request", transport.recovery)
+					if m.lifecyclePaused {
+						break
+					}
+					continue
+				}
+				return fmt.Errorf("joint UR credential lifecycle: %w", err)
+			}
+		}
+		if m.lifecyclePaused {
+			continue
 		}
 		for _, d := range pending {
 			if !m.admits(d) {
@@ -1260,6 +1625,9 @@ func (m *jointManagedControl) run(ctx context.Context, client *http.Client, logf
 			}
 		}
 		for _, d := range runnable {
+			if credentialBlocked[d.InstallationID] {
+				continue
+			}
 			if !m.admits(d) {
 				continue
 			}
@@ -1336,6 +1704,124 @@ func (f jointHTTPFixture) logManagedEnrollmentState(t *testing.T) {
 	}
 }
 
+// Only the two installed-driver receipt shapes may reach CI logs. Keep a
+// bounded tail for long adopt runs and preserve the last result if it precedes
+// that tail; no untrusted child text is copied into the diagnostic.
+func redactInstalledJointReceipts(raw string) string {
+	const maxReceipts = 48
+	stagePattern := regexp.MustCompile(`^[a-z_]{1,40}$`)
+	categoryPattern := regexp.MustCompile(`^[a-z_]{1,60}$`)
+	var safe []string
+	valid, invalid, lastResultIndex := 0, 0, -1
+	lastResult := ""
+	for _, line := range strings.Split(raw, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var receipt struct {
+			SchemaVersion   string `json:"schema_version"`
+			Stage           string `json:"stage"`
+			State           string `json:"state"`
+			ElapsedMS       int64  `json:"elapsed_ms"`
+			FailureCategory string `json:"failure_category"`
+		}
+		decoder := json.NewDecoder(strings.NewReader(line))
+		decoder.DisallowUnknownFields()
+		if decoder.Decode(&receipt) != nil ||
+			decoder.Decode(new(any)) != io.EOF ||
+			(receipt.SchemaVersion != "xinsight.ci-installed-joint-stage.v1" && receipt.SchemaVersion != "xinsight.ci-installed-joint-result.v1") ||
+			!stagePattern.MatchString(receipt.Stage) ||
+			(receipt.State != "passed" && receipt.State != "failed") ||
+			receipt.ElapsedMS < 0 || receipt.ElapsedMS > 1200000 ||
+			receipt.FailureCategory != "" && !categoryPattern.MatchString(receipt.FailureCategory) {
+			invalid++
+			continue
+		}
+		formatted := fmt.Sprintf("%s/%s/%s/%d/%s", receipt.SchemaVersion, receipt.Stage, receipt.State, receipt.ElapsedMS, receipt.FailureCategory)
+		if receipt.SchemaVersion == "xinsight.ci-installed-joint-result.v1" {
+			lastResultIndex, lastResult = valid, formatted
+		}
+		valid++
+		if len(safe) < maxReceipts {
+			safe = append(safe, formatted)
+		} else {
+			copy(safe, safe[1:])
+			safe[maxReceipts-1] = formatted
+		}
+	}
+	if len(safe) == 0 {
+		return "installed_driver_output_unavailable"
+	}
+	if lastResultIndex >= 0 && lastResultIndex < valid-len(safe) {
+		safe[0] = lastResult
+	}
+	if valid > len(safe) {
+		safe = append(safe, fmt.Sprintf("truncated_valid_receipts=%d", valid-len(safe)))
+	}
+	if invalid > 0 {
+		safe = append(safe, fmt.Sprintf("invalid_rows_omitted=%d", invalid))
+	}
+	return strings.Join(safe, ";")
+}
+
+func TestRedactInstalledJointReceiptsIntegration(t *testing.T) {
+	receipt := func(schema, stage, state string, elapsed int64, category string) string {
+		body, err := json.Marshal(map[string]any{
+			"schema_version": schema, "stage": stage, "state": state,
+			"elapsed_ms": elapsed, "failure_category": category,
+		})
+		require.NoError(t, err)
+		return string(body)
+	}
+	stageSchema, resultSchema := "xinsight.ci-installed-joint-stage.v1", "xinsight.ci-installed-joint-result.v1"
+	t.Run("ordinary and more than 24 receipts", func(t *testing.T) {
+		var lines []string
+		for i := 0; i < 29; i++ {
+			lines = append(lines, receipt(stageSchema, "credential_rotation", "passed", int64(i), ""))
+		}
+		ordinary := redactInstalledJointReceipts(strings.Join(lines[:19], "\n"))
+		require.Equal(t, 19, strings.Count(ordinary, "xinsight.ci-installed-joint-"))
+		require.NotContains(t, ordinary, "truncated_valid_receipts")
+		lines = append(lines, receipt(resultSchema, "credential_offline_expiry", "failed", 31, "server_error"))
+		output := redactInstalledJointReceipts(strings.Join(lines, "\n") + "\n")
+		require.Equal(t, 30, strings.Count(output, "xinsight.ci-installed-joint-"))
+		require.Contains(t, output, "credential_offline_expiry/failed/31/server_error")
+		require.NotContains(t, output, "truncated_valid_receipts")
+	})
+	t.Run("bounded tail retains preceding terminal result", func(t *testing.T) {
+		lines := []string{receipt(resultSchema, "installed_joint", "failed", 1, "server_error")}
+		for i := 0; i < 60; i++ {
+			lines = append(lines, receipt(stageSchema, "credential_rotation", "passed", int64(i), ""))
+		}
+		output := redactInstalledJointReceipts(strings.Join(lines, "\n"))
+		require.Equal(t, 48, strings.Count(output, "xinsight.ci-installed-joint-"))
+		require.Contains(t, output, "xinsight.ci-installed-joint-result.v1/installed_joint/failed/1/server_error")
+		require.Contains(t, output, "truncated_valid_receipts=13")
+		require.Contains(t, output, "credential_rotation/passed/59/")
+	})
+	t.Run("invalid and private lines omit only those lines", func(t *testing.T) {
+		const secret = "private-token-keep-out"
+		valid := receipt(stageSchema, "credential_rotation", "passed", 3, "")
+		invalid := []string{
+			secret,
+			receipt("xinsight.ci-installed-joint-fake.v1", "credential_rotation", "passed", 3, ""),
+			receipt(stageSchema, "credential_rotation", "failed", 1200001, ""),
+			receipt(resultSchema, "installed_joint", "failed", 2, "secret-"+secret),
+			`{"schema_version":"xinsight.ci-installed-joint-stage.v1","stage":"credential_rotation","state":"passed","elapsed_ms":1,"failure_category":"","private":"` + secret + `"}`,
+		}
+		lines := append([]string{valid}, invalid...)
+		lines = append(lines, receipt(resultSchema, "installed_joint", "failed", 4, "server_error"))
+		output := redactInstalledJointReceipts(strings.Join(lines, "\n"))
+		require.Contains(t, output, "credential_rotation/passed/3/")
+		require.Contains(t, output, "installed_joint/failed/4/server_error")
+		require.Contains(t, output, "invalid_rows_omitted=5")
+		require.NotContains(t, output, secret)
+		require.NotContains(t, output, "fake.v1")
+		require.Equal(t, "installed_driver_output_unavailable", redactInstalledJointReceipts(strings.Join(invalid, "\n")))
+		require.NotContains(t, redactInstalledJointReceipts(valid+"\n"+receipt(resultSchema, "installed_joint", "passed", 1, secret)), "/installed_joint/passed/")
+	})
+}
+
 func runManagedJointConsumer(t *testing.T, mode string) {
 	runManagedJointConsumerWithInstalled(t, mode, nil)
 }
@@ -1383,11 +1869,15 @@ func runManagedJointConsumerWithInstalled(t *testing.T, mode string, installed *
 		managed.origin = "https://" + listener.Addr().String()
 	} else {
 		managed.origin, managed.normalSetup = installed.XIOrigin, true
+		managed.lifecycleNonce = jointRandomHex(t, 32)
+		managed.lifecycleCommands = make(chan jointLifecycleCommand)
+		managed.lifecyclePublish = make(chan jointLifecycleCommand)
 	}
 	f := newJointHTTPFixtureWithManaged(t, true, managed)
 	defer func() {
 		if t.Failed() {
 			f.logManagedEnrollmentState(t)
+			t.Logf("joint UR content read outcomes: %s", f.contentReads.snapshot())
 		}
 	}()
 	defer f.publishOnce.Do(func() { close(f.contentPublished) })
@@ -1409,6 +1899,7 @@ func runManagedJointConsumerWithInstalled(t *testing.T, mode string, installed *
 		ProjectID              string                                     `json:"project_id"`
 		ForeignProjectID       string                                     `json:"foreign_project_id"`
 		PostgresDSN            string                                     `json:"postgres_dsn"`
+		LifecycleNonce         string                                     `json:"lifecycle_nonce,omitempty"`
 		ExpectedContent        struct {
 			RequestID string `json:"request_id"`
 			SHA256    string `json:"sha256"`
@@ -1418,7 +1909,7 @@ func runManagedJointConsumerWithInstalled(t *testing.T, mode string, installed *
 		ReceiverAllowedIP: "127.0.0.1/32", Profiles: sourceEnrollmentEightProfiles(), Installed: installed,
 		BaseURL: f.server.URL, TLSCAPEM: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: f.server.Certificate().Raw})),
 		SourceInstance: f.source.SourceInstance(), OrgID: stringInt64(f.orgID), ProjectID: stringInt64(f.projectID),
-		ForeignProjectID: stringInt64(f.foreignProjectID), PostgresDSN: xiDSN}
+		ForeignProjectID: stringInt64(f.foreignProjectID), PostgresDSN: xiDSN, LifecycleNonce: managed.lifecycleNonce}
 	if installed != nil {
 		input.ReceiverAllowedIP = installed.ReceiverAllowedIP
 	}
@@ -1469,32 +1960,7 @@ func runManagedJointConsumerWithInstalled(t *testing.T, mode string, installed *
 	}()
 	redact := func(raw string) string {
 		if installed != nil {
-			var safe []string
-			for _, line := range strings.Split(raw, "\n") {
-				if line == "" {
-					continue
-				}
-				var receipt struct {
-					SchemaVersion   string `json:"schema_version"`
-					Stage           string `json:"stage"`
-					State           string `json:"state"`
-					ElapsedMS       int64  `json:"elapsed_ms"`
-					FailureCategory string `json:"failure_category"`
-				}
-				if json.Unmarshal([]byte(line), &receipt) != nil ||
-					!strings.HasPrefix(receipt.SchemaVersion, "xinsight.ci-installed-joint-") ||
-					!regexp.MustCompile(`^[a-z_]{1,40}$`).MatchString(receipt.Stage) ||
-					!regexp.MustCompile(`^(passed|failed)$`).MatchString(receipt.State) ||
-					receipt.ElapsedMS < 0 || receipt.ElapsedMS > 1200000 ||
-					receipt.FailureCategory != "" && !regexp.MustCompile(`^[a-z_]{1,60}$`).MatchString(receipt.FailureCategory) {
-					return "installed_driver_output_unavailable"
-				}
-				safe = append(safe, fmt.Sprintf("%s/%s/%s/%d/%s", receipt.SchemaVersion, receipt.Stage, receipt.State, receipt.ElapsedMS, receipt.FailureCategory))
-			}
-			if len(safe) == 0 || len(safe) > 24 {
-				return "installed_driver_output_unavailable"
-			}
-			return strings.Join(safe, ";")
+			return redactInstalledJointReceipts(raw)
 		}
 		if xiDSN != "" {
 			raw = strings.ReplaceAll(raw, xiDSN, "[redacted]")
@@ -1546,34 +2012,61 @@ func runManagedJointConsumerWithInstalled(t *testing.T, mode string, installed *
 	object := f.emitSourceContent(t, requestID, payload)
 	require.Equal(t, input.ExpectedContent.SHA256, object.SHA256)
 	f.publishOnce.Do(func() { close(f.contentPublished) })
-	select {
-	case err = <-finished:
-		completed = true
-		if installed != nil && err != nil {
-			t.Fatalf("installed joint category=xi_driver_exit receipts=%s", redact(childOutput.String()))
-		}
-		require.NoError(t, err, "XI managed helper failed: %s", redact(childOutput.String()))
-		if installed != nil {
-			t.Logf("XI installed stage receipts: %s", redact(childOutput.String()))
-		}
-	case err = <-runtimeDone:
-		runtimeCompleted = true
-		childErr := childCompletion()
-		if childErr != nil {
-			if installed != nil {
-				t.Fatalf("installed joint category=ur_control_failed receipts=%s", redact(childOutput.String()))
+waitForChild:
+	for {
+		select {
+		case command := <-managed.lifecyclePublish:
+			if err := command.ctx.Err(); err != nil {
+				command.reply <- jointLifecycleResult{err: err}
+				continue
 			}
-			t.Fatalf("UR managed control failed: %v; XI child: %v; output: %s", err, childErr, redact(childOutput.String()))
+			if command.request.Action != "publish" || command.request.ExpiresAt != nil || command.request.DropResponse != "" {
+				command.reply <- jointLifecycleResult{err: xinsightconnector.ErrInvalid}
+				continue
+			}
+			newRequestID := "managed-joint-credential-" + jointRandomHex(t, 12)
+			newPayload := []byte(`{"role":"assistant","content":"credential lifecycle ` + newRequestID + `"}`)
+			newObject := f.emitSourceContent(t, newRequestID, newPayload)
+			command.reply <- jointLifecycleResult{state: jointLifecycleState{RequestID: newObject.RequestID, SHA256: newObject.SHA256}}
+		case err = <-finished:
+			completed = true
+			if installed != nil && err != nil {
+				t.Fatalf("installed joint category=xi_driver_exit receipts=%s", redact(childOutput.String()))
+			}
+			require.NoError(t, err, "XI managed helper failed: %s", redact(childOutput.String()))
+			if installed != nil {
+				t.Logf("XI installed stage receipts: %s", redact(childOutput.String()))
+			}
+			break waitForChild
+		case err = <-runtimeDone:
+			runtimeCompleted = true
+			childErr := childCompletion()
+			if childErr != nil {
+				if installed != nil {
+					t.Fatalf("installed joint category=ur_control_failed receipts=%s", redact(childOutput.String()))
+				}
+				t.Fatalf("UR managed control failed: %v; XI child: %v; output: %s", err, childErr, redact(childOutput.String()))
+			}
+		case <-ctx.Done():
+			if installed != nil {
+				_ = childCompletion()
+				t.Fatalf("installed joint category=deadline receipts=%s", redact(childOutput.String()))
+			}
+			t.Fatalf("managed joint completion: %v", ctx.Err())
 		}
-	case <-ctx.Done():
-		if installed != nil {
-			_ = childCompletion()
-			t.Fatalf("installed joint category=deadline receipts=%s", redact(childOutput.String()))
-		}
-		t.Fatalf("managed joint completion: %v", ctx.Err())
 	}
 	// Confirm real UR terminal/credential/grant records rather than treating a
 	// successful XI child process as the only acceptance authority.
+	if installed != nil {
+		managed.mu.RLock()
+		var installation string
+		if managed.lifecycleAuthority != nil {
+			installation = managed.lifecycleAuthority.installation
+		}
+		managed.mu.RUnlock()
+		require.NotEmpty(t, installation, "installed credential lifecycle must establish the original authority snapshot")
+		require.NoError(t, managed.checkLifecycleAuthority(t.Context(), installation, false), "original control fence, redeem digest and scope must remain stable")
+	}
 	var installations, candidates, purposes, activeMachines, delegations, enrollments int
 	require.NoError(t, f.pool.QueryRow(t.Context(), `SELECT count(*) FROM xinsight_connector_installations WHERE org_id=$1 AND project_id=$2 AND receiver_mode=$3 AND observed_state='connected'`, f.orgID, f.projectID, mode).Scan(&installations))
 	require.Equal(t, 1, installations)

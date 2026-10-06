@@ -353,6 +353,23 @@ func (h *Handler) writeSetupStatus(w http.ResponseWriter, r *http.Request, org i
 		out.ConfigurationReady = false
 		out.Issues = append(out.Issues, xInsightSetupIssue{"xi_status_unavailable", false})
 	}
+	if journal := h.xInsightCredentialJournalSnapshot(); journal != nil {
+		credential, err := journal.CredentialStatus(r.Context(), id)
+		if err == nil {
+			out.Credential = &credential
+			switch credential.State {
+			case "expired_recovery_required":
+				out.State, out.ConfigurationReady = "needs_action", false
+				out.Issues = append(out.Issues, xInsightSetupIssue{"control_credential_expired", true})
+			case "committed_unpromoted", "rotation_pending":
+				out.State, out.ConfigurationReady = "needs_action", false
+				out.Issues = append(out.Issues, xInsightSetupIssue{"control_credential_pending", false})
+			case "revoked", "credential_unavailable":
+				out.State, out.ConfigurationReady = "needs_action", false
+				out.Issues = append(out.Issues, xInsightSetupIssue{"control_credential_unavailable", true})
+			}
+		}
+	}
 	writeJSON(w, code, out)
 }
 func readXInsightSavedSetupTx(ctx context.Context, tx pgx.Tx, id string, lock bool) (xInsightSavedSetup, xInsightSetupProgress, string, error) {

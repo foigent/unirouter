@@ -23,6 +23,9 @@ const issueNames: Record<string, string> = {
   ur_policy_changed: 'UR 策略或其生效条件已变化，后台未覆盖新策略，请重新核对。',
   machine_activation_conflict: '现有机器授权冲突，后台未替换其他有效凭据。',
   xi_status_unavailable: 'XI 当前状态暂不可读，稍后刷新核对；不会重新提交授权。',
+  control_credential_expired: '原连接的控制凭据已过期，需先由 X-Insight 管理员在原连接页面发起恢复，再由 UR 管理员确认。',
+  control_credential_pending: '控制凭据请求仍待判定，对端是否已接收及替代凭据是否有效尚未确认。请重新读取；若持续未完成，由两端管理员按原连接恢复流程核对。',
+  control_credential_unavailable: '原连接的控制凭据不可用或连接已撤销。请两端管理员核对原授权；撤销不能通过恢复复活。',
   installation_authority_changed: '接入身份或授权已变化。请由两端管理员核对当前连接及授权，再决定是否重新发起。',
   redeem_origin_changed: '邀请对应的 XI 地址已变化。请管理员核对受信对端，并从 XI 重新发起邀请。',
   machine_candidate_changed: '待登记的连接身份已变化。请 UR 组织管理员核对当前机器登记后重新预览。',
@@ -225,6 +228,7 @@ export default function XInsightSetup({ actorId, actorOrgId, orgId, projectId, p
     {status && <>
       {status.consent_revision > 0 && <p>本次确认已登记。重新读取只核对状态，不会重复授权。</p>}
       <p role="status">{stateNames[status.state]}。配置{status.configuration_ready ? '已就绪' : '尚未就绪'}。</p>
+      {status.credential && <p>控制凭据：{{healthy:'当前有效',rotation_due:'即将自动轮换',rotation_pending:'轮换待确认',committed_unpromoted:'对端已确认，本端待接续',expired_recovery_required:'已过期，需管理员恢复',revoked:'连接已撤销',credential_unavailable:'不可用'}[status.credential.state]}。数据新鲜度与正文读取另按实际接收核对。</p>}
       {status.xi && <><p>已收到：{status.xi.receiving.profiles_received.map(p => profileNames[p] || '其他类别').join('、') || '尚无实际数据'}。尚未出现的事件类别不会被当作错误。</p><p>正文副本：{status.xi.receiving.content_received_at ? '已有实际副本' : '尚未收到'}；受保护读取：{status.xi.receiving.content_read_verified_at ? '已有服务端授权读取验证' : '尚无实际读取验证'}。</p></>}
       {status.issues.map((i, index) => <div key={index}><p role={i.requires_choice ? 'alert' : 'status'}>{issueDescription(i.code)}</p><IssueDiagnostic code={i.code} installation={status.installation_id} /></div>)}
       <button onClick={() => { if (currentInstallation) void xInsightSetupApi.status(orgId, currentInstallation).then(receiveStatus).catch(() => setError('状态读取失败，请稍后重试。')); }}>重新读取接入状态</button>

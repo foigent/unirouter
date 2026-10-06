@@ -271,6 +271,10 @@ func (counterpart *HTTPControlCounterpart) request(
 		(request.Header.Get("Authorization") != "" || request.Header.Get("Cookie") != "") {
 		return nil, ErrConflict
 	}
+	if strings.HasSuffix(path, "/credentials/recover") &&
+		(request.Header.Get("Authorization") != "" || request.Header.Get("Cookie") != "") {
+		return nil, ErrConflict
+	}
 	response, err := counterpart.client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("%w: Connector control request failed", ErrUnavailable)

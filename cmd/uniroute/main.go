@@ -570,6 +570,7 @@ func main() {
 		log.Fatalf("Failed to initialize X-Insight Connector invitation intake: %v", err)
 	}
 	adminHandler.SetXInsightConnectorInvitationIntake(xInsightConnectorIntake)
+	adminHandler.SetXInsightCredentialJournal(xInsightConnectorJournal)
 	if err = adminHandler.SetXInsightSetupPeer(cfg.XInsightConnectorStaticPeer, nil, func(ctx context.Context, id, deployment string) ([]byte, error) {
 		counterpart, err := xinsightconnector.NewHTTPControlCounterpart(cfg.XInsightConnectorControlOrigin, xinsightconnector.RuntimeInstallationDescriptor{InstallationID: id, XDeploymentID: deployment}, xInsightConnectorJournal, nil, time.Duration(cfg.XInsightConnectorRequestTimeoutMilliseconds)*time.Millisecond)
 		if err != nil {
@@ -1292,6 +1293,9 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight/setup-previews", adminRoute(adminHandler.PreviewXInsightSetup))
 	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight/setups", licensedRoute(licensing.FeatureDataExchange, adminRoute)(adminHandler.CreateXInsightSetup))
 	mux.Handle("GET /api/v2/organizations/{org_id}/xinsight/setups/{installation_id}", adminRoute(adminHandler.GetXInsightSetupStatus))
+	mux.Handle("GET /api/v2/xinsight/setups/{installation_id}/credential-recovery-scope", licensedRoute(licensing.FeatureDataExchange, adminRoute)(adminHandler.GetXInsightCredentialRecoveryScope))
+	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight/setups/{installation_id}/credential-recovery/preview", licensedRoute(licensing.FeatureDataExchange, adminRoute)(adminHandler.PreviewXInsightCredentialRecovery))
+	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight/setups/{installation_id}/credential-recovery", licensedRoute(licensing.FeatureDataExchange, adminRoute)(adminHandler.ConfirmXInsightCredentialRecovery))
 	mux.Handle("GET /api/v2/organizations/{org_id}/xinsight-policy-delegations", adminRoute(adminHandler.ListXInsightPolicyDelegations))
 	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight-policy-delegations", adminRoute(adminHandler.CreateXInsightPolicyDelegation))
 	mux.Handle("PUT /api/v2/organizations/{org_id}/xinsight-policy-delegations/{delegation_id}", adminRoute(adminHandler.UpdateXInsightPolicyDelegation))

@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -93,6 +94,8 @@ type Handler struct {
 	contentPolicyReadiness       contentPolicyReadiness
 	xInsightConnectorManager     *xinsightconnector.Manager
 	xInsightConnectorIntake      xInsightConnectorInvitationIntake
+	xInsightCredentialJournalMu  sync.RWMutex
+	xInsightCredentialJournal    *xinsightconnector.PostgresPhaseJournal
 	xInsightSetup                *xInsightSetupRuntime
 	modelAuthorizationEvaluator  *modelauthz.Evaluator
 	runtimeChangeManager         *runtimechange.Manager
@@ -204,6 +207,23 @@ func (h *Handler) SetXInsightConnectorInvitationIntake(intake xInsightConnectorI
 	if h != nil {
 		h.xInsightConnectorIntake = intake
 	}
+}
+
+func (h *Handler) SetXInsightCredentialJournal(journal *xinsightconnector.PostgresPhaseJournal) {
+	if h != nil {
+		h.xInsightCredentialJournalMu.Lock()
+		h.xInsightCredentialJournal = journal
+		h.xInsightCredentialJournalMu.Unlock()
+	}
+}
+
+func (h *Handler) xInsightCredentialJournalSnapshot() *xinsightconnector.PostgresPhaseJournal {
+	if h == nil {
+		return nil
+	}
+	h.xInsightCredentialJournalMu.RLock()
+	defer h.xInsightCredentialJournalMu.RUnlock()
+	return h.xInsightCredentialJournal
 }
 
 func (h *Handler) invalidateRoutingSnapshots() {

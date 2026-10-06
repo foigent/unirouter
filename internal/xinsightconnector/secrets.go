@@ -15,16 +15,18 @@ const connectorControlBindingDomain = "unirouter.xinsight.connector-control.bind
 type connectorSecretKind string
 
 const (
-	connectorInvitationSecret connectorSecretKind = "invitation_token"
-	connectorControlSecret    connectorSecretKind = "control_token"
+	connectorInvitationSecret        connectorSecretKind = "invitation_token"
+	connectorControlSecret           connectorSecretKind = "control_token"
+	connectorCredentialRequestSecret connectorSecretKind = "credential_request"
 )
 
 // connectorSecretCipher reuses the product encryption root while deriving a
 // purpose-local key for each Connector authority. The receiver bearer is not a
 // supported kind because UniRouter must never receive or persist it.
 type connectorSecretCipher struct {
-	invitationKey [sha256.Size]byte
-	controlKey    [sha256.Size]byte
+	invitationKey        [sha256.Size]byte
+	controlKey           [sha256.Size]byte
+	credentialRequestKey [sha256.Size]byte
 }
 
 func newConnectorSecretCipher(master []byte) (*connectorSecretCipher, error) {
@@ -32,8 +34,9 @@ func newConnectorSecretCipher(master []byte) (*connectorSecretCipher, error) {
 		return nil, fmt.Errorf("%w: Connector encryption root must be 32 bytes", ErrInvalid)
 	}
 	return &connectorSecretCipher{
-		invitationKey: deriveConnectorSecretKey(master, connectorInvitationSecret),
-		controlKey:    deriveConnectorSecretKey(master, connectorControlSecret),
+		invitationKey:        deriveConnectorSecretKey(master, connectorInvitationSecret),
+		controlKey:           deriveConnectorSecretKey(master, connectorControlSecret),
+		credentialRequestKey: deriveConnectorSecretKey(master, connectorCredentialRequestSecret),
 	}, nil
 }
 
@@ -52,7 +55,7 @@ func (cipher *connectorSecretCipher) seal(
 	installationID, plaintext string,
 ) (string, error) {
 	if cipher == nil || !validExactExternalIdentity(installationID) ||
-		plaintext == "" || len(plaintext) > 1024 {
+		plaintext == "" || len(plaintext) > connectorSecretLimit(kind) {
 		return "", ErrInvalid
 	}
 	key, err := cipher.key(kind, installationID)
@@ -71,7 +74,7 @@ func (cipher *connectorSecretCipher) open(
 	installationID, ciphertext string,
 ) (string, error) {
 	if cipher == nil || !validExactExternalIdentity(installationID) ||
-		ciphertext == "" || len(ciphertext) > 4096 {
+		ciphertext == "" || len(ciphertext) > connectorSealedLimit(kind) {
 		return "", ErrInvalid
 	}
 	key, err := cipher.key(kind, installationID)
@@ -79,7 +82,7 @@ func (cipher *connectorSecretCipher) open(
 		return "", err
 	}
 	plaintext, err := auth.DecryptKey(ciphertext, key)
-	if err != nil || plaintext == "" || len(plaintext) > 1024 {
+	if err != nil || plaintext == "" || len(plaintext) > connectorSecretLimit(kind) {
 		return "", fmt.Errorf("%w: open Connector secret", ErrUnavailable)
 	}
 	return plaintext, nil
@@ -92,6 +95,8 @@ func (cipher *connectorSecretCipher) key(kind connectorSecretKind, installationI
 		purposeKey = cipher.invitationKey[:]
 	case connectorControlSecret:
 		purposeKey = cipher.controlKey[:]
+	case connectorCredentialRequestSecret:
+		purposeKey = cipher.credentialRequestKey[:]
 	default:
 		return nil, errors.Join(ErrInvalid, errors.New("unsupported Connector secret authority"))
 	}
@@ -100,4 +105,18 @@ func (cipher *connectorSecretCipher) key(kind connectorSecretKind, installationI
 	_, _ = mac.Write([]byte{0})
 	_, _ = mac.Write([]byte(installationID))
 	return mac.Sum(nil), nil
+}
+
+func connectorSecretLimit(kind connectorSecretKind) int {
+	if kind == connectorCredentialRequestSecret {
+		return 8192
+	}
+	return 1024
+}
+
+func connectorSealedLimit(kind connectorSecretKind) int {
+	if kind == connectorCredentialRequestSecret {
+		return 16384
+	}
+	return 4096
 }
