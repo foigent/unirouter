@@ -120,6 +120,7 @@ jobs:
         run: |
           python3 -B scripts/test-internal-target-rollout.py
           python3 -B scripts/test-runtime-ingress.py
+          python3 -B scripts/test-capability-carrier.py
           python3 -B scripts/test-internal-target-build-images.py
           python3 -B scripts/internal-target-rollout.py environment-check
 
@@ -270,10 +271,12 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Verify X-Insight control credential lifecycle on PostgreSQL 16
+      - name: Verify X-Insight control credential lifecycle and migration reset classification
         env:
           REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/xinsightconnector ./internal/admin ./cmd/uniroute -run '^(TestControlCredential.*PostgresIntegration|TestXInsightCredentialRuntimePostgresIntegration|TestXInsightCredentialRecoveryScopeTechnicalOrgPostgresIntegration)$' -count=1 -timeout=5m
+        run: |
+          go test ./internal/resetplan -run '^(TestEveryCurrentMigrationTableHasAnExplicitResetClassification|TestXInsightCredentialJournalPreservesHistoryAndRefusesReset)$' -count=1
+          go test -tags=integration -race ./internal/xinsightconnector ./internal/admin ./cmd/uniroute -run '^(TestControlCredential.*PostgresIntegration|TestXInsightCredentialRuntimePostgresIntegration|TestXInsightCredentialRecoveryScopeTechnicalOrgPostgresIntegration)$' -count=1 -timeout=5m
       
       - name: Run go vet
         run: go vet ./...

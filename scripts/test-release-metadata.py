@@ -353,6 +353,19 @@ class ReleasePolicyTests(unittest.TestCase):
                       'needs.changes.outputs.backend':'true', 'needs.changes.outputs.frontend':'true', 'needs.changes.outputs.docker':'true'}
             self.assertTrue(evaluate(condition, values), job)
 
+    def test_delivery_preflight_includes_capability_carrier(self):
+        workflow = WORKFLOW.read_text()
+        preflight = workflow.split('      - name: Check delivery compatibility before expensive jobs\n', 1)[1]
+        preflight = preflight.split('\n  backend:\n', 1)[0]
+        self.assertIn('\n          python3 -B scripts/test-capability-carrier.py\n', preflight)
+
+    def test_backend_checks_migration_reset_classification_before_full_suite(self):
+        workflow = WORKFLOW.read_text()
+        backend = workflow.split('\n  backend:\n', 1)[1].split('\n  frontend:', 1)[0]
+        self.assertIn('TestEveryCurrentMigrationTableHasAnExplicitResetClassification', backend)
+        self.assertLess(backend.index('TestEveryCurrentMigrationTableHasAnExplicitResetClassification'),
+                        backend.index('      - name: Run tests\n'))
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

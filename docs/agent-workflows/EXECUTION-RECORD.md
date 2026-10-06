@@ -8,7 +8,7 @@ origins, fence, permissions, history and ACKs across 24-hour bearer renewal and
 administrator-approved post-expiry recovery; revoked connections remain final.
 The shared approved contract is the 2026-10-06 P3 control credential lifecycle
 document (SHA-256 `60073ab48c36599bd21193c76f0daf9f7090fd88e8044f6c888648f5acf2518c`).
-The UR source candidate is uncommitted on
+At the initial Local cutoff, the UR source candidate was uncommitted on
 `codex/ur-xi-control-lifecycle-20261006`, base
 `a831e6bc33ca25edd7ccb07f8a036d84f5bae591`. Version 1.9.2/M125 adds
 purpose-separated encrypted pending operations and receipts, fixed-origin
@@ -87,14 +87,54 @@ the server-half test proves a manifest published after C registration but before
 its first read appears in that initial page. No extra scheduler
 or synthetic `loaded`/`completed` result was added.
 
-**5. Remaining owner and action.** XI owner runs the installed Linux joint
-driver's credential lifecycle scenarios on the exact isolation; UR responds
-to any verified cross-product contract failure. UR owner finishes independent diff review and
-repository preflight; the coordinator then reconciles Local versus CI,
-Artifact and Target separately. No push, merge, deployment, service change,
-real credential write, paid call or real traffic action occurred. The model
-adaptation experience file needs no change: this batch adds no model,
+**5. Remaining owner and action at the initial Local cutoff.** XI owner runs
+the installed Linux joint driver's credential lifecycle scenarios on the exact
+isolation; UR responds to any verified cross-product contract failure. UR
+owner finishes independent diff review and repository preflight; the
+coordinator then reconciles Local versus CI,
+Artifact and Target separately. At that cutoff, no push, merge, deployment,
+service change, real credential write, paid call or real traffic action occurred.
+The model adaptation experience file needs no change: this batch adds no model,
 Provider, Profile, usage or pricing result.
+
+**6. PR #432 CI failure classification and original-entrypoint correction.**
+The first PR Backend run (`37440417973`, job `112192673575`) failed in
+`scripts/test-capability-carrier.py`: two fixtures targeted the current M125
+head but still supplied only M124 implementations. The prior local selected
+rollout tests covered M125, while Change Routing's existing Docker-classified
+`delivery_preflight` ran rollout, ingress and image-build fixtures but omitted
+the already existing carrier test. Thus that original short entrypoint did not
+intercept the omission before the expensive Backend job. The carrier fixtures
+now include M125's exact implementation and a missing-implementation negative
+case. The same existing `delivery_preflight` now executes
+`test-capability-carrier.py`, with a release-policy test guarding its wiring;
+the routing category, job set and full required Backend suite are unchanged.
+
+The next PR run (`37441809132`, Backend job `112197221665`) passed the Backend
+runtime-ingress/carrier short check and the M125 PostgreSQL lifecycle selector,
+then failed the full Go suite at `internal/resetplan`'s
+`TestEveryCurrentMigrationTableHasAnExplicitResetClassification`:
+`xinsight_connector_credential_operations` was absent from the explicit reset
+classification. This is a new M125 schema lifecycle omission, not a stale test
+expectation. The encrypted credential-generation journal has a restrictive FK
+to its installation and the M125 down migration refuses nonempty history. An
+independent read-only pre-code review found it must follow the existing
+X-Insight machine-authority rule: `review_required`/`preserve_all` and refuse
+reset apply, including when empty. The local fix adds exactly that classification
+and an isolated 0/1-row negative test for retained rows, zero deletion, absent
+delete-order entry and failed apply validation. The original Backend early Go
+step now runs the existing migration-table enumeration and this negative test
+before the full suite; no new job or reset deletion scope was introduced.
+
+Local evidence after the corrections: Change Routing's four Python test commands
+passed in workflow order (80, 13, 10 and 6 tests); its final host
+`environment-check` could not run here because this macOS sandbox has no Docker
+CLI. The targeted reset classification tests and full `internal/resetplan`
+`-race` suite passed; the release-policy suite passed 19 tests. A local
+`internal/resetexec` test attempt was blocked by sandbox denial of miniredis's
+loopback bind, not by a product assertion. No corrected PR/CI, Docker Artifact,
+installed XI lifecycle, Target or Production result is claimed by these Local
+checks.
 
 ## Long-task retrospective entrypoint — 2026-10-06
 
