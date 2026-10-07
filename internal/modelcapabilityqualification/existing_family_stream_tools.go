@@ -9,6 +9,7 @@ import (
 
 const (
 	DeepSeekStreamFunctionToolsProbeContractID  = "unirouter.capability-probe.deepseek-chat-stream-tools.v1"
+	DeepSeekStreamReasoningEffortProbeVersion   = "2.0.0"
 	KimiStreamFunctionToolsProbeContractID      = "unirouter.capability-probe.kimi-chat-stream-tools.v1"
 	KimiStreamReasoningEffortProbeVersion       = "2.0.0"
 	MiniMaxM3StreamFunctionToolsProbeContractID = "unirouter.capability-probe.minimax-m3-chat-stream-tools.v1"
@@ -69,7 +70,8 @@ func BuildExistingFamilyStreamFunctionToolsProbeRequest(b Binding) ([]byte, erro
 			return nil, ErrUnsupported
 		}
 	}
-	if b.ProbeContractID == KimiStreamFunctionToolsProbeContractID && b.ProbeContractVersion == KimiStreamReasoningEffortProbeVersion {
+	if (b.ProbeContractID == KimiStreamFunctionToolsProbeContractID && b.ProbeContractVersion == KimiStreamReasoningEffortProbeVersion) ||
+		(b.ProbeContractID == DeepSeekStreamFunctionToolsProbeContractID && b.ProbeContractVersion == DeepSeekStreamReasoningEffortProbeVersion) {
 		// This version qualifies the existing provider-default effort together
 		// with streamed tools. It does not prove differences between effort levels.
 		payload[reasoning.EffortControl.Field] = reasoning.EffortControl.ProviderDefault

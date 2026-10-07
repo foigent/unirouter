@@ -4,7 +4,9 @@ package modelcapabilityqualification
 // the member's existing exact binding/request validation. It is not a model
 // catalog or a claim that arbitrary capabilities can share an observation.
 func SharedStreamProbeContract(b Binding) (string, error) {
-	if b.ProbeContractVersion != "1.0.0" && !(b.ProbeContractID == KimiStreamFunctionToolsProbeContractID && b.ProbeContractVersion == KimiStreamReasoningEffortProbeVersion) {
+	if b.ProbeContractVersion != "1.0.0" &&
+		!(b.ProbeContractID == KimiStreamFunctionToolsProbeContractID && b.ProbeContractVersion == KimiStreamReasoningEffortProbeVersion) &&
+		!(b.ProbeContractID == DeepSeekStreamFunctionToolsProbeContractID && b.ProbeContractVersion == DeepSeekStreamReasoningEffortProbeVersion) {
 		return "", ErrUnsupported
 	}
 	var err error

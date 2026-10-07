@@ -21,7 +21,14 @@ var dataProbeImplementations = map[string]func(Binding, modelprofile.Profile) bo
 			(b.CapabilityID == modelprofile.CapabilityCacheReadUsage || b.CapabilityID == modelprofile.CapabilityPromptCache)
 	},
 	DeepSeekStreamFunctionToolsProbeContractID + "@1.0.0": validExistingFamilyStreamComposition,
-	KimiStreamFunctionToolsProbeContractID + "@1.0.0":     validExistingFamilyStreamComposition,
+	DeepSeekStreamFunctionToolsProbeContractID + "@" + DeepSeekStreamReasoningEffortProbeVersion: func(b Binding, p modelprofile.Profile) bool {
+		return b.CapabilityID == modelprofile.CapabilityReasoningEffort &&
+			p.ID == "deepseek.v4-flash.api" && p.Version == "1.6.0" && p.Provider == "deepseek" &&
+			p.ProtocolProfile == "protocol.deepseek-openai-chat.v5" &&
+			p.ReasoningProfile == "reasoning.deepseek-v4-flash-thinking-toggle.v5" &&
+			p.CacheUsageProfile == "cache-usage.deepseek-v4.v1"
+	},
+	KimiStreamFunctionToolsProbeContractID + "@1.0.0": validExistingFamilyStreamComposition,
 	KimiStreamFunctionToolsProbeContractID + "@" + KimiStreamReasoningEffortProbeVersion: func(b Binding, p modelprofile.Profile) bool {
 		return b.CapabilityID == modelprofile.CapabilityReasoningEffort &&
 			p.Provider == "kimi" && p.ProtocolProfile == "protocol.kimi-openai-chat.k3.v6" &&
