@@ -4,6 +4,11 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.9.4] - 2026-10-08
+
+- 修复数据化 Chat Profile 的默认推理能力准入：网关按实际默认推理合同要求相应 `reasoning` 或 `reasoning_effort` 资格；新 data-Chat Release 在签发时逐路由核对精确能力批准，历史 Release 的读取与验证合同不变。
+- 为 DeepSeek V4 Flash 1.6.0 增加独立 `reasoning_effort` Probe v2 与 Capability Bundle；保留原 Probe v1 及既有五项能力绑定。该修正和数据仅提供后续正式发布、Probe 与新路由激活的源码条件，不表示目标环境已完成。
+
 ## [1.9.3] - 2026-10-06
 
 - 修复 development/test 已启用来源采集的 M124→M125 升级：沿既有严格桥接保留 stable/canary 原采集、生产者、正文存储及静态对端绑定，拒绝配置漂移；兼容扩展 CLI 从受支持迁移头顺序确定准确前驱，允许 M124→M125 且拒绝跳级。

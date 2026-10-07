@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/modelexecution"
@@ -28,7 +30,8 @@ func TestDataReleaseAuthoringPinsDefinitionWithoutRewritingModelOrHistory(t *tes
 	makeSoleInitialCustomer(t, pool, f.OrgID)
 	p, ok := modelprofile.Lookup("glm.5.3.api", "1.9.0")
 	require.True(t, ok)
-	require.Empty(t, p.AlwaysRequiredCapabilities, "this fixture seals a plain-Chat route; it does not invent tool approvals")
+	require.Empty(t, p.AlwaysRequiredCapabilities)
+	require.Equal(t, modelprofile.CapabilityReasoning, modelprofile.DefaultChatReasoningCapability(p))
 	_, err := pool.Exec(ctx, `UPDATE model_registry SET execution_profile_id=$2,execution_profile_version=$3 WHERE id=$1`, f.PublicModelID, p.ID, p.Version)
 	require.NoError(t, err)
 	f.ConnectionRevision++
@@ -45,7 +48,7 @@ func TestDataReleaseAuthoringPinsDefinitionWithoutRewritingModelOrHistory(t *tes
 	d, err := modelprofile.NewDefinition(p, "glm/glm-5.3", "")
 	require.NoError(t, err)
 	// Explicit isolated storage fixture. It does not claim a live Publication
-	// apply or manufacture any capability Probe/Approval.
+	// apply; the exact capability evidence below is synthetic test data.
 	tx, err := pool.Begin(ctx)
 	require.NoError(t, err)
 	defer tx.Rollback(ctx)
@@ -58,6 +61,14 @@ VALUES('data-release-fixture','legacy_import','000113_glm_stream_function_tools_
 	_, err = tx.Exec(ctx, `INSERT INTO model_profile_definitions(definition_digest,profile_id,profile_version,product_lineage_id,schema_version,canonical_bytes,publication_id)
 VALUES($1,$2,$3,$4,$5,$6,'data-release-fixture')`, d.Digest(), p.ID, p.Version, d.ProductLineageID(), modelprofile.DefinitionSchemaV1, d.CanonicalBytes())
 	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `INSERT INTO model_capability_probe_contract_bindings(operation_id,capability_id,execution_profile_id,execution_profile_version,protocol_profile_id,protocol_profile_version,probe_contract_id,probe_contract_version,expected_provider,expected_upstream_model,public_path,introduced_publication_id,profile_definition_digest)
+SELECT operation_id,capability_id,execution_profile_id,$1,protocol_profile_id,protocol_profile_version,probe_contract_id,probe_contract_version,expected_provider,expected_upstream_model,public_path,'data-release-fixture',$2
+FROM model_capability_probe_contract_bindings WHERE execution_profile_id='glm.5.3.api' AND execution_profile_version='1.9.0' AND capability_id='reasoning'`, p.Version, d.Digest())
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `INSERT INTO model_capability_current_probe_contracts(operation_id,capability_id,execution_profile_id,execution_profile_version,protocol_profile_id,protocol_profile_version,probe_contract_id,probe_contract_version)
+SELECT operation_id,capability_id,execution_profile_id,$1,protocol_profile_id,protocol_profile_version,probe_contract_id,probe_contract_version
+FROM model_capability_current_probe_contracts WHERE execution_profile_id='glm.5.3.api' AND execution_profile_version='1.9.0' AND capability_id='reasoning'`, p.Version)
+	require.NoError(t, err)
 	require.NoError(t, tx.Commit(ctx))
 	// Isolated candidate authoring fixture; the production owner will expose
 	// this exact pin without mutating operations referenced by a sealed Release.
@@ -67,12 +78,14 @@ VALUES($1,$2,$3,$4,$5,$6,'data-release-fixture')`, d.Digest(), p.ID, p.Version, 
 	require.NoError(t, err)
 	f.OperationRevision++
 	insertSuccessfulProbe(t, pool, f, "data-profile-candidate-operation")
+	approvalID := insertDataReleaseReasoningApproval(t, pool, f, p)
 	manager, err := runtimechange.NewManager(pool, unusedDeploymentSnapshotBuilder{}, routingpolicy.Default())
 	require.NoError(t, err)
 	command := deploymentReleaseAuthoringCommand(f, runtimechange.DeploymentReleaseBaseline{Kind: runtimechange.DeploymentReleaseBaselineInitial}, []runtimechange.DeploymentReleaseSelection{{DeploymentID: f.DeploymentID, OperationID: f.OperationID}}, "a", "b", "op_data_release")
 	command.Mutation.ProfileDefinitionDigest = d.Digest()
 	command.Mutation.PublicContextLimit = 64000
 	command.Mutation.PublicOutputLimit = 4096
+	command.Mutation.CapabilityApprovalIDs = []int64{approvalID}
 	result, err := manager.AuthorSealedDeploymentRelease(ctx, command)
 	require.NoError(t, err)
 	require.Equal(t, d.Digest(), result.Release.ProfileDefinitionDigest)
@@ -192,4 +205,59 @@ VALUES($1,$2,$3,$4,'serving','receiving',clock_timestamp()+interval '1 hour')`, 
 	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM billing_provider_attempts WHERE request_id=$1`, deniedIdentity.RequestID).Scan(&attemptCount))
 	require.Zero(t, attemptCount)
 
+}
+
+// This DB fixture follows the retained binding/selector and Probe/Approval
+// tables. It proves authoring behavior without claiming a Provider call.
+func insertDataReleaseReasoningApproval(t *testing.T, pool *pgxpool.Pool, f canonicalDeploymentFixture, p modelprofile.Profile) int64 {
+	t.Helper()
+	ctx := t.Context()
+	var contractID, contractVersion string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT probe_contract_id,probe_contract_version
+FROM model_capability_probe_contract_bindings
+WHERE operation_id=$1 AND capability_id='reasoning' AND execution_profile_id=$2 AND execution_profile_version=$3
+  AND protocol_profile_id=$4 AND protocol_profile_version=$5`,
+		f.OperationID, p.ID, p.Version, f.ProtocolProfileID, f.ProtocolVersion).Scan(&contractID, &contractVersion))
+	_, err := pool.Exec(ctx, `INSERT INTO model_deployment_capabilities
+    (deployment_id,operation_id,capability_id,support_state,evidence_state,evidence_ref,revision)
+VALUES ($1,$2,'reasoning','enabled','declared',$3,1)`, f.DeploymentID, f.OperationID, "capability_contract:"+contractID+"@"+contractVersion)
+	require.NoError(t, err)
+	var linkCreated time.Time
+	require.NoError(t, pool.QueryRow(ctx, `SELECT created_at FROM credential_binding_deployments
+WHERE binding_id=$1 AND deployment_id=$2`, f.CredentialID, f.DeploymentID).Scan(&linkCreated))
+	var probeID int64
+	fingerprint := fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(fmt.Sprintf("data-release-reasoning/%d", f.DeploymentID))))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO model_capability_probes (
+  customer_org_id,deployment_id,connection_id,operation_id,capability_id,
+  execution_profile_id,execution_profile_version,protocol_profile_id,protocol_profile_version,
+  probe_contract_id,probe_contract_version,provider,base_url,adapter_type,adapter_config,
+  upstream_model,connection_revision,deployment_revision,operation_revision,
+  capability_support_revision,credential_binding_id,credential_state_revision,
+  credential_link_created_at,provider_success,success,status_code,latency_ms,
+  reported_model,error_summary,request_summary,response_summary,source_kind,source_ref,
+  source_fingerprint,tested_by)
+VALUES ($1,$2,$3,$4,'reasoning',$5,$6,$7,$8,$9,$10,'glm','https://open.bigmodel.cn/api/paas/v4',
+        'openai_compatible','{"endpoint_path_mode":"base_relative"}',
+        $11,$12,$13,$14,1,$15,$16,$17,TRUE,TRUE,200,12,
+        $11,'','{}','{}','admin.model_capability_probe.v1','data-release-reasoning-fixture',$18,$19)
+RETURNING capability_probe_id`, f.OrgID, f.DeploymentID, f.ConnectionID, f.OperationID,
+		p.ID, p.Version, f.ProtocolProfileID, f.ProtocolVersion, contractID, contractVersion,
+		f.UpstreamModel, f.ConnectionRevision, f.DeploymentRevision, f.OperationRevision,
+		f.CredentialID, f.CredentialRevision, linkCreated, fingerprint, f.UserID).Scan(&probeID))
+	var approvalID int64
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO model_capability_routing_approvals (
+  capability_probe_id,customer_org_id,deployment_id,connection_id,operation_id,capability_id,
+  execution_profile_id,execution_profile_version,protocol_profile_id,protocol_profile_version,
+  probe_contract_id,probe_contract_version,connection_revision,deployment_revision,
+  operation_revision,capability_support_revision,credential_binding_id,
+  credential_state_revision,credential_link_created_at,approved_by,approved_by_org_id,
+  reason,source_kind,source_ref)
+SELECT capability_probe_id,customer_org_id,deployment_id,connection_id,operation_id,capability_id,
+       execution_profile_id,execution_profile_version,protocol_profile_id,protocol_profile_version,
+       probe_contract_id,probe_contract_version,connection_revision,deployment_revision,
+       operation_revision,capability_support_revision,credential_binding_id,
+       credential_state_revision,credential_link_created_at,$2,$3,'exact data Release fixture',
+       'admin.model_capability_routing_approval.v1','capability_probe:'||capability_probe_id::text
+FROM model_capability_probes WHERE capability_probe_id=$1 RETURNING approval_id`, probeID, f.UserID, f.OrgID).Scan(&approvalID))
+	return approvalID
 }

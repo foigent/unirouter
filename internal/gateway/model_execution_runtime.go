@@ -947,26 +947,6 @@ func modelExecutionPlanForProfile(profile modelprofile.Profile) modelrouting.Pla
 	}
 }
 
-func profileDefaultReasoningIsActive(profile modelprofile.Profile) bool {
-	// Historical generic Chat Profiles remain addressable but are never
-	// retroactively assigned provider-default capability semantics.
-	if profile.LegacyProtocolAuthority {
-		return false
-	}
-	contract, ok := modelprofile.ResolveReasoningContract(profile.ReasoningProfile)
-	if !ok {
-		return false
-	}
-	switch contract.Mode {
-	case modelprofile.ReasoningModeAlwaysOn, modelprofile.ReasoningModeRequired:
-		return true
-	}
-	if contract.ToggleControl.Field != "" {
-		return reasoningControlProviderDefaultActive(contract.ToggleControl)
-	}
-	return reasoningControlProviderDefaultActive(contract.EffortControl)
-}
-
 func invocationCapabilityRequirementsForChat(
 	profile modelprofile.Profile,
 	evidence modelExecutionProfileEvidence,
@@ -1093,11 +1073,7 @@ func invocationCapabilityRequirementsForChat(
 			})
 		}
 	}
-	if !hasReasoningControl && profileDefaultReasoningIsActive(profile) {
-		capability := modelCapabilityReasoning
-		if slices.Contains(profile.Capabilities, modelprofile.CapabilityReasoningEffort) {
-			capability = modelprofile.CapabilityReasoningEffort
-		}
+	if capability := modelprofile.DefaultChatReasoningCapability(profile); !hasReasoningControl && capability != "" {
 		if !slices.Contains(profile.AlwaysRequiredCapabilities, capability) {
 			requirements = append(requirements, modelrouting.CapabilityRequirement{
 				CapabilityID: capability,

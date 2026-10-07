@@ -88,16 +88,8 @@ WHERE d.id=$1 AND o.operation_id=$2`, route.DeploymentID, route.ModelOperationID
 		}
 		s.CapabilityPins = append(s.CapabilityPins, decision.Pin)
 	}
-	for _, route := range routes {
-		for _, required := range p.AlwaysRequiredCapabilities {
-			found := false
-			for _, pin := range s.CapabilityPins {
-				found = found || pin.DeploymentID == route.DeploymentID && pin.CapabilityID == required
-			}
-			if !found {
-				return s, fmt.Errorf("%w: required capability decision %s missing", ErrConflict, required)
-			}
-		}
+	if err := validateRequiredReleasePins(p, routes, s.CapabilityPins); err != nil {
+		return s, err
 	}
 	s.Requirements = releaseexecution.Requirements(definition, s.CapabilityPins)
 	if err := s.ValidateDefinition(definition); err != nil {
@@ -105,4 +97,27 @@ WHERE d.id=$1 AND o.operation_id=$2`, route.DeploymentID, route.ModelOperationID
 	}
 	_, err := s.CanonicalBytes()
 	return s, err
+}
+
+func requiredReleaseCapabilityPins(p modelprofile.Profile) []string {
+	required := slices.Clone(p.AlwaysRequiredCapabilities)
+	if capability := modelprofile.DefaultChatReasoningCapability(p); capability != "" && !slices.Contains(required, capability) {
+		required = append(required, capability)
+	}
+	return required
+}
+
+func validateRequiredReleasePins(p modelprofile.Profile, routes []DeploymentRoute, pins []releaseexecution.CapabilityPin) error {
+	for _, route := range routes {
+		for _, required := range requiredReleaseCapabilityPins(p) {
+			found := false
+			for _, pin := range pins {
+				found = found || pin.DeploymentID == route.DeploymentID && pin.CapabilityID == required
+			}
+			if !found {
+				return fmt.Errorf("%w: required capability decision %s missing", ErrConflict, required)
+			}
+		}
+	}
+	return nil
 }

@@ -615,14 +615,7 @@ func reasoningControlValue(raw json.RawMessage, contract modelprofile.ReasoningC
 }
 
 func reasoningControlProviderDefaultActive(contract modelprofile.ReasoningControlContract) bool {
-	providerDefault := strings.TrimSpace(contract.ProviderDefault)
-	if providerDefault == "" || providerDefault == "disabled" || slices.Contains(contract.DisabledValues, providerDefault) {
-		return false
-	}
-	if effective, ok := contract.CompatibilityValues[providerDefault]; ok {
-		return effective != "disabled" && !slices.Contains(contract.DisabledValues, effective)
-	}
-	return true
+	return modelprofile.ReasoningControlProviderDefaultActive(contract)
 }
 
 func optionalJSONInteger(raw json.RawMessage, label string) (int64, bool, error) {

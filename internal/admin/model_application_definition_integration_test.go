@@ -319,28 +319,35 @@ VALUES('later-fixture','candidate-fixture','delta',$1,$1,$2,$3,$2,$3,'fixture','
 	var approval modelCapabilityApprovalResult
 	require.NoError(t, json.Unmarshal(approvalResponse.Body.Bytes(), &approval))
 	approvalIDs := []int64{approval.ApprovalID}
+	var reasoningApprovalID int64
+	capabilities := []string{"reasoning"}
 	if dataFirst {
-		for _, capability := range []string{"reasoning", "streaming", "tool_choice_auto", "tools"} {
-			r := actorRequest(http.MethodPost, capabilityPath+"/probes", fmt.Sprintf(`{"credential_binding_id":%d}`, legacy.Application.Credential.Bindings[0].ID))
-			setPath(r)
-			r.SetPathValue("capabilityID", capability)
-			w := httptest.NewRecorder()
-			h.ProbeCanonicalModelCapability(w, r)
-			require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-			var observed modelCapabilityProbeResult
-			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &observed))
-			require.True(t, observed.Success)
-			r = canonicalOperationProbeAuthorizedRequest(operatorOrg, org, approver, auth.RolePlatformAdmin)(http.MethodPost, capabilityPath+"/routing-approvals", fmt.Sprintf(`{"capability_probe_id":%d,"reason":"exact uncompiled data contract fixture"}`, observed.CapabilityProbeID))
-			setPath(r)
-			r.SetPathValue("capabilityID", capability)
-			w = httptest.NewRecorder()
-			h.ApproveCanonicalModelCapabilityRouting(w, r)
-			require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
-			var a modelCapabilityApprovalResult
-			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &a))
-			approvalIDs = append(approvalIDs, a.ApprovalID)
+		capabilities = append(capabilities, "streaming", "tool_choice_auto", "tools")
+	}
+	for _, capability := range capabilities {
+		r := actorRequest(http.MethodPost, capabilityPath+"/probes", fmt.Sprintf(`{"credential_binding_id":%d}`, legacy.Application.Credential.Bindings[0].ID))
+		setPath(r)
+		r.SetPathValue("capabilityID", capability)
+		w := httptest.NewRecorder()
+		h.ProbeCanonicalModelCapability(w, r)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		var observed modelCapabilityProbeResult
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &observed))
+		require.True(t, observed.Success)
+		r = canonicalOperationProbeAuthorizedRequest(operatorOrg, org, approver, auth.RolePlatformAdmin)(http.MethodPost, capabilityPath+"/routing-approvals", fmt.Sprintf(`{"capability_probe_id":%d,"reason":"exact uncompiled data contract fixture"}`, observed.CapabilityProbeID))
+		setPath(r)
+		r.SetPathValue("capabilityID", capability)
+		w = httptest.NewRecorder()
+		h.ApproveCanonicalModelCapabilityRouting(w, r)
+		require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+		var a modelCapabilityApprovalResult
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &a))
+		approvalIDs = append(approvalIDs, a.ApprovalID)
+		if capability == "reasoning" {
+			reasoningApprovalID = a.ApprovalID
 		}
 	}
+	require.Positive(t, reasoningApprovalID)
 	probeCalls := calls
 	policy := routingpolicy.Default()
 	router, err := gateway.NewRouterWithPolicy(pool, policy)
@@ -370,6 +377,35 @@ VALUES('later-fixture','candidate-fixture','delta',$1,$1,$2,$3,$2,$3,'fixture','
 		require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM model_deployment_release_authoring_receipts`).Scan(&afterReceipts))
 		require.Equal(t, beforeReleases, afterReleases)
 		require.Equal(t, beforeReceipts, afterReceipts)
+	}
+	{
+		// A fully specified new data Release cannot omit the capability
+		// implied by its active provider default, even when other pins exist.
+		withoutDefault := authorBody
+		withoutDefault.CapabilityApprovalIDs = nil
+		for _, id := range approvalIDs {
+			if id != reasoningApprovalID {
+				withoutDefault.CapabilityApprovalIDs = append(withoutDefault.CapabilityApprovalIDs, id)
+			}
+		}
+		type authoringFootprint struct {
+			releases, receipts, events, slots int
+			lineage                           string
+		}
+		readFootprint := func() authoringFootprint {
+			var state authoringFootprint
+			require.NoError(t, pool.QueryRow(ctx, `
+SELECT (SELECT COUNT(*) FROM runtime_change_releases WHERE public_model_id=$1),
+       (SELECT COUNT(*) FROM model_deployment_release_authoring_receipts WHERE public_model_id=$1),
+       (SELECT COUNT(*) FROM runtime_change_events e JOIN runtime_change_releases r ON r.id=e.release_id WHERE r.public_model_id=$1),
+       (SELECT COUNT(*) FROM runtime_change_slots WHERE public_model_id=$1),
+       COALESCE((SELECT product_lineage_id FROM model_registry WHERE id=$1),'')`, candidate.Application.PublicModel.ID).Scan(
+				&state.releases, &state.receipts, &state.events, &state.slots, &state.lineage))
+			return state
+		}
+		before := readFootprint()
+		serveCanonicalDeploymentReleaseAuthoring(t, h, actorRequest, withoutDefault, "data-http-missing-default", http.StatusConflict)
+		require.Equal(t, before, readFootprint(), "rejected authoring must not seal or mutate lineage")
 	}
 	sealedReceipt, _ := serveCanonicalDeploymentReleaseAuthoring(t, h, actorRequest, authorBody, "data-http-author", http.StatusCreated)
 	sealed, err := releaseexecution.ReadSnapshot(ctx, pool, sealedReceipt.Release.ID)
