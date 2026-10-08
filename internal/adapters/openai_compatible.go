@@ -520,15 +520,22 @@ func (a *OpenAICompatible) NormalizeStreamFrame(ctx context.Context, in StreamCh
 	_ = ctx
 	body, err := normalizeMiniMaxOpenAIEnvelope(in.Channel.Provider, in.Data)
 	if err != nil {
-		return nil, err
+		return nil, normalizationError("provider_envelope", err)
 	}
 	usage, present, err := ParseOpenAICompatibleStreamUsageWithCacheProfile(
 		body, EndpointChatCompletions, metering.UsageSourceUpstream, in.CacheUsageProfile,
 	)
-	if err != nil || !present {
-		return body, err
+	if err != nil {
+		return body, normalizationError("usage", err)
 	}
-	return normalizeOpenAIClientCacheUsage(body, usage)
+	if !present {
+		return body, nil
+	}
+	projected, err := normalizeOpenAIClientCacheUsage(body, usage)
+	if err != nil {
+		return nil, normalizationError("cache_projection", err)
+	}
+	return projected, nil
 }
 
 // normalizeOpenAIClientCacheUsage mirrors profile-authoritative provider cache

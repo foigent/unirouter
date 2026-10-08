@@ -20,8 +20,10 @@ const OpenAIChatFunctionToolsMaxResponseBytes = 1 << 20
 var ErrInvalidOpenAIChatFunctionToolsCapability = errors.New("invalid OpenAI-compatible Chat function-tools capability probe response")
 
 type openAIChatFunctionToolsValidationError struct {
-	code  string
-	cause error
+	code   string
+	cause  error
+	stage  string
+	member string
 }
 
 func (e *openAIChatFunctionToolsValidationError) Error() string {
@@ -51,6 +53,46 @@ func OpenAIChatFunctionToolsErrorCode(err error) string {
 	return ""
 }
 
+// OpenAIChatFunctionToolsDiagnostic contains only fixed classifications. The
+// underlying error may include provider-controlled text and must not be used
+// in a persisted Probe summary or public response.
+type OpenAIChatFunctionToolsDiagnostic struct {
+	Stage  string
+	Member string
+}
+
+func DescribeOpenAIChatFunctionToolsDiagnostic(err error) OpenAIChatFunctionToolsDiagnostic {
+	var failure *openAIChatFunctionToolsValidationError
+	if !errors.As(err, &failure) {
+		return OpenAIChatFunctionToolsDiagnostic{}
+	}
+	return CanonicalizeOpenAIChatFunctionToolsDiagnostic(failure.stage, failure.member)
+}
+
+// CanonicalizeOpenAIChatFunctionToolsDiagnostic is also used when projecting
+// stored Probe summaries, which must be treated as untrusted historical data.
+func CanonicalizeOpenAIChatFunctionToolsDiagnostic(stage, member string) OpenAIChatFunctionToolsDiagnostic {
+	// An explicit allowlist keeps future caller mistakes from exposing a raw
+	// SSE field, model name, tool argument, or adapter error message.
+	switch stage + "/" + member {
+	case "sse/unsupported_field", "sse/event_too_large", "sse/invalid_event",
+		"frame_json/invalid_json", "normalization/identity", "normalization/json",
+		"normalization/usage", "normalization/tool_normalization",
+		"normalization/builtin_metering", "normalization/provider_envelope",
+		"normalization/cache_projection", "normalization/unknown",
+		"model_identity/mismatch", "envelope/invalid_shape", "usage/invalid_usage",
+		"frame_shape/invalid_shape", "stream_state/invalid_transition",
+		"terminal/invalid_state", "terminal/missing_done", "read/read_error",
+		"read/response_too_large":
+		return OpenAIChatFunctionToolsDiagnostic{Stage: stage, Member: member}
+	}
+	return OpenAIChatFunctionToolsDiagnostic{}
+}
+
+func invalidOpenAIChatFunctionToolsDiagnostic(code, stage, member string, cause error) error {
+	return &openAIChatFunctionToolsValidationError{code: code, stage: stage, member: member, cause: cause}
+}
+
 type OpenAIChatFunctionToolsObservation struct {
 	ReportedModel            string
 	FinishReason             string
@@ -62,6 +104,10 @@ type OpenAIChatFunctionToolsObservation struct {
 	ReasoningObserved        bool
 	ToolCallObserved         bool
 	ResponseBytes            int
+	// DataEventCount counts fully assembled data events, including [DONE],
+	// before frame validation. DeltaCount counts parsed choice/delta frames.
+	DataEventCount int
+	DeltaCount     int
 }
 
 type openAIChatFunctionToolsBindingIdentity struct {

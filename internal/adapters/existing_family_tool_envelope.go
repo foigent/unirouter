@@ -3,11 +3,16 @@ package adapters
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/strictjson"
 )
+
+// ErrToolStreamModelMismatch is a fixed classification for diagnostics. It
+// carries no provider-supplied model name or response content.
+var ErrToolStreamModelMismatch = errors.New("tool stream model mismatch")
 
 // ToolStreamEnvelope selects finite provider wire preparation for new exact
 // implementations. It neither grants qualification nor owns tool assembly,
@@ -137,7 +142,7 @@ func (s *ToolStreamEnvelope) Prepare(data []byte) (body []byte, skip bool, err e
 	}
 	var model string
 	if json.Unmarshal(envelope["model"], &model) != nil || model != s.model {
-		return nil, false, fmt.Errorf("tool stream model mismatch")
+		return nil, false, ErrToolStreamModelMismatch
 	}
 	if s.kimi != nil {
 		skip = prepared.UsageOnly && s.kimi.usage != nil

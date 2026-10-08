@@ -62,6 +62,7 @@ type modelCapabilityProbeResult struct {
 	ReasonCode               string `json:"reason_code"`
 	ProviderReasonCode       string `json:"provider_reason_code"`
 	ContractErrorCode        string `json:"contract_error_code,omitempty"`
+	DiagnosticStage          string `json:"diagnostic_stage,omitempty"`
 	DiagnosticMember         string `json:"diagnostic_member,omitempty"`
 	StatusCode               int    `json:"status_code"`
 	LatencyMS                int64  `json:"latency_ms"`
@@ -127,6 +128,7 @@ type modelCapabilityProbeView struct {
 	ReportedModel            string    `json:"reported_model,omitempty"`
 	ErrorSummary             string    `json:"error_summary,omitempty"`
 	ContractErrorCode        string    `json:"contract_error_code,omitempty"`
+	DiagnosticStage          string    `json:"diagnostic_stage,omitempty"`
 	DiagnosticMember         string    `json:"diagnostic_member,omitempty"`
 	FinishReason             string    `json:"finish_reason,omitempty"`
 	PromptTokens             int64     `json:"prompt_tokens,omitempty"`
@@ -191,6 +193,7 @@ type modelCapabilityProbeOutcome struct {
 	LatencyMS                int64
 	ReasonCode               string
 	ContractErrorCode        string
+	DiagnosticStage          string
 	DiagnosticMember         string
 	ReportedModel            string
 	FinishReason             string
@@ -785,12 +788,17 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 		outcome.CacheReadCounterObserved = observation.CacheReadCounterObserved
 		outcome.CachedTokens = observation.CachedTokens
 		outcome.ResponseBytes = observation.ResponseBytes
+		outcome.DataEventCount = observation.DataEventCount
+		outcome.DeltaCount = observation.DeltaCount
 		outcome.ReasoningObserved = observation.ReasoningObserved
 		outcome.ToolCallObserved = observation.ToolCallObserved
 		if validationErr != nil {
 			outcome.LatencyMS = time.Since(started).Milliseconds()
 			outcome.ReasonCode = "provider_function_tools_contract_invalid"
 			outcome.ContractErrorCode = modelcapabilityqualification.OpenAIChatFunctionToolsErrorCode(validationErr)
+			diagnostic := modelcapabilityqualification.DescribeOpenAIChatFunctionToolsDiagnostic(validationErr)
+			outcome.DiagnosticStage = diagnostic.Stage
+			outcome.DiagnosticMember = diagnostic.Member
 			return outcome
 		}
 	case modelcapabilityqualification.MiniMaxChatFunctionToolsProbeContractID,
@@ -1137,6 +1145,33 @@ func (h *Handler) persistModelCapabilityProbe(ctx context.Context, actorID int64
 	return result, nil
 }
 
+func modelCapabilityProbeResponseSummaryFields(outcome modelCapabilityProbeOutcome, current bool, reasonCode string, shared *sharedProbeMetadata) map[string]interface{} {
+	fields := map[string]interface{}{
+		"provider_success": outcome.ProviderSuccess, "contract_success": outcome.ContractSuccess,
+		"current": current, "reason_code": reasonCode, "provider_reason_code": outcome.ReasonCode,
+		"contract_error_code": outcome.ContractErrorCode,
+		"diagnostic_member":   outcome.DiagnosticMember,
+		"response_bytes":      outcome.ResponseBytes, "data_event_count": outcome.DataEventCount,
+		"delta_count": outcome.DeltaCount, "finish_reason": outcome.FinishReason,
+		"reasoning_observed":          outcome.ReasoningObserved,
+		"cache_read_counter_observed": outcome.CacheReadCounterObserved,
+		"cached_tokens":               outcome.CachedTokens,
+		"tool_call_observed":          outcome.ToolCallObserved,
+		"structured_output_observed":  outcome.StructuredObserved,
+		"usage":                       map[string]int64{"prompt_tokens": outcome.PromptTokens, "completion_tokens": outcome.CompletionTokens, "total_tokens": outcome.TotalTokens},
+	}
+	if outcome.DiagnosticStage != "" && !outcome.ContractSuccess {
+		fields["diagnostic_stage"] = outcome.DiagnosticStage
+	}
+	if outcome.NormalizationDiagnostic != nil && !outcome.ContractSuccess {
+		fields["normalization_diagnostic"] = outcome.NormalizationDiagnostic
+	}
+	if shared != nil {
+		fields["shared_observation"] = shared
+	}
+	return fields
+}
+
 func (h *Handler) persistModelCapabilityProbeTx(ctx context.Context, tx pgx.Tx, actorID int64, snapshot modelCapabilitySnapshot, outcome modelCapabilityProbeOutcome, sourceRef string, audit auditMeta, shared *sharedProbeMetadata, groupCurrent bool) (modelCapabilityProbeResult, error) {
 	rootCurrent, err := lockCanonicalOperationProbeRootCurrent(ctx, tx, snapshot.CustomerOrgID)
 	if err != nil {
@@ -1170,26 +1205,7 @@ func (h *Handler) persistModelCapabilityProbeTx(ctx context.Context, tx pgx.Tx, 
 		requestSummaryFields[key] = value
 	}
 	requestSummary, _ := json.Marshal(requestSummaryFields)
-	responseSummaryFields := map[string]interface{}{
-		"provider_success": outcome.ProviderSuccess, "contract_success": outcome.ContractSuccess,
-		"current": currentProof, "reason_code": reasonCode, "provider_reason_code": outcome.ReasonCode,
-		"contract_error_code": outcome.ContractErrorCode,
-		"diagnostic_member":   outcome.DiagnosticMember,
-		"response_bytes":      outcome.ResponseBytes, "data_event_count": outcome.DataEventCount,
-		"delta_count": outcome.DeltaCount, "finish_reason": outcome.FinishReason,
-		"reasoning_observed":          outcome.ReasoningObserved,
-		"cache_read_counter_observed": outcome.CacheReadCounterObserved,
-		"cached_tokens":               outcome.CachedTokens,
-		"tool_call_observed":          outcome.ToolCallObserved,
-		"structured_output_observed":  outcome.StructuredObserved,
-		"usage":                       map[string]int64{"prompt_tokens": outcome.PromptTokens, "completion_tokens": outcome.CompletionTokens, "total_tokens": outcome.TotalTokens},
-	}
-	if outcome.NormalizationDiagnostic != nil && !outcome.ContractSuccess {
-		responseSummaryFields["normalization_diagnostic"] = outcome.NormalizationDiagnostic
-	}
-	if shared != nil {
-		responseSummaryFields["shared_observation"] = shared
-	}
+	responseSummaryFields := modelCapabilityProbeResponseSummaryFields(outcome, currentProof, reasonCode, shared)
 	responseSummary, _ := json.Marshal(responseSummaryFields)
 	fingerprint := modelCapabilityProbeFingerprint(snapshot, outcome, sourceRef)
 	errorSummary := ""
@@ -1254,7 +1270,7 @@ UPDATE model_deployment_capabilities
 		CapabilityProbeID: probeID, DeploymentID: snapshot.DeploymentID, OperationID: snapshot.OperationID,
 		CapabilityID: snapshot.CapabilityID, Success: success, ProviderSuccess: outcome.ProviderSuccess,
 		Current: currentProof, Stale: !currentProof, ReasonCode: reasonCode, ProviderReasonCode: outcome.ReasonCode,
-		ContractErrorCode: outcome.ContractErrorCode, DiagnosticMember: outcome.DiagnosticMember,
+		ContractErrorCode: outcome.ContractErrorCode, DiagnosticStage: outcome.DiagnosticStage, DiagnosticMember: outcome.DiagnosticMember,
 		StatusCode: outcome.StatusCode, LatencyMS: outcome.LatencyMS, ReportedModel: outcome.ReportedModel,
 		FinishReason: outcome.FinishReason, PromptTokens: outcome.PromptTokens,
 		CompletionTokens: outcome.CompletionTokens, TotalTokens: outcome.TotalTokens,
@@ -1689,6 +1705,7 @@ SELECT probe.capability_probe_id,probe.credential_binding_id,probe.success,
 		var summary struct {
 			FinishReason             string `json:"finish_reason"`
 			ContractErrorCode        string `json:"contract_error_code"`
+			DiagnosticStage          string `json:"diagnostic_stage"`
 			DiagnosticMember         string `json:"diagnostic_member"`
 			ReasoningObserved        bool   `json:"reasoning_observed"`
 			CacheReadCounterObserved bool   `json:"cache_read_counter_observed"`
@@ -1707,7 +1724,13 @@ SELECT probe.capability_probe_id,probe.credential_binding_id,probe.success,
 		)
 		latest.FinishReason = summary.FinishReason
 		latest.ContractErrorCode = diagnostic.Code
-		latest.DiagnosticMember = diagnostic.Member
+		if summary.DiagnosticStage != "" {
+			streamDiagnostic := modelcapabilityqualification.CanonicalizeOpenAIChatFunctionToolsDiagnostic(summary.DiagnosticStage, summary.DiagnosticMember)
+			latest.DiagnosticStage = streamDiagnostic.Stage
+			latest.DiagnosticMember = streamDiagnostic.Member
+		} else {
+			latest.DiagnosticMember = diagnostic.Member
+		}
 		latest.ReasoningObserved = summary.ReasoningObserved
 		latest.CacheReadCounterObserved = summary.CacheReadCounterObserved
 		latest.CachedTokens = summary.CachedTokens
