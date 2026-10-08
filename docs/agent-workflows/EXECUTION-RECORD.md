@@ -1,5 +1,172 @@
 # Current Execution Record
 
+## UR 1.9.6 independent current Flash Local candidate — 2026-10-08
+
+**Scope and baseline.** Approved option A adds a new public-model identity for
+current official Flash without migrating an old public call name across
+Profiles. Source starts at `14cf857804675d2eca8beccafa4ac5174d1c85e8`
+(version 1.9.5; tree `0756fb1dd08fde24e69aee92ac1b532ce73f42ff`). Its tree
+matches the 1.9.5 main merge; this batch does not fetch, push, merge, deploy,
+sign, read supplier credentials, or call a real Provider. Version 1.9.6 is a
+local source candidate. No migration, account system, vision, Responses or
+cross-Profile successor is added.
+
+**Exact immutable data.** `capability-bundles/deepseek-v41-flash.json` carries
+`deepseek.v4.1-flash.api@1.0.0`, lineage `deepseek/deepseek-flash`, with no
+predecessor. The only requested upstream is `deepseek-flash`, family
+`deepseek-flash`, version policy `floating`; the label describes current V4.1,
+not a pinned upstream version guarantee. Definition SHA-256 is
+`6c6c7ae34b6a6dcf69b0a3a6b382a758ec04602b50067bb2bae927c76bf4a33f`.
+Bundle SHA-256 is
+`c3ef35d6c082f924c4a817976a75f383487b87634c2b571cc3757432cd102b7a`
+(7,642 canonical bytes). The Bundle has one Definition, six bindings and six null-predecessor selector
+transitions: v1 streamed-tools for streaming/reasoning/tools/function_tools/
+tool_choice_auto, and v3 for reasoning_effort. Every binding pins the exact
+Definition, Profile/version, protocol and upstream. Historical Flash data,
+selectors, Probe v1/v2 and sealed Releases are retained; an old model response
+cannot satisfy the new identity.
+
+**Implementation and review.** Existing protocol v5, Flash reasoning v5 and
+cache v1 support this bounded text streamed-tool composition. The v3 predicate
+checks those explicit components plus the sole current upstream/floating
+family, without hardcoding a Profile ID/version as general adaptation. v3 is
+registered in runtime support and the shared-group gate, and explicitly emits
+thinking enabled/high with include_usage and no tool_choice. Existing safe
+request/response summaries carry the Probe/Profile/protocol tuple, effort and
+diagnostic allowlists. The immutable binding resolves its unique Definition;
+GET reads the exact immutable operation Definition, and Release seals its digest
+and evidence pins. Source protection hashes and request summaries are distinct;
+no source protection hash or request-summary format changes in this batch. Independent pre-code review
+required the floating identity, upstream predicate and exact HTTP lifecycle;
+all were accepted. The one closing review found a CI fixture blocker: CI's
+service administrator would fail the new unconditional non-superuser check.
+The source fix prepares only a synthetic job-local Flash role and passes its
+DSN only to this test via `CURRENT_FLASH_TEST_DATABASE_URL`. The test installs
+through the exact current migration head in its own isolated database, avoiding
+a package-template DSN change; other tests keep their original CI DSN. This CI
+configuration has not executed. The local role setup used the subsequent
+explicit approval recorded below. No real Provider conformance is claimed.
+
+**Verified Local evidence.** The new Bundle passes the formal
+`go run ./cmd/uniroute-capability-bundle-check` entry. Probe tests cover canonical
+digests/selectors, v3 registration/request, alternate data address under the
+same exact composition, retired v3 rejection, malformed/missing/duplicate or
+mismatched model, bad JSON, missing/conflicting usage and missing DONE; existing
+v1/v2 tests pass unchanged. `TestCurrentDeepSeekFlashFormalPreflightAndRuntimePreparation`
+passes the formal preflight owner with payload retention and the Runtime
+outbound preparer, checks exact deepseek-flash, default qualification bindings,
+auto omission and zero execution effects during preflight. Affected package
+regression passed for modelcapabilityqualification, modelprofile, adapters,
+gateway, admin, runtimegeneration, modelcapabilitypublication and cmd/uniroute.
+The first sandbox run blocked loopback httptest listeners; only the three
+failed packages were rerun with local listener permission and passed.
+The runtime-support v3 inclusion/rejection regression passes. Logs are
+`/private/tmp/ur-deepseek-recovery-20261008/v41-offline-regression.log`,
+`v41-http-regression.log` and `v41-final-unit.log` in the same directory.
+
+The frontend source changes only version metadata. Using the bundled exact
+Node 24.19.0 and the existing dependency tree (dependency/devDependency maps
+match), direct TypeScript, API-contract, React compatibility, Vite production
+build and asset-budget checks passed. Local npm is 10.9.2; the npm 11.17.0
+wrapper toolchain check was not run or claimed. The generated assets are local
+verification output, not an immutable Artifact. Release metadata and diff
+checks pass. The 19 release/CI-routing regressions and nine backend-integration
+runner checks pass; the updated workflow YAML parses successfully.
+No CI, Docker, signed Artifact, Target or Production evidence is
+added here.
+
+**Actual PG16 acceptance and cleanup.** The task-owned cluster was
+`/private/tmp/ur-xi-control-lifecycle-pg-20261006`, port 55437, system ID
+`7693457567414990508`, PostgreSQL 16.14. Initial discovery found only `m4` and
+`xinsight_admin`, both superusers. Automatic review rejected adding a role under
+the earlier reuse-only authority; the subsequent explicit instruction approved
+creation and cleanup of the necessary isolated test role. PostgreSQL's existing
+CLI prepared `ur_v41_flash_local_test` with LOGIN/NOSUPERUSER/NOCREATEROLE/
+CREATEDB/NOREPLICATION/NOBYPASSRLS and no password in this local trust-only test
+cluster. SQL through that role returned
+`ur_v41_flash_local_test|160014|f|t`. The existing test preparation owner created,
+installed and removed temporary databases; no administrator connection was
+used as the test's runtime pool.
+
+`TestCurrentDeepSeekFlashDataFirstHTTPPublicationQualificationActivationIntegration`
+passed with the formal materializer, a separate model reusing an existing
+connection/binding ID without a supplier secret, individual Probe POST/storage/
+GET diagnostics, HTTP group plan/execution/readback, six independent approvals,
+six exact batch pins frozen in a new Release, normal initial activation,
+preflight and real Relay/coordinator/billing owners with a fake Provider.
+The batch plan has two groups: v1 five capabilities plus v3 effort. Actual
+execution dispatches two synthetic requests, produces six exact facts across
+two source refs, and freezes those six exact Probe IDs in the Release. Readback,
+approval and freeze do not dispatch. Individual diagnostic fixtures and the
+Relay fixture are additional local synthetic validation requests, not the
+minimum supplier-call plan.
+
+**First failure adjudication.** The initial test incorrectly expected
+`request_summary.profile_definition_digest`. That field is not in the existing
+request-summary contract. A provisional five-line field addition was withdrawn:
+M114 enforces a unique immutable Profile address, the stored Probe tuple joins
+its immutable binding/digest, GET resolves the operation's immutable Definition,
+and Release seals the digest plus binding/evidence/selector pins. The corrected
+test asserts these formal owners, stored upstream and source fingerprint,
+instead of introducing a redundant product field to satisfy a self-created
+expectation. The final request-summary writer is byte-identical to the baseline;
+this was a test-contract error, not a missing source-protection hash or product
+identity defect.
+
+The final PG16 `-race` regression covered the new chain, old existing-family
+Probe dispatch/persistence (DeepSeek/Kimi/MiniMax/Qwen), uncompiled data-first
+creation through activation, and shared-group success/data-definition/drift/
+unknown-outcome/invalid-response/atomic-rollback/readback/independent-approval
+scenarios. All four selected tests and their subtests passed, with no skipped
+subtest. Log: `/private/tmp/ur-deepseek-recovery-20261008/v41-pg16-final-race.log`.
+After withdrawing the provisional product field and correcting the identity
+assertion, the changed new chain alone passed again with `-race`; its final log
+is `v41-pg16-final-contract.log` in the same directory. Relevant old-path
+regressions remain applicable because the writer reverted exactly. Admin/API
+contracts also passed in `v41-final-admin-contract.log`.
+
+The execution entry used an explicit DSN and refused missing/non-PG16 DBs:
+
+```bash
+REQUIRE_TEST_DATABASE=1 \
+TEST_DATABASE_URL='postgres://ur_v41_flash_local_test@127.0.0.1:55437/postgres?sslmode=disable' \
+GOCACHE=/private/tmp/ur-deepseek-recovery-20261008/offline-go-cache \
+go test -tags=integration -race ./internal/admin \
+  -run '^TestCurrentDeepSeekFlashDataFirstHTTPPublicationQualificationActivationIntegration$' \
+  -count=1 -v
+```
+
+This command requires approved test setup before reuse; the temporary role was
+subsequently cleaned up. SQL confirmed zero owned databases and zero role
+connections before DROP ROLE, then confirmed the role no longer existed. The
+same PG16 `pg_ctl` stopped the cluster with `-m fast`; `status` confirmed no
+server running. Final control data retained system ID `7693457567414990508`
+and reported `shut down`, restoring its original stopped state. Default PG18
+and existing roles/data are unchanged.
+
+**Minimum formal supplier-call plan: three.** Two batch requests are sufficient
+for six capability facts, but do not establish ordinary operation/credential
+eligibility. Chat is outside `IsQualificationRequired`'s extra executor-approval
+catalog; `deployment_manifest.go` still requires verified operation evidence
+and the latest successful `model_deployment_probes` for the same deployment,
+binding, upstream, protocol and revisions. Retain one ordinary connectivity
+Probe plus the two batch groups: **1 + 2 = 3**. This batch does not remove that
+existing protection, and does not authorize any supplier call.
+
+**Remaining external boundary and lessons.** A Target operation sheet must
+bind the final reviewed diff/source, new runtime implementation and exact
+Bundle before publication. New public-model pricing and project/key/model-set
+access need their own applicable authorization; an old Flash price/access does
+not transfer to the new model. The parent owns any approved supplier-call
+budget. Real default-effort behavior, supplier usage, fees, client access and
+Target activation remain outside this Local batch. Rechecked MAR-001,
+MAR-003, MAR-005, MAR-007 and MAR-009: the effective-default, exact-data and safe
+receipt constraints already cover this change. 经验文件无需变化; the new floating
+alias incident does not warrant a duplicate lesson. The PG16 identity and
+non-superuser acceptance enforce existing constraints rather than adding a new
+model-adaptation rule.
+
+
 ## DeepSeek Probe 265 stream diagnostic correction, local candidate — 2026-10-08
 
 **Boundary.** Development Probe 265 for deployment 24 `reasoning_effort` recorded HTTP 200 and `provider_success=true`, but failed the stream contract with the public code `stream`; its response summary did not retain the underlying parse stage or original frame. The old shared Function Tools path did not populate `data_event_count` or `delta_count`, so its 0/0 was a default value, not proof of no events. The exact upstream cause remains unknown; alias-model mismatch and an unsupported SSE field are distinct offline reproductions of the same old receipt. No new Provider call, Target action, credential read or Release occurred in this diagnostic batch.

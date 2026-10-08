@@ -99,6 +99,17 @@ func TestKimiK3EffortPinRequiresNewProbeImplementation(t *testing.T) {
 	require.NoError(t, m.Require("M114", []modelprofile.ImplementationReference{{Kind: "capability_probe", ID: "unirouter.capability-probe.kimi-chat-stream-tools.v1@1.0.0"}}))
 }
 
+func TestCurrentDeepSeekFlashEffortPinRequiresV3Implementation(t *testing.T) {
+	ref := modelprofile.ImplementationReference{Kind: "capability_probe", ID: "unirouter.capability-probe.deepseek-chat-stream-tools.v1@3.0.0"}
+	m := CurrentManifest(schemaauthority.SupportedSchemaHeads())
+	require.NoError(t, m.Require(schemaauthority.LatestSupportedMigration, []modelprofile.ImplementationReference{ref}))
+	m.Implementations = slices.DeleteFunc(slices.Clone(m.Implementations), func(v modelprofile.ImplementationReference) bool { return v == ref })
+	require.Error(t, m.Require(schemaauthority.LatestSupportedMigration, []modelprofile.ImplementationReference{ref}), "the historical runtime cannot claim the new data Probe")
+	for _, version := range []string{"1.0.0", "2.0.0"} {
+		require.NoError(t, m.Require(schemaauthority.LatestSupportedMigration, []modelprofile.ImplementationReference{{Kind: "capability_probe", ID: "unirouter.capability-probe.deepseek-chat-stream-tools.v1@" + version}}))
+	}
+}
+
 func TestQwenStreamBundleRequiresChatAndProbeImplementations(t *testing.T) {
 	wire, err := os.ReadFile("../../capability-bundles/qwen-flash-streamed-tools.json")
 	require.NoError(t, err)

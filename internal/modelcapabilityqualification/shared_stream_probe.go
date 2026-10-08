@@ -6,7 +6,7 @@ package modelcapabilityqualification
 func SharedStreamProbeContract(b Binding) (string, error) {
 	if b.ProbeContractVersion != "1.0.0" &&
 		!(b.ProbeContractID == KimiStreamFunctionToolsProbeContractID && b.ProbeContractVersion == KimiStreamReasoningEffortProbeVersion) &&
-		!(b.ProbeContractID == DeepSeekStreamFunctionToolsProbeContractID && b.ProbeContractVersion == DeepSeekStreamReasoningEffortProbeVersion) {
+		!(b.ProbeContractID == DeepSeekStreamFunctionToolsProbeContractID && (b.ProbeContractVersion == DeepSeekStreamReasoningEffortProbeVersion || b.ProbeContractVersion == DeepSeekCurrentFlashDefaultEffortProbeVersion)) {
 		return "", ErrUnsupported
 	}
 	var err error

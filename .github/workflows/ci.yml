@@ -328,9 +328,17 @@ jobs:
       - name: Run X-Insight snapshot producer contract tests
         run: go test scripts/prd5_xinsight_snapshot.go scripts/prd5_xinsight_snapshot_test.go -count=1
 
+      - name: Prepare isolated current Flash fixture role
+        # Synthetic, job-local PostgreSQL role. The new HTTP acceptance chain
+        # must not use the service administrator as its runtime identity.
+        run: >-
+          docker exec ${{ job.services.postgres.id }} psql -U uniroute -d postgres -v ON_ERROR_STOP=1
+          -c "CREATE ROLE ur_flash_fixture LOGIN NOSUPERUSER NOCREATEROLE CREATEDB NOREPLICATION NOBYPASSRLS PASSWORD 'synthetic-flash-fixture';"
+
       - name: Run admin integration tests
         env:
           REQUIRE_TEST_DATABASE: "1"
+          CURRENT_FLASH_TEST_DATABASE_URL: postgres://ur_flash_fixture:synthetic-flash-fixture@localhost:5432/postgres?sslmode=disable
         # Integration test names are enforced by TestAdminIntegrationFilesUseIntegrationSuffix.
         # This lane includes TestCanonicalDeploymentLifecycleHTTPApplicationIntegration.
         # Avoid rerunning the ordinary admin unit suite already covered above.

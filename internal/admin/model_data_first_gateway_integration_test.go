@@ -76,10 +76,15 @@ func verifyFirstDataGateway(t *testing.T, h *Handler, actor func(string, string,
 	calls := 0
 	relay.SetProviderHTTPDoer(canonicalOperationProbeDoerFunc(func(r *http.Request) (*http.Response, error) {
 		calls++
-		require.Equal(t, "https://open.bigmodel.cn/api/paas/v4/chat/completions", r.URL.String())
+		require.Equal(t, strings.TrimRight(application.Connection.BaseURL, "/")+"/chat/completions", r.URL.String())
 		var body map[string]any
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
-		require.Equal(t, "glm-5.3", body["model"])
+		require.Equal(t, definition.Profile().UpstreamModelIDs[0], body["model"])
+		if definition.Profile().Provider == "deepseek" {
+			require.NotContains(t, body, "tool_choice")
+			require.NotContains(t, body, "thinking")
+			require.NotContains(t, body, "reasoning_effort")
+		}
 		require.Equal(t, true, body["stream"])
 		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(string(stream)))}, nil
 	}))

@@ -28,6 +28,17 @@ var dataProbeImplementations = map[string]func(Binding, modelprofile.Profile) bo
 			p.ReasoningProfile == "reasoning.deepseek-v4-flash-thinking-toggle.v5" &&
 			p.CacheUsageProfile == "cache-usage.deepseek-v4.v1"
 	},
+	DeepSeekStreamFunctionToolsProbeContractID + "@" + DeepSeekCurrentFlashDefaultEffortProbeVersion: func(b Binding, p modelprofile.Profile) bool {
+		// Current Flash is a floating upstream identity. Component reuse does
+		// not grant the new contract to the retired V4 Flash Definition.
+		return b.CapabilityID == modelprofile.CapabilityReasoningEffort &&
+			b.ExpectedUpstreamModel == "deepseek-flash" && p.Provider == "deepseek" &&
+			len(p.UpstreamModelIDs) == 1 && p.UpstreamModelIDs[0] == "deepseek-flash" &&
+			p.UpstreamModelFamily == "deepseek-flash" && p.UpstreamVersionPolicy == "floating" &&
+			p.ProtocolProfile == "protocol.deepseek-openai-chat.v5" &&
+			p.ReasoningProfile == "reasoning.deepseek-v4-flash-thinking-toggle.v5" &&
+			p.CacheUsageProfile == "cache-usage.deepseek-v4.v1"
+	},
 	KimiStreamFunctionToolsProbeContractID + "@1.0.0": validExistingFamilyStreamComposition,
 	KimiStreamFunctionToolsProbeContractID + "@" + KimiStreamReasoningEffortProbeVersion: func(b Binding, p modelprofile.Profile) bool {
 		return b.CapabilityID == modelprofile.CapabilityReasoningEffort &&
