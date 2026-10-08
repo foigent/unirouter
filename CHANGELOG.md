@@ -4,6 +4,10 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.9.5] - 2026-10-08
+
+- 共享流式 Function Tools 能力探测在失败时保留固定的阶段与原因分类，真实记录已组装 data 事件及已解析 delta 数量；POST、持久回执、GET 与管理员页面一致展示安全诊断。原有合同错误码、请求形状、严格模型校验和资格规则保持兼容。
+
 ## [1.9.4] - 2026-10-08
 
 - 修复数据化 Chat Profile 的默认推理能力准入：网关按实际默认推理合同要求相应 `reasoning` 或 `reasoning_effort` 资格；新 data-Chat Release 在签发时逐路由核对精确能力批准，历史 Release 的读取与验证合同不变。

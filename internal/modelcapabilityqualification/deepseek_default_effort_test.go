@@ -84,6 +84,38 @@ func TestDeepSeekFlashDefaultEffortBundleAndProbeV2(t *testing.T) {
 	require.True(t, observation.ReasoningObserved)
 	require.True(t, observation.ToolCallObserved)
 	require.EqualValues(t, 120, observation.TotalTokens)
+	require.Equal(t, 3, observation.DataEventCount) // Two frames and [DONE].
+	require.Equal(t, 2, observation.DeltaCount)
+	legacy, err := ValidateOpenAIChatStreamFunctionToolsForBinding(v1, "text/event-stream", strings.NewReader(fixture))
+	require.NoError(t, err)
+	require.Equal(t, observation.DataEventCount, legacy.DataEventCount)
+	require.Equal(t, observation.DeltaCount, legacy.DeltaCount)
+
+	// Two distinct first-event failures used to collapse into the same bare
+	// `stream` code and misleading 0/0 counts in the persisted Probe receipt.
+	for _, tc := range []struct {
+		name, wire, stage, member string
+		events, deltas            int
+	}{
+		{"model alias", strings.Replace(fixture, `"model":"deepseek-v4-flash"`, `"model":"deepseek-flash"`, 1), "model_identity", "mismatch", 1, 0},
+		{"SSE field before data", "event: private_probe_marker\n" + fixture, "sse", "unsupported_field", 0, 0},
+		{"SSE field after data", strings.SplitN(fixture, "\n\n", 2)[0] + "\n\nevent: private_probe_marker\n\n", "sse", "unsupported_field", 1, 1},
+		{"malformed first frame", "data: {private_probe_marker}\n\n", "frame_json", "invalid_json", 1, 0},
+		{"invalid usage", strings.Replace(fixture, `"total_tokens":120`, `"total_tokens":"private_probe_marker"`, 1), "normalization", "usage", 2, 1},
+	} {
+		t.Run("diagnostic/"+tc.name, func(t *testing.T) {
+			observed, validationErr := ValidateOpenAIChatStreamFunctionToolsForBinding(b, "text/event-stream", strings.NewReader(tc.wire))
+			require.Equal(t, "stream", OpenAIChatFunctionToolsErrorCode(validationErr))
+			require.Equal(t, OpenAIChatFunctionToolsDiagnostic{Stage: tc.stage, Member: tc.member}, DescribeOpenAIChatFunctionToolsDiagnostic(validationErr))
+			require.Equal(t, tc.events, observed.DataEventCount)
+			require.Equal(t, tc.deltas, observed.DeltaCount)
+			diagnosticWire, err := json.Marshal(DescribeOpenAIChatFunctionToolsDiagnostic(validationErr))
+			require.NoError(t, err)
+			require.NotContains(t, string(diagnosticWire), "private_probe_marker")
+		})
+	}
+	require.Equal(t, OpenAIChatFunctionToolsDiagnostic{}, CanonicalizeOpenAIChatFunctionToolsDiagnostic("private_probe_marker", "unsupported_field"))
+	require.Equal(t, OpenAIChatFunctionToolsDiagnostic{}, CanonicalizeOpenAIChatFunctionToolsDiagnostic("sse", "private_probe_marker"))
 	for name, invalid := range map[string]string{
 		"reasoning": strings.Replace(fixture, `"reasoning_content":"brief",`, "", 1),
 		"usage":     strings.Replace(fixture, `,"usage":{"prompt_tokens":100,"completion_tokens":20,"total_tokens":120}`, "", 1),

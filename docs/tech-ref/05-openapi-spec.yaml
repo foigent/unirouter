@@ -7738,7 +7738,8 @@ components:
         reported_model: { type: string, maxLength: 200 }
         error_summary: { type: string, maxLength: 255 }
         contract_error_code: { $ref: "#/components/schemas/ModelCapabilityContractErrorCode" }
-        diagnostic_member: { type: string, maxLength: 64, pattern: '^[A-Za-z0-9_.-]{1,64}$', description: "Bounded provider-controlled member identifier retained only as diagnostic evidence; it is not an error-code, capability, usage or billing authority." }
+        diagnostic_stage: { type: string, enum: [sse, frame_json, normalization, model_identity, envelope, usage, frame_shape, stream_state, terminal, read], description: "Fixed stream Probe failure stage. Diagnostic only; raw frame and provider model are not returned." }
+        diagnostic_member: { type: string, maxLength: 64, pattern: '^[A-Za-z0-9_.-]{1,64}$', description: "Fixed reason when diagnostic_stage is present; otherwise a bounded provider-controlled member identifier. Diagnostic only, never capability, usage, billing or routing authority." }
         finish_reason: { type: string }
         prompt_tokens: { type: integer, format: int64, minimum: 0 }
         completion_tokens: { type: integer, format: int64, minimum: 0 }
@@ -7790,7 +7791,8 @@ components:
         reason_code: { type: string }
         provider_reason_code: { type: string }
         contract_error_code: { $ref: "#/components/schemas/ModelCapabilityContractErrorCode" }
-        diagnostic_member: { type: string, maxLength: 64, pattern: '^[A-Za-z0-9_.-]{1,64}$', description: "Bounded, syntax-constrained provider-controlled member identifier retained only as diagnostic evidence; the member value and complete raw response body are not returned." }
+        diagnostic_stage: { type: string, enum: [sse, frame_json, normalization, model_identity, envelope, usage, frame_shape, stream_state, terminal, read], description: "Fixed stream Probe failure stage. Diagnostic only; raw frame and provider model are not returned." }
+        diagnostic_member: { type: string, maxLength: 64, pattern: '^[A-Za-z0-9_.-]{1,64}$', description: "Fixed reason when diagnostic_stage is present; otherwise a bounded provider-controlled member identifier. The provider value and complete response body are not returned." }
         status_code: { type: integer, minimum: 0, maximum: 599 }
         latency_ms: { type: integer, format: int64, minimum: 0 }
         reported_model: { type: string, maxLength: 200 }

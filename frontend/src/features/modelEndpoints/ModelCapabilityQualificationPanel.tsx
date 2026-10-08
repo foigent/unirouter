@@ -13,6 +13,26 @@ import { endpointError } from './presentation';
 
 const { Text } = Typography;
 
+const streamDiagnosticStages = new Set([
+  'sse', 'frame_json', 'normalization', 'model_identity', 'envelope',
+  'usage', 'frame_shape', 'stream_state', 'terminal', 'read',
+]);
+const streamDiagnosticMembers = new Set([
+  'unsupported_field', 'event_too_large', 'invalid_event', 'invalid_json',
+  'identity', 'json', 'usage', 'tool_normalization', 'builtin_metering',
+  'provider_envelope', 'cache_projection', 'unknown', 'mismatch',
+  'invalid_shape', 'invalid_usage', 'invalid_transition', 'invalid_state',
+  'missing_done', 'read_error', 'response_too_large',
+]);
+
+function probeFailureDetail(stage?: string, member?: string): string {
+  if (!stage) return member ? `（成员：${member}）` : '';
+  if (stage === 'model_identity' && member === 'mismatch') return '（响应模型身份与绑定不一致）';
+  if (stage === 'sse' && member === 'unsupported_field') return '（SSE 包含未支持字段）';
+  return member && streamDiagnosticStages.has(stage) && streamDiagnosticMembers.has(member)
+    ? `（阶段：${stage}；原因：${member}）` : '';
+}
+
 export type QualifiedCapabilityID = 'streaming' | 'reasoning' | 'reasoning_effort' | 'reasoning_budget' |
   'tools' | 'function_tools' | 'tool_choice_auto' | 'tool_choice_named' |
   'tool_choice_required' | 'json_object' | 'cache_read_usage' | 'prompt_cache';
@@ -240,7 +260,7 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
       } else if (result.provider_success && result.stale) {
         Toast.warning(`供应商${presentation.shortName}响应成功，但配置已漂移；证据仅保留为历史记录`);
       } else {
-        const diagnostic = result.diagnostic_member ? `（成员：${result.diagnostic_member}）` : '';
+        const diagnostic = probeFailureDetail(result.diagnostic_stage, result.diagnostic_member);
         Toast.error(`${presentation.shortName}探测未通过：${result.contract_error_code || result.reason_code || result.provider_reason_code}${diagnostic}`);
       }
       await load();
@@ -359,7 +379,7 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
           {qualification.latest_probe.error_summary && <Text type="danger">{qualification.latest_probe.error_summary}</Text>}
           {qualification.latest_probe.contract_error_code && <Text type="danger">
             合同校验：{qualification.latest_probe.contract_error_code}
-            {qualification.latest_probe.diagnostic_member ? `（成员：${qualification.latest_probe.diagnostic_member}）` : ''}
+            {probeFailureDetail(qualification.latest_probe.diagnostic_stage, qualification.latest_probe.diagnostic_member)}
           </Text>}
         </div> : <Text type="tertiary">{presentation.emptyEvidence}</Text>}
 

@@ -3,6 +3,7 @@
 package admin
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -90,6 +91,19 @@ VALUES($1,$6,$2,$3,$4,'1.0.0',$5,'1.0.0')`, modelprofile.OperationOpenAIChat, p.
 			request.Deployment.DefaultMaxOutput = canonicalTestPtr(modelprofile.DefaultRequestOutputLimit(p, modelprofile.DefaultPublicOutputLimit(p)))
 			candidate := createCanonicalApplicationForTest(t, h, authorized, request, http.StatusCreated)
 			require.Equal(t, d.Digest(), candidate.Application.Operations[0].ProfileDefinitionDigest)
+			qualificationPath := fmt.Sprintf("/api/v1/model-deployments/%d/operations/%s/capabilities/%s", candidate.Application.Deployment.ID, modelprofile.OperationOpenAIChat, capability)
+			qualificationRequest := authorized(http.MethodGet, qualificationPath, "")
+			qualificationRequest.SetPathValue("deploymentID", strconv.FormatInt(candidate.Application.Deployment.ID, 10))
+			qualificationRequest.SetPathValue("operationID", modelprofile.OperationOpenAIChat)
+			qualificationRequest.SetPathValue("capabilityID", capability)
+			qualificationResponse := httptest.NewRecorder()
+			h.GetCanonicalModelCapabilityQualification(qualificationResponse, qualificationRequest)
+			require.Equal(t, http.StatusOK, qualificationResponse.Code, qualificationResponse.Body.String())
+			var beforeProbe modelCapabilityQualificationView
+			require.NoError(t, json.Unmarshal(qualificationResponse.Body.Bytes(), &beforeProbe))
+			require.True(t, beforeProbe.ProbeAvailable)
+			require.Equal(t, tc.probe, beforeProbe.ProbeContractID)
+			require.Nil(t, beforeProbe.LatestProbe)
 			calls := 0
 			if p.Provider == "dashscope" {
 				_, compiled := modelprofile.Lookup(p.ID, p.Version)
@@ -184,12 +198,53 @@ VALUES($1,$6,$2,$3,$4,'1.0.0',$5,'1.0.0')`, modelprofile.OperationOpenAIChat, p.
 				require.Equal(t, valid, result.Success, rec.Body.String())
 				require.True(t, result.ProviderSuccess, rec.Body.String())
 				require.Equal(t, int64(120), result.TotalTokens)
+				if valid {
+					require.Empty(t, result.DiagnosticStage)
+					require.Empty(t, result.DiagnosticMember)
+				} else {
+					require.Equal(t, "stream", result.ContractErrorCode)
+					wantStage := "frame_shape"
+					if p.Provider == "deepseek" || p.Provider == "kimi" {
+						wantStage = "envelope"
+					}
+					require.Equal(t, wantStage, result.DiagnosticStage)
+					require.Equal(t, "invalid_shape", result.DiagnosticMember)
+				}
 				var storedVersion, storedProtocol string
 				var storedSuccess bool
 				require.NoError(t, pool.QueryRow(ctx, `SELECT execution_profile_version,protocol_profile_id,success FROM model_capability_probes WHERE capability_probe_id=$1`, result.CapabilityProbeID).Scan(&storedVersion, &storedProtocol, &storedSuccess))
 				require.Equal(t, "99.0.0", storedVersion)
 				require.Equal(t, tc.protocol, storedProtocol)
 				require.Equal(t, valid, storedSuccess)
+				var responseSummary map[string]any
+				require.NoError(t, pool.QueryRow(ctx, `SELECT response_summary FROM model_capability_probes WHERE capability_probe_id=$1`, result.CapabilityProbeID).Scan(&responseSummary))
+				if valid {
+					require.Equal(t, float64(2), responseSummary["data_event_count"])
+					require.Equal(t, float64(1), responseSummary["delta_count"])
+				} else {
+					require.Equal(t, float64(1), responseSummary["data_event_count"])
+					require.Equal(t, float64(0), responseSummary["delta_count"])
+				}
+				if valid {
+					require.NotContains(t, responseSummary, "diagnostic_stage")
+				} else {
+					require.Equal(t, result.DiagnosticStage, responseSummary["diagnostic_stage"])
+					require.Equal(t, result.DiagnosticMember, responseSummary["diagnostic_member"])
+				}
+				getPath := fmt.Sprintf("/api/v1/model-deployments/%d/operations/%s/capabilities/%s", candidate.Application.Deployment.ID, modelprofile.OperationOpenAIChat, capability)
+				getRequest := authorized(http.MethodGet, getPath, "")
+				getRequest.SetPathValue("deploymentID", strconv.FormatInt(candidate.Application.Deployment.ID, 10))
+				getRequest.SetPathValue("operationID", modelprofile.OperationOpenAIChat)
+				getRequest.SetPathValue("capabilityID", capability)
+				getResponse := httptest.NewRecorder()
+				h.GetCanonicalModelCapabilityQualification(getResponse, getRequest)
+				require.Equal(t, http.StatusOK, getResponse.Code, getResponse.Body.String())
+				var view modelCapabilityQualificationView
+				require.NoError(t, json.Unmarshal(getResponse.Body.Bytes(), &view))
+				require.NotNil(t, view.LatestProbe)
+				require.Equal(t, result.CapabilityProbeID, view.LatestProbe.CapabilityProbeID)
+				require.Equal(t, result.DiagnosticStage, view.LatestProbe.DiagnosticStage)
+				require.Equal(t, result.DiagnosticMember, view.LatestProbe.DiagnosticMember)
 				if p.Provider == "dashscope" {
 					var summary map[string]any
 					require.NoError(t, pool.QueryRow(ctx, `SELECT request_summary FROM model_capability_probes WHERE capability_probe_id=$1`, result.CapabilityProbeID).Scan(&summary))
@@ -199,7 +254,89 @@ VALUES($1,$6,$2,$3,$4,'1.0.0',$5,'1.0.0')`, modelprofile.OperationOpenAIChat, p.
 				}
 
 			}
-			require.Equal(t, operationCalls+2, calls, "one fake Provider dispatch per explicit Probe")
+			if p.Provider == "deepseek" {
+				var lastFailureProbeID int64
+				for _, failure := range []struct {
+					name, wire, stage, member string
+					events                    int
+				}{
+					{"model alias", `data: {"id":"fixture","object":"chat.completion.chunk","created":1,"model":"deepseek-flash","choices":[{"index":0,"delta":{"role":"assistant"}}]}` + "\n\n", "model_identity", "mismatch", 1},
+					{"SSE field", "event: private_probe_marker\n\n", "sse", "unsupported_field", 0},
+				} {
+					t.Run(failure.name, func(t *testing.T) {
+						h.SetModelDeploymentProbeHTTPDoer(canonicalOperationProbeDoerFunc(func(*http.Request) (*http.Response, error) {
+							calls++
+							return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(failure.wire))}, nil
+						}))
+						path := fmt.Sprintf("/api/v1/model-deployments/%d/operations/%s/capabilities/%s/probes", candidate.Application.Deployment.ID, modelprofile.OperationOpenAIChat, capability)
+						req := authorized(http.MethodPost, path, fmt.Sprintf(`{"credential_binding_id":%d}`, request.Credential.BindingID))
+						req.SetPathValue("deploymentID", strconv.FormatInt(candidate.Application.Deployment.ID, 10))
+						req.SetPathValue("operationID", modelprofile.OperationOpenAIChat)
+						req.SetPathValue("capabilityID", capability)
+						rec := httptest.NewRecorder()
+						h.ProbeCanonicalModelCapability(rec, req)
+						require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+						var result modelCapabilityProbeResult
+						require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &result))
+						lastFailureProbeID = result.CapabilityProbeID
+						require.False(t, result.Success)
+						require.Equal(t, "stream", result.ContractErrorCode)
+						require.Equal(t, failure.stage, result.DiagnosticStage)
+						require.Equal(t, failure.member, result.DiagnosticMember)
+						var summary map[string]any
+						require.NoError(t, pool.QueryRow(ctx, `SELECT response_summary FROM model_capability_probes WHERE capability_probe_id=$1`, result.CapabilityProbeID).Scan(&summary))
+						require.Equal(t, failure.stage, summary["diagnostic_stage"])
+						require.Equal(t, failure.member, summary["diagnostic_member"])
+						require.Equal(t, float64(failure.events), summary["data_event_count"])
+						getPath := fmt.Sprintf("/api/v1/model-deployments/%d/operations/%s/capabilities/%s", candidate.Application.Deployment.ID, modelprofile.OperationOpenAIChat, capability)
+						getRequest := authorized(http.MethodGet, getPath, "")
+						getRequest.SetPathValue("deploymentID", strconv.FormatInt(candidate.Application.Deployment.ID, 10))
+						getRequest.SetPathValue("operationID", modelprofile.OperationOpenAIChat)
+						getRequest.SetPathValue("capabilityID", capability)
+						getResponse := httptest.NewRecorder()
+						h.GetCanonicalModelCapabilityQualification(getResponse, getRequest)
+						require.Equal(t, http.StatusOK, getResponse.Code, getResponse.Body.String())
+						var view modelCapabilityQualificationView
+						require.NoError(t, json.Unmarshal(getResponse.Body.Bytes(), &view))
+						require.NotNil(t, view.LatestProbe)
+						require.Equal(t, failure.stage, view.LatestProbe.DiagnosticStage)
+						require.Equal(t, failure.member, view.LatestProbe.DiagnosticMember)
+						for _, output := range []string{rec.Body.String(), getResponse.Body.String(), fmt.Sprint(summary)} {
+							require.NotContains(t, output, "private_probe_marker")
+						}
+					})
+				}
+				// A corrupt historical summary is never projected as raw diagnostic
+				// text, even if it bypassed the fixed writer classification.
+				_, err = pool.Exec(ctx, `ALTER TABLE model_capability_probes DISABLE TRIGGER model_capability_probes_append_only`)
+				require.NoError(t, err)
+				t.Cleanup(func() {
+					_, _ = pool.Exec(context.Background(), `ALTER TABLE model_capability_probes ENABLE TRIGGER model_capability_probes_append_only`)
+				})
+				_, err = pool.Exec(ctx, `UPDATE model_capability_probes SET response_summary=jsonb_set(jsonb_set(response_summary,'{diagnostic_stage}','"private_probe_marker"'::jsonb),'{diagnostic_member}','"private_probe_marker"'::jsonb) WHERE capability_probe_id=$1`, lastFailureProbeID)
+				require.NoError(t, err)
+				_, err = pool.Exec(ctx, `ALTER TABLE model_capability_probes ENABLE TRIGGER model_capability_probes_append_only`)
+				require.NoError(t, err)
+				getPath := fmt.Sprintf("/api/v1/model-deployments/%d/operations/%s/capabilities/%s", candidate.Application.Deployment.ID, modelprofile.OperationOpenAIChat, capability)
+				getRequest := authorized(http.MethodGet, getPath, "")
+				getRequest.SetPathValue("deploymentID", strconv.FormatInt(candidate.Application.Deployment.ID, 10))
+				getRequest.SetPathValue("operationID", modelprofile.OperationOpenAIChat)
+				getRequest.SetPathValue("capabilityID", capability)
+				getResponse := httptest.NewRecorder()
+				h.GetCanonicalModelCapabilityQualification(getResponse, getRequest)
+				require.Equal(t, http.StatusOK, getResponse.Code, getResponse.Body.String())
+				require.NotContains(t, getResponse.Body.String(), "private_probe_marker")
+				var view modelCapabilityQualificationView
+				require.NoError(t, json.Unmarshal(getResponse.Body.Bytes(), &view))
+				require.NotNil(t, view.LatestProbe)
+				require.Empty(t, view.LatestProbe.DiagnosticStage)
+				require.Empty(t, view.LatestProbe.DiagnosticMember)
+			}
+			wantCalls := operationCalls + 2
+			if p.Provider == "deepseek" {
+				wantCalls += 2
+			}
+			require.Equal(t, wantCalls, calls, "one fake Provider dispatch per explicit Probe")
 		})
 	}
 }

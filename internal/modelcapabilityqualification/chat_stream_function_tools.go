@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime"
 	"strings"
@@ -48,27 +49,33 @@ func validateChatStreamFunctionTools(b Binding, contentType string, reader io.Re
 		if string(raw) == "[DONE]" {
 			done = true
 			if err := toolEnvelope.AcceptDone(); err != nil {
-				return err
+				return invalidOpenAIChatFunctionToolsDiagnostic("stream", "terminal", "invalid_state", err)
 			}
-			return state.Finish()
+			if err := state.Finish(); err != nil {
+				return invalidOpenAIChatFunctionToolsDiagnostic("stream", "terminal", "invalid_state", err)
+			}
+			return nil
 		}
 		if err := strictjson.Validate(raw); err != nil {
-			return err
+			return invalidOpenAIChatFunctionToolsDiagnostic("stream", "frame_json", "invalid_json", err)
 		}
 		body, err := adapter.NormalizeStreamFrame(context.Background(), adapters.StreamChunkInput{Data: raw, Channel: models.Channel{Provider: b.ExpectedProvider}, CacheUsageProfile: profile.CacheUsageProfile})
 		if err != nil {
-			return err
+			return invalidOpenAIChatFunctionToolsDiagnostic("stream", "normalization", adapters.ResponseNormalizationStage(err), err)
 		}
 		body, skip, prepareErr := toolEnvelope.Prepare(body)
 		if skip {
 			return nil
 		}
 		if body == nil {
-			return prepareErr
+			if errors.Is(prepareErr, adapters.ErrToolStreamModelMismatch) {
+				return invalidOpenAIChatFunctionToolsDiagnostic("stream", "model_identity", "mismatch", prepareErr)
+			}
+			return invalidOpenAIChatFunctionToolsDiagnostic("stream", "envelope", "invalid_shape", prepareErr)
 		}
 		usage, present, err := adapters.ParseOpenAICompatibleStreamUsageWithCacheProfile(body, adapters.EndpointChatCompletions, metering.UsageSourceUpstream, profile.CacheUsageProfile)
 		if err != nil {
-			return err
+			return invalidOpenAIChatFunctionToolsDiagnostic("stream", "usage", "invalid_usage", err)
 		}
 		if present {
 			observation.PromptTokens = int64(usage.PromptTokens)
@@ -78,11 +85,14 @@ func validateChatStreamFunctionTools(b Binding, contentType string, reader io.Re
 			observation.CachedTokens = int64(usage.CacheReadTokens)
 		}
 		if prepareErr != nil {
-			return prepareErr
+			return invalidOpenAIChatFunctionToolsDiagnostic("stream", "envelope", "invalid_shape", prepareErr)
 		}
 		facts, err := adapters.ParseFunctionToolStreamFactsForContract(body, contract.StreamContract)
 		if err != nil {
-			return err
+			return invalidOpenAIChatFunctionToolsDiagnostic("stream", "frame_shape", "invalid_shape", err)
+		}
+		if facts.Choice {
+			observation.DeltaCount++
 		}
 		observation.ReportedModel = facts.Model
 		if facts.Finish != "" {
@@ -90,7 +100,27 @@ func validateChatStreamFunctionTools(b Binding, contentType string, reader io.Re
 		}
 		content.WriteString(facts.Content)
 		observation.ReasoningObserved = observation.ReasoningObserved || strings.TrimSpace(facts.Reasoning) != ""
-		return state.Accept(facts, present)
+		if err := state.Accept(facts, present); err != nil {
+			return invalidOpenAIChatFunctionToolsDiagnostic("stream", "stream_state", "invalid_transition", err)
+		}
+		return nil
+	}
+	processEvent := func(event adapters.ChatSSEEvent, ready bool, assembleErr error) error {
+		if assembleErr != nil {
+			member := "invalid_event"
+			switch {
+			case errors.Is(assembleErr, adapters.ErrChatSSEUnsupportedField):
+				member = "unsupported_field"
+			case errors.Is(assembleErr, adapters.ErrChatSSEEventTooLarge):
+				member = "event_too_large"
+			}
+			return invalidOpenAIChatFunctionToolsDiagnostic("stream", "sse", member, assembleErr)
+		}
+		if !ready {
+			return nil
+		}
+		observation.DataEventCount++
+		return process(event.Data)
 	}
 	first := true
 	for scanner.Scan() {
@@ -99,35 +129,35 @@ func validateChatStreamFunctionTools(b Binding, contentType string, reader io.Re
 			line = strings.TrimPrefix(line, "\uFEFF")
 			first = false
 		}
-		event, ready, err := assembler.AcceptLine(line)
-		if err == nil && ready {
-			err = process(event.Data)
-		}
+		event, ready, assembleErr := assembler.AcceptLine(line)
+		err := processEvent(event, ready, assembleErr)
 		observation.ResponseBytes = OpenAIChatFunctionToolsMaxResponseBytes + 1 - int(limited.N)
 		if err != nil {
-			return observation, invalidOpenAIChatFunctionTools("stream", err)
+			return observation, err
 		}
 		if done {
 			break
 		}
 	}
 	if scanner.Err() != nil || limited.N <= 0 {
-		return observation, invalidOpenAIChatFunctionTools("read_or_limit", scanner.Err())
+		member := "read_error"
+		if limited.N <= 0 {
+			member = "response_too_large"
+		}
+		return observation, invalidOpenAIChatFunctionToolsDiagnostic("read_or_limit", "read", member, scanner.Err())
 	}
 	if !done {
-		event, ready, err := assembler.Finish()
-		if err == nil && ready {
-			err = process(event.Data)
-		}
+		event, ready, assembleErr := assembler.Finish()
+		err := processEvent(event, ready, assembleErr)
 		if err != nil {
-			return observation, invalidOpenAIChatFunctionTools("stream", err)
+			return observation, err
 		}
 	}
 	if contract.StreamContract.RequireDone && !done {
-		return observation, invalidOpenAIChatFunctionTools("terminal")
+		return observation, invalidOpenAIChatFunctionToolsDiagnostic("terminal", "terminal", "missing_done", nil)
 	}
 	if err := state.Finish(); err != nil {
-		return observation, invalidOpenAIChatFunctionTools("terminal", err)
+		return observation, invalidOpenAIChatFunctionToolsDiagnostic("terminal", "terminal", "invalid_state", err)
 	}
 	calls := state.Calls()
 	if observation.FinishReason != "tool_calls" || len(calls) != 1 || calls[0].Name != "unirouter_probe_echo" {

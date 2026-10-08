@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { Modal } from '@douyinfe/semi-ui';
+import { Modal, Toast } from '@douyinfe/semi-ui';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CanonicalModelApplication, CanonicalOperation } from '../../../api/modelDeployments';
 import ModelCapabilityQualificationPanel, { isQualifiedCapabilityID } from '../ModelCapabilityQualificationPanel';
@@ -288,6 +288,38 @@ describe('ModelCapabilityQualificationPanel', () => {
 
     expect(await screen.findByText('合同校验：json_unknown_field（成员：provider_extension）')).toBeInTheDocument();
     expect(screen.getByText('provider_stream_contract_invalid')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['model_identity', 'mismatch', '响应模型身份与绑定不一致'],
+    ['sse', 'unsupported_field', 'SSE 包含未支持字段'],
+  ] as const)('shows the safe %s/%s diagnostic in POST and GET', async (stage, member, label) => {
+    let confirmationConfig: any;
+    vi.spyOn(Modal, 'confirm').mockImplementation((config: any) => {
+      confirmationConfig = config;
+      return { destroy: vi.fn(), update: vi.fn() } as any;
+    });
+    const toast = vi.spyOn(Toast, 'error').mockImplementation(() => '' as any);
+    mocks.getQualification.mockResolvedValue({
+      ...baseQualification, state: 'probe_failed', qualification_state: 'probe_failed',
+      latest_probe: {
+        capability_probe_id: 509, success: false, provider_success: true, current: true,
+        status_code: 200, latency_ms: 120, tested_at: '2026-10-08T01:00:00Z',
+        contract_error_code: 'stream', diagnostic_stage: stage, diagnostic_member: member,
+      },
+    });
+    mocks.probeCapability.mockResolvedValue({
+      success: false, provider_success: true, current: true, stale: false,
+      contract_error_code: 'stream', diagnostic_stage: stage, diagnostic_member: member,
+    });
+
+    render(<ModelCapabilityQualificationPanel selected={selected} operation={operation}
+      canManage canApprove gatewayLicensed gatewayRestriction="" />);
+    expect(await screen.findByText(`合同校验：stream（${label}）`)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /运行流式能力探测/u }));
+    await act(async () => { await confirmationConfig.onOk(); });
+    await waitFor(() => expect(toast).toHaveBeenCalledWith(`流式能力探测未通过：stream（${label}）`));
+    toast.mockRestore();
   });
 
   it('explains probe-contract staleness as revalidation rather than provider regression', async () => {

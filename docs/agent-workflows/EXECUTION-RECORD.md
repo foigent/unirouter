@@ -1,5 +1,33 @@
 # Current Execution Record
 
+## DeepSeek Probe 265 stream diagnostic correction, local candidate — 2026-10-08
+
+**Boundary.** Development Probe 265 for deployment 24 `reasoning_effort` recorded HTTP 200 and `provider_success=true`, but failed the stream contract with the public code `stream`; its response summary did not retain the underlying parse stage or original frame. The old shared Function Tools path did not populate `data_event_count` or `delta_count`, so its 0/0 was a default value, not proof of no events. The exact upstream cause remains unknown; alias-model mismatch and an unsupported SSE field are distinct offline reproductions of the same old receipt. No new Provider call, Target action, credential read or Release occurred in this diagnostic batch.
+
+**Local 1.9.5 candidate.** Based on clean source `ef04bb9b`, the shared stream validator now preserves the old error code while classifying only fixed failure stages/reasons; the read projection rechecks the same allowlist. It counts fully assembled `data:` events (including `[DONE]`) and parsed choice/delta frames separately. The POST result, immutable response summary, GET view, OpenAPI and existing admin panel carry the safe classification without a raw frame, response body, supplied model name, tool arguments or credential. This changes diagnosis only: strict model identity, SSE fields, request shape, binding, qualification and accounting stay unchanged. Version 1.9.5 metadata is prepared locally; this is not a commit, published version, deployed Target, or recovery claim for DeepSeek.
+
+**Verification and operating lesson.** Synthetic DeepSeek v2/v1 fixtures distinguish `model_identity/mismatch` from `sse/unsupported_field`, check rejection before/after a parsed frame, malformed JSON, bad usage, success and private-marker exclusion. The migrated local PostgreSQL test `TestExistingFamilyDataProbeDispatchAndPersistenceIntegration` checked pre-Probe GET plus POST/storage/GET consistency, with the retained DeepSeek, Kimi, MiniMax and Qwen fixtures and no skipped subtest; this was local fake-provider HTTP, not actual supplier evidence. An initial optional local run accidentally used the default PostgreSQL 18.3 and is not PG16 evidence. The final required run used the previously approved task-owned cluster `/private/tmp/ur-xi-control-lifecycle-pg-20261006`, port 55437, role `m4`; `PG_VERSION=16`, `/opt/homebrew/opt/postgresql@16/bin/pg_ctl --version` returned 16.14, and read-only SQL returned `server_version_num=160014` with original system ID `7693457567414990508`. It set `REQUIRE_TEST_DATABASE=1` and the explicit `postgres://m4@127.0.0.1:55437/postgres?sslmode=disable` test DSN, so the test helper also refused a missing DSN or non-PG16 server before creating an isolated test database. In the delivery sequence, Publication of a binding must not be assumed to add the existing deployment's explicit capability declaration: read exact qualification before an authorized paid Probe. A source Git bundle verification must be followed by an isolated empty-repository import and `git fsck` before it is treated as transferable; after a long transfer, dependent steps begin only after the transfer exits 0 and the receiver's exact bytes are checked. Safe diagnostics must reach the persisted receipt and readback, not stop at an in-memory validator. These checks do not retroactively recover Probe 265's missing frame.
+
+The exact PG16 verification entry, used only after confirming the task-owned cluster is running, is:
+
+```bash
+set -euo pipefail
+pg16_bin=/opt/homebrew/opt/postgresql@16/bin
+pg16_data=/private/tmp/ur-xi-control-lifecycle-pg-20261006
+pg16_dsn='postgres://m4@127.0.0.1:55437/postgres?sslmode=disable'
+test "$(cat "$pg16_data/PG_VERSION")" = 16
+test "$("$pg16_bin/pg_ctl" --version)" = 'pg_ctl (PostgreSQL) 16.14 (Homebrew)'
+"$pg16_bin/pg_ctl" -D "$pg16_data" status >/dev/null
+test "$("$pg16_bin/psql" -w -h 127.0.0.1 -p 55437 -U m4 -d postgres -Atc "SELECT current_setting('server_version_num') || '|' || system_identifier FROM pg_control_system()")" = '160014|7693457567414990508'
+REQUIRE_TEST_DATABASE=1 TEST_DATABASE_URL="$pg16_dsn" go test -tags=integration ./internal/admin -run '^TestExistingFamilyDataProbeDispatchAndPersistenceIntegration$' -count=1 -v
+```
+
+After the PASS, the same absolute PG16 `pg_ctl` stopped that cluster with `-m fast`; `status` returned no server running, `pg_controldata` retained system ID `7693457567414990508` and reported `shut down`, and port 55437 had no listener. The default PostgreSQL 18 service was not changed.
+
+**Next evidence boundary.** The repository has an offline provider conformance fixture and a paid, evidence-writing Capability Probe endpoint, but no supported online read-only diagnostic entry that uses the existing binding secret in host memory while avoiding qualification, billing and credential writes. A new formal rollout and single same-shape Probe would need separately bounded authorization; any semantic or model-identity contract change depends on that new evidence and independent review.
+
+**Proposed single-Probe operation sheet (not executed or authorized here).** Complete the normal 1.9.5 review, CI, exact artifact and development Target rollout gates first, then read back the deployed binary/version and current Target state. Before spending a call, GET `/api/v1/model-deployments/24/operations/openai.chat_completions.v1/capabilities/reasoning_effort` and confirm the exact DeepSeek Flash v2 Probe binding, deployment declaration, current eligibility and linked credential binding 9; recheck the approved provider-call/fee remainder. Only with a new authorization covering this exact development action, POST once to that capability's `/probes` endpoint with `{"credential_binding_id":9}` using the existing administrator identity. Preserve the returned Probe ID and safe POST result, persisted `response_summary` (`contract_error_code`, `diagnostic_stage`, `diagnostic_member`, both counts and usage), and GET readback; stop after the single attempt without retry or Release activation. If `model_identity/mismatch` is observed, obtain the actual provider/model contract evidence before considering a versioned exact identity change; do not broadly relax validation. This sheet neither grants deployment nor a paid Probe.
+
 ## UR 1.9.3/M125 development Target rollout and original XI recovery — 2026-10-07
 
 **Target identity and upgrade.** The executing operator reported completed
