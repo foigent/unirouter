@@ -4,6 +4,15 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.9.6] - 2026-10-08
+
+### Added
+- Independent, immutable `deepseek.v4.1-flash.api@1.0.0` text Chat Bundle for the current floating `deepseek-flash` upstream identity; historical V4 Flash definitions and Releases remain unchanged.
+- Version 3 of the default-effort streamed-tool Probe uses explicit protocol/reasoning/cache composition and exact upstream/data binding. It keeps thinking enabled/high, strict reported-model/usage/DONE validation, and safe persisted diagnostics; historical Probe v1/v2 semantics remain unchanged.
+
+### Validation boundary
+- This candidate requires local exact-data preflight/runtime and PG16 HTTP publication, qualification, freeze and initial-activation verification. Bundle data grants no Target publication, Provider conformance, pricing, client access or Production readiness.
+
 ## [1.9.5] - 2026-10-08
 
 - 共享流式 Function Tools 能力探测在失败时保留固定的阶段与原因分类，真实记录已组装 data 事件及已解析 delta 数量；POST、持久回执、GET 与管理员页面一致展示安全诊断。原有合同错误码、请求形状、严格模型校验和资格规则保持兼容。
