@@ -3,15 +3,18 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/auth"
+	publication "github.com/uniroute/unirouter/internal/modelcapabilitypublication"
 	"github.com/uniroute/unirouter/internal/modelcapabilityqualification"
 	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/strictjson"
@@ -721,4 +724,160 @@ func TestKimiK3ProbeRequestsUseAlwaysOnReasoningWithoutThinkingToggle(t *testing
 		CapabilityID: modelprofile.CapabilityStreaming,
 	})
 	require.ErrorIs(t, err, errModelCapabilityUnsupported)
+}
+
+// Exercise the real admin execution boundary, not just the lower-level parser.
+// The exact published Bundle supplies every binding; the HTTP doer is synthetic.
+func TestPublishedDeepSeekCompletionProbeReachesResponseValidator(t *testing.T) {
+	wire, err := os.ReadFile("../../capability-bundles/deepseek-v41-flash-provider-completion.json")
+	require.NoError(t, err)
+	bundle, err := publication.DecodeBundleV2(wire)
+	require.NoError(t, err)
+	require.Len(t, bundle.Definitions, 1)
+	definition, err := modelprofile.DecodeDefinition(bundle.Definitions[0])
+	require.NoError(t, err)
+	fixture, err := os.ReadFile("../adapters/testdata/deepseek_provider_completion_v6.sse")
+	require.NoError(t, err)
+	key := []byte("0123456789abcdef01234567")
+	encrypted, err := auth.EncryptKey([]byte("fixture-only"), key)
+	require.NoError(t, err)
+	for _, row := range bundle.BindingDelta {
+		t.Run(row.CapabilityID, func(t *testing.T) {
+			binding, err := modelcapabilityqualification.BindDefinition(modelcapabilityqualification.Binding{
+				OperationID: row.OperationID, CapabilityID: row.CapabilityID,
+				ExecutionProfileID: row.ExecutionProfileID, ExecutionProfileVersion: row.ExecutionProfileVersion,
+				ProtocolProfileID: row.ProtocolProfileID, ProtocolProfileVersion: row.ProtocolProfileVersion,
+				ProbeContractID: row.ProbeContractID, ProbeContractVersion: row.ProbeContractVersion,
+				ExpectedProvider: row.ExpectedProvider, ExpectedUpstreamModel: row.ExpectedUpstreamModel, PublicPath: row.PublicPath,
+			}, definition)
+			require.NoError(t, err)
+			snapshot := modelCapabilitySnapshot{
+				Definition: definition, DataBinding: binding, Provider: row.ExpectedProvider,
+				BaseURL: "https://api.deepseek.com", AdapterType: adapters.TypeOpenAICompatible,
+				AdapterConfig: json.RawMessage(`{"endpoint_path_mode":"base_relative"}`),
+				UpstreamModel: row.ExpectedUpstreamModel, OperationID: row.OperationID, CapabilityID: row.CapabilityID,
+				ExecutionProfileID: row.ExecutionProfileID, ExecutionProfileVersion: row.ExecutionProfileVersion,
+				ProtocolProfileID: row.ProtocolProfileID, ProtocolProfileVersion: row.ProtocolProfileVersion,
+				ExpectedProvider: row.ExpectedProvider, ExpectedUpstreamModel: row.ExpectedUpstreamModel, PublicPath: row.PublicPath,
+				ProbeContractID: row.ProbeContractID, ProbeContractVersion: row.ProbeContractVersion, EncryptedSecret: encrypted,
+			}
+			for _, tc := range []struct {
+				name, stream   string
+				valid          bool
+				status         int
+				transportError bool
+			}{
+				{"complete", string(fixture), true, 200, false},
+				{"missing done", strings.ReplaceAll(string(fixture), "data: [DONE]\n\n", ""), false, 200, false},
+				{"missing usage", strings.Replace(string(fixture), `,"usage":{"prompt_tokens":100,"completion_tokens":20,"total_tokens":120,"prompt_cache_hit_tokens":10,"prompt_cache_miss_tokens":90}`, "", 1), false, 200, false},
+				{"wrong model", strings.ReplaceAll(string(fixture), `"model":"deepseek-flash"`, `"model":"deepseek-v4-flash"`), false, 200, false},
+				{"completion over limit", strings.ReplaceAll(strings.ReplaceAll(string(fixture), `"completion_tokens":20`, `"completion_tokens":2049`), `"total_tokens":120`, `"total_tokens":2149`), false, 200, false},
+				{"http error", string(fixture), false, 401, false},
+				{"transport error", "", false, 0, true},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					h := NewHandler(nil, "fixture-jwt", key, nil)
+					calls := 0
+					h.SetModelDeploymentProbeHTTPDoer(canonicalOperationProbeDoerFunc(func(req *http.Request) (*http.Response, error) {
+						calls++
+						var body map[string]any
+						require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
+						require.Equal(t, "https://api.deepseek.com/chat/completions", req.URL.String())
+						require.Equal(t, "deepseek-flash", body["model"])
+						require.EqualValues(t, 2048, body["max_tokens"])
+						require.Equal(t, true, body["stream"])
+						require.Equal(t, "high", body["reasoning_effort"])
+						if tc.transportError {
+							return nil, fmt.Errorf("fixture transport failure")
+						}
+						return &http.Response{StatusCode: tc.status, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(tc.stream))}, nil
+					}))
+					outcome := h.executeModelCapabilityProbe(t.Context(), snapshot, "fixture-dispatch")
+					require.Equal(t, 1, calls)
+					require.Equal(t, tc.status == 200, outcome.ProviderSuccess)
+					if tc.transportError {
+						require.Equal(t, "provider_request_failed", outcome.ReasonCode)
+						require.True(t, outcome.OutcomeAmbiguous)
+						return
+					}
+					if tc.status != 200 {
+						require.Equal(t, "provider_http_error", outcome.ReasonCode)
+						require.Equal(t, tc.status, outcome.StatusCode)
+						return
+					}
+					require.NotEqual(t, "probe_contract_unsupported", outcome.ReasonCode)
+					require.Equal(t, tc.valid, outcome.ContractSuccess, outcome.ReasonCode)
+					require.Positive(t, outcome.ResponseBytes)
+					if tc.valid {
+						require.Equal(t, "tool_calls", outcome.FinishReason)
+						require.EqualValues(t, 20, outcome.CompletionTokens)
+						require.True(t, outcome.ToolCallObserved)
+						require.True(t, outcome.ReasoningObserved)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestModelCapabilityProbeRejectsUnsupportedResponseBeforeDispatch(t *testing.T) {
+	h := NewHandler(nil, "fixture", []byte("0123456789abcdef01234567"), nil)
+	calls := 0
+	h.SetModelDeploymentProbeHTTPDoer(canonicalOperationProbeDoerFunc(func(*http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	}))
+	for _, contract := range []string{"", "unirouter.capability-probe.unknown.v1"} {
+		outcome := h.executeModelCapabilityProbe(t.Context(), modelCapabilitySnapshot{ProbeContractID: contract}, "fixture-unsupported")
+		require.Equal(t, "probe_contract_unsupported", outcome.ReasonCode)
+		require.Equal(t, "not_started", outcome.DispatchState)
+		require.False(t, outcome.ProviderSuccess)
+		require.False(t, outcome.ContractSuccess)
+		require.False(t, outcome.OutcomeAmbiguous)
+		require.Zero(t, calls)
+	}
+}
+
+func TestPublishedCapabilityBindingsHaveActualResponseValidator(t *testing.T) {
+	paths, err := filepath.Glob("../../capability-bundles/*.json")
+	require.NoError(t, err)
+	require.NotEmpty(t, paths)
+	// Selector-only Bundles intentionally refer to a Definition published by
+	// a predecessor Bundle. Resolve the exact digest across actual sources.
+	definitions := map[string]modelprofile.Definition{}
+	for _, path := range paths {
+		wire, err := os.ReadFile(path)
+		require.NoError(t, err)
+		bundle, err := publication.DecodeBundleV2(wire)
+		require.NoError(t, err)
+		for _, raw := range bundle.Definitions {
+			d, err := modelprofile.DecodeDefinition(raw)
+			require.NoError(t, err)
+			definitions[d.Digest()] = d
+		}
+	}
+	for _, path := range paths {
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			wire, err := os.ReadFile(path)
+			require.NoError(t, err)
+			bundle, err := publication.DecodeBundleV2(wire)
+			require.NoError(t, err)
+			require.NotEmpty(t, bundle.BindingDelta)
+			for _, row := range bundle.BindingDelta {
+				d, ok := definitions[row.ProfileDefinitionDigest]
+				require.True(t, ok, "binding must use its published exact Definition")
+				binding, err := modelcapabilityqualification.BindDefinition(modelcapabilityqualification.Binding{
+					OperationID: row.OperationID, CapabilityID: row.CapabilityID,
+					ExecutionProfileID: row.ExecutionProfileID, ExecutionProfileVersion: row.ExecutionProfileVersion,
+					ProtocolProfileID: row.ProtocolProfileID, ProtocolProfileVersion: row.ProtocolProfileVersion,
+					ProbeContractID: row.ProbeContractID, ProbeContractVersion: row.ProbeContractVersion,
+					ExpectedProvider: row.ExpectedProvider, ExpectedUpstreamModel: row.ExpectedUpstreamModel, PublicPath: row.PublicPath,
+				}, d)
+				require.NoError(t, err)
+				require.NotNil(t, resolveModelCapabilityProbeResponseValidator(modelCapabilitySnapshot{
+					Definition: d, DataBinding: binding, ProbeContractID: row.ProbeContractID, ProbeContractVersion: row.ProbeContractVersion,
+				}), "%s/%s must reach the actual admin response handler", row.ExecutionProfileID, row.CapabilityID)
+			}
+		})
+	}
 }

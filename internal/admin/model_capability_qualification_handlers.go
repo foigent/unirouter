@@ -567,6 +567,10 @@ func (h *Handler) probeCanonicalModelCapability(ctx context.Context, orgID, acto
 }
 
 func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot modelCapabilitySnapshot, requestID string) modelCapabilityProbeOutcome {
+	responseValidator := resolveModelCapabilityProbeResponseValidator(snapshot)
+	if responseValidator == nil {
+		return modelCapabilityProbeOutcome{ReasonCode: "probe_contract_unsupported", DispatchState: "not_started"}
+	}
 	body, err := buildModelCapabilityProbeRequestBody(snapshot)
 	if err != nil {
 		return modelCapabilityProbeOutcome{ReasonCode: "request_build_failed"}
@@ -630,175 +634,217 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 		return outcome
 	}
 	outcome.ProviderSuccess = true
+	outcome = responseValidator(probeCtx, adapter, response, outcome, started)
+	outcome.LatencyMS = time.Since(started).Milliseconds()
+	if outcome.ReasonCode == "" {
+		outcome.ContractSuccess = true
+		outcome.ReasonCode = "ok"
+	}
+	return outcome
+}
+
+// The resolver is the actual response dispatch, not a separate support list.
+// Resolve once before credentials/transport and reuse the selected validator.
+type modelCapabilityProbeResponseValidator func(context.Context, adapters.Adapter, *http.Response, modelCapabilityProbeOutcome, time.Time) modelCapabilityProbeOutcome
+
+func resolveModelCapabilityProbeResponseValidator(snapshot modelCapabilitySnapshot) modelCapabilityProbeResponseValidator {
 	switch snapshot.ProbeContractID {
 	case modelcapabilityqualification.DeepSeekChatSSEProbeContractID:
-		observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatSSEForBinding(
-			modelCapabilityProbeBindingFromSnapshot(snapshot),
-			response.Header.Get("Content-Type"), response.Body,
-		)
-		outcome.ReportedModel = observation.ReportedModel
-		outcome.FinishReason = observation.FinishReason
-		outcome.PromptTokens = observation.PromptTokens
-		outcome.CompletionTokens = observation.CompletionTokens
-		outcome.TotalTokens = observation.TotalTokens
-		outcome.ResponseBytes = observation.ResponseBytes
-		outcome.DataEventCount = observation.DataEventCount
-		outcome.DeltaCount = observation.DeltaCount
-		if validationErr != nil {
-			outcome.LatencyMS = time.Since(started).Milliseconds()
-			outcome.ReasonCode = "provider_stream_contract_invalid"
-			outcome.ContractErrorCode = modelcapabilityqualification.DeepSeekSSEErrorCode(validationErr)
+		return func(probeCtx context.Context, adapter adapters.Adapter, response *http.Response, outcome modelCapabilityProbeOutcome, started time.Time) modelCapabilityProbeOutcome {
+			observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatSSEForBinding(
+				modelCapabilityProbeBindingFromSnapshot(snapshot),
+				response.Header.Get("Content-Type"), response.Body,
+			)
+			outcome.ReportedModel = observation.ReportedModel
+			outcome.FinishReason = observation.FinishReason
+			outcome.PromptTokens = observation.PromptTokens
+			outcome.CompletionTokens = observation.CompletionTokens
+			outcome.TotalTokens = observation.TotalTokens
+			outcome.ResponseBytes = observation.ResponseBytes
+			outcome.DataEventCount = observation.DataEventCount
+			outcome.DeltaCount = observation.DeltaCount
+			if validationErr != nil {
+				outcome.LatencyMS = time.Since(started).Milliseconds()
+				outcome.ReasonCode = "provider_stream_contract_invalid"
+				outcome.ContractErrorCode = modelcapabilityqualification.DeepSeekSSEErrorCode(validationErr)
+				return outcome
+			}
 			return outcome
 		}
 	case modelcapabilityqualification.DeepSeekChatReasoningProbeContractID,
 		modelcapabilityqualification.DeepSeekChatReasoningEffortProbeContractID:
-		observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatReasoningForModel(
-			snapshot.ProbeContractID, snapshot.ProbeContractVersion, snapshot.ExpectedUpstreamModel,
-			response.Header.Get("Content-Type"), response.Body,
-		)
-		outcome.ReportedModel = observation.ReportedModel
-		outcome.FinishReason = observation.FinishReason
-		outcome.PromptTokens = observation.PromptTokens
-		outcome.CompletionTokens = observation.CompletionTokens
-		outcome.TotalTokens = observation.TotalTokens
-		outcome.ResponseBytes = observation.ResponseBytes
-		outcome.ReasoningObserved = observation.ReasoningSeen
-		if validationErr != nil {
-			outcome.LatencyMS = time.Since(started).Milliseconds()
-			outcome.ReasonCode = "provider_reasoning_contract_invalid"
-			outcome.ContractErrorCode = modelcapabilityqualification.DeepSeekReasoningErrorCode(validationErr)
+		return func(probeCtx context.Context, adapter adapters.Adapter, response *http.Response, outcome modelCapabilityProbeOutcome, started time.Time) modelCapabilityProbeOutcome {
+			observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatReasoningForModel(
+				snapshot.ProbeContractID, snapshot.ProbeContractVersion, snapshot.ExpectedUpstreamModel,
+				response.Header.Get("Content-Type"), response.Body,
+			)
+			outcome.ReportedModel = observation.ReportedModel
+			outcome.FinishReason = observation.FinishReason
+			outcome.PromptTokens = observation.PromptTokens
+			outcome.CompletionTokens = observation.CompletionTokens
+			outcome.TotalTokens = observation.TotalTokens
+			outcome.ResponseBytes = observation.ResponseBytes
+			outcome.ReasoningObserved = observation.ReasoningSeen
+			if validationErr != nil {
+				outcome.LatencyMS = time.Since(started).Milliseconds()
+				outcome.ReasonCode = "provider_reasoning_contract_invalid"
+				outcome.ContractErrorCode = modelcapabilityqualification.DeepSeekReasoningErrorCode(validationErr)
+				return outcome
+			}
 			return outcome
 		}
 	case modelcapabilityqualification.DeepSeekChatFunctionToolsProbeContractID:
-		observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatFunctionToolsForModel(
-			snapshot.ProbeContractID, snapshot.ProbeContractVersion, snapshot.ExpectedUpstreamModel,
-			response.Header.Get("Content-Type"), response.Body,
-		)
-		outcome.ReportedModel = observation.ReportedModel
-		outcome.FinishReason = observation.FinishReason
-		outcome.PromptTokens = observation.PromptTokens
-		outcome.CompletionTokens = observation.CompletionTokens
-		outcome.TotalTokens = observation.TotalTokens
-		outcome.ResponseBytes = observation.ResponseBytes
-		outcome.ToolCallObserved = observation.ToolCallObserved
-		if validationErr != nil {
-			outcome.LatencyMS = time.Since(started).Milliseconds()
-			outcome.ReasonCode = "provider_function_tools_contract_invalid"
-			outcome.ContractErrorCode = modelcapabilityqualification.DeepSeekCoreErrorCode(validationErr)
+		return func(probeCtx context.Context, adapter adapters.Adapter, response *http.Response, outcome modelCapabilityProbeOutcome, started time.Time) modelCapabilityProbeOutcome {
+			observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatFunctionToolsForModel(
+				snapshot.ProbeContractID, snapshot.ProbeContractVersion, snapshot.ExpectedUpstreamModel,
+				response.Header.Get("Content-Type"), response.Body,
+			)
+			outcome.ReportedModel = observation.ReportedModel
+			outcome.FinishReason = observation.FinishReason
+			outcome.PromptTokens = observation.PromptTokens
+			outcome.CompletionTokens = observation.CompletionTokens
+			outcome.TotalTokens = observation.TotalTokens
+			outcome.ResponseBytes = observation.ResponseBytes
+			outcome.ToolCallObserved = observation.ToolCallObserved
+			if validationErr != nil {
+				outcome.LatencyMS = time.Since(started).Milliseconds()
+				outcome.ReasonCode = "provider_function_tools_contract_invalid"
+				outcome.ContractErrorCode = modelcapabilityqualification.DeepSeekCoreErrorCode(validationErr)
+				return outcome
+			}
 			return outcome
 		}
 	case modelcapabilityqualification.DeepSeekChatJSONObjectProbeContractID:
-		observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatJSONObjectForModel(
-			snapshot.ProbeContractID, snapshot.ProbeContractVersion, snapshot.ExpectedUpstreamModel,
-			response.Header.Get("Content-Type"), response.Body,
-		)
-		outcome.ReportedModel = observation.ReportedModel
-		outcome.FinishReason = observation.FinishReason
-		outcome.PromptTokens = observation.PromptTokens
-		outcome.CompletionTokens = observation.CompletionTokens
-		outcome.TotalTokens = observation.TotalTokens
-		outcome.ResponseBytes = observation.ResponseBytes
-		outcome.StructuredObserved = observation.StructuredOutputObserved
-		if validationErr != nil {
-			outcome.LatencyMS = time.Since(started).Milliseconds()
-			outcome.ReasonCode = "provider_json_object_contract_invalid"
-			outcome.ContractErrorCode = modelcapabilityqualification.DeepSeekCoreErrorCode(validationErr)
+		return func(probeCtx context.Context, adapter adapters.Adapter, response *http.Response, outcome modelCapabilityProbeOutcome, started time.Time) modelCapabilityProbeOutcome {
+			observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatJSONObjectForModel(
+				snapshot.ProbeContractID, snapshot.ProbeContractVersion, snapshot.ExpectedUpstreamModel,
+				response.Header.Get("Content-Type"), response.Body,
+			)
+			outcome.ReportedModel = observation.ReportedModel
+			outcome.FinishReason = observation.FinishReason
+			outcome.PromptTokens = observation.PromptTokens
+			outcome.CompletionTokens = observation.CompletionTokens
+			outcome.TotalTokens = observation.TotalTokens
+			outcome.ResponseBytes = observation.ResponseBytes
+			outcome.StructuredObserved = observation.StructuredOutputObserved
+			if validationErr != nil {
+				outcome.LatencyMS = time.Since(started).Milliseconds()
+				outcome.ReasonCode = "provider_json_object_contract_invalid"
+				outcome.ContractErrorCode = modelcapabilityqualification.DeepSeekCoreErrorCode(validationErr)
+				return outcome
+			}
 			return outcome
 		}
 	case modelcapabilityqualification.KimiChatSSEProbeContractID:
-		observation, validationErr := modelcapabilityqualification.ValidateKimiChatSSEForBinding(
-			modelCapabilityProbeBindingFromSnapshot(snapshot),
-			response.Header.Get("Content-Type"), response.Body,
-		)
-		outcome.ReportedModel = observation.ReportedModel
-		outcome.FinishReason = observation.FinishReason
-		outcome.PromptTokens = observation.PromptTokens
-		outcome.CompletionTokens = observation.CompletionTokens
-		outcome.TotalTokens = observation.TotalTokens
-		outcome.ResponseBytes = observation.ResponseBytes
-		outcome.DataEventCount = observation.DataEventCount
-		outcome.DeltaCount = observation.DeltaCount
-		if validationErr != nil {
-			outcome.LatencyMS = time.Since(started).Milliseconds()
-			outcome.ReasonCode = "provider_stream_contract_invalid"
-			applyKimiChatDiagnostic(&outcome, validationErr)
+		return func(probeCtx context.Context, adapter adapters.Adapter, response *http.Response, outcome modelCapabilityProbeOutcome, started time.Time) modelCapabilityProbeOutcome {
+			observation, validationErr := modelcapabilityqualification.ValidateKimiChatSSEForBinding(
+				modelCapabilityProbeBindingFromSnapshot(snapshot),
+				response.Header.Get("Content-Type"), response.Body,
+			)
+			outcome.ReportedModel = observation.ReportedModel
+			outcome.FinishReason = observation.FinishReason
+			outcome.PromptTokens = observation.PromptTokens
+			outcome.CompletionTokens = observation.CompletionTokens
+			outcome.TotalTokens = observation.TotalTokens
+			outcome.ResponseBytes = observation.ResponseBytes
+			outcome.DataEventCount = observation.DataEventCount
+			outcome.DeltaCount = observation.DeltaCount
+			if validationErr != nil {
+				outcome.LatencyMS = time.Since(started).Milliseconds()
+				outcome.ReasonCode = "provider_stream_contract_invalid"
+				applyKimiChatDiagnostic(&outcome, validationErr)
+				return outcome
+			}
 			return outcome
 		}
 	case modelcapabilityqualification.KimiChatReasoningProbeContractID,
 		modelcapabilityqualification.KimiChatReasoningEffortProbeContractID:
-		observation, validationErr := modelcapabilityqualification.ValidateKimiChatReasoningForBinding(
-			modelCapabilityProbeBindingFromSnapshot(snapshot), response.Header.Get("Content-Type"), response.Body,
-		)
-		outcome.ReportedModel = observation.ReportedModel
-		outcome.FinishReason = observation.FinishReason
-		outcome.PromptTokens = observation.PromptTokens
-		outcome.CompletionTokens = observation.CompletionTokens
-		outcome.TotalTokens = observation.TotalTokens
-		outcome.ResponseBytes = observation.ResponseBytes
-		outcome.ReasoningObserved = observation.ReasoningObserved
-		if validationErr != nil {
-			outcome.LatencyMS = time.Since(started).Milliseconds()
-			outcome.ReasonCode = "provider_reasoning_contract_invalid"
-			applyKimiChatDiagnostic(&outcome, validationErr)
+		return func(probeCtx context.Context, adapter adapters.Adapter, response *http.Response, outcome modelCapabilityProbeOutcome, started time.Time) modelCapabilityProbeOutcome {
+			observation, validationErr := modelcapabilityqualification.ValidateKimiChatReasoningForBinding(
+				modelCapabilityProbeBindingFromSnapshot(snapshot), response.Header.Get("Content-Type"), response.Body,
+			)
+			outcome.ReportedModel = observation.ReportedModel
+			outcome.FinishReason = observation.FinishReason
+			outcome.PromptTokens = observation.PromptTokens
+			outcome.CompletionTokens = observation.CompletionTokens
+			outcome.TotalTokens = observation.TotalTokens
+			outcome.ResponseBytes = observation.ResponseBytes
+			outcome.ReasoningObserved = observation.ReasoningObserved
+			if validationErr != nil {
+				outcome.LatencyMS = time.Since(started).Milliseconds()
+				outcome.ReasonCode = "provider_reasoning_contract_invalid"
+				applyKimiChatDiagnostic(&outcome, validationErr)
+				return outcome
+			}
 			return outcome
 		}
 	case modelcapabilityqualification.KimiChatFunctionToolsProbeContractID:
-		observation, validationErr := modelcapabilityqualification.ValidateKimiChatFunctionToolsForBinding(
-			modelCapabilityProbeBindingFromSnapshot(snapshot), response.Header.Get("Content-Type"), response.Body,
-		)
-		outcome.ReportedModel = observation.ReportedModel
-		outcome.FinishReason = observation.FinishReason
-		outcome.PromptTokens = observation.PromptTokens
-		outcome.CompletionTokens = observation.CompletionTokens
-		outcome.TotalTokens = observation.TotalTokens
-		outcome.ResponseBytes = observation.ResponseBytes
-		outcome.ToolCallObserved = observation.ToolCallObserved
-		if validationErr != nil {
-			outcome.LatencyMS = time.Since(started).Milliseconds()
-			outcome.ReasonCode = "provider_function_tools_contract_invalid"
-			applyKimiChatDiagnostic(&outcome, validationErr)
+		return func(probeCtx context.Context, adapter adapters.Adapter, response *http.Response, outcome modelCapabilityProbeOutcome, started time.Time) modelCapabilityProbeOutcome {
+			observation, validationErr := modelcapabilityqualification.ValidateKimiChatFunctionToolsForBinding(
+				modelCapabilityProbeBindingFromSnapshot(snapshot), response.Header.Get("Content-Type"), response.Body,
+			)
+			outcome.ReportedModel = observation.ReportedModel
+			outcome.FinishReason = observation.FinishReason
+			outcome.PromptTokens = observation.PromptTokens
+			outcome.CompletionTokens = observation.CompletionTokens
+			outcome.TotalTokens = observation.TotalTokens
+			outcome.ResponseBytes = observation.ResponseBytes
+			outcome.ToolCallObserved = observation.ToolCallObserved
+			if validationErr != nil {
+				outcome.LatencyMS = time.Since(started).Milliseconds()
+				outcome.ReasonCode = "provider_function_tools_contract_invalid"
+				applyKimiChatDiagnostic(&outcome, validationErr)
+				return outcome
+			}
 			return outcome
 		}
 	case modelcapabilityqualification.KimiChatJSONObjectProbeContractID:
-		observation, validationErr := modelcapabilityqualification.ValidateKimiChatJSONObjectForBinding(
-			modelCapabilityProbeBindingFromSnapshot(snapshot), response.Header.Get("Content-Type"), response.Body,
-		)
-		outcome.ReportedModel = observation.ReportedModel
-		outcome.FinishReason = observation.FinishReason
-		outcome.PromptTokens = observation.PromptTokens
-		outcome.CompletionTokens = observation.CompletionTokens
-		outcome.TotalTokens = observation.TotalTokens
-		outcome.ResponseBytes = observation.ResponseBytes
-		outcome.StructuredObserved = observation.StructuredOutputObserved
-		if validationErr != nil {
-			outcome.LatencyMS = time.Since(started).Milliseconds()
-			outcome.ReasonCode = "provider_json_object_contract_invalid"
-			applyKimiChatDiagnostic(&outcome, validationErr)
+		return func(probeCtx context.Context, adapter adapters.Adapter, response *http.Response, outcome modelCapabilityProbeOutcome, started time.Time) modelCapabilityProbeOutcome {
+			observation, validationErr := modelcapabilityqualification.ValidateKimiChatJSONObjectForBinding(
+				modelCapabilityProbeBindingFromSnapshot(snapshot), response.Header.Get("Content-Type"), response.Body,
+			)
+			outcome.ReportedModel = observation.ReportedModel
+			outcome.FinishReason = observation.FinishReason
+			outcome.PromptTokens = observation.PromptTokens
+			outcome.CompletionTokens = observation.CompletionTokens
+			outcome.TotalTokens = observation.TotalTokens
+			outcome.ResponseBytes = observation.ResponseBytes
+			outcome.StructuredObserved = observation.StructuredOutputObserved
+			if validationErr != nil {
+				outcome.LatencyMS = time.Since(started).Milliseconds()
+				outcome.ReasonCode = "provider_json_object_contract_invalid"
+				applyKimiChatDiagnostic(&outcome, validationErr)
+				return outcome
+			}
 			return outcome
 		}
 	case modelcapabilityqualification.MiniMaxM27StreamFunctionToolsProbeContractID, modelcapabilityqualification.GLMStreamFunctionToolsProbeContractID,
 		modelcapabilityqualification.DeepSeekStreamFunctionToolsProbeContractID, modelcapabilityqualification.KimiStreamFunctionToolsProbeContractID,
-		modelcapabilityqualification.MiniMaxM3StreamFunctionToolsProbeContractID, modelcapabilityqualification.QwenStreamFunctionToolsProbeContractID, modelcapabilityqualification.QwenProviderCompletionProbeContractID:
-		observation, validationErr := modelcapabilityqualification.ValidateOpenAIChatStreamFunctionToolsForBinding(modelCapabilityProbeBindingFromSnapshot(snapshot), response.Header.Get("Content-Type"), response.Body)
-		outcome.ReportedModel = observation.ReportedModel
-		outcome.FinishReason = observation.FinishReason
-		outcome.PromptTokens = observation.PromptTokens
-		outcome.CompletionTokens = observation.CompletionTokens
-		outcome.TotalTokens = observation.TotalTokens
-		outcome.CacheReadCounterObserved = observation.CacheReadCounterObserved
-		outcome.CachedTokens = observation.CachedTokens
-		outcome.ResponseBytes = observation.ResponseBytes
-		outcome.DataEventCount = observation.DataEventCount
-		outcome.DeltaCount = observation.DeltaCount
-		outcome.ReasoningObserved = observation.ReasoningObserved
-		outcome.ToolCallObserved = observation.ToolCallObserved
-		if validationErr != nil {
-			outcome.LatencyMS = time.Since(started).Milliseconds()
-			outcome.ReasonCode = "provider_function_tools_contract_invalid"
-			outcome.ContractErrorCode = modelcapabilityqualification.OpenAIChatFunctionToolsErrorCode(validationErr)
-			diagnostic := modelcapabilityqualification.DescribeOpenAIChatFunctionToolsDiagnostic(validationErr)
-			outcome.DiagnosticStage = diagnostic.Stage
-			outcome.DiagnosticMember = diagnostic.Member
+		modelcapabilityqualification.MiniMaxM3StreamFunctionToolsProbeContractID, modelcapabilityqualification.QwenStreamFunctionToolsProbeContractID, modelcapabilityqualification.QwenProviderCompletionProbeContractID,
+		modelcapabilityqualification.DeepSeekProviderCompletionProbeContractID:
+		return func(probeCtx context.Context, adapter adapters.Adapter, response *http.Response, outcome modelCapabilityProbeOutcome, started time.Time) modelCapabilityProbeOutcome {
+			observation, validationErr := modelcapabilityqualification.ValidateOpenAIChatStreamFunctionToolsForBinding(modelCapabilityProbeBindingFromSnapshot(snapshot), response.Header.Get("Content-Type"), response.Body)
+			outcome.ReportedModel = observation.ReportedModel
+			outcome.FinishReason = observation.FinishReason
+			outcome.PromptTokens = observation.PromptTokens
+			outcome.CompletionTokens = observation.CompletionTokens
+			outcome.TotalTokens = observation.TotalTokens
+			outcome.CacheReadCounterObserved = observation.CacheReadCounterObserved
+			outcome.CachedTokens = observation.CachedTokens
+			outcome.ResponseBytes = observation.ResponseBytes
+			outcome.DataEventCount = observation.DataEventCount
+			outcome.DeltaCount = observation.DeltaCount
+			outcome.ReasoningObserved = observation.ReasoningObserved
+			outcome.ToolCallObserved = observation.ToolCallObserved
+			if validationErr != nil {
+				outcome.LatencyMS = time.Since(started).Milliseconds()
+				outcome.ReasonCode = "provider_function_tools_contract_invalid"
+				outcome.ContractErrorCode = modelcapabilityqualification.OpenAIChatFunctionToolsErrorCode(validationErr)
+				diagnostic := modelcapabilityqualification.DescribeOpenAIChatFunctionToolsDiagnostic(validationErr)
+				outcome.DiagnosticStage = diagnostic.Stage
+				outcome.DiagnosticMember = diagnostic.Member
+				return outcome
+			}
 			return outcome
 		}
 	case modelcapabilityqualification.MiniMaxChatFunctionToolsProbeContractID,
@@ -806,44 +852,41 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 		modelcapabilityqualification.MiniMaxPAYGM2ChatFunctionToolsProbeContractID,
 		modelcapabilityqualification.GLMChatFunctionToolsProbeContractID,
 		modelcapabilityqualification.GLMToggleChatFunctionToolsProbeContractID:
-		normalized, normalizeErr := normalizeOpenAIChatFunctionToolsProbeResponse(
-			probeCtx, adapter, snapshot, response,
-		)
-		if normalizeErr != nil {
-			outcome.LatencyMS = time.Since(started).Milliseconds()
-			outcome.ReasonCode = "provider_function_tools_contract_invalid"
-			outcome.ContractErrorCode = "delivery_shape"
-			applyCapabilityNormalizationDiagnostic(&outcome, normalizeErr)
-			return outcome
-		}
-		observation, validationErr := modelcapabilityqualification.ValidateNormalizedOpenAIChatFunctionToolsForBinding(
-			modelCapabilityProbeBindingFromSnapshot(snapshot), normalized.Header.Get("Content-Type"), bytes.NewReader(normalized.Body),
-		)
-		outcome.ReportedModel = observation.ReportedModel
-		outcome.FinishReason = observation.FinishReason
-		outcome.PromptTokens = observation.PromptTokens
-		outcome.CompletionTokens = observation.CompletionTokens
-		outcome.TotalTokens = observation.TotalTokens
-		outcome.CacheReadCounterObserved = observation.CacheReadCounterObserved
-		outcome.CachedTokens = observation.CachedTokens
-		outcome.ResponseBytes = observation.ResponseBytes
-		outcome.ReasoningObserved = observation.ReasoningObserved
-		outcome.ToolCallObserved = observation.ToolCallObserved
-		if validationErr != nil {
-			outcome.LatencyMS = time.Since(started).Milliseconds()
-			outcome.ReasonCode = "provider_function_tools_contract_invalid"
-			outcome.ContractErrorCode = modelcapabilityqualification.OpenAIChatFunctionToolsErrorCode(validationErr)
+		return func(probeCtx context.Context, adapter adapters.Adapter, response *http.Response, outcome modelCapabilityProbeOutcome, started time.Time) modelCapabilityProbeOutcome {
+			normalized, normalizeErr := normalizeOpenAIChatFunctionToolsProbeResponse(
+				probeCtx, adapter, snapshot, response,
+			)
+			if normalizeErr != nil {
+				outcome.LatencyMS = time.Since(started).Milliseconds()
+				outcome.ReasonCode = "provider_function_tools_contract_invalid"
+				outcome.ContractErrorCode = "delivery_shape"
+				applyCapabilityNormalizationDiagnostic(&outcome, normalizeErr)
+				return outcome
+			}
+			observation, validationErr := modelcapabilityqualification.ValidateNormalizedOpenAIChatFunctionToolsForBinding(
+				modelCapabilityProbeBindingFromSnapshot(snapshot), normalized.Header.Get("Content-Type"), bytes.NewReader(normalized.Body),
+			)
+			outcome.ReportedModel = observation.ReportedModel
+			outcome.FinishReason = observation.FinishReason
+			outcome.PromptTokens = observation.PromptTokens
+			outcome.CompletionTokens = observation.CompletionTokens
+			outcome.TotalTokens = observation.TotalTokens
+			outcome.CacheReadCounterObserved = observation.CacheReadCounterObserved
+			outcome.CachedTokens = observation.CachedTokens
+			outcome.ResponseBytes = observation.ResponseBytes
+			outcome.ReasoningObserved = observation.ReasoningObserved
+			outcome.ToolCallObserved = observation.ToolCallObserved
+			if validationErr != nil {
+				outcome.LatencyMS = time.Since(started).Milliseconds()
+				outcome.ReasonCode = "provider_function_tools_contract_invalid"
+				outcome.ContractErrorCode = modelcapabilityqualification.OpenAIChatFunctionToolsErrorCode(validationErr)
+				return outcome
+			}
 			return outcome
 		}
 	default:
-		outcome.LatencyMS = time.Since(started).Milliseconds()
-		outcome.ReasonCode = "probe_contract_unsupported"
-		return outcome
+		return nil
 	}
-	outcome.LatencyMS = time.Since(started).Milliseconds()
-	outcome.ContractSuccess = true
-	outcome.ReasonCode = "ok"
-	return outcome
 }
 
 func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]byte, error) {

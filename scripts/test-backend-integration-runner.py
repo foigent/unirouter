@@ -92,6 +92,9 @@ class RunnerTests(unittest.TestCase):
             "TestXInsightBindExistingFactsAndContentIntegration",
             "TestScopedPolicyHTTPEnterpriseAndProjectCASIntegration",
             "TestM121ActiveSourceBridgeMainStartup",
+            "TestExistingFamilyDataProbeDispatchAndPersistenceIntegration",
+            "TestSharedCapabilityProbeGroupAtomicFactsAndIndependentApprovalsIntegration",
+            "TestCurrentDeepSeekFlashDataFirstHTTPPublicationQualificationActivationIntegration",
             "TestProviderCompletionRelayHoldSurvivesRecoveryIntegration",
             "TestStreamCounterVersionPinRecoveryAndReplay",
         ):
