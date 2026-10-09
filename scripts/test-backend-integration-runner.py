@@ -92,6 +92,8 @@ class RunnerTests(unittest.TestCase):
             "TestXInsightBindExistingFactsAndContentIntegration",
             "TestScopedPolicyHTTPEnterpriseAndProjectCASIntegration",
             "TestM121ActiveSourceBridgeMainStartup",
+            "TestProviderCompletionRelayHoldSurvivesRecoveryIntegration",
+            "TestStreamCounterVersionPinRecoveryAndReplay",
         ):
             with self.subTest(name=name):
                 self.assertIsNotNone(re.fullmatch(pattern, name))

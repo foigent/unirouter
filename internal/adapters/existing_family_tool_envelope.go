@@ -38,7 +38,7 @@ func NewToolStreamEnvelope(protocol, provider, model, cache string) (*ToolStream
 			return nil, fmt.Errorf("MiniMax tool stream component mismatch")
 		}
 		return &ToolStreamEnvelope{model: model, miniMaxTier: true}, nil
-	case "protocol.deepseek-openai-chat.v5":
+	case "protocol.deepseek-openai-chat.v5", modelprofile.DeepSeekProviderCompletionProtocol:
 		if provider != "deepseek" || cache != "cache-usage.deepseek-v4.v1" {
 			return nil, fmt.Errorf("DeepSeek tool stream component mismatch")
 		}

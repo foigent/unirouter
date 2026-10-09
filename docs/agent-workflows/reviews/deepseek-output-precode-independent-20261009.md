@@ -1,0 +1,16 @@
+# DeepSeek output correction — independent pre-code record
+
+- Reviewer: `/root/deepseek_precode_review`, independent from implementation. This is an actual existing agent, not an alias for the overall owner. `collaboration.list_agents` in this task returned its completed final review, explicitly bound to `c9bbaa1` and design SHA-256 `6eef0751…`, with the four findings recorded below. No new agent was started for this readback. The execution owner persists this record from that returned review; this is not a self-review.
+- Object: `c9bbaa106fe24e2468963eb5165a91d1654062d7` / tree `fa6b2163da5812f79ef358fca12151a82faa21eb`, plus the bounded diagnosis/design in the original checkout's `EXECUTION-RECORD.md` (whole-file SHA-256 at review: `6eef07516bda7ec5ef9b651d094a949d5e3fb370aff9ae46ff5bfa956184384e`). Milestone: local explicit DeepSeek output successor candidate, prior to coding.
+- Invariants: old DeepSeek v5/Qwen/Release semantics stay fixed; new DeepSeek deviation0, same public/request2048; valid terminal usage, finish, complete tools and DONE; existing partial estimates, zero-debit observation and known-overrun quarantine.
+- Non-goals: final-only charging, new missing-usage holds, billing/auth production changes, formal Publication, credentials, paid Provider requests, CI dispatch, push/merge, Target or Production changes.
+- Checks: independent read-only review of output enforcement, protocol shape, runtime reservation/preparation, exact envelope selection, shared function-tool parser/state and Probe/data binding design. No Provider or PG test was run by the reviewer; no test execution is attributed to this review. The owner's baseline focused regression was separate evidence.
+
+## Returned findings and execution-owner adjudication
+
+1. `validated_required`: install a distinct v6 protocol/Profile revision, zero deviation and sole `max_tokens` with minimum1. Replace Qwen-specific diagnostics with the selected field/deviation without changing Qwen output. Accepted and implemented.
+2. `validated_required`: select the exact DeepSeek preparer for v6 and share its final-choice/usage shape rule across Runtime/Probe; reuse strict existing tool-state/DONE validation. Accepted and implemented. The v4/1.5 compatibility EOF exception does not select the original current Flash v5 or the successor v6; no relay EOF policy was changed.
+3. `validated_required`: new exact six-capability Probe identity/bindings, same lineage and exact predecessor; retain the v1/v2/v3 historical Probe and old Bundle/Release. Accepted and implemented, with derived runtime-support tests.
+4. `rejected`: new final-only charging, missing-usage Key holds and a reservation-as-charge-ceiling interpretation. These are outside the minimum correction; no corresponding production changes were made.
+
+Conclusion: no `validated_blocker` to bounded local implementation. Actual PG financial/recovery, CI, Artifact, Target and Provider outcomes remain unverified. The overall owner separately performed a read-only design review in chat `01a0a68e-5141-7482-a9b1-d426cb53fec7` and accepted this same boundary; its later requested real Bundle identity test refinement is incorporated. Candidate code closing review belongs to the overall owner, not this pre-code record.

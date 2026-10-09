@@ -74,7 +74,7 @@ func TestKimiToolEnvelopeRejectsConflictingUsageAndPostTerminalData(t *testing.T
 }
 
 func TestExactToolEnvelopeMetadataDoesNotWidenHistoricalParsers(t *testing.T) {
-	for _, protocol := range []string{"protocol.deepseek-openai-chat.v5", "protocol.kimi-openai-chat.v6"} {
+	for _, protocol := range []string{"protocol.deepseek-openai-chat.v5", modelprofile.DeepSeekProviderCompletionProtocol, "protocol.kimi-openai-chat.v6"} {
 		provider, cache := "deepseek", "cache-usage.deepseek-v4.v1"
 		if strings.Contains(protocol, "kimi") {
 			provider, cache = "kimi", kimiChatCacheUsageProfile

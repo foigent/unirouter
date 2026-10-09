@@ -15,7 +15,7 @@ func SharedStreamProbeContract(b Binding) (string, error) {
 		_, err = BuildMiniMaxM27StreamFunctionToolsProbeRequest(b)
 	case GLMStreamFunctionToolsProbeContractID:
 		_, err = BuildGLMStreamFunctionToolsProbeRequest(b)
-	case DeepSeekStreamFunctionToolsProbeContractID, KimiStreamFunctionToolsProbeContractID, MiniMaxM3StreamFunctionToolsProbeContractID:
+	case DeepSeekProviderCompletionProbeContractID, DeepSeekStreamFunctionToolsProbeContractID, KimiStreamFunctionToolsProbeContractID, MiniMaxM3StreamFunctionToolsProbeContractID:
 		_, err = BuildExistingFamilyStreamFunctionToolsProbeRequest(b)
 	case QwenStreamFunctionToolsProbeContractID, QwenProviderCompletionProbeContractID:
 		_, err = BuildQwenStreamFunctionToolsProbeRequest(b)

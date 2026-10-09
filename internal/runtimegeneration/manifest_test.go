@@ -175,3 +175,21 @@ func TestPreDispatchLeaseRequiresV2Implementation(t *testing.T) {
 	old.SchemaHeads = slices.DeleteFunc(slices.Clone(m.SchemaHeads), func(head string) bool { return head == schemaauthority.PreDispatchExpandHead })
 	require.ErrorIs(t, requireLeaseManifest(old, schemaauthority.PreDispatchExpandHead), ErrIncompatible)
 }
+
+func TestDeepSeekProviderCompletionRequiresSuccessorChatAndProbe(t *testing.T) {
+	requirements := []modelprofile.ImplementationReference{
+		{Kind: "chat", ID: modelprofile.DeepSeekProviderCompletionProtocol},
+		{Kind: "capability_probe", ID: "unirouter.capability-probe.deepseek-chat-stream-tools.v2@1.0.0"},
+	}
+	m := CurrentManifest(schemaauthority.SupportedSchemaHeads())
+	require.NoError(t, m.Require(schemaauthority.LatestSupportedMigration, requirements))
+	for _, missing := range requirements {
+		old := m
+		old.Implementations = slices.DeleteFunc(slices.Clone(m.Implementations), func(ref modelprofile.ImplementationReference) bool { return ref == missing })
+		require.Error(t, old.Require(schemaauthority.LatestSupportedMigration, requirements))
+		require.NoError(t, old.Require(schemaauthority.LatestSupportedMigration, []modelprofile.ImplementationReference{
+			{Kind: "chat", ID: "protocol.deepseek-openai-chat.v5"},
+			{Kind: "capability_probe", ID: "unirouter.capability-probe.deepseek-chat-stream-tools.v1@3.0.0"},
+		}))
+	}
+}
