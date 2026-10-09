@@ -419,8 +419,9 @@ func (relay *Relay) prepareModelExecutionPlan(
 		return nil, err
 	}
 	if limits.OutputEnforcement.Accounting != "" {
+		protocolContract, _ := modelprofile.ResolveChatProtocolContract(plan.ModelProtocolProfile)
 		profileEvidence.ProviderRequestNormalizations = append(profileEvidence.ProviderRequestNormalizations,
-			fmt.Sprintf("max_completion_tokens=%d->%d:provider_deviation_10", limits.EstimatedOutputTokens, limits.ProviderOutputLimit))
+			fmt.Sprintf("%s=%d->%d:provider_deviation_%d", protocolContract.OutputLimitField, limits.EstimatedOutputTokens, limits.ProviderOutputLimit, limits.OutputEnforcement.ProviderDeviationTokens))
 	}
 	return &preparedModelExecutionBatch{
 		plan: plan, limits: limits, profileEvidence: profileEvidence,

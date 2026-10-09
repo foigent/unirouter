@@ -4,6 +4,12 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.9.7] - 2026-10-09
+
+- 增加显式 DeepSeek Chat v6 与未发布的 `deepseek.v4.1-flash.api@1.1.0` 后继 Bundle 候选，复用已有 provider-final 输出机制。冻结额度 B 原样发为 `max_tokens`，deviation 为 0；解码字节采用资源保护上限，避免将 UTF-8 字节当作供应商 completion tokens 截断。
+- Runtime 与新 Probe v2 共用严格终态校验：最终空 choice 带有效 finish 与 usage、完整工具参数及 `[DONE]`。新 Probe 保持 thinking enabled/high 和 `max_tokens=2048`；旧 DeepSeek v5、Qwen、历史 Bundle、Release、部分流估算结算及成本观察规则保持原合同。
+- 本条仅为本地候选；不表示 CI、正式 Publication、目标升级、真实供应商调用或生产验收已完成。
+
 ## [1.9.6] - 2026-10-08
 
 ### Added

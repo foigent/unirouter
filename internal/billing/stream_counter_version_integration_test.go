@@ -21,17 +21,28 @@ import (
 )
 
 func TestStreamCounterVersionPinRecoveryAndReplay(t *testing.T) {
-	for _, version := range []string{metering.GatewayCounterEstimateVersionV2, metering.GatewayCounterEstimateVersionV3} {
-		t.Run(version, func(t *testing.T) {
+	cases := []struct {
+		version              string
+		mode                 BillingMode
+		reserved, completion int
+	}{
+		{metering.GatewayCounterEstimateVersionV2, BillingModePrepaidEnforced, 100, 2},
+		{metering.GatewayCounterEstimateVersionV3, BillingModePrepaidEnforced, 100, 2},
+		{metering.GatewayCounterEstimateVersionV3, BillingModePrepaidEnforced, 2048, 3090},
+		{metering.GatewayCounterEstimateVersionV3, BillingModeCostObservation, 2048, 3090},
+	}
+	for _, tc := range cases {
+		version := tc.version
+		t.Run(fmt.Sprintf("%s/%s/reserved%d", version, tc.mode, tc.reserved), func(t *testing.T) {
 			pool, org, model := newReservationFixture(t, 10_000, 0)
-			b := NewBilling(pool, nil)
+			b := NewBilling(pool, nil).WithMode(tc.mode)
 			service, err := outbox.New(pool, outbox.DefaultOptions())
 			require.NoError(t, err)
 			require.NoError(t, service.RegisterHandler(outbox.EventBillingUsagePrepared, b.ProcessUsageJournalEvent))
 			require.NoError(t, service.RegisterHandler(outbox.EventBillingSettled, b.ProcessUsageJournalEvent))
 			b.SetOutbox(service)
 			start := StreamDeliveryStart{RequestID: "op_counter_pin", AttemptID: "att_counter_pin", OwnerID: "counter-owner", OrgID: org, Generation: 1, LeaseTTL: time.Minute, CounterVersion: version}
-			freezeStreamReservation(t, b, org, model, start.RequestID, 100)
+			freezeStreamReservation(t, b, org, model, start.RequestID, tc.reserved)
 			beginAcceptedStreamAttempt(t, b, org, start.RequestID, start.AttemptID)
 			require.NoError(t, b.BeginStreamDelivery(t.Context(), start))
 			require.NoError(t, b.BeginStreamDelivery(t.Context(), start))
@@ -42,7 +53,7 @@ func TestStreamCounterVersionPinRecoveryAndReplay(t *testing.T) {
 			}
 			require.ErrorIs(t, b.BeginStreamDelivery(t.Context(), other), ErrStreamLeaseConflict)
 			require.ErrorIs(t, b.RenewStreamDelivery(t.Context(), other), ErrStreamLeaseConflict)
-			cp := StreamDeliveryCheckpoint{RequestID: start.RequestID, AttemptID: start.AttemptID, OwnerID: start.OwnerID, OrgID: org, Generation: 1, DeliveredBytes: 512, DeliveredChunks: 3, PromptTokens: 20, CompletionTokens: 2, PolicySetVersion: "counter-test", LeaseTTL: time.Minute, CounterVersion: version}
+			cp := StreamDeliveryCheckpoint{RequestID: start.RequestID, AttemptID: start.AttemptID, OwnerID: start.OwnerID, OrgID: org, Generation: 1, DeliveredBytes: 512, DeliveredChunks: 3, PromptTokens: 20, CompletionTokens: tc.completion, PolicySetVersion: "counter-test", LeaseTTL: time.Minute, CounterVersion: version}
 			_, err = b.CheckpointStreamDelivery(t.Context(), cp)
 			require.NoError(t, err)
 			replay, err := b.CheckpointStreamDelivery(t.Context(), cp)
@@ -56,7 +67,7 @@ func TestStreamCounterVersionPinRecoveryAndReplay(t *testing.T) {
 			require.ErrorContains(t, err, "immutable")
 			source, err := metering.CounterSource(other.CounterVersion)
 			require.NoError(t, err)
-			conflict := SettleRequest{RequestID: start.RequestID, AttemptID: start.AttemptID, OrgID: org, StreamFence: testStreamFence(start), PromptTokens: 20, UncachedPromptTokens: 20, CompletionTokens: 2, UsageSource: source}
+			conflict := SettleRequest{RequestID: start.RequestID, AttemptID: start.AttemptID, OrgID: org, StreamFence: testStreamFence(start), PromptTokens: 20, UncachedPromptTokens: 20, CompletionTokens: tc.completion, UsageSource: source}
 			require.ErrorIs(t, b.PersistSettlementUsage(t.Context(), conflict), ErrSettlementUsageConflict)
 			_, err = pool.Exec(t.Context(), `UPDATE stream_delivery_leases SET lease_expires_at=NOW()-INTERVAL '1 second' WHERE org_id=$1 AND request_id=$2`, org, start.RequestID)
 			require.NoError(t, err)
@@ -78,7 +89,7 @@ func TestStreamCounterVersionPinRecoveryAndReplay(t *testing.T) {
 			require.Equal(t, source, storedSource)
 			require.Equal(t, version, storedVersion)
 			require.Equal(t, "settled", status)
-			require.Equal(t, 2, completion)
+			require.Equal(t, tc.completion, completion)
 			_, err = service.DrainOnce(t.Context())
 			require.NoError(t, err)
 			require.NoError(t, pool.QueryRow(t.Context(), `SELECT count(*) FROM usage_finalization_journal WHERE org_id=$1 AND request_id=$2 AND event_type='settled'`, org, start.RequestID).Scan(&journals))
@@ -91,6 +102,15 @@ func TestStreamCounterVersionPinRecoveryAndReplay(t *testing.T) {
 			settled, err := b.Settle(t.Context(), conflict)
 			require.NoError(t, err)
 			require.True(t, settled.Success)
+			require.Equal(t, tc.mode, settled.BillingMode)
+			if tc.mode == BillingModeCostObservation {
+				require.Zero(t, settled.ChargedCostMicros)
+				require.Positive(t, settled.ObservationReceiptID)
+				require.Zero(t, settled.SettleID)
+			}
+			var blocked int
+			require.NoError(t, pool.QueryRow(t.Context(), `SELECT COUNT(*) FROM billing_provider_attempts WHERE org_id=$1 AND request_id=$2 AND state IN ('outcome_unknown','response_unusable','funding_pending','delivery_failed','output_withheld','delivery_pending')`, org, start.RequestID).Scan(&blocked))
+			require.Zero(t, blocked, "ordinary interrupted estimates add no provider-pending admission block")
 			require.ErrorIs(t, b.RenewStreamDelivery(t.Context(), start), ErrStreamLeaseConflict)
 		})
 	}

@@ -2,6 +2,8 @@ package modelprofile
 
 // Output enforcement is typed implementation metadata, not a configurable
 // tokenizer or policy language. A new protocol revision opts in explicitly.
+const DeepSeekProviderCompletionProtocol = "protocol.deepseek-openai-chat.v6"
+
 const (
 	OutputEnforcementByteUpperBound       = "utf8_byte_upper_bound"
 	OutputEnforcementProviderCompletionV1 = "provider_completion_final_v1"
@@ -24,10 +26,15 @@ func ResolveOutputEnforcement(protocolID string) (OutputEnforcement, bool) {
 	case "":
 		return OutputEnforcement{Accounting: OutputEnforcementByteUpperBound}, true
 	case OutputEnforcementProviderCompletionV1:
-		return OutputEnforcement{
+		enforcement := OutputEnforcement{
 			Accounting: OutputEnforcementProviderCompletionV1, Scope: "reasoning_and_answer",
 			ProviderDeviationTokens: 10, MaxDecodedOutputBytes: 16 << 20, MaxUpstreamWireBytes: 128 << 20,
-		}, true
+		}
+		if protocolID == DeepSeekProviderCompletionProtocol {
+			enforcement.ProviderDeviationTokens = 0
+			enforcement.Scope = "generated_completion"
+		}
+		return enforcement, true
 	default:
 		return OutputEnforcement{}, false
 	}
@@ -40,5 +47,15 @@ func qwenProviderCompletionContract(id string) ChatProtocolContract {
 	c.OutputLimitFieldMaximums = nil
 	c.OutputLimitMin = 11
 	c.OutputEnforcement = OutputEnforcementProviderCompletionV1
+	return c
+}
+
+// DeepSeek's successor reuses provider-final accounting, with no documented
+// deviation allowance. Historical DeepSeek and Qwen contracts retain theirs.
+func deepSeekProviderCompletionContract(id string) ChatProtocolContract {
+	c := deepSeekStreamFunctionToolsContract(id)
+	c.OutputLimitAcceptedFields = []string{"max_tokens"}
+	c.OutputEnforcement = OutputEnforcementProviderCompletionV1
+	c.StreamContract.RequireTerminalUsageChoices = true
 	return c
 }

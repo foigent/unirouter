@@ -208,17 +208,18 @@ type ChatImageInputPolicy struct {
 // frames that cannot safely inherit the generic OpenAI-compatible stream
 // union. A zero value preserves every historical protocol profile unchanged.
 type ChatStreamContract struct {
-	RequestOptionsModeled     bool
-	AllowedRequestOptions     []string
-	RequireIncludeUsage       bool
-	ResponseModeled           bool
-	RequireDone               bool
-	RequireTerminalUsage      bool
-	AllowTerminalUsageChoices bool
-	DeltaTextFields           []string
-	DeltaOpaqueFields         []string
-	FinishReasons             []string
-	ReasoningOpaqueAnswerFlow bool
+	RequestOptionsModeled       bool
+	AllowedRequestOptions       []string
+	RequireIncludeUsage         bool
+	ResponseModeled             bool
+	RequireDone                 bool
+	RequireTerminalUsageChoices bool
+	RequireTerminalUsage        bool
+	AllowTerminalUsageChoices   bool
+	DeltaTextFields             []string
+	DeltaOpaqueFields           []string
+	FinishReasons               []string
+	ReasoningOpaqueAnswerFlow   bool
 	// Opt-in to bounded shared function-tool deltas; zero preserves old streams.
 	FunctionToolDeltas bool
 }
@@ -1191,6 +1192,7 @@ func doubaoArkInlineJPEGContract(contract ChatProtocolContract) ChatProtocolCont
 }
 
 var chatProtocolContracts = map[string]ChatProtocolContract{
+	DeepSeekProviderCompletionProtocol:              deepSeekProviderCompletionContract(DeepSeekProviderCompletionProtocol),
 	"protocol.deepseek-openai-chat.v2":              deepSeekChatContract("protocol.deepseek-openai-chat.v2", true),
 	"protocol.deepseek-openai-chat.v3":              deepSeekV4FlashExactFunctionToolsContract("protocol.deepseek-openai-chat.v3"),
 	"protocol.deepseek-openai-chat.v4":              deepSeekV4ExactFunctionToolHistoryContract("protocol.deepseek-openai-chat.v4"),
@@ -1450,10 +1452,17 @@ func ResolveChatProtocolContract(profileID string) (ChatProtocolContract, bool) 
 
 func validateChatProtocolContractShape(contract ChatProtocolContract) error {
 	if contract.OutputEnforcement != "" {
+		field, minimum := "max_completion_tokens", int64(11)
+		if contract.ProfileID == DeepSeekProviderCompletionProtocol {
+			field, minimum = "max_tokens", 1
+			if !contract.StreamContract.RequireTerminalUsageChoices {
+				return fmt.Errorf("DeepSeek provider completion requires terminal choice usage")
+			}
+		}
 		if contract.OutputEnforcement != OutputEnforcementProviderCompletionV1 ||
-			!contract.OutputLimitModeled || contract.OutputLimitField != "max_completion_tokens" ||
-			len(contract.OutputLimitAcceptedFields) != 1 || contract.OutputLimitAcceptedFields[0] != "max_completion_tokens" ||
-			contract.OutputLimitMin != 11 {
+			!contract.OutputLimitModeled || contract.OutputLimitField != field ||
+			len(contract.OutputLimitAcceptedFields) != 1 || contract.OutputLimitAcceptedFields[0] != field ||
+			contract.OutputLimitMin != minimum {
 			return fmt.Errorf("unsupported output enforcement contract")
 		}
 	}
@@ -1571,6 +1580,9 @@ func validateChatProtocolContractShape(contract ChatProtocolContract) error {
 	}
 	if stream.RequireTerminalUsage && !stream.RequireIncludeUsage {
 		return fmt.Errorf("required terminal stream usage must be requested from the provider")
+	}
+	if stream.RequireTerminalUsageChoices && !stream.AllowTerminalUsageChoices {
+		return fmt.Errorf("terminal choice usage requires modeled terminal choices")
 	}
 	if stream.AllowTerminalUsageChoices && (!stream.ResponseModeled || !stream.RequireTerminalUsage) {
 		return fmt.Errorf("terminal usage with choices requires an exact terminal-usage contract")

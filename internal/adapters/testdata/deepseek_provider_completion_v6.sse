@@ -1,0 +1,9 @@
+data: {"id":"fixture","object":"chat.completion.chunk","created":1,"model":"deepseek-flash","system_fingerprint":"fixture-fingerprint","choices":[{"index":0,"logprobs":null,"delta":{"role":"assistant","reasoning_content":"brief","tool_calls":[{"index":0,"id":"call_echo","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":"}}]},"finish_reason":null}]}
+
+data: {"id":"fixture","object":"chat.completion.chunk","created":1,"model":"deepseek-flash","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"UNIROUTER_TOOL_PROBE_OK\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"fixture","object":"chat.completion.chunk","created":1,"model":"deepseek-flash","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":100,"completion_tokens":20,"total_tokens":120,"prompt_cache_hit_tokens":10,"prompt_cache_miss_tokens":90}}
+
+data: [DONE]
+
+: constructed fixture; not Provider evidence

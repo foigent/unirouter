@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -26,8 +27,20 @@ import (
 // including stream checkpoints, final evidence, recovery and reconciliation.
 // Supplier frames are fixtures: this test makes no Provider request.
 func TestProviderCompletionRelayHoldSurvivesRecoveryIntegration(t *testing.T) {
-	for _, mode := range []billing.BillingMode{billing.BillingModePrepaidEnforced, billing.BillingModeCostObservation} {
-		t.Run(string(mode), func(t *testing.T) {
+	cases := []struct {
+		family string
+		mode   billing.BillingMode
+	}{
+		{"qwen", billing.BillingModePrepaidEnforced}, {"qwen", billing.BillingModeCostObservation},
+		{"deepseek", billing.BillingModePrepaidEnforced}, {"deepseek", billing.BillingModeCostObservation},
+	}
+	for _, tc := range cases {
+		family, mode := tc.family, tc.mode
+		t.Run(family+"/"+string(mode), func(t *testing.T) {
+			reserved, reported := 20, 21
+			if family == "deepseek" {
+				reserved, reported = 2048, 2049
+			}
 			pool := testutil.SetupMigratedTestDB(t)
 			ctx := t.Context()
 			const requestID, attemptID, model = "op_completion_hold", "att_completion_hold", "completion-hold-model"
@@ -38,11 +51,11 @@ func TestProviderCompletionRelayHoldSurvivesRecoveryIntegration(t *testing.T) {
 			_, err = pool.Exec(ctx, `INSERT INTO model_prices(model_name,provider,input_price_cents,output_price_cents) VALUES ($1,'test',2,10)`, model)
 			require.NoError(t, err)
 			actual := billing.NewBilling(pool, nil).WithMode(mode)
-			frozen, err := actual.Freeze(ctx, billing.FreezeRequest{RequestID: requestID, OrgID: orgID, Model: model, EstimatedTokens: 120, ReservedCompletionTokens: 20, SafetyFactor: "1", MinFreezeCents: 10})
+			frozen, err := actual.Freeze(ctx, billing.FreezeRequest{RequestID: requestID, OrgID: orgID, Model: model, EstimatedTokens: 100 + reserved, ReservedCompletionTokens: reserved, SafetyFactor: "1", MinFreezeCents: 10})
 			require.NoError(t, err)
 			require.True(t, frozen.Success)
 			require.Equal(t, mode, frozen.BillingMode)
-			require.NoError(t, actual.BeginProviderAttempt(ctx, billing.ProviderAttemptStart{RequestID: requestID, AttemptID: attemptID, OrgID: orgID, APIKeyID: 101, ChannelID: 201, ChannelKeyID: 301, RouteSequence: 1, RouteTotal: 1, Endpoint: "/v1/chat/completions", Provider: "dashscope", Channel: "fixture"}))
+			require.NoError(t, actual.BeginProviderAttempt(ctx, billing.ProviderAttemptStart{RequestID: requestID, AttemptID: attemptID, OrgID: orgID, APIKeyID: 101, ChannelID: 201, ChannelKeyID: 301, RouteSequence: 1, RouteTotal: 1, Endpoint: "/v1/chat/completions", Provider: map[string]string{"qwen": "dashscope", "deepseek": "deepseek"}[family], Channel: "fixture"}))
 			require.NoError(t, actual.CompleteProviderAttempt(ctx, billing.ProviderAttemptCompletion{RequestID: requestID, AttemptID: attemptID, OrgID: orgID, Outcome: billing.ProviderAttemptOutcomeResponseAccepted, HTTPStatus: 200}))
 			terminalChain := policybilling.New(capbilling.New(actual, nil), nil)
 			relay := NewRelay(pool, nil, nil, terminalChain, nil, nil)
@@ -50,10 +63,23 @@ func TestProviderCompletionRelayHoldSurvivesRecoveryIntegration(t *testing.T) {
 			p, ok := modelprofile.Lookup("qwen.3.7-flash.api", "1.7.0")
 			require.True(t, ok)
 			p.ProtocolProfile = "protocol.qwen-openai-chat.flash.v8"
+			if family == "deepseek" {
+				p = deepSeekCompletionDefinition(t).Profile()
+			}
 			wire := existingFamilyRelayFixture(t, p, "tools")
-			wire = strings.ReplaceAll(strings.ReplaceAll(wire, `"completion_tokens":20`, `"completion_tokens":21`), `"total_tokens":120`, `"total_tokens":121`)
+			if family == "deepseek" {
+				wire = deepSeekCompletionFixture(t)
+			}
+			wire = strings.ReplaceAll(strings.ReplaceAll(wire, `"completion_tokens":20`, `"completion_tokens":`+strconv.Itoa(reported)), `"total_tokens":120`, `"total_tokens":`+strconv.Itoa(100+reported))
 			route := &RouteResult{MappedModel: p.UpstreamModelIDs[0], Channel: models.Channel{ID: 201, Provider: p.Provider}, CacheUsageProfile: p.CacheUsageProfile, ModelProtocolProfile: p.ProtocolProfile, PlanCapabilityRequirements: []modelrouting.CapabilityRequirement{{CapabilityID: modelprofile.CapabilityToolChoiceAuto, FunctionToolChoice: &modelrouting.FunctionToolChoiceConstraint{DeclaredFunctionNames: []string{"unirouter_probe_echo"}}}}}
-			relayCtx := contextWithStreamReservation(contextWithDurableProviderAttempt(contextWithAttemptID(ctx, attemptID)), 20, false)
+			if family == "deepseek" {
+				route.ProfileDefinition = deepSeekCompletionDefinition(t)
+				route.ExecutionProfileID, route.ExecutionProfileVersion = p.ID, p.Version
+				route.ModelOperationID = modelprofile.OperationOpenAIChat
+				route.OperationProtocolProfileID, route.OperationProtocolProfileVersion = p.ProtocolProfile, modelprofile.ChatOperationProtocolBindingVersionV1
+				route.ReasoningProfile = p.ReasoningProfile
+			}
+			relayCtx := contextWithStreamReservation(contextWithDurableProviderAttempt(contextWithAttemptID(ctx, attemptID)), reserved, false)
 			rec := httptest.NewRecorder()
 			relay.relayStreamRequest(relayCtx, rec, &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(wire))}, route, requestID, orgID, 101, model, model, "127.0.0.1", nil, logger.New(logger.Fields{RequestID: requestID}), time.Now(), 1000, adapters.NewOpenAICompatible(), "")
 			require.Contains(t, rec.Body.String(), "stream_error.provider_output_limit_exceeded")
@@ -66,7 +92,7 @@ func TestProviderCompletionRelayHoldSurvivesRecoveryIntegration(t *testing.T) {
 			require.NoError(t, pool.QueryRow(ctx, `SELECT status,settlement_pending_reason,completion_tokens,usage_purpose,usage_authority,usage_finality FROM freeze_idempotency WHERE org_id=$1 AND request_id=$2`, orgID, requestID).Scan(&status, &reason, &completion, &purpose, &authority, &finality))
 			require.Equal(t, "settlement_pending", status)
 			require.Equal(t, billing.OutputHoldReasonProviderResponseUnusable, reason)
-			require.Equal(t, 21, completion)
+			require.Equal(t, reported, completion)
 			require.Equal(t, "provider_evidence", purpose)
 			require.Equal(t, "provider_reported", authority)
 			require.Equal(t, "final", finality)

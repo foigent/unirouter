@@ -102,7 +102,7 @@ test_pattern+='|TestHistoricalM115RetirementPermitsOnlyProvedSuffix|TestRetireme
 test_pattern+='|TestContentHTTP.*PG|TestContentPublic.*PG'
 test_pattern+='|TestLegacyReleaseAdmissionAllowExecutesStagedChannelIntegration'
 test_pattern+='|TestOwnedProviderAttemptAndTerminalHealthFenceAreReplaySafe'
-test_pattern+='|TestFreezeReplayRejectsChangedExecutionSnapshot|TestStreamOutputHold.*Integration|TestProviderCompletionRelayHoldSurvivesRecoveryIntegration'
+test_pattern+='|TestFreezeReplayRejectsChangedExecutionSnapshot|TestStreamOutputHold.*Integration|TestProviderCompletionRelayHoldSurvivesRecoveryIntegration|TestStreamCounterVersionPinRecoveryAndReplay'
 test_pattern+='|TestPendingAdmission(IndependentRequestsAndRecovery|DurableEvidenceFailsClosed|ExplicitRisksStillBlockMixedScope|StreamRequiresDurableFundedUsage|PreparationFundingFailureStillBlocks|LogicalCredentialRotationKeepsRiskScope)'
 test_pattern+='|TestP6F(06|07|08|09|10|11|20|21|40|41).*)$'
 readonly test_pattern

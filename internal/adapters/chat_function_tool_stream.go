@@ -41,7 +41,17 @@ func ParseFunctionToolStreamFactsForContract(data []byte, contract modelprofile.
 	if !contract.ResponseModeled || !contract.FunctionToolDeltas {
 		return FunctionToolStreamFacts{}, fmt.Errorf("unmodeled function-tool stream")
 	}
-	return parseFunctionToolStreamFacts(data, contract.DeltaTextFields)
+	facts, err := parseFunctionToolStreamFacts(data, contract.DeltaTextFields)
+	if err != nil {
+		return facts, err
+	}
+	// DeepSeek's new exact contract couples usage with an empty final choice.
+	// Runtime and Probe use this same parser; legacy usage-only frames stay valid.
+	if contract.RequireTerminalUsageChoices && facts.HasUsage &&
+		(!facts.Choice || facts.Finish == "" || facts.Content != "" || facts.Reasoning != "" || len(facts.Tools) != 0) {
+		return facts, fmt.Errorf("terminal usage requires an empty finished choice")
+	}
+	return facts, nil
 }
 
 func parseFunctionToolStreamFacts(data []byte, textFields []string) (FunctionToolStreamFacts, error) {

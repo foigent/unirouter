@@ -8,6 +8,7 @@ import (
 )
 
 const (
+	DeepSeekProviderCompletionProbeContractID     = "unirouter.capability-probe.deepseek-chat-stream-tools.v2"
 	DeepSeekStreamFunctionToolsProbeContractID    = "unirouter.capability-probe.deepseek-chat-stream-tools.v1"
 	DeepSeekStreamReasoningEffortProbeVersion     = "2.0.0"
 	DeepSeekCurrentFlashDefaultEffortProbeVersion = "3.0.0"
@@ -17,14 +18,19 @@ const (
 )
 
 func existingFamilyStreamProbe(id string) bool {
-	return id == DeepSeekStreamFunctionToolsProbeContractID || id == KimiStreamFunctionToolsProbeContractID || id == MiniMaxM3StreamFunctionToolsProbeContractID
+	return id == DeepSeekProviderCompletionProbeContractID || id == DeepSeekStreamFunctionToolsProbeContractID || id == KimiStreamFunctionToolsProbeContractID || id == MiniMaxM3StreamFunctionToolsProbeContractID
 }
 
 func validExistingFamilyStreamComposition(b Binding, p modelprofile.Profile) bool {
-	if !streamToolCapability(b.CapabilityID) {
+	if !streamToolCapability(b.CapabilityID) && !(b.ProbeContractID == DeepSeekProviderCompletionProbeContractID && b.CapabilityID == modelprofile.CapabilityReasoningEffort) {
 		return false
 	}
 	switch b.ProbeContractID {
+	case DeepSeekProviderCompletionProbeContractID:
+		return p.Provider == "deepseek" && p.ProtocolProfile == modelprofile.DeepSeekProviderCompletionProtocol &&
+			p.CacheUsageProfile == "cache-usage.deepseek-v4.v1" && p.ReasoningProfile == "reasoning.deepseek-v4-flash-thinking-toggle.v5" &&
+			b.ExpectedUpstreamModel == "deepseek-flash" && len(p.UpstreamModelIDs) == 1 && p.UpstreamModelIDs[0] == "deepseek-flash" &&
+			p.UpstreamModelFamily == "deepseek-flash" && p.UpstreamVersionPolicy == "floating"
 	case DeepSeekStreamFunctionToolsProbeContractID:
 		return p.Provider == "deepseek" && p.ProtocolProfile == "protocol.deepseek-openai-chat.v5" && p.CacheUsageProfile == "cache-usage.deepseek-v4.v1" &&
 			slices.Contains([]string{"reasoning.deepseek-v4-flash-thinking-toggle.v5", "reasoning.deepseek-v4-pro-thinking-toggle.v5"}, p.ReasoningProfile)
@@ -58,6 +64,9 @@ func BuildExistingFamilyStreamFunctionToolsProbeRequest(b Binding) ([]byte, erro
 		"tool_choice": "auto", protocol.OutputLimitField: 1024, "tools": openAIChatProbeTools(),
 		"messages": []map[string]string{{"role": "user", "content": "Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly."}},
 	}
+	if b.ProbeContractID == DeepSeekProviderCompletionProbeContractID {
+		payload[protocol.OutputLimitField] = 2048
+	}
 	if control := reasoning.ToggleControl; control.Field != "" {
 		if control.Field == "thinking" {
 			// The existing Chat contract carries this control in thinking.type;
@@ -71,7 +80,7 @@ func BuildExistingFamilyStreamFunctionToolsProbeRequest(b Binding) ([]byte, erro
 			return nil, ErrUnsupported
 		}
 	}
-	if (b.ProbeContractID == KimiStreamFunctionToolsProbeContractID && b.ProbeContractVersion == KimiStreamReasoningEffortProbeVersion) ||
+	if b.ProbeContractID == DeepSeekProviderCompletionProbeContractID || (b.ProbeContractID == KimiStreamFunctionToolsProbeContractID && b.ProbeContractVersion == KimiStreamReasoningEffortProbeVersion) ||
 		(b.ProbeContractID == DeepSeekStreamFunctionToolsProbeContractID && (b.ProbeContractVersion == DeepSeekStreamReasoningEffortProbeVersion || b.ProbeContractVersion == DeepSeekCurrentFlashDefaultEffortProbeVersion)) {
 		// This version qualifies the existing provider-default effort together
 		// with streamed tools. It does not prove differences between effort levels.
