@@ -7,6 +7,7 @@ import re
 import subprocess
 import tempfile
 import unittest
+from urllib.parse import urlsplit
 
 REPO = Path(__file__).resolve().parent.parent
 FAKE_GO = '''#!/usr/bin/env python3
@@ -58,6 +59,15 @@ class RunnerTests(unittest.TestCase):
     def test_ci_and_logged_runs_use_same_five_sequential_groups(self):
         workflow = (REPO / ".github/workflows/ci.yml").read_text()
         self.assertEqual(workflow.count("run: bash scripts/test-backend-integration.sh"), 1)
+        fixture_dsns = []
+        for lane in ("Run admin integration tests", "Run consolidated backend integration and feature gates"):
+            block = re.search(r"(?ms)^      - name: " + re.escape(lane) + r"\n(.*?)(?=^      - name: |\Z)", workflow)
+            self.assertIsNotNone(block, lane)
+            dsn = re.search(r"(?m)^          CURRENT_FLASH_TEST_DATABASE_URL: (\S+)$", block.group(1))
+            self.assertIsNotNone(dsn, lane + " must receive the isolated Flash fixture DSN")
+            fixture_dsns.append(dsn.group(1))
+        self.assertEqual(fixture_dsns[0], fixture_dsns[1])
+        self.assertIn("CREATE ROLE " + urlsplit(fixture_dsns[0]).username + " LOGIN NOSUPERUSER", workflow)
         result = self.run_runner()
         self.assertEqual(result.returncode, 0, result.stderr)
         before = self.read_calls()
