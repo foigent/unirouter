@@ -30,6 +30,15 @@ import (
 )
 
 func TestCurrentDeepSeekFlashDataFirstHTTPPublicationQualificationActivationIntegration(t *testing.T) {
+	testPublishedDeepSeekFlashHTTPFlow(t, "deepseek-v41-flash.json")
+}
+
+func testPublishedDeepSeekFlashHTTPFlow(t *testing.T, bundleFile string) {
+	completion := bundleFile == "deepseek-v41-flash-provider-completion.json"
+	groupCount, singleCalls := 2, 7
+	if completion {
+		groupCount, singleCalls = 1, 10
+	}
 	// A dedicated fixture DSN keeps the runtime role distinct from CI's
 	// administrator. Install through the exact current head in its own database
 	// rather than changing the package-wide migrated template's DSN.
@@ -41,7 +50,7 @@ func TestCurrentDeepSeekFlashDataFirstHTTPPublicationQualificationActivationInte
 	var super bool
 	require.NoError(t, pool.QueryRow(ctx, `SELECT rolsuper FROM pg_roles WHERE rolname=current_user`).Scan(&super))
 	require.False(t, super, "this acceptance test requires an isolated non-superuser runtime role")
-	wire, err := os.ReadFile("../../capability-bundles/deepseek-v41-flash.json")
+	wire, err := os.ReadFile("../../capability-bundles/" + bundleFile)
 	require.NoError(t, err)
 	require.NoError(t, qualification.ValidateBundleSource(wire))
 	bundle, err := publication.DecodeBundleV2(wire)
@@ -51,7 +60,7 @@ func TestCurrentDeepSeekFlashDataFirstHTTPPublicationQualificationActivationInte
 	ledger, err := schemaauthority.ExpectedLedger("../../migrations")
 	require.NoError(t, err)
 	authority := publication.AuthorityV2{Environment: "integration", ArtifactMigrationLedger: ledger,
-		Publisher: publication.PublisherIdentityV2{Artifact: publication.ArtifactIdentity{Kind: "source", Commit: strings.Repeat("a", 40), Tree: strings.Repeat("b", 40), Version: "1.9.6-local-fixture", PublisherExecutableDigest: strings.Repeat("c", 64)}},
+		Publisher: publication.PublisherIdentityV2{Artifact: publication.ArtifactIdentity{Kind: "source", Commit: strings.Repeat("a", 40), Tree: strings.Repeat("b", 40), Version: "1.9.8-local-fixture", PublisherExecutableDigest: strings.Repeat("c", 64)}},
 		ValidateBinding: func(row publication.DefinitionBindingV2, d modelprofile.Definition) error {
 			_, e := qualification.BindDefinition(qualification.Binding{OperationID: row.OperationID, CapabilityID: row.CapabilityID, ExecutionProfileID: row.ExecutionProfileID, ExecutionProfileVersion: row.ExecutionProfileVersion, ProtocolProfileID: row.ProtocolProfileID, ProtocolProfileVersion: row.ProtocolProfileVersion, ProbeContractID: row.ProbeContractID, ProbeContractVersion: row.ProbeContractVersion, ExpectedProvider: row.ExpectedProvider, ExpectedUpstreamModel: row.ExpectedUpstreamModel, PublicPath: row.PublicPath}, d)
 			return e
@@ -81,9 +90,29 @@ func TestCurrentDeepSeekFlashDataFirstHTTPPublicationQualificationActivationInte
 	apply(publication.PlanRequestV2{PublicationID: "flash-import-fixture", Kind: "legacy_import"})
 	var oldBindings int
 	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM model_capability_probe_contract_bindings WHERE execution_profile_id='deepseek.v4-flash.api'`).Scan(&oldBindings))
+	var predecessor modelprofile.Definition
+	if completion {
+		oldWire, e := os.ReadFile("../../capability-bundles/deepseek-v41-flash.json")
+		require.NoError(t, e)
+		oldBundle, e := publication.DecodeBundleV2(oldWire)
+		require.NoError(t, e)
+		predecessor, e = modelprofile.DecodeDefinition(oldBundle.Definitions[0])
+		require.NoError(t, e)
+		authority.ApprovedBundleDigest = fmt.Sprintf("%x", sha256.Sum256(oldWire))
+		authority.Publisher.Carrier = &publication.CarrierIdentityV2{Repository: "fixture/repository", Commit: strings.Repeat("f", 40), Tree: strings.Repeat("a", 40), Path: "capability-bundles/deepseek-v41-flash.json", WorkflowRunID: 1, ArtifactID: 2}
+		apply(publication.PlanRequestV2{PublicationID: "flash-predecessor-fixture", Kind: "delta", BundleBytes: oldWire})
+		require.Equal(t, "1.1.0", d.Profile().Version)
+		require.Equal(t, "2751c693d24905f1845ebb64253322e4cdaed5b327182cfd55890f5c72575a99", d.Digest())
+	}
 	authority.ApprovedBundleDigest = fmt.Sprintf("%x", sha256.Sum256(wire))
-	authority.Publisher.Carrier = &publication.CarrierIdentityV2{Repository: "fixture/repository", Commit: strings.Repeat("f", 40), Tree: strings.Repeat("a", 40), Path: "capability-bundles/deepseek-v41-flash.json", WorkflowRunID: 1, ArtifactID: 2}
-	apply(publication.PlanRequestV2{PublicationID: "flash-v41-fixture", Kind: "delta", BundleBytes: wire})
+	authority.Publisher.Carrier = &publication.CarrierIdentityV2{Repository: "fixture/repository", Commit: strings.Repeat("f", 40), Tree: strings.Repeat("a", 40), Path: "capability-bundles/" + bundleFile, WorkflowRunID: 1, ArtifactID: 2}
+	publishSelected := func() {
+		apply(publication.PlanRequestV2{PublicationID: "flash-v41-fixture", Kind: "delta", BundleBytes: wire})
+		require.NoError(t, publication.VerifyPublicationProjectionV2(ctx, pool))
+	}
+	if !completion {
+		publishSelected()
+	}
 	require.NoError(t, publication.VerifyPublicationProjectionV2(ctx, pool))
 	var retainedBindings int
 	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM model_capability_probe_contract_bindings WHERE execution_profile_id='deepseek.v4-flash.api'`).Scan(&retainedBindings))
@@ -95,27 +124,58 @@ func TestCurrentDeepSeekFlashDataFirstHTTPPublicationQualificationActivationInte
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users(org_id,username,password_hash,organization_role,role,status) VALUES($1,'flash-review-local','fixture','platform_admin','platform_admin','active') RETURNING id`, operatorOrg).Scan(&approver))
 	h := NewHandlerWithAPIKeyHashSecret(pool, "flash-fixture", "flash-http-fixture-hash", []byte("0123456789abcdef01234567"), nil)
 	authorized := canonicalApplicationAuthorizedRequest(org, actor)
-	// A fresh public model binds the independent data Definition. No old name,
-	// Profile address, candidate successor or historical Release is rewritten.
+	// The original case creates a data-first public model. The successor case
+	// first creates 1.0.0, then publishes 1.1.0 and reuses that stable identity.
 	legacy := createCanonicalApplicationForTest(t, h, authorized, canonicalModelApplicationCreateRequest{
 		Connection:  canonicalConnectionInput{Name: "Existing Flash connection fixture", Provider: "deepseek", BaseURL: "https://api.deepseek.com", AdapterType: "openai_compatible", AdapterConfig: json.RawMessage(`{"endpoint_path_mode":"base_relative"}`)},
 		PublicModel: canonicalPublicModelInput{ModelName: "historic-flash-local", ExecutionProfileID: "deepseek.v4-flash.api", ExecutionProfileVersion: "1.5.0"},
 		Deployment:  canonicalDeploymentInput{UpstreamModel: "deepseek-v4-flash"}, Credential: canonicalCredentialInput{APIKey: "local-fixture-not-provider-credential"}, Operation: canonicalOperationInput{OperationID: modelprofile.OperationOpenAIChat},
 	}, http.StatusCreated).Application
+	publicModel := canonicalPublicModelInput{ModelName: "deepseek-v41-flash-local"}
+	var previous canonicalModelApplication
+	if completion {
+		publicModel.ContextLength, publicModel.OutputLimit = canonicalTestPtr(131072), canonicalTestPtr(2048)
+		previous = createCanonicalApplicationForTest(t, h, authorized, canonicalModelApplicationCreateRequest{
+			Connection: canonicalConnectionInput{ID: legacy.Connection.ID}, PublicModel: publicModel,
+			Deployment: canonicalDeploymentInput{UpstreamModel: "deepseek-flash", ProfileDefinitionDigest: predecessor.Digest()},
+			Credential: canonicalCredentialInput{BindingID: legacy.Credential.Bindings[0].ID},
+			Operation:  canonicalOperationInput{OperationID: modelprofile.OperationOpenAIChat},
+		}, http.StatusCreated).Application
+		publicModel = canonicalPublicModelInput{ID: previous.PublicModel.ID}
+		publishSelected()
+	}
+	candidateInput := canonicalDeploymentInput{UpstreamModel: "deepseek-flash", ProfileDefinitionDigest: d.Digest(), MaxContext: canonicalTestPtr(modelprofile.DefaultPublicContextLimit(d.Profile())), DefaultMaxOutput: canonicalTestPtr(modelprofile.DefaultRequestOutputLimit(d.Profile(), modelprofile.DefaultPublicOutputLimit(d.Profile())))}
+	if completion {
+		candidateInput.MaxContext, candidateInput.DefaultMaxOutput = canonicalTestPtr(131072), canonicalTestPtr(2048)
+	}
 	created := createCanonicalApplicationForTest(t, h, authorized, canonicalModelApplicationCreateRequest{
 		Connection:  canonicalConnectionInput{ID: legacy.Connection.ID},
-		PublicModel: canonicalPublicModelInput{ModelName: "deepseek-v41-flash-local"},
-		Deployment:  canonicalDeploymentInput{UpstreamModel: "deepseek-flash", ProfileDefinitionDigest: d.Digest()},
+		PublicModel: publicModel,
+		Deployment:  candidateInput,
 		Credential:  canonicalCredentialInput{BindingID: legacy.Credential.Bindings[0].ID},
 		Operation:   canonicalOperationInput{OperationID: modelprofile.OperationOpenAIChat},
 	}, http.StatusCreated)
 	app := created.Application
+	if completion {
+		require.Equal(t, previous.PublicModel.ID, app.PublicModel.ID)
+		require.Equal(t, previous.Connection.ID, app.Connection.ID)
+		require.Equal(t, previous.Credential.Bindings[0].ID, app.Credential.Bindings[0].ID)
+		require.NotEqual(t, previous.Deployment.ID, app.Deployment.ID)
+		var oldDigest string
+		require.NoError(t, pool.QueryRow(ctx, `SELECT profile_definition_digest FROM model_deployment_operations WHERE deployment_id=$1 AND operation_id=$2`, previous.Deployment.ID, modelprofile.OperationOpenAIChat).Scan(&oldDigest))
+		require.Equal(t, predecessor.Digest(), oldDigest)
+	}
 	require.NotEqual(t, legacy.PublicModel.ID, app.PublicModel.ID)
 	require.Equal(t, legacy.Connection.ID, app.Connection.ID)
 	require.Equal(t, legacy.Credential.Bindings[0].ID, app.Credential.Bindings[0].ID)
 	require.Equal(t, "deepseek.v4-flash.api", legacy.PublicModel.ExecutionProfileID)
 	require.Equal(t, d.Profile().ID, app.PublicModel.ExecutionProfileID)
-	require.Equal(t, d.Profile().Version, app.PublicModel.ExecutionProfileVersion)
+	if completion {
+		require.Equal(t, predecessor.Profile().Version, app.PublicModel.ExecutionProfileVersion)
+	} else {
+		require.Equal(t, d.Profile().Version, app.PublicModel.ExecutionProfileVersion)
+	}
+	require.Equal(t, d.Profile().Version, app.Operations[0].ExecutionProfileVersion)
 	require.Len(t, app.Operations[0].CapabilityProbeContracts, 6)
 	require.Equal(t, d.Digest(), app.Operations[0].ProfileDefinitionDigest)
 	h.SetModelDeploymentProbeHTTPDoer(canonicalOperationProbeDoerFunc(func(r *http.Request) (*http.Response, error) {
@@ -128,7 +188,12 @@ func TestCurrentDeepSeekFlashDataFirstHTTPPublicationQualificationActivationInte
 	connectivity := serveCanonicalOperationProbeForTest(t, h, authorized, app.Deployment.ID, modelprofile.OperationOpenAIChat, app.Credential.Bindings[0].ID, "", http.StatusOK)
 	require.True(t, connectivity.Success)
 	stream := `data: {"id":"fixture","object":"chat.completion.chunk","created":1,"model":"deepseek-flash","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"brief","tool_calls":[{"index":0,"id":"call_echo","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":100,"completion_tokens":20,"total_tokens":120,"prompt_cache_hit_tokens":10,"prompt_cache_miss_tokens":90}}` + "\n\ndata: [DONE]\n\n"
-	badResponse := false
+	if completion {
+		fixture, e := os.ReadFile("../adapters/testdata/deepseek_provider_completion_v6.sse")
+		require.NoError(t, e)
+		stream = string(fixture)
+	}
+	failureMode := ""
 	currentCapability := ""
 	calls := 0
 	h.SetModelDeploymentProbeHTTPDoer(canonicalOperationProbeDoerFunc(func(r *http.Request) (*http.Response, error) {
@@ -139,14 +204,24 @@ func TestCurrentDeepSeekFlashDataFirstHTTPPublicationQualificationActivationInte
 		require.Equal(t, true, body["stream"])
 		require.Equal(t, map[string]any{"type": "enabled"}, body["thinking"])
 		require.NotContains(t, body, "tool_choice")
-		if currentCapability == "reasoning_effort" {
+		if completion || currentCapability == "reasoning_effort" {
 			require.Equal(t, "high", body["reasoning_effort"])
 		} else {
 			require.NotContains(t, body, "reasoning_effort")
 		}
+		if completion {
+			require.EqualValues(t, 2048, body["max_tokens"])
+		}
 		response := stream
-		if badResponse {
+		switch failureMode {
+		case "model":
 			response = strings.Replace(response, `"model":"deepseek-flash"`, `"model":"deepseek-v4-flash"`, 1)
+		case "done":
+			response = strings.ReplaceAll(response, "data: [DONE]\n\n", "")
+		case "usage":
+			response = strings.Replace(response, `,"usage":{"prompt_tokens":100,"completion_tokens":20,"total_tokens":120,"prompt_cache_hit_tokens":10,"prompt_cache_miss_tokens":90}`, "", 1)
+		case "limit":
+			response = strings.ReplaceAll(strings.ReplaceAll(response, `"completion_tokens":20`, `"completion_tokens":2049`), `"total_tokens":120`, `"total_tokens":2149`)
 		}
 		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(response))}, nil
 	}))
@@ -172,12 +247,16 @@ func TestCurrentDeepSeekFlashDataFirstHTTPPublicationQualificationActivationInte
 			return view
 		}
 		require.True(t, read().ProbeAvailable)
-		attempts := []bool{false}
+		attempts := []string{""}
 		if row.CapabilityID == "reasoning_effort" {
-			attempts = []bool{true, false}
+			attempts = []string{"model", ""}
 		}
-		for _, bad := range attempts {
-			badResponse = bad
+		if completion && row.CapabilityID == "function_tools" {
+			attempts = []string{"done", "usage", "limit", ""}
+		}
+		for _, mode := range attempts {
+			failureMode = mode
+			bad := mode != ""
 			r := authorized(http.MethodPost, path+"/probes", fmt.Sprintf(`{"credential_binding_id":%d}`, app.Credential.Bindings[0].ID))
 			setPath(r)
 			w := httptest.NewRecorder()
@@ -214,12 +293,26 @@ func TestCurrentDeepSeekFlashDataFirstHTTPPublicationQualificationActivationInte
 			require.Equal(t, result.DiagnosticStage, view.LatestProbe.DiagnosticStage)
 			require.Equal(t, result.DiagnosticMember, view.LatestProbe.DiagnosticMember)
 			if bad {
-				require.Equal(t, "model_identity", result.DiagnosticStage)
-				require.Equal(t, "mismatch", responseSummary["diagnostic_member"])
+				require.NotEqual(t, "probe_contract_unsupported", result.ReasonCode)
+				require.Positive(t, responseSummary["response_bytes"])
+				if stage, exists := responseSummary["diagnostic_stage"]; exists {
+					require.Equal(t, result.DiagnosticStage, stage)
+				} else {
+					require.Empty(t, result.DiagnosticStage)
+				}
+				if member, exists := responseSummary["diagnostic_member"]; exists {
+					require.Equal(t, result.DiagnosticMember, member)
+				} else {
+					require.Empty(t, result.DiagnosticMember)
+				}
+				if mode == "model" {
+					require.Equal(t, "model_identity", result.DiagnosticStage)
+					require.Equal(t, "mismatch", responseSummary["diagnostic_member"])
+				}
 			}
 		}
 	}
-	require.Equal(t, 7, calls, "GET, approval and freeze must not repeat a Provider call")
+	require.Equal(t, singleCalls, calls, "GET, approval and freeze must not repeat a Provider call")
 	// Formal HTTP plan and execution, rather than inferring batch usability
 	// from a shared-contract unit test. Plans and readbacks cannot dispatch.
 	batchBase := fmt.Sprintf("/api/v1/model-deployments/%d/operations/%s", app.Deployment.ID, modelprofile.OperationOpenAIChat)
@@ -234,16 +327,19 @@ func TestCurrentDeepSeekFlashDataFirstHTTPPublicationQualificationActivationInte
 	require.Equal(t, http.StatusOK, planResponse.Code, planResponse.Body.String())
 	var plan capabilityProbePlan
 	require.NoError(t, json.Unmarshal(planResponse.Body.Bytes(), &plan))
-	require.Len(t, plan.Groups, 2)
+	require.Len(t, plan.Groups, groupCount)
 	require.Empty(t, plan.SeparateCapabilities)
-	require.Equal(t, 7, calls)
+	require.Equal(t, singleCalls, calls)
 	beforeBatchCalls := calls
 	batchResults := []modelCapabilityProbeResult{}
 	sourceRefs := []string{}
 	for _, group := range plan.Groups {
 		require.Equal(t, 1, group.ProviderRequests)
 		currentCapability = "function_tools"
-		if strings.HasSuffix(group.ProbeContract, "@3.0.0") {
+		if completion {
+			require.Equal(t, qualification.DeepSeekProviderCompletionProbeContractID+"@1.0.0", group.ProbeContract)
+			require.Len(t, group.CapabilityIDs, 6)
+		} else if strings.HasSuffix(group.ProbeContract, "@3.0.0") {
 			require.Equal(t, []string{"reasoning_effort"}, group.CapabilityIDs)
 			currentCapability = "reasoning_effort"
 		} else {
@@ -278,12 +374,12 @@ func TestCurrentDeepSeekFlashDataFirstHTTPPublicationQualificationActivationInte
 		require.Equal(t, result.Observation, readback.Observation)
 		require.Len(t, readback.Facts, len(group.CapabilityIDs))
 	}
-	require.Equal(t, 2, calls-beforeBatchCalls)
+	require.Equal(t, groupCount, calls-beforeBatchCalls)
 	require.Len(t, batchResults, 6)
 	var facts, physical int
 	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*),count(DISTINCT source_ref) FROM model_capability_probes WHERE deployment_id=$1 AND source_ref=ANY($2)`, app.Deployment.ID, sourceRefs).Scan(&facts, &physical))
 	require.Equal(t, 6, facts)
-	require.Equal(t, 2, physical)
+	require.Equal(t, groupCount, physical)
 	batchProbeIDs := map[int64]bool{}
 	for _, fact := range batchResults {
 		batchProbeIDs[fact.CapabilityProbeID] = true
@@ -298,14 +394,18 @@ func TestCurrentDeepSeekFlashDataFirstHTTPPublicationQualificationActivationInte
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &approval))
 		approvalIDs = append(approvalIDs, approval.ApprovalID)
 	}
-	require.Equal(t, 9, calls)
+	require.Equal(t, singleCalls+groupCount, calls)
 
 	router, err := gateway.NewRouterWithPolicy(pool, routingpolicy.Default())
 	require.NoError(t, err)
 	manager, err := runtimechange.NewManager(pool, router, routingpolicy.Default())
 	require.NoError(t, err)
 	h.SetRuntimeChangeManager(manager)
-	receipt, _ := serveCanonicalDeploymentReleaseAuthoring(t, h, authorized, canonicalDeploymentReleaseAuthoringRequest{PublicModelID: app.PublicModel.ID, Baseline: runtimechange.DeploymentReleaseBaseline{Kind: runtimechange.DeploymentReleaseBaselineInitial}, Selections: []runtimechange.DeploymentReleaseSelection{{DeploymentID: app.Deployment.ID, OperationID: modelprofile.OperationOpenAIChat}}, ProfileDefinitionDigest: d.Digest(), PublicContextLimit: 64000, PublicOutputLimit: 4096, CapabilityApprovalIDs: approvalIDs, Reason: "independent current Flash text fixture"}, "flash-v41-freeze", http.StatusCreated)
+	contextLimit, outputLimit := 64000, 4096
+	if completion {
+		contextLimit, outputLimit = 131072, 2048
+	}
+	receipt, _ := serveCanonicalDeploymentReleaseAuthoring(t, h, authorized, canonicalDeploymentReleaseAuthoringRequest{PublicModelID: app.PublicModel.ID, Baseline: runtimechange.DeploymentReleaseBaseline{Kind: runtimechange.DeploymentReleaseBaselineInitial}, Selections: []runtimechange.DeploymentReleaseSelection{{DeploymentID: app.Deployment.ID, OperationID: modelprofile.OperationOpenAIChat}}, ProfileDefinitionDigest: d.Digest(), PublicContextLimit: contextLimit, PublicOutputLimit: outputLimit, CapabilityApprovalIDs: approvalIDs, Reason: "independent current Flash text fixture"}, "flash-v41-freeze", http.StatusCreated)
 	sealed, err := releaseexecution.ReadSnapshot(ctx, pool, receipt.Release.ID)
 	require.NoError(t, err)
 	require.NoError(t, sealed.ValidateDefinition(d))
@@ -313,9 +413,17 @@ func TestCurrentDeepSeekFlashDataFirstHTTPPublicationQualificationActivationInte
 	effortPin := false
 	for _, pin := range sealed.CapabilityPins {
 		require.True(t, batchProbeIDs[pin.ProbeID], "freeze must pin the exact batch fact")
+		if completion {
+			require.Equal(t, qualification.DeepSeekProviderCompletionProbeContractID, pin.ProbeContractID)
+			require.Equal(t, "1.0.0", pin.ProbeContractVersion)
+		}
 		if pin.CapabilityID == "reasoning_effort" {
 			effortPin = true
-			require.Equal(t, "3.0.0", pin.ProbeContractVersion)
+			if completion {
+				require.Equal(t, "1.0.0", pin.ProbeContractVersion)
+			} else {
+				require.Equal(t, "3.0.0", pin.ProbeContractVersion)
+			}
 		}
 	}
 	require.True(t, effortPin)
@@ -323,5 +431,5 @@ func TestCurrentDeepSeekFlashDataFirstHTTPPublicationQualificationActivationInte
 	retained, err := releaseexecution.ReadSnapshot(ctx, pool, receipt.Release.ID)
 	require.NoError(t, err)
 	require.Equal(t, sealed, retained)
-	require.Equal(t, 9, calls)
+	require.Equal(t, singleCalls+groupCount, calls)
 }

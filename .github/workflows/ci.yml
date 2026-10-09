@@ -347,6 +347,7 @@ jobs:
       - name: Run consolidated backend integration and feature gates
         env:
           REQUIRE_TEST_DATABASE: "1"
+          CURRENT_FLASH_TEST_DATABASE_URL: postgres://ur_flash_fixture:synthetic-flash-fixture@localhost:5432/postgres?sslmode=disable
         # Keep the accepted named integration selectors, but start each selected
         # package only once. The ordinary unit/race suite above already covers
         # admin and other untagged feature tests.

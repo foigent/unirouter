@@ -21,6 +21,9 @@ import (
 )
 
 func TestExistingFamilyDataProbeDispatchAndPersistenceIntegration(t *testing.T) {
+	t.Run("published_deepseek_1.1.0", func(t *testing.T) {
+		testPublishedDeepSeekFlashHTTPFlow(t, "deepseek-v41-flash-provider-completion.json")
+	})
 	for _, tc := range []struct{ id, version, protocol, probe, base string }{
 		{"deepseek.v4-flash.api", "1.5.0", "protocol.deepseek-openai-chat.v5", qualification.DeepSeekStreamFunctionToolsProbeContractID, "https://api.deepseek.com"},
 		{"kimi.k3.api", "1.9.0", "protocol.kimi-openai-chat.k3.v6", qualification.KimiStreamFunctionToolsProbeContractID, "https://api.moonshot.cn/v1"},

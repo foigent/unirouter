@@ -4,6 +4,12 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.9.8] - 2026-10-09
+
+- 修复正式 DeepSeek 1.1.0/v6 能力探测的 admin 响应分派，复用已发布 Probe v2 的严格解析与终态校验。
+- 响应 validator 在网络请求前从实际分派解析，响应处理复用同一 validator；不支持的合同不会触发供应商调用。
+- 正式 Bundle HTTP/PG 验收覆盖旧 Definition 保留、新 candidate、单次组合调用的六条事实、审批和 Release 绑定；历史合同与 Bundle 不变。本条不代表现网或供应商验收完成。
+
 ## [1.9.7] - 2026-10-09
 
 - 增加显式 DeepSeek Chat v6 与未发布的 `deepseek.v4.1-flash.api@1.1.0` 后继 Bundle 候选，复用已有 provider-final 输出机制。冻结额度 B 原样发为 `max_tokens`，deviation 为 0；解码字节采用资源保护上限，避免将 UTF-8 字节当作供应商 completion tokens 截断。
