@@ -112,6 +112,12 @@ class Acceptance:
                                     env=env or self.env, timeout=timeout)
         output = log.read_text(errors="replace")
         if ok:
+            if result.returncode != 0:
+                prefixes = ("Failed to load config:", "Failed to initialize HTTP runtime:",
+                            "Failed to load release trust:", "Command failed:",
+                            "Schema authority startup gate failed:", "Model route authority startup gate failed:")
+                self.result["command_failure"] = {"exit_code": result.returncode,
+                    "fatal_categories": [prefix[:-1] for prefix in prefixes if prefix in output]}
             require(result.returncode == 0, label + " failed")
             return output
         return result.returncode, output
@@ -186,6 +192,10 @@ class Acceptance:
         self.passed("formal host, storage and fixture prerequisites")
 
     def build(self):
+        usage = self.run("verify initially empty disposable build cache",
+                         ["docker", "system", "df", "--format", '{{if eq .Type "Build Cache"}}{{.TotalCount}}{{end}}'])
+        require(usage.strip() == "0", "runner contains preexisting build cache")
+        self.result["initial_build_cache_count"] = 0
         keygen = self.root / "uniroute-license"
         self.run("build existing key and License tool", ["go", "build", "-buildvcs=false", "-o", keygen, "./cmd/uniroute-license"])
         rings = {}
@@ -225,14 +235,21 @@ class Acceptance:
             require(row["Os"] == "linux" and row["Architecture"] == "amd64", "fixture image platform differs")
             self.image_ids[name] = row["Id"]
             self.result["images"][name] = {"id": row["Id"], "repo_digests": row.get("RepoDigests", [])}
+        # The initial cache was empty on this job's exclusive disposable VM.
+        # Reclaim only build cache produced above; keep the tagged final images.
+        self.run("reclaim this job's unused build cache", ["docker", "builder", "prune", "--all", "--force"])
+        for name, tag in self.images.items():
+            require(self.inspect(tag)["Id"] == self.image_ids[name], "cache cleanup changed a fixture image")
         self.passed("exact old and new release-mode artifacts built with synthetic trust")
 
     def configuration(self):
         self.password, self.admin_password = secrets.token_hex(24), secrets.token_hex(24)
         self.settings = {"POSTGRES_PASSWORD": self.password, "JWT_SECRET": secrets.token_hex(32),
                          "ENCRYPTION_KEY": secrets.token_hex(16), "API_KEY_HASH_SECRET": secrets.token_hex(32),
-                         "GRAFANA_ADMIN_PASSWORD": secrets.token_hex(24), "RUNTIME_ENVIRONMENT": "test",
-                         "RUNTIME_DEPLOYMENT_MODE": "docker-compose", "MODEL_ROUTE_AUTHORITY": "canonical"}
+                         "GRAFANA_ADMIN_PASSWORD": secrets.token_hex(24),
+                         "UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET": secrets.token_hex(32),
+                         "RUNTIME_ENVIRONMENT": "test", "RUNTIME_DEPLOYMENT_MODE": "docker-compose",
+                         "MODEL_ROUTE_AUTHORITY": "legacy", "MODEL_ROUTE_COMPATIBILITY_ENABLED": "true"}
         private_write(self.env_file, "".join(k + "=" + v + "\n" for k, v in self.settings.items()))
         self.cert = self.root / "loopback.crt"
         self.run("create loopback-only TLS fixture", ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
@@ -338,6 +355,9 @@ class Acceptance:
         for service in config["services"].values():
             for port in service.get("ports", []):
                 require(port.get("host_ip") == "127.0.0.1", "fixture exposes a non-loopback port")
+        for name in ("old", "new"):
+            self.backend(name, ["runtime-generation", "support"], label="validate " + name + " release configuration before database startup")
+        self.passed("old and new release configuration admitted before database startup")
         self.run("start empty fixture databases", self.compose("old") + ["up", "-d", "--wait", "--pull", "never", "--no-build", "postgres", "redis"], env=self.compose_env("old"))
         self.backend("old", ["fresh-install", "plan", "--out", "/evidence/install.json"], label="plan actual M125 fresh owner")
         self.backend("old", ["fresh-install", "apply", "--plan", "/evidence/install.json", "--evidence-dir", "/evidence/publications"], label="apply actual M125 fresh owner")

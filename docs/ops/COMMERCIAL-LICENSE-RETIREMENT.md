@@ -187,3 +187,22 @@ the preinstalled SDK manager was not discoverable through `PATH`. The runner's
 installs it at `/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager`.
 The harness now checks and invokes that exact executable within the SDK root,
 without changing `PATH`, installing a tool or expanding the package allowlist.
+
+Run [38065300249](https://github.com/foigent/unirouter/actions/runs/38065300249)
+at `dd9fcf1d7b9b8a307b42687d6fa2871a234dd6bc` passed the unchanged storage
+check (19.09 GiB free, 74 percent used), built both release-mode backends and
+the frontend, and started the empty temporary database. It stopped at the
+original M125 fresh plan. Source inspection and the existing release-secret
+test show the fixture omitted the required notification signing secret. The
+follow-up supplies an independent synthetic value and checks both binaries'
+existing `runtime-generation support` command before database startup.
+
+The empty fleet also follows the existing customer fresh-install posture:
+`legacy` model authority with explicit compatibility enabled, retained across
+old/new/restore fixtures. It contains no qualified model or customer traffic;
+this does not prove a canonical-model cutover. Product route/startup checks are
+unchanged. The job confirms its initial Docker build cache is empty before
+building, then asks Docker to reclaim only the job-created unused build cache;
+all final image IDs are checked unchanged. Formal host storage checks still
+apply before maintenance. Failure reports add only fixed source-authored fatal
+categories and exit codes, never arbitrary command output or secret values.
