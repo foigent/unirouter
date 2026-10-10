@@ -206,3 +206,34 @@ building, then asks Docker to reclaim only the job-created unused build cache;
 all final image IDs are checked unchanged. Formal host storage checks still
 apply before maintenance. Failure reports add only fixed source-authored fatal
 categories and exit codes, never arbitrary command output or secret values.
+
+
+### Upgrade accepted; independent restore correction — 2026-10-11
+
+Run [38065970385](https://github.com/foigent/unirouter/actions/runs/38065970385)
+at `216a1b47ee39910c7013429b33d59fd217a5e11c` passed real M125 initialization,
+License import, full withdrawal/clean exit/removal, negative/read-only checks,
+M126 migration and preserved history/financial certificate, old-Artifact refusal,
+and new-fleet NGINX login with `not_required`. It failed at the separate
+`pg_restore`; full maintenance acceptance is therefore still pending. The
+backup hash is retained in its allowlisted report; no original fixture was
+reused or represented as accepted after the failed run.
+
+The restore began about 1.2 seconds after PostgreSQL container creation, after
+an unqualified socket readiness probe. The [official PostgreSQL image entrypoint](https://github.com/docker-library/postgres/blob/master/docker-entrypoint.sh)
+starts an initialization-only socket server before creating the target database,
+then stops it before starting its TCP server. A local PG16.14 reproduction on
+the previously approved task cluster confirmed that the socket probe returns
+success even for a missing database, while TCP refuses that initialization-only
+state. A fresh M125 created by the original CLI also dumped/restored successfully
+into a distinct local database. This supports an initialization race; the native
+report did not retain PostgreSQL stderr, so the earlier exact error is unknown.
+
+The harness now waits for TCP on container loopback with the exact database
+name, then verifies the actual database/user, empty public schema and a distinct
+database system identifier before restoring. Dump, original rebase owner and
+all preservation assertions remain unchanged. Local receipts and retained
+synthetic databases/dump are referenced in
+`/private/tmp/unirouter-component-opensource-20261010/local-restore-debug-state.json`
+and `local-restore-readiness-reproduction.json`. The exact local PG16 was stopped
+again after confirming zero other clients; no existing service was stopped.

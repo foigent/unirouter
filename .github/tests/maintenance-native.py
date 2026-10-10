@@ -516,11 +516,20 @@ class Acceptance:
                  "--label", "io.unirouter.fixture=" + self.project, "--env-file", pg_env, self.image_ids["postgres"]])
         deadline = time.monotonic() + 60
         while True:
-            code, _ = self.run("wait for restore database", ["docker", "exec", name, "pg_isready", "-U", "uniroute"], ok=False, timeout=10)
+            code, _ = self.run("wait for restore database", ["docker", "exec", name, "pg_isready", "-h", "127.0.0.1", "-p", "5432", "-U", "uniroute", "-d", "uniroute"], ok=False, timeout=10)
             if code == 0:
                 break
             require(time.monotonic() < deadline, "restore database readiness deadline")
             time.sleep(1)
+        # The official image's initialization server accepts Unix sockets before
+        # POSTGRES_DB exists, then exits. Only the final server opens TCP.
+        require(self.sql("SELECT current_database()='uniroute' AND current_user='uniroute' "
+                         "AND NOT EXISTS (SELECT 1 FROM pg_class WHERE relnamespace='public'::regnamespace)",
+                         restored=True) == "t", "restore target is not the expected empty database")
+        require(self.sql("SELECT system_identifier FROM pg_control_system()", restored=True)
+                != self.sql("SELECT system_identifier FROM pg_control_system()"),
+                "restore target shares the source database system")
+        self.result["restore_target"] = "distinct_empty_database_after_tcp_readiness"
         self.run("restore actual pre-M126 backup", ["docker", "exec", "-i", name, "pg_restore", "--exit-on-error", "-U", "uniroute", "-d", "uniroute"], data=(self.evidence / "before.dump").read_bytes())
         restored = self.facts(restored=True, heartbeat=True)
         require(restored == self.backup_facts, "restored M125 authoritative facts differ from backup")
