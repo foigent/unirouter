@@ -153,3 +153,14 @@ excludes this maintenance path. This batch uses the separate explicit owner
 approval above, rather than extending the earlier scope by inference. Bind
 any result to the actual head, images and run ID. Existing required checks,
 merge/publication restrictions and target-specific deployment approval remain.
+
+### Initial native preflight result
+
+Run [38058875535](https://github.com/foigent/unirouter/actions/runs/38058875535)
+at `bb9b26befa414bfe53390503b105b40727596b24` stopped at the formal storage
+preflight before builds, keys or database startup. Python 3.10.22, Docker
+client/server 28.0.4 and Compose 2.38.2 passed their prerequisites. The original
+report did not retain storage measurements, so it cannot identify the reason
+or establish maintenance acceptance. A test-only diagnostic follow-up retains
+numeric capacity/usage and fixed refusal categories while preserving the
+8-GiB-free/80-percent-used checks. No arbitrary command output is uploaded.

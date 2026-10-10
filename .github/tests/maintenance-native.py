@@ -125,8 +125,20 @@ class Acceptance:
 
     def preflight(self):
         self.result["tools"] = self.rollout.environment_check()
-        self.run("formal storage preflight before builds", [self.repo / "scripts/docker-storage-preflight.sh",
-                 "--path", "/var/lib/docker", "--minimum-free-gib", "8", "--maximum-use-percent", "80"])
+        code, output = self.run("formal storage preflight before builds", [self.repo / "scripts/docker-storage-preflight.sh",
+                 "--path", "/var/lib/docker", "--minimum-free-gib", "8", "--maximum-use-percent", "80"], ok=False)
+        storage = {"exit_code": code}
+        values = re.search(r"used_percent=(\d+) available_gib=([0-9.]+) minimum_free_gib=(\d+) maximum_use_percent=(\d+)", output)
+        if values:
+            storage.update(used_percent=int(values[1]), available_gib=float(values[2]),
+                           minimum_free_gib=int(values[3]), maximum_use_percent=int(values[4]))
+        for reason, message in (("missing_path", "path does not exist:"),
+                                ("usage_threshold", "filesystem use exceeds the approved threshold"),
+                                ("free_space_threshold", "available space is below the approved threshold")):
+            if message in output:
+                storage["refusal"] = reason
+        self.result["storage"] = storage
+        require(code == 0, "formal storage preflight before builds failed")
         require(self.run("refuse existing fixture project", ["docker", "ps", "-aq", "--filter",
                     "label=com.docker.compose.project=" + self.project]).strip() == "", "fixture project exists")
         for name in ("uniroute-api", "uniroute-api-canary", "uniroute-frontend", "uniroute-nginx", "uniroute-postgres", "uniroute-redis", "ur-maintenance-restore-postgres", "ur-maintenance-restore-backend"):
