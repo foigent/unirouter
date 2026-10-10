@@ -40,5 +40,6 @@ source ownership, and distinguish observed facts from estimates and hypotheses.
 Managed services and independent commercial extensions may be explored as
 repeated user needs become clear.
 
-The separate Why UniRouter article will be written by the project owner.
-It is not required to use or contribute to the project.
+Read the owner's [Why UniRouter](docs/community/why-unirouter.md) essay
+([简体中文](docs/community/why-unirouter.zh-CN.md)) for the motivation, design
+choices and longer-term research questions behind this direction.

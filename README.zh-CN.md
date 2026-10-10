@@ -2,7 +2,7 @@
 
 **企业 AI 的模型执行与可信事实底座。**
 
-[English](README.md) · [开始使用](docs/community/getting-started.md) ·
+[English](README.md) · [设计理念](docs/community/why-unirouter.zh-CN.md) · [开始使用](docs/community/getting-started.md) ·
 [架构与 X-Insight](docs/community/architecture.md) · [参与贡献](CONTRIBUTING.md) ·
 [路线图](ROADMAP.md) · [许可证](LICENSE)
 
@@ -10,7 +10,7 @@ UniRouter 为应用和 Agent 提供统一模型入口及管理控制台，将模
 路由、预算、用量、计费和执行回执放在同一条可检查的链路中。你可以追溯请求
 如何执行，以及费用依据如何形成。
 
-> **开源准备中：** 本分支是本地候选。公开发布、无商业 License 的安装验收、
+> **开源准备中：** 本分支正在私有 PR 中审阅。公开发布、无商业 License 的安装验收、
 > 外部 Fork 完整 CI 尚未完成。请先查看[发布准备状态](docs/community/release-readiness.md)，
 > 不要将候选说明视为已发布的安装或生产支持承诺。
 
@@ -33,6 +33,8 @@ UniRouter 为应用和 Agent 提供统一模型入口及管理控制台，将模
 
 | 你的目标 | 阅读入口 |
 | --- | --- |
+| 理解为什么做 UR 及设计取舍 | [设计理念](docs/community/why-unirouter.zh-CN.md) |
+| 深入了解网关实现差异 | [源码比较说明（英文）](docs/community/gateway-design-comparison.md) |
 | 理解产品与职责边界 | [架构与 X-Insight](docs/community/architecture.md) |
 | 安装并发出第一次请求 | [开始使用](docs/community/getting-started.md) |
 | 了解 Linux／ECS 简易安装预览版 | [Linux 安装说明](docs/community/install-linux.zh-CN.md) |

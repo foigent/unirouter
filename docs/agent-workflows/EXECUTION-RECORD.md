@@ -1,5 +1,50 @@
 # Current Execution Record
 
+## Owner design rationale and publication follow-up — 2026-10-10
+
+The owner supplied the English and Simplified Chinese Why UniRouter essays and
+an English source-based gateway comparison. The candidate preserves the essays'
+substance, fixes the Chinese overview link, adds README/index/roadmap entry
+points and replaces outdated statements that the essay is still to be written.
+The original authoring checkout and its unrelated modifications are untouched.
+
+The comparison now binds UR to `c5958c57106e7073e74653652b38dc549f482e10`.
+The implementation files it cites are unchanged from `35546e2`. The cited
+LiteLLM and New API commits were checked against their live official Git trees;
+all 11 cached source files used for review match their Git blob identities.
+Review covered execution admission, reservations/settlement/recovery, usage and
+source-fact meaning, capture limits and the parity of the two rationale texts.
+It does not claim comparative runtime experiments or a complete product audit.
+
+Private PR 442's exact `c5958c5` CI
+[38032678754](https://github.com/foigent/unirouter/actions/runs/38032678754)
+and protocol
+[38032678752](https://github.com/foigent/unirouter/actions/runs/38032678752)
+were read back as successful: Change Routing, Backend Tests, Frontend Build,
+Browser E2E, Docker Build and Protocol Pin. The earlier two CI failures below
+remain historical evidence; the complete latest run resolves their CI blockers.
+Main remains `59c47b852b7372951c5c49b0e6b23df8c83817b9`, and the repository
+remains private with this PR open as a draft.
+
+The release-readiness guide now records concrete fork-CI dependencies,
+frontend license metadata inventory, limited history-disclosure triage and the
+unconfirmed private-reporting channel. The next native-installation batch is
+prepared in the existing COMMUNITY-INSTALLER runbook for a disposable
+GitHub-hosted Ubuntu runner, synthetic data and ephemeral test keys. A separate
+user question requests the additional environment/execution authority; no new
+workflow, service, key, image or target has been created by this documentation
+follow-up. Existing ECS provider evidence keeps its original boundary.
+
+Local review checked 115 relative links across 16 documents, all 13 pinned UR
+source/readiness files against both commits, and whitespace. The English essay
+is byte-identical to the owner's original; the Chinese essay changes only its
+overview link.
+
+This batch changes documentation only; product version, runtime contracts,
+required checks, permissions and budget remain unchanged. It continues the
+approved private commit/push/PR scope. Publication, merge, official artifacts
+and target deployment remain separate. Experience file: no change required.
+
 ## Private PR 442 — CI timeout follow-up — 2026-10-10
 
 The approved candidate was committed and pushed as

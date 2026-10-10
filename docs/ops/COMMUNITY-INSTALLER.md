@@ -130,3 +130,51 @@ TLS exposure and provider credentials retain their own authorization boundary.
 An npm launcher, automatic Docker installation, upgrades and uninstall are
 separate follow-ups; the first path uses Python 3 and Docker Compose already
 installed on the server.
+
+## Proposed native acceptance batch
+
+The next environment should be a disposable GitHub-hosted Ubuntu runner for
+this private candidate, rather than an existing ECS application host. This is
+a proposed test batch, not a workflow already dispatched or an approved release.
+The existing CI allocation and hard stop remain unchanged. A separate manual
+job keeps native installation distinguishable from the existing Docker Build
+check and avoids running the full install on every documentation edit.
+
+Before execution, bind the batch to the exact candidate commit and runner
+platform, inspect available Docker/Compose/Python versions and storage, and
+prepare the reviewed package using the existing pack/verifier interfaces.
+Use only a fresh test signing key and public ring, embedded in this test
+backend's release-mode build. Production keys, repository secrets and private
+registry credentials are unnecessary. Test signatures do not establish the
+identity of a future official release. Record the exact six pulled/built image
+digests; backend and frontend registry round-tripping, if needed for RepoDigests,
+stays inside a loopback registry on the same disposable runner. No registry
+publication or public release is part of this batch.
+
+Acceptance must exercise the actual packaged installer:
+
+1. `check` leaves files, database and Docker resources unchanged; reject a
+   modified payload or wrong ring before starting services.
+2. A fresh install reaches M126 through the existing fresh owner, records the
+   exact test release, rotates the administrator password once and starts the
+   loopback console without a commercial License. Check actual image IDs,
+   backend and NGINX health, login and the License-retired response.
+3. An interrupted install resumes with the original project, secrets, database
+   identity and retained evidence. Repeating a completed install/resume does
+   not append another password-rotation audit. An ambiguous rotation remains
+   a refusal requiring investigation, not a blind retry.
+4. Existing exact-name or labelled Docker resources are refused; changing
+   signed inputs or resuming against the wrong daemon/project/database is
+   refused. Compare before/after resource and database state.
+5. Retain redacted commit/image/version/schema/check results and failure logs.
+   Do not upload generated secrets, private keys, full Compose output or raw
+   customer/provider content. Dispose only of this job's synthetic resources
+   through the runner lifecycle.
+
+This batch validates installation and console access. It makes no provider
+call, publishes no port beyond loopback, changes no ECS/firewall configuration,
+and does not replace the separate M125-to-M126 maintenance acceptance or
+published-download/trust-bootstrap checks. Existing provider evidence keeps its
+original version and environment limits. New test infrastructure and execution
+must have corresponding authorization before dispatch; the earlier local
+PostgreSQL/Redis approval alone does not cover this Docker environment.

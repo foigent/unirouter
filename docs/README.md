@@ -2,6 +2,9 @@
 
 ## 使用与贡献
 
+- [Why UniRouter](community/why-unirouter.md) / [设计理念](community/why-unirouter.zh-CN.md) — 项目动机、设计取舍和长期方向
+- [Gateway design comparison](community/gateway-design-comparison.md) — 固定源码版本的机制比较与适用边界
+
 - [开始使用](community/getting-started.md) — 安装路径、首次请求与候选限制
 - [架构与 X-Insight](community/architecture.md) — 请求链路及产品职责
 - [数据处理](community/data-handling.md) — 本地记录、Provider、遥测与证据外发

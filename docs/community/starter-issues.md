@@ -56,4 +56,4 @@ answer correctness. Keep diagram node meaning and source links aligned.
 
 **Acceptance:** a bilingual maintainer checks the translation and rendered
 diagram. No API, product behavior or new capability claim changes. This task
-does not write the owner's future Why UniRouter essay.
+does not rewrite the owner's [Why UniRouter](why-unirouter.md) essay.

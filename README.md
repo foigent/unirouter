@@ -2,7 +2,8 @@
 
 **Model execution, policy and accountable usage for enterprise AI.**
 
-[简体中文](README.zh-CN.md) · [Getting started](docs/community/getting-started.md) ·
+[简体中文](README.zh-CN.md) · [Why UniRouter](docs/community/why-unirouter.md) ·
+[Getting started](docs/community/getting-started.md) ·
 [Architecture](docs/community/architecture.md) · [Contributing](CONTRIBUTING.md) ·
 [Roadmap](ROADMAP.md) · [License](LICENSE)
 
@@ -11,8 +12,8 @@ administration console. It brings model access policies, routing, budgets,
 usage, billing and execution receipts together, so operators can inspect how a
 request was handled and what its charges are based on.
 
-> **Open-source preparation:** this branch is a local candidate. The public
-> release, license-free installation acceptance and external-fork CI are not yet
+> **Open-source preparation:** this branch is a candidate under private PR review.
+> The public release, license-free installation acceptance and external-fork CI are not yet
 > complete. See [release readiness](docs/community/release-readiness.md) before
 > treating these instructions as a published, supported installation.
 
@@ -45,6 +46,8 @@ Choose the path that matches your task:
 
 | Goal | Start with |
 | --- | --- |
+| Understand the motivation and design choices | [Why UniRouter](docs/community/why-unirouter.md) |
+| Examine selected gateway implementations | [Source-based design comparison](docs/community/gateway-design-comparison.md) |
 | Understand the product and its boundaries | [Architecture and X-Insight](docs/community/architecture.md) |
 | Install and make a first request | [Getting started](docs/community/getting-started.md) |
 | Preview simplified Linux/ECS installation | [Linux installer](docs/community/install-linux.md) |
