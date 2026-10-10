@@ -1,5 +1,30 @@
 # Current Execution Record
 
+## Public source publication and contributor CI — 2026-10-11
+
+The owner explicitly approved merging and publishing UR and both complete
+dependency repositories, the bounded existing-history scope, English community
+settings, three starter issues and actual fork CI. PR 442, component PR 1 and
+protocol PR 10 were normally merged with unchanged reviewed trees. Their main
+checks passed; all three repositories are public and private vulnerability
+reporting is enabled. UR main protection is unchanged. Exact dependency source,
+license files and five N1 assets passed anonymous byte/hash verification; the
+existing N1 release page now links its complete accompanying license materials.
+
+The separately reviewed public-auth patch is activated without changing its
+resulting workflow hash, dependency identities, permissions or test coverage.
+A comment in the protocol workflow makes its public dependency explicit and
+ensures the real fork PR also exercises that action. Full upstream checks from
+`nicholaszming/unirouter` remain the acceptance condition for this candidate.
+
+Native fresh-install and full M125-to-M126 maintenance/independent restore
+passed at `71b5a4ee` (runs 38067610346 and 38067610388). Exact-main protocol
+passed at `345a614d` (38073239078). Current source/publication status and
+remaining official distribution work are in [release readiness](../community/release-readiness.md).
+No official package/image/tag, signing key, existing App secret revocation,
+ECS/Production operation or provider call is included. Product version remains
+1.10.0; experience file needs no change. Older entries below are historical.
+
 ## Prepared native maintenance acceptance — 2026-10-10
 
 The M125-to-M126 test-only harness and scoped GitHub workflow are prepared

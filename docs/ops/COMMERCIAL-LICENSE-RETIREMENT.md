@@ -1,10 +1,10 @@
 # Commercial License retirement: 1.10.0 candidate
 
-Status: local candidate. PostgreSQL 16 migration, fresh-install and backup
-restore/rebase tests passed; host-controller tests use simulated Docker/NGINX.
-Actual Docker/NGINX maintenance acceptance is still required before this becomes
-an executable target runbook or an installable release. This document grants no Target or Production
-operation authorization.
+Status: source candidate with passed local and disposable Linux amd64
+maintenance acceptance, including actual Docker/NGINX and independent backup
+restore. See the [accepted native result](#accepted-native-maintenance-result--2026-10-11).
+An official installable release remains pending. This document grants no Target
+or Production operation authorization; each target needs its own reviewed input.
 
 ## Runtime and API contract
 
@@ -237,3 +237,28 @@ synthetic databases/dump are referenced in
 `/private/tmp/unirouter-component-opensource-20261010/local-restore-debug-state.json`
 and `local-restore-readiness-reproduction.json`. The exact local PG16 was stopped
 again after confirming zero other clients; no existing service was stopped.
+
+
+## Accepted native maintenance result — 2026-10-11
+
+Run [38067610388](https://github.com/foigent/unirouter/actions/runs/38067610388)
+passed all ten acceptance checks at exact candidate
+`71b5a4ee72d649d08e1137e68edb8b4d866f0987`, tree
+`463c5de2405e52cce44423c0f1fa7cfcd6cb6a61`. It used original M125 Artifact
+`59c47b852b7372951c5c49b0e6b23df8c83817b9` and synthetic retained License,
+audit/outbox and financial history. This supersedes pending and partial results
+above without treating those earlier failed runs as accepted.
+
+The run proved actual NGINX full withdrawal, clean process exit/removal, lease
+expiry and retirement, migration refusals before safe retirement, unchanged
+state for check/dry-run, M126 history/certificate preservation, old-Artifact
+refusal and new-fleet NGINX login with `not_required`. The verified pre-M126
+backup was restored into a distinct empty PostgreSQL instance; the original
+restore/rebase owner appended a coverage successor and the original Artifact
+started on restored M125. The migrated M126 database remained unchanged.
+
+Backup SHA-256:
+`77454edb97e8b45ad765890117fe7ac1fcdebbce088b05c695aadbf52efa9403`.
+The report artifact digest and candidate commit/tree were independently read
+back. This is disposable CI acceptance with zero content streams and no model
+or provider calls, not an existing ECS/Production upgrade or traffic-drain proof.

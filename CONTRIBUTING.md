@@ -46,7 +46,7 @@ leave a comment first so maintainers can confirm scope and avoid duplicate work.
 
 ## Fork and branch
 
-Once the repository is public, fork it in GitHub, then:
+Fork the public repository in GitHub, then:
 
 ```sh
 git clone https://github.com/YOUR-ACCOUNT/unirouter.git
@@ -102,13 +102,13 @@ integration entry point is `scripts/test-backend-integration.sh`; its flags,
 required services and scope are documented in that script. Do not use real
 provider calls as part of ordinary contributor tests.
 
-**Current external dependency limitation:** parts of the required backend and
-protocol CI need private `foigent/integration-control` and
-`foigent/event-connector-spec` inputs. Fork PRs cannot currently reproduce
-those complete checks. Maintainers must resolve the distribution/access
-boundary before declaring contribution CI ready. Do not pass secrets to
-untrusted forks, change to privileged PR execution, or treat skipped
-conformance as passed. See [release readiness](docs/community/release-readiness.md).
+**Public conformance dependencies:** backend and protocol CI use the public
+`foigent/integration-control` and `foigent/event-connector-spec` repositories
+at fixed, verified commits. CI checks the historical release hashes and uses
+only its read-only GitHub job token for downloads; contributors do not need
+maintainer App secrets. Keep ordinary pull-request execution, exact inputs and
+required checks intact. See [release readiness](docs/community/release-readiness.md)
+for the actual fork-verification record.
 
 ## Version and compatibility
 

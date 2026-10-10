@@ -1,5 +1,72 @@
 # Open-source release readiness
 
+Status on **2026-10-11: source published; official signed installer distribution
+is not available yet**. English is the primary community language, with Chinese
+entry points and contributions welcome.
+
+## Published source and community
+
+- [UniRouter](https://github.com/foigent/unirouter),
+  [integration-control](https://github.com/foigent/integration-control) and
+  [event-connector-spec](https://github.com/foigent/event-connector-spec) are public
+  under Apache-2.0 for project-owned material. Third-party terms remain applicable.
+- The owner approved publication of the existing Git history and retained records
+  after the bounded disclosure review below. No history was rewritten or deleted.
+- GitHub private vulnerability reporting is enabled for all three repositories.
+  UR's English About/topics and Discussions are enabled; conduct concerns use
+  the contact in the [Code of Conduct](../../CODE_OF_CONDUCT.md).
+- Exact licensed dependency sources and accompanying notices were downloaded
+  anonymously and compared with the reviewed Git bytes. All five historical N1
+  assets matched their original SHA-256 values. The [N1 download page](https://github.com/foigent/integration-control/releases/tag/v0.1.0-candidate.1)
+  links the complete accompanying license materials; the assets remain unchanged.
+
+## Verified implementation and installation
+
+The accepted 1.10.0 candidate is `71b5a4ee72d649d08e1137e68edb8b4d866f0987`,
+tree `463c5de2405e52cce44423c0f1fa7cfcd6cb6a61`. It was merged through
+[PR 442](https://github.com/foigent/unirouter/pull/442) as
+`345a614d958eff041460e382e3e25b21556b963b`, with the same tree.
+
+| Evidence | Result and boundary |
+| --- | --- |
+| Required CI | [38067610362](https://github.com/foigent/unirouter/actions/runs/38067610362): Change Routing, Backend Tests, Frontend Build, Browser E2E and Docker Build passed |
+| Exact-main protocol | [38073239078](https://github.com/foigent/unirouter/actions/runs/38073239078) passed at merged main `345a614d` |
+| Fresh installation | [38067610346](https://github.com/foigent/unirouter/actions/runs/38067610346): all eight synthetic Linux amd64 checks passed, including interruption/resume, login and no commercial License |
+| Existing M125 upgrade and recovery | [38067610388](https://github.com/foigent/unirouter/actions/runs/38067610388): all ten checks passed, including real Docker/NGINX withdrawal, clean stop, M126 preservation checks, admission and restore into a separate PostgreSQL instance |
+
+These native tests used temporary signing trust and synthetic data on disposable
+GitHub Ubuntu machines. No existing ECS installation was upgraded, no provider
+request was made, and no official package, image or signing identity was published.
+See the [installer runbook](../ops/COMMUNITY-INSTALLER.md) and
+[maintenance result](../ops/COMMERCIAL-LICENSE-RETIREMENT.md#accepted-native-maintenance-result--2026-10-11).
+
+## Public contributor CI
+
+The reviewed public CI activation removes the private App-token dependency,
+retains the exact dependency commits/trees and all five N1 asset checks, and
+uses only the read-only GitHub job token. No privileged PR event or reduced
+test suite is introduced. An actual fork under `nicholaszming/unirouter` is
+used to verify this change in upstream PR CI. The publication follow-up PR's
+checks record the result; until they pass, fork reproducibility is unverified.
+Existing required checks and branch protection remain unchanged. Existing App
+secret revocation is outside this batch.
+
+## Remaining signed-distribution work
+
+Source publication is complete independently of an official installable release.
+Before advertising a one-command public install, prepare the exact supported
+package and image digests, complete third-party notices/source delivery for their
+actual contents, publish the separately trusted verifier and public verification
+ring, and test the resulting public downloads. The installer remains a preview;
+there is no published npm installer or supported production release from this batch.
+
+The accepted architecture, X-Insight boundary, source-notice findings and bounded
+history review are retained below. X-Insight publication, ECS/Production changes,
+provider calls and new official signing credentials are separate actions.
+
+<details>
+<summary>Historical preparation record (superseded by the current status above)</summary>
+
 Status: **private draft [PR 442](https://github.com/foigent/unirouter/pull/442);
 not ready for public release**.
 Implementation candidate `b7432803a8ae7ef3b946501ae5f3e9ff0a905273`
@@ -221,3 +288,5 @@ evidence are separate.
 Before publication, review exact source/history scope, attribution, contacts,
 installation evidence and dependency distribution. Commit, push, PR, public
 visibility, release and deployment require their corresponding authorization.
+
+</details>
