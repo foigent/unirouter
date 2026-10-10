@@ -1,0 +1,79 @@
+name: Commercial License Maintenance Acceptance
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/maintenance-native.yml
+      - .github/tests/maintenance-native.py
+      - scripts/runtime-generation-retire.py
+      - scripts/runtime-ingress.py
+      - scripts/internal-target-rollout.py
+      - scripts/source-budget-restore-rebase.sql
+      - internal/migrate/**
+      - internal/runtimegeneration/**
+      - internal/schemaauthority/**
+      - cmd/uniroute/runtime_generation_cli.go
+      - migrations/000126_commercial_license_retirement.up.sql
+      - Dockerfile
+      - frontend/Dockerfile
+      - docker-compose.yml
+      - docker-compose.canary.yml
+      - deploy/internal-target-images.override.yml
+      - nginx/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: maintenance-native-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux-maintenance:
+    name: M125 to M126 Maintenance (synthetic)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact candidate and original baseline
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.25.12'
+          cache: false
+
+      - name: Set up supported Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+
+      - name: Test actual maintenance and separate backup restore
+        env:
+          EXPECTED_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
+          git cat-file -e 59c47b852b7372951c5c49b0e6b23df8c83817b9^{commit}
+          sudo env PATH="$PATH" GITHUB_ACTIONS=true \
+            RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" RUNNER_TEMP="$RUNNER_TEMP" \
+            python3 -B .github/tests/maintenance-native.py \
+            --expected-commit "$EXPECTED_COMMIT" \
+            --report "$RUNNER_TEMP/ur-maintenance-native-report.json"
+
+      - name: Retain only allowlisted acceptance facts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: maintenance-native-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/ur-maintenance-native-report.json
+          if-no-files-found: warn
+          retention-days: 7

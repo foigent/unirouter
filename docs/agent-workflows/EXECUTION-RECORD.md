@@ -1,5 +1,24 @@
 # Current Execution Record
 
+## Prepared native maintenance acceptance — 2026-10-10
+
+The M125-to-M126 test-only harness and scoped GitHub workflow are prepared
+locally; see [the reviewed scope](../ops/COMMERCIAL-LICENSE-RETIREMENT.md#prepared-disposable-maintenance-acceptance--2026-10-10).
+Independent pre-code and single closing reviews are complete. The three
+required test corrections and offline checks passed. The owner explicitly
+approved committing and executing this separate disposable GitHub maintenance
+batch on 2026-10-10, including temporary keys, service lifecycle, synthetic
+migration and independent backup restore. The earlier fresh-only approval is
+not extended by inference. One Ubuntu 24.04 amd64 job is bounded to 45 minutes;
+the existing account budget and hard stop remain. No ECS, provider call or
+official publication is authorized. Native results are pending. Product
+version remains 1.10.0; experience file needs no change.
+
+The existing dependency-pin head `6bd3ae192c9e30fc17b68fc3bace5a7fcdc86497`
+passed all seven PR checks: CI 38054463214, protocol 38054463203 and native
+installer 38054463238. These are private PR/fresh-install results, not the
+prepared maintenance test, exact-main, public distribution or Production.
+
 ## Licensed dependency repositories and contributor CI — 2026-10-10
 
 The owner approved both complete integration-control and event-connector-spec

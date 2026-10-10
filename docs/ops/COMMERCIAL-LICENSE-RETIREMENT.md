@@ -109,3 +109,47 @@ remove the migration row, replay historical trigger SQL, edit entitlement data
 or start an old binary against M126 as an improvised rollback.
 
 [Release readiness](../community/release-readiness.md) tracks missing acceptance.
+
+## Prepared disposable maintenance acceptance — 2026-10-10
+
+The local candidate `.github/tests/maintenance-native.py` and scoped workflow
+`.github/workflows/maintenance-native.yml` exercise the original M125 artifact
+`59c47b852b7372951c5c49b0e6b23df8c83817b9` against the exact candidate head/tree.
+The proposed environment is one disposable GitHub-hosted Ubuntu 24.04 amd64
+runner, with a 45-minute job limit and the existing account budget/hard stop.
+It creates synthetic signing keys, loopback TLS and test-only databases; no
+repository secrets, ECS, existing databases, provider calls or official
+publication are involved. The owner explicitly approved committing and running
+this bounded disposable-maintenance batch on 2026-10-10. Actual native
+acceptance remains pending and must bind the resulting head and run ID.
+
+The harness uses shipped owners to initialize M125, import a synthetic License,
+retain a pre-M126 backup, withdraw both receivers, prove clean process exit,
+remove exact stopped containers, retire the two generations and migrate M126.
+It checks full ledger/history/financial-certificate preservation, old-artifact
+schema refusal, new-artifact admission and login through NGINX. Recovery uses
+an independent empty PostgreSQL instance, the original restore/rebase owner
+and the old artifact; it never down-migrates or overwrites the migrated fixture.
+
+Negative checks cover unsafe startup/migration, stop/remove/retirement before
+withdrawal and a stale revision while the genuine predecessor remains eligible.
+Plan and check compare protected database/evidence/resource facts. Initial
+login audit and its matching outbox must settle before the backup baseline;
+normal active-runtime heartbeat fields remain explicitly excluded only while
+old processes are live. Content-stream counts are reported, not invented.
+Only the allowlisted JSON report is uploaded, for seven days. Raw logs, dumps,
+private keys, passwords and tokens remain inside the temporary runner.
+
+Independent pre-code review and the single closing review by
+`/root/installer_precode_review` are complete. All three required closing
+findings were corrected. Python 3.10 grammar, help, non-runner refusal before
+fixture creation, workflow identities/permissions/upload scope and whitespace
+checks passed. Exact local receipts are in
+`/private/tmp/unirouter-component-opensource-20261010/maintenance-offline-checks.json`
+and `maintenance-closing-review.md`. No native result exists yet.
+
+The earlier [fresh-installer acceptance](COMMUNITY-INSTALLER.md) explicitly
+excludes this maintenance path. This batch uses the separate explicit owner
+approval above, rather than extending the earlier scope by inference. Bind
+any result to the actual head, images and run ID. Existing required checks,
+merge/publication restrictions and target-specific deployment approval remain.

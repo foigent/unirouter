@@ -16,7 +16,13 @@ checks: [CI 38044957141](https://github.com/foigent/unirouter/actions/runs/38044
 and [native installer 38044957126](https://github.com/foigent/unirouter/actions/runs/38044957126).
 Native acceptance used that exact head; the other workflows used PR merge
 commit `19e6fae867d95f843fda7ca5a51349595618989b`. The dependency-carrier
-follow-up below requires its own CI results.
+head `6bd3ae192c9e30fc17b68fc3bace5a7fcdc86497` also passed all seven checks:
+[CI 38054463214](https://github.com/foigent/unirouter/actions/runs/38054463214),
+[protocol 38054463203](https://github.com/foigent/unirouter/actions/runs/38054463203)
+and [native installer 38054463238](https://github.com/foigent/unirouter/actions/runs/38054463238).
+Its PR merge commit is `b0493da5781d0a050ca6bfdff3d3d7ced23abcd4`; both head
+and merge trees are `d96837b958ae73bfdd8dd063e05dd70f663d6ab6`. These
+results do not cover the separately prepared native maintenance test.
 Main read back on 2026-10-10:
 `59c47b852b7372951c5c49b0e6b23df8c83817b9`, version 1.9.8.
 This task has not changed private visibility.
@@ -38,7 +44,7 @@ Chinese is secondary. Both remain welcome for questions and contributions.
 | Condition | Remaining work / evidence |
 | --- | --- |
 | Reader/contributor entry | Candidate bilingual README and design rationale, source comparison, architecture, data guide, contribution map, DCO, reporting and roadmap |
-| Runtime License retirement | Local PG16 migration/refusal, retained history and new-runtime admission passed; actual Docker/NGINX maintenance acceptance remains pending |
+| Runtime License retirement | Local PG16 migration/refusal, retained history and new-runtime admission passed; native maintenance harness/review/offline checks and separate GitHub execution approval are complete, while its actual Docker/NGINX result remains pending |
 | Installation/first request | Fresh Linux amd64 installation, interrupted-plan recovery, repeat resume, login and retired-License status passed at `b7432803`; 23 offline cases and signature interoperability also passed. Public assets and affected first-use behavior need their own acceptance; existing ECS evidence retains its recorded versions |
 | External Fork CI | Owner approved both dependency repositories under Apache-2.0; licensed private candidates passed local gates. Public access and a real fork run remain pending |
 | Copyright/dependencies | Existing Foigent attribution retained; contributor authority and redistribution review need completion |
@@ -69,14 +75,25 @@ Chinese is secondary. Both remain welcome for questions and contributions.
   The authenticated GitHub reporting read returned 404 for the still-private
   repository; verify the private form as part of the approved publication
   action before announcing the project. Selection is not availability proof.
-- **Source/history:** user-authored public-facing essays are reviewed, but that
-  does not clear the entire repository history, internal operational records
-  or other contributors' rights for disclosure. A content-pattern triage of 189
-  tracked Markdown files under `docs/ops` and `docs/agent-workflows` found 41
-  files with local filesystem references and 3 with private-IPv4-shaped values.
-  These may include examples; they are review candidates, not confirmed secret
-  leaks. Preserve existing material while reviewing the exact intended
-  publication scope.
+- **Source/history:** the saved advertised heads/tags of all three repositories
+  were inspected across 12,416 distinct reachable Git blobs for six plaintext
+  key/token patterns. The 12 matches were header-only negative-test literals;
+  no other matching candidate appeared. Current operational/evidence text
+  review covers 192 paths, with 56 containing filesystem, IP or cloud-instance
+  references. These include examples and historical development/backup records.
+  All nine documented PostgreSQL DSNs point to loopback; password-bearing
+  contexts are documented test defaults. This does not clear other credential
+  formats, embedded/compressed content, all Actions logs/discussions, other
+  contributors' rights or the suitability of internal records for publication.
+  No historical material has been removed or rewritten.
+- **Actions disclosure check:** 332 complete archives (311 coverage files and
+  37 expected JSON entries) matched their metadata digests and passed expected
+  shape/six-pattern checks. Three snapshot archives reached their recorded
+  retention expiry and return 404; they remain uninspected. Fifteen sampled
+  log archives had no pattern matches; one further log could not be completely
+  read because its download ended with EOF. This is bounded evidence, not
+  clearance of every historical log or credential format. No artifact/log was
+  deleted. Exact results are retained in the private review directory.
 - **Native installation:** the independent disposable Ubuntu workflow now
   verifies real installation and recovery. See the
   [accepted result](../ops/COMMUNITY-INSTALLER.md#accepted-native-result).
@@ -135,10 +152,18 @@ those external facts. No repository visibility has changed.
 
 ## Third-party distribution findings
 
-The source inventory found 42 third-party modules in the Linux amd64
-`cmd/uniroute` dependency graph, each with root license/notice files. Together
-with the frontend metadata above, this is an input to release notices, not a
-complete inventory of the built frontend, Go standard library or image contents.
+Private source notice materials now contain 390 unmodified license/notice
+files for 42 Go runtime modules, Go 1.25.12 and all 272 frontend production
+lockfile entries. Installed frontend versions and every copied file's SHA-256
+were verified. The missing root MIT license for `victory-vendor` is supplied
+from its exact upstream v36.9.2 source alongside its 13 included vendor licenses.
+The manifest SHA-256 is
+`a43cd67541c0581684be4de1c8d8d5705bf207637d6837190887f2b75c81a6fc`;
+review materials are in
+`/private/tmp/unirouter-component-opensource-20261010/source-notice-review/`.
+They have not been signed, published or included in release images. Actual
+binary/frontend contents, inline attribution, OS/image components and required
+source delivery still need verification for the exact public package.
 
 The tested Redis digest
 `sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499`
