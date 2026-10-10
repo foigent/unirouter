@@ -15,7 +15,6 @@ import (
 	"github.com/uniroute/unirouter/internal/accessscope"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
-	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelauthz"
@@ -223,21 +222,7 @@ func (h *Handler) readinessPlatformAxes(
 	billingErr error,
 ) {
 	model := response.Scope.ResolvedModel
-	if h.licenseRuntime == nil {
-		response.PlatformModel.GatewayLicense = modelreadiness.Optional(
-			"gateway_license_evidence_not_configured", modelreadiness.Evidence("runtime_configured", false))
-	} else if decision := h.licenseRuntime.Authorize(licensing.FeatureGateway); decision.Allowed {
-		response.PlatformModel.GatewayLicense = modelreadiness.Ready(
-			"gateway_license_authorized", modelreadiness.Evidence("status", decision.Status.Status, "enforceable", decision.Status.Enforceable))
-	} else {
-		response.PlatformModel.GatewayLicense = modelreadiness.Blocked(
-			decision.Code,
-			modelreadiness.Evidence("status", decision.Status.Status, "enforceable", decision.Status.Enforceable),
-			h.readinessFixRoute(r, "/license", actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin),
-			"platform_admin",
-		)
-	}
-	modelGovernanceLicensed := h.licenseRuntime == nil || h.licenseRuntime.Authorize(licensing.FeatureModelGovernance).Allowed
+	response.PlatformModel.GatewayLicense = modelreadiness.Optional("commercial_license_not_required", nil)
 	registry, err := modelreadiness.ReadRegistry(r.Context(), h.db, orgID, model)
 	registryFix := h.readinessFixRoute(r, "/model-governance?tab=registry&model="+url.QueryEscape(model),
 		actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin || actorOrganizationRole(r.Context()) == auth.RoleOrgAdmin)
@@ -247,13 +232,8 @@ func (h *Handler) readinessPlatformAxes(
 		response.PlatformModel.Lifecycle = modelreadiness.Unavailable("model_lifecycle_unavailable")
 		response.PlatformModel.Catalog = modelreadiness.Unavailable("model_catalog_unavailable")
 	case !registry.Exists:
-		if modelGovernanceLicensed {
-			response.PlatformModel.Registration = modelreadiness.Blocked("model_unregistered", modelreadiness.Evidence("registered", false), registryFix, "organization_admin")
-			response.PlatformModel.Catalog = modelreadiness.Blocked("catalog_not_published", modelreadiness.Evidence("visible", false), registryFix, "organization_admin")
-		} else {
-			response.PlatformModel.Registration = modelreadiness.Optional("model_governance_not_licensed_optional", modelreadiness.Evidence("registered", false, "feature_licensed", false))
-			response.PlatformModel.Catalog = modelreadiness.Optional("model_governance_not_licensed_optional", modelreadiness.Evidence("visible", false, "feature_licensed", false))
-		}
+		response.PlatformModel.Registration = modelreadiness.Blocked("model_unregistered", modelreadiness.Evidence("registered", false), registryFix, "organization_admin")
+		response.PlatformModel.Catalog = modelreadiness.Blocked("catalog_not_published", modelreadiness.Evidence("visible", false), registryFix, "organization_admin")
 		response.PlatformModel.Lifecycle = modelreadiness.Optional("unregistered_lifecycle_not_applicable", nil)
 	default:
 		response.PlatformModel.Registration = modelreadiness.Ready("model_registered", modelreadiness.Evidence("registered", true))
@@ -264,8 +244,7 @@ func (h *Handler) readinessPlatformAxes(
 		}
 		if registry.ApprovedCatalog && modelgov.IsCatalogLifecycle(registry.Lifecycle) {
 			response.PlatformModel.Catalog = modelreadiness.Ready("catalog_published", modelreadiness.Evidence("visible", true))
-		} else if !modelGovernanceLicensed {
-			response.PlatformModel.Catalog = modelreadiness.Optional("model_governance_not_licensed_optional", modelreadiness.Evidence("visible", false, "feature_licensed", false))
+
 		} else {
 			response.PlatformModel.Catalog = modelreadiness.Blocked("catalog_not_published", modelreadiness.Evidence("visible", false), registryFix, "organization_admin")
 		}

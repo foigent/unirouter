@@ -17,7 +17,7 @@ import (
 )
 
 func TestModelExecutionGuardedDownsSerializeWithFutureMigrationRunner(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 
 	// Put 72 at the rollback frontier. The child rollback helper also removes

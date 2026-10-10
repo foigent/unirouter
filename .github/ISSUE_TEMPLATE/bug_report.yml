@@ -1,0 +1,29 @@
+name: Bug report
+description: Report a reproducible problem using sanitized data.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: "English titles help everyone find related work. English and Simplified Chinese reports are welcome."
+  - type: markdown
+    attributes:
+      value: "Follow SECURITY.md for sensitive reports. Do not include credentials, customer data or raw prompts."
+  - type: input
+    id: version
+    attributes:
+      label: Version and installation
+      description: Version or commit, OS and installation method.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction, expected and actual behavior
+      description: Minimal steps using synthetic data.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: Error code, request ID and relevant checks, including skips.

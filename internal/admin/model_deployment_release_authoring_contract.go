@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/runtimechange"
 )
 
@@ -31,19 +30,20 @@ type canonicalDeploymentReleaseAuthoringRequest struct {
 }
 
 type canonicalDeploymentReleaseAuthoringDescriptor struct {
-	Available             bool                                       `json:"available"`
-	ReasonCode            string                                     `json:"reason_code"`
-	StructurallyAvailable bool                                       `json:"structurally_available"`
-	Authorized            bool                                       `json:"authorized"`
-	Licensed              bool                                       `json:"licensed"`
-	LicenseFeature        string                                     `json:"license_feature,omitempty"`
-	Method                string                                     `json:"method"`
-	Path                  string                                     `json:"path"`
-	IdempotencyRequired   bool                                       `json:"idempotency_required"`
-	RequiredFields        []string                                   `json:"required_fields"`
-	Baseline              *runtimechange.DeploymentReleaseBaseline   `json:"baseline,omitempty"`
-	Slot                  runtimechange.DeploymentLifecycleSlotState `json:"slot"`
-	StableRelease         *runtimechange.DeploymentReleaseSummary    `json:"stable_release,omitempty"`
+	Available             bool   `json:"available"`
+	ReasonCode            string `json:"reason_code"`
+	StructurallyAvailable bool   `json:"structurally_available"`
+	Authorized            bool   `json:"authorized"`
+	// Deprecated: always true means no commercial restriction, not authorization.
+	Licensed            bool                                       `json:"licensed"`
+	LicenseFeature      string                                     `json:"license_feature,omitempty"`
+	Method              string                                     `json:"method"`
+	Path                string                                     `json:"path"`
+	IdempotencyRequired bool                                       `json:"idempotency_required"`
+	RequiredFields      []string                                   `json:"required_fields"`
+	Baseline            *runtimechange.DeploymentReleaseBaseline   `json:"baseline,omitempty"`
+	Slot                runtimechange.DeploymentLifecycleSlotState `json:"slot"`
+	StableRelease       *runtimechange.DeploymentReleaseSummary    `json:"stable_release,omitempty"`
 }
 
 type canonicalDeploymentReleaseAuthoringModelView struct {
@@ -104,28 +104,24 @@ func canonicalDeploymentReleaseAuthoringFingerprint(
 func canonicalDeploymentReleaseAuthoringModels(
 	options runtimechange.DeploymentReleaseAuthoringOptions,
 	canWrite bool,
-	gatewayLicensed bool,
 ) []canonicalDeploymentReleaseAuthoringModelView {
 	models := make([]canonicalDeploymentReleaseAuthoringModelView, 0, len(options.Models))
 	for _, option := range options.Models {
-		available := option.StructurallyAvailable && canWrite && gatewayLicensed
+		available := option.StructurallyAvailable && canWrite
 		reasonCode := "ready_for_authoring"
 		switch {
 		case !option.StructurallyAvailable:
 			reasonCode = option.ReasonCode
 		case !canWrite:
 			reasonCode = "organization_write_role_required"
-		case !gatewayLicensed:
-			reasonCode = "gateway_license_required"
 		}
 		models = append(models, canonicalDeploymentReleaseAuthoringModelView{
 			PublicModel: option.PublicModel,
 			Authoring: canonicalDeploymentReleaseAuthoringDescriptor{
 				Available: available, ReasonCode: reasonCode,
 				StructurallyAvailable: option.StructurallyAvailable,
-				Authorized:            canWrite, Licensed: gatewayLicensed,
-				LicenseFeature: licensing.FeatureGateway,
-				Method:         "POST", Path: "/api/v1/model-deployment-releases",
+				Authorized:            canWrite, Licensed: true,
+				Method: "POST", Path: "/api/v1/model-deployment-releases",
 				IdempotencyRequired: true,
 				RequiredFields:      []string{"public_model_id", "baseline", "selections", "reason"},
 				Baseline:            option.Baseline, Slot: option.Slot, StableRelease: option.StableRelease,

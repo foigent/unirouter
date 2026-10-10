@@ -229,7 +229,7 @@ func TestContentRestoreRejectsPartialSchemaAtomicallyPG(t *testing.T) {
 func TestContentRestoreRejectsPreDContaminationPG(t *testing.T) {
 	for _, fault := range []string{"content_table", "future_ledger"} {
 		t.Run(fault, func(t *testing.T) {
-			pool := testutil.SetupMigratedTestDB(t)
+			pool := testutil.SetupPreRetirementTestDB(t)
 			require.NoError(t, budgetDown(t, pool))
 			if fault == "content_table" {
 				_, err := pool.Exec(t.Context(), "CREATE TABLE execution_content_health(synthetic integer)")

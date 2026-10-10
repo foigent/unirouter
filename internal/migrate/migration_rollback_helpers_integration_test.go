@@ -12,7 +12,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
-	"github.com/uniroute/unirouter/internal/schemaauthority"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -23,7 +22,7 @@ func setupM46RollbackPrestate(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	const head = "000046_v1_async_media_image_jobs"
 	pool, _ := setupMigratedThrough(t, head+".up.sql")
-	want, err := schemaauthority.ExpectedLedger(testutil.MigrationsDir(t))
+	want, err := testutil.PreRetirementLedger(t)
 	require.NoError(t, err)
 	index := slices.Index(want, head)
 	require.GreaterOrEqual(t, index, 0)
@@ -102,7 +101,7 @@ func rollbackEmptyMigrations(t *testing.T, pool *pgxpool.Pool, names []string) {
 	t.Helper()
 	ctx := context.Background()
 	require.NoError(t, testutil.RewindCapabilityPublicationsForLegacyMigrationTest(
-		ctx, pool, testutil.MigrationsDir(t),
+		ctx, pool, testutil.PreRetirementMigrationsDir(t),
 	))
 	orderedNames := make([]string, 0, len(names)+4)
 	seen := make(map[string]struct{}, len(names)+4)
@@ -163,7 +162,7 @@ func rollbackEmptyMigrations(t *testing.T, pool *pgxpool.Pool, names []string) {
 		}
 	}
 	for _, name := range orderedNames {
-		wire, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		wire, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), name))
 		require.NoError(t, err)
 		_, err = pool.Exec(ctx, string(wire))
 		if err != nil {
@@ -211,7 +210,7 @@ func rollbackAsyncMediaImageFromM46Prestate(t *testing.T, pool *pgxpool.Pool) {
 	require.NoError(t, pool.QueryRow(t.Context(), `SELECT max(version)::text FROM schema_migrations`).Scan(&head))
 	require.Equal(t, "000046_v1_async_media_image_jobs", head)
 	downSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t),
+		testutil.PreRetirementMigrationsDir(t),
 		"000046_v1_async_media_image_jobs.down.sql",
 	))
 	require.NoError(t, err)

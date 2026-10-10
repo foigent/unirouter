@@ -11,7 +11,7 @@ import (
 )
 
 func TestEnterpriseProjectRoleSeparationDownLocksBeforeRepresentabilityChecks(t *testing.T) {
-	body, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000058_enterprise_project_role_separation.down.sql"))
+	body, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000058_enterprise_project_role_separation.down.sql"))
 	require.NoError(t, err)
 	sql := string(body)
 	advisoryLock := "SELECT pg_advisory_xact_lock(86420517831702491);"

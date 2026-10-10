@@ -17,12 +17,12 @@ import (
 )
 
 func TestCanonicalConnectionLicenseAuthoritySplitLockOrderIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	downgradeObservationProviderCostReconciliationForM79Test(t, pool)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	downBody, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000079_canonical_connection_license_authority.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000079_canonical_connection_license_authority.down.sql",
 	))
 	require.NoError(t, err)
 	down := string(downBody)
@@ -64,7 +64,7 @@ VALUES ('m79-lock-writer','custom','https://m79-lock-writer.invalid',
 		}
 	})
 
-	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallPreRetirementTestArtifact(t, ctx, pool))
 	downgradeObservationProviderCostReconciliationForM79Test(t, pool)
 	_, err = pool.Exec(ctx, `
 INSERT INTO commercial_license_entitlements (
@@ -113,7 +113,7 @@ UPDATE commercial_license_entitlements
 }
 
 func TestCanonicalConnectionLicenseAuthorityConcurrentActivationIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	downgradeObservationProviderCostReconciliationForM79Test(t, pool)
 	ctx := t.Context()
 	_, err := pool.Exec(ctx, `
@@ -162,7 +162,7 @@ SELECT COUNT(*) FROM provider_connections WHERE admin_state='enabled'`).Scan(&en
 }
 
 func TestCanonicalConnectionLicenseAuthorityMigrationAndSafeRollbackIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	downgradeObservationProviderCostReconciliationForM79Test(t, pool)
 	ctx := t.Context()
 	require.NoError(t, func() error {
@@ -211,7 +211,7 @@ UPDATE provider_connections SET admin_state='enabled' WHERE id=$1`, pausedConnec
 	require.ErrorContains(t, err, "commercial License limit exceeded for active_channels")
 
 	downBody, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000079_canonical_connection_license_authority.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000079_canonical_connection_license_authority.down.sql",
 	))
 	require.NoError(t, err)
 	down := string(downBody)
@@ -266,14 +266,14 @@ INSERT INTO provider_connections (
   name,provider,base_url,adapter_type,adapter_config,admin_state,config_revision)
 VALUES ('m79-unsafe-native','custom','https://m79-unsafe.invalid',
         'openai_compatible','{}','enabled',1) RETURNING id`).Scan(&unsafeNativeID))
-	err = testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t))
+	err = testutil.InstallPreRetirementTestArtifact(t, ctx, pool)
 	require.ErrorContains(t, err, "enabled provider connections exceed signed active_channels limit")
 	_, err = pool.Exec(ctx, `
 UPDATE provider_connections
    SET admin_state='retired',retired_at=NOW(),config_revision=config_revision+1
  WHERE id=$1`, unsafeNativeID)
 	require.NoError(t, err)
-	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallPreRetirementTestArtifact(t, ctx, pool))
 	assertCommercialLimitTrigger(t, pool, "channels", "channels_commercial_limit", false)
 	assertCommercialLimitTrigger(t, pool, "provider_connections", "provider_connections_commercial_limit", true)
 }
@@ -282,7 +282,7 @@ func downgradeObservationProviderCostReconciliationForM79Test(t *testing.T, pool
 	t.Helper()
 	execMigrationDown(t, t.Context(), pool, "000081_versioned_model_execution_profiles.down.sql")
 	down, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000080_observation_provider_cost_reconciliation.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000080_observation_provider_cost_reconciliation.down.sql",
 	))
 	require.NoError(t, err)
 	_, err = pool.Exec(t.Context(), string(down))

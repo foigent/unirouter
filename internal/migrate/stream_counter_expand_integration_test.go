@@ -21,10 +21,10 @@ import (
 )
 
 func TestCounterExpandBusySettlementPreservesRuntimeTransaction(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 12*time.Second)
 	defer cancel()
-	dir := testutil.MigrationsDir(t)
+	dir := testutil.PreRetirementMigrationsDir(t)
 	require.NoError(t, testutil.RewindEmptySourceFactsForLegacyTest(ctx, pool, dir))
 	down, err := os.ReadFile(filepath.Join(dir, schemaauthority.StreamCounterExpandHead+".down.sql"))
 	require.NoError(t, err)
@@ -88,8 +88,8 @@ func TestCounterExpandBusySettlementPreservesRuntimeTransaction(t *testing.T) {
 }
 
 func TestCounterExpandBusyOwnersLeaveSchemaUntouched(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
-	dir := testutil.MigrationsDir(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
+	dir := testutil.PreRetirementMigrationsDir(t)
 	require.NoError(t, testutil.RewindEmptySourceFactsForLegacyTest(t.Context(), pool, dir))
 	down, err := os.ReadFile(filepath.Join(dir, schemaauthority.StreamCounterExpandHead+".down.sql"))
 	require.NoError(t, err)
@@ -136,15 +136,15 @@ func TestCounterExpandBusyOwnersLeaveSchemaUntouched(t *testing.T) {
 func TestCounterExpandRejectsIncompatibleRecoveryActorAtomically(t *testing.T) {
 	for _, missing := range []string{"M115", metering.GatewayCounterEstimateVersionV2, metering.GatewayCounterEstimateVersionV3} {
 		t.Run(missing, func(t *testing.T) {
-			pool := testutil.SetupMigratedTestDB(t)
+			pool := testutil.SetupPreRetirementTestDB(t)
 			ctx := t.Context()
-			dir := testutil.MigrationsDir(t)
+			dir := testutil.PreRetirementMigrationsDir(t)
 			require.NoError(t, testutil.RewindEmptySourceFactsForLegacyTest(ctx, pool, dir))
 			down, err := os.ReadFile(filepath.Join(dir, schemaauthority.StreamCounterExpandHead+".down.sql"))
 			require.NoError(t, err)
 			_, err = pool.Exec(ctx, string(down))
 			require.NoError(t, err)
-			artifact, err := schemaauthority.ExpectedLedger(dir)
+			artifact, err := testutil.PreRetirementLedger(t)
 			require.NoError(t, err)
 			manifest := runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads())
 			if missing == "M115" {

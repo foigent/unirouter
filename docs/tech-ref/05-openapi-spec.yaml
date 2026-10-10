@@ -23,7 +23,7 @@ info:
     - `Idempotency-Key` enables tenant/API-key/payload-bound metadata-only deduplication for Chat, Embeddings, Responses, Messages, and async image-job admission. Model response bytes are never stored or replayed; public non-stream calls implement `unirouter.public-at-most-once.v1`.
     - Canonical model-deployment creation requires `Idempotency-Key`; its separate 24-hour actor-scoped mutation receipt stores no request body, provider secret, or response body. Exact replay returns 200 and `X-UniRouter-Idempotency-Replayed: true`; reuse with another normalized payload returns 409.
     - Canonical sealed-release authoring and lifecycle writes require `Idempotency-Key`. Authoring accepts only a public model, exact server-derived baseline, deployment/operation selections and reason, then commits its immutable receipt, server-projected evidence/events/audit and one sealed validated release in one repeatable-read transaction; it never activates traffic. A fresh author returns 201 plus `Location`; a later exact replay returns 200, the same `Location`, and replay headers.
-    - Lifecycle writes commit the release pair when applicable, runtime slot, lifecycle events, qualification snapshot, immutable receipt and audit in one repeatable-read transaction. Authoring and lifecycle bodies are each one strict JSON object limited to 16384 bytes; duplicate or unknown members and trailing values are rejected before receipt access. Lifecycle exact replay returns the original 200 status and frozen receipt. Canary cancellation and legacy rollback are no-License safety contractions; authoring and every expansion require the Gateway feature.
+    - Lifecycle writes commit the release pair when applicable, runtime slot, lifecycle events, qualification snapshot, immutable receipt and audit in one repeatable-read transaction. Authoring and lifecycle bodies are each one strict JSON object limited to 16384 bytes; duplicate or unknown members and trailing values are rejected before receipt access. Lifecycle exact replay returns the original 200 status and frozen receipt. Authoring and lifecycle operations require current role authorization, qualification, idempotency and financial safety checks; commercial License admission has been retired.
 
 servers:
   - url: http://localhost:8080
@@ -160,7 +160,7 @@ x-unirouter-operation-templates:
   RetiredLegacyModelMutation: &operation_legacy_model_mutation_retired
     tags: [Admin]
     summary: Legacy model mutation is permanently retired
-    description: Authenticated platform RBAC is evaluated first. Authentication and customer/RBAC context may read their own security state, but the retirement handler then fails before License admission, request-body parsing, any business-data query, secret access, probe execution, or runtime mutation. No MODEL_ROUTE_AUTHORITY or compatibility setting re-enables this operation; use the canonical model-deployment and release APIs.
+    description: Authenticated platform RBAC is evaluated first. Authentication and customer/RBAC context may read their own security state, but the retirement handler then fails before request-body parsing, any business-data query, secret access, probe execution, or runtime mutation. No MODEL_ROUTE_AUTHORITY or compatibility setting re-enables this operation; use the canonical model-deployment and release APIs.
     security:
       - bearerAuth: []
     responses:
@@ -436,7 +436,7 @@ paths:
       summary: Optional caller-authorized Chat request preflight (no Provider call)
       description: |
         Accepts the actual Chat document and uses the same Chat endpoint/key,
-        Agent capability, Grant, IP, license, model governance and authorization
+        Agent capability, Grant, IP, model governance and authorization
         gates. Canonical Profile normalization, capability derivation, route
         planning, output-default injection and final OpenAI-compatible outbound
         token bounds are evaluated without decrypting a credential, dispatching,
@@ -840,7 +840,7 @@ paths:
     get:
       tags: [Data Exchange]
       summary: Inspect the source connection
-      description: Available for existing inactive projects and without the current Data Exchange entitlement; platform-admin authorization still applies.
+      description: Available for existing inactive projects and without a commercial License; platform-admin authorization still applies.
       security:
         - bearerAuth: []
       parameters:
@@ -856,7 +856,7 @@ paths:
               schema: {type: object}
         "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
         "401": {description: Invalid administrator session}
-        "403": {description: "Role, live authorization or entitlement denied"}
+        "403": {description: "Role or live authorization denied"}
         "404": {description: Project or connection not found}
         "409": {description: "Lifecycle, operation replay or credential identity conflict"}
         "503": {description: Source capture is disabled}
@@ -867,7 +867,7 @@ paths:
     post:
       tags: [Data Exchange]
       summary: Register a separate staged source credential
-      description: Requires an active project, current Data Exchange entitlement and live platform-admin commit authorization. Registration accepts only a receiver-generated SHA-256 verifier, never a bearer. Exact operation replay preserves the original binding; conflicting replay returns 409. Rotation inherits the original exact-host IP.
+      description: Requires an active project, live platform-admin commit authorization. Registration accepts only a receiver-generated SHA-256 verifier, never a bearer. Exact operation replay preserves the original binding; conflicting replay returns 409. Rotation inherits the original exact-host IP.
       security:
         - bearerAuth: []
       parameters:
@@ -888,7 +888,7 @@ paths:
               schema: {type: object}
         "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
         "401": {description: Invalid administrator session}
-        "403": {description: "Role, live authorization or entitlement denied"}
+        "403": {description: "Role or live authorization denied"}
         "404": {description: Project or connection not found}
         "409": {description: "Lifecycle, operation replay or credential identity conflict"}
         "503": {description: Source capture is disabled}
@@ -899,7 +899,7 @@ paths:
     post:
       tags: [Data Exchange]
       summary: Prepare a replacement source credential
-      description: Requires an active project, current Data Exchange entitlement and live platform-admin commit authorization. Registration accepts only a receiver-generated SHA-256 verifier, never a bearer. Exact operation replay preserves the original binding; conflicting replay returns 409. Rotation inherits the original exact-host IP.
+      description: Requires an active project, live platform-admin commit authorization. Registration accepts only a receiver-generated SHA-256 verifier, never a bearer. Exact operation replay preserves the original binding; conflicting replay returns 409. Rotation inherits the original exact-host IP.
       security:
         - bearerAuth: []
       parameters:
@@ -920,7 +920,7 @@ paths:
               schema: {type: object}
         "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
         "401": {description: Invalid administrator session}
-        "403": {description: "Role, live authorization or entitlement denied"}
+        "403": {description: "Role or live authorization denied"}
         "404": {description: Project or connection not found}
         "409": {description: "Lifecycle, operation replay or credential identity conflict"}
         "503": {description: Source capture is disabled}
@@ -931,7 +931,7 @@ paths:
     post:
       tags: [Data Exchange]
       summary: Activate the exact staged source credential
-      description: Requires an active project, current Data Exchange entitlement and live platform-admin commit authorization. Revokes the prior active credential atomically. The connection remains paused until a separate resume.
+      description: Requires an active project, live platform-admin commit authorization. Revokes the prior active credential atomically. The connection remains paused until a separate resume.
       security:
         - bearerAuth: []
       parameters:
@@ -952,7 +952,7 @@ paths:
               schema: {type: object}
         "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
         "401": {description: Invalid administrator session}
-        "403": {description: "Role, live authorization or entitlement denied"}
+        "403": {description: "Role or live authorization denied"}
         "404": {description: Project or connection not found}
         "409": {description: "Lifecycle, operation replay or credential identity conflict"}
         "503": {description: Source capture is disabled}
@@ -963,7 +963,7 @@ paths:
     post:
       tags: [Data Exchange]
       summary: Revoke the exact staged source credential
-      description: Available for existing inactive projects and without the current Data Exchange entitlement; platform-admin authorization still applies.
+      description: Available for existing inactive projects and without a commercial License; platform-admin authorization still applies.
       security:
         - bearerAuth: []
       parameters:
@@ -984,7 +984,7 @@ paths:
               schema: {type: object}
         "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
         "401": {description: Invalid administrator session}
-        "403": {description: "Role, live authorization or entitlement denied"}
+        "403": {description: "Role or live authorization denied"}
         "404": {description: Project or connection not found}
         "409": {description: "Lifecycle, operation replay or credential identity conflict"}
         "503": {description: Source capture is disabled}
@@ -995,7 +995,7 @@ paths:
     post:
       tags: [Data Exchange]
       summary: Pause source reads
-      description: Available for existing inactive projects and without the current Data Exchange entitlement; platform-admin authorization still applies.
+      description: Available for existing inactive projects and without a commercial License; platform-admin authorization still applies.
       security:
         - bearerAuth: []
       parameters:
@@ -1016,7 +1016,7 @@ paths:
               schema: {type: object}
         "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
         "401": {description: Invalid administrator session}
-        "403": {description: "Role, live authorization or entitlement denied"}
+        "403": {description: "Role or live authorization denied"}
         "404": {description: Project or connection not found}
         "409": {description: "Lifecycle, operation replay or credential identity conflict"}
         "503": {description: Source capture is disabled}
@@ -1027,7 +1027,7 @@ paths:
     post:
       tags: [Data Exchange]
       summary: Resume source reads
-      description: Requires an active project, current Data Exchange entitlement and live platform-admin commit authorization.
+      description: Requires an active project, live platform-admin commit authorization.
       security:
         - bearerAuth: []
       parameters:
@@ -1048,7 +1048,7 @@ paths:
               schema: {type: object}
         "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
         "401": {description: Invalid administrator session}
-        "403": {description: "Role, live authorization or entitlement denied"}
+        "403": {description: "Role or live authorization denied"}
         "404": {description: Project or connection not found}
         "409": {description: "Lifecycle, operation replay or credential identity conflict"}
         "503": {description: Source capture is disabled}
@@ -1059,7 +1059,7 @@ paths:
     post:
       tags: [Data Exchange]
       summary: Permanently revoke the source connection
-      description: Available for existing inactive projects and without the current Data Exchange entitlement; platform-admin authorization still applies. Revokes active and staged credentials and invalidates cursors. This connection cannot be resumed.
+      description: Available for existing inactive projects and without a commercial License; platform-admin authorization still applies. Revokes active and staged credentials and invalidates cursors. This connection cannot be resumed.
       security:
         - bearerAuth: []
       parameters:
@@ -1080,7 +1080,7 @@ paths:
               schema: {type: object}
         "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
         "401": {description: Invalid administrator session}
-        "403": {description: "Role, live authorization or entitlement denied"}
+        "403": {description: "Role or live authorization denied"}
         "404": {description: Project or connection not found}
         "409": {description: "Lifecycle, operation replay or credential identity conflict"}
         "503": {description: Source capture is disabled}
@@ -1091,7 +1091,7 @@ paths:
     post:
       tags: [Data Exchange]
       summary: Replace fixed source profile permissions
-      description: Requires an active project, current Data Exchange entitlement and live platform-admin commit authorization. Changes to A/B grants require pause, revoke credentials and advance the event scope generation. A change only to D grants may occur while active and advances only D access/catalog revisions. It preserves A/B cursors and immutable credential grants; adding a connection grant never grants it to an existing credential.
+      description: Requires an active project, live platform-admin commit authorization. Changes to A/B grants require pause, revoke credentials and advance the event scope generation. A change only to D grants may occur while active and advances only D access/catalog revisions. It preserves A/B cursors and immutable credential grants; adding a connection grant never grants it to an existing credential.
       security:
         - bearerAuth: []
       parameters:
@@ -1112,7 +1112,7 @@ paths:
               schema: {type: object}
         "400": {description: "Invalid registration, scope, exact-host IP, target or strict JSON"}
         "401": {description: Invalid administrator session}
-        "403": {description: "Role, live authorization or entitlement denied"}
+        "403": {description: "Role or live authorization denied"}
         "404": {description: Project or connection not found}
         "409": {description: "Lifecycle, operation replay or credential identity conflict"}
         "503": {description: Source capture is disabled}
@@ -1472,12 +1472,12 @@ paths:
     get:
       tags: [Admin]
       summary: Current admin user profile
-      description: Returns the authenticated profile plus a non-sensitive, fail-closed commercial License capability projection. The projection contains no signed payload, customer identity, key ID, signature, or resource limits.
+      description: Returns the authenticated profile plus the retired commercial License compatibility projection (status=not_required, enforceable=false). Feature flags describe absence of commercial restrictions and never grant role or tenant authorization. The projection contains no signed payload, customer identity, key ID, signature, or resource limits.
       security:
         - bearerAuth: []
       responses:
         "200":
-          description: Authenticated user profile and seven-feature License projection
+          description: Authenticated user profile and commercial-retirement compatibility projection
           content:
             application/json:
               schema:
@@ -1603,7 +1603,7 @@ paths:
     post:
       tags: [Admin]
       summary: Transactionally create or exactly reuse one model deployment and operation
-      description: "Requires an active Gateway License and Idempotency-Key. Existing IDs are explicit selectors and extra fields are exact assertions; no name-based connection lookup or fallback-to-first deployment occurs. A new public model may pin one exact repository-reviewed execution_profile_id/version; both fields are required together, their context/output limits are server-validated, and omission explicitly records unverified.chat rather than guessing from the model name. For the exact compiled M88 DeepSeek V4 Flash Chat streaming tuple, creation also materializes only an enabled/declared capability projection after the compiled binding and database support contract agree exactly. This performs no provider call and creates no live probe, routing approval, route, Release, price, or caller authorization; no capability is inferred for any other tuple. Responses and Messages require the effective connection base_url to be a path-free HTTPS origin before any receipt or canonical row is written; invalid new input returns 400 and an incompatible selected connection returns 409 with code canonical_application_https_origin_required. The first committed mutation returns 201. An exact actor-scoped replay within 24 hours returns the current projection with the original reused-result, status 200, X-UniRouter-Idempotency-Replayed true, and X-UniRouter-Original-Request-ID. The receipt stores no raw key, request body, provider API key, or response body; using the same key with another normalized payload returns 409."
+      description: "Requires current role authorization and Idempotency-Key. Existing IDs are explicit selectors and extra fields are exact assertions; no name-based connection lookup or fallback-to-first deployment occurs. A new public model may pin one exact repository-reviewed execution_profile_id/version; both fields are required together, their context/output limits are server-validated, and omission explicitly records unverified.chat rather than guessing from the model name. For the exact compiled M88 DeepSeek V4 Flash Chat streaming tuple, creation also materializes only an enabled/declared capability projection after the compiled binding and database support contract agree exactly. This performs no provider call and creates no live probe, routing approval, route, Release, price, or caller authorization; no capability is inferred for any other tuple. Responses and Messages require the effective connection base_url to be a path-free HTTPS origin before any receipt or canonical row is written; invalid new input returns 400 and an incompatible selected connection returns 409 with code canonical_application_https_origin_required. The first committed mutation returns 201. An exact actor-scoped replay within 24 hours returns the current projection with the original reused-result, status 200, X-UniRouter-Idempotency-Replayed true, and X-UniRouter-Original-Request-ID. The receipt stores no raw key, request body, provider API key, or response body; using the same key with another normalized payload returns 409."
       security: [{ bearerAuth: [] }]
       parameters:
         - name: Idempotency-Key
@@ -1712,7 +1712,7 @@ paths:
     get:
       tags: [Admin]
       summary: Read supplier model metadata through an owned existing binding
-      description: "Requires a Gateway License. Supports only the exact Beijing DashScope workspace endpoint. No Probe, qualification, price, configuration or routing writes. Responses and errors never contain credentials or raw supplier diagnostics."
+      description: "Requires current role and tenant authorization. Supports only the exact Beijing DashScope workspace endpoint. No Probe, qualification, price, configuration or routing writes. Responses and errors never contain credentials or raw supplier diagnostics."
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
@@ -1783,7 +1783,7 @@ paths:
     post:
       tags: [Admin]
       summary: Probe one exact canonical model operation with one exact credential binding
-      description: "Requires an active Gateway License. The server resolves only the supplied deployment ID, operation ID and credential binding ID and decrypts the saved credential server-side. Chat Completions and Embeddings use their configured adapter contract. Responses and Messages must resolve the exact operation-owned endpointprotocol profile and version, build the protocol-native request on the immutable public path, execute a bounded HTTPS network request, and pass that same profile's terminal response-and-usage parser; local fixtures never satisfy this probe. It never falls back to another deployment, operation, profile or credential and never infers capabilities from a model name. Every attempt appends sanitized evidence. Only a successful response whose connection, deployment, operation, profile, credential and binding-link identity remain current can advance operation evidence to live_probed. A successful Responses or Messages probe is structural qualification input only; by itself it cannot create the per-release-item M77 public-execution binding, select an active route, authorize provider dispatch, or prove Production traffic. Responses and audit records contain no API key, prompt body, provider response body, curl command or full provider URL."
+      description: "Requires current role and tenant authorization. The server resolves only the supplied deployment ID, operation ID and credential binding ID and decrypts the saved credential server-side. Chat Completions and Embeddings use their configured adapter contract. Responses and Messages must resolve the exact operation-owned endpointprotocol profile and version, build the protocol-native request on the immutable public path, execute a bounded HTTPS network request, and pass that same profile's terminal response-and-usage parser; local fixtures never satisfy this probe. It never falls back to another deployment, operation, profile or credential and never infers capabilities from a model name. Every attempt appends sanitized evidence. Only a successful response whose connection, deployment, operation, profile, credential and binding-link identity remain current can advance operation evidence to live_probed. A successful Responses or Messages probe is structural qualification input only; by itself it cannot create the per-release-item M77 public-execution binding, select an active route, authorize provider dispatch, or prove Production traffic. Responses and audit records contain no API key, prompt body, provider response body, curl command or full provider URL."
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
@@ -1836,7 +1836,7 @@ paths:
     post:
       tags: [Admin]
       summary: Append an exact Responses or Messages production-qualification approval
-      description: Requires an active Gateway License and a current platform administrator. This control-plane action accepts only one exact successful Responses or Messages endpointprotocol HTTPS network probe that is still bound to the same customer organization, deployment, connection, operation, immutable public path, profile ID/version, executor contract, HTTPS origin and source revisions. The approval receipt is append-only and advances the operation from live_probed to production_approved in the same transaction. An exact replay by the same actor returns the historical receipt and the qualification view's current state, which may be qualified false after structural revision drift; it never appends another approval. A changed reason, revision, executor contract, operation or actor conflicts. Approval is M75 structural lineage only. Public dispatch additionally requires a selected active M77 release item carrying its own exact public-execution binding, current credential/link/latest-own-probe authority, funding and a successful per-request Coordinator decision; approval alone is not online or Production traffic evidence.
+      description: Requires a current platform administrator. This control-plane action accepts only one exact successful Responses or Messages endpointprotocol HTTPS network probe that is still bound to the same customer organization, deployment, connection, operation, immutable public path, profile ID/version, executor contract, HTTPS origin and source revisions. The approval receipt is append-only and advances the operation from live_probed to production_approved in the same transaction. An exact replay by the same actor returns the historical receipt and the qualification view's current state, which may be qualified false after structural revision drift; it never appends another approval. A changed reason, revision, executor contract, operation or actor conflicts. Approval is M75 structural lineage only. Public dispatch additionally requires a selected active M77 release item carrying its own exact public-execution binding, current credential/link/latest-own-probe authority, funding and a successful per-request Coordinator decision; approval alone is not online or Production traffic evidence.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
@@ -1902,7 +1902,7 @@ paths:
     post:
       tags: [Admin]
       summary: Run one reviewed shared capability observation
-      description: "Requires Gateway License. Rebuilds the plan and rejects drift before dispatch. Exactly one transport dispatch attempt for the selected group; no automatic retry. Atomically records individual facts with one physical source_ref, but does not approve or activate. Transport failures can be ambiguous; row count is not paid request count."
+      description: "Requires current role and tenant authorization. Rebuilds the plan and rejects drift before dispatch. Exactly one transport dispatch attempt for the selected group; no automatic retry. Atomically records individual facts with one physical source_ref, but does not approve or activate. Transport failures can be ambiguous; row count is not paid request count."
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
@@ -1985,7 +1985,7 @@ paths:
     post:
       tags: [Admin]
       summary: Run one server-owned typed capability probe
-      description: "Requires an active Gateway License. M89 and M92 support DeepSeek V4 Flash at the immutable deepseek.v4-flash.api@1.4.0 and @1.5.0 identities for OpenAI-compatible Chat Completions. M93 advances only Flash Profile 1.5.0's five function-tool capability bindings under both retained exact Chat protocol identities to probe contract 2.0.0. M94 publishes the same nine reviewed Chat-core probe grammars for deepseek.v4-pro.api@1.5.0 under only protocol.deepseek-openai-chat.v4@1.0.0. M95 publishes six Kimi K2.6 Chat-core probe grammars for kimi.k2.6.api@1.7.0 under only protocol.kimi-openai-chat.v5@1.0.0. M96 advances only that exact Kimi streaming binding to probe contract 2.0.0; the failed v1 sample remains immutable and stale. These migrations do not create a Profile, Protocol, Release or Alias. The server owns one fixed, bounded request for the selected capability. DeepSeek streaming uses stream=true, stream_options.include_usage=true, thinking.type=disabled and max_tokens=64; Kimi K2.6 uses the same stream controls with max_completion_tokens=64, as required by its exact v5 request contract. A successful streaming result must prove text/event-stream, legal content deltas, the exact binding-owned reported model, authoritative terminal usage and [DONE] under the selected immutable probe contract. Historical probe evidence remains bound to its exact contract and is never reinterpreted. A probe appends live_probed evidence only and never auto-approves routing. This action is one real supplier call; supplier cost unavailable is absent/unknown, never represented as CNY zero."
+      description: "Requires current role and tenant authorization. M89 and M92 support DeepSeek V4 Flash at the immutable deepseek.v4-flash.api@1.4.0 and @1.5.0 identities for OpenAI-compatible Chat Completions. M93 advances only Flash Profile 1.5.0's five function-tool capability bindings under both retained exact Chat protocol identities to probe contract 2.0.0. M94 publishes the same nine reviewed Chat-core probe grammars for deepseek.v4-pro.api@1.5.0 under only protocol.deepseek-openai-chat.v4@1.0.0. M95 publishes six Kimi K2.6 Chat-core probe grammars for kimi.k2.6.api@1.7.0 under only protocol.kimi-openai-chat.v5@1.0.0. M96 advances only that exact Kimi streaming binding to probe contract 2.0.0; the failed v1 sample remains immutable and stale. These migrations do not create a Profile, Protocol, Release or Alias. The server owns one fixed, bounded request for the selected capability. DeepSeek streaming uses stream=true, stream_options.include_usage=true, thinking.type=disabled and max_tokens=64; Kimi K2.6 uses the same stream controls with max_completion_tokens=64, as required by its exact v5 request contract. A successful streaming result must prove text/event-stream, legal content deltas, the exact binding-owned reported model, authoritative terminal usage and [DONE] under the selected immutable probe contract. Historical probe evidence remains bound to its exact contract and is never reinterpreted. A probe appends live_probed evidence only and never auto-approves routing. This action is one real supplier call; supplier cost unavailable is absent/unknown, never represented as CNY zero."
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
@@ -2019,7 +2019,7 @@ paths:
     post:
       tags: [Admin]
       summary: Approve exact typed capability evidence for the current environment route pool
-      description: "Requires an active Gateway License and current platform administrator. Appends one immutable approval bound to the exact successful probe, deployment, connection, operation, Execution Profile, protocol Profile, probe contract and stable revisions. Credential identity and revision are verified at approval time as source provenance, but later transient cooldown or health revision does not revoke the capability approval. Approval is qualification input only: it is not released status, SLA proof, long-term stability evidence or canonical cutover."
+      description: "Requires a current platform administrator. Appends one immutable approval bound to the exact successful probe, deployment, connection, operation, Execution Profile, protocol Profile, probe contract and stable revisions. Credential identity and revision are verified at approval time as source provenance, but later transient cooldown or health revision does not revoke the capability approval. Approval is qualification input only: it is not released status, SLA proof, long-term stability evidence or canonical cutover."
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
@@ -2137,7 +2137,7 @@ paths:
     post:
       tags: [Admin]
       summary: Atomically author one sealed validated canonical v2 release
-      description: Expansion requiring the Gateway License. The caller echoes one exact server-derived baseline and chooses eligible deployment/operation pairs; every revision, parent, hash, route profile, binding and release reference remains server-owned. One Repeatable Read transaction creates and seals the release, immutable route items and public bindings, create/validate events, audit and durable authoring receipt. Authoring ends at validated and never activates, starts a canary or moves a runtime slot. The request is one strict JSON object limited to 16384 bytes.
+      description: Expansion requiring current role authorization. The caller echoes one exact server-derived baseline and chooses eligible deployment/operation pairs; every revision, parent, hash, route profile, binding and release reference remains server-owned. One Repeatable Read transaction creates and seals the release, immutable route items and public bindings, create/validate events, audit and durable authoring receipt. Authoring ends at validated and never activates, starts a canary or moves a runtime slot. The request is one strict JSON object limited to 16384 bytes.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/ModelDeploymentReleaseAuthoringIdempotencyKey"
@@ -2204,7 +2204,7 @@ paths:
     post:
       tags: [Admin]
       summary: Activate a parentless validated release as the first stable assignment
-      description: Expansion requiring the Gateway License. The release must be sealed canonical v2, parentless and validated, and the tenant slot must not exist. The immutable M76 receipt and audit row commit with the slot, release and lifecycle event.
+      description: Expansion requiring current role authorization. The release must be sealed canonical v2, parentless and validated, and the tenant slot must not exist. The immutable M76 receipt and audit row commit with the slot, release and lifecycle event.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/ModelDeploymentReleaseRef"
@@ -2237,7 +2237,7 @@ paths:
     post:
       tags: [Admin]
       summary: Atomically activate an immutable successor under one stable request identity
-      description: Expansion requiring the Gateway License. The sealed parentless successor release, exact registry and mode-specific Alias before-state, caller-frozen model-set references, initial stable Slot and durable audit/receipt commit together. Omitted/published mode preserves the first canonical-to-alias contract. primary_alias mode upgrades its current target using expected Alias ID, predecessor Slot version and stable Release ref. Both Releases must pin addressable non-unverified revisions of the same Profile product. Current canary, target Slot and secondary active aliases are rejected. Historical replay never retargets the current Alias.
+      description: Expansion requiring current role authorization. The sealed parentless successor release, exact registry and mode-specific Alias before-state, caller-frozen model-set references, initial stable Slot and durable audit/receipt commit together. Omitted/published mode preserves the first canonical-to-alias contract. primary_alias mode upgrades its current target using expected Alias ID, predecessor Slot version and stable Release ref. Both Releases must pin addressable non-unverified revisions of the same Profile product. Current canary, target Slot and secondary active aliases are rejected. Historical replay never retargets the current Alias.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/ModelDeploymentReleaseRef"
@@ -2270,7 +2270,7 @@ paths:
     post:
       tags: [Admin]
       summary: Atomically replace a never-activated staging canonical with its first immutable successor
-      description: Expansion requiring the Gateway License. This separate command accepts only a staging, de-listed predecessor with no Runtime Slot, sealed or executable Release, active Alias or completed successor receipt. The successor's sealed parentless Release, first stable Slot, registry cutover, primary stable Alias, model-set conversion and durable v2 child evidence commit in one transaction. It never replays or broadens the published-predecessor successor command.
+      description: Expansion requiring current role authorization. This separate command accepts only a staging, de-listed predecessor with no Runtime Slot, sealed or executable Release, active Alias or completed successor receipt. The successor's sealed parentless Release, first stable Slot, registry cutover, primary stable Alias, model-set conversion and durable v2 child evidence commit in one transaction. It never replays or broadens the published-predecessor successor command.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/ModelDeploymentReleaseRef"
@@ -2303,7 +2303,7 @@ paths:
     post:
       tags: [Admin]
       summary: Start a bounded canary for a sealed child release
-      description: Expansion requiring the Gateway License. The target must be the exact validated child of the slot's current stable release; canary_basis_points is bounded to 1..5000.
+      description: Expansion requiring current role authorization. The target must be the exact validated child of the slot's current stable release; canary_basis_points is bounded to 1..5000.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/ModelDeploymentReleaseRef"
@@ -2321,7 +2321,7 @@ paths:
     post:
       tags: [Admin]
       summary: Promote the exact active canary to stable
-      description: Expansion requiring the Gateway License and current production qualification for every required target operation.
+      description: Expansion requiring current role authorization and current production qualification for every required target operation.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/ModelDeploymentReleaseRef"
@@ -2357,7 +2357,7 @@ paths:
     post:
       tags: [Admin]
       summary: Restore the retained stable parent of the current active release
-      description: Expansion requiring the Gateway License and current production qualification for every required stable-parent operation. It is distinct from canary cancellation and cannot target an arbitrary historical release.
+      description: Expansion requiring current role authorization and current production qualification for every required stable-parent operation. It is distinct from canary cancellation and cannot target an arbitrary historical release.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/ModelDeploymentReleaseRef"
@@ -2375,7 +2375,7 @@ paths:
     post:
       tags: [Admin]
       summary: Replace the exact sealed v1 stable parent with its canonical v2 child
-      description: Expansion requiring the Gateway License. The target must be a sealed validated v2 child of the exact active sealed v1 slot assignment. Inside the slot-CAS transaction UniRouter proves that the v2 manifest contains exactly the established Chat Completions and Embeddings operation set and that every currently executable legacy/canonical candidate produces the same secret-free full-plan hash. Both release transitions, the raw slot public-model identity change, events, audit, qualification images and immutable lifecycle receipt commit atomically. This action does not switch MODEL_ROUTE_AUTHORITY or drain a fleet.
+      description: Expansion requiring current role authorization. The target must be a sealed validated v2 child of the exact active sealed v1 slot assignment. Inside the slot-CAS transaction UniRouter proves that the v2 manifest contains exactly the established Chat Completions and Embeddings operation set and that every currently executable legacy/canonical candidate produces the same secret-free full-plan hash. Both release transitions, the raw slot public-model identity change, events, audit, qualification images and immutable lifecycle receipt commit atomically. This action does not switch MODEL_ROUTE_AUTHORITY or drain a fleet.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/ModelDeploymentReleaseRef"
@@ -2828,19 +2828,19 @@ paths:
 
   /api/v2/organizations/{org_id}/xinsight/setup-peer:
     parameters: [{"name":"org_id","in":"path","required":true,"schema":{"type":"integer","format":"int64"}},{"name":"project_id","in":"query","required":true,"schema":{"type":"integer","format":"int64"}}]
-    get: {"tags":["Admin"],"summary":"Read installer-pinned XI peer for this authorized project","description":"Current actual organization/project management authority is rechecked. Fixed installer peer only; no caller URL or ambient identity is forwarded. Responses are no-store; invitation material must stay in request/page memory. Final save alone requires Data Exchange entitlement. Pure supply may omit policy management. Current/future policy scope is independent of source exclusions. Configuration readiness and genuine receiving/authorized server-side body read are separate.","security":[{"bearerAuth":[]}],"responses":{"200":{"description":"Exact current projection","content":{"application/json":{"schema":{"$ref":"#/components/schemas/XInsightSetupPeer"}}}},"400":{"$ref":"#/components/responses/Error"},"403":{"$ref":"#/components/responses/Error"},"409":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}}}
+    get: {"tags":["Admin"],"summary":"Read installer-pinned XI peer for this authorized project","description":"Current actual organization/project management authority is rechecked. Fixed installer peer only; no caller URL or ambient identity is forwarded. Responses are no-store; invitation material must stay in request/page memory. Final save requires current role and tenant authorization. Pure supply may omit policy management. Current/future policy scope is independent of source exclusions. Configuration readiness and genuine receiving/authorized server-side body read are separate.","security":[{"bearerAuth":[]}],"responses":{"200":{"description":"Exact current projection","content":{"application/json":{"schema":{"$ref":"#/components/schemas/XInsightSetupPeer"}}}},"400":{"$ref":"#/components/responses/Error"},"403":{"$ref":"#/components/responses/Error"},"409":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}}}
 
   /api/v2/organizations/{org_id}/xinsight/setup-previews:
     parameters: [{"name":"org_id","in":"path","required":true,"schema":{"type":"integer","format":"int64"}}]
-    post: {"tags":["Admin"],"summary":"Resolve original link and preview exact normal setup consent","description":"Current actual organization/project management authority is rechecked. Fixed installer peer only; no caller URL or ambient identity is forwarded. Responses are no-store; invitation material must stay in request/page memory. Final save alone requires Data Exchange entitlement. Pure supply may omit policy management. Current/future policy scope is independent of source exclusions. Configuration readiness and genuine receiving/authorized server-side body read are separate.","security":[{"bearerAuth":[]}],"responses":{"200":{"description":"Exact current projection","content":{"application/json":{"schema":{"$ref":"#/components/schemas/XInsightSetupPreview"}}}},"400":{"$ref":"#/components/responses/Error"},"403":{"$ref":"#/components/responses/Error"},"409":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}},"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/XInsightSetupPreviewInput"}}}}}
+    post: {"tags":["Admin"],"summary":"Resolve original link and preview exact normal setup consent","description":"Current actual organization/project management authority is rechecked. Fixed installer peer only; no caller URL or ambient identity is forwarded. Responses are no-store; invitation material must stay in request/page memory. Final save requires current role and tenant authorization. Pure supply may omit policy management. Current/future policy scope is independent of source exclusions. Configuration readiness and genuine receiving/authorized server-side body read are separate.","security":[{"bearerAuth":[]}],"responses":{"200":{"description":"Exact current projection","content":{"application/json":{"schema":{"$ref":"#/components/schemas/XInsightSetupPreview"}}}},"400":{"$ref":"#/components/responses/Error"},"403":{"$ref":"#/components/responses/Error"},"409":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}},"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/XInsightSetupPreviewInput"}}}}}
 
   /api/v2/organizations/{org_id}/xinsight/setups:
     parameters: [{"name":"org_id","in":"path","required":true,"schema":{"type":"integer","format":"int64"}}]
-    post: {"tags":["Admin"],"summary":"Atomically save human consent and original encrypted invitation","description":"Current actual organization/project management authority is rechecked. Fixed installer peer only; no caller URL or ambient identity is forwarded. Responses are no-store; invitation material must stay in request/page memory. Final save alone requires Data Exchange entitlement. Pure supply may omit policy management. Current/future policy scope is independent of source exclusions. Configuration readiness and genuine receiving/authorized server-side body read are separate.","security":[{"bearerAuth":[]}],"responses":{"202":{"description":"Exact current projection","content":{"application/json":{"schema":{"$ref":"#/components/schemas/XInsightSetupStatus"}}}},"400":{"$ref":"#/components/responses/Error"},"403":{"$ref":"#/components/responses/Error"},"409":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}},"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/XInsightSetupConsent"}}}}}
+    post: {"tags":["Admin"],"summary":"Atomically save human consent and original encrypted invitation","description":"Current actual organization/project management authority is rechecked. Fixed installer peer only; no caller URL or ambient identity is forwarded. Responses are no-store; invitation material must stay in request/page memory. Final save requires current role and tenant authorization. Pure supply may omit policy management. Current/future policy scope is independent of source exclusions. Configuration readiness and genuine receiving/authorized server-side body read are separate.","security":[{"bearerAuth":[]}],"responses":{"202":{"description":"Exact current projection","content":{"application/json":{"schema":{"$ref":"#/components/schemas/XInsightSetupStatus"}}}},"400":{"$ref":"#/components/responses/Error"},"403":{"$ref":"#/components/responses/Error"},"409":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}},"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/XInsightSetupConsent"}}}}}
 
   /api/v2/organizations/{org_id}/xinsight/setups/{installation_id}:
     parameters: [{"name":"org_id","in":"path","required":true,"schema":{"type":"integer","format":"int64"}},{"name":"installation_id","in":"path","required":true,"schema":{"type":"string"}}]
-    get: {"tags":["Admin"],"summary":"Read current setup, policy and actual XI receiving state","description":"Current actual organization/project management authority is rechecked. Fixed installer peer only; no caller URL or ambient identity is forwarded. Responses are no-store; invitation material must stay in request/page memory. Final save alone requires Data Exchange entitlement. Pure supply may omit policy management. Current/future policy scope is independent of source exclusions. Configuration readiness and genuine receiving/authorized server-side body read are separate.","security":[{"bearerAuth":[]}],"responses":{"200":{"description":"Exact current projection","content":{"application/json":{"schema":{"$ref":"#/components/schemas/XInsightSetupStatus"}}}},"400":{"$ref":"#/components/responses/Error"},"403":{"$ref":"#/components/responses/Error"},"409":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}}}
+    get: {"tags":["Admin"],"summary":"Read current setup, policy and actual XI receiving state","description":"Current actual organization/project management authority is rechecked. Fixed installer peer only; no caller URL or ambient identity is forwarded. Responses are no-store; invitation material must stay in request/page memory. Final save requires current role and tenant authorization. Pure supply may omit policy management. Current/future policy scope is independent of source exclusions. Configuration readiness and genuine receiving/authorized server-side body read are separate.","security":[{"bearerAuth":[]}],"responses":{"200":{"description":"Exact current projection","content":{"application/json":{"schema":{"$ref":"#/components/schemas/XInsightSetupStatus"}}}},"400":{"$ref":"#/components/responses/Error"},"403":{"$ref":"#/components/responses/Error"},"409":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}}}
 
   /api/v2/xinsight/setups/{installation_id}/credential-recovery-scope:
     parameters: [{name: installation_id, in: path, required: true, schema: {type: string}}]
@@ -3081,7 +3081,7 @@ paths:
     x-unirouter-rbac:
       get: [platform_admin, org_admin, org_viewer, project_admin, project_user, project_viewer]
       put: [platform_admin, org_admin, project_admin]
-    description: Requires an enforceable commercial License; model governance is included as a core management module. org_viewer may read ordinary model-set assignment metadata in its organization. organization_role=member is constrained by the exact live membership; PUT requires a live project_admin membership. The users.role/JWT compatibility shadow cannot grant a role in another project.
+    description: Model governance requires current role and tenant authorization. org_viewer may read ordinary model-set assignment metadata in its organization. organization_role=member is constrained by the exact live membership; PUT requires a live project_admin membership. The users.role/JWT compatibility shadow cannot grant a role in another project.
     get: *operation_list_by_id
     put: *operation_update_by_id
 
@@ -3399,7 +3399,7 @@ paths:
     get:
       tags: [Admin]
       summary: Read the project-bound X-Insight completed-feed connection
-      description: Available for existing active, disabled or archived projects independent of the current Data Exchange entitlement. The receiver cursor is a durable receiver-persistence acknowledgement only; it does not claim search, API, or UI visibility.
+      description: Available for existing active, disabled or archived projects without a commercial License. The receiver cursor is a durable receiver-persistence acknowledgement only; it does not claim search, API, or UI visibility.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: project_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
@@ -3419,7 +3419,7 @@ paths:
     post:
       tags: [Admin]
       summary: Consent to and stage one frozen X-Insight Connector invitation
-      description: Requires an active project, current Data Exchange entitlement, the stable deployment role, an enabled exact completed-feed source instance, and a locally pinned X-Insight HTTPS origin. The complete frozen invitation is validated without extensions; its bearer is accepted only from the canonical install_url fragment, purpose-encrypted, and never returned. Exact replay is a no-op. This action does not enable the Connector agent or send traffic.
+      description: Requires an active project, the stable deployment role, an enabled exact completed-feed source instance, and a locally pinned X-Insight HTTPS origin. The complete frozen invitation is validated without extensions; its bearer is accepted only from the canonical install_url fragment, purpose-encrypted, and never returned. Exact replay is a no-op. This action does not enable the Connector agent or send traffic.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -3446,7 +3446,7 @@ paths:
     post:
       tags: [Admin]
       summary: Pause feed delivery without disabling a credential
-      description: Authority-reducing safety action available for existing inactive projects and without the current Data Exchange entitlement. Authenticated active or staged feed keys receive a strict retryable 503 while paused.
+      description: Authority-reducing safety action available for existing inactive projects and without a commercial License. Authenticated active or staged feed keys receive a strict retryable 503 while paused.
       security: [{ bearerAuth: [] }]
       responses:
         "200": { $ref: "#/components/responses/JSON" }
@@ -3460,7 +3460,7 @@ paths:
     post:
       tags: [Admin]
       summary: Resume feed delivery
-      description: Requires an active project, current Data Exchange entitlement, exactly one active feed credential and no staged replacement.
+      description: Requires an active project, exactly one active feed credential and no staged replacement.
       security: [{ bearerAuth: [] }]
       responses:
         "200": { $ref: "#/components/responses/JSON" }
@@ -3475,7 +3475,7 @@ paths:
     post:
       tags: [Admin]
       summary: Register the initial staged receiver-generated X-Insight feed-only credential
-      description: Active-project and Data Exchange entitlement required. X-Insight keeps the raw token and submits only the exact non-secret Frozen Registration Bundle V1. UniRouter stores a server-HMAC of the decoded domain-separated verifier and never receives or returns the raw token.
+      description: An active project and current platform-admin authorization are required. X-Insight keeps the raw token and submits only the exact non-secret Frozen Registration Bundle V1. UniRouter stores a server-HMAC of the decoded domain-separated verifier and never receives or returns the raw token.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -3505,7 +3505,7 @@ paths:
     post:
       tags: [Admin]
       summary: Activate the installed initial staged credential while keeping the connection paused
-      description: Requires an active project and current Data Exchange entitlement.
+      description: Requires an active project.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -3526,7 +3526,7 @@ paths:
     post:
       tags: [Admin]
       summary: Irreversibly revoke one feed credential and pause the connection
-      description: Authority-reducing safety action available for active or staged credentials on existing inactive projects and without the current Data Exchange entitlement.
+      description: Authority-reducing safety action available for active or staged credentials on existing inactive projects and without a commercial License.
       security: [{ bearerAuth: [] }]
       responses:
         "200": { $ref: "#/components/responses/JSON" }
@@ -3541,7 +3541,7 @@ paths:
     post:
       tags: [Admin]
       summary: Prepare one staged replacement while retaining the active credential
-      description: Requires an active project, current Data Exchange entitlement and a paused connection. X-Insight keeps the newly generated raw token and submits only the non-secret registration bundle. The staged key may authenticate only to receive the retryable paused response; it can never read data.
+      description: Requires an active project and a paused connection. X-Insight keeps the newly generated raw token and submits only the non-secret registration bundle. The staged key may authenticate only to receive the retryable paused response; it can never read data.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -3570,7 +3570,7 @@ paths:
     post:
       tags: [Admin]
       summary: Atomically promote staged and revoke old after X systemctl restart and staged-key 503 proof
-      description: Requires an active project and current Data Exchange entitlement.
+      description: Requires an active project.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -3590,7 +3590,7 @@ paths:
     post:
       tags: [Admin]
       summary: Irreversibly revoke the staged replacement and keep the old credential active
-      description: Authority-reducing safety action available for an existing inactive project and without the current Data Exchange entitlement.
+      description: Authority-reducing safety action available for an existing inactive project and without a commercial License.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -4034,7 +4034,7 @@ paths:
       get: [platform_admin, org_admin, org_viewer, project_admin]
       post: [platform_admin, org_admin]
     description: |
-      Requires an enforceable commercial License; model governance is included as a core management module. Organization administrators and
+      Model governance requires current role and tenant authorization. Organization administrators and
       organization viewers always use their JWT organization; a foreign org_id query or
       request-body value returns 403, and a missing/zero JWT organization fails closed.
       A member may list candidate sets only with project_id and a live project_admin
@@ -4052,7 +4052,7 @@ paths:
       get: [platform_admin, org_admin]
       put: [platform_admin, org_admin]
     description: |
-      Requires an enforceable commercial License and remains limited to platform/org
+      Requires current authorization and remains limited to platform/org
       governance; project administrators cannot read or replace items. Organization-
       scoped global-ID access binds organization administrators to their JWT organization;
       a foreign org_id query returns 403, while a foreign or nonexistent set ID returns
@@ -4658,7 +4658,7 @@ paths:
   /api/v1/notification-events:
     x-unirouter-rbac:
       get: [platform_admin, org_admin, billing_admin, project_admin, project_user, project_viewer]
-    description: Requires an enforceable commercial License; notifications are included as a core management module. Billing administrators are SQL-filtered to the financial taxonomy `project_budget.threshold` and `token_metering.estimated_ratio.high`; membership-scoped callers require project_id and a live project_admin/project_user/project_viewer membership.
+    description: Notifications require current role and tenant authorization. Billing administrators are SQL-filtered to the financial taxonomy `project_budget.threshold` and `token_metering.estimated_ratio.high`; membership-scoped callers require project_id and a live project_admin/project_user/project_viewer membership.
     get: *operation_list
 
   /api/v1/notification-events/{id}/acknowledge:
@@ -4667,7 +4667,7 @@ paths:
     post:
       tags: [Admin]
       summary: Acknowledge a tenant-scoped notification event
-      description: Requires an enforceable commercial License. Billing administrators can transition only the two financial event types visible to them. Lifecycle state is independent from webhook delivery state.
+      description: Requires current role and tenant authorization. Billing administrators can transition only the two financial event types visible to them. Lifecycle state is independent from webhook delivery state.
       security:
         - bearerAuth: []
       parameters:
@@ -4705,7 +4705,7 @@ paths:
     post:
       tags: [Admin]
       summary: Resolve a tenant-scoped notification event
-      description: Requires an enforceable commercial License. Billing administrators can transition only the two financial event types visible to them. Resolved events cannot be reopened through this API.
+      description: Requires current role and tenant authorization. Billing administrators can transition only the two financial event types visible to them. Resolved events cannot be reopened through this API.
       security:
         - bearerAuth: []
       parameters:
@@ -4732,27 +4732,27 @@ paths:
   /api/v1/notification-deliveries:
     x-unirouter-rbac:
       get: [platform_admin, org_admin, billing_admin, project_admin, project_user, project_viewer]
-    description: Requires an enforceable commercial License. Billing administrators see delivery rows only when the joined event is in the two-type financial taxonomy; membership-scoped callers require project_id and a live project_admin/project_user/project_viewer membership.
+    description: Requires current role and tenant authorization. Billing administrators see delivery rows only when the joined event is in the two-type financial taxonomy; membership-scoped callers require project_id and a live project_admin/project_user/project_viewer membership.
     get: *operation_list
 
   /api/v1/notification-webhooks:
     x-unirouter-rbac:
       get: [platform_admin, org_admin, project_admin, project_user, project_viewer]
       post: [platform_admin, org_admin, project_admin]
-    description: Requires an enforceable commercial License. Billing administrators have no webhook authority; route middleware excludes the role and every handler also returns 403 before persistence as defense in depth.
+    description: Requires current role and tenant authorization. Billing administrators have no webhook authority; route middleware excludes the role and every handler also returns 403 before persistence as defense in depth.
     get: *operation_list
     post: *operation_create
 
   /api/v1/notification-webhooks/{id}:
     x-unirouter-rbac:
       put: [platform_admin, org_admin, project_admin]
-    description: Requires an enforceable commercial License. Billing administrators receive 403 and no read or write is attempted.
+    description: Requires current role and tenant authorization. Billing administrators receive 403 and no read or write is attempted.
     put: *operation_update_by_id
 
   /api/v1/notification-webhooks/{id}/verify-scope:
     x-unirouter-rbac:
       post: [platform_admin, org_admin, project_admin]
-    description: Requires an enforceable commercial License. Billing administrators receive 403 and no verification or audit mutation is attempted.
+    description: Requires current role and tenant authorization. Billing administrators receive 403 and no verification or audit mutation is attempted.
     post: *operation_update_by_id
 
   /api/v1/audit-logs:
@@ -4809,22 +4809,24 @@ paths:
     x-unirouter-rbac:
       get: [platform_admin]
       put: [platform_admin]
-    description: Platform recovery and commercial License surface. The response never returns the raw signed document or signature. Only enforceable=true authorizes commercial runtime. The signed V1 limit field remains named active_channels, while schema M79 enforces and reports its current usage from enabled canonical provider_connections rather than legacy channels.
+    description: Deprecated commercial License compatibility surface. Platform authorization remains required. GET returns status=not_required without reading stored documents. PUT validates only a bounded compatibility envelope and performs no document import, signature verification, entitlement write, audit write or event emission.
     get:
+      deprecated: true
       tags: [Admin]
-      summary: Get verified commercial License status
+      summary: Get commercial License retirement status
       security:
         - bearerAuth: []
       responses:
         "200":
-          description: Current verified License status and non-secret signed payload metadata
+          description: Commercial License not required; all validity/enforcement booleans are false
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/LicenseStatus"
     put:
+      deprecated: true
       tags: [Admin]
-      summary: Import strict signed commercial License
+      summary: Accept a legacy License envelope without importing it
       security:
         - bearerAuth: []
       requestBody:
@@ -4833,29 +4835,27 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               required: [license]
               properties:
                 license:
+                  description: A nonempty strict JSON object or a string encoding one. Duplicate fields, unknown envelope fields, multiple documents and scalar or array roots are rejected.
                   oneOf:
-                    - $ref: "#/components/schemas/CommercialLicenseDocument"
+                    - type: object
+                      minProperties: 1
+                      additionalProperties: true
                     - type: string
       responses:
         "200":
-          description: Imported and immediately active verified License status
+          description: status=not_required and imported=false; nothing was stored or activated
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/LicenseStatus"
         "400":
           $ref: "#/components/responses/JSON"
-        "409":
-          description: Signed resource limit is below current active inventory. For active_channels, current inventory means enabled canonical provider connections under schema M79.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
         "413":
-          description: License import exceeds 256 KiB
+          description: Compatibility envelope exceeds 256 KiB
 
   /api/v1/sensitive-words:
     x-unirouter-rbac:
@@ -5350,7 +5350,7 @@ paths:
       tags: [Admin]
       summary: Explain exact canonical deployment-operation or current-project caller readiness without runtime mutation or external traffic
       description: |
-        Contract `unirouter.model-readiness.v2`. `mode=connection` requires one canonical `deployment_id` and checks the endpoint-derived exact `model_operation_id`, Gateway License, provider connection, provider credential and current runtime assignment without requiring a project. `channel_id` is forbidden and no legacy Router preview is used. The default `mode=caller` explains the current canonical Planner/application projection and also evaluates the selected project's caller, AccessGrant, API key, model authorization and distributed-limit evidence. It never claims a half-open route lease and sends no Provider, Feed, health-check or upstream request. Unavailable evidence remains `unavailable` rather than being reported as a business blocker. Non-platform responses contain only safe aggregates.
+        Contract `unirouter.model-readiness.v2`. `mode=connection` requires one canonical `deployment_id` and checks the endpoint-derived exact `model_operation_id`, provider connection, provider credential and current runtime assignment without requiring a project. `channel_id` is forbidden and no legacy Router preview is used. The default `mode=caller` explains the current canonical Planner/application projection and also evaluates the selected project's caller, AccessGrant, API key, model authorization and distributed-limit evidence. It never claims a half-open route lease and sends no Provider, Feed, health-check or upstream request. Unavailable evidence remains `unavailable` rather than being reported as a business blocker. Non-platform responses contain only safe aggregates.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: mode
@@ -7219,8 +7219,8 @@ components:
         reason_code: { type: string }
         structurally_available: { type: boolean }
         authorized: { type: boolean }
-        licensed: { type: boolean }
-        license_feature: { type: string, enum: [gateway] }
+        licensed: { type: boolean, deprecated: true, enum: [true], description: "Compatibility only; commercial admission has been retired." }
+        license_feature: { type: string, deprecated: true, enum: [""] }
         method: { type: string, enum: [POST] }
         path: { type: string, enum: [/api/v1/model-deployment-releases] }
         idempotency_required: { type: boolean, enum: [true] }
@@ -7413,8 +7413,8 @@ components:
         reason_code: { type: string }
         structurally_available: { type: boolean }
         authorized: { type: boolean }
-        licensed: { type: boolean }
-        license_feature: { type: string, enum: [gateway] }
+        licensed: { type: boolean, deprecated: true, enum: [true], description: "Compatibility only; commercial admission has been retired." }
+        license_feature: { type: string, deprecated: true, enum: [""] }
         idempotency_required: { type: boolean, enum: [true] }
         required_fields: { type: array, uniqueItems: true, items: { type: string } }
         safety_direction: { type: string, enum: [expansion, contraction] }
@@ -9168,7 +9168,7 @@ components:
       type: object
       additionalProperties: false
       required: [gateway, agent_capabilities, oidc, guardrails, notifications, model_governance, data_exchange]
-      description: Effective authorization results. Guardrails, notifications, and model governance are true for every enforceable commercial License; the remaining capabilities require their signed feature item or wildcard.
+      description: All seven flags are true because commercial restrictions are retired. They are not authorization grants; identity, tenant, project and policy checks still apply.
       properties:
         gateway: { type: boolean }
         agent_capabilities: { type: boolean }
@@ -9181,11 +9181,11 @@ components:
       type: object
       additionalProperties: false
       required: [status, enforceable, features]
-      description: Non-sensitive, fail-closed feature authorization projection. It never includes the signed License, customer or deployment identity, key ID, signature, expiry metadata, or resource limits.
+      description: Retired commercial feature compatibility projection; status=not_required and enforceable=false. It never includes the signed License, customer or deployment identity, key ID, signature, expiry metadata, or resource limits.
       properties:
         status:
           type: string
-          enum: [missing, active, expiring, expired, invalid, not_yet_valid, deployment_mismatch]
+          enum: [not_required]
         enforceable: { type: boolean }
         features: { $ref: "#/components/schemas/LicenseCapabilityFeatures" }
     CurrentUserProfile:
@@ -9612,9 +9612,10 @@ components:
     LicenseStatus:
       type: object
       additionalProperties: false
+      description: Deprecated compatibility status. No commercial document is verified or returned. PUT additionally returns imported=false and a human-readable message.
       required: [status, valid, enforceable, commercial, signature_valid, deployment_match, warning, days_until_expiry, checked_at, verifier_configured]
       properties:
-        status: { type: string, enum: [missing, active, expiring, expired, invalid, not_yet_valid, deployment_mismatch] }
+        status: { type: string, enum: [not_required] }
         valid: { type: boolean }
         enforceable: { type: boolean }
         commercial: { type: boolean }
@@ -9624,6 +9625,8 @@ components:
         days_until_expiry: { type: integer }
         checked_at: { type: string, format: date-time }
         verifier_configured: { type: boolean }
+        imported: { type: boolean, enum: [false], description: "Present only on PUT." }
+        message: { type: string, description: "Present only on PUT." }
         schema_version: { type: string }
         key_id: { type: string }
         expected_deployment_id: { type: string }

@@ -13,7 +13,7 @@ import (
 )
 
 func TestPRD8RuntimeControlMigrationsAndRollbackGuards(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 
 	var tables, constraints, ledger int

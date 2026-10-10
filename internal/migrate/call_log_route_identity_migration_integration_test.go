@@ -12,7 +12,7 @@ import (
 )
 
 func TestCallLogRouteIdentityMigrationBackfillsOnlyAuthoritativeAttempts(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 
 	execMigrationDown(t, ctx, pool, "000071_model_execution_evidence.down.sql")
@@ -44,7 +44,7 @@ func TestCallLogRouteIdentityMigrationBackfillsOnlyAuthoritativeAttempts(t *test
 		 ('route-migration-unproven',$1,'model-b','provider-b','duplicate-name',NULL,200)`, orgID)
 	require.NoError(t, err)
 
-	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000067_call_log_route_identity"))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.PreRetirementMigrationsDir(t), "000067_call_log_route_identity"))
 	var provenRoute int64
 	var unprovenRoute *int64
 	require.NoError(t, pool.QueryRow(ctx, `

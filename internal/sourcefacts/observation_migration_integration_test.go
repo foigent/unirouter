@@ -50,7 +50,7 @@ func observationDown(t *testing.T, pool *pgxpool.Pool) error {
 }
 
 func TestObservationExpandPreservesAAndRefusesDataBearingDown(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	require.NoError(t, budgetDown(t, pool), "establish the real M117 predecessor before any fixture project exists")
 	pool, s, org, project := setupSourceDBWithPool(t, pool)
 	snapshot := testSnapshot()
@@ -69,12 +69,12 @@ func TestObservationExpandPreservesAAndRefusesDataBearingDown(t *testing.T) {
 	s.options.ObservationsEnabled = true
 	require.ErrorContains(t, s.CheckReady(t.Context()), "M117")
 	dir := testutil.MigrationsDir(t)
-	artifact, err := schemaauthority.ExpectedLedger(dir)
+	artifact, err := testutil.PreRetirementLedger(t)
 	require.NoError(t, err)
 	predecessor := assertSourceFixtureLedger(t, pool, "000116_execution_source_facts")
 	require.NoError(t, schemaauthority.VerifyRuntimeLedger(artifact, predecessor))
 	require.Error(t, schemaauthority.VerifyRuntimeLedger(predecessor, append(append([]string(nil), predecessor...), schemaauthority.ObservationExpandHead)))
-	require.NoError(t, migrate.RunRuntime(t.Context(), pool, dir))
+	require.NoError(t, migrate.RunRuntime(t.Context(), pool, testutil.PreRetirementMigrationsDir(t)))
 	require.ErrorContains(t, s.CheckReady(t.Context()), "M117")
 	wire, err := os.ReadFile(filepath.Join(dir, schemaauthority.ObservationExpandHead+".up.sql"))
 	require.NoError(t, err)

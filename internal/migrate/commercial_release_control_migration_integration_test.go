@@ -18,7 +18,7 @@ import (
 )
 
 func TestV1CommercialReleaseControlMigrationAndConcurrentResourceLimit(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -93,7 +93,7 @@ func TestV1CommercialReleaseControlMigrationAndConcurrentResourceLimit(t *testin
 	require.Error(t, err, "expired entitlement snapshot must block new active resources")
 	require.Contains(t, err.Error(), "commercial License is expired")
 
-	downSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000037_v1_commercial_release_control.down.sql"))
+	downSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000037_v1_commercial_release_control.down.sql"))
 	require.NoError(t, err)
 	connection, err := pool.Acquire(ctx)
 	require.NoError(t, err)

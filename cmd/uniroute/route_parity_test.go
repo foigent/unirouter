@@ -214,7 +214,7 @@ func TestMainRegistersCostOptimizationWithPricingReadAuthority(t *testing.T) {
 	}
 }
 
-func TestMainRegistersInvocationOptimizationBehindModelGovernanceAndOrganizationAdmin(t *testing.T) {
+func TestMainRegistersInvocationOptimizationWithOrganizationAdmin(t *testing.T) {
 	src, err := os.ReadFile("main.go")
 	if err != nil {
 		t.Fatalf("read main.go: %v", err)
@@ -222,7 +222,7 @@ func TestMainRegistersInvocationOptimizationBehindModelGovernanceAndOrganization
 	mainSource := string(src)
 	for _, fragment := range []string{
 		"registerInvocationOptimizationRoutes(",
-		"licensedRoute(licensing.FeatureModelGovernance, orgAdminRoute)",
+		"orgAdminRoute,",
 	} {
 		if !strings.Contains(mainSource, fragment) {
 			t.Fatalf("main.go invocation optimization authority missing %q", fragment)
@@ -332,12 +332,12 @@ func TestMainRegistersExtractedModelGovernanceRoutes(t *testing.T) {
 	mainSource := string(src)
 	for _, fragment := range []string{
 		"registerModelGovernanceRoutes(mux, adminHandler",
-		"organizationRead: licensedRoute(licensing.FeatureModelGovernance",
-		"organizationWrite: licensedRoute(licensing.FeatureModelGovernance, orgAdminRoute)",
-		"projectRead:       licensedRoute(licensing.FeatureModelGovernance, projectReadRoute)",
-		"modelSetRead: licensedRoute(licensing.FeatureModelGovernance",
-		`mux.Handle("GET /api/v1/projects/{id}/model-sets", licensedRoute(licensing.FeatureModelGovernance, projectReadRoute)(adminHandler.ListProjectModelSets))`,
-		`mux.Handle("PUT /api/v1/projects/{id}/model-sets", licensedRoute(licensing.FeatureModelGovernance`,
+		"organizationRead: func(h http.HandlerFunc) http.Handler",
+		"organizationWrite: orgAdminRoute,",
+		"projectRead:       projectReadRoute,",
+		"modelSetRead: func(h http.HandlerFunc) http.Handler",
+		`mux.Handle("GET /api/v1/projects/{id}/model-sets", projectReadRoute(adminHandler.ListProjectModelSets))`,
+		`mux.Handle("PUT /api/v1/projects/{id}/model-sets", func(h http.HandlerFunc) http.Handler`,
 	} {
 		if !strings.Contains(mainSource, fragment) {
 			t.Fatalf("main.go model-governance registrar wiring missing %q", fragment)
@@ -354,8 +354,8 @@ func TestMainRegistersCanonicalModelDeploymentRoutes(t *testing.T) {
 	for _, fragment := range []string{
 		"registerModelDeploymentRoutes(mux, adminHandler",
 		"return organizationRoleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleOrgViewer)",
-		"write:   licensedRoute(licensing.FeatureGateway, orgAdminRoute)",
-		"approve: licensedRoute(licensing.FeatureGateway, platformRoute)",
+		"write:   orgAdminRoute,",
+		"approve: platformRoute,",
 		"safety:  orgAdminRoute",
 	} {
 		if !strings.Contains(mainSource, fragment) {
@@ -387,25 +387,26 @@ func TestMainRegistersCanonicalModelDeploymentRoutes(t *testing.T) {
 	}
 }
 
-func TestMainRegistersCommercialFeatureGates(t *testing.T) {
+func TestMainRetiresCommercialGatesAndKeepsAuthentication(t *testing.T) {
 	src, err := os.ReadFile("main.go")
 	if err != nil {
-		t.Fatalf("read main.go: %v", err)
+		t.Fatal(err)
 	}
 	mainSource := string(src)
-	for _, fragment := range []string{
+	for _, forbidden := range []string{"licenseRuntime", "licensedRoute", "gatewayLicenseGate", "eventSvc.SetAdmission"} {
+		if strings.Contains(mainSource, forbidden) {
+			t.Fatalf("retired commercial gate remains: %s", forbidden)
+		}
+	}
+	for _, required := range []string{
 		`mux.HandleFunc("GET /api/v1/auth/oidc/config", adminHandler.OIDCConfig)`,
-		`mux.Handle("GET /api/v1/auth/oidc/start", licenseRuntime.Gate(licensing.FeatureOIDC)`,
-		`mux.Handle("GET /api/v1/auth/oidc/callback", licenseRuntime.Gate(licensing.FeatureOIDC)`,
-		"licenseRuntime.Gate(licensing.FeatureOIDC)",
-		"licensedRoute(licensing.FeatureNotifications",
-		`mux.Handle("GET /api/v1/internal-status", licensedRoute(licensing.FeatureNotifications, orgAdminRoute)(adminHandler.InternalStatus))`,
-		"licensedRoute(licensing.FeatureDataExchange",
-		"licensedRoute(licensing.FeatureGuardrails",
-		"eventSvc.SetAdmission",
+		`mux.Handle("GET /api/v1/auth/oidc/start", http.HandlerFunc(adminHandler.OIDCStart))`,
+		`mux.Handle("GET /api/v1/auth/oidc/callback", http.HandlerFunc(adminHandler.OIDCCallback))`,
+		`mux.Handle("GET /api/v1/internal-status", orgAdminRoute(adminHandler.InternalStatus))`,
+		`registerGlobalControlRoutes(mux, adminHandler, platformRoute, platformRoute)`,
 	} {
-		if !strings.Contains(mainSource, fragment) {
-			t.Fatalf("main.go commercial feature wiring missing %q", fragment)
+		if !strings.Contains(mainSource, required) {
+			t.Fatalf("required authority missing: %s", required)
 		}
 	}
 }
@@ -417,10 +418,10 @@ func TestPublicMediaRoutesOnlySubmitExecutionWork(t *testing.T) {
 	}
 	mainSource := string(src)
 	for _, registration := range []string{
-		`mux.Handle("POST /v1/media/jobs", middleware.GatewayAuthAcrossBufferedBody(mediaAuth, mediaPayloadGuard)(captureExecutionContext(gatewayLicenseGate(capturePublicContent(http.HandlerFunc(mediaHandler.Submit))))))`,
-		`mux.Handle("GET /v1/media/jobs/{id}", mediaAuth(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Get))))`,
-		`mux.Handle("POST /v1/media/jobs/{id}/cancel", mediaAuth(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Cancel))))`,
-		`mux.Handle("GET /v1/media/jobs/{id}/content", mediaAuth(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Content))))`,
+		`mux.Handle("POST /v1/media/jobs", middleware.GatewayAuthAcrossBufferedBody(mediaAuth, mediaPayloadGuard)(captureExecutionContext(capturePublicContent(http.HandlerFunc(mediaHandler.Submit)))))`,
+		`mux.Handle("GET /v1/media/jobs/{id}", mediaAuth(http.HandlerFunc(mediaHandler.Get)))`,
+		`mux.Handle("POST /v1/media/jobs/{id}/cancel", mediaAuth(http.HandlerFunc(mediaHandler.Cancel)))`,
+		`mux.Handle("GET /v1/media/jobs/{id}/content", mediaAuth(http.HandlerFunc(mediaHandler.Content)))`,
 	} {
 		if !strings.Contains(mainSource, registration) {
 			t.Fatalf("public media route wiring missing %q", registration)
@@ -438,31 +439,21 @@ func TestPublicMediaRoutesOnlySubmitExecutionWork(t *testing.T) {
 	}
 }
 
-func TestGatewayAuthenticationPrecedesLicenseDisclosure(t *testing.T) {
+func TestGatewayAuthenticationWrapsExecutionAdmission(t *testing.T) {
 	src, err := os.ReadFile("main.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 	mainSource := string(src)
 	for _, registration := range []string{
-		`mux.Handle("POST /v1/chat/completions", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(captureExecutionContext(gatewayLicenseGate(`,
-		`mux.Handle("POST /v1/embeddings", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, embeddingsPayloadGuard)(captureExecutionContext(gatewayLicenseGate(`,
-		`mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(gatewayLicenseGate(`,
-		`mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(gatewayLicenseGate(`,
-		`mux.Handle("GET /v1/models", gatewayAuth(gatewayLicenseGate(`,
+		`mux.Handle("POST /v1/chat/completions", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(captureExecutionContext(`,
+		`mux.Handle("POST /v1/embeddings", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, embeddingsPayloadGuard)(captureExecutionContext(`,
+		`mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(`,
+		`mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(`,
+		`mux.Handle("GET /v1/models", gatewayAuth(`,
 	} {
 		if !strings.Contains(mainSource, registration) {
-			t.Fatalf("gateway authentication must wrap license admission: missing %q", registration)
-		}
-	}
-	for _, forbidden := range []string{
-		`gatewayLicenseGate(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)`,
-		`gatewayLicenseGate(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, embeddingsPayloadGuard)`,
-		`gatewayLicenseGate(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)`,
-		`gatewayLicenseGate(gatewayAuth(admissionMiddleware(http.HandlerFunc(relay.HandleModels))))`,
-	} {
-		if strings.Contains(mainSource, forbidden) {
-			t.Fatalf("gateway license admission still exposes state before authentication: %q", forbidden)
+			t.Fatalf("gateway authentication must wrap execution admission: missing %q", registration)
 		}
 	}
 }
@@ -496,8 +487,8 @@ func TestPublicNonStreamRoutesUseExactProductionPipeline(t *testing.T) {
 		`responsesHandler := newGatewayPublicNonStreamHandler(postgres.Pool, relay, modeloperation.IDResponses, outboxSvc)`,
 		`messagesHandler := newGatewayPublicNonStreamHandler(postgres.Pool, relay, modeloperation.IDMessages, outboxSvc)`,
 		`publicNonStreamPayloadGuard := payloadpolicy.RequestMiddlewareWithMax(payloadBudget, 8*payloadpolicy.MiB, middleware.GetOrgIDFromContext)`,
-		`mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(gatewayLicenseGate(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(responsesHandler))))))))`,
-		`mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(gatewayLicenseGate(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(messagesHandler))))))))`,
+		`mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(responsesHandler)))))))`,
+		`mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(messagesHandler)))))))`,
 	} {
 		if !strings.Contains(mainSource, fragment) {
 			t.Fatalf("public non-stream production pipeline missing %q", fragment)
@@ -557,7 +548,7 @@ func TestOpenAPICanonicalAdminAndRetiredMutationContractsRemainExplicit(t *testi
 	}
 	for _, fragment := range []string{
 		"legacy_model_mutation_retired",
-		"before License admission, request-body parsing, any business-data query, secret access",
+		"before request-body parsing, any business-data query, secret access",
 		"contract_version: { type: string, enum: [unirouter.model-readiness.v2] }",
 		"required: [mode, org_id, project_id, requested_model, resolved_model, endpoint, model_operation_id, caller]",
 		"required: [gateway_license, registration, lifecycle, catalog, price_authority, deployment, provider_credential, operation, base_route, runtime_slot]",

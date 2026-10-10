@@ -107,11 +107,11 @@ func TestRepeatedModelSuccessorContinuousHistoryIntegration(t *testing.T) {
 	// This round-trip exercises M112 against its supported schema ceiling.
 	// The strict historical install includes the M113 Publication; its guarded
 	// down restores the exact M112 predecessor before creating test history.
-	body, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), schemaauthority.LegacyCapabilityHead+".down.sql"))
+	body, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), schemaauthority.LegacyCapabilityHead+".down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(body))
 	require.NoError(t, err, schemaauthority.LegacyCapabilityHead)
-	artifactLedger, err := schemaauthority.ExpectedLedger(testutil.MigrationsDir(t))
+	artifactLedger, err := testutil.PreRetirementLedger(t)
 	require.NoError(t, err)
 	var expectedLedger []string
 	for _, version := range artifactLedger {

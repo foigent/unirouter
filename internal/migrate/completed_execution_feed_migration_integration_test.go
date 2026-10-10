@@ -14,8 +14,8 @@ import (
 )
 
 func TestCompletedExecutionFeedPurposeCredentialIsLegacyBinaryFailClosed(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
-	require.NoError(t, testutil.RewindEmptyBudgetSnapshotsForLegacyTest(t.Context(), pool, testutil.MigrationsDir(t)))
+	pool := testutil.SetupPreRetirementTestDB(t)
+	require.NoError(t, testutil.RewindEmptyBudgetSnapshotsForLegacyTest(t.Context(), pool, testutil.PreRetirementMigrationsDir(t)))
 	ctx := context.Background()
 
 	var orgID, projectID int64
@@ -95,7 +95,7 @@ func TestCompletedExecutionFeedPurposeCredentialIsLegacyBinaryFailClosed(t *test
 		orgID, projectID,
 	).Scan(&keyID))
 	downSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t),
+		testutil.PreRetirementMigrationsDir(t),
 		"000043_v1_completed_execution_feed.down.sql",
 	))
 	require.NoError(t, err)
@@ -121,10 +121,10 @@ func TestCompletedExecutionFeedPurposeCredentialIsLegacyBinaryFailClosed(t *test
 }
 
 func TestCompletedExecutionFeedMigrationDownRemainsAvailableWithoutFeedState(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	rollbackXInsightFeedControl(t, pool)
 	downSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t),
+		testutil.PreRetirementMigrationsDir(t),
 		"000043_v1_completed_execution_feed.down.sql",
 	))
 	require.NoError(t, err)
@@ -133,9 +133,9 @@ func TestCompletedExecutionFeedMigrationDownRemainsAvailableWithoutFeedState(t *
 }
 
 func TestCompletedExecutionFeedProjectScopeSurvivesGuardrailRollbackThenFeedRollback(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
-	migrationsDir := testutil.MigrationsDir(t)
+	migrationsDir := testutil.PreRetirementMigrationsDir(t)
 
 	var itemIndex, stateIndex string
 	require.NoError(t, pool.QueryRow(ctx,
@@ -222,7 +222,7 @@ func rollbackXInsightFeedControl(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	rollbackAsyncMediaImageMigration(t, pool)
 	receiverDownSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t),
+		testutil.PreRetirementMigrationsDir(t),
 		"000045_v1_receiver_feed_credential.down.sql",
 	))
 	require.NoError(t, err)
@@ -230,7 +230,7 @@ func rollbackXInsightFeedControl(t *testing.T, pool *pgxpool.Pool) {
 	require.NoError(t, err)
 
 	downSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t),
+		testutil.PreRetirementMigrationsDir(t),
 		"000044_v1_xinsight_feed_control.down.sql",
 	))
 	require.NoError(t, err)

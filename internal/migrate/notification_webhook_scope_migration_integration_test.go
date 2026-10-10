@@ -15,7 +15,7 @@ import (
 func TestP6F33MigrationQuarantinesExistingWebhooksWithoutDeletingThem(t *testing.T) {
 	pool := testutil.SetupIsolatedTestDB(t)
 	ctx := context.Background()
-	allMigrationsDir := testutil.MigrationsDir(t)
+	allMigrationsDir := testutil.PreRetirementMigrationsDir(t)
 	preP6Dir := t.TempDir()
 	throughP6Dir := t.TempDir()
 	const p6Migration = "000020_prd6_notification_webhook_scope_verification.up.sql"

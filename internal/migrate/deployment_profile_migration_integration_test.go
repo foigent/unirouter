@@ -13,7 +13,7 @@ import (
 )
 
 func TestDeploymentProfileMigrationContractAndRollbackGuard(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	rollbackEmptyMigrations(t, pool, []string{
 		"000062_xinsight_connector_redeem_lifecycle.down.sql",
@@ -44,7 +44,7 @@ func TestDeploymentProfileMigrationContractAndRollbackGuard(t *testing.T) {
 	_, err = pool.Exec(ctx, `INSERT INTO gateway_endpoints (deployment_profile_id,endpoint_ref,display_name,base_url,visibility,tls_mode,certificate_ref,endpoint_profile,status,created_by,updated_by) VALUES ($1,'gwe_bad_private_key','Bad key','https://key.example.com','internal','private_ca','-----BEGIN PRIVATE KEY-----','endpoint.openai-chat.v1','active',$2,$2)`, profileID, userID)
 	require.Error(t, err)
 
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000055_prd8_deployment_profiles.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000055_prd8_deployment_profiles.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.ErrorContains(t, err, "desired-state or endpoint evidence exists")

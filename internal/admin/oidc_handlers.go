@@ -19,7 +19,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/customercontext"
-	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/oidc"
 )
@@ -48,14 +47,7 @@ func (h *Handler) OIDCConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{"error": "Method not allowed"})
 		return
 	}
-	// This public endpoint projects whether OIDC is currently usable, rather
-	// than exposing a licensed-but-unavailable login action. Start and callback
-	// remain independently gated so a license change after this read fails
-	// closed.
-	if h.licenseRuntime != nil && !h.licenseRuntime.Authorize(licensing.FeatureOIDC).Allowed {
-		writeJSON(w, http.StatusOK, map[string]interface{}{"enabled": false})
-		return
-	}
+	// OIDC availability follows its configuration; commercial gates are retired.
 	if h.oidcService == nil || !h.oidcService.Enabled() {
 		writeJSON(w, http.StatusOK, map[string]interface{}{"enabled": false})
 		return

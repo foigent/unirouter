@@ -43,3 +43,14 @@ func TestBudgetCoveragePreservesM118ProofAcrossM120(t *testing.T) {
 	m.SchemaHeads = slices.DeleteFunc(slices.Clone(m.SchemaHeads), func(h string) bool { return h == schemaauthority.ContentReclaimExpandHead })
 	require.Error(t, requireLeaseManifest(m, schemaauthority.ContentReclaimExpandHead))
 }
+
+func TestBudgetCoveragePreservesOriginalM118ProofThroughCommercialRetirement(t *testing.T) {
+	ledger, err := schemaauthority.ExpectedLedger("../../migrations")
+	require.NoError(t, err)
+	original := ledger[:slices.Index(ledger, schemaauthority.BudgetSnapshotExpandHead)+1]
+	originalDigest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(original, "\n"))))
+	require.NoError(t, verifyBudgetCoverageLedger(ledger, schemaauthority.BudgetSnapshotExpandHead, originalDigest))
+	require.Error(t, verifyBudgetCoverageLedger(ledger, schemaauthority.BudgetSnapshotExpandHead, fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(ledger, "\n"))))))
+	require.Error(t, verifyBudgetCoverageLedger(append(slices.Clone(ledger), "000127_future"), schemaauthority.BudgetSnapshotExpandHead, originalDigest))
+	require.Error(t, verifyBudgetCoverageLedger(append(slices.Clone(ledger[:20]), ledger[21:]...), schemaauthority.BudgetSnapshotExpandHead, originalDigest))
+}

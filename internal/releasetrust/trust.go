@@ -37,45 +37,30 @@ type Bundle struct {
 // only the key rings embedded at build time. Development binaries retain the
 // explicit environment-key path so local tests and source development do not
 // require production signing material.
-func Resolve(runtimeLicenseKeys, runtimeUpgradeKeys string) (Bundle, error) {
+func Resolve(_ string, runtimeUpgradeKeys string) (Bundle, error) {
 	mode := strings.TrimSpace(buildMode)
 	switch mode {
 	case ModeRelease:
-		if strings.TrimSpace(runtimeLicenseKeys) != "" || strings.TrimSpace(runtimeUpgradeKeys) != "" {
-			return Bundle{}, fmt.Errorf("release binaries forbid runtime License or upgrade trust-root overrides")
-		}
-		licenseJSON, licenseCount, err := decodeEmbeddedRing(embeddedLicenseKeyRingBase64, "embedded License public-key ring")
-		if err != nil {
-			return Bundle{}, err
+		if strings.TrimSpace(runtimeUpgradeKeys) != "" {
+			return Bundle{}, fmt.Errorf("release binaries forbid runtime upgrade trust-root overrides")
 		}
 		upgradeJSON, upgradeCount, err := decodeEmbeddedRing(embeddedUpgradeKeyRingBase64, "embedded upgrade public-key ring")
 		if err != nil {
 			return Bundle{}, err
 		}
-		if err := ensureDisjointSigningKeys(licenseJSON, upgradeJSON); err != nil {
-			return Bundle{}, err
-		}
 		return Bundle{
 			Mode:              mode,
-			LicensePublicKeys: licenseJSON,
 			UpgradePublicKeys: upgradeJSON,
-			LicenseKeyCount:   licenseCount,
 			UpgradeKeyCount:   upgradeCount,
 		}, nil
 	case ModeDevelopment:
-		licenseJSON, licenseCount, err := normalizeRuntimeRing(runtimeLicenseKeys, "LICENSE_PUBLIC_KEYS")
-		if err != nil {
-			return Bundle{}, err
-		}
 		upgradeJSON, upgradeCount, err := normalizeRuntimeRing(runtimeUpgradeKeys, "UPGRADE_PUBLIC_KEYS")
 		if err != nil {
 			return Bundle{}, err
 		}
 		return Bundle{
 			Mode:              mode,
-			LicensePublicKeys: licenseJSON,
 			UpgradePublicKeys: upgradeJSON,
-			LicenseKeyCount:   licenseCount,
 			UpgradeKeyCount:   upgradeCount,
 		}, nil
 	default:

@@ -14,9 +14,9 @@ import (
 )
 
 func TestV1PricingUnitContractMigrationDocumentsWithoutRepricing(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
-	migrationsDir := testutil.MigrationsDir(t)
+	migrationsDir := testutil.PreRetirementMigrationsDir(t)
 
 	const model = "v1-pricing-unit-contract"
 	_, err := pool.Exec(ctx, `

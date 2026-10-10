@@ -165,7 +165,7 @@ SELECT EXISTS(SELECT 1 FROM runtime_change_releases WHERE id=$1 AND candidate_ve
 	require.True(t, releaseRetained)
 	require.True(t, metadataDropped)
 	require.True(t, ledgerDropped)
-	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000070_runtime_deployment_route_manifest"))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.PreRetirementMigrationsDir(t), "000070_runtime_deployment_route_manifest"))
 }
 
 func TestRuntimeDeploymentRouteManifestSealRejectsStaleConnectionAndDeploymentPins(t *testing.T) {
@@ -302,7 +302,7 @@ VALUES ('rcr_manifest_v2_down','manifest-v2-model',$1,$2,$3,$4::jsonb,
 		"sha256:"+strings.Repeat("c", 64))
 	require.NoError(t, err)
 
-	downSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000070_runtime_deployment_route_manifest.down.sql"))
+	downSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000070_runtime_deployment_route_manifest.down.sql"))
 	require.NoError(t, err)
 	execMigrationDown(t, ctx, pool, "000071_model_execution_evidence.down.sql")
 	_, err = pool.Exec(ctx, string(downSQL))
@@ -337,7 +337,7 @@ INSERT INTO model_deployment_operations (
 VALUES ($1,'openai.chat_completions.v1','enabled','declared','pre-profile-writer',1)`, deploymentID)
 	require.NoError(t, err)
 
-	err = migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000070_runtime_deployment_route_manifest")
+	err = migrate.RunThrough(ctx, pool, testutil.PreRetirementMigrationsDir(t), "000070_runtime_deployment_route_manifest")
 	require.ErrorContains(t, err, "non-legacy operations require an explicit protocol profile")
 	var ledger, profileColumn bool
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -350,7 +350,7 @@ SELECT EXISTS(SELECT 1 FROM schema_migrations
 	require.False(t, profileColumn, "failed migration transaction must not leave partial profile columns")
 	_, err = pool.Exec(ctx, `DELETE FROM model_deployment_operations WHERE deployment_id=$1`, deploymentID)
 	require.NoError(t, err)
-	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000070_runtime_deployment_route_manifest"))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.PreRetirementMigrationsDir(t), "000070_runtime_deployment_route_manifest"))
 }
 
 func TestRuntimeDeploymentRouteManifestRequiresExplicitNonLegacyProfile(t *testing.T) {
@@ -485,7 +485,7 @@ INSERT INTO model_deployment_operations (
 VALUES ($1,'openai.chat_completions.v1','enabled','declared','explicit-profile',1,
         'explicit.profile.v1','1.0.0')`, deploymentID)
 	require.NoError(t, err)
-	downSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000070_runtime_deployment_route_manifest.down.sql"))
+	downSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000070_runtime_deployment_route_manifest.down.sql"))
 	require.NoError(t, err)
 	execMigrationDown(t, ctx, pool, "000071_model_execution_evidence.down.sql")
 	_, err = pool.Exec(ctx, string(downSQL))

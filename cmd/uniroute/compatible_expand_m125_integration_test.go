@@ -84,7 +84,7 @@ func invokeCompatibleExpandForTest(t *testing.T, cfg *config.Config, action stri
 func m125CLIInput(t *testing.T, pool *pgxpool.Pool) (*config.Config, compatibleExpandInput) {
 	t.Helper()
 	dir := testutil.MigrationsDir(t)
-	artifactLedger, err := schemaauthority.ExpectedLedger(dir)
+	artifactLedger, err := testutil.PreRetirementLedger(t)
 	require.NoError(t, err)
 	actual, err := readCompatibleRuntimeSchema(t.Context(), pool, artifactLedger)
 	require.NoError(t, err)
@@ -120,35 +120,19 @@ func m125CLIInput(t *testing.T, pool *pgxpool.Pool) (*config.Config, compatibleE
 	return cfg, input
 }
 
-func TestM124ToM125CompatibleExpandCLIIntegration(t *testing.T) {
+// M126 intentionally no longer serves the old compatible-expand bridge. The
+// domain transition still has its historical-artifact tests; this CLI must refuse.
+func TestM126CompatibleExpandCLIRejectsM124ToM125Integration(t *testing.T) {
 	pool := testutil.SetupMigratedThroughTestDB(t, schemaauthority.XInsightAdoptionExpandHead)
 	cfg, input := m125CLIInput(t, pool)
 	useM125ReadyTransport(t, pool, input.Fleet)
-	var before string
-	require.NoError(t, pool.QueryRow(t.Context(), `SELECT max(version) FROM schema_migrations`).Scan(&before))
-	require.Equal(t, schemaauthority.XInsightAdoptionExpandHead, before)
-	result, err := invokeCompatibleExpandForTest(t, cfg, "check", input)
-	require.NoError(t, err)
-	require.Contains(t, string(result), `"status":"check"`)
-	var after string
-	require.NoError(t, pool.QueryRow(t.Context(), `SELECT max(version) FROM schema_migrations`).Scan(&after))
-	require.Equal(t, before, after, "check must not expand the schema")
-	result, err = invokeCompatibleExpandForTest(t, cfg, "apply", input)
-	require.NoError(t, err)
-	require.Contains(t, string(result), `"status":"apply"`)
-	require.NoError(t, pool.QueryRow(t.Context(), `SELECT max(version) FROM schema_migrations`).Scan(&after))
-	require.Equal(t, schemaauthority.XInsightCredentialExpandHead, after)
-	actual, err := readRuntimeSchemaLedger(t.Context(), pool)
-	require.NoError(t, err)
-	encoded, err := json.Marshal(actual)
-	require.NoError(t, err)
-	for host, health := range input.Fleet {
-		health.SchemaLedgerDigest = fmt.Sprintf("%x", sha256.Sum256(encoded))
-		input.Fleet[host] = health
+	for _, action := range []string{"check", "apply"} {
+		_, err := invokeCompatibleExpandForTest(t, cfg, action, input)
+		require.ErrorContains(t, err, "outside this artifact")
+		var head string
+		require.NoError(t, pool.QueryRow(t.Context(), `SELECT max(version) FROM schema_migrations`).Scan(&head))
+		require.Equal(t, schemaauthority.XInsightAdoptionExpandHead, head, "refusal must not mutate schema")
 	}
-	result, err = invokeCompatibleExpandForTest(t, cfg, "check", input)
-	require.NoError(t, err)
-	require.Contains(t, string(result), `"schema_head":"`+schemaauthority.XInsightCredentialExpandHead+`"`)
 }
 
 func TestM125CompatibleExpandCLIRejectsNonadjacentPredecessorIntegration(t *testing.T) {
@@ -156,7 +140,7 @@ func TestM125CompatibleExpandCLIRejectsNonadjacentPredecessorIntegration(t *test
 	cfg, input := m125CLIInput(t, pool)
 	useM125ReadyTransport(t, pool, input.Fleet)
 	_, err := invokeCompatibleExpandForTest(t, cfg, "check", input)
-	require.ErrorContains(t, err, "expansion predecessor differs")
+	require.ErrorContains(t, err, "outside this artifact")
 	var head string
 	require.NoError(t, pool.QueryRow(t.Context(), `SELECT max(version) FROM schema_migrations`).Scan(&head))
 	require.Equal(t, schemaauthority.XInsightPolicyExpandHead, head)

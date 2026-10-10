@@ -12,9 +12,18 @@ func RuntimeLedgers(artifact []string) ([][]string, error) {
 		return nil, err
 	}
 	end := len(artifact)
+	if end >= 14 && artifact[end-1] == CommercialLicenseRetirementHead && artifact[end-2] == XInsightCredentialExpandHead {
+		if _, err := RuntimeLedgers(artifact[:end-1]); err != nil {
+			return nil, err
+		}
+		// Commercial-limit retirement is a maintenance boundary, never a rolling bridge.
+		return [][]string{slices.Clone(artifact)}, nil
+	}
 	if end >= 13 && artifact[end-1] == XInsightCredentialExpandHead && artifact[end-2] == XInsightAdoptionExpandHead {
 		prior, err := RuntimeLedgers(artifact[:end-1])
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 		return append(prior, slices.Clone(artifact)), nil
 	}
 	if end >= 12 && artifact[end-1] == XInsightAdoptionExpandHead && artifact[end-2] == XInsightPolicyExpandHead {
@@ -88,5 +97,5 @@ func VerifyRuntimeLedger(artifact, actual []string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("database ledger is outside the exact M113–M125 runtime compatibility bridge")
+	return fmt.Errorf("database ledger is outside this artifact's exact supported runtime ledgers")
 }

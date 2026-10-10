@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/runtimechange"
 )
 
@@ -46,11 +45,12 @@ type canonicalDeploymentLifecycleActionDescriptor struct {
 	ReasonCode            string                                  `json:"reason_code"`
 	StructurallyAvailable bool                                    `json:"structurally_available"`
 	Authorized            bool                                    `json:"authorized"`
-	Licensed              bool                                    `json:"licensed"`
-	LicenseFeature        string                                  `json:"license_feature,omitempty"`
-	IdempotencyRequired   bool                                    `json:"idempotency_required"`
-	RequiredFields        []string                                `json:"required_fields"`
-	SafetyDirection       string                                  `json:"safety_direction"`
+	// Deprecated: always true means no commercial restriction, not authorization.
+	Licensed            bool     `json:"licensed"`
+	LicenseFeature      string   `json:"license_feature,omitempty"`
+	IdempotencyRequired bool     `json:"idempotency_required"`
+	RequiredFields      []string `json:"required_fields"`
+	SafetyDirection     string   `json:"safety_direction"`
 }
 
 func canonicalDeploymentLifecycleMutation(
@@ -98,7 +98,6 @@ func canonicalDeploymentLifecycleActions(
 	slot runtimechange.DeploymentLifecycleSlotState,
 	stableParent *runtimechange.DeploymentReleaseSummary,
 	canWrite bool,
-	gatewayLicensed bool,
 ) []canonicalDeploymentLifecycleActionDescriptor {
 	actions := []runtimechange.DeploymentLifecycleAction{
 		runtimechange.DeploymentLifecycleActivateInitial, runtimechange.DeploymentLifecycleStartCanary,
@@ -116,18 +115,13 @@ func canonicalDeploymentLifecycleActions(
 		structurallyAvailable, structuralReason := canonicalDeploymentLifecycleStructuralAvailability(
 			action, release, slot, stableParent,
 		)
-		requiresLicense := action != runtimechange.DeploymentLifecycleCancelCanary &&
-			action != runtimechange.DeploymentLifecycleRollbackLegacy
-		licensed := !requiresLicense || gatewayLicensed
-		available := structurallyAvailable && canWrite && licensed
+		available := structurallyAvailable && canWrite
 		reasonCode := "ready_for_transactional_preflight"
 		switch {
 		case !structurallyAvailable:
 			reasonCode = structuralReason
 		case !canWrite:
 			reasonCode = "organization_write_role_required"
-		case !licensed:
-			reasonCode = "gateway_license_required"
 		}
 		requiredFields := []string{"expected_release_version", "expected_slot_version"}
 		if action == runtimechange.DeploymentLifecycleActivateInitial {
@@ -144,11 +138,8 @@ func canonicalDeploymentLifecycleActions(
 			Action: action, Method: "POST",
 			Path:      "/api/v1/model-deployment-releases/{releaseRef}/" + canonicalDeploymentLifecycleActionPath(action),
 			Available: available, ReasonCode: reasonCode,
-			StructurallyAvailable: structurallyAvailable, Authorized: canWrite, Licensed: licensed,
+			StructurallyAvailable: structurallyAvailable, Authorized: canWrite, Licensed: true,
 			IdempotencyRequired: true, RequiredFields: requiredFields, SafetyDirection: "expansion",
-		}
-		if requiresLicense {
-			descriptor.LicenseFeature = licensing.FeatureGateway
 		}
 		if action == runtimechange.DeploymentLifecycleCancelCanary ||
 			action == runtimechange.DeploymentLifecycleRollbackLegacy {

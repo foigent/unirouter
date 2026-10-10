@@ -119,9 +119,6 @@ services:
       GUARDRAIL_PLATFORM_ACTIVE_POLICY_LIMIT: ${GUARDRAIL_PLATFORM_ACTIVE_POLICY_LIMIT:-256}
       GUARDRAIL_CACHED_POLICY_LIMIT: ${GUARDRAIL_CACHED_POLICY_LIMIT:-4096}
       GUARDRAIL_CACHED_TENANT_LIMIT: ${GUARDRAIL_CACHED_TENANT_LIMIT:-4096}
-      LICENSE_DEPLOYMENT_ID: ${LICENSE_DEPLOYMENT_ID:?Set the approved stable deployment identity}
-      LICENSE_EXPIRY_WARNING_DAYS: ${LICENSE_EXPIRY_WARNING_DAYS:-30}
-      LICENSE_REFRESH_SECONDS: ${LICENSE_REFRESH_SECONDS:-30}
       OIDC_ENABLED: ${OIDC_ENABLED:-false}
       OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
@@ -164,7 +161,7 @@ services:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost/health/ready >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health/ready >/dev/null 2>&1 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10

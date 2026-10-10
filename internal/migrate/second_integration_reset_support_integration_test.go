@@ -18,7 +18,7 @@ func TestSecondIntegrationResetSupportMigrationUpDownAndRollForward(t *testing.T
 	ctx := context.Background()
 	assertSecondIntegrationResetSupportContract(t, pool, false)
 
-	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallPreRetirementTestArtifact(t, ctx, pool))
 	assertSecondIntegrationResetSupportContract(t, pool, true)
 	// This test owns the 000057 lifecycle. Reverse the later empty role-axis
 	// migration first so 000057's own rollback guard remains the evidence under
@@ -82,7 +82,7 @@ func TestSecondIntegrationResetSupportMigrationUpDownAndRollForward(t *testing.T
 	require.Error(t, err, "bootstrap operation identity must be globally replay-safe")
 
 	downSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000057_second_integration_reset_support.down.sql"))
+		testutil.PreRetirementMigrationsDir(t), "000057_second_integration_reset_support.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ('000058_future_contract')`)
 	require.NoError(t, err)
@@ -96,7 +96,7 @@ func TestSecondIntegrationResetSupportMigrationUpDownAndRollForward(t *testing.T
 	require.NoError(t, err)
 	assertSecondIntegrationResetSupportContract(t, pool, false)
 
-	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallPreRetirementTestArtifact(t, ctx, pool))
 	assertSecondIntegrationResetSupportContract(t, pool, true)
 }
 

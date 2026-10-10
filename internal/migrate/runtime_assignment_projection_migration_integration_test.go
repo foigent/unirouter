@@ -12,7 +12,7 @@ import (
 )
 
 func TestRuntimeAssignmentProjectionMigrationIsCanonicalAndReversible(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	var orgID, userID, channelID, releaseID int64
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -82,7 +82,7 @@ func TestRuntimeAssignmentProjectionMigrationIsCanonicalAndReversible(t *testing
 	require.False(t, viewExists)
 	require.False(t, ledgerExists)
 
-	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000066_runtime_assignment_projection"))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.PreRetirementMigrationsDir(t), "000066_runtime_assignment_projection"))
 	require.NoError(t, pool.QueryRow(ctx, `
 		SELECT to_regclass('public.runtime_channel_assignments_v1') IS NOT NULL,
 		       EXISTS (SELECT 1 FROM schema_migrations WHERE version='000066_runtime_assignment_projection')`,

@@ -24,10 +24,10 @@ import (
 // existing M115 key. The Target's actual backup, process fleet and host controller
 // are separate deployment gates; this test never treats a synthetic DB as those.
 func TestM115ToM125CompatibleExpandPreservesExistingKey(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
-	dir := testutil.MigrationsDir(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
+	dir := testutil.PreRetirementMigrationsDir(t)
 	ctx := t.Context()
-	artifact, err := schemaauthority.ExpectedLedger(dir)
+	artifact, err := testutil.PreRetirementLedger(t)
 	require.NoError(t, err)
 	require.Equal(t, schemaauthority.XInsightCredentialExpandHead, artifact[len(artifact)-1])
 	require.NoError(t, testutil.RewindEmptySourceFactsForLegacyTest(ctx, pool, dir))

@@ -71,7 +71,7 @@ func TestReceiverFeedCredentialMigrationContractAndDownRefusal(t *testing.T) {
 	require.Error(t, err)
 
 	downSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t),
+		testutil.PreRetirementMigrationsDir(t),
 		"000045_v1_receiver_feed_credential.down.sql",
 	))
 	require.NoError(t, err)

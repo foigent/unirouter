@@ -14,7 +14,7 @@ import (
 )
 
 func TestXInsightConnectorCP1MigrationUpDownAndEvidenceGuard(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 
 	var ledger, tables int
@@ -30,11 +30,11 @@ WHERE table_schema='public'
 		"000064_rate_card_request_pricing_authority.down.sql",
 		"000063_onprem_billing_mode.down.sql",
 	})
-	redeemDown, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000062_xinsight_connector_redeem_lifecycle.down.sql"))
+	redeemDown, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000062_xinsight_connector_redeem_lifecycle.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(redeemDown))
 	require.NoError(t, err)
-	cp2Down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000061_xinsight_connector_cp2a_phase_contract.down.sql"))
+	cp2Down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000061_xinsight_connector_cp2a_phase_contract.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(cp2Down))
 	require.NoError(t, err)
@@ -58,7 +58,7 @@ VALUES ('migration-installation',$1,$2,'migration-x',
         'active','provisioning')`, orgID, projectID)
 	require.NoError(t, err)
 
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000060_xinsight_connector_cp1.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000060_xinsight_connector_cp1.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.ErrorContains(t, err, "durable installation or operation evidence exists")
@@ -81,7 +81,7 @@ WHERE table_schema='public'
 	).Scan(&ledger))
 	require.Zero(t, ledger)
 
-	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000060_xinsight_connector_cp1"))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.PreRetirementMigrationsDir(t), "000060_xinsight_connector_cp1"))
 	require.NoError(t, pool.QueryRow(ctx,
 		`SELECT COUNT(*) FROM schema_migrations WHERE version='000060_xinsight_connector_cp1'`,
 	).Scan(&ledger))

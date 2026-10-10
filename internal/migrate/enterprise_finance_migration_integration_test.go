@@ -13,7 +13,7 @@ import (
 )
 
 func TestEnterpriseFinanceMigrationsAndRollbackGuards(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 
 	var tables, constraints, credentialColumns, ledger int
@@ -74,7 +74,7 @@ func TestEnterpriseFinanceMigrationsAndRollbackGuards(t *testing.T) {
 	rollbackEmptyPRD8RuntimeControlMigrations(t, pool)
 
 	allocationDown, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), enterpriseFinanceDownMigrations[0],
+		testutil.PreRetirementMigrationsDir(t), enterpriseFinanceDownMigrations[0],
 	))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(allocationDown))
@@ -85,13 +85,13 @@ func TestEnterpriseFinanceMigrationsAndRollbackGuards(t *testing.T) {
 	require.NoError(t, err)
 
 	rateDown, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), enterpriseFinanceDownMigrations[1],
+		testutil.PreRetirementMigrationsDir(t), enterpriseFinanceDownMigrations[1],
 	))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(rateDown))
 	require.NoError(t, err)
 	budgetDown, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), enterpriseFinanceDownMigrations[2],
+		testutil.PreRetirementMigrationsDir(t), enterpriseFinanceDownMigrations[2],
 	))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(budgetDown))

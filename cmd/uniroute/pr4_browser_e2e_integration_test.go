@@ -23,7 +23,6 @@ import (
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/gateway"
-	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelauthz"
@@ -383,8 +382,6 @@ func newPR4BrowserApplicationServer(
 	if routing != nil {
 		handler.SetRoutingController(routing)
 	}
-	licenseRuntime := licensing.NewRuntime(nil)
-	handler.SetLicenseRuntime(licenseRuntime)
 
 	adminAuth := middleware.AdminAuth(pool, pr4BrowserJWTSecret)
 	adminCustomerContext := middleware.CustomerContext(pool)

@@ -193,3 +193,22 @@ func TestDeepSeekProviderCompletionRequiresSuccessorChatAndProbe(t *testing.T) {
 		}))
 	}
 }
+
+func TestCommercialRetirementPreservesInheritedLeaseRequirements(t *testing.T) {
+	m := CurrentManifest(schemaauthority.SupportedSchemaHeads())
+	require.NoError(t, requireLeaseManifest(m, schemaauthority.CommercialLicenseRetirementHead))
+	for _, required := range append(append(append(append(ContentLifecycleRequirements(), ScopedContentRequirements()...), XInsightPolicyRequirements()...), XInsightAdoptionRequirements()...), XInsightCredentialRequirements()...) {
+		changed := m
+		changed.Implementations = append([]modelprofile.ImplementationReference(nil), m.Implementations...)
+		for i, item := range changed.Implementations {
+			if item == required {
+				changed.Implementations = append(changed.Implementations[:i], changed.Implementations[i+1:]...)
+				break
+			}
+		}
+		require.ErrorIs(t, requireLeaseManifest(changed, schemaauthority.CommercialLicenseRetirementHead), ErrIncompatible, required.ID)
+	}
+	missing := m
+	missing.SchemaHeads = append([]string(nil), m.SchemaHeads[:len(m.SchemaHeads)-1]...)
+	require.ErrorIs(t, requireLeaseManifest(missing, schemaauthority.CommercialLicenseRetirementHead), ErrIncompatible)
+}

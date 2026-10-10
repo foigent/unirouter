@@ -435,7 +435,10 @@ class Rollout:
 
     def artifact_owner_command(self, _receiver, command, document=None):
         """Same typed owner, independent of the old serving binary's CLI guard."""
-        require(command in ("inspect", "read", "prepare", "complete"), "unsupported Artifact owner command")
+        allowed = ("inspect", "read", "prepare", "complete")
+        if getattr(self, "maintenance_retirement", False):
+            allowed += ("stop-check", "stop-apply")
+        require(command in allowed, "unsupported Artifact owner command")
         require(bool(HELD_LOCK_FDS), "Artifact owner carrier requires operation locks")
         self.identity()
         image = self.images()["backend"]
@@ -533,7 +536,7 @@ class Rollout:
 
     def ingress_static_digest(self):
         membership = regular(Path(self.target["ingress_directory"]) / "upstreams.conf").read_bytes()
-        require(membership in [self.ingress.membership(s) for s in ("both", "stable", "canary")], "unknown installed membership")
+        require(membership in [self.ingress.membership(s) for s in ("both", "stable", "canary", "none")], "unknown installed membership")
         config = self.ingress.docker_exec("uniroute-nginx", "nginx", "-T")
         self.ingress.check_configuration(config)
         require(config.count(membership) == 1, "managed membership occurrence is ambiguous")
@@ -862,7 +865,8 @@ class Rollout:
     def stop(self, role, plan):
         self.prove_withdrawal(role)
         survivor = "stable" if role == "canary" else "canary"
-        self.ready(survivor, None)
+        if not getattr(self, "maintenance_retirement", False):
+            self.ready(survivor, None)
         old = inspect(CONTAINERS[role])
         require(old["Id"] == plan["containers"][role]["id"], "refuse stopping an unrecognized generation")
         grace = old["Config"].get("StopTimeout")

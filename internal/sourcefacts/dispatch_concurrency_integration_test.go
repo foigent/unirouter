@@ -33,12 +33,12 @@ func dispatchExpandHooks(t *testing.T) migrate.CompatibleExpandHooks {
 }
 
 func TestSourceDispatchExpansionCoversExpiredRecoveryAndConcurrentRenew(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	require.NoError(t, budgetDown(t, pool))
 	require.NoError(t, observationDown(t, pool))
 	ctx := t.Context()
 	dir := testutil.MigrationsDir(t)
-	ledger, err := schemaauthority.ExpectedLedger(dir)
+	ledger, err := testutil.PreRetirementLedger(t)
 	require.NoError(t, err)
 	full := runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads())
 	old := runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads())
@@ -98,7 +98,7 @@ func TestSourceDispatchExpansionCoversExpiredRecoveryAndConcurrentRenew(t *testi
 }
 
 func TestSourceDispatchDownCannotRaceUncommittedEnqueue(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	require.NoError(t, budgetDown(t, pool))
 	pool, s, org, project := setupSourceDBWithPool(t, pool)
 	docs := frozenDispatchFixture(t, s, org, project, "down-race", time.Now().UTC().Truncate(time.Microsecond))

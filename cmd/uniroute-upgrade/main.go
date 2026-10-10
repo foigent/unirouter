@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -166,7 +168,13 @@ func runVerify(args []string, stdout io.Writer) error {
 		return fmt.Errorf("close upgrade package: %w", closeErr)
 	}
 	manifest := verification.Manifest
-	_, err = fmt.Fprintf(stdout, "verified=true\npackage_sha256=%s\nrelease_sequence=%d\nversion=%s\ncommit=%s\ntarget=%s/%s\ntarget_schema=%s\npayload_bytes=%d\n", verification.BundleSHA256, manifest.ReleaseSequence, manifest.Version, manifest.Commit, manifest.TargetOS, manifest.TargetArch, manifest.TargetSchema, verification.PayloadBytes)
+	// Verify accepts only this canonical encoding. Bind consumers' parsed
+	// artifact lists to the exact signed manifest, not only its release identity.
+	manifestJSON, err := json.Marshal(manifest)
+	if err != nil {
+		return fmt.Errorf("encode verified manifest: %w", err)
+	}
+	_, err = fmt.Fprintf(stdout, "verified=true\npackage_sha256=%s\nmanifest_sha256=%x\nrelease_sequence=%d\nversion=%s\ncommit=%s\ntarget=%s/%s\ntarget_schema=%s\npayload_bytes=%d\n", verification.BundleSHA256, sha256.Sum256(manifestJSON), manifest.ReleaseSequence, manifest.Version, manifest.Commit, manifest.TargetOS, manifest.TargetArch, manifest.TargetSchema, verification.PayloadBytes)
 	return err
 }
 

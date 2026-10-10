@@ -71,6 +71,7 @@ type runOptions struct {
 	requireExactPrefix bool
 	publication        *PublicationHooks
 	runtimeBridge      bool
+	maintenance        bool
 	scopeSet           bool
 	expand             *CompatibleExpandHooks
 	fresh              *FreshOwner
@@ -87,7 +88,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 }
 
 func RunExisting(ctx context.Context, pool *pgxpool.Pool, dir string) error {
-	return run(ctx, pool, dir, runOptions{})
+	return run(ctx, pool, dir, runOptions{maintenance: true})
 }
 
 // RunRuntime preserves pending explicit expansions. The caller must then
@@ -301,6 +302,11 @@ func runOnConnection(ctx context.Context, conn *pgxpool.Conn, dir string, option
 	for _, file := range files {
 		artifactVersions = append(artifactVersions, strings.TrimSuffix(file, ".up.sql"))
 	}
+	if applied[schemaauthority.CommercialLicenseRetirementHead] {
+		if err := schemaauthority.VerifyRuntimeLedger(artifactVersions, appliedVersions); err != nil {
+			return fmt.Errorf("retired-license schema must have its complete artifact ledger: %w", err)
+		}
+	}
 	if options.requireExactPrefix {
 		if err := validateExactLedgerPrefix(appliedVersions, artifactVersions, options.ceiling); err != nil {
 			return err
@@ -324,6 +330,11 @@ func runOnConnection(ctx context.Context, conn *pgxpool.Conn, dir string, option
 		expandFiles[version] = strings.Contains(string(body), CompatibleExpandMarker)
 	}
 	if options.runtimeBridge {
+		for _, version := range pending {
+			if version == schemaauthority.CommercialLicenseRetirementHead {
+				return fmt.Errorf("M126 requires explicit maintenance migration; ordinary startup does not apply it")
+			}
+		}
 		options.scopeSet = true
 		for _, version := range pending {
 			if expandFiles[version] {
@@ -355,6 +366,11 @@ func runOnConnection(ctx context.Context, conn *pgxpool.Conn, dir string, option
 		return err
 	}
 	for _, version := range allowed {
+		if version == schemaauthority.CommercialLicenseRetirementHead {
+			if err := validateCommercialRetirement(appliedVersions, artifactVersions, options.maintenance, options.fresh != nil && options.freshExpand == version); err != nil {
+				return err
+			}
+		}
 		if expandFiles[version] && (options.expand == nil || version != options.expand.Version) && (options.fresh == nil || version != options.freshExpand) {
 			return fmt.Errorf("pending compatible expansion %s requires explicit fleet preflight", version)
 		}
@@ -666,4 +682,21 @@ func migrationTransactionBody(sqlContent string) string {
 		kept = append(kept, line)
 	}
 	return strings.Join(kept, "\n")
+}
+
+func validateCommercialRetirement(applied, artifact []string, maintenance, fresh bool) error {
+	n := len(artifact)
+	if n < 2 || artifact[n-1] != schemaauthority.CommercialLicenseRetirementHead || artifact[n-2] != schemaauthority.XInsightCredentialExpandHead {
+		return fmt.Errorf("M126 requires an exact M125 predecessor artifact")
+	}
+	if !maintenance && !fresh {
+		return fmt.Errorf("M126 requires the explicit maintenance or fresh-install owner")
+	}
+	if !slicesEqual(applied, artifact[:n-1]) {
+		return fmt.Errorf("M126 requires the complete exact M125 database ledger")
+	}
+	if _, err := schemaauthority.RuntimeLedgers(artifact); err != nil {
+		return err
+	}
+	return nil
 }

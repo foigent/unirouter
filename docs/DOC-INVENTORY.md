@@ -2,6 +2,16 @@
 
 > Purpose: classify documents so agents know what is current truth, implementation reference, historical evidence, or stale/conflicting material.
 
+## Public reader entry points
+
+| File | Role |
+| --- | --- |
+| `docs/README.md` | English-first navigation for readers and contributors, with links to technical references |
+| `docs/README.zh-CN.md` | Chinese entry preserving the earlier engineering and historical navigation |
+| `docs/community/why-unirouter.md` | Owner-authored motivation, design choices and research direction; not a new product contract |
+| `docs/community/why-unirouter.zh-CN.md` | Simplified Chinese version of the design rationale |
+| `docs/community/gateway-design-comparison.md` | Selected mechanisms at fixed source commits; not a benchmark or whole-product ranking |
+
 ## Current authorities and indexed evidence
 
 This section mixes governing documents and dated evidence references. Each file retains its own scope, approval state and evidence cutoff; inclusion here does not make an old Target report live or a candidate approved. Use `ops/CURRENT-STATUS.md` and the active execution record for current task facts.

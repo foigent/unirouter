@@ -160,27 +160,18 @@ func TestSelfAccessProvisioningKeepsSatisfiedLiveMembershipAndCommitsEvidenceInt
 	}
 }
 
-func TestCredentialCreatingHandlersPreserveCommercialLicenseErrorsIntegration(t *testing.T) {
+func TestCredentialCreatingHandlersIgnoreRetiredCommercialLicenseIntegration(t *testing.T) {
 	for _, test := range []struct {
-		name             string
-		expiresAt        time.Time
-		wantStatus       int
-		wantCode         string
-		wantRotateStatus int
+		name      string
+		expiresAt time.Time
 	}{
 		{
-			name:             "active key capacity",
-			expiresAt:        time.Now().UTC().Add(24 * time.Hour),
-			wantStatus:       http.StatusConflict,
-			wantCode:         "license_error.resource_limit_exceeded",
-			wantRotateStatus: http.StatusCreated,
+			name:      "active key capacity",
+			expiresAt: time.Now().UTC().Add(24 * time.Hour),
 		},
 		{
-			name:             "expired license",
-			expiresAt:        time.Now().UTC().Add(-time.Hour),
-			wantStatus:       http.StatusForbidden,
-			wantCode:         "license_error.expired",
-			wantRotateStatus: http.StatusForbidden,
+			name:      "expired license",
+			expiresAt: time.Now().UTC().Add(-time.Hour),
 		},
 	} {
 		test := test
@@ -277,43 +268,34 @@ func TestCredentialCreatingHandlersPreserveCommercialLicenseErrorsIntegration(t 
 			)
 			require.NoError(t, err)
 
-			assertCommercialError := func(label string, response *httptest.ResponseRecorder) {
+			assertCreated := func(label string, response *httptest.ResponseRecorder) {
 				t.Helper()
-				require.Equal(t, test.wantStatus, response.Code, "%s: %s", label, response.Body.String())
-				var payload map[string]any
-				require.NoError(t, json.Unmarshal(response.Body.Bytes(), &payload))
-				require.Equal(t, test.wantCode, payload["code"], "%s: %s", label, response.Body.String())
-				require.NotEqual(t, "service_unavailable", payload["reason"], label)
+				require.Equal(t, http.StatusCreated, response.Code, "%s: %s", label, response.Body.String())
+				require.NotContains(t, response.Body.String(), "license_error.")
 			}
 
 			issueResponse := invoke(issueSubjectID,
 				http.MethodPost, "/api/v1/access-grants/"+issueGrant.GrantRef+"/credentials",
-				`{"name":"license-blocked canonical issue"}`, "license-blocked-issue-"+caseID,
+				`{"name":"license-retired canonical issue"}`, "license-retired-issue-"+caseID,
 				map[string]string{"ref": issueGrant.GrantRef}, handler.IssueAccessGrantCredential,
 			)
-			assertCommercialError("canonical issue", issueResponse)
+			assertCreated("canonical issue", issueResponse)
 
 			rotateResponse := invoke(rotateSubjectID,
 				http.MethodPost, fmt.Sprintf("/api/v1/access-grants/%s/credentials/%d/rotate", rotateGrant.GrantRef, predecessor.ID),
 				`{}`,
-				"license-blocked-rotate-"+caseID,
+				"license-retired-rotate-"+caseID,
 				map[string]string{"ref": rotateGrant.GrantRef, "key_id": fmt.Sprint(predecessor.ID)}, handler.RotateAccessGrantCredential,
 			)
-			if test.wantRotateStatus == http.StatusCreated {
-				// Rotation replaces one physical secret inside an existing logical
-				// credential family, so it must not consume another License seat.
-				require.Equal(t, http.StatusCreated, rotateResponse.Code, rotateResponse.Body.String())
-			} else {
-				assertCommercialError("canonical rotate", rotateResponse)
-			}
+			assertCreated("canonical rotate", rotateResponse)
 
 			legacyResponse := invoke(legacySubjectID,
 				http.MethodPost, "/api/v1/keys",
-				fmt.Sprintf(`{"org_id":%d,"project_id":%d,"owner_user_id":%d,"key_type":"personal","name":"license-blocked legacy create"}`,
+				fmt.Sprintf(`{"org_id":%d,"project_id":%d,"owner_user_id":%d,"key_type":"personal","name":"license-retired legacy create"}`,
 					orgID, projectID, legacySubjectID),
-				"license-blocked-legacy-"+caseID, nil, handler.CreateAPIKey,
+				"license-retired-legacy-"+caseID, nil, handler.CreateAPIKey,
 			)
-			assertCommercialError("legacy create adapter", legacyResponse)
+			assertCreated("legacy create adapter", legacyResponse)
 		})
 	}
 }

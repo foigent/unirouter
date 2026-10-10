@@ -49,7 +49,7 @@ const (
 func publicGatewayPGDowngradeCapabilityPublicationsForLegacyRollbackTest(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	require.NoError(t, testutil.RewindCapabilityPublicationsForLegacyMigrationTest(
-		t.Context(), pool, testutil.MigrationsDir(t),
+		t.Context(), pool, testutil.PreRetirementMigrationsDir(t),
 	), "legacy rollback fixture must start from the exact M100 ceiling")
 }
 
@@ -138,7 +138,7 @@ UPDATE model_deployment_capabilities
 }
 
 func TestPublicModelExecutionAuthorityExactBindingsMigrationRoundTripIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	fixture := newPublicGatewayPGFixture(t, pool, "exact-bindings-v1-roundtrip", modeloperation.IDResponses)
 	readBinding := func() string {
 		var body string
@@ -167,13 +167,13 @@ SELECT row_to_json(binding)::text FROM model_operation_public_execution_bindings
 			"000087_anthropic_messages_tools_public_binding.down.sql",
 			"000086_exact_public_execution_bindings.down.sql",
 		} {
-			body, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+			body, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), name))
 			require.NoError(t, err)
 			_, err = pool.Exec(t.Context(), string(body))
 			require.NoError(t, err)
 		}
 		require.Equal(t, original, readBinding(), "downgrade must preserve the sealed v1 binding")
-		require.NoError(t, testutil.InstallExactTestArtifact(t.Context(), pool, testutil.MigrationsDir(t)))
+		require.NoError(t, testutil.InstallPreRetirementTestArtifact(t, t.Context(), pool))
 		require.Equal(t, original, readBinding(), "upgrade must not reinterpret the sealed v1 binding")
 		plan, err := fixture.planner.Plan(t.Context(), modelrouting.Request{
 			Mode: modelrouting.ModeCanonical, CustomerOrgID: fixture.orgID,
@@ -195,7 +195,7 @@ func TestPublicModelExecutionAuthorityExactBindingsRollbackProtectsSealedEvidenc
 		{"messages-tools-v3", "anthropic.claude-sonnet-5.api", "1.4.0", "claude-sonnet-5", modeloperation.IDMessages},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			pool := testutil.SetupMigratedTestDB(t)
+			pool := testutil.SetupPreRetirementTestDB(t)
 			suite := newPublicGatewayPGSuite(t, pool, tc.name)
 			origin := "https://api.anthropic.com"
 			if tc.operation == modeloperation.IDResponses {
@@ -221,20 +221,20 @@ func TestPublicModelExecutionAuthorityExactBindingsRollbackProtectsSealedEvidenc
 				"000089_deepseek_chat_sse_usage_contract_v2.down.sql",
 				"000088_model_capability_execution_qualification.down.sql",
 			} {
-				capabilityDown, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), capabilityDownName))
+				capabilityDown, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), capabilityDownName))
 				require.NoError(t, err)
 				_, err = pool.Exec(t.Context(), string(capabilityDown))
 				require.NoError(t, err, capabilityDownName)
 			}
 			name := "000087_anthropic_messages_tools_public_binding.down.sql"
 			if tc.name != "messages-tools-v3" {
-				body, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+				body, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), name))
 				require.NoError(t, err)
 				_, err = pool.Exec(t.Context(), string(body))
 				require.NoError(t, err)
 				name = "000086_exact_public_execution_bindings.down.sql"
 			}
-			body, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+			body, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), name))
 			require.NoError(t, err)
 			_, err = pool.Exec(t.Context(), string(body))
 			require.ErrorContains(t, err, "immutable evidence refers to")
@@ -279,7 +279,7 @@ func TestPublicModelExecutionAuthorityStreamFailuresPreserveFinancialOutcomeInte
 				if tc.name == "terminal_receipt_failure" && operation != modeloperation.IDResponses {
 					t.Skip("shared receipt-failure recovery contract is covered by Responses")
 				}
-				pool := testutil.SetupMigratedTestDB(t)
+				pool := testutil.SetupPreRetirementTestDB(t)
 				publicGatewayPGDowngradeCapabilityPublicationsForLegacyRollbackTest(t, pool)
 				suite := newPublicGatewayPGSuite(t, pool, "stream-financial-"+tc.name)
 				profile := publicGatewayPGExecutionProfile{
@@ -497,7 +497,7 @@ FROM billing_provider_attempts a WHERE org_id=$1 AND request_id=$2 AND attempt_i
 		"000088_model_capability_execution_qualification.down.sql",
 	} {
 		var readErr error
-		down, readErr = os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		down, readErr = os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), name))
 		require.NoError(t, readErr)
 		_, err = conn.Exec(ctx, string(down))
 		require.NoError(t, err, name)
@@ -509,12 +509,12 @@ FROM billing_provider_attempts a WHERE org_id=$1 AND request_id=$2 AND attempt_i
 		guardedError = "immutable evidence refers"
 	} else {
 		name := "000087_anthropic_messages_tools_public_binding.down.sql"
-		down, readErr := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		down, readErr := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), name))
 		require.NoError(t, readErr)
 		_, err = conn.Exec(ctx, string(down))
 		require.NoError(t, err, name)
 	}
-	down, err = os.ReadFile(filepath.Join(testutil.MigrationsDir(t), guardedDown))
+	down, err = os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), guardedDown))
 	require.NoError(t, err)
 	_, err = conn.Exec(ctx, string(down))
 	require.ErrorContains(t, err, guardedError)

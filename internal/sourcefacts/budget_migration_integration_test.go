@@ -26,11 +26,11 @@ import (
 func TestSourceBudgetExpansionRequiresServingAndExpiredRecoveryWriterSupport(t *testing.T) {
 	for _, missing := range []string{"schema_head", "source_budgets", "financial_journal"} {
 		t.Run(missing, func(t *testing.T) {
-			pool := testutil.SetupMigratedTestDB(t)
+			pool := testutil.SetupPreRetirementTestDB(t)
 			ctx := t.Context()
 			require.NoError(t, budgetDown(t, pool))
 			dir := testutil.MigrationsDir(t)
-			ledger, err := schemaauthority.ExpectedLedger(dir)
+			ledger, err := testutil.PreRetirementLedger(t)
 			require.NoError(t, err)
 			full := runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads())
 			old := runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads())
@@ -143,7 +143,7 @@ func sourceBudgetFixtureDownIfPresent(t *testing.T, pool *pgxpool.Pool, version 
 }
 
 func TestSourceBudgetMigrationRequiresCertificateAndPreservesHistory(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := t.Context()
 	certificate, err := runtimegeneration.ReadBudgetCoverage(ctx, pool)
 	require.NoError(t, err)
@@ -207,7 +207,7 @@ func TestSourceBudgetMigrationRequiresCertificateAndPreservesHistory(t *testing.
 func TestSourceBudgetRestoreAlwaysRebasesAndReadinessDoesNotWrite(t *testing.T) {
 	for _, head := range []string{schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ScopedContentExpandHead} {
 		t.Run(head, func(t *testing.T) {
-			pool := testutil.SetupMigratedTestDB(t)
+			pool := testutil.SetupPreRetirementTestDB(t)
 			require.NoError(t, sourceBudgetFixtureDownIfPresent(t, pool, schemaauthority.XInsightPolicyExpandHead))
 			if head == schemaauthority.BudgetSnapshotExpandHead {
 				require.NoError(t, contentDownForBudgetFixture(t, pool))
@@ -295,7 +295,7 @@ EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('execution_content_
 }
 
 func TestSourceBudgetRestoreHelperPreservesPreDSchema(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	require.NoError(t, budgetDown(t, pool))
 	helper, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "..", "scripts", "source-budget-restore-rebase.sql"))
 	require.NoError(t, err)

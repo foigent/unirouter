@@ -13,7 +13,7 @@ import (
 )
 
 func TestOfficialRateSourceCurrencyDraftMigrationGuardsUSDReviewEvidence(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	execMigrationDown(t, ctx, pool, "000085_model_execution_plan_freeze_fence.down.sql")
 	var orgID int64
@@ -30,7 +30,7 @@ INSERT INTO enterprise_finance_rate_source_evidence (
 )`, orgID)
 	require.NoError(t, err)
 
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000084_official_rate_source_currency_drafts.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000084_official_rate_source_currency_drafts.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.ErrorContains(t, err, "non-CNY source evidence exists")

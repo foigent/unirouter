@@ -101,7 +101,8 @@ func TestP6F35GlobalControlAuthorityIntegration(t *testing.T) {
 
 		license := serve(t, http.MethodGet, "/api/v1/license", "", fx.platformA, fx.orgA, auth.RolePlatformAdmin, "")
 		assertStatus(t, license, http.StatusOK)
-		require.Contains(t, license.Body.String(), "p6f35-old-deployment")
+		require.Contains(t, license.Body.String(), `"status":"not_required"`)
+		require.NotContains(t, license.Body.String(), "p6f35-old-deployment")
 		require.NotContains(t, license.Body.String(), `"signature"`)
 		words := serve(t, http.MethodGet, "/api/v1/sensitive-words", "", fx.platformA, fx.orgA, auth.RolePlatformAdmin, "")
 		assertStatus(t, words, http.StatusOK)
@@ -179,7 +180,7 @@ func TestP6F35GlobalControlAuthorityIntegration(t *testing.T) {
 		require.NoError(t, pool.QueryRow(ctx,
 			`SELECT COUNT(*) FROM audit_logs WHERE request_id = ANY($1::text[])`, requestIDs,
 		).Scan(&auditCount))
-		require.Equal(t, len(requestIDs), auditCount)
+		require.Equal(t, len(requestIDs)-1, auditCount, "retired License PUT performs no audit write")
 		var actorOrgID, actorUserID int64
 		require.NoError(t, pool.QueryRow(ctx,
 			`SELECT org_id, user_id FROM audit_logs WHERE request_id = 'p6f35-setting'`,
@@ -217,16 +218,12 @@ func TestP6F35GlobalControlAuthorityIntegration(t *testing.T) {
 		longLicense := p6f35SignedLicense(t, privateKey, longDeploymentID, "2026-12-31T00:00:00Z")
 		assertStatus(t, serve(t, http.MethodPut, "/api/v1/license", fmt.Sprintf(`{"license":%s}`, longLicense),
 			fx.platformA, fx.orgA, auth.RolePlatformAdmin, "p6f35-long-license-id"), http.StatusOK)
-		var licenseResourceID, licenseDetail string
-		require.NoError(t, pool.QueryRow(ctx,
-			`SELECT resource_id, detail::text FROM audit_logs WHERE request_id = 'p6f35-long-license-id'`,
-		).Scan(&licenseResourceID, &licenseDetail))
-		require.Len(t, licenseResourceID, 64)
-		require.Contains(t, licenseDetail, longDeploymentID)
-		require.Contains(t, licenseDetail, `"resource_id_hashed": true`)
+		var count int
+		require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE request_id='p6f35-long-license-id'`).Scan(&count))
+		require.Zero(t, count, "compatibility PUT does not import or audit historical documents")
 	})
 
-	t.Run("database audit failure rolls back all three control mutations", func(t *testing.T) {
+	t.Run("database audit failure rolls back writes but not retired License no-op", func(t *testing.T) {
 		_, err := pool.Exec(ctx, `CREATE OR REPLACE FUNCTION p6f35_fail_selected_audit() RETURNS trigger AS $$
 		BEGIN
 		  IF COALESCE(NEW.request_id, '') LIKE 'p6f35-forced-audit-%' THEN
@@ -254,17 +251,23 @@ func TestP6F35GlobalControlAuthorityIntegration(t *testing.T) {
 		for _, tc := range cases {
 			before := readP6F35Snapshot(t, pool, sensitiveFilter)
 			rec := serve(t, tc.method, tc.target, tc.body, fx.platformA, fx.orgA, auth.RolePlatformAdmin, tc.requestID)
-			assertStatus(t, rec, http.StatusInternalServerError)
-			require.Contains(t, rec.Body.String(), "Audit failed")
+			if tc.target == "/api/v1/license" {
+				assertStatus(t, rec, http.StatusOK)
+				require.Contains(t, rec.Body.String(), `"imported":false`)
+			} else {
+				assertStatus(t, rec, http.StatusInternalServerError)
+				require.Contains(t, rec.Body.String(), "Audit failed")
+			}
 			require.Equal(t, before, readP6F35Snapshot(t, pool, sensitiveFilter))
 		}
 	})
 
-	t.Run("invalid license has no write audit or event side effect", func(t *testing.T) {
+	t.Run("historical invalid signature has no write audit or event side effect", func(t *testing.T) {
 		before := readP6F35Snapshot(t, pool, sensitiveFilter)
 		rec := serve(t, http.MethodPut, "/api/v1/license", fmt.Sprintf(`{"license":%s}`, invalidLicense),
 			fx.platformA, fx.orgA, auth.RolePlatformAdmin, "p6f35-invalid-license")
-		assertStatus(t, rec, http.StatusBadRequest)
+		assertStatus(t, rec, http.StatusOK)
+		require.Contains(t, rec.Body.String(), `"imported":false`)
 		require.Equal(t, before, readP6F35Snapshot(t, pool, sensitiveFilter))
 	})
 

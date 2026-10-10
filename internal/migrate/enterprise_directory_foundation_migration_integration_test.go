@@ -13,7 +13,7 @@ import (
 )
 
 func TestEnterpriseDirectoryFoundationMigrationAndRollbackGuard(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 
 	var tables, constraints, credentialColumns, ledger int
@@ -61,7 +61,7 @@ func TestEnterpriseDirectoryFoundationMigrationAndRollbackGuard(t *testing.T) {
 	rollbackEmptyEnterpriseFinanceMigrations(t, pool)
 
 	peopleAccountsDownSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t),
+		testutil.PreRetirementMigrationsDir(t),
 		"000048_prd8_enterprise_directory_people_accounts.down.sql",
 	))
 	require.NoError(t, err)
@@ -69,7 +69,7 @@ func TestEnterpriseDirectoryFoundationMigrationAndRollbackGuard(t *testing.T) {
 	require.NoError(t, err)
 
 	downSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t),
+		testutil.PreRetirementMigrationsDir(t),
 		"000047_prd8_enterprise_directory_foundation.down.sql",
 	))
 	require.NoError(t, err)

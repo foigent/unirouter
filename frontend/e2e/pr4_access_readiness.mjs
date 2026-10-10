@@ -95,8 +95,8 @@ async function login(role, baseURL = fixture.base_url) {
   await page.goto('/login');
   const oidcConfigResponse = await oidcConfigPromise;
   assert.equal(oidcConfigResponse.status(), 200, 'OIDC availability must be readable without presenting a false login error');
-  assert.equal((await oidcConfigResponse.json()).enabled, false, 'unconfigured or unlicensed OIDC must be unavailable');
-  assert.equal(await page.getByText(/企业登录配置暂时无法确认/).count(), 0, 'license availability is not a transient login error');
+  assert.equal((await oidcConfigResponse.json()).enabled, false, 'unconfigured OIDC must be unavailable');
+  assert.equal(await page.getByText(/企业登录配置暂时无法确认/).count(), 0, 'missing OIDC configuration is not a transient login error');
   await page.getByLabel('用户名').fill(fixture.usernames[role]);
   await page.locator('input[type="password"]').fill(fixture.password);
   const [response] = await Promise.all([
@@ -478,19 +478,23 @@ try {
 		await visible(facts.getByText('canonical Planner 当前没有可用路由', { exact: true }));
 		assert.equal(await facts.getByText('当前至少有一条可用路由', { exact: true }).count(), 0,
 			'legacy channel inventory must not be presented as a canonical route');
-    await visible(facts.getByText('当前部署的模型网关商业授权未就绪，请由平台管理员检查许可证', { exact: true }));
+    assert.equal(await facts.getByText('当前部署的模型网关商业授权未就绪，请由平台管理员检查许可证', { exact: true }).count(), 0);
+    const commercialAxis = readiness.page.locator('section[aria-label="模型网关授权诊断"]');
+    await commercialAxis.locator('summary').click();
+    await visible(commercialAxis.getByText('commercial_license_not_required', { exact: true }));
+    assert.equal(await commercialAxis.locator('a').count(), 0, 'retired commercial check must not offer a repair link');
 
     const runtimePath = `/model-readiness?project_id=${fixture.project_a}&model=${encodeURIComponent(fixture.runtime_only_model)}&endpoint=${encodeURIComponent('/v1/chat/completions')}&caller=self`;
     await readiness.page.goto(runtimePath);
     await visible(readiness.page.getByText('查看高级诊断证据', { exact: true }));
     await readiness.page.getByText('查看高级诊断证据', { exact: true }).click();
     const registrationAxis = readiness.page.locator('section[aria-label="模型记录诊断"]');
-    await visible(registrationAxis.getByText('当前流程不要求', { exact: true }));
+    await visible(registrationAxis.getByText('模型尚未加入模型目录', { exact: true }));
     await registrationAxis.locator('summary').click();
-    await visible(registrationAxis.getByText('model_governance_not_licensed_optional', { exact: true }));
+    await visible(registrationAxis.getByText('model_unregistered', { exact: true }));
     const runtimeFacts = readiness.page.locator('.ur-readiness-summary-grid');
     await visible(runtimeFacts);
-    await visible(runtimeFacts.getByText('当前流程不要求', { exact: true }).first());
+    await visible(runtimeFacts.getByText('模型尚未加入模型目录', { exact: true }));
 		await visible(runtimeFacts.getByText('canonical Planner 当前没有可用路由', { exact: true }));
     journeys.push('readiness_four_facts_optional_states');
   } finally {

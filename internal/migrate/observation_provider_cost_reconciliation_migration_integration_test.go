@@ -15,10 +15,10 @@ import (
 
 func TestObservationProviderCostReconciliationMigrationIntegration(t *testing.T) {
 	t.Run("safe down and roll forward", func(t *testing.T) {
-		pool := testutil.SetupMigratedTestDB(t)
+		pool := testutil.SetupPreRetirementTestDB(t)
 		ctx := context.Background()
 		down, err := os.ReadFile(filepath.Join(
-			testutil.MigrationsDir(t), "000080_observation_provider_cost_reconciliation.down.sql",
+			testutil.PreRetirementMigrationsDir(t), "000080_observation_provider_cost_reconciliation.down.sql",
 		))
 		require.NoError(t, err)
 		execMigrationDown(t, ctx, pool, "000081_versioned_model_execution_profiles.down.sql")
@@ -56,7 +56,7 @@ func TestObservationProviderCostReconciliationMigrationIntegration(t *testing.T)
 		require.False(t, triggerPresent)
 		require.False(t, ledgerPresent)
 
-		require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000080_observation_provider_cost_reconciliation"))
+		require.NoError(t, migrate.RunThrough(ctx, pool, testutil.PreRetirementMigrationsDir(t), "000080_observation_provider_cost_reconciliation"))
 		require.NoError(t, pool.QueryRow(ctx, `
 			SELECT
 			  EXISTS(SELECT 1 FROM information_schema.columns
@@ -73,7 +73,7 @@ func TestObservationProviderCostReconciliationMigrationIntegration(t *testing.T)
 	})
 
 	t.Run("completion rejects a receipt that drifts from frozen usage authority", func(t *testing.T) {
-		pool := testutil.SetupMigratedTestDB(t)
+		pool := testutil.SetupPreRetirementTestDB(t)
 		ctx := context.Background()
 		tx, err := pool.Begin(ctx)
 		require.NoError(t, err)
@@ -152,7 +152,7 @@ func TestObservationProviderCostReconciliationMigrationIntegration(t *testing.T)
 	})
 
 	t.Run("durable observation evidence refuses down atomically", func(t *testing.T) {
-		pool := testutil.SetupMigratedTestDB(t)
+		pool := testutil.SetupPreRetirementTestDB(t)
 		ctx := context.Background()
 		tx, err := pool.Begin(ctx)
 		require.NoError(t, err)
@@ -220,7 +220,7 @@ func TestObservationProviderCostReconciliationMigrationIntegration(t *testing.T)
 		require.NoError(t, tx.Commit(ctx))
 
 		down, err := os.ReadFile(filepath.Join(
-			testutil.MigrationsDir(t), "000080_observation_provider_cost_reconciliation.down.sql",
+			testutil.PreRetirementMigrationsDir(t), "000080_observation_provider_cost_reconciliation.down.sql",
 		))
 		require.NoError(t, err)
 		execMigrationDown(t, ctx, pool, "000081_versioned_model_execution_profiles.down.sql")

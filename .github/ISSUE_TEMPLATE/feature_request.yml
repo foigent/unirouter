@@ -1,0 +1,26 @@
+name: Proposal
+description: Explain a user problem or a bounded improvement.
+title: "[Proposal]: "
+body:
+  - type: markdown
+    attributes:
+      value: "English titles help everyone find related work. English and Simplified Chinese reports are welcome."
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: Who needs to do what, and where does current behavior fall short?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Expected outcome and scope
+      description: Observable result, alternatives, constraints and relevant compatibility.
+    validations:
+      required: true
+  - type: textarea
+    id: contribution
+    attributes:
+      label: Would you like to contribute?
+      description: Optional; implementation is not required to propose a change.

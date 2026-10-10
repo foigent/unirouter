@@ -45,10 +45,10 @@ func sourceExpandPresent(t *testing.T, pool *pgxpool.Pool, want bool) {
 }
 
 func TestSourceFactsExpandAtomicityAndFiniteBridge(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
-	dir := testutil.MigrationsDir(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
+	dir := testutil.PreRetirementMigrationsDir(t)
 	ctx := t.Context()
-	artifact, err := schemaauthority.ExpectedLedger(dir)
+	artifact, err := testutil.PreRetirementLedger(t)
 	require.NoError(t, err)
 	require.NoError(t, schemaauthority.VerifyRuntimeLedger(artifact, artifact))
 	require.Error(t, schemaauthority.VerifyRuntimeLedger(artifact[:len(artifact)-1], artifact), "M115 binary cannot resume on M116")
@@ -73,8 +73,8 @@ func TestSourceFactsExpandAtomicityAndFiniteBridge(t *testing.T) {
 }
 
 func TestSourceFactsExpandBusyOwnersPreserveTheirTransactions(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
-	dir := testutil.MigrationsDir(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
+	dir := testutil.PreRetirementMigrationsDir(t)
 	require.NoError(t, testutil.RewindEmptySourceFactsForLegacyTest(t.Context(), pool, dir))
 	for name, lock := range map[string]string{
 		"release":       `LOCK TABLE runtime_change_releases IN ACCESS EXCLUSIVE MODE`,
@@ -118,10 +118,10 @@ func TestSourceFactsExpandBusyOwnersPreserveTheirTransactions(t *testing.T) {
 func TestSourceFactsExpandRejectsIncompatibleServingAndRecovery(t *testing.T) {
 	for _, missing := range []string{"head", "unirouter.source-fact.v1", "unirouter.stream-counter.v2", "unirouter.stream-counter.v3"} {
 		t.Run(missing, func(t *testing.T) {
-			pool := testutil.SetupMigratedTestDB(t)
-			dir := testutil.MigrationsDir(t)
+			pool := testutil.SetupPreRetirementTestDB(t)
+			dir := testutil.PreRetirementMigrationsDir(t)
 			require.NoError(t, testutil.RewindEmptySourceFactsForLegacyTest(t.Context(), pool, dir))
-			artifact, err := schemaauthority.ExpectedLedger(dir)
+			artifact, err := testutil.PreRetirementLedger(t)
 			require.NoError(t, err)
 			manifest := runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads())
 			if missing == "head" {
@@ -142,11 +142,11 @@ func TestSourceFactsExpandRejectsIncompatibleServingAndRecovery(t *testing.T) {
 func TestSourceFactsDownRefusesLiveGenerationAndDurableSeeds(t *testing.T) {
 	for _, evidence := range []string{"generation", "stream", "reservation"} {
 		t.Run(evidence, func(t *testing.T) {
-			pool := testutil.SetupMigratedTestDB(t)
+			pool := testutil.SetupPreRetirementTestDB(t)
 			ctx := t.Context()
-			dir := testutil.MigrationsDir(t)
+			dir := testutil.PreRetirementMigrationsDir(t)
 			if evidence == "generation" {
-				artifact, err := schemaauthority.ExpectedLedger(dir)
+				artifact, err := testutil.PreRetirementLedger(t)
 				require.NoError(t, err)
 				_, _, err = runtimegeneration.Renew(ctx, pool, runtimegeneration.Identity{Instance: "uri_" + strings.Repeat("f", 32), Artifact: "sha256:" + strings.Repeat("f", 64)}, runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads()), artifact, true)
 				require.NoError(t, err)

@@ -16,7 +16,7 @@ import (
 func TestP6F18BillingReservationMigrationUpDownAndSafeRollForward(t *testing.T) {
 	pool := testutil.SetupIsolatedTestDB(t)
 	ctx := context.Background()
-	migrationsDir := testutil.MigrationsDir(t)
+	migrationsDir := testutil.PreRetirementMigrationsDir(t)
 	runMigrationsBeforeP6F18(t, pool, migrationsDir)
 
 	historicalOrgID := int64(2001)

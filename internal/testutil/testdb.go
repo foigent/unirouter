@@ -26,6 +26,10 @@ import (
 var migratedTestDBTemplate struct {
 	sync.Mutex
 	enabled   bool
+	templates map[string]migratedTemplate
+}
+
+type migratedTemplate struct {
 	baseDSN   string
 	adminPool *pgxpool.Pool
 	dbName    string
@@ -81,7 +85,7 @@ func SetupIsolatedTestDB(t *testing.T) *pgxpool.Pool {
 func SetupMigratedTestDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	if migratedTestDBTemplateEnabled() {
-		return setupMigratedTestDBFromTemplate(t)
+		return setupMigratedTestDBFromTemplate(t, schemaauthority.LatestSupportedMigration)
 	}
 	pool := SetupIsolatedTestDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -103,8 +107,56 @@ func SetupMigratedThroughTestDB(t *testing.T, ceiling string) *pgxpool.Pool {
 	return pool
 }
 
-// EnableMigratedTestDBTemplate makes SetupMigratedTestDB migrate and clean one
-// process-scoped template database, then clone it for each test. The caller must
+// PreRetirementMigrationsDir freezes the historical artifact at M125 for
+// tests of earlier rollback/compatible-expand contracts. M126 deliberately
+// cannot be undone; current-runtime tests must continue using MigrationsDir.
+func PreRetirementMigrationsDir(t *testing.T) string {
+	t.Helper()
+	source, target := MigrationsDir(t), t.TempDir()
+	entries, err := os.ReadDir(source)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") || entry.Name() >= "000126_" {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(source, entry.Name()))
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(target, entry.Name()), body, 0o600))
+	}
+	return target
+}
+
+// SetupPreRetirementTestDB is an explicit M125 fixture, never a downgrade of
+// a current installation. Keep historical tests separate from M126 runtime tests.
+func SetupPreRetirementTestDB(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	if migratedTestDBTemplateEnabled() {
+		return setupMigratedTestDBFromTemplate(t, schemaauthority.XInsightCredentialExpandHead)
+	}
+	return SetupMigratedThroughTestDB(t, schemaauthority.XInsightCredentialExpandHead)
+}
+
+// PreRetirementLedger supplies an immutable historical artifact identity to
+// domain-level compatibility tests. ExpectedLedger keeps its binary ceiling.
+func PreRetirementLedger(t *testing.T) ([]string, error) {
+	t.Helper()
+	ledger, err := schemaauthority.ExpectedLedger(MigrationsDir(t))
+	if err != nil {
+		return nil, err
+	}
+	if len(ledger) < 2 || ledger[len(ledger)-2] != schemaauthority.XInsightCredentialExpandHead {
+		return nil, fmt.Errorf("historical fixture requires exact M125/M126 boundary")
+	}
+	return ledger[:len(ledger)-1], nil
+}
+
+func InstallPreRetirementTestArtifact(t *testing.T, ctx context.Context, pool *pgxpool.Pool) error {
+	t.Helper()
+	return runStrictTestArtifactInstallThrough(ctx, pool, MigrationsDir(t), schemaauthority.XInsightCredentialExpandHead)
+}
+
+// EnableMigratedTestDBTemplate makes current and pre-retirement fixtures migrate
+// and clean separate process-scoped templates, then clone one for each test. The caller must
 // invoke CleanupMigratedTestDBTemplate after the package test run completes.
 func EnableMigratedTestDBTemplate() {
 	migratedTestDBTemplate.Lock()
@@ -112,9 +164,9 @@ func EnableMigratedTestDBTemplate() {
 	migratedTestDBTemplate.enabled = true
 }
 
-// RunWithMigratedTestDBTemplate runs an integration-test package with one
-// migrated template database. Every SetupMigratedTestDB call still receives
-// an isolated clone, while the package pays the migration cost only once.
+// RunWithMigratedTestDBTemplate runs an integration-test package with separate
+// current and historical templates. Every fixture still receives an isolated
+// clone, while the package pays the migration cost only once per schema ceiling.
 func RunWithMigratedTestDBTemplate(m *testing.M) {
 	EnableMigratedTestDBTemplate()
 	code := m.Run()
@@ -125,25 +177,22 @@ func RunWithMigratedTestDBTemplate(m *testing.M) {
 	os.Exit(code)
 }
 
-// CleanupMigratedTestDBTemplate removes the process-scoped template database.
+// CleanupMigratedTestDBTemplate removes every process-scoped template database.
 func CleanupMigratedTestDBTemplate() error {
 	migratedTestDBTemplate.Lock()
-	adminPool := migratedTestDBTemplate.adminPool
-	dbName := migratedTestDBTemplate.dbName
+	templates := migratedTestDBTemplate.templates
 	migratedTestDBTemplate.enabled = false
-	migratedTestDBTemplate.baseDSN = ""
-	migratedTestDBTemplate.adminPool = nil
-	migratedTestDBTemplate.dbName = ""
+	migratedTestDBTemplate.templates = nil
 	migratedTestDBTemplate.Unlock()
 
-	if adminPool == nil || dbName == "" {
-		return nil
+	var result error
+	for _, template := range templates {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		result = errors.Join(result, dropTemporaryDatabase(ctx, template.adminPool, template.dbName))
+		cancel()
+		template.adminPool.Close()
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	err := dropTemporaryDatabase(ctx, adminPool, dbName)
-	adminPool.Close()
-	return err
+	return result
 }
 
 func migratedTestDBTemplateEnabled() bool {
@@ -152,11 +201,11 @@ func migratedTestDBTemplateEnabled() bool {
 	return migratedTestDBTemplate.enabled
 }
 
-func setupMigratedTestDBFromTemplate(t *testing.T) *pgxpool.Pool {
+func setupMigratedTestDBFromTemplate(t *testing.T, ceiling string) *pgxpool.Pool {
 	t.Helper()
 	baseDSN, err := testdb.PreflightDSN()
 	require.NoError(t, err)
-	adminPool, templateName := ensureMigratedTestDBTemplate(t, baseDSN)
+	adminPool, templateName := ensureMigratedTestDBTemplate(t, baseDSN, ceiling)
 	_, cloneDSN, cloneName, err := tempDatabaseDSNs(baseDSN)
 	require.NoError(t, err, "build cloned test database DSN")
 
@@ -192,13 +241,13 @@ func setupMigratedTestDBFromTemplate(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-func ensureMigratedTestDBTemplate(t *testing.T, baseDSN string) (*pgxpool.Pool, string) {
+func ensureMigratedTestDBTemplate(t *testing.T, baseDSN, ceiling string) (*pgxpool.Pool, string) {
 	t.Helper()
 	migratedTestDBTemplate.Lock()
 	defer migratedTestDBTemplate.Unlock()
-	if migratedTestDBTemplate.adminPool != nil {
-		require.Equal(t, migratedTestDBTemplate.baseDSN, baseDSN, "migrated test database template DSN changed during one test process")
-		return migratedTestDBTemplate.adminPool, migratedTestDBTemplate.dbName
+	if template, ok := migratedTestDBTemplate.templates[ceiling]; ok {
+		require.Equal(t, template.baseDSN, baseDSN, "migrated test database template DSN changed during one test process")
+		return template.adminPool, template.dbName
 	}
 
 	adminDSN, templateDSN, templateName, err := tempDatabaseDSNs(baseDSN)
@@ -234,7 +283,7 @@ func ensureMigratedTestDBTemplate(t *testing.T, baseDSN string) (*pgxpool.Pool, 
 		adminPool.Close()
 		testDatabaseUnavailable(t, "cannot ping migrated template database %s: %v", templateName, err)
 	}
-	if err := runStrictTestArtifactInstall(ctx, templatePool, MigrationsDir(t)); err != nil {
+	if err := runStrictTestArtifactInstallThrough(ctx, templatePool, MigrationsDir(t), ceiling); err != nil {
 		templatePool.Close()
 		_ = dropTemporaryDatabase(ctx, adminPool, templateName)
 		adminPool.Close()
@@ -243,9 +292,10 @@ func ensureMigratedTestDBTemplate(t *testing.T, baseDSN string) (*pgxpool.Pool, 
 	TruncateAll(t, templatePool)
 	templatePool.Close()
 
-	migratedTestDBTemplate.baseDSN = baseDSN
-	migratedTestDBTemplate.adminPool = adminPool
-	migratedTestDBTemplate.dbName = templateName
+	if migratedTestDBTemplate.templates == nil {
+		migratedTestDBTemplate.templates = make(map[string]migratedTemplate)
+	}
+	migratedTestDBTemplate.templates[ceiling] = migratedTemplate{baseDSN: baseDSN, adminPool: adminPool, dbName: templateName}
 	return adminPool, templateName
 }
 
@@ -394,9 +444,9 @@ func runStrictTestArtifactInstallThrough(ctx context.Context, pool *pgxpool.Pool
 		}
 		return nil
 	}
-	// Apply any trailing ordinary migrations. A missed declaration-owned
-	// migration still fails closed in migrate.Run instead of being bypassed.
-	if err := migrate.Run(ctx, pool, migrationsDir); err != nil {
+	// Apply maintenance retirement only through the formal owner. This isolated
+	// fixture has no serving writers; no runtime startup bypass is granted.
+	if err := migrate.RunExisting(ctx, pool, migrationsDir); err != nil {
 		return err
 	}
 	return publication.VerifyRuntimeStaticProjection(ctx, pool, artifactLedger)

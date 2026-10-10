@@ -15,7 +15,7 @@ import (
 )
 
 func TestModelExecutionEvidenceMigrationPreservesHistoryAndHasOrderedRollback(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	var orgID int64
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -35,7 +35,7 @@ VALUES ($1,'execution-evidence-history','attempt-history',101,201,301,
 
 	_, err = pool.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ('000075_future_contract')`)
 	require.NoError(t, err)
-	downSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000071_model_execution_evidence.down.sql"))
+	downSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000071_model_execution_evidence.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(downSQL))
 	require.ErrorContains(t, err, "later migrations must be reversed first")
@@ -54,11 +54,11 @@ SELECT EXISTS(
             AND column_name='route_evidence_version')`, orgID).Scan(&historyRetained, &evidenceColumnsDropped))
 	require.True(t, historyRetained)
 	require.True(t, evidenceColumnsDropped)
-	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000071_model_execution_evidence"))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.PreRetirementMigrationsDir(t), "000071_model_execution_evidence"))
 }
 
 func TestModelExecutionEvidenceMigrationRejectsPartialBundlesAndFreezesReceipt(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	var orgID int64
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -123,7 +123,7 @@ UPDATE billing_provider_attempts SET route_evidence_hash=$4
 
 	execMigrationDown(t, ctx, pool, "000073_model_execution_dispatch_fence.down.sql")
 	execMigrationDown(t, ctx, pool, "000072_execution_evidence_projection.down.sql")
-	downSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000071_model_execution_evidence.down.sql"))
+	downSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000071_model_execution_evidence.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(downSQL))
 	require.ErrorContains(t, err, "versioned provider attempt evidence exists")

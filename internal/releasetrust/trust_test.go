@@ -20,15 +20,15 @@ func TestReleaseTrustUsesOnlyEmbeddedRings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bundle.Mode != ModeRelease || bundle.LicenseKeyCount != 1 || bundle.UpgradeKeyCount != 1 {
+	if bundle.Mode != ModeRelease || bundle.LicenseKeyCount != 0 || bundle.UpgradeKeyCount != 1 {
 		t.Fatalf("unexpected release trust bundle: %+v", bundle)
 	}
-	if !strings.Contains(bundle.LicensePublicKeys, "license-2026-a") || !strings.Contains(bundle.UpgradePublicKeys, "upgrade-2026-a") {
+	if bundle.LicensePublicKeys != "" || !strings.Contains(bundle.UpgradePublicKeys, "upgrade-2026-a") {
 		t.Fatalf("embedded rings were not resolved: %+v", bundle)
 	}
 
-	if _, err := Resolve(licenseRing, ""); err == nil || !strings.Contains(err.Error(), "forbid runtime") {
-		t.Fatalf("expected runtime License trust override rejection, got %v", err)
+	if _, err := Resolve("malformed ignored legacy input", ""); err != nil {
+		t.Fatalf("retired license input must be ignored: %v", err)
 	}
 	if _, err := Resolve("", upgradeRing); err == nil || !strings.Contains(err.Error(), "forbid runtime") {
 		t.Fatalf("expected runtime upgrade trust override rejection, got %v", err)
@@ -51,8 +51,8 @@ func TestReleaseTrustRejectsLicenseAndUpgradeKeyReuse(t *testing.T) {
 	upgradeRing := testRingForPublicKey(t, "upgrade-2026-a", publicKey)
 	setBuildTrustForTest(t, ModeRelease, encodeRing(licenseRing), encodeRing(upgradeRing))
 
-	if _, err := Resolve("", ""); err == nil || !strings.Contains(err.Error(), "must use distinct") {
-		t.Fatalf("expected cross-purpose signing-key reuse rejection, got %v", err)
+	if err := ensureDisjointSigningKeys(licenseRing, upgradeRing); err == nil {
+		t.Fatal("legacy ring separation helper must still detect overlap")
 	}
 }
 
@@ -97,8 +97,8 @@ func TestReleaseTrustRejectsOneOverlapAcrossMultiKeyRings(t *testing.T) {
 	})
 	setBuildTrustForTest(t, ModeRelease, encodeRing(licenseRing), encodeRing(upgradeRing))
 
-	if _, err := Resolve("", ""); err == nil || !strings.Contains(err.Error(), "must use distinct") {
-		t.Fatalf("expected overlap in multi-key rings to be rejected, got %v", err)
+	if err := ensureDisjointSigningKeys(licenseRing, upgradeRing); err == nil {
+		t.Fatal("legacy ring separation helper must still detect overlap")
 	}
 }
 
@@ -115,7 +115,7 @@ func TestDevelopmentTrustAcceptsExplicitRuntimeRings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bundle.Mode != ModeDevelopment || bundle.LicenseKeyCount != 1 || bundle.UpgradeKeyCount != 1 {
+	if bundle.Mode != ModeDevelopment || bundle.LicenseKeyCount != 0 || bundle.UpgradeKeyCount != 1 {
 		t.Fatalf("unexpected development trust bundle: %+v", bundle)
 	}
 }
@@ -180,4 +180,12 @@ func setBuildTrustForTest(t *testing.T, mode, licenseRing, upgradeRing string) {
 		embeddedLicenseKeyRingBase64 = oldLicense
 		embeddedUpgradeKeyRingBase64 = oldUpgrade
 	})
+}
+
+func TestReleaseTrustRequiresUpgradeRootWithoutLicenseRoot(t *testing.T) {
+	setBuildTrustForTest(t, ModeRelease, "", encodeRing(testRing(t, "upgrade-only")))
+	bundle, err := Resolve("obsolete invalid license", "")
+	if err != nil || bundle.LicenseKeyCount != 0 || bundle.UpgradeKeyCount != 1 {
+		t.Fatalf("%+v %v", bundle, err)
+	}
 }

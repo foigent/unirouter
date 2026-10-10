@@ -17,7 +17,7 @@ import (
 func TestV1DeliveryAttemptBindingMigrationBackfillsOnlyUniqueEvidence(t *testing.T) {
 	pool, _ := setupMigratedThrough(t, "000039_v1_guardrail_tenant_isolation.up.sql")
 	ctx := context.Background()
-	allMigrations := testutil.MigrationsDir(t)
+	allMigrations := testutil.PreRetirementMigrationsDir(t)
 	throughBinding := migrationsThrough(t, allMigrations, "000040_v1_delivery_attempt_binding.up.sql")
 
 	insertReservation := func(requestID string) {

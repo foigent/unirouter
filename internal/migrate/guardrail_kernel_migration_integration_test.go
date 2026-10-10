@@ -14,9 +14,9 @@ import (
 )
 
 func TestP6F10GuardrailKernelMigrationUpDownGuardAndRollForward(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
-	migrationsDir := testutil.MigrationsDir(t)
+	migrationsDir := testutil.PreRetirementMigrationsDir(t)
 	downSQL, err := os.ReadFile(filepath.Join(migrationsDir, "000033_prd6_guardrail_kernel.down.sql"))
 	require.NoError(t, err)
 

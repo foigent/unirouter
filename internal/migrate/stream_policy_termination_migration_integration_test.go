@@ -14,9 +14,9 @@ import (
 )
 
 func TestP6F11StreamPolicyTerminationMigrationUpDownGuardAndRollForward(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
-	migrationsDir := testutil.MigrationsDir(t)
+	migrationsDir := testutil.PreRetirementMigrationsDir(t)
 	downSQL, err := os.ReadFile(filepath.Join(migrationsDir, "000034_prd6_stream_policy_termination.down.sql"))
 	require.NoError(t, err)
 

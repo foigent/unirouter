@@ -444,9 +444,9 @@ SELECT $1,'stable_parent',release_id,release_ref,candidate_hash,route_items_hash
 }
 
 func TestModelDeploymentLifecycleReceiptDownLockOrderIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	authoringDownSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000078_atomic_model_release_authoring.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000078_atomic_model_release_authoring.down.sql",
 	))
 	require.NoError(t, err)
 	downgradeCanonicalConnectionLicenseAuthorityForTest(t, pool)
@@ -458,7 +458,7 @@ func TestModelDeploymentLifecycleReceiptDownLockOrderIntegration(t *testing.T) {
 	stableRef := legacyReleaseRef(fixture)
 	const stableVersion int64 = 1
 	publicAuthorityDownSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000077_public_model_execution_authority.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000077_public_model_execution_authority.down.sql",
 	))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(publicAuthorityDownSQL))
@@ -467,7 +467,7 @@ func TestModelDeploymentLifecycleReceiptDownLockOrderIntegration(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(otherPool.Close)
 	downSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000076_model_deployment_lifecycle_receipts.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000076_model_deployment_lifecycle_receipts.down.sql",
 	))
 	require.NoError(t, err)
 

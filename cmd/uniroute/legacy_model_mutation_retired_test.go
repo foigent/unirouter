@@ -80,7 +80,7 @@ func TestLegacyModelMutationRouteMatrixUsesOnlyPermanentRetirementIngress(t *tes
 	retainedReads := []string{
 		`mux.Handle("GET /api/v1/channels", platformRoute(adminHandler.ListChannels))`,
 		`mux.Handle("GET /api/v1/channels/{id}", platformRoute(adminHandler.GetChannel))`,
-		`mux.Handle("GET /api/v1/channels/{id}/provider-models", licensedRoute(licensing.FeatureGateway, platformRoute)(adminHandler.ListChannelProviderModels))`,
+		`mux.Handle("GET /api/v1/channels/{id}/provider-models", platformRoute(adminHandler.ListChannelProviderModels))`,
 		`mux.Handle("GET /api/v1/channel-keys", platformRoute(adminHandler.ListChannelKeys))`,
 		`mux.Handle("GET /api/v1/model-endpoints", platformRoute(adminHandler.ListModelEndpoints))`,
 		`mux.Handle("GET /api/v1/runtime-changes", platformRoute(handler.ListRuntimeChanges))`,

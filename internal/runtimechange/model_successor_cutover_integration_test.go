@@ -21,7 +21,7 @@ import (
 )
 
 func TestModelSuccessorCutoverAtomicIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	manager, err := runtimechange.NewManager(
 		&recordingBeginTxPool{Pool: pool}, unusedDeploymentSnapshotBuilder{}, routingpolicy.Default(),
 	)
@@ -235,7 +235,7 @@ VALUES ($1,'glm-secondary',$2,'secondary','active')`, successor.OrgID, successor
 	_, err = conflictRecoveryManager.ApplyModelSuccessorCutover(ctx, conflicting)
 	require.ErrorIs(t, err, runtimechange.ErrDeploymentLifecycleIdempotencyConflict)
 
-	downSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000107_stable_model_successor_cutover.down.sql"))
+	downSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000107_stable_model_successor_cutover.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(downSQL))
 	require.ErrorContains(t, err, "rollback refused")
@@ -300,8 +300,8 @@ func (row successorRecoveryRow) Scan(dest ...any) error {
 }
 
 func TestNeverActivatedStagingModelSuccessorCutoverAtomicIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
-	require.NoError(t, testutil.RewindEmptyBudgetSnapshotsForLegacyTest(t.Context(), pool, testutil.MigrationsDir(t)))
+	pool := testutil.SetupPreRetirementTestDB(t)
+	require.NoError(t, testutil.RewindEmptyBudgetSnapshotsForLegacyTest(t.Context(), pool, testutil.PreRetirementMigrationsDir(t)))
 	manager, err := runtimechange.NewManager(
 		&recordingBeginTxPool{Pool: pool}, unusedDeploymentSnapshotBuilder{}, routingpolicy.Default(),
 	)
@@ -405,17 +405,17 @@ VALUES ($1,$2,NULL,0,1)`, predecessor.PublicModelID, predecessor.ModelName)
 	require.Equal(t, receipt.Lifecycle.ReceiptID, replayed.Lifecycle.ReceiptID)
 
 	rewindSuccessorLaterMigrations(t, pool)
-	downSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000109_staging_model_successor_cutover.down.sql"))
+	downSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000109_staging_model_successor_cutover.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(downSQL))
 	require.ErrorContains(t, err, "durable v2 successor authority")
 }
 
 func TestStagingModelSuccessorMigrationGuardedRoundTripWithoutEvidence(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	rewindSuccessorLaterMigrations(t, pool)
 	ctx := context.Background()
-	downSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000109_staging_model_successor_cutover.down.sql"))
+	downSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000109_staging_model_successor_cutover.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(downSQL))
 	require.NoError(t, err)
@@ -436,18 +436,18 @@ SELECT COUNT(*) FROM information_schema.columns
 }
 
 func TestStableModelSuccessorCutoverMigrationGuardedRoundTripWithoutEvidence(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	rewindSuccessorLaterMigrations(t, pool)
 	ctx := context.Background()
-	m109DownSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000109_staging_model_successor_cutover.down.sql"))
+	m109DownSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000109_staging_model_successor_cutover.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(m109DownSQL))
 	require.NoError(t, err)
-	m108DownSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000108_minimax_cache_threshold_qualification.down.sql"))
+	m108DownSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000108_minimax_cache_threshold_qualification.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(m108DownSQL))
 	require.NoError(t, err)
-	downSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000107_stable_model_successor_cutover.down.sql"))
+	downSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000107_stable_model_successor_cutover.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(downSQL))
 	require.NoError(t, err)
@@ -470,7 +470,7 @@ SELECT COUNT(*) FROM information_schema.columns
 // without bypassing any later-migration or durable-evidence guard.
 func rewindSuccessorLaterMigrations(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
-	require.NoError(t, testutil.RewindEmptyBudgetSnapshotsForLegacyTest(t.Context(), pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.RewindEmptyBudgetSnapshotsForLegacyTest(t.Context(), pool, testutil.PreRetirementMigrationsDir(t)))
 	for _, migration := range []string{
 		"000117_execution_observations",
 		"000116_execution_source_facts",
@@ -481,7 +481,7 @@ func rewindSuccessorLaterMigrations(t *testing.T, pool *pgxpool.Pool) {
 		"000111_minimax_m27_stream_function_tools_qualification",
 		"000110_openai_chat_runtime_capability_qualification",
 	} {
-		body, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), migration+".down.sql"))
+		body, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), migration+".down.sql"))
 		require.NoError(t, err)
 		_, err = pool.Exec(context.Background(), string(body))
 		require.NoError(t, err, migration)

@@ -638,8 +638,8 @@ func TestGetMe_IncludesIdentityProviderAndEmail(t *testing.T) {
 		t.Fatalf("unexpected navigation capability projection: %#v", body["navigation_capabilities"])
 	}
 	licenseAccess, ok := body["license_access"].(map[string]interface{})
-	if !ok || licenseAccess["status"] != licensing.StatusInvalid || licenseAccess["enforceable"] != false {
-		t.Fatalf("expected a fail-closed non-sensitive license projection: %#v", body["license_access"])
+	if !ok || licenseAccess["status"] != licensing.StatusNotRequired || licenseAccess["enforceable"] != false {
+		t.Fatalf("expected non-sensitive retired license projection: %#v", body["license_access"])
 	}
 	features, ok := licenseAccess["features"].(map[string]interface{})
 	if !ok || len(features) != 7 {

@@ -19,7 +19,7 @@ func TestModelCapabilityQualificationKimiK26StreamProbeContractV2MigrationLifecy
 	pool, _ := setupMigratedThrough(t, "000094_deepseek_v4_pro_chat_core_qualification.up.sql")
 	fixture := insertM95KimiCapabilityFixture(t, pool, "stream-v2-lifecycle", "protocol.kimi-openai-chat.v5")
 	ctx := t.Context()
-	m96Dir := migrationsThrough(t, testutil.MigrationsDir(t), "000096_kimi_k26_stream_probe_contract_v2.up.sql")
+	m96Dir := migrationsThrough(t, testutil.PreRetirementMigrationsDir(t), "000096_kimi_k26_stream_probe_contract_v2.up.sql")
 
 	require.NoError(t, migrate.Run(ctx, pool, m96Dir))
 	assertKimiK26StreamProbeContractState(t, pool, fixture.deploymentID, "2.0.0", 2)
@@ -33,11 +33,11 @@ func TestModelCapabilityQualificationKimiK26StreamProbeContractV2DownAllowsHisto
 	pool, _ := setupMigratedThrough(t, "000094_deepseek_v4_pro_chat_core_qualification.up.sql")
 	fixture := insertM95KimiCapabilityFixture(t, pool, "stream-v1-failure", "protocol.kimi-openai-chat.v5")
 	ctx := t.Context()
-	m95Dir := migrationsThrough(t, testutil.MigrationsDir(t), "000095_kimi_k26_chat_core_qualification.up.sql")
+	m95Dir := migrationsThrough(t, testutil.PreRetirementMigrationsDir(t), "000095_kimi_k26_chat_core_qualification.up.sql")
 	require.NoError(t, migrate.Run(ctx, pool, m95Dir))
 	insertKimiK26StreamProbeFixture(t, pool, fixture, "1.0.0", false, "m96-historical-v1-failure")
 
-	m96Dir := migrationsThrough(t, testutil.MigrationsDir(t), "000096_kimi_k26_stream_probe_contract_v2.up.sql")
+	m96Dir := migrationsThrough(t, testutil.PreRetirementMigrationsDir(t), "000096_kimi_k26_stream_probe_contract_v2.up.sql")
 	require.NoError(t, migrate.Run(ctx, pool, m96Dir))
 	execMigrationDown(t, ctx, pool, "000096_kimi_k26_stream_probe_contract_v2.down.sql")
 	assertKimiK26StreamProbeContractState(t, pool, fixture.deploymentID, "1.0.0", 1)
@@ -55,11 +55,11 @@ func TestModelCapabilityQualificationKimiK26StreamProbeContractV2DownRefusesReta
 	pool, _ := setupMigratedThrough(t, "000094_deepseek_v4_pro_chat_core_qualification.up.sql")
 	fixture := insertM95KimiCapabilityFixture(t, pool, "stream-v2-retained", "protocol.kimi-openai-chat.v5")
 	ctx := t.Context()
-	m96Dir := migrationsThrough(t, testutil.MigrationsDir(t), "000096_kimi_k26_stream_probe_contract_v2.up.sql")
+	m96Dir := migrationsThrough(t, testutil.PreRetirementMigrationsDir(t), "000096_kimi_k26_stream_probe_contract_v2.up.sql")
 	require.NoError(t, migrate.Run(ctx, pool, m96Dir))
 	insertKimiK26StreamProbeFixture(t, pool, fixture, "2.0.0", true, "m96-retained-v2")
 
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000096_kimi_k26_stream_probe_contract_v2.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000096_kimi_k26_stream_probe_contract_v2.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.ErrorContains(t, err, "retained v2 qualification evidence")
@@ -70,7 +70,7 @@ func TestModelCapabilityQualificationKimiK26StreamProbeContractV2DownRefusesProj
 	pool, _ := setupMigratedThrough(t, "000094_deepseek_v4_pro_chat_core_qualification.up.sql")
 	fixture := insertM95KimiCapabilityFixture(t, pool, "stream-v2-drift", "protocol.kimi-openai-chat.v5")
 	ctx := t.Context()
-	m96Dir := migrationsThrough(t, testutil.MigrationsDir(t), "000096_kimi_k26_stream_probe_contract_v2.up.sql")
+	m96Dir := migrationsThrough(t, testutil.PreRetirementMigrationsDir(t), "000096_kimi_k26_stream_probe_contract_v2.up.sql")
 	require.NoError(t, migrate.Run(ctx, pool, m96Dir))
 
 	_, err := pool.Exec(ctx, `
@@ -78,7 +78,7 @@ UPDATE model_deployment_operations
    SET protocol_profile_id='unverified.chat',revision=revision+1
  WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'`, fixture.deploymentID)
 	require.NoError(t, err)
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000096_kimi_k26_stream_probe_contract_v2.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000096_kimi_k26_stream_probe_contract_v2.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.ErrorContains(t, err, "projection identity drift")

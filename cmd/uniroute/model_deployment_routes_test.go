@@ -18,11 +18,10 @@ import (
 	"github.com/uniroute/unirouter/internal/middleware"
 )
 
-func TestRegisterModelDeploymentRoutesEnforcesRoleAndGatewayLicenseBoundaries(t *testing.T) {
+func TestRegisterModelDeploymentRoutesEnforcesRoleBoundariesWithoutCommercialLicense(t *testing.T) {
 	const secret = "canonical-model-deployment-route-secret"
 	database := activeAdminPrincipalDB()
 	handler := admin.NewHandler(database, secret, []byte("0123456789abcdef01234567"), nil)
-	validLicense := canonicalDeploymentGatewayLicenseRuntime(t)
 
 	organizationRoute := func(next http.HandlerFunc, roles ...string) http.Handler {
 		return middleware.AdminAuth(database, secret)(middleware.RequireOrganizationRoles(roles...)(next))
@@ -30,17 +29,11 @@ func TestRegisterModelDeploymentRoutesEnforcesRoleAndGatewayLicenseBoundaries(t 
 	readRoute := func(next http.HandlerFunc) http.Handler {
 		return organizationRoute(next, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleOrgViewer)
 	}
-	licensedWriteRoute := func(runtime *licensing.Runtime) modelDeploymentRouteGuard {
-		return func(next http.HandlerFunc) http.Handler {
-			gated := runtime.Gate(licensing.FeatureGateway)(next)
-			return organizationRoute(http.HandlerFunc(gated.ServeHTTP), auth.RolePlatformAdmin, auth.RoleOrgAdmin)
-		}
+	writeRoute := func(next http.HandlerFunc) http.Handler {
+		return organizationRoute(next, auth.RolePlatformAdmin, auth.RoleOrgAdmin)
 	}
-	licensedApprovalRoute := func(runtime *licensing.Runtime) modelDeploymentRouteGuard {
-		return func(next http.HandlerFunc) http.Handler {
-			gated := runtime.Gate(licensing.FeatureGateway)(next)
-			return organizationRoute(http.HandlerFunc(gated.ServeHTTP), auth.RolePlatformAdmin)
-		}
+	approvalRoute := func(next http.HandlerFunc) http.Handler {
+		return organizationRoute(next, auth.RolePlatformAdmin)
 	}
 	safetyRoute := func(next http.HandlerFunc) http.Handler {
 		return organizationRoute(next, auth.RolePlatformAdmin, auth.RoleOrgAdmin)
@@ -58,8 +51,8 @@ func TestRegisterModelDeploymentRoutesEnforcesRoleAndGatewayLicenseBoundaries(t 
 
 	validMux := http.NewServeMux()
 	registerModelDeploymentRoutes(validMux, handler, modelDeploymentRouteGuards{
-		read: readRoute, write: licensedWriteRoute(validLicense),
-		approve: licensedApprovalRoute(validLicense), safety: safetyRoute,
+		read: readRoute, write: writeRoute,
+		approve: approvalRoute, safety: safetyRoute,
 	})
 	for _, role := range []string{auth.RolePlatformAdmin, auth.RoleLegacyAdmin, auth.RoleOrgAdmin, auth.RoleOrgViewer} {
 		response := serve(validMux, http.MethodGet, "/api/v1/model-deployments", "", role)
@@ -88,14 +81,14 @@ func TestRegisterModelDeploymentRoutesEnforcesRoleAndGatewayLicenseBoundaries(t 
 	require.Equal(t, http.StatusBadRequest, serve(validMux, http.MethodGet, "/api/v1/model-deployments/1/model-discovery", "", auth.RoleOrgAdmin).Code)
 	viewerWrite := serve(validMux, http.MethodPost, "/api/v1/model-deployments", "not-json", auth.RoleOrgViewer)
 	require.Equal(t, http.StatusForbidden, viewerWrite.Code)
-	require.NotContains(t, viewerWrite.Body.String(), "license_error", "RBAC must reject before the License gate")
+	require.NotContains(t, viewerWrite.Body.String(), "license_error", "RBAC must reject without commercial gates")
 	viewerProbe := serve(
 		validMux, http.MethodPost,
 		"/api/v1/model-deployments/1/operations/openai.chat_completions.v1/probes",
 		"not-json", auth.RoleOrgViewer,
 	)
 	require.Equal(t, http.StatusForbidden, viewerProbe.Code)
-	require.NotContains(t, viewerProbe.Body.String(), "license_error", "probe RBAC must reject before the License gate")
+	require.NotContains(t, viewerProbe.Body.String(), "license_error", "probe RBAC must reject without commercial gates")
 	groupBase := "/api/v1/model-deployments/1/operations/openai.chat_completions.v1"
 	for _, role := range []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin} {
 		require.Equal(t, http.StatusBadRequest, serve(validMux, http.MethodPost, groupBase+"/capability-probe-groups", "not-json", role).Code)
@@ -109,7 +102,7 @@ func TestRegisterModelDeploymentRoutesEnforcesRoleAndGatewayLicenseBoundaries(t 
 	require.Contains(t, platformApproval.Body.String(), "model_operation_production_approval_invalid")
 	orgApproval := serve(validMux, http.MethodPost, approvalPath, "not-json", auth.RoleOrgAdmin)
 	require.Equal(t, http.StatusForbidden, orgApproval.Code)
-	require.NotContains(t, orgApproval.Body.String(), "license_error", "approval RBAC must reject before the License gate")
+	require.NotContains(t, orgApproval.Body.String(), "license_error", "approval RBAC must reject without commercial gates")
 	capabilityBase := "/api/v1/model-deployments/1/operations/openai.chat_completions.v1/capabilities/streaming"
 	capabilityRead := serve(validMux, http.MethodGet, capabilityBase, "", auth.RoleOrgViewer)
 	require.NotEqual(t, http.StatusNotFound, capabilityRead.Code, capabilityRead.Body.String())
@@ -124,37 +117,37 @@ func TestRegisterModelDeploymentRoutesEnforcesRoleAndGatewayLicenseBoundaries(t 
 
 	missingLicenseMux := http.NewServeMux()
 	registerModelDeploymentRoutes(missingLicenseMux, handler, modelDeploymentRouteGuards{
-		read: readRoute, write: licensedWriteRoute(licensing.NewRuntime(nil)),
-		approve: licensedApprovalRoute(licensing.NewRuntime(nil)), safety: safetyRoute,
+		read: readRoute, write: writeRoute,
+		approve: approvalRoute, safety: safetyRoute,
 	})
-	require.Equal(t, http.StatusForbidden, serve(missingLicenseMux, http.MethodPost, groupBase+"/capability-probe-groups", "not-json", auth.RoleOrgAdmin).Code)
+	require.Equal(t, http.StatusBadRequest, serve(missingLicenseMux, http.MethodPost, groupBase+"/capability-probe-groups", "not-json", auth.RoleOrgAdmin).Code)
 	require.Equal(t, http.StatusBadRequest, serve(missingLicenseMux, http.MethodGet, groupBase+"/capability-probe-groups/invalid", "", auth.RoleOrgViewer).Code)
 	readWithoutLicense := serve(missingLicenseMux, http.MethodGet, "/api/v1/model-deployments", "", auth.RoleOrgViewer)
 	require.NotEqual(t, http.StatusForbidden, readWithoutLicense.Code, readWithoutLicense.Body.String())
 	writeWithoutLicense := serve(missingLicenseMux, http.MethodPost, "/api/v1/model-deployments", "not-json", auth.RoleOrgAdmin)
-	require.Equal(t, http.StatusForbidden, writeWithoutLicense.Code)
-	require.Contains(t, writeWithoutLicense.Body.String(), "license_error.missing")
+	require.Equal(t, http.StatusBadRequest, writeWithoutLicense.Code)
+	require.NotContains(t, writeWithoutLicense.Body.String(), "license_error")
 	discoveryWithoutLicense := serve(missingLicenseMux, http.MethodGet, "/api/v1/model-deployments/1/model-discovery", "", auth.RoleOrgAdmin)
-	require.Equal(t, http.StatusForbidden, discoveryWithoutLicense.Code)
-	require.Contains(t, discoveryWithoutLicense.Body.String(), "license_error.missing")
+	require.Equal(t, http.StatusBadRequest, discoveryWithoutLicense.Code)
+	require.NotContains(t, discoveryWithoutLicense.Body.String(), "license_error")
 	probeWithoutLicense := serve(
 		missingLicenseMux, http.MethodPost,
 		"/api/v1/model-deployments/1/operations/openai.chat_completions.v1/probes",
 		"not-json", auth.RoleOrgAdmin,
 	)
-	require.Equal(t, http.StatusForbidden, probeWithoutLicense.Code)
-	require.Contains(t, probeWithoutLicense.Body.String(), "license_error.missing")
+	require.Equal(t, http.StatusBadRequest, probeWithoutLicense.Code)
+	require.NotContains(t, probeWithoutLicense.Body.String(), "license_error")
 	approvalWithoutLicense := serve(missingLicenseMux, http.MethodPost, approvalPath, "not-json", auth.RolePlatformAdmin)
-	require.Equal(t, http.StatusForbidden, approvalWithoutLicense.Code)
-	require.Contains(t, approvalWithoutLicense.Body.String(), "license_error.missing")
+	require.Equal(t, http.StatusBadRequest, approvalWithoutLicense.Code)
+	require.NotContains(t, approvalWithoutLicense.Body.String(), "license_error")
 	capabilityReadWithoutLicense := serve(missingLicenseMux, http.MethodGet, capabilityBase, "", auth.RoleOrgViewer)
 	require.NotEqual(t, http.StatusForbidden, capabilityReadWithoutLicense.Code, capabilityReadWithoutLicense.Body.String())
 	capabilityProbeWithoutLicense := serve(missingLicenseMux, http.MethodPost, capabilityBase+"/probes", "not-json", auth.RoleOrgAdmin)
-	require.Equal(t, http.StatusForbidden, capabilityProbeWithoutLicense.Code)
-	require.Contains(t, capabilityProbeWithoutLicense.Body.String(), "license_error.missing")
+	require.Equal(t, http.StatusBadRequest, capabilityProbeWithoutLicense.Code)
+	require.NotContains(t, capabilityProbeWithoutLicense.Body.String(), "license_error")
 	capabilityApprovalWithoutLicense := serve(missingLicenseMux, http.MethodPost, capabilityBase+"/routing-approvals", "not-json", auth.RolePlatformAdmin)
-	require.Equal(t, http.StatusForbidden, capabilityApprovalWithoutLicense.Code)
-	require.Contains(t, capabilityApprovalWithoutLicense.Body.String(), "license_error.missing")
+	require.Equal(t, http.StatusBadRequest, capabilityApprovalWithoutLicense.Code)
+	require.NotContains(t, capabilityApprovalWithoutLicense.Body.String(), "license_error")
 	for _, safetyRequest := range []struct {
 		path string
 		body string
@@ -206,11 +199,11 @@ func TestRegisterModelDeploymentRoutesEnforcesRoleAndGatewayLicenseBoundaries(t 
 		require.Equal(t, http.StatusBadRequest, licensed.Code, "path=%s body=%s", path, licensed.Body.String())
 		require.Contains(t, licensed.Body.String(), "idempotency_required")
 		unlicensed := serve(missingLicenseMux, http.MethodPost, path, `{}`, auth.RoleOrgAdmin)
-		require.Equal(t, http.StatusForbidden, unlicensed.Code, "path=%s body=%s", path, unlicensed.Body.String())
-		require.Contains(t, unlicensed.Body.String(), "license_error.missing")
+		require.Equal(t, http.StatusBadRequest, unlicensed.Code, "path=%s body=%s", path, unlicensed.Body.String())
+		require.NotContains(t, unlicensed.Body.String(), "license_error")
 		viewer := serve(missingLicenseMux, http.MethodPost, path, `{}`, auth.RoleOrgViewer)
 		require.Equal(t, http.StatusForbidden, viewer.Code, "path=%s body=%s", path, viewer.Body.String())
-		require.NotContains(t, viewer.Body.String(), "license_error", "RBAC must reject before lifecycle License admission")
+		require.NotContains(t, viewer.Body.String(), "license_error", "RBAC must reject before lifecycle execution")
 	}
 	for _, role := range []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin} {
 		response := serve(validMux, http.MethodPost,
@@ -240,7 +233,7 @@ func TestRegisterModelDeploymentRoutesEnforcesRoleAndGatewayLicenseBoundaries(t 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/model-deployment-releases/rcr_route-one/promote", strings.NewReader(`{}`))
 	missingLicenseMux.ServeHTTP(unauthenticated, request)
 	require.Equal(t, http.StatusUnauthorized, unauthenticated.Code, unauthenticated.Body.String())
-	require.NotContains(t, unauthenticated.Body.String(), "license_error", "authentication must reject before License admission")
+	require.NotContains(t, unauthenticated.Body.String(), "license_error", "authentication must reject before execution admission")
 }
 
 func TestOpenAPIDocumentsCanonicalModelDeploymentIdempotencyContract(t *testing.T) {
@@ -302,14 +295,14 @@ func TestCanonicalDeploymentLifecycleContractParityAcrossOpenAPIAndDocs(t *testi
 		path               string
 		licenseDescription string
 	}{
-		{readPath + "/activate-initial", "Expansion requiring the Gateway License"},
-		{readPath + "/activate-successor", "Expansion requiring the Gateway License"},
-		{readPath + "/activate-staging-successor", "Expansion requiring the Gateway License"},
-		{readPath + "/start-canary", "Expansion requiring the Gateway License"},
-		{readPath + "/promote", "Expansion requiring the Gateway License"},
+		{readPath + "/activate-initial", "Expansion requiring current role authorization"},
+		{readPath + "/activate-successor", "Expansion requiring current role authorization"},
+		{readPath + "/activate-staging-successor", "Expansion requiring current role authorization"},
+		{readPath + "/start-canary", "Expansion requiring current role authorization"},
+		{readPath + "/promote", "Expansion requiring current role authorization"},
 		{readPath + "/cancel-canary", "Safety contraction available without a Gateway License"},
-		{readPath + "/rollback-stable", "Expansion requiring the Gateway License"},
-		{readPath + "/cutover-legacy", "Expansion requiring the Gateway License"},
+		{readPath + "/rollback-stable", "Expansion requiring current role authorization"},
+		{readPath + "/cutover-legacy", "Expansion requiring current role authorization"},
 		{readPath + "/rollback-legacy", "Emergency safety contraction available without a Gateway License"},
 	}
 	for _, write := range writes {

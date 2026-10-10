@@ -53,15 +53,15 @@ func TestOIDCConfigProjectsLicensedAvailability(t *testing.T) {
 		}
 	})
 
-	t.Run("unlicensed service is projected as unavailable", func(t *testing.T) {
+	t.Run("retired license runtime cannot disable configured OIDC", func(t *testing.T) {
 		h.SetLicenseRuntime(licensing.NewRuntime(nil))
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/config", nil)
 		rec := httptest.NewRecorder()
 
 		h.OIDCConfig(rec, req)
 
-		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"enabled":false`) {
-			t.Fatalf("expected unavailable config, got %d: %s", rec.Code, rec.Body.String())
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"enabled":true`) {
+			t.Fatalf("expected configured availability, got %d: %s", rec.Code, rec.Body.String())
 		}
 	})
 }

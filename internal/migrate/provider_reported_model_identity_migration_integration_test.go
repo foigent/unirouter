@@ -12,7 +12,7 @@ import (
 )
 
 func TestProviderReportedModelIdentityMigrationAppliesRollsBackAndReapplies(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 
 	var columnExists, ledgerExists bool
@@ -40,7 +40,7 @@ SELECT EXISTS (
 	require.False(t, columnExists)
 	require.False(t, ledgerExists)
 
-	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000068_provider_reported_model_identity"))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.PreRetirementMigrationsDir(t), "000068_provider_reported_model_identity"))
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT EXISTS (
          SELECT 1 FROM information_schema.columns

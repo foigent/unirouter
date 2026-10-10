@@ -200,7 +200,7 @@ func TestFreshInstallProcessRecoveryIntegration(t *testing.T) {
 	assertHead(a.Ledger[slices.Index(a.Ledger, id("000113"))-1])
 	run("publication_committed:"+id("000113"), false)
 	s = assertHead(id("000113"))
-	require.NoError(t, schemaauthority.VerifyRuntimeLedger(a.Ledger, s.Ledger), "M113 is otherwise runtime-supported")
+	require.Error(t, schemaauthority.VerifyRuntimeLedger(a.Ledger, s.Ledger), "M126 must not serve an incomplete pre-retirement installation")
 	_, err = verifyRuntimeAuthority(ctx, pool, a.Ledger)
 	require.Error(t, err, "including SKIP_MIGRATION must reject active M113")
 	run("expand_committed:"+schemaauthority.ObservationExpandHead, false)
@@ -250,7 +250,12 @@ func TestFreshInstallProcessRecoveryIntegration(t *testing.T) {
 	run("expand_committed:"+schemaauthority.XInsightPolicyExpandHead, false)
 	s = assertHead(schemaauthority.XInsightPolicyExpandHead)
 	require.Equal(t, "active", s.Record.State, "M123 cannot complete the current M124 installation")
-	run("expand_committed:"+schemaauthority.XInsightAdoptionExpandHead, false)
+	for _, head := range []string{schemaauthority.XInsightAdoptionExpandHead, schemaauthority.XInsightCredentialExpandHead} {
+		run("expand_committed:"+head, false)
+		s = assertHead(head)
+		require.Equal(t, "active", s.Record.State, "pre-retirement installation remains incomplete")
+	}
+	run("expand_committed:"+schemaauthority.CommercialLicenseRetirementHead, false)
 	s, err = installstate.RequireOrdinary(ctx, pool)
 	require.NoError(t, err)
 	require.Equal(t, "completed", s.Record.State)

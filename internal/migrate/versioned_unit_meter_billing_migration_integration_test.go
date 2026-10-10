@@ -14,7 +14,7 @@ import (
 )
 
 func TestVersionedUnitMeterBillingMigrationIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	execMigrationDown(t, ctx, pool, "000085_model_execution_plan_freeze_fence.down.sql")
 	execMigrationDown(t, ctx, pool, "000084_official_rate_source_currency_drafts.down.sql")
@@ -48,7 +48,7 @@ INSERT INTO enterprise_finance_rate_source_evidence (
 )`, orgID)
 	require.NoError(t, err)
 
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000083_versioned_unit_meter_billing.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000083_versioned_unit_meter_billing.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.ErrorContains(t, err, "versioned component source evidence exists")
@@ -84,7 +84,7 @@ SELECT
 	_, err = pool.Exec(ctx, string(down))
 	require.NoError(t, err)
 
-	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000083_versioned_unit_meter_billing"))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.PreRetirementMigrationsDir(t), "000083_versioned_unit_meter_billing"))
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT
   EXISTS(SELECT 1 FROM schema_migrations WHERE version='000083_versioned_unit_meter_billing'),

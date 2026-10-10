@@ -65,9 +65,9 @@ func contentMigrationLedger(t *testing.T, pool *pgxpool.Pool) []string {
 // execution of a historical M118 binary, host process, or deployed artifact.
 func contentMigrationM118(t *testing.T) (*pgxpool.Pool, string, []string) {
 	t.Helper()
-	pool := testutil.SetupMigratedTestDB(t)
-	dir := testutil.MigrationsDir(t)
-	artifact, err := schemaauthority.ExpectedLedger(dir)
+	pool := testutil.SetupPreRetirementTestDB(t)
+	dir := testutil.PreRetirementMigrationsDir(t)
+	artifact, err := testutil.PreRetirementLedger(t)
 	require.NoError(t, err)
 	require.Equal(t, schemaauthority.XInsightCredentialExpandHead, artifact[len(artifact)-1])
 	credentialDown, err := os.ReadFile(filepath.Join(dir, schemaauthority.XInsightCredentialExpandHead+".down.sql"))

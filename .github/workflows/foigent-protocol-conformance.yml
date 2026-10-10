@@ -74,7 +74,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Run pinned cross-language Conformance kit and verify UniRouter pin
-        uses: foigent/event-connector-spec/actions/source-neutral-v2@ad8fe7a38c9d7335657630baa8670dd07556b98c
+        uses: foigent/event-connector-spec/actions/source-neutral-v2@e01527350ab38d02c2bfdefe090ff72d6e48e749
         with:
           pin: contracts/foigent/event-connector-protocol.pin.json
           product: unirouter

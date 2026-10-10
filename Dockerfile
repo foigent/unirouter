@@ -5,7 +5,6 @@ ARG RUNTIME_COMMIT=unknown
 ARG RUNTIME_TREE=unknown
 ARG GOPROXY=https://proxy.golang.org,direct
 ARG UNIROUTER_RELEASE_TRUST_MODE=release
-ARG UNIROUTER_LICENSE_TRUST_BUNDLE_B64=
 ARG UNIROUTER_UPGRADE_TRUST_BUNDLE_B64=
 ENV GOPROXY=${GOPROXY}
 COPY go.mod go.sum ./
@@ -30,7 +29,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
         esac; \
         test "${#RUNTIME_VERSION}" -le 128 \
         || { echo "release runtime version exceeds 128 bytes" >&2; exit 1; }; \
-        for trust_bundle in "${UNIROUTER_LICENSE_TRUST_BUNDLE_B64}" "${UNIROUTER_UPGRADE_TRUST_BUNDLE_B64}"; do \
+        for trust_bundle in "${UNIROUTER_UPGRADE_TRUST_BUNDLE_B64}"; do \
           case "${trust_bundle}" in \
             ''|*[!A-Za-z0-9_-]*) echo "release trust bundles must be non-empty unpadded base64url" >&2; exit 1 ;; \
           esac; \
@@ -58,7 +57,6 @@ RUN --mount=type=cache,target=/go/pkg/mod \
         -X main.buildCommit=${RUNTIME_COMMIT} \
         -X main.buildTree=${RUNTIME_TREE} \
         -X github.com/uniroute/unirouter/internal/releasetrust.buildMode=${UNIROUTER_RELEASE_TRUST_MODE} \
-        -X github.com/uniroute/unirouter/internal/releasetrust.embeddedLicenseKeyRingBase64=${UNIROUTER_LICENSE_TRUST_BUNDLE_B64} \
         -X github.com/uniroute/unirouter/internal/releasetrust.embeddedUpgradeKeyRingBase64=${UNIROUTER_UPGRADE_TRUST_BUNDLE_B64}" \
       -o /app/uniroute ./cmd/uniroute/
 

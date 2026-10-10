@@ -45,7 +45,7 @@ func TestSourceBudgetRestoreRejectsUnprovedLedger(t *testing.T) {
 			require.NoError(t, err)
 			require.ErrorContains(t, tx.Commit(t.Context()), fault.commitError)
 			require.Equal(t, before, budgetCoverageRows(t, pool))
-			assertSourceFixtureLedger(t, pool, schemaauthority.XInsightCredentialExpandHead)
+			assertSourceFixtureLedger(t, pool, schemaauthority.CommercialLicenseRetirementHead)
 
 			_, err = pool.Exec(t.Context(), fault.sql)
 			require.NoError(t, err)
@@ -112,7 +112,7 @@ FROM execution_source_budget_coverage ORDER BY coverage_epoch DESC LIMIT 1`)
 }
 
 func TestSourceBudgetRestoreRejectsMissingCoverageWithContentLedger(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	require.NoError(t, budgetDown(t, pool))
 	_, err := pool.Exec(t.Context(), `INSERT INTO schema_migrations(version) VALUES('000119_execution_content_capture')`)
 	require.NoError(t, err)

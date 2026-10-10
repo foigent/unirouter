@@ -19,7 +19,6 @@ func TestMainWiresExtractedAgentCapabilityRoutes(t *testing.T) {
 	mainSource := string(source)
 	for _, fragment := range []string{
 		"registerAgentCapabilityRoutes(mux, agentCapabilityHandler",
-		"authorize:    agentLicenseGate",
 		"authenticate: gatewayAuth",
 		"rateLimit:    rateLimiter",
 	} {
@@ -29,7 +28,7 @@ func TestMainWiresExtractedAgentCapabilityRoutes(t *testing.T) {
 	}
 }
 
-func TestAgentCapabilityRoutesAuthenticateBeforeLicenseAndRateAdmission(t *testing.T) {
+func TestAgentCapabilityRoutesAuthenticateBeforeRateAdmissionWithoutCommercialGate(t *testing.T) {
 	t.Parallel()
 	var order []string
 	wrap := func(name string, callNext bool) agentCapabilityRouteGuard {
@@ -56,7 +55,7 @@ func TestAgentCapabilityRoutesAuthenticateBeforeLicenseAndRateAdmission(t *testi
 	if recorder.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNoContent)
 	}
-	if want := []string{"authenticate", "license", "rate"}; !reflect.DeepEqual(order, want) {
+	if want := []string{"authenticate", "rate"}; !reflect.DeepEqual(order, want) {
 		t.Fatalf("guard order = %v, want %v", order, want)
 	}
 }

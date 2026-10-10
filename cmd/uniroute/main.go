@@ -33,7 +33,6 @@ import (
 	"github.com/uniroute/unirouter/internal/filter"
 	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/invocationopt"
-	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
 	"github.com/uniroute/unirouter/internal/mediajob"
 	"github.com/uniroute/unirouter/internal/middleware"
@@ -595,28 +594,6 @@ func main() {
 	adminHandler.SetBillingReadinessProvider(billingSvc)
 	adminHandler.SetLimitPolicyReloader(limitPolicyService)
 	adminHandler.SetInvocationOptimization(invocationOptimizationManager, responseCacheService != nil)
-	legacyLicenseKey, err := licensing.ParsePublicKey(cfg.LicensePublicKey)
-	if err != nil {
-		log.Fatalf("Invalid license configuration: %v", err)
-	}
-	licenseKeyRing, err := licensing.ParsePublicKeyRing(cfg.LicensePublicKeys)
-	if err != nil {
-		log.Fatalf("Invalid commercial license key ring: %v", err)
-	}
-	licenseVerifier := licensing.NewCommercialVerifier(licenseKeyRing, legacyLicenseKey, cfg.LicenseExpiryWarningDays, cfg.LicenseDeploymentID)
-	licenseRuntime := licensing.NewRuntime(licenseVerifier)
-	adminHandler.SetLicenseVerifier(licenseVerifier)
-	adminHandler.SetLicenseRuntime(licenseRuntime)
-	initialLicenseStatus, err := adminHandler.ReconcileStoredCommercialLicense(context.Background())
-	if err != nil {
-		licenseRuntime.Replace(nil)
-		log.Printf("Commercial License startup reconciliation failed; runtime remains fail-closed: %v", err)
-		initialLicenseStatus = licenseRuntime.Status()
-	}
-	log.Printf("Commercial license status: %s enforceable=%t", initialLicenseStatus.Status, initialLicenseStatus.Enforceable)
-	eventSvc.SetAdmission(func() bool {
-		return licenseRuntime.Authorize(licensing.FeatureNotifications).Allowed
-	})
 	adminHandler.SetEventService(eventSvc)
 	if err := adminHandler.SetBillingMode(cfg.BillingMode); err != nil {
 		log.Fatalf("Invalid admin billing mode: %v", err)
@@ -694,9 +671,6 @@ func main() {
 		log.Fatalf("Invalid OIDC configuration: %v", err)
 	}
 	adminHandler.SetOIDCService(oidcService)
-	licenseRefreshCtx, stopLicenseRefresh := context.WithCancel(context.Background())
-	defer stopLicenseRefresh()
-	go runLicenseRefreshLoop(licenseRefreshCtx, adminHandler, cfg.LicenseRefreshInterval())
 
 	// Load sensitive words from settings and periodically refresh all instances.
 	go startSensitiveWordsReloadLoop(postgres.Pool, sensitiveFilter, time.Minute)
@@ -768,8 +742,6 @@ func main() {
 	}
 	captureExecutionContext := middleware.CaptureExecutionContext(sourceCapturer)
 	capturePublicContent := contentCaptureRuntime.captureClient
-	gatewayLicenseGate := licenseRuntime.Gate(licensing.FeatureGateway)
-	agentLicenseGate := licenseRuntime.GateAll(licensing.FeatureGateway, licensing.FeatureAgentCapabilities)
 	rateLimiter := middleware.RateLimit(redisClient.Client)
 	admissionMiddleware := middleware.AdmissionFromContext(admissionCtrl)
 	idempotencyStore := middleware.NewPostgresIdempotencyStore(postgres.Pool)
@@ -789,16 +761,16 @@ func main() {
 	// Repeat live authentication after the complete body is retained. A slow
 	// upload cannot carry a pre-revocation Grant, Credential, membership,
 	// capability, endpoint, or provider-liability snapshot into paid admission.
-	mux.Handle("POST /v1/chat/completions", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(captureExecutionContext(gatewayLicenseGate(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(chatHandler))))))))
-	mux.Handle("POST /v1/chat/completions/preflight", chatPreflightOperation(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(gatewayLicenseGate(middleware.StrictJSONIngress(newGatewayChatPreflightHandler(postgres.Pool, relay))))))
-	mux.Handle("POST /v1/embeddings", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, embeddingsPayloadGuard)(captureExecutionContext(gatewayLicenseGate(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(embeddingsHandler))))))))
-	mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(gatewayLicenseGate(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(responsesHandler))))))))
-	mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(gatewayLicenseGate(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(messagesHandler))))))))
-	mux.Handle("GET /v1/models", gatewayAuth(gatewayLicenseGate(admissionMiddleware(http.HandlerFunc(relay.HandleModels)))))
-	mux.Handle("POST /v1/media/jobs", middleware.GatewayAuthAcrossBufferedBody(mediaAuth, mediaPayloadGuard)(captureExecutionContext(gatewayLicenseGate(capturePublicContent(http.HandlerFunc(mediaHandler.Submit))))))
-	mux.Handle("GET /v1/media/jobs/{id}", mediaAuth(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Get))))
-	mux.Handle("POST /v1/media/jobs/{id}/cancel", mediaAuth(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Cancel))))
-	mux.Handle("GET /v1/media/jobs/{id}/content", mediaAuth(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Content))))
+	mux.Handle("POST /v1/chat/completions", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(captureExecutionContext(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(chatHandler)))))))
+	mux.Handle("POST /v1/chat/completions/preflight", chatPreflightOperation(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(middleware.StrictJSONIngress(newGatewayChatPreflightHandler(postgres.Pool, relay)))))
+	mux.Handle("POST /v1/embeddings", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, embeddingsPayloadGuard)(captureExecutionContext(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(embeddingsHandler)))))))
+	mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(responsesHandler)))))))
+	mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(messagesHandler)))))))
+	mux.Handle("GET /v1/models", gatewayAuth(admissionMiddleware(http.HandlerFunc(relay.HandleModels))))
+	mux.Handle("POST /v1/media/jobs", middleware.GatewayAuthAcrossBufferedBody(mediaAuth, mediaPayloadGuard)(captureExecutionContext(capturePublicContent(http.HandlerFunc(mediaHandler.Submit)))))
+	mux.Handle("GET /v1/media/jobs/{id}", mediaAuth(http.HandlerFunc(mediaHandler.Get)))
+	mux.Handle("POST /v1/media/jobs/{id}/cancel", mediaAuth(http.HandlerFunc(mediaHandler.Cancel)))
+	mux.Handle("GET /v1/media/jobs/{id}/content", mediaAuth(http.HandlerFunc(mediaHandler.Content)))
 	mux.Handle(
 		"GET /api/v1/integrations/xinsight/completed-executions",
 		completedFeedAuth(completedFeedSvc.Handler()),
@@ -816,7 +788,6 @@ func main() {
 		log.Fatalf("Content read runtime refused: %v", err)
 	}
 	registerAgentCapabilityRoutes(mux, agentCapabilityHandler, agentCapabilityRouteGuards{
-		authorize:    agentLicenseGate,
 		authenticate: gatewayAuth,
 		rateLimit:    rateLimiter,
 	})
@@ -877,12 +848,6 @@ func main() {
 	projectWriteRoute := func(h http.HandlerFunc) http.Handler {
 		return adminRoute(h)
 	}
-	licensedRoute := func(feature string, route func(http.HandlerFunc) http.Handler) func(http.HandlerFunc) http.Handler {
-		return func(h http.HandlerFunc) http.Handler {
-			gated := licenseRuntime.Gate(feature)(http.HandlerFunc(h))
-			return route(http.HandlerFunc(gated.ServeHTTP))
-		}
-	}
 
 	loginRateLimiter := middleware.LoginRateLimit(redisClient.Client, middleware.LoginRateLimitOptions{
 		Enabled:      cfg.LoginRateLimitEnabled,
@@ -896,8 +861,8 @@ func main() {
 	mux.Handle("POST /api/v1/auth/login", loginRateLimiter(http.HandlerFunc(adminHandler.Login)))
 	mux.HandleFunc("POST /api/v1/auth/logout", adminHandler.Logout)
 	mux.HandleFunc("GET /api/v1/auth/oidc/config", adminHandler.OIDCConfig)
-	mux.Handle("GET /api/v1/auth/oidc/start", licenseRuntime.Gate(licensing.FeatureOIDC)(http.HandlerFunc(adminHandler.OIDCStart)))
-	mux.Handle("GET /api/v1/auth/oidc/callback", licenseRuntime.Gate(licensing.FeatureOIDC)(http.HandlerFunc(adminHandler.OIDCCallback)))
+	mux.Handle("GET /api/v1/auth/oidc/start", http.HandlerFunc(adminHandler.OIDCStart))
+	mux.Handle("GET /api/v1/auth/oidc/callback", http.HandlerFunc(adminHandler.OIDCCallback))
 	mux.Handle("GET /api/v1/me", adminRoute(adminHandler.GetMe))
 	mux.Handle("PUT /api/v1/me/password", adminRoute(adminHandler.ChangePassword))
 	mux.HandleFunc("GET /docs", func(w http.ResponseWriter, r *http.Request) {
@@ -916,7 +881,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <h1>UniRouter API Documentation</h1>
 <p class="muted">Current API contract index. Admin APIs use JWT Bearer auth. OpenAI-family Gateway APIs use Bearer UniRouter keys or endpoint-scoped Agent capabilities; Anthropic Messages uses x-api-key plus exact anthropic-version 2023-06-01 and rejects Authorization. The private completed-execution feed accepts only its project- and network-bound feed service key.</p>
 <p>Admin Base URL: <code>/api/v1</code> &nbsp; Gateway Base URL: <code>/v1</code></p>
-<p><code>X-Request-ID</code> in every response is a server operation ID. Send caller correlation in <code>X-UniRouter-Client-Request-ID</code>. Chat, Embeddings, Responses and Messages accept <code>Idempotency-Key</code> for tenant/key/payload-bound metadata-only deduplication; model output bytes are never stored or replayed. Async image admission requires the key for a persistent project/key/payload-bound job identity. Canonical model-deployment creation, atomic sealed-release authoring and every canonical release lifecycle write also require it. Authoring and lifecycle mutations accept one strict JSON object up to 16384 bytes. Authoring atomically commits a durable receipt, server-projected route evidence and one sealed validated release, but never activates it; a fresh author response is 201 with <code>Location</code>, while an exact later replay is 200 with the same <code>Location</code> and replay headers. Lifecycle writes atomically retain their release, slot, event, qualification, audit and frozen replay receipt; canary cancellation and legacy rollback remain no-License safety contractions.</p>
+<p><code>X-Request-ID</code> in every response is a server operation ID. Send caller correlation in <code>X-UniRouter-Client-Request-ID</code>. Chat, Embeddings, Responses and Messages accept <code>Idempotency-Key</code> for tenant/key/payload-bound metadata-only deduplication; model output bytes are never stored or replayed. Async image admission requires the key for a persistent project/key/payload-bound job identity. Canonical model-deployment creation, atomic sealed-release authoring and every canonical release lifecycle write also require it. Authoring and lifecycle mutations accept one strict JSON object up to 16384 bytes. Authoring atomically commits a durable receipt, server-projected route evidence and one sealed validated release, but never activates it; a fresh author response is 201 with <code>Location</code>, while an exact later replay is 200 with the same <code>Location</code> and replay headers. Lifecycle writes atomically retain their release, slot, event, qualification, audit and frozen replay receipt; canary cancellation and legacy rollback remain safety contractions.</p>
 <p>Image V1 is an isolated job plane using <code>unirouter.openai.images.gpt-image.v1</code>. Output is available only through authenticated proxy routes for exactly seven days after durable persistence. Provider success plus durable output records an observed charge-eligibility fact; the current text-token rate table is not reused and no wallet amount is invented.</p>
 <p>Agent discovery is explicit: a supervisor exchanges its root API key, then registers each child with an attenuation-only capability. Capabilities last at most five minutes, normally refresh near minute three, grant model-gateway authority only, and never grant Tool, IAM, database or export authority. Model calls reserve cost, tokens, rolling rate, and concurrency on every signed ancestor before any upstream dispatch; Redis uncertainty denies new capability admission.</p>
 <table>
@@ -960,26 +925,26 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">POST</td><td><code>/api/v1/channels/{id}/test</code></td><td>Retired legacy mutation; returns 410, use canonical deployment probes</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/channels/{id}/provider-models</code></td><td>Read live provider model catalog without exposing credentials</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/model-endpoints</code></td><td>Canonical model, provider target, probe and runtime projection</td></tr>
-<tr><td class="method">GET</td><td><code>/api/v1/model-deployments</code></td><td>List canonical deployment identities and five independent truth axes without a Gateway License</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/model-deployments</code></td><td>List canonical deployment identities and five independent truth axes subject to role authorization</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/model-deployments/{deploymentID}</code></td><td>Read one exact deployment and operation without fallback</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/model-deployments</code></td><td>Transactionally create or exactly replay one deployment operation; requires a Gateway License and Idempotency-Key (24-hour actor-scoped receipt)</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-deployments</code></td><td>Transactionally create or exactly replay one deployment operation; requires role authorization and Idempotency-Key (24-hour actor-scoped receipt)</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes</code></td><td>Run one bounded real provider probe for Chat Completions, Embeddings, Responses or Messages; the latter two require the exact endpointprotocol profile and immutable public path</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/model-deployments/{deploymentID}/operations/{operationID}/production-approvals</code></td><td>Platform-admin append-only approval of one exact current Responses or Messages HTTPS probe; qualification only, with no public route or provider dispatch</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/model-deployments/{deploymentID}/operations/{operationID}/capabilities/{capabilityID}</code></td><td>Read the exact typed capability probe, approval and current qualification projection</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/model-deployments/{deploymentID}/operations/{operationID}/capabilities/{capabilityID}/probes</code></td><td>Run one server-owned typed capability probe; M88 initially supports only DeepSeek V4 Flash Chat streaming</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/model-deployments/{deploymentID}/operations/{operationID}/capabilities/{capabilityID}/routing-approvals</code></td><td>Platform-admin append-only approval for the exact current typed capability evidence to enter the current environment route pool</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/provider-connections/{connectionID}/pause</code></td><td>Emergency-pause one provider connection without changing sibling deployment states; available without a Gateway License</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/provider-credential-bindings/{bindingID}/revoke</code></td><td>Irreversibly retire and scrub one provider credential binding; available without a Gateway License</td></tr>
-<tr><td class="method">GET</td><td><code>/api/v1/model-deployment-releases</code></td><td>Read tenant-scoped public models, exact server-owned authoring baselines/options and actionable canonical v2 releases without a Gateway License</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases</code></td><td>Atomically author one sealed validated canonical v2 release from an exact server baseline; 201 on create, 200 on exact replay, Gateway License required; authoring does not activate</td></tr>
-<tr><td class="method">GET</td><td><code>/api/v1/model-deployment-releases/{releaseRef}</code></td><td>Read one canonical v2 release, live slot and server-owned action descriptors without a Gateway License</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases/{releaseRef}/activate-initial</code></td><td>Idempotently activate a parentless validated release as the first stable assignment; Gateway License required</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases/{releaseRef}/start-canary</code></td><td>Idempotently start the exact sealed child as a bounded canary; Gateway License required</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases/{releaseRef}/promote</code></td><td>Idempotently promote the exact active canary after current qualification; Gateway License required</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases/{releaseRef}/cancel-canary</code></td><td>Remove the exact canary as a no-License safety contraction; organization write role and Idempotency-Key remain required</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases/{releaseRef}/rollback-stable</code></td><td>Idempotently restore the retained qualified stable parent; Gateway License required</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases/{releaseRef}/cutover-legacy</code></td><td>Atomically replace the exact sealed v1 stable parent only after full Chat+Embeddings executable-plan parity; Gateway License required</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases/{releaseRef}/rollback-legacy</code></td><td>Restore the exact sealed and currently executable v1 parent as a no-License safety contraction; broken v2 health does not block rollback</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/provider-connections/{connectionID}/pause</code></td><td>Emergency-pause one provider connection without changing sibling deployment states; available subject to role authorization</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/provider-credential-bindings/{bindingID}/revoke</code></td><td>Irreversibly retire and scrub one provider credential binding; available subject to role authorization</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/model-deployment-releases</code></td><td>Read tenant-scoped public models, exact server-owned authoring baselines/options and actionable canonical v2 releases subject to role authorization</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases</code></td><td>Atomically author one sealed validated canonical v2 release from an exact server baseline; 201 on create, 200 on exact replay, role authorization and qualification required; authoring does not activate</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/model-deployment-releases/{releaseRef}</code></td><td>Read one canonical v2 release, live slot and server-owned action descriptors subject to role authorization</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases/{releaseRef}/activate-initial</code></td><td>Idempotently activate a parentless validated release as the first stable assignment; role authorization and qualification required</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases/{releaseRef}/start-canary</code></td><td>Idempotently start the exact sealed child as a bounded canary; role authorization and qualification required</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases/{releaseRef}/promote</code></td><td>Idempotently promote the exact active canary after current qualification; role authorization and qualification required</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases/{releaseRef}/cancel-canary</code></td><td>Remove the exact canary as a safety contraction; organization write role and Idempotency-Key remain required</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases/{releaseRef}/rollback-stable</code></td><td>Idempotently restore the retained qualified stable parent; role authorization and qualification required</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases/{releaseRef}/cutover-legacy</code></td><td>Atomically replace the exact sealed v1 stable parent only after full Chat+Embeddings executable-plan parity; role authorization and qualification required</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases/{releaseRef}/rollback-legacy</code></td><td>Restore the exact sealed and currently executable v1 parent as a safety contraction; broken v2 health does not block rollback</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/model-endpoints/activate</code></td><td>Retired legacy mutation; returns 410, use canonical release lifecycle actions</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/model-endpoints/canary</code></td><td>Retired legacy mutation; returns 410, use canonical release lifecycle actions</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/model-endpoints/recover</code></td><td>Retired legacy mutation; returns 410, use canonical release lifecycle actions</td></tr>
@@ -1055,8 +1020,8 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">POST</td><td><code>/api/v1/data-exchange/xinsight/connections/{project_id}/rotation/cancel</code></td><td>Terminally cancel staged replacement</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/settings</code></td><td>List deployment settings (platform admin)</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/settings/{key}</code></td><td>Update deployment setting (platform admin)</td></tr>
-<tr><td class="method">GET</td><td><code>/api/v1/license</code></td><td>License status (platform admin)</td></tr>
-<tr><td class="method">PUT</td><td><code>/api/v1/license</code></td><td>Import offline license (platform admin)</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/license</code></td><td>Deprecated: commercial license not required (platform admin)</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/license</code></td><td>Deprecated no-op; returns imported=false (platform admin)</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/users</code></td><td>List users</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/users</code></td><td>Create user</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/bootstrap/first-customer</code></td><td>First customer from exact strict-reset, runtime-reset shell or fresh-migration state; dry_run=true previews without writes; fresh production still requires recorded release evidence</td></tr>
@@ -1182,10 +1147,10 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("PUT /api/v2/projects/{id}/payload-policy", projectManagementRoute(adminHandler.PutProjectPayloadPolicyV2))
 	mux.Handle("GET /api/v2/projects/{id}/users/{user_id}/payload-policy", projectManagementRoute(adminHandler.GetUserPayloadPolicyV2))
 	mux.Handle("PUT /api/v2/projects/{id}/users/{user_id}/payload-policy", projectManagementRoute(adminHandler.PutUserPayloadPolicyV2))
-	mux.Handle("GET /api/v1/projects/{id}/model-sets", licensedRoute(licensing.FeatureModelGovernance, projectReadRoute)(adminHandler.ListProjectModelSets))
-	mux.Handle("PUT /api/v1/projects/{id}/model-sets", licensedRoute(licensing.FeatureModelGovernance, func(h http.HandlerFunc) http.Handler {
+	mux.Handle("GET /api/v1/projects/{id}/model-sets", projectReadRoute(adminHandler.ListProjectModelSets))
+	mux.Handle("PUT /api/v1/projects/{id}/model-sets", func(h http.HandlerFunc) http.Handler {
 		return adminRoute(h)
-	})(adminHandler.ReplaceProjectModelSets))
+	}(adminHandler.ReplaceProjectModelSets))
 	mux.Handle("GET /api/v1/projects/{id}/members", projectManagementRoute(adminHandler.ListProjectMembers))
 	mux.Handle("PUT /api/v1/projects/{id}/members/{user_id}", projectManagementRoute(adminHandler.UpsertProjectMember))
 	mux.Handle("DELETE /api/v1/projects/{id}/members/{user_id}", projectManagementRoute(adminHandler.DeleteProjectMember))
@@ -1209,7 +1174,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("GET /api/v1/dashboard/stats", dashboardRoute(adminHandler.DashboardStats))
 	mux.Handle("GET /api/v1/usage/analytics", usageRoute(adminHandler.UsageAnalytics))
 	registerCostOptimizationRoutes(mux, adminHandler, pricingReadRoute)
-	mux.Handle("GET /api/v1/internal-status", licensedRoute(licensing.FeatureNotifications, orgAdminRoute)(adminHandler.InternalStatus))
+	mux.Handle("GET /api/v1/internal-status", orgAdminRoute(adminHandler.InternalStatus))
 	mux.Handle("GET /api/v1/runtime/status", organizationRoleRoute(adminHandler.RuntimeStatus, auth.RolePlatformAdmin, auth.RoleOrgAdmin))
 	mux.Handle("GET /api/v1/error-docs", usageRoute(adminHandler.ListErrorDocs))
 
@@ -1231,27 +1196,27 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	registerProvenancePassportRoutes(mux, adminHandler, orgAdminRoute)
 	registerRiskControlRoutes(mux, adminHandler, orgAdminRoute)
 	registerModelGovernanceRoutes(mux, adminHandler, modelGovernanceRouteGuards{
-		organizationRead: licensedRoute(licensing.FeatureModelGovernance, func(h http.HandlerFunc) http.Handler {
+		organizationRead: func(h http.HandlerFunc) http.Handler {
 			return organizationRoleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleOrgViewer)
-		}),
-		organizationWrite: licensedRoute(licensing.FeatureModelGovernance, orgAdminRoute),
-		projectRead:       licensedRoute(licensing.FeatureModelGovernance, projectReadRoute),
-		modelSetRead: licensedRoute(licensing.FeatureModelGovernance, func(h http.HandlerFunc) http.Handler {
+		},
+		organizationWrite: orgAdminRoute,
+		projectRead:       projectReadRoute,
+		modelSetRead: func(h http.HandlerFunc) http.Handler {
 			return adminRoute(h)
-		}),
+		},
 	})
 	registerModelDeploymentRoutes(mux, adminHandler, modelDeploymentRouteGuards{
 		read: func(h http.HandlerFunc) http.Handler {
 			return organizationRoleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleOrgViewer)
 		},
-		write:   licensedRoute(licensing.FeatureGateway, orgAdminRoute),
-		approve: licensedRoute(licensing.FeatureGateway, platformRoute),
+		write:   orgAdminRoute,
+		approve: platformRoute,
 		safety:  orgAdminRoute,
 	})
 	registerInvocationOptimizationRoutes(
 		mux,
 		adminHandler,
-		licensedRoute(licensing.FeatureModelGovernance, orgAdminRoute),
+		orgAdminRoute,
 	)
 	registerPricingRoutes(mux, adminHandler, pricingRouteGuards{read: pricingReadRoute, write: platformRoute})
 	registerLimitPolicyRoutes(mux, adminHandler, limitPolicyRouteGuards{
@@ -1261,10 +1226,10 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 		write: orgAdminRoute,
 	})
 	registerGuardrailPolicyRoutes(mux, adminHandler, guardrailPolicyRouteGuards{
-		read: licensedRoute(licensing.FeatureGuardrails, func(h http.HandlerFunc) http.Handler {
+		read: func(h http.HandlerFunc) http.Handler {
 			return organizationRoleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin)
-		}),
-		write: licensedRoute(licensing.FeatureGuardrails, orgAdminRoute),
+		},
+		write: orgAdminRoute,
 	})
 
 	mux.Handle("GET /api/v1/users", orgAdminRoute(adminHandler.ListUsers))
@@ -1275,27 +1240,24 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("GET /api/v1/grants", billingRoute(adminHandler.ListGrants))
 	mux.Handle("POST /api/v1/grants", billingRoute(adminHandler.CreateGrant))
 
-	notificationEventReadLicensedRoute := licensedRoute(licensing.FeatureNotifications, notificationEventReadRoute)
-	notificationEventWriteLicensedRoute := licensedRoute(licensing.FeatureNotifications, notificationEventWriteRoute)
-	notificationOperatorLicensedRoute := licensedRoute(licensing.FeatureNotifications, notificationOperatorRoute)
-	mux.Handle("GET /api/v1/notification-events", notificationEventReadLicensedRoute(adminHandler.ListNotificationEvents))
-	mux.Handle("POST /api/v1/notification-events/{id}/acknowledge", notificationEventWriteLicensedRoute(adminHandler.AcknowledgeNotificationEvent))
-	mux.Handle("POST /api/v1/notification-events/{id}/resolve", notificationEventWriteLicensedRoute(adminHandler.ResolveNotificationEvent))
-	mux.Handle("GET /api/v1/notification-deliveries", notificationEventReadLicensedRoute(adminHandler.ListNotificationDeliveries))
-	mux.Handle("GET /api/v1/notification-webhooks", notificationOperatorLicensedRoute(adminHandler.ListNotificationWebhooks))
-	mux.Handle("POST /api/v1/notification-webhooks", notificationOperatorLicensedRoute(adminHandler.CreateNotificationWebhook))
-	mux.Handle("PUT /api/v1/notification-webhooks/{id}", notificationOperatorLicensedRoute(adminHandler.UpdateNotificationWebhook))
-	mux.Handle("POST /api/v1/notification-webhooks/{id}/verify-scope", notificationOperatorLicensedRoute(adminHandler.VerifyNotificationWebhookScope))
+	mux.Handle("GET /api/v1/notification-events", notificationEventReadRoute(adminHandler.ListNotificationEvents))
+	mux.Handle("POST /api/v1/notification-events/{id}/acknowledge", notificationEventWriteRoute(adminHandler.AcknowledgeNotificationEvent))
+	mux.Handle("POST /api/v1/notification-events/{id}/resolve", notificationEventWriteRoute(adminHandler.ResolveNotificationEvent))
+	mux.Handle("GET /api/v1/notification-deliveries", notificationEventReadRoute(adminHandler.ListNotificationDeliveries))
+	mux.Handle("GET /api/v1/notification-webhooks", notificationOperatorRoute(adminHandler.ListNotificationWebhooks))
+	mux.Handle("POST /api/v1/notification-webhooks", notificationOperatorRoute(adminHandler.CreateNotificationWebhook))
+	mux.Handle("PUT /api/v1/notification-webhooks/{id}", notificationOperatorRoute(adminHandler.UpdateNotificationWebhook))
+	mux.Handle("POST /api/v1/notification-webhooks/{id}/verify-scope", notificationOperatorRoute(adminHandler.VerifyNotificationWebhookScope))
 
 	mux.Handle("GET /api/v1/audit-logs", organizationRoleRoute(adminHandler.ListAuditLogs, auth.RolePlatformAdmin, auth.RoleOrgAdmin))
 	mux.Handle("GET /api/v2/audit-logs", organizationRoleRoute(adminHandler.ListAuditLogsV2, auth.RolePlatformAdmin, auth.RoleOrgAdmin))
 	mux.Handle("GET /api/v2/organizations/{org_id}/xinsight/setup-peer", adminRoute(adminHandler.GetXInsightSetupPeer))
 	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight/setup-previews", adminRoute(adminHandler.PreviewXInsightSetup))
-	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight/setups", licensedRoute(licensing.FeatureDataExchange, adminRoute)(adminHandler.CreateXInsightSetup))
+	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight/setups", adminRoute(adminHandler.CreateXInsightSetup))
 	mux.Handle("GET /api/v2/organizations/{org_id}/xinsight/setups/{installation_id}", adminRoute(adminHandler.GetXInsightSetupStatus))
-	mux.Handle("GET /api/v2/xinsight/setups/{installation_id}/credential-recovery-scope", licensedRoute(licensing.FeatureDataExchange, adminRoute)(adminHandler.GetXInsightCredentialRecoveryScope))
-	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight/setups/{installation_id}/credential-recovery/preview", licensedRoute(licensing.FeatureDataExchange, adminRoute)(adminHandler.PreviewXInsightCredentialRecovery))
-	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight/setups/{installation_id}/credential-recovery", licensedRoute(licensing.FeatureDataExchange, adminRoute)(adminHandler.ConfirmXInsightCredentialRecovery))
+	mux.Handle("GET /api/v2/xinsight/setups/{installation_id}/credential-recovery-scope", adminRoute(adminHandler.GetXInsightCredentialRecoveryScope))
+	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight/setups/{installation_id}/credential-recovery/preview", adminRoute(adminHandler.PreviewXInsightCredentialRecovery))
+	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight/setups/{installation_id}/credential-recovery", adminRoute(adminHandler.ConfirmXInsightCredentialRecovery))
 	mux.Handle("GET /api/v2/organizations/{org_id}/xinsight-policy-delegations", adminRoute(adminHandler.ListXInsightPolicyDelegations))
 	mux.Handle("POST /api/v2/organizations/{org_id}/xinsight-policy-delegations", adminRoute(adminHandler.CreateXInsightPolicyDelegation))
 	mux.Handle("PUT /api/v2/organizations/{org_id}/xinsight-policy-delegations/{delegation_id}", adminRoute(adminHandler.UpdateXInsightPolicyDelegation))
@@ -1324,14 +1286,14 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("GET /api/v1/integrations/xinsight/source-enrollments/projects", sourceEnrollmentMachineRoute(http.HandlerFunc(adminHandler.ListXInsightMachineEnrollmentProjects)))
 	mux.Handle("GET /api/v1/integrations/xinsight/source-enrollments/projects/{project_id}", sourceEnrollmentMachineRoute(http.HandlerFunc(adminHandler.GetXInsightMachineEnrollmentProject)))
 	mux.Handle("POST /api/v1/integrations/xinsight/source-enrollments/projects/{project_id}/registrations", sourceEnrollmentMachineRoute(http.HandlerFunc(adminHandler.RegisterXInsightSourceEnrollmentProject)))
-	mediaReadRoute := licensedRoute(licensing.FeatureGateway, projectReadRoute)
-	mediaWriteRoute := licensedRoute(licensing.FeatureGateway, projectWriteRoute)
+	mediaReadRoute := projectReadRoute
+	mediaWriteRoute := projectWriteRoute
 	mux.Handle("GET /api/v1/media-jobs/contract", mediaReadRoute(mediaHandler.Contract))
 	mux.Handle("GET /api/v1/media-jobs", mediaReadRoute(mediaHandler.AdminList))
 	mux.Handle("GET /api/v1/media-jobs/{id}", mediaReadRoute(mediaHandler.AdminGet))
 	mux.Handle("GET /api/v1/media-jobs/{id}/content", mediaReadRoute(mediaHandler.AdminContent))
 	mux.Handle("POST /api/v1/media-jobs/{id}/cancel", mediaWriteRoute(mediaHandler.AdminCancel))
-	dataExchangeRoute := licensedRoute(licensing.FeatureDataExchange, platformRoute)
+	dataExchangeRoute := platformRoute
 	mux.Handle("GET /api/v1/data-exchange/items", dataExchangeRoute(adminHandler.ListDataExchangeItems))
 	mux.Handle("POST /api/v1/data-exchange/items", dataExchangeRoute(adminHandler.CreateDataExchangeItem))
 	mux.Handle("PUT /api/v1/data-exchange/items/{id}", dataExchangeRoute(adminHandler.UpdateDataExchangeItem))
@@ -1354,9 +1316,9 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 		expansion: dataExchangeRoute,
 	})
 
-	registerGlobalControlRoutes(mux, adminHandler, platformRoute, licensedRoute(licensing.FeatureGuardrails, platformRoute))
+	registerGlobalControlRoutes(mux, adminHandler, platformRoute, platformRoute)
 	mux.Handle("POST /api/v1/channels/{id}/test", platformRoute(legacyModelMutationRetired))
-	mux.Handle("GET /api/v1/channels/{id}/provider-models", licensedRoute(licensing.FeatureGateway, platformRoute)(adminHandler.ListChannelProviderModels))
+	mux.Handle("GET /api/v1/channels/{id}/provider-models", platformRoute(adminHandler.ListChannelProviderModels))
 	mux.Handle("GET /api/v1/wallet/transactions/export", billingRoute(adminHandler.ExportWalletTransactions))
 	metricsHandler := middleware.MetricsMiddleware(httpRuntime.handler(mux))
 	corsHandler := middleware.CORSWithOptions(middleware.CORSOptions{
@@ -1524,9 +1486,6 @@ func applyReleaseTrust(cfg *config.Config) (releasetrust.Bundle, error) {
 	if err != nil {
 		return releasetrust.Bundle{}, err
 	}
-	if bundle.Mode == releasetrust.ModeRelease && strings.TrimSpace(cfg.LicensePublicKey) != "" {
-		return releasetrust.Bundle{}, fmt.Errorf("release binaries forbid the legacy runtime LICENSE_PUBLIC_KEY trust root")
-	}
 	if err := validateReleaseModeConfig(cfg, bundle.Mode); err != nil {
 		return releasetrust.Bundle{}, fmt.Errorf("release security configuration: %w", err)
 	}
@@ -1570,24 +1529,6 @@ func findMigrationsDir() string {
 		}
 	}
 	return "./migrations"
-}
-
-func runLicenseRefreshLoop(ctx context.Context, handler *admin.Handler, interval time.Duration) {
-	if interval <= 0 {
-		interval = 30 * time.Second
-	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if _, err := handler.RefreshStoredCommercialLicense(ctx); err != nil {
-				log.Printf("Commercial license refresh failed: %v", err)
-			}
-		}
-	}
 }
 
 // loadSensitiveWords loads the versioned deployment-wide input blocking policy.

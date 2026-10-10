@@ -33,8 +33,8 @@ func sourceMarkerState(t *testing.T, pool *pgxpool.Pool) string {
 }
 
 func TestSourceFactsExpandMarkerExactPredecessorAndRollbackIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t) // Always a new temporary database.
-	dir := testutil.MigrationsDir(t)
+	pool := testutil.SetupPreRetirementTestDB(t) // Always a new temporary database.
+	dir := testutil.PreRetirementMigrationsDir(t)
 	expected := sourceMarkerDefinition(t, pool)
 	require.Contains(t, expected, "NOT micro_evidence_written OR first_evidence_at IS NULL")
 	require.NoError(t, testutil.RewindEmptySourceFactsForLegacyTest(t.Context(), pool, dir))

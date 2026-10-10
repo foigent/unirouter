@@ -18,7 +18,7 @@ import (
 )
 
 func TestGuardrailTenantIsolationMigration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 
 	t.Run("platform cache and tenant-scope quotas are independently atomic", func(t *testing.T) {
 		ctx := t.Context()
@@ -265,7 +265,7 @@ func TestGuardrailTenantIsolationMigration(t *testing.T) {
 
 	t.Run("rollback refuses to delete durable gap history", func(t *testing.T) {
 		ctx := t.Context()
-		downSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000039_v1_guardrail_tenant_isolation.down.sql"))
+		downSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000039_v1_guardrail_tenant_isolation.down.sql"))
 		if err != nil {
 			t.Fatal(err)
 		}

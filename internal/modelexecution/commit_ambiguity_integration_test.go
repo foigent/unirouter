@@ -78,7 +78,7 @@ func (tx *ambiguousCommitTx) Commit(ctx context.Context) error {
 }
 
 func TestAuthorizeOwnerSurvivesCommitAmbiguityAcrossCompatibleExpandIntegration(t *testing.T) {
-	fixture := newExecutionFixture(t, true, false)
+	fixture := newPreRetirementExecutionFixture(t, true, false)
 	dir := "../../migrations"
 	require.NoError(t, testutil.RewindEmptySourceFactsForLegacyTest(t.Context(), fixture.pool, dir))
 	counterDown, err := os.ReadFile(filepath.Join(dir, schemaauthority.StreamCounterExpandHead+".down.sql"))

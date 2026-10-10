@@ -16,7 +16,7 @@ import (
 )
 
 func TestModelDeploymentCreateIdempotencyMigrationIsScopedImmutableAndReversibleWhenEmpty(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	execMigrationDown(t, ctx, pool, "000075_model_operation_production_qualification.down.sql")
 	var orgID, userID int64
@@ -61,7 +61,7 @@ UPDATE model_deployment_create_receipts SET idempotency_key_hash=repeat('c',64)
 	require.ErrorContains(t, err, "retained until expiry")
 
 	downSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000074_model_deployment_create_idempotency.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000074_model_deployment_create_idempotency.down.sql",
 	))
 	require.NoError(t, err)
 	downWire := string(downSQL)
@@ -89,7 +89,7 @@ UPDATE model_deployment_create_receipts SET idempotency_key_hash=repeat('c',64)
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT to_regclass('public.model_deployment_create_receipts') IS NOT NULL`).Scan(&tableExists))
 	require.False(t, tableExists)
-	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000074_model_deployment_create_idempotency"))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.PreRetirementMigrationsDir(t), "000074_model_deployment_create_idempotency"))
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT to_regclass('public.model_deployment_create_receipts') IS NOT NULL`).Scan(&tableExists))
 	require.True(t, tableExists)
@@ -161,7 +161,7 @@ VALUES ($1,$2,$1,'model_deployment.create.v1',$3,
 }
 
 func TestModelDeploymentCreateReceiptDownSerializesWithConcurrentWriter(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	execMigrationDown(t, ctx, pool, "000075_model_operation_production_qualification.down.sql")
@@ -185,7 +185,7 @@ VALUES ($1,'create-receipt-down-writer','fixture','org_admin','active','org_admi
 	var downPID int
 	require.NoError(t, downConn.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&downPID))
 	downSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000074_model_deployment_create_idempotency.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000074_model_deployment_create_idempotency.down.sql",
 	))
 	require.NoError(t, err)
 	downResult := make(chan error, 1)
@@ -244,7 +244,7 @@ SELECT COUNT(*) FROM schema_migrations
 }
 
 func TestModelDeploymentCreateReceiptDownSharesMigrationRunnerAdvisoryLock(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	execMigrationDown(t, ctx, pool, "000075_model_operation_production_qualification.down.sql")
@@ -263,7 +263,7 @@ func TestModelDeploymentCreateReceiptDownSharesMigrationRunnerAdvisoryLock(t *te
 	var downPID int
 	require.NoError(t, downConn.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&downPID))
 	downSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000074_model_deployment_create_idempotency.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000074_model_deployment_create_idempotency.down.sql",
 	))
 	require.NoError(t, err)
 	downResult := make(chan error, 1)
