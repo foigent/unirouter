@@ -1,5 +1,49 @@
 # Current Execution Record
 
+## Private PR 442 — CI timeout follow-up — 2026-10-10
+
+The approved candidate was committed and pushed as
+`35546e2ccabc954b9cbff4c7b446e542d46ee652`, and opened as private draft
+[PR 442](https://github.com/foigent/unirouter/pull/442). Protocol conformance
+[38026577534](https://github.com/foigent/unirouter/actions/runs/38026577534)
+passed. In CI [38026577564](https://github.com/foigent/unirouter/actions/runs/38026577564),
+Change Routing, Frontend Build and Browser E2E passed. Backend ordinary race,
+source-evidence and admin integrations passed, but the consolidated migration
+package exhausted its existing 20-minute package timeout while constructing
+another historical fixture. Docker stopped at its prerequisite gate and did
+not build an image.
+
+Historical M125 fixtures bypassed the existing process-scoped database template
+and replayed the complete historical install for every test. The follow-up
+reuses the existing template mechanism with separate exact schema ceilings.
+Each template still uses the strict artifact install; each test receives its
+own clone. Current M126 and historical M125 schemas and mutable data remain
+separate. The added regression checks distinct database identities, exact heads,
+commercial trigger presence/absence and isolation after data/schema mutations.
+This changes test fixtures only; no product migration, selector, CI timeout,
+required check, deployment or installation contract is changed.
+
+Local verification used only the previously approved synthetic PostgreSQL 16
+and Redis fixture. The isolation regression and testutil race suite passed.
+The unchanged consolidated runner passed 19 packages, including the complete
+migration package in 329.633 seconds. One content-capture observation exceeded
+its existing 250 ms admission deadline under that run; its failure remains in
+`/private/tmp/unirouter-oss-validation.upqUNT/formal-integration-pr442-fix/`.
+The same complete cmd/uniroute selector then passed separately (131 tests,
+158.766 seconds); no deadline was relaxed. The remaining original groups passed:
+source-media 849 tests, agentcap 1, limitpolicy 1 and workloadadmission 3.
+Logs are `/private/tmp/ur-oss-pr442-{cmd-recheck,source-media,agentcap,limitpolicy,workloadadmission}.jsonl`.
+The first cmd summary invocation rejected an undeclared group name after the
+tests passed; its JSON log was retained and inspected, without rerunning tests
+for a reporting error. This is combined Local evidence, not a claim that the
+first consolidated invocation passed or that resource contention is proven.
+
+The PR's latest exact-head checks remain the authority for CI acceptance.
+Actions budget protection was rechecked without changing it. No merge, public
+visibility change, release, Target operation or provider call is authorized by
+this follow-up. Native Linux installation remains pending. Experience file:
+no change required.
+
 ## Private review dispatch — approved, pre-dispatch record — 2026-10-10
 
 The owner explicitly confirmed committing and pushing the prepared open-source
