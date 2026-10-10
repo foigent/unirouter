@@ -369,11 +369,64 @@ os.kill(parent, signal.SIGKILL)
         require(status.get("status") == "not_required", "commercial License still required")
         self.passed("real NGINX console, administrator login and license not_required")
 
+    def failure_facts(self):
+        """Read only this fixture; emit authored labels and scalar states only."""
+        if not hasattr(self, "project"):
+            return
+        previous_phase = self.phase
+        try:
+            path = self.directory / "install-state.json"
+            if path.is_file():
+                state = json.loads(path.read_text())
+                allowed = {"fresh-plan", "fresh-apply", "record-release", "rotate-administrator", "start-console", "start-databases"}
+                self.result["installation_checkpoint"] = {
+                    "done": sorted(set(state.get("done", [])) & allowed),
+                    "pending": state.get("pending") if state.get("pending") in allowed else None}
+            ids = self.run("read failed fixture container identities", [self.docker, "ps", "-aq", "--filter",
+                "label=com.docker.compose.project=" + self.project]).splitlines()
+            if not ids:
+                return
+            containers = json.loads(self.run("inspect failed fixture states", [self.docker, "inspect", *ids]))
+            facts = {}
+            # Match only source-authored constant fatal prefixes. Dynamic log
+            # arguments, health output, container env and commands never leave.
+            source = (self.repo / "cmd/uniroute/main.go").read_text()
+            fatal_prefixes = re.findall(r'log\.Fatalf\("([^"%]+)', source)
+            health_markers = ("Connection refused", "bad address", "403 Forbidden", "503 Service Unavailable")
+            for container in containers:
+                name = container["Config"]["Labels"].get("com.docker.compose.service")
+                if name not in self.images:
+                    continue
+                state = container["State"]
+                health = state.get("Health", {})
+                item = {"running": bool(state.get("Running")), "exit_code": state.get("ExitCode"),
+                        "oom_killed": bool(state.get("OOMKilled")), "restart_count": container.get("RestartCount"),
+                        "health": health.get("Status") if health.get("Status") in ("starting", "healthy", "unhealthy") else None,
+                        "health_exit_codes": [v.get("ExitCode") for v in health.get("Log", [])],
+                        "health_markers": sorted({marker for v in health.get("Log", []) for marker in health_markers if marker in v.get("Output", "")})}
+                if name in ("backend", "frontend"):
+                    _, logs = self.run("classify failed " + name + " logs", [self.docker, "logs", "--tail", "100", container["Id"]], ok=False)
+                    item["fatal_prefixes"] = sorted({prefix for prefix in fatal_prefixes if prefix in logs})
+                    if state.get("Running"):
+                        port = "8080" if name == "backend" else "80"
+                        item["health_probe_exit_codes"] = {}
+                        for host in ("localhost", "127.0.0.1", "[::1]"):
+                            code, output = self.run("diagnose " + name + " loopback health", [self.docker, "exec", container["Id"],
+                                "wget", "-qO-", "-T", "5", "http://" + host + ":" + port + "/health/ready"], ok=False, timeout=15)
+                            item["health_probe_exit_codes"][host] = code
+                facts[name] = item
+            self.result["failed_container_facts"] = facts
+        except (Failed, OSError, ValueError, KeyError, subprocess.TimeoutExpired):
+            self.result["failure_diagnostics_incomplete"] = True
+        finally:
+            self.phase = previous_phase
+
     def execute(self):
         self.preflight()
         self.prepare()
         project = "ur-native-" + self.suffix
         directory = self.instances / "interrupted"
+        self.project, self.directory = project, directory
         self.negative_checks(directory, project)
         self.interrupt_after_plan(directory, project)
         self.installed_checks(directory, project)
@@ -402,6 +455,7 @@ def main():
     except (Failed, OSError, ValueError, KeyError, subprocess.TimeoutExpired, urllib.error.URLError) as exc:
         fixture.result.update(status="failed", phase=fixture.phase,
                               error=str(exc) if isinstance(exc, Failed) else type(exc).__name__)
+        fixture.failure_facts()
     finally:
         # Explicitly allowlisted facts only. No keys, raw logs, DSNs, env or JWT.
         args.report.write_text(json.dumps(fixture.result, indent=2) + "\n")

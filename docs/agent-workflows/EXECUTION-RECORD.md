@@ -27,6 +27,14 @@ was found. Local syntax/help/host-refusal, generated-wrapper syntax, workflow
 permissions/identity/artifact checks and whitespace checks pass. Native CI is
 pending, and its eventual result must be reported against its exact commit.
 
+First native run [38038209649](https://github.com/foigent/unirouter/actions/runs/38038209649)
+at `bd4d4b99461a775a54492f9fef373e8af725a02c` built both real images and the
+signed fixture, passed read-only/signature/collision checks and reached resume
+after the actual completed plan. It failed at `start-console`; that is not an
+installation pass. A test-only follow-up records allowlisted container health,
+exit/OOM state, source-authored fatal prefixes and loopback probe return codes,
+without raw logs or credentials. No product check or timeout is relaxed.
+
 This is test-only CI and documentation work, with no product contract or version
 change. The earlier documentation entry's pending approval is superseded by the
 explicit approval above. Private commit/push/PR authority continues; merge and
