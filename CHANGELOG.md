@@ -10,8 +10,9 @@ those build identities do not replace the product version.
 - Retire runtime commercial License admission, imports, refresh and resource-count limits. Authentication, tenant/project policy, financial controls, model qualification and signed upgrade trust remain.
 - M126 requires maintenance from the complete M125 ledger. Ordinary startup cannot apply it; old binaries do not support M126. Retain the pre-M126 backup and original Artifact for recovery.
 - Deprecated License APIs return `not_required`; imports return `imported=false` without modifying historical records.
-- Add a Linux/ECS installer candidate for a verified signed release: independent secrets, private Compose setup, formal fresh initialization and bounded resume. The verifier now exposes the exact signed manifest digest. Public packages and real Docker acceptance remain pending.
-- Local candidate only; this entry does not assert CI, installation, Target, Provider or Production acceptance.
+- Add a Linux/ECS installer candidate for a verified signed release: independent secrets, private Compose setup, formal fresh initialization and bounded resume. The verifier now exposes the exact signed manifest digest. Public packages remain pending; the native workflow records exact-artifact installation results.
+- Pin the customer frontend readiness probe to IPv4 loopback, matching its NGINX listener; native acceptance caught a running console marked unhealthy through `localhost`.
+- Unreleased candidate; exact CI and native installation evidence are recorded separately. This entry does not assert public release, Target, Provider or Production acceptance.
 
 ## [1.9.8] - 2026-10-09
 

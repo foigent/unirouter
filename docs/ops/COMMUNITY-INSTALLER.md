@@ -200,5 +200,24 @@ The single closing review found and resolved a runner ownership issue: helper
 CLI builds use `-buildvcs=false` because the harness runs as root against a
 runner-owned checkout. The backend release image still receives the exact
 commit, tree and version explicitly. No global Git trust setting is changed.
-Local syntax, workflow structure, wrapper syntax and host-refusal checks pass;
-actual native execution remains pending until the candidate CI run completes.
+Local syntax, workflow structure, wrapper syntax and host-refusal checks pass.
+
+Native runs [38038209649](https://github.com/foigent/unirouter/actions/runs/38038209649)
+and [38038691565](https://github.com/foigent/unirouter/actions/runs/38038691565)
+retain the failed `bd4d4b9` and `3a30ddd` candidates respectively. The diagnostic
+run reached fresh-apply, release registration and administrator-rotation
+checkpoints, then failed frontend health. The frontend was running with no
+restarts: readiness probe return codes were `localhost=1`, `127.0.0.1=0`,
+`[::1]=1`; the backend, PostgreSQL and Redis were healthy. This establishes a
+loopback-address mismatch, not a completed installation or post-install audit
+verification. Raw logs and credentials were not uploaded.
+
+The independently reviewed correction changes only the customer frontend probe
+to IPv4 loopback; endpoint meaning, listener, timeouts and retries stay intact.
+The exact corrected commit must pass the existing
+[Community Installer Acceptance workflow](https://github.com/foigent/unirouter/actions/workflows/community-installer.yml)
+with a newly generated synthetic package. Its allowlisted report is the
+installation result; a previous failed candidate's package is never reused.
+The workflow includes original identity, one-rotation, repeated-resume, login
+and License-retired assertions. Results apply only to the named commit and
+Linux amd64 fixture, not to an official distribution or existing ECS runtime.

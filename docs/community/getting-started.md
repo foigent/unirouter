@@ -8,8 +8,8 @@ does not establish an installed, qualified model-serving deployment.
 ## Choose a path
 
 - Linux server / ECS: see the [simplified installer preview](install-linux.md).
-  Its local implementation is separate from the still-pending public package
-  and real Docker acceptance.
+  Exact native acceptance is recorded separately from the still-pending
+  public package; the guide links to both scope and results.
 - Read/contribute: follow [development prerequisites](../../CONTRIBUTING.md).
   No provider credential or paid request is needed for isolated unit tests.
 - Empty database: use the exact artifact's

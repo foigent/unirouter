@@ -2,8 +2,9 @@
 
 [简体中文](install-linux.zh-CN.md) · [First model request](getting-started.md)
 
-**Preview: the installer is a local source candidate. A public download is not
-available yet, and real Linux/Docker installation acceptance is pending.**
+**Preview: this is an unreleased installer candidate; a public download is not
+available yet.** Exact Linux/Docker test results and their limits are recorded
+in the [native acceptance record](../ops/COMMUNITY-INSTALLER.md#native-acceptance-batch).
 The commands below are for a prepared, verified release. Cloning this repository
 does not supply its signed package, trusted verifier or published images.
 

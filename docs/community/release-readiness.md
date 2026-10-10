@@ -5,7 +5,9 @@ not ready for public release**.
 Candidate `c5958c57106e7073e74653652b38dc549f482e10` passed all six checks in
 [CI 38032678754](https://github.com/foigent/unirouter/actions/runs/38032678754)
 and [protocol 38032678752](https://github.com/foigent/unirouter/actions/runs/38032678752).
-This is CI evidence, not native installer or public-release acceptance.
+This is the prior implementation baseline. Newer candidate checks are visible
+in [PR 442](https://github.com/foigent/unirouter/pull/442/checks); CI evidence
+does not substitute for native installer or public-release acceptance.
 Main read back on 2026-10-10:
 `59c47b852b7372951c5c49b0e6b23df8c83817b9`, version 1.9.8.
 This task has not changed private visibility.
@@ -28,7 +30,7 @@ Chinese is secondary. Both remain welcome for questions and contributions.
 | --- | --- |
 | Reader/contributor entry | Candidate bilingual README and design rationale, source comparison, architecture, data guide, contribution map, DCO, reporting and roadmap |
 | Runtime License retirement | Local PG16 migration/refusal, retained history and new-runtime admission passed; actual Docker/NGINX maintenance acceptance remains pending |
-| Installation/first request | Existing ECS model/onboarding evidence is retained for its recorded versions; Local fresh/resume and real restore/rebase passed. Linux installer code, 23 offline cases and real signature interoperability passed; real Docker installation, public assets and the affected first-use path still need exact-artifact acceptance |
+| Installation/first request | Existing ECS model/onboarding evidence is retained for its recorded versions; Local fresh/resume and real restore/rebase passed. Linux installer code, 23 offline cases and real signature interoperability passed; the native workflow records exact-commit Docker installation results, while public assets and the affected first-use path need their own acceptance |
 | External Fork CI | Private integration-control and event-connector-spec inputs block complete reproducibility; distribution/access strategy unresolved |
 | Copyright/dependencies | Existing Foigent attribution retained; contributor authority and redistribution review need completion |
 | Source/history exposure | Review before visibility change; no unapproved deletion of historical material |

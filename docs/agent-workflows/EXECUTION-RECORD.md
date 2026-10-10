@@ -1,5 +1,30 @@
 # Current Execution Record
 
+## Native frontend health correction — 2026-10-10
+
+Diagnostic native run [38038691565](https://github.com/foigent/unirouter/actions/runs/38038691565)
+for `3a30ddd0e38b9ce667c3f26f4bff6da265cf9819` isolated the failed startup:
+frontend running with zero restarts, localhost/IPv6 readiness probes failing,
+and the same endpoint succeeding through IPv4 loopback. Backend, PostgreSQL
+and Redis were healthy; monitoring services were running. The installer had
+recorded fresh-apply, release-registration and administrator-rotation steps,
+but the post-install authority assertions had not run. This is retained failed
+evidence, not installation acceptance.
+
+Independent pre-code review from `/root/installer_precode_review` validated the
+one-line customer frontend healthcheck correction to `127.0.0.1`. NGINX and
+backend behavior, endpoint, retries and timeouts remain unchanged. Existing
+native assertions provide behavioral regression coverage; no string-only test
+is added. VERSION stays at the same unreleased 1.10.0 candidate, already higher
+than main 1.9.8; its CHANGELOG records the correction. Public-facing guides
+refer to the exact native workflow result and keep public distribution separate.
+
+The corrected candidate requires a fresh signed synthetic package and native
+run. Failed fixture identities remain in their original runs. Existing offline,
+release metadata and Compose checks remain applicable. No Target, Provider,
+Production or public publication claim is made. Experience file: no change
+required.
+
 ## Disposable Linux installer acceptance — authorized CI batch — 2026-10-10
 
 The owner explicitly approved GitHub-hosted disposable Ubuntu acceptance with

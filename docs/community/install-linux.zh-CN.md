@@ -2,8 +2,9 @@
 
 [English](install-linux.md) · [配置模型与第一次请求（英文）](getting-started.md)
 
-**预览版：安装器目前是本地源码候选，尚无公开下载包，也尚未完成真实 Linux／Docker
-安装验收。** 以下命令适用于已经准备并验证的正式发布目录。只克隆仓库还不会获得
+**预览版：安装器尚未正式发布，目前没有公开下载包。** 真实 Linux／Docker 测试结果
+及其适用范围见[安装验收记录（英文）](../ops/COMMUNITY-INSTALLER.md#native-acceptance-batch)。
+以下命令适用于已经准备并验证的发布目录。只克隆仓库还不会获得
 签名安装包、可信校验程序或已发布的镜像。
 
 安装器会准备 PostgreSQL、Redis、UR 和监控服务，生成必要的本地密码与配置，
