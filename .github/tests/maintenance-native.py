@@ -123,8 +123,43 @@ class Acceptance:
     def inspect(self, name):
         return json.loads(self.run("inspect fixture identity", ["docker", "inspect", name]))[0]
 
+    def prepare_runner_storage(self):
+        # These preinstalled packages belong to this disposable job, not a
+        # customer host. Use their existing owner; never delete SDK directories.
+        require(os.environ.get("GITHUB_ACTIONS") == "true"
+                and os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted"
+                and platform.system() == "Linux" and platform.machine() == "x86_64"
+                and os.geteuid() == 0, "storage preparation requires the disposable runner")
+        sdk = Path("/usr/local/lib/android/sdk")
+        manager = shutil.which("sdkmanager")
+        require(manager is not None and Path(manager).resolve().is_relative_to(sdk),
+                "preinstalled Android package manager unavailable")
+        packages = []
+        for version in ("27.3.13750724", "29.0.14206865", "30.0.16248370"):
+            directory = sdk / "ndk" / version
+            if not directory.exists():
+                continue
+            require(directory.is_dir() and directory.resolve() == directory,
+                    "unexpected NDK package path")
+            properties = (directory / "source.properties").read_text()
+            require(re.search(r"^Pkg.Revision\s*=\s*" + re.escape(version) + r"\s*$",
+                              properties, re.MULTILINE), "NDK package identity differs")
+            packages.append("ndk;" + version)
+        before = shutil.disk_usage("/var/lib/docker")
+        self.result["runner_storage_preparation"] = {
+            "uninstalled_packages": [], "free_bytes_before": before.free,
+            "total_bytes": before.total}
+        if packages:
+            self.run("uninstall unused disposable-runner NDK packages",
+                     [manager, "--sdk_root=" + str(sdk), "--uninstall", *packages])
+            require(all(not (sdk / "ndk" / package.split(";")[1]).exists()
+                        for package in packages), "NDK uninstall did not complete")
+            self.result["runner_storage_preparation"]["uninstalled_packages"] = packages
+        self.result["runner_storage_preparation"]["free_bytes_after"] = shutil.disk_usage("/var/lib/docker").free
+
     def preflight(self):
         self.result["tools"] = self.rollout.environment_check()
+        self.prepare_runner_storage()
         code, output = self.run("formal storage preflight before builds", [self.repo / "scripts/docker-storage-preflight.sh",
                  "--path", "/var/lib/docker", "--minimum-free-gib", "8", "--maximum-use-percent", "80"], ok=False)
         storage = {"exit_code": code}

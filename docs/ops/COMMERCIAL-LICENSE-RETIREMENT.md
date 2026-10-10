@@ -146,7 +146,7 @@ findings were corrected. Python 3.10 grammar, help, non-runner refusal before
 fixture creation, workflow identities/permissions/upload scope and whitespace
 checks passed. Exact local receipts are in
 `/private/tmp/unirouter-component-opensource-20261010/maintenance-offline-checks.json`
-and `maintenance-closing-review.md`. No native result exists yet.
+and `maintenance-closing-review.md`. Native acceptance has not yet passed.
 
 The earlier [fresh-installer acceptance](COMMUNITY-INSTALLER.md) explicitly
 excludes this maintenance path. This batch uses the separate explicit owner
@@ -164,3 +164,18 @@ report did not retain storage measurements, so it cannot identify the reason
 or establish maintenance acceptance. A test-only diagnostic follow-up retains
 numeric capacity/usage and fixed refusal categories while preserving the
 8-GiB-free/80-percent-used checks. No arbitrary command output is uploaded.
+
+
+Run [38064314648](https://github.com/foigent/unirouter/actions/runs/38064314648)
+at `5e2d354310e4e54e96227728f96cd402089d8ecb` retained the exact refusal:
+12.6 GiB available, 83 percent used, exceeding the unchanged 80-percent limit.
+It also stopped before builds, keys or database startup. The disposable runner
+image was `ubuntu24/20261004.327`. Its [official inventory](https://github.com/actions/runner-images/blob/ubuntu24/20261004.327/images/ubuntu/Ubuntu2404-Readme.md)
+includes three Android NDK packages unused by this server-only rehearsal.
+The test harness prepares only this newly provisioned GitHub VM by asking the
+preinstalled `sdkmanager` to uninstall `ndk;27.3.13750724`,
+`ndk;29.0.14206865` and `ndk;30.0.16248370`, when present and identity-verified.
+Unknown packages, user worktrees and other hosts are untouched. No directory
+removal command, tool installation or global configuration change is used.
+The report retains package IDs and numeric capacity before/after preparation;
+the same formal 8-GiB/80-percent storage checks still decide admission.

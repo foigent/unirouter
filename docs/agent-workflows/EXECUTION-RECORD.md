@@ -19,6 +19,16 @@ passed all seven PR checks: CI 38054463214, protocol 38054463203 and native
 installer 38054463238. These are private PR/fresh-install results, not the
 prepared maintenance test, exact-main, public distribution or Production.
 
+Native runs 38058875535 (`bb9b26be`) and 38064314648 (`5e2d3543`) stopped
+before builds/keys/database startup. The second report established 12.6 GiB
+free but 83 percent used, above the original 80-percent limit. The test-only
+follow-up uninstalls three exact, verified unused NDK packages through the
+preinstalled package manager on the disposable GitHub VM. The original storage
+thresholds and all deployment owners remain unchanged. Offline checks prove
+exact uninstall arguments, refusal on self-hosted machines, mismatched package
+identity and a package manager outside the expected SDK; no real local
+uninstall or service operation ran. Native upgrade/restore remains pending.
+
 ## Licensed dependency repositories and contributor CI — 2026-10-10
 
 The owner approved both complete integration-control and event-connector-spec
