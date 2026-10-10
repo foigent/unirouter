@@ -1,0 +1,73 @@
+name: Community Installer Acceptance
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/community-installer.yml
+      - .github/tests/community-installer.py
+      - deploy/customer/**
+      - cmd/uniroute/fresh_install_cli.go
+      - cmd/uniroute/upgrade_cli.go
+      - cmd/uniroute-upgrade/**
+      - internal/installstate/**
+      - internal/migrate/fresh_install.go
+      - Dockerfile
+      - frontend/Dockerfile
+      - frontend/nginx.conf
+      - infra/prometheus/**
+      - infra/grafana/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: community-installer-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux-install:
+    name: Linux Installer (synthetic release)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.25.12'
+          cache: false
+
+      - name: Set up supported Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+
+      - name: Test real signed installation and recovery
+        env:
+          EXPECTED_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
+          sudo env PATH="$PATH" GITHUB_ACTIONS=true \
+            RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" RUNNER_TEMP="$RUNNER_TEMP" \
+            python3 -B .github/tests/community-installer.py \
+            --expected-commit "$EXPECTED_COMMIT" \
+            --report "$RUNNER_TEMP/ur-community-native-report.json"
+
+      - name: Retain only allowlisted acceptance facts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: community-installer-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/ur-community-native-report.json
+          if-no-files-found: warn
+          retention-days: 7

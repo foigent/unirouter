@@ -131,14 +131,16 @@ An npm launcher, automatic Docker installation, upgrades and uninstall are
 separate follow-ups; the first path uses Python 3 and Docker Compose already
 installed on the server.
 
-## Proposed native acceptance batch
+## Native acceptance batch
 
 The next environment should be a disposable GitHub-hosted Ubuntu runner for
-this private candidate, rather than an existing ECS application host. This is
-a proposed test batch, not a workflow already dispatched or an approved release.
-The existing CI allocation and hard stop remain unchanged. A separate manual
-job keeps native installation distinguishable from the existing Docker Build
-check and avoids running the full install on every documentation edit.
+this private candidate, rather than an existing ECS application host. The owner
+approved this exact temporary environment, synthetic data, temporary test keys
+and service lifecycle on 2026-10-10. Official release publication remains separate.
+The existing CI allocation and hard stop remain unchanged. A separate scoped
+PR workflow keeps native installation distinguishable from the existing Docker
+Build check. Manual dispatch is also available after workflow registration; a
+branch-only new manual workflow cannot reliably provide its own first run.
 
 Before execution, bind the batch to the exact candidate commit and runner
 platform, inspect available Docker/Compose/Python versions and storage, and
@@ -175,6 +177,28 @@ This batch validates installation and console access. It makes no provider
 call, publishes no port beyond loopback, changes no ECS/firewall configuration,
 and does not replace the separate M125-to-M126 maintenance acceptance or
 published-download/trust-bootstrap checks. Existing provider evidence keeps its
-original version and environment limits. New test infrastructure and execution
-must have corresponding authorization before dispatch; the earlier local
-PostgreSQL/Redis approval alone does not cover this Docker environment.
+original version and environment limits. The separate explicit approval covers this test environment; the earlier local
+PostgreSQL/Redis approval was not extended by inference.
+
+The new batch received independent pre-code review from
+`/root/installer_precode_review` against `aff3eb4baf497e3c34ce21a07ee6b32928f51c16`.
+All eight required points are retained: exact head/tree/version, original signing
+interfaces, real digest references, real monitoring files, narrow transport fault
+injection, one fixed-subnet installation, authoritative no-op/identity readback
+and secret-free bounded execution.
+
+The implementation is `.github/workflows/community-installer.yml` with the
+CI-only `.github/tests/community-installer.py`. It runs the actual fresh plan,
+then uses a temporary Docker transport wrapper to lose that successful command
+response and kill only the installer parent. Normal `resume` runs without the
+wrapper. This proves recovery after a completed plan, not a crash within a
+migration. No product behavior is patched or simulated. ARM64, existing-database
+maintenance, provider setup and official distribution retain separate evidence
+requirements.
+
+The single closing review found and resolved a runner ownership issue: helper
+CLI builds use `-buildvcs=false` because the harness runs as root against a
+runner-owned checkout. The backend release image still receives the exact
+commit, tree and version explicitly. No global Git trust setting is changed.
+Local syntax, workflow structure, wrapper syntax and host-refusal checks pass;
+actual native execution remains pending until the candidate CI run completes.

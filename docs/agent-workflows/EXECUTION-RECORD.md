@@ -1,5 +1,37 @@
 # Current Execution Record
 
+## Disposable Linux installer acceptance — authorized CI batch — 2026-10-10
+
+The owner explicitly approved GitHub-hosted disposable Ubuntu acceptance with
+synthetic data, temporary signing keys and containers, within the existing CI
+budget and hard stop. ECS, provider calls, official releases, registry
+publication and permission/budget changes remain excluded.
+
+This batch adds a separate scoped PR workflow and a CI-only harness that builds
+the exact release-mode backend and frontend, prepares a real signed package
+through existing CLIs and runs the shipped installer. It verifies read-only
+checks, wrong-key/payload/resource refusal, a real fresh plan followed by
+response-loss interruption and normal resume, preserved plan/config/database
+identity, M126 and release registration, one admin password rotation, completed
+resume without changes, loopback login and retired-License status. Only an
+allowlisted summary leaves the disposable runner; raw logs and test secrets do
+not. This does not establish provider usage, official downloads, ARM64 or
+existing-database maintenance acceptance.
+
+Independent pre-code review and the single closing review were completed by
+`/root/installer_precode_review` against the design and exact candidate. The
+closing review identified the root/runner Git ownership failure in helper Go
+builds. Both test-helper builds now disable implicit VCS stamping; release
+backend commit/tree/version binding is unchanged. No other validated blocker
+was found. Local syntax/help/host-refusal, generated-wrapper syntax, workflow
+permissions/identity/artifact checks and whitespace checks pass. Native CI is
+pending, and its eventual result must be reported against its exact commit.
+
+This is test-only CI and documentation work, with no product contract or version
+change. The earlier documentation entry's pending approval is superseded by the
+explicit approval above. Private commit/push/PR authority continues; merge and
+public visibility remain separate. Experience file: no change required.
+
 ## Owner design rationale and publication follow-up — 2026-10-10
 
 The owner supplied the English and Simplified Chinese Why UniRouter essays and

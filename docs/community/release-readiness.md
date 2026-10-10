@@ -68,8 +68,8 @@ Chinese is secondary. Both remain welcome for questions and contributions.
   publication scope.
 - **Native installation:** this host has no Docker, Podman or Colima command.
   The existing Docker Build check builds a release-mode image and validates
-  Compose, but does not execute the community installer. The proposed bounded
-  acceptance batch is in [COMMUNITY-INSTALLER.md](../ops/COMMUNITY-INSTALLER.md#proposed-native-acceptance-batch).
+  Compose, but does not execute the community installer. The authorized bounded
+  acceptance batch is in [COMMUNITY-INSTALLER.md](../ops/COMMUNITY-INSTALLER.md#native-acceptance-batch).
 
 ## Proposed GitHub configuration
 
