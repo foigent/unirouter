@@ -12,11 +12,11 @@ administration console. It brings model access policies, routing, budgets,
 usage, billing and execution receipts together, so operators can inspect how a
 request was handled and what its charges are based on.
 
-> **Open-source preparation:** this branch is a candidate under private PR review.
-> Fresh installation without a commercial License passed on a disposable Linux amd64 runner.
-> Public downloads and complete external-fork CI are still pending. See
-> [release readiness](docs/community/release-readiness.md) for the tested commit,
-> scope and remaining work before using this candidate.
+> **Public source, installer preview:** the Apache-2.0 source is available.
+> Fresh Linux amd64 installation and maintenance removal of the commercial
+> License passed in disposable GitHub environments. Official signed downloads
+> remain pending. See [release readiness](docs/community/release-readiness.md)
+> for evidence, contributor CI status and the remaining distribution work.
 
 English is the primary language for public documentation and project updates;
 [Simplified Chinese](README.zh-CN.md) is the secondary language. Contributions

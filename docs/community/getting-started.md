@@ -22,7 +22,7 @@ steps below prepare model access and verify your first request.
 - Signed release: use [the customer template](../../deploy/customer/README.md)
   with an actual verified artifact. This candidate is not a published release.
 
-Once public:
+Clone the public source:
 
 ```sh
 git clone https://github.com/foigent/unirouter.git

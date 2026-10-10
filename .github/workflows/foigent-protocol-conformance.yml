@@ -73,6 +73,7 @@ jobs:
       - name: Checkout UniRouter
         uses: actions/checkout@v7
 
+      # Public, commit-pinned action: fork contributors need no repository secret.
       - name: Run pinned cross-language Conformance kit and verify UniRouter pin
         uses: foigent/event-connector-spec/actions/source-neutral-v2@e01527350ab38d02c2bfdefe090ff72d6e48e749
         with:

@@ -5,14 +5,13 @@ unredacted execution payloads in public issues or pull requests.
 
 ## Private reports
 
-When GitHub private vulnerability reporting is enabled for this repository,
-use **Security → Advisories → Report a vulnerability**:
+GitHub private vulnerability reporting is enabled for this public repository.
+Use **Security → Advisories → Report a vulnerability**:
 
 https://github.com/foigent/unirouter/security/advisories/new
 
-The repository is being prepared for public release. Enabling and verifying
-this reporting channel is a publication prerequisite; its availability has
-not yet been confirmed. If the private form is unavailable, open an issue
+The reporting setting was enabled and read back on 2026-10-11.
+If the private form is unavailable, open an issue
 requesting a confidential reporting channel **without including vulnerability
 details**. Do not assume a public issue or an unverified email address is a
 private channel.
@@ -24,7 +23,7 @@ to investigate. Remove secrets, real payloads and internal host details.
 ## Supported versions
 
 No public support window or production certification is established by this
-preparation branch. The first public release must state its supported versions
+source publication. The first public release must state its supported versions
 and security update procedure. Historical internal deployment evidence is not
 a support commitment for every installation.
 

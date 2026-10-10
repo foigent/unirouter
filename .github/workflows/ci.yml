@@ -181,28 +181,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Mint read-only Neutral N1 installation token
-        id: integration-control-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          client-id: ${{ secrets.INTEGRATION_CONTROL_APP_ID }}
-          private-key: ${{ secrets.INTEGRATION_CONTROL_APP_PRIVATE_KEY }}
-          owner: foigent
-          repositories: integration-control
-          permission-contents: read
-
       - name: Checkout exact Neutral D1 qualifier
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: foigent/integration-control
           ref: 52bf197fafef2c55ff7717887b2396fa9df7f877
-          token: ${{ steps.integration-control-token.outputs.token }}
+          token: ${{ github.token }}
           persist-credentials: false
           path: .integration-control-n1-d1
 
       - name: Qualify and materialize exact Neutral N1 release
         env:
-          GH_TOKEN: ${{ steps.integration-control-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -220,7 +210,7 @@ jobs:
             exit 1
           }
 
-          [[ -n "$GH_TOKEN" ]] || fail "read-only installation token is unavailable"
+          [[ -n "$GH_TOKEN" ]] || fail "read-only GitHub token is unavailable"
           [[ "$(git -C "$qualifier_root" rev-parse HEAD)" == "$qualifier_commit" ]] || fail "qualifier commit drift"
           [[ "$(git -C "$qualifier_root" rev-parse HEAD^{tree})" == "$qualifier_tree" ]] || fail "qualifier tree drift"
           # The exact Neutral-owned library is the authority for release assets,
