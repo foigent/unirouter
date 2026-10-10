@@ -14,8 +14,17 @@ existing N1 release page now links its complete accompanying license materials.
 The separately reviewed public-auth patch is activated without changing its
 resulting workflow hash, dependency identities, permissions or test coverage.
 A comment in the protocol workflow makes its public dependency explicit and
-ensures the real fork PR also exercises that action. Full upstream checks from
-`nicholaszming/unirouter` remain the acceptance condition for this candidate.
+ensures the real fork PR also exercises that action. Actual fork PR 443 from
+`nicholaszming/unirouter` passed all six checks: CI 38073940176 and protocol
+38073940188. Head `ba249cf7` and tested merge `ec59f102` share tree
+`d3b04759106281835bfc0aa3f2611b4c503584c2`; checkout/permission log readback
+confirms public dependency access with the read-only job token. The PR was
+normally merged after all required checks passed. Component community PRs 2
+and 11 and their exact-main checks also passed. Three starter issues (#444,
+#445 and #446) and the required English discussion categories are available;
+anonymous security-page reads expose the private reporting entry on all three
+repositories. This closes source publication and public contributor acceptance;
+formal signed distribution remains a separate next step.
 
 Native fresh-install and full M125-to-M126 maintenance/independent restore
 passed at `71b5a4ee` (runs 38067610346 and 38067610388). Exact-main protocol

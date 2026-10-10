@@ -1,5 +1,21 @@
 # UniRouter Current Status
 
+## Public source and contributor acceptance — 2026-10-11
+
+UniRouter, integration-control and event-connector-spec are public under
+Apache-2.0 for project-owned material, with English-first community entry points
+and Chinese navigation. The source candidate for UR 1.10.0/M126 passed full CI,
+fresh Linux installation, real disposable M125 maintenance and independent
+backup restore, then merged through PR 442. Public-contributor PR 443 also
+passed its full fork CI and protocol conformance without private App secrets.
+
+Public reporting channels, Discussions and three beginner issues are enabled.
+[Release readiness](../community/release-readiness.md) records exact identities,
+runs, licensing/disclosure scope and the remaining signed-distribution work.
+No official installation package/image or public support window is released by
+this source publication, and no ECS/Production installation was upgraded here.
+The Target observations below retain their original versions and timestamps.
+
 ## UR 1.9.3/M125 development Target and original XI recovery — 2026-10-07
 
 The operator's completed development rollout readback identifies UR 1.9.3 at

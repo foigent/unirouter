@@ -15,6 +15,10 @@ entry points and contributions welcome.
 - GitHub private vulnerability reporting is enabled for all three repositories.
   UR's English About/topics and Discussions are enabled; conduct concerns use
   the contact in the [Code of Conduct](../../CODE_OF_CONDUCT.md).
+- Three [starter contribution issues](starter-issues.md) are public with bounded
+  tasks, code/document entry points, acceptance criteria and newcomer labels.
+  [Discussions](https://github.com/foigent/unirouter/discussions) includes Q&A,
+  Ideas, Show and tell, and the default maintainer Announcements category.
 - Exact licensed dependency sources and accompanying notices were downloaded
   anonymously and compared with the reviewed Git bytes. All five historical N1
   assets matched their original SHA-256 values. The [N1 download page](https://github.com/foigent/integration-control/releases/tag/v0.1.0-candidate.1)
@@ -45,11 +49,16 @@ See the [installer runbook](../ops/COMMUNITY-INSTALLER.md) and
 The reviewed public CI activation removes the private App-token dependency,
 retains the exact dependency commits/trees and all five N1 asset checks, and
 uses only the read-only GitHub job token. No privileged PR event or reduced
-test suite is introduced. An actual fork under `nicholaszming/unirouter` is
-used to verify this change in upstream PR CI. The publication follow-up PR's
-checks record the result; until they pass, fork reproducibility is unverified.
-Existing required checks and branch protection remain unchanged. Existing App
-secret revocation is outside this batch.
+test suite is introduced. Actual cross-repository [PR 443](https://github.com/foigent/unirouter/pull/443)
+from `nicholaszming/unirouter` passed all six checks: the five standard jobs in
+[CI 38073940176](https://github.com/foigent/unirouter/actions/runs/38073940176)
+and [protocol 38073940188](https://github.com/foigent/unirouter/actions/runs/38073940188).
+The tested fork head is `ba249cf767d3b07118630417e75ec20d08d663dc`; CI checked
+out PR merge `ec59f102beff070991b377d052e7f4fe91087ac2`, with the same tree
+`d3b04759106281835bfc0aa3f2611b4c503584c2`. Job logs confirm the public
+qualifier/action inputs and read-only token permissions. No private App secret
+is referenced by either workflow. Existing required checks and branch protection
+remain unchanged. Existing App secret revocation is outside this batch.
 
 ## Remaining signed-distribution work
 

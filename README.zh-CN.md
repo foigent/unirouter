@@ -63,6 +63,8 @@ X-Insight 不进入模型调用的同步关键路径。UR 可以独立使用，X
 [Issue](https://github.com/foigent/unirouter/issues) 讨论，再按
 [贡献指南](CONTRIBUTING.md) 提交。贡献采用 Apache-2.0 与 DCO 来源声明。
 
+问题交流、想法与集成展示可前往 [Discussions](https://github.com/foigent/unirouter/discussions)。
+[首次贡献任务](docs/community/starter-issues.md)列出了具体入口与验收要求。
 敏感问题请按[安全报告说明](SECURITY.md)处理，社区协作遵循[行为准则](CODE_OF_CONDUCT.md)。
 
 ## 开源与商业服务

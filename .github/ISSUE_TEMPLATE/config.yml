@@ -1,5 +1,8 @@
 blank_issues_enabled: true
 contact_links:
+  - name: Questions and discussions
+    url: https://github.com/foigent/unirouter/discussions
+    about: Ask usage questions, propose ideas, or share integrations. English and Chinese are welcome.
   - name: Security reporting
     url: https://github.com/foigent/unirouter/blob/main/SECURITY.md
     about: Read confidential reporting instructions before sharing sensitive details.

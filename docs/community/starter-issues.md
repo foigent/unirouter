@@ -1,11 +1,13 @@
-# Starter issue drafts
+# Starter contribution issues
 
-These are prepared task cards, not published or assigned GitHub issues.
-Maintainers should confirm scope against the release being prepared before
-applying `good first issue` and assigning a reviewer. English is preferred for
-titles; Chinese discussion and translation contributions are welcome.
+These three tasks were published on 2026-10-11 with `good first issue` and
+`help wanted` labels. Follow the linked issue for current availability and
+review coordination. English is preferred for titles; Chinese discussion and
+translation contributions are welcome.
 
 ## 1. Add a Simplified Chinese getting-started guide
+
+[GitHub issue #444](https://github.com/foigent/unirouter/issues/444)
 
 **Problem:** the Chinese README links to an English-only model setup and
 first-request guide. A separate Chinese Linux installer guide already exists.
@@ -24,6 +26,8 @@ link. No deployment, provider account or paid request is needed. Do not invent
 download URLs or translate stable API field names.
 
 ## 2. Turn the standard-library first-request snippet into a runnable example
+
+[GitHub issue #445](https://github.com/foigent/unirouter/issues/445)
 
 **Problem:** getting started includes a Python snippet, but the existing client
 examples require framework/SDK dependencies. A small standalone file makes the
@@ -44,6 +48,8 @@ captured output. No real provider request is required. Link the example from
 the English guide and update the Chinese translation if present.
 
 ## 3. Add a Simplified Chinese architecture guide
+
+[GitHub issue #446](https://github.com/foigent/unirouter/issues/446)
 
 **Problem:** the Chinese entry point has a short UR/X-Insight explanation, but
 the deeper architecture guide is English-only.
