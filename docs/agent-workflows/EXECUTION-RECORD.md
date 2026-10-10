@@ -38,6 +38,16 @@ tests passed; its JSON log was retained and inspected, without rerunning tests
 for a reporting error. This is combined Local evidence, not a claim that the
 first consolidated invocation passed or that resource contention is proven.
 
+Follow-up `7cc3165b410046174d17963c608c196f49db94eb` passed frontend,
+browser and protocol checks. CI
+[38031024083](https://github.com/foigent/unirouter/actions/runs/38031024083)
+then passed 106 packages in the ordinary race step, but `internal/testdb` failed:
+its source-order guard still expected the template helper's old two-argument
+call. The guard is updated to the exact three-argument call while retaining
+all checks that DSN/server preflight precedes database writes. Both testdb and
+testutil race suites passed locally. That CI run did not reach the consolidated
+group and does not prove the earlier timeout resolved.
+
 The PR's latest exact-head checks remain the authority for CI acceptance.
 Actions budget protection was rechecked without changing it. No merge, public
 visibility change, release, Target operation or provider call is authorized by

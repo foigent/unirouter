@@ -92,7 +92,7 @@ func TestRequiredDatabasePreflightIsWiredBeforeWrites(t *testing.T) {
 	shared := read("../testutil/testdb.go", "func SetupTestDB(", "// SetupIsolatedTestDB")
 	assertOrder(shared, "PreflightDSN()", "pgxpool.New(ctx, dsn)", "PreflightServer(ctx, pool)", "TruncateAll(t, pool)")
 	template := read("../testutil/testdb.go", "func setupMigratedTestDBFromTemplate(", "func ensureMigratedTestDBTemplate(")
-	assertOrder(template, "PreflightDSN()", "ensureMigratedTestDBTemplate(t, baseDSN)", "PreflightServer(ctx, adminPool)", "CREATE DATABASE")
+	assertOrder(template, "PreflightDSN()", "ensureMigratedTestDBTemplate(t, baseDSN, ceiling)", "PreflightServer(ctx, adminPool)", "CREATE DATABASE")
 	admin := read("../testutil/testdb.go", "func ensureMigratedTestDBTemplate(", "func testDatabaseUnavailable(")
 	assertOrder(admin, "pgxpool.New(ctx, adminDSN)", "PreflightServer(ctx, adminPool)", "CREATE DATABASE")
 }
