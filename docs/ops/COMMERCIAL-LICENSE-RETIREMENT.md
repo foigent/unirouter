@@ -179,3 +179,11 @@ Unknown packages, user worktrees and other hosts are untouched. No directory
 removal command, tool installation or global configuration change is used.
 The report retains package IDs and numeric capacity before/after preparation;
 the same formal 8-GiB/80-percent storage checks still decide admission.
+
+Run [38064998204](https://github.com/foigent/unirouter/actions/runs/38064998204)
+at `66d96420b8de27a191b3fe3f94ea9ee32784798b` refused before uninstall/builds:
+the preinstalled SDK manager was not discoverable through `PATH`. The runner's
+[exact image build script](https://github.com/actions/runner-images/blob/ubuntu24/20261004.327/images/ubuntu/scripts/build/install-android-sdk.sh)
+installs it at `/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager`.
+The harness now checks and invokes that exact executable within the SDK root,
+without changing `PATH`, installing a tool or expanding the package allowlist.

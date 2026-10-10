@@ -130,9 +130,11 @@ class Acceptance:
                 and os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted"
                 and platform.system() == "Linux" and platform.machine() == "x86_64"
                 and os.geteuid() == 0, "storage preparation requires the disposable runner")
+        self.phase = "prepare disposable runner storage"
         sdk = Path("/usr/local/lib/android/sdk")
-        manager = shutil.which("sdkmanager")
-        require(manager is not None and Path(manager).resolve().is_relative_to(sdk),
+        manager = sdk / "cmdline-tools/latest/bin/sdkmanager"
+        require(manager.is_file() and os.access(manager, os.X_OK)
+                and manager.resolve().is_relative_to(sdk),
                 "preinstalled Android package manager unavailable")
         packages = []
         for version in ("27.3.13750724", "29.0.14206865", "30.0.16248370"):
