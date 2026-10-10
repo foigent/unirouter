@@ -1,5 +1,53 @@
 # Current Execution Record
 
+## Licensed dependency repositories and contributor CI — 2026-10-10
+
+The owner approved both complete integration-control and event-connector-spec
+repositories under Apache-2.0, matching UR. This supersedes the prior unresolved
+rights/consumer-kit decision. X-Insight remains a later open-source plan;
+no X-Insight source or runtime is changed. Work stays in private candidates: [integration-control PR 1](https://github.com/foigent/integration-control/pull/1) and [event-connector-spec PR 10](https://github.com/foigent/event-connector-spec/pull/10).
+
+integration-control `52bf197fafef2c55ff7717887b2396fa9df7f877` adds 14 files
+to `db10730d64a9302887ad59c53921e98c757927e7`. event-connector-spec
+`e01527350ab38d02c2bfdefe090ff72d6e48e749` adds 13 files to
+`ad8fe7a38c9d7335657630baa8670dd07556b98c`. Every previously tracked byte
+and file mode is unchanged in both repositories, including release manifests,
+original READMEs, scripts and workflow files. English `.github/README.md`
+provides the public entry without rewriting a release-bound root README.
+Both retain vendor licenses and include explicit historical grant/delivery
+instructions. Separate accompanying license review archives are outside N1's
+strict five-asset input; no historical artifact or tag was rewritten.
+
+Local component verification passed on those exact commits: full N1 D1 with
+default clean-checkout and official-origin checks, tests/race/vet/schema/fixtures,
+two equal builds and refusal/idempotence checks; full protocol Authority Kit
+with immutable predecessors; and Git-less action snapshot Consumer Kit with
+83 current cases / 29 classes. The actual snapshot includes the license files.
+34 and 41 relative links respectively, forms and exact Apache text equality
+passed. Evidence is retained under
+`/private/tmp/unirouter-component-opensource-20261010/`.
+
+Independent pre-code review by `/root/opensource_precode_review` required
+separate CI-carrier and runtime protocol identities, complete accompanying
+historical license materials, and honest fork versus upstream gate claims.
+A follow-up read-only review confirmed the existing provenance test must pin
+the new action carrier separately. UR updates only the two workflow carrier
+pins, N1 tree and that exact test expectation; runtime constants, Source facts,
+product pin, golden bytes, permissions and test coverage remain unchanged.
+The public authentication patch stays inactive while dependencies are private.
+
+UR documentation head `096e15343e2c8fb9348240fa30757cc9c990d78b` passed
+all seven checks: CI 38044957141, protocol 38044957124 and native installer
+38044957126. The new dependency-pin batch needs its own CI. Local UR provenance-passport tests, the snapshot product-pin verifier, all 19 release-policy checks, workflow YAML, changed-section links and unchanged runtime-identity checks passed. Existing Actions
+budget headroom and hard stop were verified before private candidate pushes;
+no budget or required check was changed. Public visibility, anonymous reads,
+real fork execution, reporting availability, official assets, merge and target
+deployment remain distinct publication/acceptance actions.
+
+This batch changes license/community documentation and CI carrier bindings,
+not product behavior. Product version stays at the existing unreleased 1.10.0.
+Experience file: no change required.
+
 ## English-first GitHub entry and accepted installer evidence — 2026-10-10
 
 The owner reaffirmed English as the primary GitHub language. The default

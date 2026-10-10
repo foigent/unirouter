@@ -195,7 +195,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: foigent/integration-control
-          ref: db10730d64a9302887ad59c53921e98c757927e7
+          ref: 52bf197fafef2c55ff7717887b2396fa9df7f877
           token: ${{ steps.integration-control-token.outputs.token }}
           persist-credentials: false
           path: .integration-control-n1-d1
@@ -208,8 +208,8 @@ jobs:
           set -euo pipefail
 
           readonly repository="foigent/integration-control"
-          readonly qualifier_commit="db10730d64a9302887ad59c53921e98c757927e7"
-          readonly qualifier_tree="1d91cdecc5ea6c587b6bd03706f0f873657c12e3"
+          readonly qualifier_commit="52bf197fafef2c55ff7717887b2396fa9df7f877"
+          readonly qualifier_tree="d4b23e3903b4173c7f6aa1f7046221ada935e4aa"
           readonly qualifier_root="$GITHUB_WORKSPACE/.integration-control-n1-d1"
           readonly asset_dir="$RUNNER_TEMP/integration-control-n1-assets"
           readonly consumer_dir="$RUNNER_TEMP/integration-control-n1-consumer"

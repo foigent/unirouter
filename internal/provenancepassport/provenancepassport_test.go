@@ -138,11 +138,14 @@ func TestProductRuntimeRegistryStillContainsOnlyReferenceConnector(t *testing.T)
 	if err != nil {
 		t.Fatalf("read protocol conformance workflow: %v", err)
 	}
+	// This licensed CI carrier adds only community/license files to the original
+	// authority source. Runtime provenance keeps ProductProtocolCommit unchanged.
+	const conformanceActionCommit = "e01527350ab38d02c2bfdefe090ff72d6e48e749"
 	if !bytes.Contains(
 		workflow,
-		[]byte("uses: foigent/event-connector-spec/actions/source-neutral-v2@"+ProductProtocolCommit),
+		[]byte("uses: foigent/event-connector-spec/actions/source-neutral-v2@"+conformanceActionCommit),
 	) {
-		t.Fatal("product CI no longer pins the exact shared protocol authority commit")
+		t.Fatal("product CI no longer pins the exact licensed conformance carrier commit")
 	}
 }
 
