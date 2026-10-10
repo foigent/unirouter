@@ -89,8 +89,10 @@ improvements are welcome. Start with the [contribution map](docs/community/contr
 discuss substantial changes in an issue, and follow the [contribution guide](CONTRIBUTING.md).
 Contributions use Apache-2.0 and the Developer Certificate of Origin (DCO).
 
-Use [Issues](https://github.com/foigent/unirouter/issues) for reproducible bugs
-and scoped proposals. See [Security](SECURITY.md) for sensitive reports and
+Use [Discussions](https://github.com/foigent/unirouter/discussions) for questions,
+ideas and integrations, and [Issues](https://github.com/foigent/unirouter/issues)
+for reproducible bugs and scoped proposals. The [starter tasks](docs/community/starter-issues.md)
+include concrete entry points and acceptance criteria. See [Security](SECURITY.md) for sensitive reports and
 [Code of Conduct](CODE_OF_CONDUCT.md) for participation expectations.
 
 ## License and commercial services

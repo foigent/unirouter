@@ -22,9 +22,9 @@ a reproduction before implementation.
 
 A good beginner issue identifies the symptom, entry file, expected behavior,
 verification and a maintainer able to review it. Apply `good first issue`
-or `help wanted` only after confirming those details. These labels/issues
-have not been created by this documentation change.
+or `help wanted` only after confirming those details.
 
-Maintainers can start from the [three prepared task cards](starter-issues.md).
+Start with the [three published contribution tasks](starter-issues.md), or browse
+[open beginner issues](https://github.com/foigent/unirouter/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
 
 Follow [CONTRIBUTING](../../CONTRIBUTING.md) for development, Fork/PR and DCO.
