@@ -94,7 +94,7 @@ func TestFreshEnvelopeSupersessionNeverRewritesCommittedPlan(t *testing.T) {
 }
 
 func TestFreshCompletionRetainsHistoricalM118AndSeparatesM119(t *testing.T) {
-	for _, head := range []string{schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead} {
+	for _, head := range []string{schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.CommercialLicenseRetirementHead} {
 		t.Run(head, func(t *testing.T) {
 			r := testRecord(t)
 			for r.Plan.Artifact.Ledger[len(r.Plan.Artifact.Ledger)-1] != head {
@@ -116,7 +116,7 @@ func TestFreshCompletionRetainsHistoricalM118AndSeparatesM119(t *testing.T) {
 			if err != nil || decoded.Completion.MigrationSHA256 != r.Completion.MigrationSHA256 {
 				t.Fatalf("historical completion changed: %v", err)
 			}
-			if head == schemaauthority.ContentCaptureExpandHead || head == schemaauthority.ContentReclaimExpandHead {
+			if head == schemaauthority.ContentCaptureExpandHead || head == schemaauthority.ContentReclaimExpandHead || head == schemaauthority.CommercialLicenseRetirementHead {
 				r.Completion.MigrationSHA256 = "sha256:" + r.Plan.Artifact.Files[schemaauthority.BudgetSnapshotExpandHead+".up.sql"]
 				if err := r.Validate(); err == nil {
 					t.Fatal("M118 proof prematurely completes M119 installation")

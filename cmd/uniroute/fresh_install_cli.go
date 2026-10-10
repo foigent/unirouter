@@ -283,7 +283,7 @@ func executeFreshInstallObserved(ctx context.Context, owner *migrate.FreshOwner,
 			return err
 		}
 	}
-	for _, version := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.XInsightPolicyExpandHead, schemaauthority.XInsightAdoptionExpandHead, schemaauthority.XInsightCredentialExpandHead} {
+	for _, version := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.XInsightPolicyExpandHead, schemaauthority.XInsightAdoptionExpandHead, schemaauthority.XInsightCredentialExpandHead, schemaauthority.CommercialLicenseRetirementHead} {
 		s, err := owner.Snapshot(ctx)
 		if err != nil {
 			return err
@@ -301,7 +301,7 @@ func executeFreshInstallObserved(ctx context.Context, owner *migrate.FreshOwner,
 				return nil
 			}
 		}
-		if version == schemaauthority.ContentCaptureExpandHead || version == schemaauthority.ContentReclaimExpandHead || version == schemaauthority.PreDispatchExpandHead || (version == schemaauthority.ScopedContentExpandHead || (version == schemaauthority.XInsightPolicyExpandHead || (version == schemaauthority.XInsightAdoptionExpandHead || version == schemaauthority.XInsightCredentialExpandHead))) {
+		if version == schemaauthority.ContentCaptureExpandHead || version == schemaauthority.ContentReclaimExpandHead || version == schemaauthority.PreDispatchExpandHead || (version == schemaauthority.ScopedContentExpandHead || (version == schemaauthority.XInsightPolicyExpandHead || (version == schemaauthority.XInsightAdoptionExpandHead || version == schemaauthority.XInsightCredentialExpandHead || version == schemaauthority.CommercialLicenseRetirementHead))) {
 			final = func(ctx context.Context, tx pgx.Tx) error {
 				if version == p.Artifact.Ledger[len(p.Artifact.Ledger)-1] {
 					return verifyFreshCompletion(ctx, tx, p.Artifact.Ledger)

@@ -112,7 +112,7 @@ func TestUpdateSettingRollsBackWhenAuditInsertFails(t *testing.T) {
 	require.True(t, rolledBack)
 }
 
-func TestUpdateLicenseRollsBackWhenAuditInsertFails(t *testing.T) {
+func TestRetiredLicenseDoesNotBeginAnAuditTransaction(t *testing.T) {
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	licenseJSON := p6f35SignedLicense(t, privateKey, "p6f35-audit-failure", "2026-12-31T00:00:00Z")
@@ -140,10 +140,10 @@ func TestUpdateLicenseRollsBackWhenAuditInsertFails(t *testing.T) {
 
 	h.UpdateLicense(rec, req)
 
-	require.Equal(t, http.StatusInternalServerError, rec.Code)
-	require.Contains(t, rec.Body.String(), "Audit failed")
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"imported":false`)
 	require.False(t, committed)
-	require.True(t, rolledBack)
+	require.False(t, rolledBack)
 }
 
 func TestSensitiveWordsAuditFailureDoesNotUpdateInMemoryFilter(t *testing.T) {
@@ -289,38 +289,24 @@ func TestGlobalControlCommitFailureDoesNotApplyPostCommitEffects(t *testing.T) {
 		require.Contains(t, rec.Body.String(), "Commit failed")
 	})
 
-	t.Run("license", func(t *testing.T) {
-		publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
-		require.NoError(t, err)
-		licenseJSON := p6f35SignedLicense(t, privateKey, "p6f35-commit-failure", "2026-07-20T00:00:00Z")
-		tx := &testutil.MockTx{
-			QueryRowFn: func(context.Context, string, ...any) pgx.Row {
-				return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
-			},
-			ExecFn: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
-				return pgconn.NewCommandTag("INSERT 1"), nil
-			},
-			CommitFn: func(context.Context) error { return fmt.Errorf("commit outcome unknown") },
-		}
-		h := newTestHandler(&testutil.MockDB{BeginFn: func(context.Context) (pgx.Tx, error) { return tx, nil }})
-		h.SetLicenseVerifier(licensing.NewVerifier(publicKey, 30).WithNow(func() time.Time {
-			return time.Date(2026, 7, 2, 0, 0, 0, 0, time.UTC)
-		}))
-		eventQueries := 0
-		eventDB := &testutil.MockDB{QueryRowFn: func(context.Context, string, ...any) pgx.Row {
-			eventQueries++
+	t.Run("retired license has no commit or event", func(t *testing.T) {
+		transactions := 0
+		h := newTestHandler(&testutil.MockDB{BeginFn: func(context.Context) (pgx.Tx, error) {
+			transactions++
+			return nil, fmt.Errorf("storage unavailable")
+		}})
+		events := 0
+		h.SetEventService(billing.NewEventService(&testutil.MockDB{QueryRowFn: func(context.Context, string, ...any) pgx.Row {
+			events++
 			return &testutil.MockRow{}
-		}}
-		h.SetEventService(billing.NewEventService(eventDB, ""))
-		req := platformGlobalControlRequest(httptest.NewRequest(http.MethodPut, "/license",
-			strings.NewReader(fmt.Sprintf(`{"license":%s}`, licenseJSON))))
-		rec := httptest.NewRecorder()
-
-		h.UpdateLicense(rec, req)
-
-		require.Equal(t, http.StatusInternalServerError, rec.Code)
-		require.Contains(t, rec.Body.String(), "Commit failed")
-		require.Zero(t, eventQueries)
+		}}, ""))
+		request := platformGlobalControlRequest(httptest.NewRequest(http.MethodPut, "/license", strings.NewReader(`{"license":{"historical":true}}`)))
+		response := httptest.NewRecorder()
+		h.UpdateLicense(response, request)
+		require.Equal(t, http.StatusOK, response.Code)
+		require.Contains(t, response.Body.String(), `"imported":false`)
+		require.Zero(t, transactions)
+		require.Zero(t, events)
 	})
 
 	t.Run("sensitive words", func(t *testing.T) {

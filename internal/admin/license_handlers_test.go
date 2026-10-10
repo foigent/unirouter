@@ -3,21 +3,17 @@ package admin
 import (
 	"context"
 	"crypto/ed25519"
-	"crypto/rand"
 	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"testing"
-	"time"
-
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/testutil"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
 )
 
 func signedAdminLicense(t *testing.T, privateKey ed25519.PrivateKey, expiresAt string) []byte {
@@ -49,277 +45,71 @@ func licenseRequestContext() context.Context {
 	return ctx
 }
 
-func TestGetLicense_Missing(t *testing.T) {
-	h := newTestHandler(&testutil.MockDB{})
-
-	req := httptest.NewRequest("GET", "/api/v1/license", nil).WithContext(licenseRequestContext())
-	rec := httptest.NewRecorder()
-
-	h.GetLicense(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var resp licensing.Status
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if resp.Status != licensing.StatusMissing {
-		t.Fatalf("expected missing status, got %#v", resp)
-	}
-}
-
-func TestUpdateLicense_ValidStoresAndAudits(t *testing.T) {
-	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("generate key: %v", err)
-	}
-	verifier := licensing.NewVerifier(publicKey, 30).WithNow(func() time.Time {
-		return time.Date(2026, 7, 2, 0, 0, 0, 0, time.UTC)
-	})
-	licenseJSON := signedAdminLicense(t, privateKey, "2026-12-31T00:00:00Z")
-	var savedSetting string
-	var auditArgs []any
-	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			switch {
-			case strings.Contains(sql, "INSERT INTO settings"):
-				savedSetting = args[1].(string)
-			case strings.Contains(sql, "INSERT INTO audit_logs"):
-				auditArgs = append([]any(nil), args...)
+func TestRetiredLicenseEndpointsAreAuthorizedNoOps(t *testing.T) {
+	// A nil database is deliberate: even a read/transaction would panic.
+	h := newTestHandler(nil)
+	for _, method := range []string{http.MethodGet, http.MethodPut} {
+		req := httptest.NewRequest(method, "/api/v1/license", strings.NewReader(`{"license":{"signature":"never-echo-me","payload":{"expired":true}}}`)).WithContext(licenseRequestContext())
+		rec := httptest.NewRecorder()
+		if method == http.MethodGet {
+			h.GetLicense(rec, req)
+		} else {
+			h.UpdateLicense(rec, req)
+		}
+		if rec.Code != 200 {
+			t.Fatalf("%s: %d %s", method, rec.Code, rec.Body.String())
+		}
+		var status licensing.Status
+		if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
+			t.Fatal(err)
+		}
+		if status.Status != licensing.StatusNotRequired || status.Valid || status.Enforceable || status.SignatureValid || status.Commercial || status.License != nil || status.Warning || status.VerifierConfigured {
+			t.Fatalf("false license proof: %+v", status)
+		}
+		if strings.Contains(rec.Body.String(), "never-echo-me") {
+			t.Fatal("document leaked")
+		}
+		if method == http.MethodPut && !strings.Contains(rec.Body.String(), `"imported":false`) {
+			t.Fatal("missing no-op result")
+		}
+		for _, role := range []string{auth.RoleOrgAdmin, auth.RoleMember, ""} {
+			denied := req.WithContext(context.WithValue(licenseRequestContext(), middleware.CtxUserRole, role))
+			rr := httptest.NewRecorder()
+			if method == http.MethodGet {
+				h.GetLicense(rr, denied)
+			} else {
+				h.UpdateLicense(rr, denied)
 			}
-			return pgconn.NewCommandTag("INSERT 1"), nil
-		},
-	}
-	h := newTestHandler(globalControlTestDB(db))
-	h.SetLicenseVerifier(verifier)
-
-	req := httptest.NewRequest("PUT", "/api/v1/license", strings.NewReader(fmt.Sprintf(`{"license":%s}`, licenseJSON))).WithContext(licenseRequestContext())
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "license-test")
-	rec := httptest.NewRecorder()
-
-	h.UpdateLicense(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var resp licensing.Status
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if resp.Status != licensing.StatusActive || !resp.Valid {
-		t.Fatalf("expected active license, got %#v", resp)
-	}
-	if !strings.Contains(savedSetting, `"deployment_id":"prod-cn-1"`) {
-		t.Fatalf("expected normalized license saved, got %s", savedSetting)
-	}
-	if len(auditArgs) != 14 {
-		t.Fatalf("expected audit args, got %#v", auditArgs)
-	}
-	if auditArgs[2] != "license.update" || auditArgs[3] != "license" || auditArgs[4] != "prod-cn-1" {
-		t.Fatalf("expected license audit action/resource, got %#v", auditArgs)
-	}
-	if !strings.Contains(auditArgs[12].(string), `"customer":"Acme Corp"`) {
-		t.Fatalf("expected after audit summary to include customer, got %v", auditArgs[12])
-	}
-	if strings.Contains(auditArgs[12].(string), `"signature":"`) {
-		t.Fatalf("audit summary must not include raw signature: %v", auditArgs[12])
+			if rr.Code == 200 {
+				t.Fatalf("role %q bypassed platform authorization", role)
+			}
+		}
 	}
 }
-
-func TestUpdateLicense_InvalidSignatureRejected(t *testing.T) {
-	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("generate key: %v", err)
-	}
-	_, otherPrivateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("generate other key: %v", err)
-	}
-	licenseJSON := signedAdminLicense(t, otherPrivateKey, "2026-12-31T00:00:00Z")
-	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			t.Fatalf("invalid license must not write database, SQL=%s", sql)
-			return pgconn.CommandTag{}, nil
-		},
-	}
-	h := newTestHandler(db)
-	h.SetLicenseVerifier(licensing.NewVerifier(publicKey, 30))
-
-	req := httptest.NewRequest("PUT", "/api/v1/license", strings.NewReader(fmt.Sprintf(`{"license":%s}`, licenseJSON))).WithContext(licenseRequestContext())
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	h.UpdateLicense(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), "signature verification failed") {
-		t.Fatalf("expected signature failure response, got %s", rec.Body.String())
-	}
-}
-
-func TestUpdateLicenseRejectsOversizedUnknownAndTrailingInput(t *testing.T) {
-	h := newTestHandler(&testutil.MockDB{})
-	tests := []struct {
-		name   string
+func TestUpdateLicenseRejectsMalformedOrUnboundedInput(t *testing.T) {
+	h := newTestHandler(nil)
+	cases := []struct {
 		body   string
 		status int
 	}{
-		{name: "oversized", body: `{"license":"` + strings.Repeat("x", maxLicenseImportBytes) + `"}`, status: http.StatusRequestEntityTooLarge},
-		{name: "unknown wrapper field", body: `{"license":{},"replace":true}`, status: http.StatusBadRequest},
-		{name: "trailing object", body: `{"license":{}} {"license":{}}`, status: http.StatusBadRequest},
+		{`{"license":"` + strings.Repeat("x", maxLicenseImportBytes) + `"}`, 413},
+		{`{"license":{"old":true},"replace":true}`, 400},
+		{`{"license":{"old":true}} {}`, 400},
+		{`{"license":{"old":true},"license":{"other":true}}`, 400},
+		{`{"license":{"old":true,"old":false}}`, 400},
+		{`{"license":null}`, 400}, {`{"license":[]}`, 400}, {`{"license":{}}`, 400},
+		{`{}`, 400}, {`null`, 400}, {`{"license":"invalid json"}`, 400},
+		{`{"license":"{\"old\":true}"}`, 200},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPut, "/api/v1/license", strings.NewReader(test.body)).WithContext(licenseRequestContext())
-			rec := httptest.NewRecorder()
-			h.UpdateLicense(rec, req)
-			if rec.Code != test.status {
-				t.Fatalf("status=%d body=%s, want %d", rec.Code, rec.Body.String(), test.status)
-			}
-		})
-	}
-}
-
-func TestUpdateLicense_CommercialPersistsEntitlementsAtomically(t *testing.T) {
-	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
-	payload := licensing.Payload{
-		LicenseID:    "lic-commercial-test",
-		Customer:     "Commercial Customer",
-		DeploymentID: "deployment-test",
-		Tier:         "enterprise",
-		IssuedAt:     now.Add(-time.Hour).Format(time.RFC3339),
-		NotBefore:    now.Add(-time.Minute).Format(time.RFC3339),
-		ExpiresAt:    now.Add(365 * 24 * time.Hour).Format(time.RFC3339),
-		Features:     []string{licensing.FeatureAll},
-		Limits: map[string]int64{
-			licensing.LimitActiveAPIKeys:  10,
-			licensing.LimitActiveUsers:    20,
-			licensing.LimitActiveProjects: 5,
-			licensing.LimitActiveChannels: 4,
-		},
-	}
-	doc, err := licensing.SignCommercialPayload(payload, "license-commercial-a", privateKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	licenseJSON, err := json.Marshal(doc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	verifier := licensing.NewCommercialVerifier(
-		map[string]ed25519.PublicKey{"license-commercial-a": publicKey}, nil, 30, "deployment-test",
-	).WithNow(func() time.Time { return now })
-	runtime := licensing.NewRuntime(verifier)
-
-	var entitlementArgs []any
-	var savedSetting bool
-	tx := &testutil.MockTx{
-		QueryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
-			if strings.Contains(sql, "COUNT(*)") {
-				return &testutil.MockRow{ScanFn: func(dest ...any) error {
-					*dest[0].(*int64) = 0
-					return nil
-				}}
-			}
-			return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
-		},
-		ExecFn: func(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			switch {
-			case strings.Contains(sql, "INSERT INTO commercial_license_entitlements"):
-				entitlementArgs = append([]any(nil), args...)
-			case strings.Contains(sql, "INSERT INTO settings"):
-				savedSetting = true
-			}
-			return pgconn.NewCommandTag("INSERT 1"), nil
-		},
-	}
-	h := newTestHandler(&testutil.MockDB{BeginFn: func(context.Context) (pgx.Tx, error) { return tx, nil }})
-	h.SetLicenseVerifier(verifier)
-	h.SetLicenseRuntime(runtime)
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/license",
-		strings.NewReader(fmt.Sprintf(`{"license":%s}`, licenseJSON))).WithContext(licenseRequestContext())
-	rec := httptest.NewRecorder()
-
-	h.UpdateLicense(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	if !savedSetting || len(entitlementArgs) != 9 {
-		t.Fatalf("commercial setting/entitlements not persisted: setting=%v args=%#v", savedSetting, entitlementArgs)
-	}
-	if entitlementArgs[0] != payload.LicenseID || entitlementArgs[1] != payload.DeploymentID || entitlementArgs[2] != "license-commercial-a" {
-		t.Fatalf("unexpected entitlement identity: %#v", entitlementArgs)
-	}
-	if strings.Contains(fmt.Sprint(entitlementArgs), doc.Signature) {
-		t.Fatal("raw License signature must not enter entitlement snapshot")
-	}
-	if status := runtime.Status(); !status.Enforceable || status.License.LicenseID != payload.LicenseID {
-		t.Fatalf("runtime was not hot-reloaded: %#v", status)
+	for _, tc := range cases {
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/license", strings.NewReader(tc.body)).WithContext(licenseRequestContext())
+		rec := httptest.NewRecorder()
+		h.UpdateLicense(rec, req)
+		if rec.Code != tc.status {
+			t.Fatalf("got %d want %d: %s", rec.Code, tc.status, rec.Body.String())
+		}
 	}
 }
-
-func TestUpdateLicense_RejectsLimitBelowCurrentUsage(t *testing.T) {
-	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
-	payload := licensing.Payload{
-		LicenseID: "lic-too-small", Customer: "Customer", DeploymentID: "deployment-test", Tier: "enterprise",
-		IssuedAt: now.Add(-time.Hour).Format(time.RFC3339), NotBefore: now.Add(-time.Minute).Format(time.RFC3339),
-		ExpiresAt: now.Add(24 * time.Hour).Format(time.RFC3339), Features: []string{licensing.FeatureGateway},
-		Limits: map[string]int64{licensing.LimitActiveAPIKeys: 1},
-	}
-	doc, err := licensing.SignCommercialPayload(payload, "license-commercial-a", privateKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	licenseJSON, _ := json.Marshal(doc)
-	verifier := licensing.NewCommercialVerifier(
-		map[string]ed25519.PublicKey{"license-commercial-a": publicKey}, nil, 30, "deployment-test",
-	).WithNow(func() time.Time { return now })
-	committed := false
-	tx := &testutil.MockTx{
-		QueryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
-			if strings.Contains(sql, "commercial_api_key_seats") {
-				return &testutil.MockRow{ScanFn: func(dest ...any) error { *dest[0].(*int64) = 2; return nil }}
-			}
-			return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
-		},
-		ExecFn: func(_ context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
-			if strings.Contains(sql, "INSERT INTO settings") || strings.Contains(sql, "INSERT INTO audit_logs") {
-				t.Fatalf("conflicting License must not persist or audit as accepted: %s", sql)
-			}
-			return pgconn.NewCommandTag("SELECT 1"), nil
-		},
-		CommitFn: func(context.Context) error { committed = true; return nil },
-	}
-	h := newTestHandler(&testutil.MockDB{BeginFn: func(context.Context) (pgx.Tx, error) { return tx, nil }})
-	h.SetLicenseVerifier(verifier)
-	h.SetLicenseRuntime(licensing.NewRuntime(verifier))
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/license",
-		strings.NewReader(fmt.Sprintf(`{"license":%s}`, licenseJSON))).WithContext(licenseRequestContext())
-	rec := httptest.NewRecorder()
-
-	h.UpdateLicense(rec, req)
-
-	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "resource_limit_below_current_usage") {
-		t.Fatalf("expected bounded conflict, got %d: %s", rec.Code, rec.Body.String())
-	}
-	if committed {
-		t.Fatal("conflicting License transaction committed")
-	}
-}
-
 func TestActiveChannelsCommercialUsageCountsCanonicalEnabledConnections(t *testing.T) {
 	var query string
 	tx := &testutil.MockTx{QueryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {

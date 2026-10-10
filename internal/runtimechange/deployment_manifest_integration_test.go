@@ -269,7 +269,7 @@ SELECT COALESCE(STRING_AGG(
 }
 
 func TestDeploymentLifecycleReceiptLegacyCutoverIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	fixture := createCanonicalDeploymentFixture(t, pool, "sealed", "active", 100, 100)
 	recordedPool := &recordingBeginTxPool{Pool: pool}
@@ -653,7 +653,7 @@ SELECT COUNT(*) FROM runtime_change_events
 	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM runtime_change_releases`).Scan(&releaseCountBeforeDown))
 	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM runtime_change_events`).Scan(&eventCountBeforeDown))
 	down, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000078_atomic_model_release_authoring.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000078_atomic_model_release_authoring.down.sql",
 	))
 	require.NoError(t, err)
 	downgradeCanonicalConnectionLicenseAuthorityForTest(t, pool)
@@ -686,7 +686,7 @@ func downgradeCanonicalConnectionLicenseAuthorityForTest(t *testing.T, pool *pgx
 	t.Helper()
 	ctx := t.Context()
 	require.NoError(t, testutil.RewindCapabilityPublicationsForLegacyMigrationTest(
-		ctx, pool, testutil.MigrationsDir(t),
+		ctx, pool, testutil.PreRetirementMigrationsDir(t),
 	))
 	for _, name := range []string{
 		"000100_kimi_k26_function_tools_tool_index_normalizer.down.sql",
@@ -706,37 +706,37 @@ func downgradeCanonicalConnectionLicenseAuthorityForTest(t *testing.T, pool *pgx
 		"000086_exact_public_execution_bindings.down.sql",
 		"000085_model_execution_plan_freeze_fence.down.sql",
 	} {
-		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), name))
 		require.NoError(t, err)
 		_, err = pool.Exec(ctx, string(down))
 		require.NoError(t, err, name)
 	}
 	currencyDraftDown, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000084_official_rate_source_currency_drafts.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000084_official_rate_source_currency_drafts.down.sql",
 	))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(currencyDraftDown))
 	require.NoError(t, err)
 	unitMeterDown, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000083_versioned_unit_meter_billing.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000083_versioned_unit_meter_billing.down.sql",
 	))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(unitMeterDown))
 	require.NoError(t, err)
 	sealedContractDown, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000082_sealed_model_execution_contracts.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000082_sealed_model_execution_contracts.down.sql",
 	))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(sealedContractDown))
 	require.NoError(t, err)
 	profileDown, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000081_versioned_model_execution_profiles.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000081_versioned_model_execution_profiles.down.sql",
 	))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(profileDown))
 	require.NoError(t, err)
 	observationDown, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000080_observation_provider_cost_reconciliation.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000080_observation_provider_cost_reconciliation.down.sql",
 	))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(observationDown))
@@ -758,7 +758,7 @@ UPDATE channels legacy
    AND connection.legacy_channel_id=legacy.id`)
 	require.NoError(t, err)
 	down, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000079_canonical_connection_license_authority.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000079_canonical_connection_license_authority.down.sql",
 	))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))

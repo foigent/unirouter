@@ -86,7 +86,7 @@ func TestAsyncMediaImageMigrationContractAndRollbackGuard(t *testing.T) {
 	)
 	require.NoError(t, err)
 	downSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t),
+		testutil.PreRetirementMigrationsDir(t),
 		"000046_v1_async_media_image_jobs.down.sql",
 	))
 	require.NoError(t, err)

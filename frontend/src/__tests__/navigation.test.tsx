@@ -73,7 +73,7 @@ const scenarios: Record<string, { authz: AuthzContext; routes: string[] }> = {
 		'/access-review', '/applications', '/organization-members', '/agent-trust', '/limit-policies', '/guardrail-policies', '/audit-logs',
       '/logs', '/media-jobs', '/usage-analytics', '/notifications', '/status',
       '/wallet', '/model-prices', '/cost-optimization', '/reconciliation',
-      '/deployment', '/integrations', '/docs', '/license',
+      '/deployment', '/integrations', '/docs',
     ],
   },
   organizationAdmin: {
@@ -323,4 +323,13 @@ describe('two-axis navigation boundaries', () => {
     expect(channelsItem?.disabled).toBeUndefined();
     expect(hasLicensedFeature(null, 'gateway')).toBe(true);
   });
+});
+
+it('removes commercial gates without granting organization privileges', () => {
+  const access = licenseAccess('not_required', false);
+  expect(hasLicensedFeature(access, 'gateway')).toBe(true);
+  expect(isRouteLicensed('/connectors', access)).toBe(true);
+  expect(isRouteAllowedForAuthz('/deployment', context('member'))).toBe(false);
+  expect(getNavItemsForAuthz(context('platform_admin'), access)
+    .flatMap(item => item.items || []).some(item => item.itemKey === '/license')).toBe(false);
 });

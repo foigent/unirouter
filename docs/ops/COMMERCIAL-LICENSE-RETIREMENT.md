@@ -1,0 +1,111 @@
+# Commercial License retirement: 1.10.0 candidate
+
+Status: local candidate. PostgreSQL 16 migration, fresh-install and backup
+restore/rebase tests passed; host-controller tests use simulated Docker/NGINX.
+Actual Docker/NGINX maintenance acceptance is still required before this becomes
+an executable target runbook or an installable release. This document grants no Target or Production
+operation authorization.
+
+## Runtime and API contract
+
+The binary does not construct the commercial License runtime, reconcile stored
+entitlements, start its refresh loop, or wrap Gateway/admin/OIDC/Agent routes
+with commercial gates. Role, tenant/project, credential, rate, budget,
+qualification, idempotency, release and upgrade-signature checks remain.
+
+Deprecated endpoints retain platform-admin authorization:
+- GET /api/v1/license returns status=not_required; validity, signature and
+  enforceability flags are false and no historical payload is returned.
+- PUT accepts one bounded strict JSON envelope containing a nonempty document.
+  It returns imported=false and status=not_required. It performs no DB read or
+  write, entitlement update, import audit or License-warning event.
+- /me retains license_access with status=not_required and available feature
+  flags. These are not role grants.
+- gateway_license readiness is not_applicable without a repair link.
+- Deprecated descriptor licensed=true means no commercial restriction. Actual
+  availability still requires role, structure and transactional preflight.
+
+LICENSE_* inputs are ignored. A release binary still requires an embedded,
+nonempty upgrade verification ring and rejects runtime UPGRADE_PUBLIC_KEYS
+overrides. Expected trust readback: license_keys=0, upgrade_keys greater than 0.
+
+Historical signing tools, documents, entitlements, audits and migrations remain
+for historical verification. Their presence does not authorize new runtime
+commercial enforcement.
+
+## Existing M125 installation
+
+M126 is a maintenance boundary, not a compatible-expand transition.
+
+1. Identify the exact M125 Artifact, complete ledger and environment. Retain
+   the database backup, original binary/image, required configuration and
+   existing secret custody references; do not copy secrets into evidence.
+2. After actual host-controller acceptance and explicit target authorization,
+   use the exact M126 Artifact CLI owner to withdraw M125 through explicit empty
+   ingress membership, drain workers and stop/retire every writer.
+   Resolve pending/ambiguous ingress changes. Retain host/controller evidence
+   that processes have exited; expired leases alone do not prove this.
+   Existing development/test retirement commands do not authorize Production.
+3. With the reviewed new Artifact and migrations, use the existing
+   `uniroute migrate up` owner. It checks the entire M125 ledger against the
+   artifact while holding the migration session lock. M126 additionally refuses
+   non-stopped/non-absent runtime rows and unresolved ingress transitions.
+   Ordinary server startup and compatible-expand cannot perform this step.
+4. Verify the full M126 ledger and absence of exactly these commercial triggers:
+   api_keys_commercial_limit, users_commercial_limit, projects_commercial_limit,
+   access_credentials_commercial_limit, provider_connections_commercial_limit.
+   Verify retained License/settings/audit history and the original M118 budget
+   coverage certificate. Do not recertify historical financial evidence.
+5. Start only the new Artifact, verify readiness and permissions, and perform
+   the approved synthetic admission and financial checks before opening traffic.
+   Real provider calls retain their own explicit scope and allowance.
+
+The development/test controller is `scripts/runtime-generation-retire.py` with
+`--maintenance --rollout-input <reviewed-input.json>`. It uses the formal rollout
+input (exact host/database/NGINX/source/image identity), requires
+`runtime_owner=artifact_cli`, and refuses a rolling `transition`. The explicit
+sequence is `plan`, `prepare`, `withdraw`, then `stop` and `remove` for each role,
+then `check` and `apply` for each role. Role operations require `--role stable`
+or `--role canary`. `prepare` retains a verified dump before runtime changes;
+`check` writes no retirement state or evidence. The Artifact carrier is ephemeral
+even for reads, so target authorization covers that lifecycle too.
+
+Full withdrawal uses canonical empty backend upstreams and waits for old NGINX
+workers through the existing intent/completion protocol. Neither backend is a
+replacement or survivor requirement. Only exact cleanly stopped containers can
+be removed, without volumes. Both removals and an empty process inventory are
+required before retirement. Expired leases, a successful CLI exit or absent
+containers alone are insufficient. Unknown Docker command results are not
+replayed; prove the exact post-state or investigate. A lost database retirement
+response is read back against the retained request and revision.
+
+The controller does not migrate the database or start/rejoin new serving
+processes. Those remain separate, authorized operations. After M126 migration,
+new ready processes can rejoin from the retained empty membership through the
+normal ingress owner; old processes must never be restarted against M126.
+
+The new runtime accepts the complete M126 ledger only. Historical artifacts keep
+their original finite bridges and reject M126. Historical release/manifest
+identities are not rewritten.
+
+## Fresh installation
+
+Use [FRESH-INSTALL.md](FRESH-INSTALL.md). The same owner applies the full
+publication/expansion chain, then M126 as its final atomic completion step.
+No License import or commercial signing key is required. Empty-database
+ownership, build identity, final coverage verification and first-customer
+bootstrap remain mandatory.
+
+## Recovery
+
+Before the M126 transaction commits, failure rolls back that transaction and
+the database remains M125; retain the error and investigate before retrying.
+
+After commit, no generic SQL down owner is supported. Recovery requires the
+verified pre-M126 backup plus its original compatible Artifact under the
+existing approved recovery procedure. Restoring it loses subsequent writes
+unless the operator has separately reviewed how to preserve them. Do not
+remove the migration row, replay historical trigger SQL, edit entitlement data
+or start an old binary against M126 as an improvised rollback.
+
+[Release readiness](../community/release-readiness.md) tracks missing acceptance.

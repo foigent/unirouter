@@ -14,7 +14,7 @@ import (
 )
 
 func TestExecutionEvidenceProjectionMigrationKeepsHistoricalRowsUnknown(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	execMigrationDown(t, ctx, pool, "000073_model_execution_dispatch_fence.down.sql")
 	execMigrationDown(t, ctx, pool, "000072_execution_evidence_projection.down.sql")
@@ -33,7 +33,7 @@ VALUES ('projection-history-trace',$1,'provider.response_accepted','provider',
         'duplicate-model','duplicate-provider','duplicate-channel')`, orgID)
 	require.NoError(t, err)
 
-	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallPreRetirementTestArtifact(t, ctx, pool))
 	var callSource, traceSource *string
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT route_evidence_source FROM call_logs
@@ -46,7 +46,7 @@ SELECT route_evidence_source FROM request_trace_events
 
 	_, err = pool.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ('000075_future_contract')`)
 	require.NoError(t, err)
-	downSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000072_execution_evidence_projection.down.sql"))
+	downSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000072_execution_evidence_projection.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(downSQL))
 	require.ErrorContains(t, err, "later migrations must be reversed first")
@@ -55,12 +55,12 @@ SELECT route_evidence_source FROM request_trace_events
 
 	execMigrationDown(t, ctx, pool, "000073_model_execution_dispatch_fence.down.sql")
 	execMigrationDown(t, ctx, pool, "000072_execution_evidence_projection.down.sql")
-	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)),
+	require.NoError(t, testutil.InstallPreRetirementTestArtifact(t, ctx, pool),
 		"nullable historical rows must permit an ordered rollback and reapply")
 }
 
 func TestExecutionEvidenceProjectionRejectsCrossOrgMutationAndUnsafeRollback(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	var orgID, otherOrgID int64
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -119,7 +119,7 @@ DELETE FROM request_trace_events
 		"query projection retention stays governed by the existing log lifecycle")
 
 	execMigrationDown(t, ctx, pool, "000073_model_execution_dispatch_fence.down.sql")
-	downSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000072_execution_evidence_projection.down.sql"))
+	downSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000072_execution_evidence_projection.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(downSQL))
 	require.ErrorContains(t, err, "versioned projection evidence exists")

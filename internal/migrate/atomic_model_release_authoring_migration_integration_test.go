@@ -32,7 +32,7 @@ func (m78MigrationSnapshotBuilder) BuildRuntimeChangeSnapshots(
 }
 
 func TestAtomicModelReleaseAuthoringRejectsM77DraftBeforeSchemaMutationIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	execMigrationDown(t, ctx, pool, "000078_atomic_model_release_authoring.down.sql")
 
@@ -144,7 +144,7 @@ VALUES ($1,1,'create','none','draft',$2,0,1,
 		releaseID, userID)
 	require.NoError(t, err)
 
-	err = testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t))
+	err = testutil.InstallPreRetirementTestArtifact(t, ctx, pool)
 	require.ErrorContains(t, err, "seal every canonical v2 draft with the M77 artifact SealDeploymentDraft")
 	var ledgerApplied, receiptTableExists, receiptColumnExists bool
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -180,7 +180,7 @@ SELECT stage,version,route_items_sealed_at IS NOT NULL
 	require.EqualValues(t, 2, sealedVersion)
 	require.True(t, sealedAtPresent)
 
-	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallPreRetirementTestArtifact(t, ctx, pool))
 	var historicalReceiptNull bool
 	var historicalEventCount, historicalCreateCount, historicalValidateCount int
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -272,7 +272,7 @@ SELECT
 	require.True(t, receiptColumnRemoved)
 	require.True(t, creatorConstraintRestored)
 
-	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallPreRetirementTestArtifact(t, ctx, pool))
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT EXISTS(SELECT 1 FROM schema_migrations
               WHERE version='000078_atomic_model_release_authoring')`).Scan(&ledgerApplied))
@@ -286,13 +286,13 @@ SELECT EXISTS(SELECT 1 FROM schema_migrations
 }
 
 func TestAtomicModelReleaseAuthoringDownRejectsFutureMigrationIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := t.Context()
 	_, err := pool.Exec(ctx, `
 INSERT INTO schema_migrations(version) VALUES ('000079_future_contract')`)
 	require.NoError(t, err)
 	down, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000078_atomic_model_release_authoring.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000078_atomic_model_release_authoring.down.sql",
 	))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))

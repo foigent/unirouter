@@ -64,7 +64,7 @@ WHERE conname IN (
 func TestOnPremBillingModeMigrationCleanRollbackAndReapply(t *testing.T) {
 	pool, _ := setupMigratedThrough(t, "000062_xinsight_connector_redeem_lifecycle.up.sql")
 	ctx := context.Background()
-	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallPreRetirementTestArtifact(t, ctx, pool))
 
 	execMigrationDown(t, ctx, pool, "000071_model_execution_evidence.down.sql")
 	execMigrationDown(t, ctx, pool, "000070_runtime_deployment_route_manifest.down.sql")
@@ -101,7 +101,7 @@ SELECT COUNT(*) FROM schema_migrations
 WHERE version='000063_onprem_billing_mode'`).Scan(&ledger))
 	require.Zero(t, ledger)
 
-	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallPreRetirementTestArtifact(t, ctx, pool))
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT COUNT(*) FROM schema_migrations
 WHERE version='000063_onprem_billing_mode'`).Scan(&ledger))
@@ -109,10 +109,10 @@ WHERE version='000063_onprem_billing_mode'`).Scan(&ledger))
 }
 
 func TestOnPremBillingModeMigrationRefusesRollbackWhileLaterMigrationIsApplied(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	down, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t),
+		testutil.PreRetirementMigrationsDir(t),
 		"000063_onprem_billing_mode.down.sql",
 	))
 	require.NoError(t, err)
@@ -138,7 +138,7 @@ WHERE version IN ('000063_onprem_billing_mode','000064_rate_card_request_pricing
 func TestOnPremBillingModeMigrationRefusesObservationEvidenceRollbackAtomically(t *testing.T) {
 	pool, _ := setupMigratedThrough(t, "000062_xinsight_connector_redeem_lifecycle.up.sql")
 	ctx := context.Background()
-	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallPreRetirementTestArtifact(t, ctx, pool))
 
 	_, err := pool.Exec(ctx, `
 INSERT INTO freeze_idempotency (
@@ -156,7 +156,7 @@ VALUES (
 	execMigrationDown(t, ctx, pool, "000064_rate_card_request_pricing_authority.down.sql")
 
 	down, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t),
+		testutil.PreRetirementMigrationsDir(t),
 		"000063_onprem_billing_mode.down.sql",
 	))
 	require.NoError(t, err)
@@ -187,7 +187,7 @@ WHERE org_id=960002 AND request_id='op_billing_mode_observation'
 func execMigrationDown(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string) {
 	t.Helper()
 	require.NoError(t, testutil.RewindCapabilityPublicationsForLegacyMigrationTest(
-		ctx, pool, testutil.MigrationsDir(t),
+		ctx, pool, testutil.PreRetirementMigrationsDir(t),
 	))
 	for _, successor := range []struct {
 		name    string
@@ -227,7 +227,7 @@ func execMigrationDown(t *testing.T, ctx context.Context, pool *pgxpool.Pool, na
 		name == "000092_deepseek_reasoning_tool_choice_contract.down.sql" ||
 		name == "000091_deepseek_chat_tools_json_capabilities.down.sql" ||
 		name == "000090_deepseek_chat_reasoning_capabilities.down.sql" {
-		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), name))
 		require.NoError(t, err)
 		_, err = pool.Exec(ctx, string(down))
 		require.NoError(t, err, name)
@@ -243,7 +243,7 @@ SELECT EXISTS(SELECT 1 FROM schema_migrations
 		}
 	}
 	if name == "000089_deepseek_chat_sse_usage_contract_v2.down.sql" {
-		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), name))
 		require.NoError(t, err)
 		_, err = pool.Exec(ctx, string(down))
 		require.NoError(t, err, name)
@@ -259,7 +259,7 @@ SELECT EXISTS(SELECT 1 FROM schema_migrations
 		}
 	}
 	if name == "000088_model_capability_execution_qualification.down.sql" {
-		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), name))
 		require.NoError(t, err)
 		_, err = pool.Exec(ctx, string(down))
 		require.NoError(t, err, name)
@@ -275,7 +275,7 @@ SELECT EXISTS(SELECT 1 FROM schema_migrations
 		}
 	}
 	if name == "000087_anthropic_messages_tools_public_binding.down.sql" {
-		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), name))
 		require.NoError(t, err)
 		_, err = pool.Exec(ctx, string(down))
 		require.NoError(t, err, name)
@@ -294,7 +294,7 @@ SELECT EXISTS(SELECT 1 FROM schema_migrations
 		}
 	}
 	if name == "000086_exact_public_execution_bindings.down.sql" {
-		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), name))
 		require.NoError(t, err)
 		_, err = pool.Exec(ctx, string(down))
 		require.NoError(t, err, name)
@@ -312,7 +312,7 @@ SELECT EXISTS(SELECT 1 FROM schema_migrations
 		}
 	}
 	if name == "000085_model_execution_plan_freeze_fence.down.sql" {
-		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), name))
 		require.NoError(t, err)
 		_, err = pool.Exec(ctx, string(down))
 		require.NoError(t, err, name)
@@ -330,7 +330,7 @@ SELECT EXISTS(SELECT 1 FROM schema_migrations
 		}
 	}
 	if name == "000084_official_rate_source_currency_drafts.down.sql" {
-		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), name))
 		require.NoError(t, err)
 		_, err = pool.Exec(ctx, string(down))
 		require.NoError(t, err, name)
@@ -349,7 +349,7 @@ SELECT EXISTS(SELECT 1 FROM schema_migrations
 		}
 	}
 	if name == "000083_versioned_unit_meter_billing.down.sql" {
-		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), name))
 		require.NoError(t, err)
 		_, err = pool.Exec(ctx, string(down))
 		require.NoError(t, err, name)
@@ -368,7 +368,7 @@ SELECT EXISTS(SELECT 1 FROM schema_migrations
 		}
 	}
 	if name == "000082_sealed_model_execution_contracts.down.sql" {
-		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), name))
 		require.NoError(t, err)
 		_, err = pool.Exec(ctx, string(down))
 		require.NoError(t, err, name)
@@ -378,7 +378,7 @@ SELECT EXISTS(SELECT 1 FROM schema_migrations
 	// Historical rollback fixtures remove the empty/default profile extension
 	// before exercising any earlier migration's own down contract.
 	if name == "000081_versioned_model_execution_profiles.down.sql" {
-		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), name))
 		require.NoError(t, err)
 		_, err = pool.Exec(ctx, string(down))
 		require.NoError(t, err, name)
@@ -395,7 +395,7 @@ SELECT EXISTS(SELECT 1 FROM schema_migrations
 	// with an observation receipt terminal. Older rollback fixtures remove this
 	// empty extension before exercising their own historical down contracts.
 	if name == "000080_observation_provider_cost_reconciliation.down.sql" {
-		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), name))
 		require.NoError(t, err)
 		_, err = pool.Exec(ctx, string(down))
 		require.NoError(t, err, name)
@@ -505,7 +505,7 @@ SELECT EXISTS(SELECT 1 FROM schema_migrations
 			execMigrationDown(t, ctx, pool, "000072_execution_evidence_projection.down.sql")
 		}
 	}
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), name))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.NoError(t, err, name)

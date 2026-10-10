@@ -85,10 +85,12 @@ class RunnerTests(unittest.TestCase):
         self.assertIn("TestRetirementRacesFastAndSlowRenewWithoutReusingStoppedIdentity", pattern)
         for name in (
             "TestAsyncMediaImageMigrationContractAndRollbackGuard",
+            "TestCommercialRetirementCLIWithdrawalIntegration",
+            "TestCommercialRetirementMaintenanceIntegration",
             "TestReceiverFeedCredentialMigrationContractAndDownRefusal",
             "TestXInsightFeedControlMigrationEnforcesStagedAndRollbackLifecycle",
             "TestM115ToM125CompatibleExpandPreservesExistingKey",
-            "TestM124ToM125CompatibleExpandCLIIntegration",
+            "TestM126CompatibleExpandCLIRejectsM124ToM125Integration",
             "TestM125CompatibleExpandCLIRejectsNonadjacentPredecessorIntegration",
             "TestControlCredentialLifecyclePostgresIntegration",
             "TestControlCredentialExpiredPendingRecoveryPostgresIntegration",
@@ -101,7 +103,7 @@ class RunnerTests(unittest.TestCase):
             "TestXInsightFutureSourceEnrollmentACReadAndRevokeIntegration",
             "TestXInsightBindExistingFactsAndContentIntegration",
             "TestScopedPolicyHTTPEnterpriseAndProjectCASIntegration",
-            "TestM121ActiveSourceBridgeMainStartup",
+            "TestActiveSourceM126MainStartupIntegration",
             "TestExistingFamilyDataProbeDispatchAndPersistenceIntegration",
             "TestSharedCapabilityProbeGroupAtomicFactsAndIndependentApprovalsIntegration",
             "TestCurrentDeepSeekFlashDataFirstHTTPPublicationQualificationActivationIntegration",

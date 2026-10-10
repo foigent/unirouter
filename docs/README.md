@@ -1,5 +1,16 @@
 # UniRouter 文档目录
 
+## 使用与贡献
+
+- [开始使用](community/getting-started.md) — 安装路径、首次请求与候选限制
+- [架构与 X-Insight](community/architecture.md) — 请求链路及产品职责
+- [数据处理](community/data-handling.md) — 本地记录、Provider、遥测与证据外发
+- [贡献指南](../CONTRIBUTING.md)与[贡献地图](community/contribution-map.md)
+- [路线图](../ROADMAP.md)与[商业边界](community/commercial-boundaries.md)
+- [开源发布准备状态](community/release-readiness.md) — 当前缺口及验证边界
+
+下方保留工程与历史证据导航；初次使用无需从历史阶段记录开始阅读。
+
 ## 当前入口
 
 先按任务读取 [项目规则](../AGENTS.md)、[当前状态](ops/CURRENT-STATUS.md) 和 [活动执行记录](agent-workflows/EXECUTION-RECORD.md)。以下历史证据保留各自截止时间，不因列在入口中成为实时状态或当前授权。

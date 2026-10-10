@@ -17,7 +17,7 @@ func TestModelCapabilityQualificationKimiK26FunctionToolsProbeContractV4Migratio
 	pool, _ := setupMigratedThrough(t, "000094_deepseek_v4_pro_chat_core_qualification.up.sql")
 	fixture := insertM95KimiCapabilityFixture(t, pool, "function-tools-v4-lifecycle", "protocol.kimi-openai-chat.v5")
 	ctx := t.Context()
-	m100Dir := migrationsThrough(t, testutil.MigrationsDir(t), "000100_kimi_k26_function_tools_tool_index_normalizer.up.sql")
+	m100Dir := migrationsThrough(t, testutil.PreRetirementMigrationsDir(t), "000100_kimi_k26_function_tools_tool_index_normalizer.up.sql")
 
 	require.NoError(t, migrate.Run(ctx, pool, m100Dir))
 	assertKimiK26FunctionToolsProbeContractV4State(t, pool, fixture.deploymentID, "4.0.0", 4)
@@ -31,11 +31,11 @@ func TestModelCapabilityQualificationKimiK26FunctionToolsProbeContractV4DownAllo
 	pool, _ := setupMigratedThrough(t, "000094_deepseek_v4_pro_chat_core_qualification.up.sql")
 	fixture := insertM95KimiCapabilityFixture(t, pool, "function-tools-v3-failure-before-v4", "protocol.kimi-openai-chat.v5")
 	ctx := t.Context()
-	m99Dir := migrationsThrough(t, testutil.MigrationsDir(t), "000099_kimi_k26_function_tools_probe_v3.up.sql")
+	m99Dir := migrationsThrough(t, testutil.PreRetirementMigrationsDir(t), "000099_kimi_k26_function_tools_probe_v3.up.sql")
 	require.NoError(t, migrate.Run(ctx, pool, m99Dir))
 	insertKimiK26CapabilityProbeFixture(t, pool, fixture, "tools", kimiK26FunctionToolsProbeContractID, "3.0.0", false, "m100-historical-v3-failure")
 
-	m100Dir := migrationsThrough(t, testutil.MigrationsDir(t), "000100_kimi_k26_function_tools_tool_index_normalizer.up.sql")
+	m100Dir := migrationsThrough(t, testutil.PreRetirementMigrationsDir(t), "000100_kimi_k26_function_tools_tool_index_normalizer.up.sql")
 	require.NoError(t, migrate.Run(ctx, pool, m100Dir))
 	execMigrationDown(t, ctx, pool, "000100_kimi_k26_function_tools_tool_index_normalizer.down.sql")
 	assertKimiK26FunctionToolsProbeContractV4State(t, pool, fixture.deploymentID, "3.0.0", 3)
@@ -53,11 +53,11 @@ func TestModelCapabilityQualificationKimiK26FunctionToolsProbeContractV4DownRefu
 	pool, _ := setupMigratedThrough(t, "000094_deepseek_v4_pro_chat_core_qualification.up.sql")
 	fixture := insertM95KimiCapabilityFixture(t, pool, "function-tools-v4-retained", "protocol.kimi-openai-chat.v5")
 	ctx := t.Context()
-	m100Dir := migrationsThrough(t, testutil.MigrationsDir(t), "000100_kimi_k26_function_tools_tool_index_normalizer.up.sql")
+	m100Dir := migrationsThrough(t, testutil.PreRetirementMigrationsDir(t), "000100_kimi_k26_function_tools_tool_index_normalizer.up.sql")
 	require.NoError(t, migrate.Run(ctx, pool, m100Dir))
 	insertKimiK26CapabilityProbeFixture(t, pool, fixture, "tools", kimiK26FunctionToolsProbeContractID, "4.0.0", true, "m100-retained-v4")
 
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000100_kimi_k26_function_tools_tool_index_normalizer.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000100_kimi_k26_function_tools_tool_index_normalizer.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.ErrorContains(t, err, "retained v4 qualification evidence")
@@ -68,7 +68,7 @@ func TestModelCapabilityQualificationKimiK26FunctionToolsProbeContractV4DownRefu
 	pool, _ := setupMigratedThrough(t, "000094_deepseek_v4_pro_chat_core_qualification.up.sql")
 	fixture := insertM95KimiCapabilityFixture(t, pool, "function-tools-v4-drift", "protocol.kimi-openai-chat.v5")
 	ctx := t.Context()
-	m100Dir := migrationsThrough(t, testutil.MigrationsDir(t), "000100_kimi_k26_function_tools_tool_index_normalizer.up.sql")
+	m100Dir := migrationsThrough(t, testutil.PreRetirementMigrationsDir(t), "000100_kimi_k26_function_tools_tool_index_normalizer.up.sql")
 	require.NoError(t, migrate.Run(ctx, pool, m100Dir))
 
 	_, err := pool.Exec(ctx, `
@@ -76,7 +76,7 @@ UPDATE model_deployment_operations
    SET protocol_profile_id='unverified.chat',revision=revision+1
  WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'`, fixture.deploymentID)
 	require.NoError(t, err)
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000100_kimi_k26_function_tools_tool_index_normalizer.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000100_kimi_k26_function_tools_tool_index_normalizer.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.ErrorContains(t, err, "projection identity drift")

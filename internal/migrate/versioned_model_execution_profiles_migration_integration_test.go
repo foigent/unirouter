@@ -14,11 +14,11 @@ import (
 )
 
 func TestVersionedModelExecutionProfilesMigrationIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	execMigrationDown(t, ctx, pool, "000082_sealed_model_execution_contracts.down.sql")
 	down, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000081_versioned_model_execution_profiles.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000081_versioned_model_execution_profiles.down.sql",
 	))
 	require.NoError(t, err)
 	require.NoError(t, func() error {
@@ -37,7 +37,7 @@ INSERT INTO model_registry (
 VALUES ($1,'MiniMax-M2.7','MiniMax M2.7','minimax','ga',204800,65536,'reasoning,tools')
 RETURNING id`, orgID).Scan(&modelID))
 
-	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000082_sealed_model_execution_contracts"))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.PreRetirementMigrationsDir(t), "000082_sealed_model_execution_contracts"))
 	var profileID, profileVersion string
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT execution_profile_id,execution_profile_version
@@ -103,7 +103,7 @@ SELECT
 	require.True(t, ledgerPresent)
 	require.True(t, profileColumnsPresent)
 
-	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000082_sealed_model_execution_contracts"))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.PreRetirementMigrationsDir(t), "000082_sealed_model_execution_contracts"))
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT execution_profile_id,execution_profile_version
   FROM model_registry WHERE id=$1`, modelID).Scan(&profileID, &profileVersion))

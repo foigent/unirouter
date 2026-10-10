@@ -319,7 +319,6 @@ require_configured_value POSTGRES_PASSWORD
 require_configured_value DB_DSN
 require_configured_value REDIS_PASSWORD
 require_configured_value GRAFANA_ADMIN_PASSWORD
-require_configured_value LICENSE_DEPLOYMENT_ID
 require_configured_value UNIROUTER_INTERNAL_NETWORK_CIDR
 internal_network_cidr="${effective_value}"
 require_configured_value UNIROUTER_INTERNAL_NETWORK_GATEWAY

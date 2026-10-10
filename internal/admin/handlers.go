@@ -315,22 +315,7 @@ func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	licenseAccess := licensing.CapabilityStatus{
-		Status:      licensing.StatusInvalid,
-		Enforceable: false,
-		Features: map[string]bool{
-			licensing.FeatureGateway:           false,
-			licensing.FeatureAgentCapabilities: false,
-			licensing.FeatureOIDC:              false,
-			licensing.FeatureGuardrails:        false,
-			licensing.FeatureNotifications:     false,
-			licensing.FeatureModelGovernance:   false,
-			licensing.FeatureDataExchange:      false,
-		},
-	}
-	if h.licenseRuntime != nil {
-		licenseAccess = h.licenseRuntime.Capabilities()
-	}
+	licenseAccess := licensing.NotRequiredCapabilities()
 	customer, present := middleware.GetCustomerContextFromContext(r.Context())
 	if !present {
 		customer = customercontext.Snapshot{State: customercontext.StateUnavailable}

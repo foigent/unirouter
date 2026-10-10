@@ -27,17 +27,17 @@ func scopedContentMigrationWire(t *testing.T, suffix string) []byte {
 }
 
 func TestScopedContentMigrationPreservesOldPolicyAndRefusesNewHistoryRollback(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := t.Context()
-	credentialDown, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), schemaauthority.XInsightCredentialExpandHead+".down.sql"))
+	credentialDown, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), schemaauthority.XInsightCredentialExpandHead+".down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(credentialDown))
 	require.NoError(t, err)
-	adoptionDown, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), schemaauthority.XInsightAdoptionExpandHead+".down.sql"))
+	adoptionDown, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), schemaauthority.XInsightAdoptionExpandHead+".down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(adoptionDown))
 	require.NoError(t, err)
-	policyDown, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), schemaauthority.XInsightPolicyExpandHead+".down.sql"))
+	policyDown, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), schemaauthority.XInsightPolicyExpandHead+".down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(policyDown))
 	require.NoError(t, err)
@@ -50,7 +50,7 @@ func TestScopedContentMigrationPreservesOldPolicyAndRefusesNewHistoryRollback(t 
       VALUES($1,$2,1,1,$3,$3,clock_timestamp(),'applied','none')`, org, project, []byte(config))
 	require.NoError(t, err)
 	up := scopedContentMigrationWire(t, ".up.sql")
-	require.NoError(t, migrate.RunCompatibleExpand(ctx, pool, testutil.MigrationsDir(t), migrate.CompatibleExpandHooks{
+	require.NoError(t, migrate.RunCompatibleExpand(ctx, pool, testutil.PreRetirementMigrationsDir(t), migrate.CompatibleExpandHooks{
 		Version:        schemaauthority.ScopedContentExpandHead,
 		ExpectedSHA256: fmt.Sprintf("sha256:%x", sha256.Sum256(up)),
 		Before:         func(context.Context, *pgxpool.Conn) error { return nil },

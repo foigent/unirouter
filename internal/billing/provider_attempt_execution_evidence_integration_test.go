@@ -258,7 +258,7 @@ UPDATE call_logs
 }
 
 func TestOwnedProviderAttemptAndTerminalHealthFenceAreReplaySafe(t *testing.T) {
-	pool, orgID, model := newReservationFixture(t, 1000, 0)
+	pool, orgID, model := newPreRetirementReservationFixture(t, 1000, 0)
 	b := NewBilling(pool, nil)
 	evidence := seedProviderAttemptCanonicalEvidence(t, pool, orgID, model)
 	requestID := "attempt-owned-health-fence"
@@ -415,7 +415,7 @@ UPDATE billing_provider_attempts SET execution_snapshot_hash=NULL WHERE org_id=$
 	// The newer public-binding migrations must be reversed before the M85
 	// guard can permit this isolated fixture to enter the legacy schema.
 	require.NoError(t, testutil.RewindCapabilityPublicationsForLegacyMigrationTest(
-		t.Context(), pool, testutil.MigrationsDir(t),
+		t.Context(), pool, testutil.PreRetirementMigrationsDir(t),
 	))
 	for _, name := range []string{
 		"000100_kimi_k26_function_tools_tool_index_normalizer.down.sql",
@@ -434,43 +434,43 @@ UPDATE billing_provider_attempts SET execution_snapshot_hash=NULL WHERE org_id=$
 		"000087_anthropic_messages_tools_public_binding.down.sql",
 		"000086_exact_public_execution_bindings.down.sql",
 	} {
-		down, readErr := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		down, readErr := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), name))
 		require.NoError(t, readErr)
 		_, err = pool.Exec(t.Context(), string(down))
 		require.NoError(t, err, name)
 	}
 	planFenceDownSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000085_model_execution_plan_freeze_fence.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000085_model_execution_plan_freeze_fence.down.sql",
 	))
 	require.NoError(t, err)
 	_, err = pool.Exec(t.Context(), string(planFenceDownSQL))
 	require.NoError(t, err)
 	currencyDraftDownSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000084_official_rate_source_currency_drafts.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000084_official_rate_source_currency_drafts.down.sql",
 	))
 	require.NoError(t, err)
 	unitMeterDownSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000083_versioned_unit_meter_billing.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000083_versioned_unit_meter_billing.down.sql",
 	))
 	require.NoError(t, err)
 	sealedContractDownSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000082_sealed_model_execution_contracts.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000082_sealed_model_execution_contracts.down.sql",
 	))
 	require.NoError(t, err)
 	profileDownSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000081_versioned_model_execution_profiles.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000081_versioned_model_execution_profiles.down.sql",
 	))
 	require.NoError(t, err)
 	observationReconciliationDownSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000080_observation_provider_cost_reconciliation.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000080_observation_provider_cost_reconciliation.down.sql",
 	))
 	require.NoError(t, err)
 	connectionLicenseDownSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000079_canonical_connection_license_authority.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000079_canonical_connection_license_authority.down.sql",
 	))
 	require.NoError(t, err)
 	authoringDownSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000078_atomic_model_release_authoring.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000078_atomic_model_release_authoring.down.sql",
 	))
 	require.NoError(t, err)
 	_, err = pool.Exec(t.Context(), string(currencyDraftDownSQL))
@@ -488,23 +488,23 @@ UPDATE billing_provider_attempts SET execution_snapshot_hash=NULL WHERE org_id=$
 	_, err = pool.Exec(t.Context(), string(authoringDownSQL))
 	require.NoError(t, err)
 
-	publicAuthorityDownSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000077_public_model_execution_authority.down.sql"))
+	publicAuthorityDownSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000077_public_model_execution_authority.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(t.Context(), string(publicAuthorityDownSQL))
 	require.NoError(t, err)
-	lifecycleReceiptDownSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000076_model_deployment_lifecycle_receipts.down.sql"))
+	lifecycleReceiptDownSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000076_model_deployment_lifecycle_receipts.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(t.Context(), string(lifecycleReceiptDownSQL))
 	require.NoError(t, err)
-	qualificationDownSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000075_model_operation_production_qualification.down.sql"))
+	qualificationDownSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000075_model_operation_production_qualification.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(t.Context(), string(qualificationDownSQL))
 	require.NoError(t, err)
-	createReceiptDownSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000074_model_deployment_create_idempotency.down.sql"))
+	createReceiptDownSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000074_model_deployment_create_idempotency.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(t.Context(), string(createReceiptDownSQL))
 	require.NoError(t, err)
-	downSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000073_model_execution_dispatch_fence.down.sql"))
+	downSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000073_model_execution_dispatch_fence.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(t.Context(), string(downSQL))
 	require.ErrorContains(t, err, "dispatch owner or terminal health evidence exists")

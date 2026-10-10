@@ -14,9 +14,9 @@ import (
 )
 
 func TestP6F08RoutingPolicyV1MigrationUpDownGuardAndRollForward(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
-	migrationsDir := testutil.MigrationsDir(t)
+	migrationsDir := testutil.PreRetirementMigrationsDir(t)
 
 	assertUp := func() {
 		t.Helper()

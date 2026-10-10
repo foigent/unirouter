@@ -12,7 +12,7 @@ import (
 
 func TestModelExecutionDispatchFenceDownLocksBeforeEveryRepresentabilityCheck(t *testing.T) {
 	body, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000073_model_execution_dispatch_fence.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000073_model_execution_dispatch_fence.down.sql",
 	))
 	require.NoError(t, err)
 	sql := string(body)

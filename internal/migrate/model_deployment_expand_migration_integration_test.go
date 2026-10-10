@@ -31,7 +31,7 @@ INSERT INTO channel_keys (channel_id,key_enc,status,state_epoch)
 VALUES ($1,'encrypted-fixture','active',3)
 RETURNING id`, channelID).Scan(&keyID))
 
-	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000071_model_execution_evidence"))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.PreRetirementMigrationsDir(t), "000071_model_execution_evidence"))
 
 	var connections, credentials, deployments, capabilities int
 	var latestProbeView, deploymentColumn, attemptColumn, ledger bool
@@ -91,7 +91,7 @@ SELECT (SELECT COUNT(*) FROM provider_connections WHERE legacy_channel_id=$1),
 	execMigrationDown(t, ctx, pool, "000071_model_execution_evidence.down.sql")
 	execMigrationDown(t, ctx, pool, "000070_runtime_deployment_route_manifest.down.sql")
 
-	downSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000069_model_deployment_expand.down.sql"))
+	downSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000069_model_deployment_expand.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(downSQL))
 	require.ErrorContains(t, err, "non-reconstructable provider connection exists")
@@ -135,7 +135,7 @@ SELECT to_regclass('public.provider_connections') IS NULL,
 	require.True(t, deploymentColumn)
 	require.True(t, ledger)
 
-	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000069_model_deployment_expand"))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.PreRetirementMigrationsDir(t), "000069_model_deployment_expand"))
 }
 
 func TestModelDeploymentExpandEnforcesTenantAttributionAndSurrogateIdentity(t *testing.T) {
@@ -285,7 +285,7 @@ VALUES ('rollback-cross-tenant-attribution',$1,'public-attribution',$2,$3)`,
 		otherOrgID, channelID, deploymentID)
 	require.NoError(t, err)
 
-	downSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000069_model_deployment_expand.down.sql"))
+	downSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000069_model_deployment_expand.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(downSQL))
 	require.ErrorContains(t, err, "non-reconstructable deployment attribution exists")
@@ -362,7 +362,7 @@ SELECT id,connection_id,'legacy.any.v1','canonical.manual','v1',upstream_model,'
 			}
 			require.NoError(t, err)
 
-			downSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000069_model_deployment_expand.down.sql"))
+			downSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000069_model_deployment_expand.down.sql"))
 			require.NoError(t, err)
 			_, err = pool.Exec(ctx, string(downSQL))
 			switch evidenceKind {

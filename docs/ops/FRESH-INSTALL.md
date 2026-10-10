@@ -1,10 +1,21 @@
-# Fresh single-instance installer — source candidate pending native validation
+# Fresh single-instance installer
+
+For the 1.10.0 candidate, the final owner step is M126 commercial License
+retirement. No commercial License import or public key is required; exact
+Artifact identity, publications, coverage and atomic completion remain required.
+See [the M126 contract](COMMERCIAL-LICENSE-RETIREMENT.md). Local synthetic PG16
+fresh/resume and real restore/rebase checks passed on 2026-10-10; see the
+[execution record](../agent-workflows/EXECUTION-RECORD.md). Docker installation
+and public artifact acceptance remain pending. The new
+[Linux wrapper](../community/install-linux.md) uses this existing owner.
+
+## Retained original design context
 
 This is the bounded installer design and command contract reviewed by the UR
 supervisor, including the ordinary-prefix Plan recovery, actual-writer admission
-and historical-completion amendments. Version 1.4.1 is currently source only.
-No new native build, database installation, restore or runtime acceptance has
-been executed for this candidate.
+and historical-completion amendments. At the original 1.4.1 design checkpoint,
+the candidate was source only; the baseline and worktree below describe that
+historical checkpoint, not the current 1.10.0 validation state above.
 
 Accepted product baseline: `59f7712d09653034756b846b15b8d69a16782791`, tree
 `ab09c48939539a10dbb039814489d764c0b53ca5`, version 1.4.0. The retained workflow

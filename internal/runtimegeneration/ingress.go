@@ -31,7 +31,7 @@ type IngressPlan struct {
 }
 
 func (p IngressPlan) validate() error {
-	if len(p.ChangeID) == 0 || len(p.ChangeID) > 160 || strings.TrimSpace(p.ChangeID) != p.ChangeID || strings.ContainsAny(p.ChangeID, "\x00\r\n") || !modelprofile.IsDefinitionDigest(p.ExpectedConfigDigest) || !modelprofile.IsDefinitionDigest(p.DesiredConfigDigest) || len(p.DesiredConfigBytes) == 0 || len(p.DesiredConfigBytes) > 1<<20 || fmt.Sprintf("%x", sha256.Sum256(p.DesiredConfigBytes)) != p.DesiredConfigDigest || len(p.After) == 0 || len(p.After) > 64 || len(p.Before) > 64 {
+	if len(p.ChangeID) == 0 || len(p.ChangeID) > 160 || strings.TrimSpace(p.ChangeID) != p.ChangeID || strings.ContainsAny(p.ChangeID, "\x00\r\n") || !modelprofile.IsDefinitionDigest(p.ExpectedConfigDigest) || !modelprofile.IsDefinitionDigest(p.DesiredConfigDigest) || len(p.DesiredConfigBytes) == 0 || len(p.DesiredConfigBytes) > 1<<20 || fmt.Sprintf("%x", sha256.Sum256(p.DesiredConfigBytes)) != p.DesiredConfigDigest || p.After == nil || len(p.After) > 64 || len(p.Before) > 64 {
 		return fmt.Errorf("invalid ingress transition")
 	}
 	for _, members := range [][]Identity{p.Before, p.After} {

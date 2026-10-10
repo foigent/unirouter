@@ -10,23 +10,21 @@ import (
 	"strings"
 
 	"github.com/uniroute/unirouter/internal/licensing"
+	"github.com/uniroute/unirouter/internal/strictjson"
 )
 
 const licenseSettingKey = "license.offline"
 const maxLicenseImportBytes = 256 << 10
 
-// ReconcileStoredCommercialLicense loads the signed document and rebuilds its
-// derived resource-limit projection under the same lock used by imports. This
-// is the startup path after migrations and makes a restored database safe even
-// if the derived singleton was absent.
+// ReconcileStoredCommercialLicense is retained for historical verification and
+// pre-M126 fixtures. The open-source server never calls it during startup or
+// restore, and the deprecated License HTTP endpoint does not import documents.
 func (h *Handler) ReconcileStoredCommercialLicense(ctx context.Context) (licensing.Status, error) {
 	return h.syncStoredCommercialLicense(ctx, true)
 }
 
-// RefreshStoredCommercialLicense accepts a stored commercial document only
-// when its derived resource-limit projection matches. Imports update both in
-// one transaction, so a mismatch is an unsafe restored or manually modified
-// state rather than a normal replica race.
+// RefreshStoredCommercialLicense retains the historical projection consistency
+// check. It is not scheduled or used for admission by the open-source server.
 func (h *Handler) RefreshStoredCommercialLicense(ctx context.Context) (licensing.Status, error) {
 	return h.syncStoredCommercialLicense(ctx, false)
 }
@@ -77,12 +75,7 @@ func (h *Handler) GetLicense(w http.ResponseWriter, r *http.Request) {
 	if !requirePlatformGlobalControl(w, r) {
 		return
 	}
-	raw, err := h.readStoredLicense(r)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to read license"})
-		return
-	}
-	writeJSON(w, http.StatusOK, h.evaluateLicense(raw))
+	writeJSON(w, http.StatusOK, licensing.NotRequiredStatus())
 }
 
 func (h *Handler) UpdateLicense(w http.ResponseWriter, r *http.Request) {
@@ -92,7 +85,21 @@ func (h *Handler) UpdateLicense(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		License json.RawMessage `json:"license"`
 	}
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxLicenseImportBytes))
+	wire, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxLicenseImportBytes))
+	if err != nil {
+		var tooLarge *http.MaxBytesError
+		code := http.StatusBadRequest
+		if errors.As(err, &tooLarge) {
+			code = http.StatusRequestEntityTooLarge
+		}
+		writeJSON(w, code, map[string]interface{}{"error": "Invalid or oversized License import"})
+		return
+	}
+	if strictjson.Validate(wire) != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
+		return
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(wire)))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&req); err != nil {
 		var tooLarge *http.MaxBytesError
@@ -113,86 +120,19 @@ func (h *Handler) UpdateLicense(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	verifier := h.licenseVerifierOrDefault()
-	status := verifier.VerifyBytes(raw)
-	if status.Status == licensing.StatusInvalid {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": status.Error, "status": status})
+	// Compatibility only: consume a well-formed object without storing, validating
+	// signatures, changing entitlements or emitting an import/expiry event.
+	var object map[string]json.RawMessage
+	if strictjson.Validate(raw) != nil || json.Unmarshal(raw, &object) != nil || len(object) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "license must be a nonempty JSON object"})
 		return
 	}
-	if h.licenseRuntime != nil && !status.Enforceable {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "An enforceable unirouter.license.v1 document is required", "status": status})
-		return
-	}
+	writeJSON(w, http.StatusOK, struct {
+		licensing.Status
+		Imported bool   `json:"imported"`
+		Message  string `json:"message"`
+	}{Status: licensing.NotRequiredStatus(), Imported: false, Message: "Commercial licenses are not required; no document was imported."})
 
-	normalized, err := licensing.NormalizeDocument(raw)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error()})
-		return
-	}
-	tx, err := h.db.Begin(r.Context())
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Transaction failed"})
-		return
-	}
-	defer tx.Rollback(r.Context())
-	if err := lockGlobalControlKey(r.Context(), tx, licenseSettingKey); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Lock failed"})
-		return
-	}
-	beforeRaw, _, err := readGlobalSetting(r.Context(), tx, licenseSettingKey, true)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to read existing license"})
-		return
-	}
-	beforeStatus := verifier.VerifyBytes(beforeRaw)
-	if status.Enforceable {
-		if err := replaceCommercialEntitlements(r.Context(), tx, status); err != nil {
-			var conflict *commercialEntitlementConflict
-			if errors.As(err, &conflict) {
-				writeJSON(w, http.StatusConflict, map[string]interface{}{
-					"error":    conflict.Error(),
-					"code":     "license_error.resource_limit_below_current_usage",
-					"resource": conflict.Resource,
-					"current":  conflict.Current,
-					"limit":    conflict.Limit,
-				})
-				return
-			}
-			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to persist commercial entitlements"})
-			return
-		}
-	}
-
-	_, err = tx.Exec(r.Context(),
-		`INSERT INTO settings (key, value, description, updated_at)
-		 VALUES ($1, $2::jsonb, 'Offline UniRouter license document', NOW())
-		 ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, description = EXCLUDED.description, updated_at = NOW()`,
-		licenseSettingKey, string(normalized))
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to save license"})
-		return
-	}
-
-	auditResourceID, resourceIDHashed := globalControlAuditResourceID(licenseResourceID(status))
-	if err := insertAuditEntry(r.Context(), tx, "license.update", "license", auditResourceID, map[string]interface{}{
-		"scope":              "platform_global",
-		"resource_id_hashed": resourceIDHashed,
-		"before":             licenseAuditSummary(beforeStatus),
-		"after":              licenseAuditSummary(status),
-	}, globalControlAuditMeta(r)); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
-		return
-	}
-	if err := tx.Commit(r.Context()); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Commit failed"})
-		return
-	}
-	if h.licenseRuntime != nil {
-		status = h.licenseRuntime.Replace(normalized)
-	}
-	h.emitLicenseWarningEvent(r.Context(), status)
-
-	writeJSON(w, http.StatusOK, status)
 }
 
 func (h *Handler) evaluateLicense(raw []byte) licensing.Status {

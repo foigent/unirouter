@@ -16,7 +16,7 @@ import (
 func TestP6F18BStreamSettlementRecoveryMigrationUpDownGuardAndRollForward(t *testing.T) {
 	pool := testutil.SetupIsolatedTestDB(t)
 	ctx := context.Background()
-	migrationsDir := testutil.MigrationsDir(t)
+	migrationsDir := testutil.PreRetirementMigrationsDir(t)
 	runMigrationsBeforeP6F18B(t, pool, migrationsDir)
 	throughP6F18BDir := migrationsThroughP6F18B(t, migrationsDir)
 	require.NoError(t, migrate.Run(ctx, pool, throughP6F18BDir))

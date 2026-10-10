@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -45,7 +46,8 @@ func TestCurrentResetPreviewRejectsM118AndPreservesExactState(t *testing.T) {
 	_, err = Preview(ctx, pool, client, resetArtifactSchemaLedger(t), target, "synthetic-source-old", "synthetic-source-new", time.Unix(1, 0))
 	require.ErrorIs(t, err, resetplan.ErrInvalid)
 	require.ErrorContains(t, err, "reset_support_migration")
-	require.ErrorContains(t, err, "missing=["+schemaauthority.ContentCaptureExpandHead+"]")
+	require.ErrorContains(t, err, "missing=["+schemaauthority.ContentCaptureExpandHead)
+	require.ErrorContains(t, err, schemaauthority.CommercialLicenseRetirementHead)
 	redisAfter, err := ObserveRedis(ctx, client)
 	require.NoError(t, err)
 	after, err := Inspect(ctx, pool, redisAfter)
@@ -333,8 +335,9 @@ var resetContentTables = []string{
 
 func resetM118TestDB(t *testing.T) (*pgxpool.Pool, []string) {
 	t.Helper()
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupMigratedThroughTestDB(t, schemaauthority.ContentCaptureExpandHead)
 	ledger := resetArtifactSchemaLedger(t)
+	ledger = ledger[:slices.Index(ledger, schemaauthority.ContentCaptureExpandHead)+1]
 	require.Equal(t, schemaauthority.ContentCaptureExpandHead, ledger[len(ledger)-1])
 	wire, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), schemaauthority.ContentCaptureExpandHead+".down.sql"))
 	require.NoError(t, err)
@@ -357,7 +360,7 @@ func resetM118TestDB(t *testing.T) (*pgxpool.Pool, []string) {
 	return pool, ledger
 }
 
-func TestApplyRefusesM119ContentAndPreservesPostgresAndRedis(t *testing.T) {
+func TestApplyRefusesCurrentContentAndPreservesPostgresAndRedis(t *testing.T) {
 	for _, state := range []string{"empty", "retained_content"} {
 		t.Run(state, func(t *testing.T) {
 			pool := testutil.SetupMigratedTestDB(t)
@@ -391,7 +394,7 @@ func TestApplyRefusesM119ContentAndPreservesPostgresAndRedis(t *testing.T) {
 			contentBefore := digests()
 			target := resetplan.TargetIdentity{RuntimeVersion: "1.4.1", RuntimeCommit: strings.Repeat("a", 40), SourceTree: strings.Repeat("b", 40)}
 			ledger := resetArtifactSchemaLedger(t)
-			require.Equal(t, schemaauthority.ContentCaptureExpandHead, before.MigrationVersions[len(before.MigrationVersions)-1])
+			require.Equal(t, schemaauthority.CommercialLicenseRetirementHead, before.MigrationVersions[len(before.MigrationVersions)-1])
 			plan, err := Preview(ctx, pool, client, ledger, target, "source-old", "source-new", time.Unix(1, 0))
 			require.NoError(t, err)
 			require.False(t, plan.ScopeComplete)

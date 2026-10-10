@@ -45,9 +45,6 @@ func invokeGenerationCLI(t *testing.T, cfg *config.Config, action string, input 
 
 func TestRuntimeGenerationCLIExpandedLedgerLifecycleIntegration(t *testing.T) {
 	for _, head := range schemaauthority.SupportedSchemaHeads() {
-		if head == schemaauthority.LegacyCapabilityHead {
-			continue // The runtime-generation CLI requires an expanded schema.
-		}
 		t.Run(head, func(t *testing.T) {
 			pool := testutil.SetupMigratedThroughTestDB(t, head)
 			dir := testutil.MigrationsDir(t)
@@ -55,6 +52,19 @@ func TestRuntimeGenerationCLIExpandedLedgerLifecycleIntegration(t *testing.T) {
 			require.NoError(t, pool.QueryRow(t.Context(), `SELECT max(version) FROM schema_migrations`).Scan(&actualHead))
 			require.Equal(t, head, actualHead, "each CLI case must run on its named actual schema")
 			cfg := &config.Config{DB_DSN: pool.Config().ConnString(), DBMaxConnections: 3, MigrationsDir: dir}
+			if head != schemaauthority.CommercialLicenseRetirementHead {
+				cfg.RuntimeEnvironment = "test"
+				_, err := invokeGenerationCLI(t, cfg, "inspect", nil)
+				if head == schemaauthority.XInsightCredentialExpandHead {
+					require.NoError(t, err, "only exact M125 maintenance reads remain available")
+				} else {
+					require.ErrorContains(t, err, "outside this artifact")
+				}
+				var afterHead string
+				require.NoError(t, pool.QueryRow(t.Context(), `SELECT max(version) FROM schema_migrations`).Scan(&afterHead))
+				require.Equal(t, head, afterHead, "control read/refusal must not migrate")
+				return
+			}
 			ledger, err := schemaauthority.ExpectedLedger(dir)
 			require.NoError(t, err)
 			member := runtimegeneration.Identity{Instance: "uri_" + strings.Repeat("a", 32), Artifact: "sha256:" + strings.Repeat("b", 64)}
@@ -113,7 +123,7 @@ func TestRuntimeGenerationCLIRejectsUnapprovedLedgersIntegration(t *testing.T) {
 				_, err := invokeGenerationCLI(t, cfg, action, map[string]any{})
 				require.Error(t, err)
 				if kind == "legacy" {
-					require.ErrorContains(t, err, "runtime generation owner requires the exact expanded schema")
+					require.ErrorContains(t, err, "outside this artifact")
 				}
 			}
 			if kind == "legacy" {

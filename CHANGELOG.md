@@ -4,6 +4,15 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.10.0] - 2026-10-10
+
+- Adopt Apache-2.0 with bilingual project and contributor documentation.
+- Retire runtime commercial License admission, imports, refresh and resource-count limits. Authentication, tenant/project policy, financial controls, model qualification and signed upgrade trust remain.
+- M126 requires maintenance from the complete M125 ledger. Ordinary startup cannot apply it; old binaries do not support M126. Retain the pre-M126 backup and original Artifact for recovery.
+- Deprecated License APIs return `not_required`; imports return `imported=false` without modifying historical records.
+- Add a Linux/ECS installer candidate for a verified signed release: independent secrets, private Compose setup, formal fresh initialization and bounded resume. The verifier now exposes the exact signed manifest digest. Public packages and real Docker acceptance remain pending.
+- Local candidate only; this entry does not assert CI, installation, Target, Provider or Production acceptance.
+
 ## [1.9.8] - 2026-10-09
 
 - 修复正式 DeepSeek 1.1.0/v6 能力探测的 admin 响应分派，复用已发布 Probe v2 的严格解析与终态校验。

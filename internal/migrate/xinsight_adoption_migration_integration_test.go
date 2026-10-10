@@ -24,7 +24,7 @@ import (
 func TestXInsightAdoptionM124RuntimeGateAndEmptyDownIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedThroughTestDB(t, schemaauthority.XInsightPolicyExpandHead)
 	ctx := t.Context()
-	dir := testutil.MigrationsDir(t)
+	dir := testutil.PreRetirementMigrationsDir(t)
 	up, e := os.ReadFile(filepath.Join(dir, schemaauthority.XInsightAdoptionExpandHead+".up.sql"))
 	require.NoError(t, e)
 	down, e := os.ReadFile(filepath.Join(dir, schemaauthority.XInsightAdoptionExpandHead+".down.sql"))

@@ -83,7 +83,7 @@ func TestV1StreamLeaseFencingMigrationRefusesActiveLeaseCutover(t *testing.T) {
 }
 
 func TestV1StreamLeaseFencingMigrationRejectsUnfencedNewStreamEvidence(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	_, err := pool.Exec(ctx, `
 		INSERT INTO freeze_idempotency (
@@ -119,7 +119,7 @@ func TestV1StreamLeaseFencingMigrationRejectsUnfencedNewStreamEvidence(t *testin
 		) VALUES (7301,'stream-fence-schema','attempt-schema',2,'stream','partial',1,1,200,'owner-stale',1)`)
 	require.ErrorContains(t, err, "fence cannot regress")
 
-	downSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000041_v1_stream_lease_fencing.down.sql"))
+	downSQL, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000041_v1_stream_lease_fencing.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(downSQL))
 	require.ErrorContains(t, err, "C1.3 rollback refused")

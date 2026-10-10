@@ -1,5 +1,208 @@
 # Current Execution Record
 
+## Private review dispatch — approved, pre-dispatch record — 2026-10-10
+
+The owner explicitly confirmed committing and pushing the prepared open-source
+and Linux-installer candidate, creating a draft PR, and running existing checks.
+This does not authorize merging, changing visibility, publishing releases,
+deployment, production traffic or new provider calls.
+
+Before dispatch, all 224 candidate files matched the prepared scope receipt
+`/private/tmp/ur-open-source-private-pr-candidate-20261010.json`; generated
+`frontend/output/` remains excluded and preserved. The only subsequent local
+edit is this authorization/status entry. GitHub `foigent/unirouter` remains
+private, main remains `59c47b852b7372951c5c49b0e6b23df8c83817b9`, and no PR
+already exists for `codex/open-source-preparation`. Repository identity and
+write access were verified; existing Git author configuration is retained.
+
+Actions budget and usage were checked before dispatch. No billing figures are
+included here; budget settings and required checks remain unchanged. This entry
+records pre-dispatch checks; the resulting PR and its exact-head checks record
+remote outcomes. Earlier Local evidence below remains scoped to its tested
+files and conditions. Experience file: no change required.
+
+## Linux/ECS community installer — local checks complete, native acceptance pending — 2026-10-10
+
+The owner selected Linux servers/ECS for the first simplified installation.
+Work continues in the same `codex/open-source-preparation` candidate at
+`/Users/m4/.codex/worktrees/remove-commercial-license/unirouter`, baseline
+`59c47b852b7372951c5c49b0e6b23df8c83817b9`, version 1.10.0. This is local
+implementation and offline validation only. Existing ECS onboarding/model
+evidence remains valid within its original versions; no existing target is
+reinstalled or revalidated by this work.
+
+The wrapper at `deploy/customer/install.py` accepts a prepared signed release,
+checks every declared payload and six immutable image references, generates
+independent private configuration and uses the existing fresh-install owner.
+Initial release registration and one administrator password rotation precede
+HTTP startup. Resume reconciles original DB facts and preserves secrets;
+uncertain password rotation stops for readback without a second audit write.
+The standalone verifier exposes `manifest_sha256` to bind the parsed complete
+artifact list to the actual verified signature. No new DB authority or trust
+bypass is introduced. The reviewed scope and producer inputs are in
+[COMMUNITY-INSTALLER.md](../ops/COMMUNITY-INSTALLER.md).
+
+English and Chinese installation guides are linked from their READMEs.
+[Three starter task cards](../community/starter-issues.md) are local drafts,
+not published GitHub issues: Chinese getting started, a standard-library
+request example, and Chinese architecture. The owner need not write technical
+issue descriptions or the deferred Why UniRouter essay for this step.
+
+New Local evidence, separate from the prior License-removal checks below:
+- 23 offline installer cases passed, including no-write checks, signed input
+  binding, copy-time tamper, project/daemon collisions, secret preservation,
+  initialization order and interrupted-result handling.
+  `/private/tmp/ur-community-installer-offline-4.log`.
+- Race-enabled full tests for `cmd/uniroute-upgrade` and
+  `internal/upgradebundle` passed. The Python installer consumed real Go
+  Ed25519 package verification with synthetic keys; valid, prepared-file
+  tamper, wrong-key and package-tamper cases behaved as expected.
+  `/private/tmp/ur-community-installer-signatures-final.log`.
+- Release-policy 19 cases and current version/toolchain metadata passed;
+  installer `--help`, local links in 14 entry/community documents and
+  `git diff --check` passed. The delivery CI preflight includes the offline
+  installer tests; no GitHub CI run has occurred.
+- An initial Go invocation could not load its cached toolchain with the
+  checksum database disabled. Using the already installed exact Go 1.25.12
+  binary resolved this without downloads or installation.
+
+Read-only independent pre-code review and the one closing review use
+`/root/installer_precode_review`. Closing input receipt:
+`/private/tmp/ur-community-installer-closing-review-20261010.json`, SHA-256
+`ca1b6c5dd021f3180e39fcc16919aca0c901c343d150401607c66565883d9e54`.
+The four validated blockers were verified and fixed: reject unlabelled exact-name
+resource collisions, resume retained pre-claim evidence, bind effective Compose
+images/resources to the signed descriptor and bind exact reread descriptor bytes.
+Targeted regressions and signature interoperability passed after corrections.
+The contract document records adjudication; no extra review round is claimed.
+
+Docker is unavailable locally. A reviewed actual release, image artifacts and
+an authorized disposable Linux environment are still required for real Docker
+acceptance. No production signing, public download, npm package, commit, push,
+PR, Issue, deployment, new service or provider call was performed. The original
+checkout remains on `ac53699d29c3791a514a045fe064ab63ff9f99c0` with its prior
+edits preserved. Experience file: no change required.
+
+## Open-source preparation — prior License-removal local checks complete, publication pending — 2026-10-10
+
+Baseline: `59c47b852b7372951c5c49b0e6b23df8c83817b9`, tree
+`35dea6fce43ff8391d7bb8ef4a9a500efbf329bf`; private main was read back before
+preparation. Candidate: `/Users/m4/.codex/worktrees/remove-commercial-license/unirouter`,
+branch `codex/open-source-preparation`, version 1.10.0. Original checkout edits
+are preserved. No commit, push, PR, visibility, release, deployment or Provider
+call was performed.
+
+Accepted direction: Apache-2.0 core; runtime commercial License retirement;
+independent future commercial services/modules; bilingual entry and contribution
+docs. UR owns execution/economic facts. X-Insight is optional asynchronous
+evidence/investigation infrastructure with its own product/license boundary.
+The owner will write Why UniRouter later.
+
+Local implementation includes public documentation/templates, retired HTTP/UI
+License projections, removal of production commercial middleware/refresh,
+mandatory upgrade trust, M126 commercial-trigger retirement, exact runtime schema
+admission, fresh-install progression and preservation of M118 budget coverage.
+Authorization, qualification, billing and historical records remain required.
+
+Independent pre-code review and one closing review are recorded in
+[OPEN-SOURCE-PRECODE-REVIEW.md](OPEN-SOURCE-PRECODE-REVIEW.md). Closing review found
+the final-receiver maintenance gap, two omitted M126 consumers and stale tests.
+Source Facts/counter consumers and route tests are corrected. Additional unit
+tests found and corrected an empty-requirement error in M126 manifest admission.
+
+Verified Local, using synthetic PostgreSQL 16/Redis where applicable:
+- Full ordinary `go test -race -p=2 ./... -count=1 -timeout=20m` passed:
+  106 packages, 24 without tests. Log: `/private/tmp/ur-oss-backend-race-final.log`.
+  This supersedes the initial unavailable-database run and its stale assertions.
+- Historical migration/domain regressions passed after explicitly pinning
+  pre-retirement fixtures to M125. Current runtime/fresh fixtures retain M126;
+  production ledger validation and the unsupported M126 down guard are unchanged.
+  The affected seven-package integration run passed billing, gateway,
+  modelexecution, sourcefacts and resetexec; its 11 remaining migration/runtimechange
+  failures were corrected and passed a dedicated race rerun. Logs:
+  `/private/tmp/ur-oss-history-regression-4.log` and
+  `/private/tmp/ur-oss-history-retest-5.log`.
+- Real PG16 retirement checks cover receiving-fleet refusal, explicit empty
+  ingress and ambiguous transitions, check without writes, retired fleet,
+  M126 migration/rejoin, retained expired/low-limit entitlement history and
+  preserved real constraints. The exact M125 maintenance CLI rejects nonempty,
+  null and Production requests without mutation. CLI log:
+  `/private/tmp/ur-oss-maintenance-cli-4.log`.
+- Frontend Vitest passed all 96 files / 853 tests:
+  `/private/tmp/ur-oss-frontend-final-tests.log`. Fixed Node 24.19.0/npm 11.17.0
+  formal build passed type, API, React and bundle guards; the API guard passed
+  again after OpenAPI edits. Logs: `/private/tmp/ur-oss-frontend-build-3.log`
+  and `/private/tmp/ur-oss-api-contracts-2.log`.
+- Three real-browser acceptance cases passed with the existing Chromium and
+  synthetic services: access/readiness, model onboarding and source budgets.
+  Commercial gates are absent; model-registration and permission requirements
+  remain. Log: `/private/tmp/ur-oss-browser-retest-2.log`.
+- Offline controller tests passed: ingress 15, retirement 9, rollout 81;
+  backend runner selection/orchestration 9 and release policy 19 passed.
+  Current-mode product/toolchain metadata and `go vet ./...` passed; vet log:
+  `/private/tmp/ur-oss-vet-confirmed.log`.
+- Fresh installation, process-interruption/resume through M126, real pg_dump /
+  psql restore, budget-proof rebase, mixed-database refusal and no-write plan/check
+  guards passed with race enabled. Four top-level cases, no skips; log:
+  `/private/tmp/ur-oss-fresh-recovery-final.log`.
+- The repository's existing five-group `scripts/test-backend-integration.sh`
+  passed with race enabled: consolidated 20 packages / 956 test results,
+  source-media 3 / 849, agentcap 1 / 1, limitpolicy 1 / 1,
+  workloadadmission 1 / 3. Counts include subtests. Summaries and exact JSONL
+  logs: `/private/tmp/unirouter-oss-validation.upqUNT/formal-integration-final/`.
+  Outer log: `/private/tmp/ur-oss-formal-integration-final.log`.
+  Of seven recorded skips, four restore cases required an explicit PG tool
+  directory and subsequently passed dedicated race runs, with no skips:
+  `/private/tmp/ur-oss-source-restore-final.log` and
+  `/private/tmp/ur-oss-budget-content-restore-final.log`.
+  The other three are two deliberate shared Responses recovery cases and the
+  opt-in query-scale benchmark. No new performance-scale claim is made.
+- Final `git diff --check`, current-mode release metadata and local links in
+  the 12 public entry/community documents passed. Original checkout readback
+  remains `ac53699d29c3791a514a045fe064ab63ff9f99c0` on
+  `codex/minimax-payg-glm-onboarding`; its pre-existing edits remain untouched.
+- No CI, Docker Artifact, actual Docker/NGINX maintenance, Target, real Provider
+  or Production acceptance is claimed.
+
+User approved task-local PostgreSQL 16/Redis synthetic instances and temporary
+npm under `/private/tmp/unirouter-oss-validation.upqUNT`. A later explicit approval
+allowed only shared-memory segment 1900545/key 0x0b0a2d4f to be removed after
+rechecking zero attachments and creator PID 38490 absent. Those checks passed;
+only that segment was released. PostgreSQL 16.14 (65266) and Redis (65267) ran
+only in that directory. After all tests, the exact data directory, ports,
+PIDs 59441/59455 and Redis run identity were rechecked; PostgreSQL had zero
+other client connections. Native pg_ctl/Redis shutdown stopped both services,
+and both PIDs were confirmed absent. Synthetic data and logs are retained.
+No existing service or system parameter was changed.
+An additional synthetic, non-superuser role is used for the acceptance cases
+that require it; no real credentials or business database are involved.
+
+Automatic approval review previously rejected a rollout-script patch as outside
+the earlier temporary-environment authorization. The user subsequently explicitly
+approved maintenance-controller code and offline tests, limited to development/test.
+The rejection is resolved for local code only. No Docker, Target, stop, removal,
+deployment or migration operation against a real environment is authorized.
+
+The local maintenance path now supports canonical full withdrawal, independent
+Artifact CLI control after both receivers exit, clean-exit/removal proof, and
+unknown-result readback. Its offline host tests do not establish real
+Docker/NGINX acceptance. Source-budget restore/rebase recognizes M126 while
+retaining the original M118 certificate and validating the exact predecessor
+and absence of the five retired triggers. The customer helper hash is updated.
+
+Required remaining work:
+- Complete actual Docker image/native installation and Docker/NGINX maintenance
+  acceptance in a separately authorized environment. Docker is unavailable on
+  this host; the local-code approval expressly excludes running those operations.
+- Validate the affected first-use path of the new installation under its own
+  Provider/credential allowance before claiming the public journey complete;
+  reuse unchanged model behavior from the recorded ECS evidence.
+- Resolve private Fork CI dependencies, rights/history disclosure and confidential
+  reporting before any public release. Private conformance cannot be skipped
+  or copied to manufacture green CI.
+
+Experience file: no change required.
+
 
 ## UR 1.9.7 DeepSeek output successor — local candidate — 2026-10-09
 

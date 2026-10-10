@@ -122,6 +122,7 @@ jobs:
           python3 -B scripts/test-runtime-ingress.py
           python3 -B scripts/test-capability-carrier.py
           python3 -B scripts/test-internal-target-build-images.py
+          python3 -B scripts/test-community-installer.py
           python3 -B scripts/internal-target-rollout.py environment-check
 
   backend:
@@ -278,7 +279,7 @@ jobs:
           go test ./internal/resetplan -run '^(TestEveryCurrentMigrationTableHasAnExplicitResetClassification|TestXInsightCredentialJournalPreservesHistoryAndRefusesReset)$' -count=1
           go test ./internal/admin -run '^TestFirstCustomerInventory' -count=1
           go test ./internal/admin -run '^(TestAdminIntegrationFilesUseIntegrationSuffix|TestXInsightAuditActionLiteralsFitSchema)$' -count=1
-          go test -tags=integration -race ./internal/xinsightconnector ./internal/admin ./cmd/uniroute -run '^(TestControlCredential.*PostgresIntegration|TestXInsightCredentialRuntimePostgresIntegration|TestXInsightCredentialRecoveryScopeTechnicalOrgPostgresIntegration|TestXInsightCredentialRecoveryConfirmPostgresIntegration|TestRuntimeGenerationCLIExpandedLedgerLifecycleIntegration|TestM124ToM125CompatibleExpandCLIIntegration|TestM125CompatibleExpandCLIRejectsNonadjacentPredecessorIntegration)$' -count=1 -timeout=5m
+          go test -tags=integration -race ./internal/xinsightconnector ./internal/admin ./cmd/uniroute -run '^(TestControlCredential.*PostgresIntegration|TestXInsightCredentialRuntimePostgresIntegration|TestXInsightCredentialRecoveryScopeTechnicalOrgPostgresIntegration|TestXInsightCredentialRecoveryConfirmPostgresIntegration|TestRuntimeGenerationCLIExpandedLedgerLifecycleIntegration|TestM126CompatibleExpandCLIRejectsM124ToM125Integration|TestM125CompatibleExpandCLIRejectsNonadjacentPredecessorIntegration)$' -count=1 -timeout=5m
       
       - name: Run go vet
         run: go vet ./...
@@ -805,7 +806,6 @@ jobs:
 
           if docker build \
             --build-arg UNIROUTER_RELEASE_TRUST_MODE=release \
-            --build-arg UNIROUTER_LICENSE_TRUST_BUNDLE_B64=eyJsaWNlbnNlLWNpIjoiM2JvVTZyMWtOMXhNY1VtMmh0cFk4ZE0zR3A2ZVE2ZHFiVnZjT1hKWm5qTT0ifQ \
             --build-arg UNIROUTER_UPGRADE_TRUST_BUNDLE_B64=eyJ1cGdyYWRlLWNpIjoiaTlRLzlSVm5YNjlqZDhNbWJzWVdCa1RIOHRIWk9rdng2c3l4cTJvNjFlMD0ifQ \
             -t unirouter-missing-release-identity:test .; then
             echo 'release image build must reject missing immutable version/commit metadata' >&2
@@ -817,7 +817,6 @@ jobs:
             --build-arg RUNTIME_COMMIT=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
             --build-arg RUNTIME_TREE=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
             --build-arg UNIROUTER_RELEASE_TRUST_MODE=release \
-            --build-arg UNIROUTER_LICENSE_TRUST_BUNDLE_B64=eyJsaWNlbnNlLWNpIjoiM2JvVTZyMWtOMXhNY1VtMmh0cFk4ZE0zR3A2ZVE2ZHFiVnZjT1hKWm5qTT0ifQ \
             --build-arg 'UNIROUTER_UPGRADE_TRUST_BUNDLE_B64=invalid -X injected=value' \
             -t unirouter-unsafe-release-argument:test .; then
             echo 'release image build must reject linker-argument injection through trust metadata' >&2
@@ -829,7 +828,6 @@ jobs:
             --build-arg RUNTIME_COMMIT=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
             --build-arg RUNTIME_TREE=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
             --build-arg UNIROUTER_RELEASE_TRUST_MODE=release \
-            --build-arg UNIROUTER_LICENSE_TRUST_BUNDLE_B64=eyJsaWNlbnNlLWNpIjoiM2JvVTZyMWtOMXhNY1VtMmh0cFk4ZE0zR3A2ZVE2ZHFiVnZjT1hKWm5qTT0ifQ \
             --build-arg UNIROUTER_UPGRADE_TRUST_BUNDLE_B64=eyJ1cGdyYWRlLWNpIjoiaTlRLzlSVm5YNjlqZDhNbWJzWVdCa1RIOHRIWk9rdng2c3l4cTJvNjFlMD0ifQ \
             -t unirouter:test .
 
@@ -844,7 +842,7 @@ jobs:
             echo 'release image smoke command must stop at the intentional admin usage error' >&2
             exit 1
           fi
-          grep -F 'Release trust mode: release license_keys=1 upgrade_keys=1' <<< "$release_smoke"
+          grep -F 'Release trust mode: release license_keys=0 upgrade_keys=1' <<< "$release_smoke"
           grep -F 'usage: uniroute admin <create|set-password>' <<< "$release_smoke"
 
           docker build -t unirouter-frontend-context:test -f - frontend <<'DOCKERFILE'

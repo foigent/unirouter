@@ -122,7 +122,7 @@ WHERE introduced_migration='000075_model_operation_production_qualification'`).S
 }
 
 func TestModelOperationProductionQualificationDownRejectsFrozenEvidenceIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	execMigrationDown(t, ctx, pool, "000076_model_deployment_lifecycle_receipts.down.sql")
 	var orgID, publicModelID, connectionID, deploymentID, bindingID int64
@@ -165,7 +165,7 @@ VALUES ($1,$2,'openai.responses.v1','unirouter.openai.responses.text.v1','1.0.0'
 		deploymentID, connectionID, bindingID)
 	require.NoError(t, err)
 
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000075_model_operation_production_qualification.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000075_model_operation_production_qualification.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.ErrorContains(t, err, "frozen network probe evidence exists")
@@ -180,11 +180,11 @@ SELECT EXISTS(SELECT 1 FROM schema_migrations
 }
 
 func TestModelOperationProductionQualificationDownRejectsFutureM76Integration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	_, err := pool.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ('000076_future_contract')`)
 	require.NoError(t, err)
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000075_model_operation_production_qualification.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000075_model_operation_production_qualification.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.ErrorContains(t, err, "later migrations must be reversed first")

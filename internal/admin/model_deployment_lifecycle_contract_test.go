@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/runtimechange"
 )
 
@@ -48,25 +47,25 @@ func TestCanonicalDeploymentLifecycleActionsSeparateRoleLicenseAndSafety(t *test
 	t.Parallel()
 
 	canary, slot := canonicalLifecycleCanaryFixture()
-	viewer := canonicalDeploymentLifecycleActions(canary, slot, nil, false, false)
-	licensedWriter := canonicalDeploymentLifecycleActions(canary, slot, nil, true, true)
-	unlicensedWriter := canonicalDeploymentLifecycleActions(canary, slot, nil, true, false)
+	viewer := canonicalDeploymentLifecycleActions(canary, slot, nil, false)
+	licensedWriter := canonicalDeploymentLifecycleActions(canary, slot, nil, true)
+	unlicensedWriter := canonicalDeploymentLifecycleActions(canary, slot, nil, true)
 
 	promoteViewer := lifecycleActionDescriptor(t, viewer, runtimechange.DeploymentLifecyclePromote)
 	require.True(t, promoteViewer.StructurallyAvailable)
 	require.False(t, promoteViewer.Authorized)
-	require.False(t, promoteViewer.Licensed)
+	require.True(t, promoteViewer.Licensed)
 	require.False(t, promoteViewer.Available)
 	require.Equal(t, "organization_write_role_required", promoteViewer.ReasonCode)
-	require.Equal(t, licensing.FeatureGateway, promoteViewer.LicenseFeature)
+	require.Empty(t, promoteViewer.LicenseFeature)
 
 	promoteLicensed := lifecycleActionDescriptor(t, licensedWriter, runtimechange.DeploymentLifecyclePromote)
 	require.True(t, promoteLicensed.Available)
 	require.Equal(t, "ready_for_transactional_preflight", promoteLicensed.ReasonCode)
 
 	promoteUnlicensed := lifecycleActionDescriptor(t, unlicensedWriter, runtimechange.DeploymentLifecyclePromote)
-	require.False(t, promoteUnlicensed.Available)
-	require.Equal(t, "gateway_license_required", promoteUnlicensed.ReasonCode)
+	require.True(t, promoteUnlicensed.Available)
+	require.Equal(t, "ready_for_transactional_preflight", promoteUnlicensed.ReasonCode)
 
 	cancel := lifecycleActionDescriptor(t, unlicensedWriter, runtimechange.DeploymentLifecycleCancelCanary)
 	require.True(t, cancel.Available, "safe contraction must not depend on Gateway License")
@@ -80,7 +79,7 @@ func TestCanonicalDeploymentLifecycleActionsAreStageSpecific(t *testing.T) {
 	t.Parallel()
 
 	canary, slot := canonicalLifecycleCanaryFixture()
-	descriptors := canonicalDeploymentLifecycleActions(canary, slot, nil, true, true)
+	descriptors := canonicalDeploymentLifecycleActions(canary, slot, nil, true)
 	require.True(t, lifecycleActionDescriptor(t, descriptors, runtimechange.DeploymentLifecyclePromote).StructurallyAvailable)
 	require.True(t, lifecycleActionDescriptor(t, descriptors, runtimechange.DeploymentLifecycleCancelCanary).StructurallyAvailable)
 	require.False(t, lifecycleActionDescriptor(t, descriptors, runtimechange.DeploymentLifecycleRollbackStable).StructurallyAvailable)
@@ -92,7 +91,7 @@ func TestCanonicalDeploymentLifecycleActionsAreStageSpecific(t *testing.T) {
 	slot.StableReleaseID = lifecycleInt64Pointer(active.ID)
 	slot.CanaryReleaseID = nil
 	slot.CanaryBasisPoints = 0
-	descriptors = canonicalDeploymentLifecycleActions(active, slot, nil, true, true)
+	descriptors = canonicalDeploymentLifecycleActions(active, slot, nil, true)
 	require.True(t, lifecycleActionDescriptor(t, descriptors, runtimechange.DeploymentLifecycleRollbackStable).StructurallyAvailable)
 	require.False(t, lifecycleActionDescriptor(t, descriptors, runtimechange.DeploymentLifecycleCancelCanary).StructurallyAvailable)
 
@@ -100,7 +99,7 @@ func TestCanonicalDeploymentLifecycleActionsAreStageSpecific(t *testing.T) {
 	initial.Stage = "validated"
 	initial.ParentStableReleaseID = nil
 	initial.CanaryBasisPoints = 0
-	descriptors = canonicalDeploymentLifecycleActions(initial, runtimechange.DeploymentLifecycleSlotState{}, nil, true, true)
+	descriptors = canonicalDeploymentLifecycleActions(initial, runtimechange.DeploymentLifecycleSlotState{}, nil, true)
 	require.True(t, lifecycleActionDescriptor(t, descriptors, runtimechange.DeploymentLifecycleActivateInitial).StructurallyAvailable)
 	require.Equal(t, []string{"expected_release_version"}, lifecycleActionDescriptor(
 		t, descriptors, runtimechange.DeploymentLifecycleActivateInitial,
@@ -129,7 +128,7 @@ func TestCanonicalDeploymentLifecycleActionsUseOnlyLegacyBridgeForV1Parent(t *te
 		Exists: true, PublicModelID: publicModelID, ModelName: "legacy-model",
 		StableReleaseID: &parentID, Version: 9,
 	}
-	descriptors := canonicalDeploymentLifecycleActions(release, slot, parent, true, true)
+	descriptors := canonicalDeploymentLifecycleActions(release, slot, parent, true)
 	require.Len(t, descriptors, 2)
 	require.Equal(t, runtimechange.DeploymentLifecycleCutoverLegacy, descriptors[0].Action)
 	require.True(t, descriptors[0].Available)
@@ -147,7 +146,7 @@ func TestCanonicalDeploymentLifecycleActionsUseOnlyLegacyBridgeForV1Parent(t *te
 	parent.Stage = "rolled_back"
 	slot.AssignedPublicModelID = &publicModelID
 	slot.StableReleaseID = &targetID
-	descriptors = canonicalDeploymentLifecycleActions(release, slot, parent, true, false)
+	descriptors = canonicalDeploymentLifecycleActions(release, slot, parent, true)
 	rollback := lifecycleActionDescriptor(t, descriptors, runtimechange.DeploymentLifecycleRollbackLegacy)
 	require.True(t, rollback.Available, "legacy rollback is a no-License safety contraction")
 	require.True(t, rollback.Licensed)

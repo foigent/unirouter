@@ -14,7 +14,7 @@ import (
 )
 
 func TestInvocationOptimizationMigrationSafetyAndRollbackGuards(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	rollbackEmptyMigrations(t, pool, []string{
 		"000062_xinsight_connector_redeem_lifecycle.down.sql",
@@ -69,7 +69,7 @@ func TestInvocationOptimizationMigrationSafetyAndRollbackGuards(t *testing.T) {
 	require.NoError(t, pool.QueryRow(ctx, `SELECT auth_epoch FROM api_keys WHERE id=$1`, keyID).Scan(&epoch))
 	require.EqualValues(t, 2, epoch)
 
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000056_prd8_invocation_optimization.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000056_prd8_invocation_optimization.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.ErrorContains(t, err, "policy or runtime evidence exists")

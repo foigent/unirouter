@@ -27,6 +27,12 @@ def digest(data):
 
 
 def membership(state):
+    if state == "none":
+        return (b"upstream backend_stable {\n    server 127.0.0.1:1 down;\n}\n\n"
+                b"upstream backend_canary {\n    server 127.0.0.1:1 down;\n}\n\n"
+                b"upstream frontend {\n    server uniroute-frontend:80;\n}\n")
+    if state not in ("stable", "canary", "both"):
+        raise RuntimeError("unknown managed membership")
     primary = HOSTS["canary"] if state == "canary" else HOSTS["stable"]
     servers = ("    server uniroute-api:8080 weight=9;\n"
                "    server uniroute-api-canary:8080 weight=1;") if state == "both" else f"    server {primary}:8080;"
@@ -84,13 +90,18 @@ def snapshot(args):
     if path.is_symlink() or not path.is_file():
         raise RuntimeError("membership must be a regular non-symlink file")
     before = path.read_bytes()
-    states = [state for state in ("stable", "canary", "both") if membership(state) == before]
+    states = [state for state in ("stable", "canary", "both", "none") if membership(state) == before]
     if len(states) != 1:
         raise RuntimeError("current membership is outside the canonical carrier")
     if docker_exec(args.container, "cat", MOUNT + "/upstreams.conf") != before:
         raise RuntimeError("container-visible membership differs from host bytes")
     configuration = docker_exec(args.container, "nginx", "-T")
     check_configuration(configuration)
+    if args.desired == "none":
+        if not getattr(args, "maintenance", False):
+            raise RuntimeError("full withdrawal requires the maintenance Artifact owner")
+        return {"before": before, "before_state": states[0], "after": membership("none"),
+                "configuration_sha256": digest(configuration), "workers": workers(args.container), "health": {}}
     health = {}
     for role, host in HOSTS.items():
         body = docker_exec(args.container, "wget", "-q", "-O", "-", f"http://{host}:8080/health/ready")
@@ -183,13 +194,16 @@ def owner_command(container, command, document=None):
 
 
 def state_members(state, health):
+    if state == "none":
+        return []
     roles = ("stable", "canary") if state == "both" else (state,)
     return sorted(({"instance": health[role]["instance"], "artifact_digest": health[role]["artifact_digest"]}
                    for role in roles), key=lambda item: item["instance"])
 
 
 def coordinated_apply(args, before):
-    if not before["health"]["stable"].get("lease_required"):
+    maintenance = getattr(args, "maintenance", False) and args.desired == "none"
+    if not maintenance and not before["health"]["stable"].get("lease_required"):
         return apply(args, before)
     if not args.change_id or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,159}", args.change_id):
         raise RuntimeError("expanded ingress requires an exact change ID for ambiguity recovery")
@@ -213,7 +227,13 @@ def coordinated_apply(args, before):
         active = sorted(({"instance": g["instance"], "artifact_digest": g["artifact_digest"]}
                          for g in state["generations"] if g["ingress_state"] != "absent"), key=lambda item: item["instance"])
         if state["head"]:
-            if state["head_status"] != "applied" or active != state_members(before["before_state"], before["health"]):
+            retained = owner_command(owner, "read", {"change_id": state["head"]}) if maintenance else None
+            expected_members = retained["plan"]["membership_after"] if maintenance else state_members(before["before_state"], before["health"])
+            if maintenance and (retained["status"] != "applied" or
+                                retained["plan"]["desired_config_digest"] != digest(before["before"]) or
+                                base64.b64decode(retained["plan"]["desired_config_bytes"], validate=True) != before["before"]):
+                raise RuntimeError("maintenance predecessor differs from installed membership")
+            if state["head_status"] != "applied" or active != expected_members:
                 raise RuntimeError("database ingress membership and installed proxy differ")
         elif active or args.desired != before["before_state"]:
             raise RuntimeError("initial ingress import must retain the exact observed membership")

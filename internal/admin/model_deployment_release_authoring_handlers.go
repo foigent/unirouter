@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/uniroute/unirouter/internal/auth"
-	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/runtimechange"
 	"github.com/uniroute/unirouter/internal/strictjson"
@@ -31,11 +30,10 @@ func (h *Handler) ListCanonicalDeploymentReleases(w http.ResponseWriter, r *http
 		return
 	}
 	canWrite := auth.RoleIn(actorOrganizationRole(r.Context()), auth.RolePlatformAdmin, auth.RoleOrgAdmin)
-	gatewayLicensed := h.licenseRuntime != nil && h.licenseRuntime.Authorize(licensing.FeatureGateway).Allowed
 	writeJSON(w, http.StatusOK, canonicalDeploymentReleaseCollectionView{
 		ContractVersion: options.ContractVersion,
 		GeneratedAt:     options.GeneratedAt,
-		Models:          canonicalDeploymentReleaseAuthoringModels(options, canWrite, gatewayLicensed),
+		Models:          canonicalDeploymentReleaseAuthoringModels(options, canWrite),
 		Releases:        options.Releases,
 	})
 }

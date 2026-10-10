@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/uniroute/unirouter/internal/config"
@@ -73,12 +74,30 @@ func runRuntimeGenerationCLI(ctx context.Context, args []string, cfg *config.Con
 	if err != nil {
 		return err
 	}
-	actual, err := readCompatibleRuntimeSchema(ctx, postgres.Pool, ledger)
+	actual, err := readRuntimeSchemaLedger(ctx, postgres.Pool)
 	if err != nil {
 		return err
 	}
+	if schemaErr := schemaauthority.VerifyRuntimeLedger(ledger, actual); schemaErr != nil {
+		// The M126 artifact can withdraw and retire an exact M125 fleet. This
+		// exception never admits an ordinary runtime or a joining generation.
+		if !commercialRetirementControlAllowed(ledger, actual, cfg.RuntimeEnvironment, "inspect", nil) {
+			return schemaErr
+		}
+		after := plan.After
+		if args[0] == "complete" {
+			retained, _, readErr := runtimegeneration.ReadIngress(ctx, postgres.Pool, complete.ChangeID)
+			if readErr != nil {
+				return readErr
+			}
+			after = retained.After
+		}
+		if !commercialRetirementControlAllowed(ledger, actual, cfg.RuntimeEnvironment, args[0], after) {
+			return schemaErr
+		}
+	}
 	head := actual[len(actual)-1]
-	if head != schemaauthority.CapabilityExpandHead && head != schemaauthority.StreamCounterExpandHead && head != schemaauthority.SourceFactsExpandHead && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead && head != schemaauthority.ScopedContentExpandHead && head != schemaauthority.XInsightPolicyExpandHead && (head != schemaauthority.XInsightAdoptionExpandHead && head != schemaauthority.XInsightCredentialExpandHead) {
+	if head != schemaauthority.CapabilityExpandHead && head != schemaauthority.StreamCounterExpandHead && head != schemaauthority.SourceFactsExpandHead && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead && head != schemaauthority.ScopedContentExpandHead && head != schemaauthority.XInsightPolicyExpandHead && (head != schemaauthority.XInsightAdoptionExpandHead && head != schemaauthority.XInsightCredentialExpandHead && head != schemaauthority.CommercialLicenseRetirementHead) {
 		return fmt.Errorf("runtime generation owner requires the exact expanded schema")
 	}
 	var result any
@@ -125,4 +144,28 @@ func readBoundedCLIJSON(r io.Reader, maximum int64, target any) error {
 	d := json.NewDecoder(bytes.NewReader(wire))
 	d.DisallowUnknownFields()
 	return d.Decode(target)
+}
+
+func commercialRetirementControlAllowed(artifact, actual []string, environment, command string, after []runtimegeneration.Identity) bool {
+	if environment != "development" && environment != "test" {
+		return false
+	}
+	if len(artifact) < 2 || artifact[len(artifact)-1] != schemaauthority.CommercialLicenseRetirementHead ||
+		artifact[len(artifact)-2] != schemaauthority.XInsightCredentialExpandHead {
+		return false
+	}
+	if _, err := schemaauthority.RuntimeLedgers(artifact); err != nil {
+		return false
+	}
+	if !slices.Equal(actual, artifact[:len(artifact)-1]) {
+		return false
+	}
+	switch command {
+	case "inspect", "read", "stop-check", "stop-apply":
+		return true
+	case "prepare", "complete":
+		return after != nil && len(after) == 0
+	default:
+		return false
+	}
 }

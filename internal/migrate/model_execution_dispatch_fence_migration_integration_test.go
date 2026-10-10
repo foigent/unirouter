@@ -16,10 +16,10 @@ import (
 )
 
 func TestModelExecutionDispatchFenceHasOrderedEmptyRollbackAndReapply(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	downSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000073_model_execution_dispatch_fence.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000073_model_execution_dispatch_fence.down.sql",
 	))
 	require.NoError(t, err)
 
@@ -38,7 +38,7 @@ SELECT COUNT(*) FROM information_schema.columns
    AND column_name IN ('dispatch_owner_hash','health_outcome','health_applied_at')`).Scan(&columns))
 	require.Zero(t, columns)
 
-	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000073_model_execution_dispatch_fence"))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.PreRetirementMigrationsDir(t), "000073_model_execution_dispatch_fence"))
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT COUNT(*) FROM information_schema.columns
  WHERE table_schema='public' AND table_name='billing_provider_attempts'
@@ -54,7 +54,7 @@ SELECT EXISTS (
 }
 
 func TestModelExecutionDispatchFenceDownWaitsForConcurrentEvidenceWriterThenFailsClosed(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	execMigrationDown(t, ctx, pool, "000074_model_deployment_create_idempotency.down.sql")
@@ -96,7 +96,7 @@ VALUES ($1,'dispatch-fence-down-race','attempt-race',101,201,301,1,1,
 	var downPID int
 	require.NoError(t, downConn.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&downPID))
 	downSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000073_model_execution_dispatch_fence.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000073_model_execution_dispatch_fence.down.sql",
 	))
 	require.NoError(t, err)
 	downResult := make(chan error, 1)
@@ -129,7 +129,7 @@ SELECT dispatch_owner_hash FROM billing_provider_attempts
 }
 
 func TestModelExecutionDispatchFenceDownSerializesWithFutureMigrationLedgerWriter(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	execMigrationDown(t, ctx, pool, "000074_model_deployment_create_idempotency.down.sql")
@@ -154,7 +154,7 @@ INSERT INTO schema_migrations(version) VALUES ('000075_future_contract')`)
 	var downPID int
 	require.NoError(t, downConn.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&downPID))
 	downSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000073_model_execution_dispatch_fence.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000073_model_execution_dispatch_fence.down.sql",
 	))
 	require.NoError(t, err)
 	downResult := make(chan error, 1)

@@ -295,25 +295,7 @@ func (c *Config) Validate() error {
 	if c.ShutdownTimeoutSecs < 0 {
 		return fmt.Errorf("SHUTDOWN_TIMEOUT_SECONDS must be >= 0")
 	}
-	if c.LicenseExpiryWarningDays < 0 || c.LicenseExpiryWarningDays > 36500 {
-		return fmt.Errorf("LICENSE_EXPIRY_WARNING_DAYS must be between 0 and 36500")
-	}
-	if c.LicenseRefreshSeconds < 0 || c.LicenseRefreshSeconds > 3600 {
-		return fmt.Errorf("LICENSE_REFRESH_SECONDS must be between 0 and 3600")
-	}
-	if len(c.LicenseDeploymentID) > 128 {
-		return fmt.Errorf("LICENSE_DEPLOYMENT_ID must be at most 128 characters")
-	}
-	if c.LicensePublicKey != "" {
-		if _, err := signing.ParsePublicKey(c.LicensePublicKey); err != nil {
-			return fmt.Errorf("LICENSE_PUBLIC_KEY: %w", err)
-		}
-	}
-	if c.LicensePublicKeys != "" {
-		if _, err := signing.ParsePublicKeyRing(c.LicensePublicKeys, "LICENSE_PUBLIC_KEYS"); err != nil {
-			return err
-		}
-	}
+	// Retired LICENSE_* inputs are ignored, including malformed legacy values.
 	if c.UpgradePublicKeys != "" {
 		if _, err := signing.ParsePublicKeyRing(c.UpgradePublicKeys, "UPGRADE_PUBLIC_KEYS"); err != nil {
 			return err

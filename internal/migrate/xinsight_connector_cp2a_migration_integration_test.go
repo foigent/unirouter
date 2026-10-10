@@ -14,13 +14,13 @@ import (
 )
 
 func TestXInsightConnectorCP2APhaseContractMigrationUpDownAndEvidenceGuard(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	rollbackEmptyMigrations(t, pool, []string{
 		"000064_rate_card_request_pricing_authority.down.sql",
 		"000063_onprem_billing_mode.down.sql",
 	})
-	redeemDown, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000062_xinsight_connector_redeem_lifecycle.down.sql"))
+	redeemDown, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000062_xinsight_connector_redeem_lifecycle.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(redeemDown))
 	require.NoError(t, err)
@@ -36,7 +36,7 @@ WHERE table_schema='public'
   AND table_name IN ('xinsight_connector_control_bindings','xinsight_connector_phase_operations')`).Scan(&tables))
 	require.Equal(t, 2, tables)
 
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000061_xinsight_connector_cp2a_phase_contract.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000061_xinsight_connector_cp2a_phase_contract.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, `INSERT INTO schema_migrations (version) VALUES ('000063_cp2a_future_fixture')`)
 	require.NoError(t, err)
@@ -128,7 +128,7 @@ VALUES ('xco_BBBBBBBBBBBBBBBBBBBBBB',$1,$2,$3,
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.NoError(t, err)
-	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000061_xinsight_connector_cp2a_phase_contract"))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.PreRetirementMigrationsDir(t), "000061_xinsight_connector_cp2a_phase_contract"))
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT COUNT(*) FROM schema_migrations
 WHERE version='000061_xinsight_connector_cp2a_phase_contract'`).Scan(&ledger))

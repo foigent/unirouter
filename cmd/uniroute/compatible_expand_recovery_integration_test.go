@@ -19,11 +19,10 @@ import (
 func TestSourceCompatibleExpandRetainsOnlySupportedDormantGenerations(t *testing.T) {
 	pool := testutil.SetupMigratedThroughTestDB(t, schemaauthority.SourceFactsExpandHead)
 	ctx := t.Context()
-	dir := testutil.MigrationsDir(t)
 	var head string
 	require.NoError(t, pool.QueryRow(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&head))
 	require.Equal(t, schemaauthority.SourceFactsExpandHead, head)
-	ledger, err := schemaauthority.ExpectedLedger(dir)
+	ledger, err := testutil.PreRetirementLedger(t)
 	require.NoError(t, err)
 	org := testutil.NewTestOrg(t, pool)
 	var project, key int64

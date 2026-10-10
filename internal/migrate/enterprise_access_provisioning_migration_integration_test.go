@@ -160,7 +160,7 @@ func TestEnterpriseAccessProvisioningFamilyPolicySelectorsRequireExactProjectSco
 }
 
 func TestEnterpriseAccessProvisioningDownGuardAndEmptyRollback(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	rollbackEmptyMigrations(t, pool, []string{"000062_xinsight_connector_redeem_lifecycle.down.sql", "000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql"})
 	var ownedIndexDefinition string
@@ -172,7 +172,7 @@ func TestEnterpriseAccessProvisioningDownGuardAndEmptyRollback(t *testing.T) {
 		SELECT pg_get_indexdef('api_keys_access_credential_one_active_version'::regclass)`).Scan(&activeVersionIndexDefinition))
 	require.Contains(t, activeVersionIndexDefinition, "UNIQUE INDEX api_keys_access_credential_one_active_version")
 	require.Contains(t, activeVersionIndexDefinition, "WHERE ((access_credential_id IS NOT NULL) AND ((status)::text = 'active'::text))")
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000059_enterprise_access_provisioning.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000059_enterprise_access_provisioning.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.NoError(t, err)
@@ -217,7 +217,7 @@ func TestEnterpriseAccessProvisioningAsyncMediaLegacyBackfillAndRollbackIntegrat
 		  'pending','not_eligible',NOW())`, orgID, projectID, keyID)
 	require.NoError(t, err)
 
-	up, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000059_enterprise_access_provisioning.up.sql"))
+	up, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000059_enterprise_access_provisioning.up.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(up))
 	require.NoError(t, err)
@@ -516,7 +516,7 @@ func TestEnterpriseAccessProvisioningSponsorEvidenceMatchesSubjectType(t *testin
 }
 
 func TestEnterpriseAccessProvisioningDownRejectsNonemptyEvidenceWithoutChangingSchemaDataOrLedger(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	rollbackEmptyMigrations(t, pool, []string{"000062_xinsight_connector_redeem_lifecycle.down.sql", "000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql"})
 	var orgID, projectID, userID, requestID int64
@@ -550,7 +550,7 @@ func TestEnterpriseAccessProvisioningDownRejectsNonemptyEvidenceWithoutChangingS
 }
 
 func TestEnterpriseAccessProvisioningDownRejectsAsyncMediaExecutionReservationEvidence(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	rollbackEmptyMigrations(t, pool, []string{"000062_xinsight_connector_redeem_lifecycle.down.sql", "000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql"})
 	var orgID, projectID, keyID int64
@@ -604,7 +604,7 @@ func TestEnterpriseAccessProvisioningDownRejectsAsyncMediaExecutionReservationEv
 }
 
 func TestEnterpriseAccessProvisioningFutureFirstSerializesDownAndPreservesLaterLedger(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	rollbackEmptyMigrations(t, pool, []string{"000062_xinsight_connector_redeem_lifecycle.down.sql", "000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql"})
@@ -663,7 +663,7 @@ func TestEnterpriseAccessProvisioningFutureFirstSerializesDownAndPreservesLaterL
 }
 
 func TestEnterpriseAccessProvisioningDownFirstSerializesFutureRunnerAndForcesRediscovery(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	rollbackEmptyMigrations(t, pool, []string{"000062_xinsight_connector_redeem_lifecycle.down.sql", "000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql"})
@@ -723,7 +723,7 @@ func TestEnterpriseAccessProvisioningDownFirstSerializesFutureRunnerAndForcesRed
 
 func readEnterpriseAccessDownMigration(t *testing.T) string {
 	t.Helper()
-	body, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000059_enterprise_access_provisioning.down.sql"))
+	body, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000059_enterprise_access_provisioning.down.sql"))
 	require.NoError(t, err)
 	return string(body)
 }

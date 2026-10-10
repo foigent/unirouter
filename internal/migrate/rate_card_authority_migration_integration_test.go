@@ -36,7 +36,7 @@ func TestRateCardAuthorityMigrationAddsEvidenceContractWithoutAutoBackfill(t *te
 }
 
 func TestRateCardAuthorityMigrationRollbackRefusesDailySchedules(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	var orgID int64
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -55,7 +55,7 @@ func TestRateCardAuthorityMigrationRollbackRefusesDailySchedules(t *testing.T) {
 	execMigrationDown(t, ctx, pool, "000067_call_log_route_identity.down.sql")
 	execMigrationDown(t, ctx, pool, "000066_runtime_assignment_projection.down.sql")
 	execMigrationDown(t, ctx, pool, "000065_model_endpoint_projection.down.sql")
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000064_rate_card_request_pricing_authority.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000064_rate_card_request_pricing_authority.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.ErrorContains(t, err, "daily price schedules exist")
@@ -71,7 +71,7 @@ func TestRateCardAuthorityMigrationRollbackRefusesDailySchedules(t *testing.T) {
 }
 
 func TestRateCardAuthorityMigrationRollbackRefusesSourceEvidence(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	var orgID int64
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -91,7 +91,7 @@ func TestRateCardAuthorityMigrationRollbackRefusesSourceEvidence(t *testing.T) {
 	execMigrationDown(t, ctx, pool, "000067_call_log_route_identity.down.sql")
 	execMigrationDown(t, ctx, pool, "000066_runtime_assignment_projection.down.sql")
 	execMigrationDown(t, ctx, pool, "000065_model_endpoint_projection.down.sql")
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000064_rate_card_request_pricing_authority.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000064_rate_card_request_pricing_authority.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.ErrorContains(t, err, "source evidence exists")

@@ -216,7 +216,7 @@ func TestSourceDispatchOutboxAtomicRecoveryAndRetention(t *testing.T) {
 }
 
 func TestSourceDispatchLeaseIdentityAndDownGuards(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	require.NoError(t, budgetDown(t, pool))
 	pool, s, org, project := setupSourceDBWithPool(t, pool)
 	event := insertFrozenDispatch(t, pool, s, frozenDispatchFixture(t, s, org, project, "frozen-lease", time.Now().UTC().Truncate(time.Microsecond)))

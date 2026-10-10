@@ -24,7 +24,7 @@ import (
 )
 
 func TestGatewayPreDispatchM121ProfileExpansionPG(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := t.Context()
 	migrations := testutil.MigrationsDir(t)
 	require.NoError(t, sourceBudgetFixtureDownIfPresent(t, pool, schemaauthority.XInsightPolicyExpandHead))

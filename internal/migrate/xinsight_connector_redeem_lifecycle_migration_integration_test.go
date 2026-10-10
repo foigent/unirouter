@@ -68,7 +68,7 @@ VALUES ($1,$2,$3,'opaque-encrypted-invitation')`,
 		redeemLifecycleInstallationID, orgID, projectID,
 	)
 	require.NoError(t, err)
-	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000062_xinsight_connector_redeem_lifecycle"))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.PreRetirementMigrationsDir(t), "000062_xinsight_connector_redeem_lifecycle"))
 
 	var columns, ledger int
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -121,7 +121,7 @@ SET invitation_token_enc='opaque-revived-invitation'
 WHERE installation_id=$1`, redeemLifecycleInstallationID)
 	require.Error(t, err, "control_active must not regain invitation authority")
 	down, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t),
+		testutil.PreRetirementMigrationsDir(t),
 		"000062_xinsight_connector_redeem_lifecycle.down.sql",
 	))
 	require.NoError(t, err)
@@ -144,9 +144,9 @@ VALUES ($1,$2,$3,'opaque-encrypted-invitation')`,
 		redeemLifecycleInstallationID, orgID, projectID,
 	)
 	require.NoError(t, err)
-	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000062_xinsight_connector_redeem_lifecycle"))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.PreRetirementMigrationsDir(t), "000062_xinsight_connector_redeem_lifecycle"))
 	down, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t),
+		testutil.PreRetirementMigrationsDir(t),
 		"000062_xinsight_connector_redeem_lifecycle.down.sql",
 	))
 	require.NoError(t, err)
@@ -177,7 +177,7 @@ WHERE installation_id=$1
   AND control_token_enc IS NULL`, redeemLifecycleInstallationID).Scan(&staged))
 	require.Equal(t, 1, staged, "schema-61-representable invitation authority must survive rollback")
 
-	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000062_xinsight_connector_redeem_lifecycle"))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.PreRetirementMigrationsDir(t), "000062_xinsight_connector_redeem_lifecycle"))
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT COUNT(*) FROM schema_migrations
 WHERE version='000062_xinsight_connector_redeem_lifecycle'`).Scan(&ledger))

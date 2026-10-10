@@ -22,7 +22,6 @@ import {
   IconSendStroked,
   IconServerStroked,
   IconSettingStroked,
-  IconShield,
   IconShieldStroked,
   IconTerminal,
   IconTestScoreStroked,
@@ -245,7 +244,6 @@ const taskNavItems: NavItem[] = [
       { itemKey: '/deployment', text: '部署与网络', icon: <IconMonitorStroked /> },
       { itemKey: '/integrations', text: '集成管理', icon: <IconConnectionPoint1 /> },
       { itemKey: '/docs', text: 'API 与兼容性', icon: <IconBookOpenStroked /> },
-      { itemKey: '/license', text: '商业授权', icon: <IconShield /> },
     ],
   },
 ];
@@ -255,6 +253,7 @@ const accessStateItem: NavItem = { itemKey: '/access', text: '访问申请与授
 
 const platformRoutes = new Set(taskNavItems.flatMap(item => item.items?.map(child => child.itemKey) || [item.itemKey]));
 const compatibilityRoutes = new Set([
+  '/license',
   '/governance-simulation', '/risk-control', '/member-lifecycle', '/users', '/project-management',
   '/provenance-passport', '/org-model-prices', '/grants', '/agent-trust-evidence', '/keys', '/data-exchange',
 	'/connectors', '/channel-keys', '/model-governance',
@@ -389,11 +388,9 @@ export function getRequiredLicenseFeatureForRoute(path: string): LicenseFeature 
 }
 
 export function hasLicensedFeature(licenseAccess: LicenseAccess | null | undefined, feature: LicenseFeature) {
-  // ProtectedRoute refreshes old/login-only profiles before rendering. The
-  // permissive undefined branch keeps isolated component tests and rolling
-  // frontend/backend upgrades from inventing a client-side security boundary;
-  // the backend License gate remains authoritative.
-  if (!licenseAccess) return true;
+  // Current servers report not_required. Retained old-status handling is only
+  // for compatibility; role and resource authorization remain independent.
+  if (!licenseAccess || licenseAccess.status === 'not_required') return true;
   return licenseAccess.enforceable && licenseAccess.features?.[feature] === true;
 }
 

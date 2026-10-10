@@ -247,7 +247,7 @@ func TestCanonicalDeploymentLifecycleHandlerRejectsInvalidIngressBeforeExecutor(
 	}
 }
 
-func TestGetCanonicalDeploymentLifecycleReturnsRoleAndLicenseAwareServerActions(t *testing.T) {
+func TestGetCanonicalDeploymentLifecycleKeepsRoleAuthorityAfterCommercialRetirement(t *testing.T) {
 	t.Parallel()
 
 	release, slot := canonicalLifecycleCanaryFixture()
@@ -269,11 +269,12 @@ func TestGetCanonicalDeploymentLifecycleReturnsRoleAndLicenseAwareServerActions(
 	promote := lifecycleActionDescriptor(t, view.Actions, runtimechange.DeploymentLifecyclePromote)
 	require.True(t, promote.StructurallyAvailable)
 	require.False(t, promote.Authorized)
-	require.False(t, promote.Licensed)
+	require.True(t, promote.Licensed)
+	require.Empty(t, promote.LicenseFeature)
 	require.False(t, promote.Available)
 	cancel := lifecycleActionDescriptor(t, view.Actions, runtimechange.DeploymentLifecycleCancelCanary)
 	require.True(t, cancel.Licensed)
-	require.False(t, cancel.Available, "viewer cannot mutate even though contraction is unlicensed")
+	require.False(t, cancel.Available, "viewer cannot mutate after commercial retirement")
 }
 
 func TestCanonicalDeploymentLifecycleHandlerHasNoLegacyWriterCall(t *testing.T) {

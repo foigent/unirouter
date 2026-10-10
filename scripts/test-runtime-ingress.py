@@ -154,6 +154,45 @@ class CoordinatedMembershipTests(unittest.TestCase):
             ingress.coordinated_apply(self.args,self.before)
         reload.assert_not_called()
 
+    def test_full_maintenance_withdrawal_keeps_the_worker_and_database_protocol(self):
+        import base64
+        self.args.desired = "none"
+        self.args.maintenance = True
+        self.before["after"] = ingress.membership("none")
+        self.before["health"] = {}  # Recovery works after both receivers exit.
+        def owner(container, action, document=None):
+            if action == "read":
+                return {"status": "applied", "plan": {
+                    "membership_after": ingress.state_members("both", self.health),
+                    "desired_config_digest": ingress.digest(self.before["before"]),
+                    "desired_config_bytes": base64.b64encode(self.before["before"]).decode()}}
+            return self.owner(container, action, document)
+        def reload(*args):
+            self.assertEqual(self.plan["membership_after"], [])
+            self.assertEqual(len(self.plan["membership_before"]), 2)
+            self.events.append("reload_and_wait")
+            return "old_proxy_workers_exited"
+        with patch.object(ingress, "owner_command", owner), patch.object(ingress, "apply", reload):
+            ingress.coordinated_apply(self.args, self.before)
+        self.assertTrue(self.completion["old_workers_gone"])
+        self.assertEqual(self.events, ["inspect", "prepare", "reload_and_wait", "complete"])
+        self.assertEqual(self.before["after"].count(b"127.0.0.1:1 down"), 2)
+        self.assertNotIn(b"uniroute-api", self.before["after"])
+
+    def test_full_withdrawal_rejects_a_drifted_predecessor_without_reload(self):
+        self.args.desired = "none"
+        self.args.maintenance = True
+        self.before["after"] = ingress.membership("none")
+        self.before["health"] = {}
+        def owner(container, action, document=None):
+            if action == "read":
+                return {"status": "applied", "plan": {"membership_after": [], "desired_config_digest": "wrong"}}
+            return self.owner(container, action, document)
+        with patch.object(ingress, "owner_command", owner), patch.object(ingress, "apply") as reload:
+            with self.assertRaisesRegex(RuntimeError, "predecessor differs"):
+                ingress.coordinated_apply(self.args, self.before)
+        reload.assert_not_called()
+
     def test_import_cannot_silently_change_observed_membership(self):
         with patch.object(ingress,"owner_command",return_value={"head":"","generations":[]}),patch.object(ingress,"apply") as reload,self.assertRaisesRegex(RuntimeError,"initial ingress import"):
             ingress.coordinated_apply(self.args,self.before)

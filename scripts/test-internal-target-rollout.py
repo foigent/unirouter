@@ -1254,10 +1254,10 @@ class ArtifactOwnerReadFixtureTests(unittest.TestCase):
     def test_exact_current_artifact_and_bridge_are_reported_separately(self):
         migrations=Path(__file__).resolve().parent.parent/"migrations"
         bridge,current=self.load_carrier().carrier_read_ledgers(migrations)
-        self.assertEqual(bridge[0],"bridge")
+        self.assertEqual(bridge[0],"maintenance_predecessor")
         self.assertEqual(current[0],"current")
-        self.assertEqual(bridge[1][-1],rollout.BRIDGE_HEADS[-2])
-        self.assertEqual(current[1][-1],rollout.BRIDGE_HEADS[-1])
+        self.assertEqual(bridge[1][-1],rollout.BRIDGE_HEADS[-1])
+        self.assertEqual(current[1][-1],"000126_commercial_license_retirement")
         self.assertEqual(current[1],sorted(p.name[:-7] for p in migrations.glob("*.up.sql")))
         self.assertEqual(bridge[1],current[1][:-1])
 

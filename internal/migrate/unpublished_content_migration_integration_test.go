@@ -62,8 +62,8 @@ func reclaimMigrationHooks(t *testing.T) migrate.CompatibleExpandHooks {
 	return migrate.CompatibleExpandHooks{Version: schemaauthority.ContentReclaimExpandHead, ExpectedSHA256: fmt.Sprintf("sha256:%x", sha256.Sum256(wire)), Before: func(context.Context, *pgxpool.Conn) error { return nil }, After: func(context.Context, pgx.Tx) error { return nil }}
 }
 func TestUnpublishedContentMigrationPGExactM119PreservesProofAndRejectsMissingPredecessor(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
-	dir := testutil.MigrationsDir(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
+	dir := testutil.PreRetirementMigrationsDir(t)
 	proof := func() string {
 		var s string
 		require.NoError(t, pool.QueryRow(t.Context(), `SELECT to_jsonb(c)::text FROM execution_source_budget_coverage c WHERE ended_at IS NULL`).Scan(&s))
@@ -91,10 +91,10 @@ func TestUnpublishedContentMigrationPGExactM119PreservesProofAndRejectsMissingPr
 }
 
 func TestUnpublishedContentMigrationPGRejectsOldRuntimeAdvertisement(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
-	dir := testutil.MigrationsDir(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
+	dir := testutil.PreRetirementMigrationsDir(t)
 	require.NoError(t, reclaimMigrationDown(t.Context(), pool, dir))
-	ledger, err := schemaauthority.ExpectedLedger(dir)
+	ledger, err := testutil.PreRetirementLedger(t)
 	require.NoError(t, err)
 	identity := runtimegeneration.Identity{Instance: "uri_" + strings.Repeat("c", 32), Artifact: "sha256:" + strings.Repeat("d", 64)}
 	manifest := runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads())

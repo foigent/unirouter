@@ -330,15 +330,16 @@ func TestValidate_NegativeLicenseExpiryWarningDays(t *testing.T) {
 		JWTSecret:                "secret",
 		APIKeyHashSecret:         "api-key-secret",
 		EncryptionKey:            "0123456789abcdef0123456789abcdef",
+		FreezeSafetyFactor:       "1",
 		LicenseExpiryWarningDays: -1,
 	}
 	err := cfg.Validate()
-	if err == nil {
-		t.Fatal("expected error for negative LICENSE_EXPIRY_WARNING_DAYS")
+	if err != nil {
+		t.Fatalf("retired License configuration must not block startup: %v", err)
 	}
 }
 
-func TestValidateRejectsOverflowingLicenseTiming(t *testing.T) {
+func TestValidateIgnoresRetiredLicenseTiming(t *testing.T) {
 	cfg := &Config{
 		JWTSecret:                "secret",
 		APIKeyHashSecret:         "api-key-secret",
@@ -346,13 +347,13 @@ func TestValidateRejectsOverflowingLicenseTiming(t *testing.T) {
 		FreezeSafetyFactor:       "1",
 		LicenseExpiryWarningDays: 36501,
 	}
-	if err := cfg.Validate(); err == nil {
-		t.Fatal("expected excessive License warning window rejection")
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("retired License configuration must not block startup: %v", err)
 	}
 	cfg.LicenseExpiryWarningDays = 30
 	cfg.LicenseRefreshSeconds = 3601
-	if err := cfg.Validate(); err == nil {
-		t.Fatal("expected excessive License refresh interval rejection")
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("retired License configuration must not block startup: %v", err)
 	}
 }
 
@@ -1580,13 +1581,13 @@ func TestValidateLicensePublicKeys(t *testing.T) {
 		FreezeSafetyFactor: "1",
 		LicensePublicKeys:  `{"bad key":"not-a-key"}`,
 	}
-	if err := cfg.Validate(); err == nil {
-		t.Fatal("expected invalid LICENSE_PUBLIC_KEYS to fail startup validation")
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("retired License configuration must not block startup: %v", err)
 	}
 	cfg.LicensePublicKeys = ""
 	cfg.LicensePublicKey = "not-a-key"
-	if err := cfg.Validate(); err == nil {
-		t.Fatal("expected invalid LICENSE_PUBLIC_KEY to fail startup validation")
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("retired License configuration must not block startup: %v", err)
 	}
 }
 

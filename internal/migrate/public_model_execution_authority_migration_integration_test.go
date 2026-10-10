@@ -337,12 +337,12 @@ SELECT COUNT(*) FROM runtime_change_releases
 }
 
 func TestPublicModelExecutionAuthorityDownRejectsFutureMigrationIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	downgradeEmptyM78ForM77DownTest(t, pool)
 	ctx := context.Background()
 	_, err := pool.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ('000079_future_contract')`)
 	require.NoError(t, err)
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000077_public_model_execution_authority.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000077_public_model_execution_authority.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.ErrorContains(t, err, "later migrations must be reversed first")
@@ -356,10 +356,10 @@ SELECT EXISTS(SELECT 1 FROM schema_migrations
 }
 
 func TestPublicModelExecutionAuthorityDownRejectsPublicEndpointScopeEvidenceIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	downgradeEmptyM78ForM77DownTest(t, pool)
 	fixture := seedM77PublicEndpointScope(t, pool)
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000077_public_model_execution_authority.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000077_public_model_execution_authority.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(t.Context(), string(down))
 	require.ErrorContains(t, err, "durable public endpoint scope evidence exists")
@@ -379,7 +379,7 @@ SELECT (SELECT COUNT(*) FROM access_requests WHERE id=$1),
 }
 
 func TestPublicModelExecutionAuthorityDownRejectsGatewayEndpointProfileEvidenceIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	downgradeEmptyM78ForM77DownTest(t, pool)
 	fixture := seedM77GatewayEndpointFixture(t, pool)
 	require.NoError(t, insertM77GatewayEndpoint(
@@ -387,7 +387,7 @@ func TestPublicModelExecutionAuthorityDownRejectsGatewayEndpointProfileEvidenceI
 		"gwe_m77_messages_evidence", "https://messages-evidence.m77.example",
 		"endpoint.anthropic-messages.v1",
 	))
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000077_public_model_execution_authority.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000077_public_model_execution_authority.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(t.Context(), string(down))
 	require.ErrorContains(t, err, "Anthropic Messages Gateway Endpoint profile evidence exists")
@@ -405,9 +405,9 @@ SELECT (SELECT COUNT(*) FROM gateway_endpoints
 }
 
 func TestPublicModelExecutionAuthorityDownRestoresV1EvidenceSchemaIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	downgradeEmptyM78ForM77DownTest(t, pool)
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000077_public_model_execution_authority.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000077_public_model_execution_authority.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(t.Context(), string(down))
 	require.NoError(t, err)

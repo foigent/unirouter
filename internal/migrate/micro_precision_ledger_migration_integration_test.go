@@ -18,7 +18,7 @@ import (
 func TestV1MicroPrecisionLedgerMigrationConvertsAndGuardsDowngrade(t *testing.T) {
 	pool := testutil.SetupIsolatedTestDB(t)
 	ctx := context.Background()
-	migrationsDir := testutil.MigrationsDir(t)
+	migrationsDir := testutil.PreRetirementMigrationsDir(t)
 	runMigrationsBeforeV1MicroLedger(t, pool, migrationsDir)
 
 	const orgID = int64(3601)

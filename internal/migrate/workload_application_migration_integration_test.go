@@ -13,7 +13,7 @@ import (
 )
 
 func TestWorkloadApplicationMigrationScopeAndRollbackGuard(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	rollbackEmptyMigrations(t, pool, []string{
 		"000062_xinsight_connector_redeem_lifecycle.down.sql",
@@ -77,7 +77,7 @@ func TestWorkloadApplicationMigrationScopeAndRollbackGuard(t *testing.T) {
 		  'service_credential','client.openai-sdk.chat.v1','active',$3,$3)
 		RETURNING id`, a.orgID, a.projectID, a.userID).Scan(&applicationID))
 
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000054_prd8_workload_applications.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000054_prd8_workload_applications.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.ErrorContains(t, err, "application or credential evidence exists")

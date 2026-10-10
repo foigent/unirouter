@@ -25,7 +25,7 @@ func TestExactPublicExecutionBindingsConstraintRoundTripIntegration(t *testing.T
 	}
 	before := definitions()
 	for cycle := 0; cycle < 2; cycle++ {
-		require.NoError(t, migrate.RunThrough(t.Context(), pool, testutil.MigrationsDir(t), "000086_exact_public_execution_bindings"))
+		require.NoError(t, migrate.RunThrough(t.Context(), pool, testutil.PreRetirementMigrationsDir(t), "000086_exact_public_execution_bindings"))
 		for index, definition := range definitions() {
 			require.NotEqual(t, before[index], definition, names[index])
 			require.Contains(t, definition, "COALESCE(btrim((route_delivery_contract_version)::text)", names[index])

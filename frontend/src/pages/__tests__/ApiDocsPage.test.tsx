@@ -91,17 +91,17 @@ describe('ApiDocsPage', () => {
 
     [
       '部署级设置（仅平台管理员）',
-      'License 状态（仅平台管理员）',
+      '兼容状态 not_required（仅平台管理员）',
       '全局输入阻断词库（仅平台管理员）',
       '唯一客户的模型注册表；部署管理员也自动绑定该客户上下文',
       '组织模型目录；org_viewer 可只读本组织，member 必须提供 project_id 并通过 live membership',
       '更新本组织别名；越权组织参数返回 403，越权或不存在的 ID 返回 404',
       '原子创建本组织模型集合及其全部初始条目',
       '原子替换本组织模型集合条目；不会暴露部分结果',
-      '按组织读取公共模型、服务端权威 baseline/候选项和可操作 canonical v2 release；platform_admin、org_admin、org_viewer 可读且不要求 Gateway License',
-      '以服务端 baseline、精确 deployment/operation 选择和 Idempotency-Key 原子编写 sealed validated release；要求组织写角色与 Gateway License，但编写不会激活或改变流量',
-      '仅在 Chat 与 Embeddings 可执行计划完整同等后原子替换精确 sealed v1 stable parent；要求组织写角色、Gateway License 和 Idempotency-Key',
-      '安全收缩到精确 sealed 且当前仍可执行的 v1 parent；v2 健康失败不阻断，仍要求组织写角色和 Idempotency-Key，但不要求 Gateway License',
+      '按组织读取公共模型、服务端权威 baseline/候选项和可操作 canonical v2 release；platform_admin、org_admin、org_viewer 可读且不受商业授权限制',
+      '以服务端 baseline、精确 deployment/operation 选择和 Idempotency-Key 原子编写 sealed validated release；要求组织写角色，但编写不会激活或改变流量',
+      '仅在 Chat 与 Embeddings 可执行计划完整同等后原子替换精确 sealed v1 stable parent；要求组织写角色和 Idempotency-Key',
+      '安全收缩到精确 sealed 且当前仍可执行的 v1 parent；v2 健康失败不阻断，仍要求组织写角色和 Idempotency-Key，但不受商业授权限制',
     ].forEach((description) => {
       expect(screen.getByText(description)).toBeTruthy();
     });
@@ -126,9 +126,9 @@ describe('ApiDocsPage', () => {
       '原子创建本组织模型集合及其全部初始条目',
       '原子替换本组织模型集合条目；不会暴露部分结果',
       '查看 CNY/百万 tokens 基础价格与供应商 Prompt Cache 倍率（平台、组织或账务管理员）',
-      '以服务端 baseline、精确 deployment/operation 选择和 Idempotency-Key 原子编写 sealed validated release；要求组织写角色与 Gateway License，但编写不会激活或改变流量',
-      '仅在 Chat 与 Embeddings 可执行计划完整同等后原子替换精确 sealed v1 stable parent；要求组织写角色、Gateway License 和 Idempotency-Key',
-      '安全收缩到精确 sealed 且当前仍可执行的 v1 parent；v2 健康失败不阻断，仍要求组织写角色和 Idempotency-Key，但不要求 Gateway License',
+      '以服务端 baseline、精确 deployment/operation 选择和 Idempotency-Key 原子编写 sealed validated release；要求组织写角色，但编写不会激活或改变流量',
+      '仅在 Chat 与 Embeddings 可执行计划完整同等后原子替换精确 sealed v1 stable parent；要求组织写角色和 Idempotency-Key',
+      '安全收缩到精确 sealed 且当前仍可执行的 v1 parent；v2 健康失败不阻断，仍要求组织写角色和 Idempotency-Key，但不受商业授权限制',
     ].forEach((description) => {
       expect(screen.getByText(description)).toBeTruthy();
     });
@@ -253,7 +253,7 @@ describe('ApiDocsPage', () => {
     expect(screen.getByText('Dashboard 聚合数据')).toBeTruthy();
     expect(await screen.findByText('auth_error.invalid_api_key')).toBeTruthy();
     expect(screen.getByText('错误说明')).toBeTruthy();
-    expect(screen.getByText('按组织读取公共模型、服务端权威 baseline/候选项和可操作 canonical v2 release；platform_admin、org_admin、org_viewer 可读且不要求 Gateway License')).toBeTruthy();
+    expect(screen.getByText('按组织读取公共模型、服务端权威 baseline/候选项和可操作 canonical v2 release；platform_admin、org_admin、org_viewer 可读且不受商业授权限制')).toBeTruthy();
     expect(screen.queryByText(/原子编写 sealed validated release/)).toBeNull();
     expect(screen.queryByText(/原子替换精确 sealed v1 stable parent/)).toBeNull();
     expect(screen.queryByText(/安全收缩到精确 sealed 且当前仍可执行的 v1 parent/)).toBeNull();

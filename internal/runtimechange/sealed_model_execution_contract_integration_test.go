@@ -16,7 +16,7 @@ import (
 )
 
 func TestSealedModelExecutionContractReleasePinningIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	manager, err := runtimechange.NewManager(
 		pool, unusedDeploymentSnapshotBuilder{}, routingpolicy.Default(),
@@ -50,7 +50,7 @@ UPDATE model_registry
 		// Keep the historical M82 rollback fixture at its supported predecessor;
 		// the newer exact-public and Plan fences are independently guarded.
 		require.NoError(t, testutil.RewindCapabilityPublicationsForLegacyMigrationTest(
-			ctx, pool, testutil.MigrationsDir(t),
+			ctx, pool, testutil.PreRetirementMigrationsDir(t),
 		))
 		for _, name := range []string{
 			"000100_kimi_k26_function_tools_tool_index_normalizer.down.sql",
@@ -70,22 +70,22 @@ UPDATE model_registry
 			"000086_exact_public_execution_bindings.down.sql",
 			"000085_model_execution_plan_freeze_fence.down.sql",
 		} {
-			body, readErr := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+			body, readErr := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), name))
 			require.NoError(t, readErr)
 			_, downErr := pool.Exec(ctx, string(body))
 			require.NoError(t, downErr, name)
 		}
 	}
 	currencyDraftDown, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000084_official_rate_source_currency_drafts.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000084_official_rate_source_currency_drafts.down.sql",
 	))
 	require.NoError(t, err)
 	unitMeterDown, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000083_versioned_unit_meter_billing.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000083_versioned_unit_meter_billing.down.sql",
 	))
 	require.NoError(t, err)
 	down, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000082_sealed_model_execution_contracts.down.sql",
+		testutil.PreRetirementMigrationsDir(t), "000082_sealed_model_execution_contracts.down.sql",
 	))
 	require.NoError(t, err)
 	reverseLaterBindings()
@@ -105,7 +105,7 @@ SELECT
             AND column_name='execution_profile_id')`).Scan(&migrationPresent, &pinColumnsPresent))
 	require.False(t, migrationPresent)
 	require.False(t, pinColumnsPresent)
-	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallPreRetirementTestArtifact(t, ctx, pool))
 	backfilled, err := manager.GetDeploymentRelease(ctx, initial.ReleaseRef)
 	require.NoError(t, err)
 	assertSealedExecutionContract(t, backfilled, "kimi.k3.api", "1.1.0", 262144, 32768)

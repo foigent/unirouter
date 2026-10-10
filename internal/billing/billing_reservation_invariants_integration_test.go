@@ -19,7 +19,16 @@ func testMicros(cents int) int64 {
 
 func newReservationFixture(t *testing.T, balance, granted int) (*pgxpool.Pool, int64, string) {
 	t.Helper()
-	pool := testutil.SetupMigratedTestDB(t)
+	return reservationFixtureWithPool(t, testutil.SetupMigratedTestDB(t), balance, granted)
+}
+
+func newPreRetirementReservationFixture(t *testing.T, balance, granted int) (*pgxpool.Pool, int64, string) {
+	t.Helper()
+	return reservationFixtureWithPool(t, testutil.SetupPreRetirementTestDB(t), balance, granted)
+}
+
+func reservationFixtureWithPool(t *testing.T, pool *pgxpool.Pool, balance, granted int) (*pgxpool.Pool, int64, string) {
+	t.Helper()
 	ctx := t.Context()
 
 	var orgID int64

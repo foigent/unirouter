@@ -17,7 +17,7 @@ import (
 func TestModelCapabilityQualificationKimiK26MigrationLifecycleIntegration(t *testing.T) {
 	pool, _ := setupMigratedThrough(t, "000094_deepseek_v4_pro_chat_core_qualification.up.sql")
 	ctx := t.Context()
-	m95Dir := migrationsThrough(t, testutil.MigrationsDir(t), "000095_kimi_k26_chat_core_qualification.up.sql")
+	m95Dir := migrationsThrough(t, testutil.PreRetirementMigrationsDir(t), "000095_kimi_k26_chat_core_qualification.up.sql")
 
 	require.NoError(t, migrate.Run(ctx, pool, m95Dir))
 	assertM95KimiAuthorityState(t, pool, 6, 6)
@@ -31,7 +31,7 @@ func TestModelCapabilityQualificationKimiK26MaterializesExactTupleAndBlocksUnsaf
 	pool, _ := setupMigratedThrough(t, "000094_deepseek_v4_pro_chat_core_qualification.up.sql")
 	ctx := t.Context()
 	fixture := insertM95KimiCapabilityFixture(t, pool, "exact", "protocol.kimi-openai-chat.v5")
-	m95Dir := migrationsThrough(t, testutil.MigrationsDir(t), "000095_kimi_k26_chat_core_qualification.up.sql")
+	m95Dir := migrationsThrough(t, testutil.PreRetirementMigrationsDir(t), "000095_kimi_k26_chat_core_qualification.up.sql")
 	require.NoError(t, migrate.Run(ctx, pool, m95Dir))
 	assertM95KimiAuthorityState(t, pool, 6, 6)
 
@@ -41,7 +41,7 @@ SELECT COUNT(*) FROM model_deployment_capabilities
  WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'`, fixture.deploymentID).Scan(&projections))
 	require.Equal(t, 6, projections)
 
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000095_kimi_k26_chat_core_qualification.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000095_kimi_k26_chat_core_qualification.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.Error(t, err)
@@ -57,7 +57,7 @@ func TestModelCapabilityQualificationKimiK26DownRefusesRetainedProbeIntegration(
 	pool, _ := setupMigratedThrough(t, "000094_deepseek_v4_pro_chat_core_qualification.up.sql")
 	ctx := t.Context()
 	fixture := insertM95KimiCapabilityFixture(t, pool, "retained-probe", "protocol.kimi-openai-chat.v5")
-	m95Dir := migrationsThrough(t, testutil.MigrationsDir(t), "000095_kimi_k26_chat_core_qualification.up.sql")
+	m95Dir := migrationsThrough(t, testutil.PreRetirementMigrationsDir(t), "000095_kimi_k26_chat_core_qualification.up.sql")
 	require.NoError(t, migrate.Run(ctx, pool, m95Dir))
 
 	var operationRevision, capabilityRevision int64
@@ -95,7 +95,7 @@ RETURNING capability_probe_id`, fixture.orgID, fixture.deploymentID, fixture.con
 	).Scan(&probeID))
 	require.Positive(t, probeID)
 
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000095_kimi_k26_chat_core_qualification.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000095_kimi_k26_chat_core_qualification.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.ErrorContains(t, err, "retained evidence")
@@ -111,7 +111,7 @@ func TestModelCapabilityQualificationKimiK26DoesNotUpgradeGenericAttachmentInteg
 	pool, _ := setupMigratedThrough(t, "000094_deepseek_v4_pro_chat_core_qualification.up.sql")
 	ctx := t.Context()
 	fixture := insertM95KimiCapabilityFixture(t, pool, "generic", "openai.chat_completions")
-	m95Dir := migrationsThrough(t, testutil.MigrationsDir(t), "000095_kimi_k26_chat_core_qualification.up.sql")
+	m95Dir := migrationsThrough(t, testutil.PreRetirementMigrationsDir(t), "000095_kimi_k26_chat_core_qualification.up.sql")
 	require.NoError(t, migrate.Run(ctx, pool, m95Dir))
 
 	var projections int

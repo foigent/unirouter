@@ -22,6 +22,15 @@ BEGIN
     LOCK TABLE schema_migrations IN SHARE MODE;
     SELECT array_agg(version::text ORDER BY version) INTO ledger FROM schema_migrations;
     certified_ledger := ledger;
+    IF ledger[cardinality(ledger)]='000126_commercial_license_retirement' THEN
+      IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000125_xinsight_control_credential_lifecycle'
+         OR EXISTS(SELECT 1 FROM pg_trigger WHERE NOT tgisinternal AND tgname IN
+           ('api_keys_commercial_limit','users_commercial_limit','projects_commercial_limit',
+            'access_credentials_commercial_limit','provider_connections_commercial_limit')) THEN
+        RAISE EXCEPTION 'M126 restore requires exact M125 predecessor and retired commercial triggers'; END IF;
+      ledger := ledger[1:cardinality(ledger)-1];
+      certified_ledger := ledger;
+    END IF;
     IF ledger[cardinality(ledger)]='000125_xinsight_control_credential_lifecycle' THEN
       IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000124_xinsight_receiver_adoption'
          OR to_regclass('public.xinsight_connector_credential_operations') IS NULL
@@ -105,12 +114,13 @@ BEGIN
        AND head IS DISTINCT FROM '000122_scoped_content_policy'
        AND head IS DISTINCT FROM '000123_xinsight_policy_delegation'
        AND head IS DISTINCT FROM '000124_xinsight_receiver_adoption'
-       AND head IS DISTINCT FROM '000125_xinsight_control_credential_lifecycle' THEN
+       AND head IS DISTINCT FROM '000125_xinsight_control_credential_lifecycle'
+       AND head IS DISTINCT FROM '000126_commercial_license_retirement' THEN
       IF present<>0 THEN RAISE EXCEPTION 'restored C tables require the exact M119 ledger'; END IF;
       RETURN;
     END IF;
     IF present<>8 THEN RAISE EXCEPTION 'restored C schema is incomplete'; END IF;
-    IF head IN ('000120_unpublished_content_reclamation','000121_gateway_pre_dispatch_terminal','000122_scoped_content_policy','000123_xinsight_policy_delegation','000124_xinsight_receiver_adoption','000125_xinsight_control_credential_lifecycle') THEN
+    IF head IN ('000120_unpublished_content_reclamation','000121_gateway_pre_dispatch_terminal','000122_scoped_content_policy','000123_xinsight_policy_delegation','000124_xinsight_receiver_adoption','000125_xinsight_control_credential_lifecycle','000126_commercial_license_retirement') THEN
       IF NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='execution_content_objects'::regclass AND attname='reclaimed_at' AND NOT attisdropped AND atttypid='timestamptz'::regtype AND NOT attnotnull) THEN
         RAISE EXCEPTION 'restored content reclamation schema mismatch'; END IF;
     ELSIF EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='execution_content_objects'::regclass AND attname='reclaimed_at' AND NOT attisdropped) THEN

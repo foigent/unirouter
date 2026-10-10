@@ -103,6 +103,51 @@ func SetupMigratedThroughTestDB(t *testing.T, ceiling string) *pgxpool.Pool {
 	return pool
 }
 
+// PreRetirementMigrationsDir freezes the historical artifact at M125 for
+// tests of earlier rollback/compatible-expand contracts. M126 deliberately
+// cannot be undone; current-runtime tests must continue using MigrationsDir.
+func PreRetirementMigrationsDir(t *testing.T) string {
+	t.Helper()
+	source, target := MigrationsDir(t), t.TempDir()
+	entries, err := os.ReadDir(source)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") || entry.Name() >= "000126_" {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(source, entry.Name()))
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(target, entry.Name()), body, 0o600))
+	}
+	return target
+}
+
+// SetupPreRetirementTestDB is an explicit M125 fixture, never a downgrade of
+// a current installation. Keep historical tests separate from M126 runtime tests.
+func SetupPreRetirementTestDB(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	return SetupMigratedThroughTestDB(t, schemaauthority.XInsightCredentialExpandHead)
+}
+
+// PreRetirementLedger supplies an immutable historical artifact identity to
+// domain-level compatibility tests. ExpectedLedger keeps its binary ceiling.
+func PreRetirementLedger(t *testing.T) ([]string, error) {
+	t.Helper()
+	ledger, err := schemaauthority.ExpectedLedger(MigrationsDir(t))
+	if err != nil {
+		return nil, err
+	}
+	if len(ledger) < 2 || ledger[len(ledger)-2] != schemaauthority.XInsightCredentialExpandHead {
+		return nil, fmt.Errorf("historical fixture requires exact M125/M126 boundary")
+	}
+	return ledger[:len(ledger)-1], nil
+}
+
+func InstallPreRetirementTestArtifact(t *testing.T, ctx context.Context, pool *pgxpool.Pool) error {
+	t.Helper()
+	return runStrictTestArtifactInstallThrough(ctx, pool, MigrationsDir(t), schemaauthority.XInsightCredentialExpandHead)
+}
+
 // EnableMigratedTestDBTemplate makes SetupMigratedTestDB migrate and clean one
 // process-scoped template database, then clone it for each test. The caller must
 // invoke CleanupMigratedTestDBTemplate after the package test run completes.
@@ -394,9 +439,9 @@ func runStrictTestArtifactInstallThrough(ctx context.Context, pool *pgxpool.Pool
 		}
 		return nil
 	}
-	// Apply any trailing ordinary migrations. A missed declaration-owned
-	// migration still fails closed in migrate.Run instead of being bypassed.
-	if err := migrate.Run(ctx, pool, migrationsDir); err != nil {
+	// Apply maintenance retirement only through the formal owner. This isolated
+	// fixture has no serving writers; no runtime startup bypass is granted.
+	if err := migrate.RunExisting(ctx, pool, migrationsDir); err != nil {
 		return err
 	}
 	return publication.VerifyRuntimeStaticProjection(ctx, pool, artifactLedger)

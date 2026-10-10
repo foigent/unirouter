@@ -122,7 +122,7 @@ func TestReadinessConnectionScopeUsesExactCanonicalDeployment(t *testing.T) {
 	}
 }
 
-func TestReadinessGatewayLicenseAxisBlocksBeforeProviderRepair(t *testing.T) {
+func TestReadinessCommercialLicenseIsNotApplicable(t *testing.T) {
 	handler := NewHandler(&testutil.MockDB{}, "jwt", []byte("0123456789abcdef01234567"), nil)
 	handler.SetLicenseRuntime(licensing.NewRuntime(nil))
 	response := &modelreadiness.Response{Scope: modelreadiness.Scope{ResolvedModel: "deepseek-v4-pro"}}
@@ -135,7 +135,7 @@ func TestReadinessGatewayLicenseAxisBlocksBeforeProviderRepair(t *testing.T) {
 	}, nil)
 
 	axis := response.PlatformModel.GatewayLicense
-	if axis.State != modelreadiness.StateBlocked || axis.ReasonCode != "license_error.missing" || axis.FixRoute != "/license" {
+	if axis.State != modelreadiness.StateNotApplicable || axis.ReasonCode != "commercial_license_not_required" || axis.FixRoute != "" {
 		t.Fatalf("gateway license axis=%#v", axis)
 	}
 }

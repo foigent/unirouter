@@ -136,7 +136,7 @@ func readLeaseLedger(ctx context.Context, q interface {
 		return nil, "", fmt.Errorf("%w: %v", ErrIncompatible, err)
 	}
 	head := ledger[len(ledger)-1]
-	if head != schemaauthority.CapabilityExpandHead && head != schemaauthority.StreamCounterExpandHead && head != schemaauthority.SourceFactsExpandHead && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead && (head != schemaauthority.ScopedContentExpandHead && head != schemaauthority.XInsightPolicyExpandHead && head != schemaauthority.XInsightAdoptionExpandHead && head != schemaauthority.XInsightCredentialExpandHead) {
+	if head != schemaauthority.CapabilityExpandHead && head != schemaauthority.StreamCounterExpandHead && head != schemaauthority.SourceFactsExpandHead && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead && (head != schemaauthority.ScopedContentExpandHead && head != schemaauthority.XInsightPolicyExpandHead && head != schemaauthority.XInsightAdoptionExpandHead && head != schemaauthority.XInsightCredentialExpandHead && head != schemaauthority.CommercialLicenseRetirementHead) {
 		return nil, head, fmt.Errorf("%w: runtime lease requires explicit expand", ErrIncompatible)
 	}
 	return ledger, head, nil
@@ -180,8 +180,16 @@ VALUES($1,$2,$3,$4,'serving','absent',clock_timestamp()+$5*interval '1 second')`
 
 // Schema advertisement alone cannot register a pre-C same-purpose writer on M119.
 func requireLeaseManifest(manifest Manifest, head string) error {
+	if head == schemaauthority.CommercialLicenseRetirementHead {
+		if err := manifest.Require(head, XInsightCredentialRequirements()); err != nil {
+			return fmt.Errorf("%w: %v", ErrIncompatible, err)
+		}
+		return requireLeaseManifest(manifest, schemaauthority.XInsightCredentialExpandHead)
+	}
 	if head == schemaauthority.XInsightCredentialExpandHead {
-		if err := manifest.Require(head, XInsightCredentialRequirements()); err != nil { return fmt.Errorf("%w: %v", ErrIncompatible, err) }
+		if err := manifest.Require(head, XInsightCredentialRequirements()); err != nil {
+			return fmt.Errorf("%w: %v", ErrIncompatible, err)
+		}
 	}
 	if head == schemaauthority.XInsightAdoptionExpandHead || head == schemaauthority.XInsightCredentialExpandHead {
 		if err := manifest.Require(head, XInsightAdoptionRequirements()); err != nil {

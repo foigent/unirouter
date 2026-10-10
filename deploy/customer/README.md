@@ -12,14 +12,16 @@ signed release manifest proves that those digests are vendor-approved.
 
 The Compose file contains no `build:` entry, source mount, builder cache or
 host migration mount. The backend image owns its exact migrations, immutable
-build version/commit and vendor License/upgrade public trust roots. Runtime
-environment variables cannot replace those embedded roots. A stable deployment
-identity remains mandatory configuration.
+build version/commit and the embedded upgrade public trust root. Runtime
+environment variables cannot replace that root. Commercial licenses and
+LICENSE_* settings are not required by the 1.10.0 candidate.
 
-For the 1.4.1 source candidate, schema installation uses the same backend image's
-explicit `fresh-install` owner before any full runtime is started. Native build,
-installation and full first-customer acceptance are still pending for this
-candidate; this template is not evidence of a signed release or successful run.
+For the 1.10.0 source candidate, schema installation uses the same backend
+image's explicit `fresh-install` owner through M126 before the runtime starts.
+The [Linux installer preview](../../docs/community/install-linux.md) automates
+the private installation steps below. Local database fresh/resume/restore
+checks passed; actual Docker installation and the public release remain pending.
+This template is not evidence of a signed release or successful target run.
 
 `MODEL_ROUTE_AUTHORITY` is a process-level cutover gate. The binary and the
 Compose fallback default to `canonical`, with
@@ -135,7 +137,7 @@ Before first start:
    existing stopped-writer restore/rebase procedure, preserving their historical
    installation COMMENT; do not rerun fresh certification after restore.
 
-   After the owner reports completed M118 and the retained readback is verified,
+   After the owner reports completed M126 and the retained readback is verified,
    start the full legacy compatibility stack and copy the same package into the healthy backend,
    re-verify it with the running release binary and record the initial
    installed release:
@@ -195,11 +197,9 @@ Before first start:
    and its zero wallet. Any extra row, field drift, missing/mismatched release
    evidence, or concurrent change returns `409` and rolls back all normalization
    and creation. The endpoint does not create a customer user, project,
-   Provider/Feed credential, application key, policy or traffic. Import the
-   customer's customer-bound V1 License through the local
-   platform-admin recovery surface, then create the single reviewed customer
-   project with `slug=default` (the canonical restart reuses this project and
-   must not consume a second active-project License seat), provider
+   Provider/Feed credential, application key, policy or traffic. Create the
+   single reviewed customer project with `slug=default` (the canonical restart
+   reuses this project), provider
    connection/credential, canonical model deployment and operation evidence,
    sealed v2 release and initial stable slot. Admit no customer Gateway traffic
    during this phase; only separately authorized bootstrap, authoring and
@@ -290,13 +290,13 @@ artifact with its size and SHA-256 in the signed upgrade manifest, alongside thi
 restoration instruction. This source template does not itself sign or release it.
 
 - Repository/package path: `scripts/source-budget-restore-rebase.sql`
-- SHA-256: `d9939ccad3bd962e23a2f8ee2123d8efbe265d74e13352c3bc6c31171f20ff62`
-- Bytes: `10838`
+- SHA-256: `cee69a55f1784290bf70b2dec77901252e4a01dbfaca5c8a26b52d7b8aa2bd6f`
+- Bytes: `11610`
 
 After every supported SQL restore, while all database readers/writers are still
 stopped, run this helper with `psql -v ON_ERROR_STOP=1 -f` before restart. It retains
 the former D coverage epoch and records the database restore boundary. With the
-exact M119, M120, M121, M122, M123, M124 or M125 schema it also changes each C recovery epoch in the same transaction,
+exact M119, M120, M121, M122, M123, M124, M125 or M126 schema it also changes each C recovery epoch in the same transaction,
 invalidating old C cursors and in-flight grants. It does not change money,
 credentials, source identity, A/B cursors, C registration, manifests or object
 allocation epochs. Any helper failure

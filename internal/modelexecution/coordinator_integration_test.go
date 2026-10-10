@@ -577,7 +577,16 @@ type executionFixture struct {
 
 func newExecutionFixture(t *testing.T, selectedV2, halfOpen bool) *executionFixture {
 	t.Helper()
-	pool := testutil.SetupMigratedTestDB(t)
+	return executionFixtureWithPool(t, testutil.SetupMigratedTestDB(t), selectedV2, halfOpen)
+}
+
+func newPreRetirementExecutionFixture(t *testing.T, selectedV2, halfOpen bool) *executionFixture {
+	t.Helper()
+	return executionFixtureWithPool(t, testutil.SetupPreRetirementTestDB(t), selectedV2, halfOpen)
+}
+
+func executionFixtureWithPool(t *testing.T, pool *pgxpool.Pool, selectedV2, halfOpen bool) *executionFixture {
+	t.Helper()
 	fixture := &executionFixture{pool: pool, model: fmt.Sprintf("exec-%d", time.Now().UnixNano()), halfOpen: halfOpen}
 	fixture.orgID = testutil.NewTestOrg(t, pool)
 	testutil.NewTestWalletCents(t, pool, fixture.orgID, 10000)

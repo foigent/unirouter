@@ -13,9 +13,9 @@ import (
 )
 
 func TestP6F17OperationIdempotencyMigrationUpDownAndSafeRollForward(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
-	migrationsDir := testutil.MigrationsDir(t)
+	migrationsDir := testutil.PreRetirementMigrationsDir(t)
 
 	var orgA, orgB int64
 	require.NoError(t, pool.QueryRow(ctx,

@@ -24,7 +24,7 @@ import (
 func TestHistoricalM115RetirementPermitsOnlyProvedSuffix(t *testing.T) {
 	pool := testutil.SetupMigratedThroughTestDB(t, schemaauthority.StreamCounterExpandHead)
 	ctx := t.Context()
-	dir := testutil.MigrationsDir(t)
+	dir := testutil.PreRetirementMigrationsDir(t)
 	manifestWire, err := os.ReadFile("testdata/runtime-support-1.2.77-m115.json")
 	require.NoError(t, err)
 	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.TrimSpace(string(manifestWire)))))
@@ -63,7 +63,7 @@ func TestHistoricalM115RetirementPermitsOnlyProvedSuffix(t *testing.T) {
 		return execErr
 	}
 	require.NoError(t, up(schemaauthority.SourceFactsExpandHead))
-	ledger, err := schemaauthority.ExpectedLedger(dir)
+	ledger, err := testutil.PreRetirementLedger(t)
 	require.NoError(t, err)
 	currentManifest := CurrentManifest(schemaauthority.SupportedSchemaHeads())
 	successors := []Identity{{Instance: "uri_" + strings.Repeat("b", 32), Artifact: "sha256:" + strings.Repeat("b", 64)},

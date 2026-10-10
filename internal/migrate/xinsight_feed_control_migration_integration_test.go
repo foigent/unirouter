@@ -50,7 +50,7 @@ func TestXInsightFeedControlMigrationEnforcesStagedAndRollbackLifecycle(t *testi
 
 	rollbackAsyncMediaImageFromM46Prestate(t, pool)
 	receiverDownSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t),
+		testutil.PreRetirementMigrationsDir(t),
 		"000045_v1_receiver_feed_credential.down.sql",
 	))
 	require.NoError(t, err)
@@ -58,7 +58,7 @@ func TestXInsightFeedControlMigrationEnforcesStagedAndRollbackLifecycle(t *testi
 	require.NoError(t, err)
 
 	downSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t),
+		testutil.PreRetirementMigrationsDir(t),
 		"000044_v1_xinsight_feed_control.down.sql",
 	))
 	require.NoError(t, err)

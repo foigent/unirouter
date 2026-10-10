@@ -41,7 +41,7 @@ SELECT jsonb_agg(to_jsonb(b) ORDER BY operation_id)::text
 FROM model_operation_current_public_execution_contracts b`).Scan(&legacyBindings))
 
 	for cycle := 0; cycle < 2; cycle++ {
-		require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
+		require.NoError(t, testutil.InstallPreRetirementTestArtifact(t, ctx, pool))
 		var freezeHash, attemptHash *string
 		require.NoError(t, pool.QueryRow(ctx, `
 SELECT f.execution_snapshot_hash,a.execution_snapshot_hash
@@ -70,7 +70,7 @@ FROM model_operation_current_public_execution_contracts b`).Scan(&preservedBindi
 }
 
 func TestModelExecutionPlanFreezeFenceDownWaitsForEvidenceWriterIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 	execMigrationDown(t, ctx, pool, "000086_exact_public_execution_bindings.down.sql")
@@ -88,7 +88,7 @@ VALUES ('m85-writer',$1,'frozen','test','mrs1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 	defer downConn.Release()
 	var pid int
 	require.NoError(t, downConn.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&pid))
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000085_model_execution_plan_freeze_fence.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000085_model_execution_plan_freeze_fence.down.sql"))
 	require.NoError(t, err)
 	result := make(chan error, 1)
 	go func() {
@@ -169,7 +169,7 @@ func TestModelExecutionPlanFreezeFenceSharesMigrationLifecycleLockIntegration(t 
 }
 
 func TestModelExecutionPlanFreezeFenceMigrationIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool := testutil.SetupPreRetirementTestDB(t)
 	ctx := context.Background()
 	execMigrationDown(t, ctx, pool, "000086_exact_public_execution_bindings.down.sql")
 
@@ -223,7 +223,7 @@ UPDATE freeze_idempotency
  WHERE org_id=$1 AND request_id='m85-valid-snapshot'`, orgID)
 	require.ErrorContains(t, err, "model execution Plan snapshot is immutable")
 
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000085_model_execution_plan_freeze_fence.down.sql"))
+	down, err := os.ReadFile(filepath.Join(testutil.PreRetirementMigrationsDir(t), "000085_model_execution_plan_freeze_fence.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.ErrorContains(t, err, "durable snapshot bindings exist")
