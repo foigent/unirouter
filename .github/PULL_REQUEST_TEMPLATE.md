@@ -1,3 +1,6 @@
+<!-- Prefer an English title. English and Simplified Chinese descriptions are welcome;
+include a short English summary for substantial changes. -->
+
 ## Problem and result
 
 What problem does this solve, and what changes for the user?

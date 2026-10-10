@@ -1,8 +1,10 @@
 # Linux community installer candidate
 
-Status: local implementation and offline checks complete; actual Linux/Docker
-acceptance and publication pending. No public package, registry image,
-npm package or target installation is created by this work.
+Status: Local checks and disposable Linux amd64 installation acceptance passed
+at `b7432803a8ae7ef3b946501ae5f3e9ff0a905273`. See the
+[accepted native result](#accepted-native-result). Public distribution remains
+pending. This work has not published a package, registry image or npm package,
+or installed to an existing Target.
 
 The owner selected Linux servers, including ECS, for the first simplified
 installation. Existing ECS onboarding/model evidence remains valid for its
@@ -121,12 +123,13 @@ including real Go/Python signed-input interoperability with synthetic keys:
 19 cases, current metadata, CLI help, local documentation links and whitespace
 checks passed. No additional independent review round is claimed.
 
-These checks do not prove Docker or a downloadable release works. Actual Linux acceptance
-requires a reviewed signed release, real images and a separately authorized
-disposable host. Existing running ECS services remain untouched.
+These Local checks alone did not prove Docker or a downloadable release works.
+The separately authorized native batch below supplies actual Linux installation
+evidence. Public artifact acceptance remains separate; existing ECS services
+remain untouched.
 
-Public download addresses, release signing/publication, real Docker acceptance,
-TLS exposure and provider credentials retain their own authorization boundary.
+Public download addresses, official release signing/publication, Target service
+changes, TLS exposure and provider credentials retain their authorization boundary.
 An npm launcher, automatic Docker installation, upgrades and uninstall are
 separate follow-ups; the first path uses Python 3 and Docker Compose already
 installed on the server.
@@ -221,3 +224,29 @@ installation result; a previous failed candidate's package is never reused.
 The workflow includes original identity, one-rotation, repeated-resume, login
 and License-retired assertions. Results apply only to the named commit and
 Linux amd64 fixture, not to an official distribution or existing ECS runtime.
+
+
+## Accepted native result
+
+[Run 38039244599](https://github.com/foigent/unirouter/actions/runs/38039244599)
+passed all eight check groups at exact head
+`b7432803a8ae7ef3b946501ae5f3e9ff0a905273`, tree
+`0c52df41786c09bc5c5fe1078e45788f5278c137`, version 1.10.0.
+The runner used Ubuntu 24.04, Linux amd64, Python 3.10.22, Docker 28.0.4
+and Compose 2.38.2. Its allowlisted acceptance report contains the six image
+digests and synthetic package SHA-256
+`3c99ef97de8fb6802064e1cdc7663aada3d501a9104627199ca7e4a4cfbb2981`.
+
+Verified: read-only checks; wrong key and changed payload refusal without
+writes; unlabelled volume collision refusal; actual fresh-plan completion
+followed by response-loss interruption; normal resume with the same identities;
+M126, image/database/release binding and exactly one administrator password
+rotation; unchanged completed resume; real NGINX console, login and
+`license.status=not_required`.
+
+All credentials, keys and data were temporary synthetic fixtures; there were
+zero provider calls. This verifies the interrupted-after-plan fresh path,
+not a crash during migration. It does not establish ARM64, an existing M125
+database's Docker/NGINX maintenance path, public trust/download bootstrap,
+Target, Provider or Production acceptance. Failed runs above retain their own
+identities and results.

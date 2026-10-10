@@ -7,8 +7,8 @@ titles; Chinese discussion and translation contributions are welcome.
 
 ## 1. Add a Simplified Chinese getting-started guide
 
-**Problem:** the Chinese README links to an English-only installation and
-first-request guide.
+**Problem:** the Chinese README links to an English-only model setup and
+first-request guide. A separate Chinese Linux installer guide already exists.
 
 **Entry:** `docs/community/getting-started.md`, `README.zh-CN.md`.
 
@@ -16,7 +16,8 @@ first-request guide.
 versions, and point the Chinese README to the translation. Keep commands,
 environment variable names, release status, signature requirements and paid
 provider-call notices consistent with the current English guide. Include the
-new Linux installer only when its English instructions are ready.
+existing [Chinese Linux installer guide](install-linux.zh-CN.md) as the
+installation entry, keeping its preview status and tested scope explicit.
 
 **Acceptance:** a bilingual maintainer checks semantic parity and every local
 link. No deployment, provider account or paid request is needed. Do not invent

@@ -1,5 +1,43 @@
 # Current Execution Record
 
+## English-first GitHub entry and accepted installer evidence — 2026-10-10
+
+The owner reaffirmed English as the primary GitHub language. The default
+documentation index now follows understanding, installation, first request and
+contribution, with the complete previous Chinese engineering navigation
+preserved in `docs/README.zh-CN.md`. README language links, contributor naming
+guidance and Issue/PR template hints are aligned. Owner-authored rationale and
+source comparison content remain unchanged.
+
+The owner selected GitHub private vulnerability reporting and supplied the
+conduct email now in CODE_OF_CONDUCT.md. No email was sent and no account or
+credential was created. GitHub reporting availability still needs verification
+during an approved publication action.
+
+Successful native run 38039244599 binds exact head
+`b7432803a8ae7ef3b946501ae5f3e9ff0a905273`; CI 38039244481 and protocol
+38039244482 bind PR merge commit `a66e19c54955130801de4292b51a356cab1d310c`
+with the same tree `0c52df41786c09bc5c5fe1078e45788f5278c137`. All seven
+checks passed. The installer runbook records scope, package identity and
+limitations. This supersedes pending-native status in earlier entries while
+preserving their failed candidates and historical results.
+
+Release readiness now identifies the two private conformance dependencies and
+their proposed public consumer-kit boundary, plus source dependency inventory
+and Redis/Grafana license findings. This does not authorize copying, relicensing
+or publishing other repositories, replacing dependencies or weakening CI.
+
+Local verification passed: 378 relative links across 20 public-entry documents,
+all previous Chinese index links and content preserved, owner essays/comparison
+unchanged, Issue form YAML parsing and unique field IDs, current release
+metadata, and whitespace checks.
+
+This batch changes documentation and community template text only. Product
+version remains 1.10.0; runtime, installer, CI workflows and required checks
+remain unchanged. Private commit/push/PR authority continues. Merge, visibility,
+official artifacts and deployment remain separate. Experience file: no change
+required.
+
 ## Native frontend health correction — 2026-10-10
 
 Diagnostic native run [38038691565](https://github.com/foigent/unirouter/actions/runs/38038691565)

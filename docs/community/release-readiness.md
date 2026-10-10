@@ -2,12 +2,15 @@
 
 Status: **private draft [PR 442](https://github.com/foigent/unirouter/pull/442);
 not ready for public release**.
-Candidate `c5958c57106e7073e74653652b38dc549f482e10` passed all six checks in
-[CI 38032678754](https://github.com/foigent/unirouter/actions/runs/38032678754)
-and [protocol 38032678752](https://github.com/foigent/unirouter/actions/runs/38032678752).
-This is the prior implementation baseline. Newer candidate checks are visible
-in [PR 442](https://github.com/foigent/unirouter/pull/442/checks); CI evidence
-does not substitute for native installer or public-release acceptance.
+Implementation candidate `b7432803a8ae7ef3b946501ae5f3e9ff0a905273`
+passed all seven checks: [CI 38039244481](https://github.com/foigent/unirouter/actions/runs/38039244481),
+[protocol 38039244482](https://github.com/foigent/unirouter/actions/runs/38039244482)
+and [native installer 38039244599](https://github.com/foigent/unirouter/actions/runs/38039244599).
+Native acceptance checked out that exact head. Standard CI and protocol used
+PR merge commit `a66e19c54955130801de4292b51a356cab1d310c`, with the same
+tree `0c52df41786c09bc5c5fe1078e45788f5278c137`.
+This is not exact-main or public-release evidence. Later documentation updates
+have their own checks in [PR 442](https://github.com/foigent/unirouter/pull/442/checks).
 Main read back on 2026-10-10:
 `59c47b852b7372951c5c49b0e6b23df8c83817b9`, version 1.9.8.
 This task has not changed private visibility.
@@ -30,11 +33,11 @@ Chinese is secondary. Both remain welcome for questions and contributions.
 | --- | --- |
 | Reader/contributor entry | Candidate bilingual README and design rationale, source comparison, architecture, data guide, contribution map, DCO, reporting and roadmap |
 | Runtime License retirement | Local PG16 migration/refusal, retained history and new-runtime admission passed; actual Docker/NGINX maintenance acceptance remains pending |
-| Installation/first request | Existing ECS model/onboarding evidence is retained for its recorded versions; Local fresh/resume and real restore/rebase passed. Linux installer code, 23 offline cases and real signature interoperability passed; the native workflow records exact-commit Docker installation results, while public assets and the affected first-use path need their own acceptance |
+| Installation/first request | Fresh Linux amd64 installation, interrupted-plan recovery, repeat resume, login and retired-License status passed at `b7432803`; 23 offline cases and signature interoperability also passed. Public assets and affected first-use behavior need their own acceptance; existing ECS evidence retains its recorded versions |
 | External Fork CI | Private integration-control and event-connector-spec inputs block complete reproducibility; distribution/access strategy unresolved |
 | Copyright/dependencies | Existing Foigent attribution retained; contributor authority and redistribution review need completion |
 | Source/history exposure | Review before visibility change; no unapproved deletion of historical material |
-| Confidential reporting | Working security and conduct channels must be confirmed before launch |
+| Confidential reporting | Owner selected GitHub private vulnerability reporting and the conduct email in the Code of Conduct; verify the private GitHub form before launch |
 | Public artifact/support | No published artifact or support window created |
 | GitHub settings | About/topics, Discussions and labels await reviewed publication action |
 
@@ -56,10 +59,12 @@ Chinese is secondary. Both remain welcome for questions and contributions.
   output, six runtime images and their contents at the selected digests. The
   root NOTICE does not substitute for third-party notices. No image digest has
   been selected for the public installer yet.
-- **Confidential reporting:** the authenticated GitHub private-reporting read
-  returned 404 for the still-private repository. This does not establish that
-  reporting will work after publication; confirm an accessible private channel
-  before launch. Do not publish an unverified contact address.
+- **Confidential reporting:** the owner selected GitHub private vulnerability
+  reporting and supplied the private conduct contact now recorded in the
+  [Code of Conduct](../../CODE_OF_CONDUCT.md). No test email was sent.
+  The authenticated GitHub reporting read returned 404 for the still-private
+  repository; verify the private form as part of the approved publication
+  action before announcing the project. Selection is not availability proof.
 - **Source/history:** user-authored public-facing essays are reviewed, but that
   does not clear the entire repository history, internal operational records
   or other contributors' rights for disclosure. A content-pattern triage of 189
@@ -68,10 +73,57 @@ Chinese is secondary. Both remain welcome for questions and contributions.
   These may include examples; they are review candidates, not confirmed secret
   leaks. Preserve existing material while reviewing the exact intended
   publication scope.
-- **Native installation:** this host has no Docker, Podman or Colima command.
-  The existing Docker Build check builds a release-mode image and validates
-  Compose, but does not execute the community installer. The authorized bounded
-  acceptance batch is in [COMMUNITY-INSTALLER.md](../ops/COMMUNITY-INSTALLER.md#native-acceptance-batch).
+- **Native installation:** the independent disposable Ubuntu workflow now
+  verifies real installation and recovery. See the
+  [accepted result](../ops/COMMUNITY-INSTALLER.md#accepted-native-result).
+  It uses temporary signing trust, a loopback registry and synthetic data;
+  official distribution, existing-database maintenance and provider calls
+  remain outside that result.
+
+## Dependency publication boundary
+
+The following is a preparation proposal, not permission to publish other
+repositories or a claim that a new kit has been assembled.
+
+| Required input | Current identity and consumer | Public preparation needed |
+| --- | --- | --- |
+| Neutral N1 release and qualifier | `integration-control` qualifier `db10730d64a9302887ad59c53921e98c757927e7`; release `v0.1.0-candidate.1`; Backend Tests | Rights-reviewed source archive, both declared platform binaries, manifest, checksums and qualifier scripts, retaining their exact integrity checks |
+| Source-Neutral protocol consumer kit | `event-connector-spec` action `ad8fe7a38c9d7335657630baa8670dd07556b98c`; protocol 2.0.2; Protocol Pin | Action/entry scripts, v1 compatibility kit, schemas/vectors, implementation and release manifests, Go implementation with vendored dependencies, TypeScript implementation, validators and expected reports |
+
+The protocol action executes Go and TypeScript conformance and verifies the UR
+product pin. Publishing only a schema or replacing the action with a local
+success marker would omit required behavior. The N1 verifier also validates
+declared assets beyond the single Linux executable used by UR.
+
+The recommended distribution is a reviewed public consumer kit containing the
+complete required dependency set. It does not require the X-Insight application
+repository. Its exact contents, rights, retained notices and publication target
+must be accepted before changing CI. If a new public artifact has a new
+identity, update the consumer binding through review; do not pretend a reduced
+copy is the original private Git tree. Acceptance must run from a fork without
+repository secrets while retaining all current conformance coverage.
+
+## Third-party distribution findings
+
+The source inventory found 42 third-party modules in the Linux amd64
+`cmd/uniroute` dependency graph, each with root license/notice files. Together
+with the frontend metadata above, this is an input to release notices, not a
+complete inventory of the built frontend, Go standard library or image contents.
+
+The tested Redis digest
+`sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499`
+matched `7.4.11-alpine`. Redis 7.4 uses RSALv2 or SSPLv1, rather than the BSD
+license of 7.2 and earlier. See [Redis's license table](https://redis.io/legal/licenses/).
+The tested Grafana 11.0.0 source uses
+[AGPLv3](https://github.com/grafana/grafana/blob/v11.0.0/LICENSE).
+These dependencies do not become Apache-2.0 when UR adopts that license.
+
+Before a public package is signed, select exact dependency versions/digests,
+review the intended redistribution and service model, and include the required
+licenses, notices and source materials. The installer currently requires all
+six services; making monitoring optional or changing the Redis implementation
+would be a separate reviewed compatibility change, not a documentation fix.
+No dependency has been silently replaced or downgraded.
 
 ## Proposed GitHub configuration
 

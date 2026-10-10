@@ -2,6 +2,9 @@ name: Proposal
 description: Explain a user problem or a bounded improvement.
 title: "[Proposal]: "
 body:
+  - type: markdown
+    attributes:
+      value: "English titles help everyone find related work. English and Simplified Chinese reports are welcome."
   - type: textarea
     id: problem
     attributes:

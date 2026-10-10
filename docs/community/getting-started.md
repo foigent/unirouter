@@ -1,9 +1,11 @@
 # Getting started
 
-**A reproducible no-commercial-License installation is still a release
-prerequisite for this candidate.** Check
-[release readiness](release-readiness.md). Development Compose startup alone
-does not establish an installed, qualified model-serving deployment.
+**Unreleased candidate:** fresh installation without a commercial License,
+interrupted-plan recovery and console login passed on a disposable Linux amd64
+runner. Public release packages are still pending. See
+[release readiness](release-readiness.md) for the exact tested commit and scope.
+Installation does not configure or qualify a model for you; the remaining
+steps below prepare model access and verify your first request.
 
 ## Choose a path
 

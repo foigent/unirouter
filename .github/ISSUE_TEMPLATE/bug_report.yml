@@ -4,6 +4,9 @@ title: "[Bug]: "
 body:
   - type: markdown
     attributes:
+      value: "English titles help everyone find related work. English and Simplified Chinese reports are welcome."
+  - type: markdown
+    attributes:
       value: "Follow SECURITY.md for sensitive reports. Do not include credentials, customer data or raw prompts."
   - type: input
     id: version

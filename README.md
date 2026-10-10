@@ -13,9 +13,10 @@ usage, billing and execution receipts together, so operators can inspect how a
 request was handled and what its charges are based on.
 
 > **Open-source preparation:** this branch is a candidate under private PR review.
-> The public release, license-free installation acceptance and external-fork CI are not yet
-> complete. See [release readiness](docs/community/release-readiness.md) before
-> treating these instructions as a published, supported installation.
+> Fresh installation without a commercial License passed on a disposable Linux amd64 runner.
+> Public downloads and complete external-fork CI are still pending. See
+> [release readiness](docs/community/release-readiness.md) for the tested commit,
+> scope and remaining work before using this candidate.
 
 English is the primary language for public documentation and project updates;
 [Simplified Chinese](README.zh-CN.md) is the secondary language. Contributions

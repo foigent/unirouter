@@ -10,9 +10,9 @@ UniRouter 为应用和 Agent 提供统一模型入口及管理控制台，将模
 路由、预算、用量、计费和执行回执放在同一条可检查的链路中。你可以追溯请求
 如何执行，以及费用依据如何形成。
 
-> **开源准备中：** 本分支正在私有 PR 中审阅。公开发布、无商业 License 的安装验收、
-> 外部 Fork 完整 CI 尚未完成。请先查看[发布准备状态](docs/community/release-readiness.md)，
-> 不要将候选说明视为已发布的安装或生产支持承诺。
+> **开源准备中：** 本分支正在私有 PR 中审阅。无商业 License 的全新安装已在临时
+> Linux amd64 测试机上通过；公开下载与外部 Fork 完整 CI 仍待完成。
+> 已验证的提交、范围与剩余工作见[发布准备状态](docs/community/release-readiness.md)。
 
 项目以英文作为对外文档与项目更新的第一语言，简体中文作为第二语言。
 中英文提问和贡献均欢迎；文档存在差异时，以英文版本为准，并欢迎提交翻译修正。
@@ -40,7 +40,7 @@ UniRouter 为应用和 Agent 提供统一模型入口及管理控制台，将模
 | 了解 Linux／ECS 简易安装预览版 | [Linux 安装说明](docs/community/install-linux.zh-CN.md) |
 | 了解数据保存和外发 | [数据处理说明](docs/community/data-handling.md) |
 | 构建、测试或贡献 | [贡献指南](CONTRIBUTING.md)、[贡献地图](docs/community/contribution-map.md) |
-| 深入源码和历史验证 | [文档索引](docs/README.md) |
+| 深入源码和历史验证 | [文档索引](docs/README.zh-CN.md) |
 
 首次使用围绕“配置模型 → 设置访问策略与预算 → 请求 → 核对用量与回执”展开。
 真实请求与模型资格 Probe 使用你选定的供应商及凭据，可能产生供应商费用。

@@ -22,6 +22,11 @@ substantial decisions discussed in Chinese, include a short English summary
 of the problem and accepted outcome; maintainers can help with that summary.
 Fluent English is not a contribution requirement.
 
+Use the unsuffixed Markdown path for an English guide and `.zh-CN.md` for its
+Simplified Chinese translation, with links between the two when both exist.
+GitHub landing pages, templates and new release summaries start in English.
+The [documentation index](docs/README.md) is the default reading entry.
+
 Keep the two README entry points aligned when changing product positioning,
 installation requirements or contribution guidance. Mark stale translations
 clearly and link to the current English source. Historical records retain

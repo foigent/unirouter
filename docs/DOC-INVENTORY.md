@@ -6,6 +6,8 @@
 
 | File | Role |
 | --- | --- |
+| `docs/README.md` | English-first navigation for readers and contributors, with links to technical references |
+| `docs/README.zh-CN.md` | Chinese entry preserving the earlier engineering and historical navigation |
 | `docs/community/why-unirouter.md` | Owner-authored motivation, design choices and research direction; not a new product contract |
 | `docs/community/why-unirouter.zh-CN.md` | Simplified Chinese version of the design rationale |
 | `docs/community/gateway-design-comparison.md` | Selected mechanisms at fixed source commits; not a benchmark or whole-product ranking |
