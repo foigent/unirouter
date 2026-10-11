@@ -1,3 +1,5 @@
+import '../i18n/integrations';
+import { translate as t, useI18n, translateLabel } from '../i18n';
 import { finishXInsightLoginContinuation } from '../routing/xInsightLoginContinuation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Banner, Button, Descriptions, Input, Popconfirm, Select, Spin, Tag, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
@@ -152,12 +154,12 @@ const invitationKeys = [
 export function parseReceiverRegistrationBundle(raw: string): ReceiverFeedCredentialRegistrationV1 {
   const parsed = JSON.parse(raw) as Record<string, unknown>;
   if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
-    throw new Error('registration 必须是 JSON object');
+    throw new Error(t("registration 必须是 JSON object"));
   }
   const keys = Object.keys(parsed).sort();
   if (keys.length !== registrationKeys.length ||
       keys.some((key, index) => key !== [...registrationKeys].sort()[index])) {
-    throw new Error('registration 字段必须与 Frozen Registration Bundle V1 完全一致');
+    throw new Error(t("registration 字段必须与 Frozen Registration Bundle V1 完全一致"));
   }
   if (parsed.schema_version !== 'unirouter.xinsight.feed-credential-registration.v1' ||
       parsed.token_format !== 'ur-xf1-hex256.v1' ||
@@ -168,7 +170,7 @@ export function parseReceiverRegistrationBundle(raw: string): ReceiverFeedCreden
       !/^[0-9a-f]{64}$/.test(parsed.verifier_sha256) ||
       typeof parsed.operation_id !== 'string' ||
       !/^[0-9a-f]{32}$/.test(parsed.operation_id)) {
-    throw new Error('registration 不符合 Frozen Registration Bundle V1');
+    throw new Error(t("registration 不符合 Frozen Registration Bundle V1"));
   }
   return parsed as unknown as ReceiverFeedCredentialRegistrationV1;
 }
@@ -180,12 +182,12 @@ export function parseFrozenConnectorInvitation(
 ): FrozenConnectorInvitationV1 {
   const parsed = JSON.parse(raw) as Record<string, unknown>;
   if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
-    throw new Error('invitation 必须是 JSON object');
+    throw new Error(t("invitation 必须是 JSON object"));
   }
   const keys = Object.keys(parsed).sort();
   if (keys.length !== invitationKeys.length ||
       keys.some((key, index) => key !== [...invitationKeys].sort()[index])) {
-    throw new Error('invitation 字段必须与 frozen Connector invitation 完全一致');
+    throw new Error(t("invitation 字段必须与 frozen Connector invitation 完全一致"));
   }
   if (parsed.schema_version !== 'xinsight.connector-installation-invitation.v1' ||
       typeof parsed.invitation_id !== 'string' || !/^xii_[A-Za-z0-9_-]{22}$/.test(parsed.invitation_id) ||
@@ -198,11 +200,11 @@ export function parseFrozenConnectorInvitation(
       typeof parsed.expires_at !== 'string' ||
       !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(parsed.expires_at) ||
       typeof parsed.install_url !== 'string') {
-    throw new Error('invitation 不符合 frozen Connector invitation');
+    throw new Error(t("invitation 不符合 frozen Connector invitation"));
   }
   const expiresAt = Date.parse(parsed.expires_at);
   if (!Number.isFinite(expiresAt) || expiresAt <= now.getTime() || expiresAt > now.getTime() + 30 * 60 * 1000) {
-    throw new Error('invitation 已过期或超过 frozen 30 分钟有效期');
+    throw new Error(t("invitation 已过期或超过 frozen 30 分钟有效期"));
   }
   const installURL = new URL(parsed.install_url);
   const fragment = new URLSearchParams(installURL.hash.slice(1));
@@ -217,7 +219,7 @@ export function parseFrozenConnectorInvitation(
       xInsightOrigin !== parsed.xinsight_origin ||
       parsed.install_url !== `${installURL.origin}/connectors/x-insight/install#${fragment.toString()}` ||
       (expectedFragment !== '' && installURL.hash !== expectedFragment)) {
-    throw new Error('install_url 不符合 frozen Connector invitation');
+    throw new Error(t("install_url 不符合 frozen Connector invitation"));
   }
   return parsed as unknown as FrozenConnectorInvitationV1;
 }
@@ -239,19 +241,19 @@ function credentialLabel(credential?: FeedCredential | null) {
 
 function connectorProductLabel(status?: FeedConnectionStatus['connector_product_status']) {
   switch (status) {
-    case 'connected': return '已连接';
-    case 'abnormal': return '异常';
-    case 'paused': return '已暂停';
-    case 'connecting': return '连接中';
-    default: return '未连接';
+    case 'connected': return t("已连接");
+    case 'abnormal': return t("异常");
+    case 'paused': return t("已暂停");
+    case 'connecting': return t("连接中");
+    default: return t("未连接");
   }
 }
 
 function feedConnectionLabel(status?: FeedConnectionStatus['connection_status']) {
   switch (status) {
-    case 'active': return '读取已启用';
-    case 'paused': return '已暂停';
-    default: return '未配置';
+    case 'active': return t("读取已启用");
+    case 'paused': return t("已暂停");
+    default: return t("未配置");
   }
 }
 
@@ -269,6 +271,7 @@ export default function XInsightLiveConnection({
   expansionAllowed = true,
   expansionRestriction = '',
 }: XInsightLiveConnectionProps) {
+  const { locale } = useI18n();
   const user = useAuthStore((state) => state.user);
   const normalOnly = canonicalOrganizationRole(user?.organization_role, user?.role) === 'org_admin';
   const projectCacheKey = `xinsight.setup-project:${user?.id}:${user?.org_id}`;
@@ -279,11 +282,11 @@ export default function XInsightLiveConnection({
   const [allowedIP, setAllowedIP] = useState('');
   const [registrationJSON, setRegistrationJSON] = useState('');
   const [invitationJSON, setInvitationJSON] = useState('');
-  const [projectLoadError, setProjectLoadError] = useState('');
+  const [projectLoadError, setProjectLoadError] = useState<{ detail: string } | null>(null);
   const [statusLoadError, setStatusLoadError] = useState('');
 
   const loadProjects = useCallback(async () => {
-    setProjectLoadError('');
+    setProjectLoadError(null);
     try {
       const next = await loadAllPages<Project>((page, pageSize) => api.getProjects(page, pageSize));
       setProjects(next);
@@ -291,7 +294,7 @@ export default function XInsightLiveConnection({
  setProjectID(next.find(p=>p.id===saved)?.id || next[0]?.id);
     } catch (error: any) {
       setProjects([]);
-      setProjectLoadError(`无法读取可用于 X-Insight 的项目${error?.message ? `：${error.message}` : ''}`);
+      setProjectLoadError({ detail: error?.message || '' });
     }
   }, [projectCacheKey]);
 
@@ -305,7 +308,7 @@ export default function XInsightLiveConnection({
     try {
       setStatus(await api.getXInsightFeedConnection(projectID) as FeedConnectionStatus);
     } catch (error: any) {
-      setStatusLoadError(error?.message || '无法读取 X-Insight 连接状态');
+      setStatusLoadError(error?.message || "无法读取 X-Insight 连接状态");
       setStatus(null);
     } finally {
       setLoading(false);
@@ -322,7 +325,7 @@ export default function XInsightLiveConnection({
       Toast.success(success);
       await loadStatus();
     } catch (error: any) {
-      Toast.error(`${success}失败${error?.message ? `：${error.message}` : ''}`);
+      Toast.error(t("{v0}失败{v1}", { v0: String(success), v1: String(error?.message ? `：${error.message}` : '') }));
     } finally {
       setLoading(false);
     }
@@ -338,10 +341,10 @@ export default function XInsightLiveConnection({
         { allowed_ip: allowedIP, registration },
       ) as RegisteredCredential;
       setRegistrationJSON('');
-      Toast.success(`已登记 staged feed-only 凭证 #${created.id}（${created.key_prefix}）；连接仍保持暂停`);
+      Toast.success(t("已登记 staged feed-only 凭证 #{v0}（{v1}）；连接仍保持暂停", { v0: String(created.id), v1: String(created.key_prefix) }));
       await loadStatus();
     } catch (error: any) {
-      Toast.error(`创建失败${error?.message ? `：${error.message}` : ''}`);
+      Toast.error(t("创建失败{v0}", { v0: String(error?.message ? `：${error.message}` : '') }));
     } finally {
       setLoading(false);
     }
@@ -354,10 +357,10 @@ export default function XInsightLiveConnection({
       const registration = parseReceiverRegistrationBundle(registrationJSON);
       const created = await api.prepareXInsightFeedRotation(projectID, { registration }) as RegisteredCredential;
       setRegistrationJSON('');
-      Toast.success(`轮换已准备（#${created.id} · ${created.key_prefix}）；旧凭证保持 active，新凭证仅在暂停态可认证`);
+      Toast.success(t("轮换已准备（#{v0} · {v1}）；旧凭证保持 active，新凭证仅在暂停态可认证", { v0: String(created.id), v1: String(created.key_prefix) }));
       await loadStatus();
     } catch (error: any) {
-      Toast.error(`准备轮换失败${error?.message ? `：${error.message}` : ''}`);
+      Toast.error(t("准备轮换失败{v0}", { v0: String(error?.message ? `：${error.message}` : '') }));
     } finally {
       setLoading(false);
     }
@@ -377,10 +380,10 @@ export default function XInsightLiveConnection({
       if (window.location.hash) {
         window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
       }
-      Toast.success(status?.connection_status === 'active' ? '接管申请已登记；原连接、凭据和同步进度保留，等待接管验证完成' : 'Connector invitation 已登记，等待连接验证完成');
+      Toast.success(status?.connection_status === 'active' ? t("接管申请已登记；原连接、凭据和同步进度保留，等待接管验证完成") : t("Connector invitation 已登记，等待连接验证完成"));
       await loadStatus();
     } catch (error: any) {
-      Toast.error(`Connector invitation 登记失败${error?.message ? `：${error.message}` : ''}`);
+      Toast.error(t("Connector invitation 登记失败{v0}", { v0: String(error?.message ? `：${error.message}` : '') }));
     } finally {
       setLoading(false);
     }
@@ -389,9 +392,9 @@ export default function XInsightLiveConnection({
   const projectOptions = useMemo(() => projects.map(project => ({
     value: project.id,
     label: `${projectDisplayName(project)}${project.org_name || project.org_id ? ` · ${customerOrganizationDisplayName(user, project.org_id, project.org_name)}` : ''}${
-      project.status === 'active' ? '' : project.status === 'archived' ? ' · 已归档' : ' · 已停用'
+      project.status === 'active' ? '' : project.status === 'archived' ? t(" · 已归档") : t(" · 已停用")
     }`,
-  })), [projects, user]);
+  })), [projects, user, locale]);
   const selectedProject = useMemo(
     () => projects.find(project => project.id === projectID),
     [projectID, projects],
@@ -419,55 +422,56 @@ export default function XInsightLiveConnection({
   const connectorIntakeEnabled = expansionEnabled && Boolean(status?.global_enabled && status?.source_instance);
 
   if (!projectID && projects.length === 0) {
-    if (projectLoadError) return <Banner type="warning" description={projectLoadError} />;
-    return <Spin tip="正在读取可用项目…" />;
+    if (projectLoadError) return <Banner type="warning" description={t('无法读取可用于 X-Insight 的项目{v0}', { v0: projectLoadError.detail ? `: ${projectLoadError.detail}` : '' })} />;
+    return <Spin tip={t("正在读取可用项目…")} />;
   }
 
-  if (normalOnly) return <div style={{display:'grid',gap:18}}>
-    <Select aria-label="实时连接项目" value={projectID} optionList={projectOptions} onChange={value=>setProjectID(Number(value))} style={{width:320}} />
+  if (normalOnly) return <div className="ur-integration-workspace" style={{display:'grid',gap:18}}>
+    <Select aria-label={t("实时连接项目")} value={projectID} optionList={projectOptions} onChange={value=>setProjectID(Number(value))} style={{width:320}} />
     {expansionRestriction && <Banner type="warning" description={expansionRestriction} />}
     {projectID && selectedProject?.org_id && user && <XInsightSetup key={`setup-${user.id}-${selectedProject.org_id}-${projectID}`} actorId={user.id} actorOrgId={user.org_id} orgId={selectedProject.org_id} projectId={projectID} projectName={selectedProject.name} projects={projects} invitationFragment={linkedInvitationFragment} enabled={expansionEnabled} onSaved={()=>{}} />}
   </div>;
 
   return (
-    <div style={{ display: 'grid', gap: 18 }}>
+    <div className="ur-integration-workspace" style={{ display: 'grid', gap: 18 }}>
       <div className="ur-toolbar">
         <Select
-          aria-label="实时连接项目"
+          aria-label={t("实时连接项目")}
           value={projectID}
           optionList={projectOptions}
           onChange={value => setProjectID(Number(value))}
           style={{ width: 320 }}
         />
         <div style={{ flex: 1 }} />
-        <Button icon={<IconRefresh />} onClick={loadStatus} loading={loading}>刷新状态</Button>
+        <Button icon={<IconRefresh />} onClick={loadStatus} loading={loading}>{t("刷新状态")}</Button>
       </div>
 
       {statusLoadError && <Banner
         type="warning"
-        description={`当前项目尚不能读取 X-Insight 连接状态：${statusLoadError}。这只影响 X-Insight 连接管理，不影响模型网关、其他集成或本页目录。请确认该 Connector 已配置且 License 包含 Data Exchange 后再重试。`}
+        description={t("当前项目尚不能读取 X-Insight 连接状态：{v0}。这只影响 X-Insight 连接管理，不影响模型网关、其他集成或本页目录。请确认该 Connector 已配置且 License 包含 Data Exchange 后再重试。", { v0: translateLabel(statusLoadError) })}
         closeIcon={null}
       />}
 
       {projectID && selectedProject?.org_id && <XInsightSetup key={`setup-${user?.id}-${selectedProject.org_id}-${projectID}`} actorId={user?.id} actorOrgId={user?.org_id} orgId={selectedProject.org_id} projectId={projectID} projectName={selectedProject.name} projects={projects} invitationFragment={linkedInvitationFragment} installationId={status?.connector_installation?.installation_id} enabled={connectorIntakeEnabled} onSaved={()=>{setInvitationJSON('');void loadStatus();}} />}
-      <details><summary>维护与技术详情</summary>
+      <details><summary>{t("维护与技术详情")}</summary>
       <div className="ur-chip-row">
         <Tag color="green">metadata only</Tag>
         <Tag color="blue">project-bound</Tag>
         <Tag>purpose=xinsight.feed.read</Tag>
-        <Tag>无模型调用权限</Tag>
-        <Tag>不向 X-Insight 提供管理员凭证</Tag>
+        <Tag>{t("无模型调用权限")}</Tag>
+        <Tag>{t("不向 X-Insight 提供管理员凭证")}</Tag>
         <Tag color="purple">receiver-generated credential</Tag>
       </div>
 
       {status && !status.connector_installation && (
         <div style={{ padding: 14, border: '1px solid var(--semi-color-border)', borderRadius: 8, display: 'grid', gap: 10 }}>
-          <Title heading={6} style={{ margin: 0 }}>接受 Connector invitation</Title>
+          <Title heading={6} style={{ margin: 0 }}>{t("接受 Connector invitation")}</Title>
           <Text type="tertiary">
-            粘贴 X-Insight 返回的完整 frozen invitation JSON。UniRouter 会校验全部字段、固定 HTTPS origin、唯一 scope、有效期和 install_url fragment；token 仅做用途隔离加密持久化，响应不会返回。
+
+            {t("粘贴 X-Insight 返回的完整 frozen invitation JSON。UniRouter 会校验全部字段、固定 HTTPS origin、唯一 scope、有效期和 install_url fragment；token 仅做用途隔离加密持久化，响应不会返回。")}
           </Text>
           {linkedInvitationFragment && (
-            <Tag color="blue">已从 invitation link 进入；完整 package 必须与当前 fragment 精确一致</Tag>
+            <Tag color="blue">{t("已从 invitation link 进入；完整 package 必须与当前 fragment 精确一致")}</Tag>
           )}
           <TextArea
             aria-label="Frozen X-Insight Connector invitation"
@@ -484,59 +488,59 @@ export default function XInsightLiveConnection({
                 { key: 'Installation', value: parsedInvitation.installation_id },
                 { key: 'Deployment', value: parsedInvitation.deployment_id },
                 { key: 'X-Insight origin', value: parsedInvitation.xinsight_origin },
-                { key: '固定 scope', value: parsedInvitation.requested_event_scope[0] },
-                { key: '到期', value: formatDateTime(parsedInvitation.expires_at) },
+                { key: t("固定 scope"), value: parsedInvitation.requested_event_scope[0] },
+                { key: t("到期"), value: formatDateTime(parsedInvitation.expires_at) },
               ]}
             />
           )}
           <Popconfirm
-            title={status.connection_status === 'active' ? `接管当前项目的现有连接，保留原凭据 ${status.active_credential?.key_prefix || ''} 和同步进度。` : '确认将 X-Insight 绑定到当前项目，登记邀请与项目范围。'}
+            title={status.connection_status === 'active' ? t("接管当前项目的现有连接，保留原凭据 {v0} 和同步进度。", { v0: String(status.active_credential?.key_prefix || '') }) : t("确认将 X-Insight 绑定到当前项目，登记邀请与项目范围。")}
             onConfirm={installConnector}
           >
             <Button type="primary" disabled={!parsedInvitation || !connectorIntakeEnabled || loading || (status.connection_status === 'active' && (!status.active_credential || !!status.staged_credential || status.active_credential.verifier_scheme !== 'receiver_sha256_v1' || !status.active_credential.operation_id))}>
-              {status.connection_status === 'active' ? '接管现有连接' : '确认项目范围并登记 invitation'}
+              {status.connection_status === 'active' ? t("接管现有连接") : t("确认项目范围并登记 invitation")}
             </Button>
           </Popconfirm>
           {!status.global_enabled || !status.source_instance ? (
-            <Text type="warning">需要先启用并固定 completed-execution Source instance；不会生成默认来源身份。</Text>
+            <Text type="warning">{t("需要先启用并固定 completed-execution Source instance；不会生成默认来源身份。")}</Text>
           ) : null}
         </div>
       )}
 
       <div style={{ padding: 14, border: '1px solid var(--semi-color-border)', borderRadius: 8 }}>
-        <Title heading={6} style={{ marginTop: 0 }}>Connector 配对与 Feed 状态</Title>
+        <Title heading={6} style={{ marginTop: 0 }}>{t("Connector 配对与 Feed 状态")}</Title>
         <Descriptions
           row
           data={[
             {
-              key: 'Connector 配对状态',
+              key: t("Connector 配对状态"),
               value: <StatusTag status={status?.connector_product_status || 'not_connected'}>
                 {connectorProductLabel(status?.connector_product_status)}
               </StatusTag>,
             },
             {
-              key: 'Feed 实际状态',
+              key: t("Feed 实际状态"),
               value: <StatusTag status={status?.connection_status || 'not_configured'}>
                 {feedConnectionLabel(status?.connection_status)}
               </StatusTag>,
             },
-            { key: 'Feed 当前凭据', value: credentialLabel(status?.active_credential) },
+            { key: t("Feed 当前凭据"), value: credentialLabel(status?.active_credential) },
             {
-              key: 'Connector 最近同步',
+              key: t("Connector 最近同步"),
               value: status?.connector_installation?.last_successful_sync_at
                 ? formatDateTime(status.connector_installation.last_successful_sync_at)
                 : '-',
             },
-            { key: 'Feed 最近认证拉取', value: status?.last_authenticated_pull_at ? formatDateTime(status.last_authenticated_pull_at) : '-' },
-            { key: '待同步 backlog', value: boundedBacklogLabel(status) },
+            { key: t("Feed 最近认证拉取"), value: status?.last_authenticated_pull_at ? formatDateTime(status.last_authenticated_pull_at) : '-' },
+            { key: t("待同步 backlog"), value: boundedBacklogLabel(status) },
             {
-              key: '最旧待同步延迟',
+              key: t("最旧待同步延迟"),
               value: status?.oldest_pending_at
-                ? `${status.oldest_pending_age_seconds} 秒 · ${formatDateTime(status.oldest_pending_at)}`
+                ? t("{v0} 秒 · {v1}", { v0: String(status.oldest_pending_age_seconds), v1: String(formatDateTime(status.oldest_pending_at)) })
                 : '-',
             },
             {
-              key: '最近控制动作',
+              key: t("最近控制动作"),
               value: status?.connector_latest_operation
                 ? `${status.connector_latest_operation.action} · ${status.connector_latest_operation.state}`
                 : '-',
@@ -544,11 +548,12 @@ export default function XInsightLiveConnection({
           ]}
         />
         {status?.connector_installation?.receiver_adoption && <Text>
-          接管现有连接：{status.connector_installation.receiver_adoption.status === 'confirmed'
-            ? '已完成双方接管与原链读取确认；当前健康以上方实时状态为准'
-            : 'UniRouter 已绑定；等待 X-Insight 持久接管及原链读取确认，原连接继续运行'}
+
+          {t("接管现有连接：")}{status.connector_installation.receiver_adoption.status === 'confirmed'
+            ? t("已完成双方接管与原链读取确认；当前健康以上方实时状态为准")
+            : t("UniRouter 已绑定；等待 X-Insight 持久接管及原链读取确认，原连接继续运行")}
         </Text>}
-        <Text type="tertiary">Connector 配对状态只反映自动配对；手工 Feed 的真实连接和凭据状态以上方 Feed 字段为准。</Text>
+        <Text type="tertiary">{t("Connector 配对状态只反映自动配对；手工 Feed 的真实连接和凭据状态以上方 Feed 字段为准。")}</Text>
         {status?.connector_installation?.last_error_code && (
           <div style={{ marginTop: 8 }}>
             <Tag color="red">{status.connector_installation.last_error_code}</Tag>
@@ -556,54 +561,56 @@ export default function XInsightLiveConnection({
         )}
       </div>
 
-      <Title heading={6} style={{ marginBottom: -8 }}>高级 Source / 凭证诊断</Title>
+      <Title heading={6} style={{ marginBottom: -8 }}>{t("高级 Source / 凭证诊断")}</Title>
       <Descriptions
         row
         data={[
-          { key: '全局配置 / 启用', value: `${status?.global_configured ? '已配置' : '未配置'} / ${status?.global_enabled ? '已启用' : '未启用'}` },
-          { key: '项目状态', value: <StatusTag status={projectStatus || 'unknown'}>{projectStatus || 'unknown'}</StatusTag> },
-          { key: '连接状态', value: <StatusTag status={status?.connection_status || 'not_configured'}>{status?.connection_status || 'not_configured'}</StatusTag> },
-          { key: '来源实例', value: status?.source_instance || '-' },
-          { key: '当前 active 凭证', value: credentialLabel(status?.active_credential) },
-          { key: 'staged 替换凭证', value: credentialLabel(status?.staged_credential) },
-          { key: '最近撤销凭证', value: credentialLabel(status?.last_revoked_credential) },
-          { key: '最近认证拉取', value: status?.last_authenticated_pull_at ? formatDateTime(status.last_authenticated_pull_at) : '-' },
-          { key: '最近认证凭证', value: credentialLabel(status?.last_authenticated_credential) },
-          { key: 'UniRouter 来源高水位', value: status?.source_high_watermark || '-' },
-          { key: '接收端提交确认 cursor', value: status?.receiver_acknowledged_cursor || '-' },
-          { key: '待拉取项', value: boundedBacklogLabel(status) },
+          { key: t("全局配置 / 启用"), value: `${status?.global_configured ? t("已配置") : t("未配置")} / ${status?.global_enabled ? t("已启用") : t("未启用")}` },
+          { key: t("项目状态"), value: <StatusTag status={projectStatus || 'unknown'}>{projectStatus || 'unknown'}</StatusTag> },
+          { key: t("连接状态"), value: <StatusTag status={status?.connection_status || 'not_configured'}>{status?.connection_status || 'not_configured'}</StatusTag> },
+          { key: t("来源实例"), value: status?.source_instance || '-' },
+          { key: t("当前 active 凭证"), value: credentialLabel(status?.active_credential) },
+          { key: t("staged 替换凭证"), value: credentialLabel(status?.staged_credential) },
+          { key: t("最近撤销凭证"), value: credentialLabel(status?.last_revoked_credential) },
+          { key: t("最近认证拉取"), value: status?.last_authenticated_pull_at ? formatDateTime(status.last_authenticated_pull_at) : '-' },
+          { key: t("最近认证凭证"), value: credentialLabel(status?.last_authenticated_credential) },
+          { key: t("UniRouter 来源高水位"), value: status?.source_high_watermark || '-' },
+          { key: t("接收端提交确认 cursor"), value: status?.receiver_acknowledged_cursor || '-' },
+          { key: t("待拉取项"), value: boundedBacklogLabel(status) },
         ]}
       />
 
       {!projectActive && (
         <div style={{ padding: 12, border: '1px solid var(--semi-color-warning-light-default)', borderRadius: 8 }}>
-          <Tag color="orange">{projectStatus === 'archived' ? '项目已归档' : '项目已停用'}</Tag>
+          <Tag color="orange">{projectStatus === 'archived' ? t("项目已归档") : t("项目已停用")}</Tag>
           <Text type="tertiary">
-            创建、激活、恢复和准备轮换已禁用；状态查看、暂停、取消轮换和不可逆撤销仍可使用。
+
+            {t("创建、激活、恢复和准备轮换已禁用；状态查看、暂停、取消轮换和不可逆撤销仍可使用。")}
           </Text>
         </div>
       )}
 
       {!expansionAllowed && (
         <div style={{ padding: 12, border: '1px solid var(--semi-color-warning-light-default)', borderRadius: 8 }}>
-          <Tag color="orange">仅保留安全控制</Tag>
+          <Tag color="orange">{t("仅保留安全控制")}</Tag>
           <Text type="tertiary">
-            {expansionRestriction || '当前 Data Exchange entitlement 不可用。'}
-            状态查看、暂停、取消轮换与不可逆撤销保持可用；创建、激活、恢复和准备轮换已禁用。
+            {expansionRestriction || t("当前 Data Exchange entitlement 不可用。")}
+
+            {t("状态查看、暂停、取消轮换与不可逆撤销保持可用；创建、激活、恢复和准备轮换已禁用。")}
           </Text>
         </div>
       )}
 
       <div style={{ padding: 12, border: '1px solid var(--semi-color-border)', borderRadius: 8 }}>
-        <Text strong>确认语义</Text>
+        <Text strong>{t("确认语义")}</Text>
         <div style={{ marginTop: 6 }}>
           <Text type="tertiary">
-            “接收端提交确认”仅表示 X-Insight 在发出下一次认证 GET 前，前一页已写入 EvidenceStore
-            （或收敛为 duplicate/no-op）且 durable cursor 已提交；不代表搜索、API 或 UI 已可见，也不证明来源完整性。
+
+            {t("“接收端提交确认”仅表示 X-Insight 在发出下一次认证 GET 前，前一页已写入 EvidenceStore （或收敛为 duplicate/no-op）且 durable cursor 已提交；不代表搜索、API 或 UI 已可见，也不证明来源完整性。")}
           </Text>
         </div>
         {status?.cursor_outside_retention && (
-          <div style={{ marginTop: 8 }}><Tag color="red">确认 cursor 已超出保留窗口，禁止自动重置或回填</Tag></div>
+          <div style={{ marginTop: 8 }}><Tag color="red">{t("确认 cursor 已超出保留窗口，禁止自动重置或回填")}</Tag></div>
         )}
       </div>
 
@@ -611,10 +618,10 @@ export default function XInsightLiveConnection({
         {((!status?.active_credential && !status?.staged_credential) ||
           (status?.connection_status === 'paused' && status?.active_credential && !status?.staged_credential)) && (
           <div style={{ width: '100%', display: 'grid', gap: 8 }}>
-            <Text strong>Frozen Registration Bundle V1（非秘密）</Text>
+            <Text strong>{t("Frozen Registration Bundle V1（非秘密）")}</Text>
             <Text type="tertiary">
-              X-Insight 在本机生成并保留 bearer token；此处只登记不可逆 verifier、公开 prefix 和 operation ID。
-              UniRouter 不接收、不返回、也不展示明文 token。
+
+              {t("X-Insight 在本机生成并保留 bearer token；此处只登记不可逆 verifier、公开 prefix 和 operation ID。 UniRouter 不接收、不返回、也不展示明文 token。")}
             </Text>
             <TextArea
               aria-label="X-Insight feed credential registration bundle"
@@ -630,100 +637,100 @@ export default function XInsightLiveConnection({
           <>
             <Input
               aria-label="X-Insight worker exact IP"
-              placeholder="X worker 私网 /32 或 /128"
+              placeholder={t("X worker 私网 /32 或 /128")}
               value={allowedIP}
               onChange={setAllowedIP}
               disabled={!expansionEnabled}
               style={{ width: 250 }}
             />
-            <Button type="primary" disabled={!allowedIP || !registrationReady || !expansionEnabled} onClick={createCredential}>登记初始 staged 凭证</Button>
+            <Button type="primary" disabled={!allowedIP || !registrationReady || !expansionEnabled} onClick={createCredential}>{t("登记初始 staged 凭证")}</Button>
           </>
         )}
 
         {status?.staged_credential && !status?.active_credential && (
           <>
             <Popconfirm
-              title="确认 staged key 已安全安装；激活后连接仍保持暂停。"
+              title={t("确认 staged key 已安全安装；激活后连接仍保持暂停。")}
               onConfirm={() => {
                 if (projectID) return mutate(
                   () => api.activateInitialXInsightFeedCredential(projectID, status.staged_credential!.id),
-                  '初始凭证激活',
+                  t("初始凭证激活"),
                 );
               }}
             >
-              <Button type="primary" disabled={!expansionEnabled}>激活初始凭证</Button>
+              <Button type="primary" disabled={!expansionEnabled}>{t("激活初始凭证")}</Button>
             </Popconfirm>
             <Popconfirm
-              title="撤销未安装或交付失败的 staged 凭证；连接保持暂停，之后可重新创建。"
+              title={t("撤销未安装或交付失败的 staged 凭证；连接保持暂停，之后可重新创建。")}
               onConfirm={() => {
                 if (projectID) return mutate(
                   () => api.revokeXInsightFeedCredential(projectID, status.staged_credential!.id),
-                  'staged 凭证撤销',
+                  t("staged 凭证撤销"),
                 );
               }}
             >
-              <Button>撤销未安装的 staged 凭证</Button>
+              <Button>{t("撤销未安装的 staged 凭证")}</Button>
             </Popconfirm>
           </>
         )}
 
         {status?.connection_status === 'active' && (
-          <Button onClick={() => projectID && mutate(() => api.pauseXInsightFeedConnection(projectID), '连接暂停')}>暂停连接</Button>
+          <Button onClick={() => projectID && mutate(() => api.pauseXInsightFeedConnection(projectID), t("连接暂停"))}>{t("暂停连接")}</Button>
         )}
         {status?.connection_status === 'paused' && status?.active_credential && !status?.staged_credential && (
-          <Button type="primary" disabled={!expansionEnabled} onClick={() => projectID && mutate(() => api.resumeXInsightFeedConnection(projectID), '连接恢复')}>恢复连接</Button>
+          <Button type="primary" disabled={!expansionEnabled} onClick={() => projectID && mutate(() => api.resumeXInsightFeedConnection(projectID), t("连接恢复"))}>{t("恢复连接")}</Button>
         )}
 
         {status?.connection_status === 'paused' && status?.active_credential && !status?.staged_credential && (
-          <Button disabled={!expansionEnabled || !registrationReady} onClick={prepareRotation}>准备两阶段轮换</Button>
+          <Button disabled={!expansionEnabled || !registrationReady} onClick={prepareRotation}>{t("准备两阶段轮换")}</Button>
         )}
         {status?.connection_status === 'paused' && status?.active_credential && status?.staged_credential && (
           <>
             <Popconfirm
-              title="仅在 staged key 已原子安装、X 已 systemctl restart（不是 reload），并用新 key 观察到暂停 503 后继续。"
+              title={t("仅在 staged key 已原子安装、X 已 systemctl restart（不是 reload），并用新 key 观察到暂停 503 后继续。")}
               onConfirm={() => {
                 if (projectID) return mutate(
                   () => api.activateXInsightFeedRotation(projectID, status.staged_credential!.id),
-                  '轮换激活',
+                  t("轮换激活"),
                 );
               }}
             >
-              <Button type="primary" disabled={!expansionEnabled}>确认重启与 503，激活轮换</Button>
+              <Button type="primary" disabled={!expansionEnabled}>{t("确认重启与 503，激活轮换")}</Button>
             </Popconfirm>
             <Popconfirm
-              title="撤销 staged 替换凭证；旧 active 凭证保持不变，连接保持暂停。"
+              title={t("撤销 staged 替换凭证；旧 active 凭证保持不变，连接保持暂停。")}
               onConfirm={() => {
                 if (projectID) return mutate(
                   () => api.cancelXInsightFeedRotation(projectID, status.staged_credential!.id),
-                  '轮换取消',
+                  t("轮换取消"),
                 );
               }}
             >
-              <Button>取消轮换</Button>
+              <Button>{t("取消轮换")}</Button>
             </Popconfirm>
           </>
         )}
 
         {status?.active_credential && !status?.staged_credential && (
           <Popconfirm
-            title="撤销不可逆：当前 feed 凭证将终止，连接同时暂停；其他 key、用户和 grant 不受影响。"
+            title={t("撤销不可逆：当前 feed 凭证将终止，连接同时暂停；其他 key、用户和 grant 不受影响。")}
             onConfirm={() => {
               if (projectID) return mutate(
                 () => api.revokeXInsightFeedCredential(projectID, status.active_credential!.id),
-                '凭证撤销',
+                t("凭证撤销"),
               );
             }}
           >
-            <Button type="danger">撤销当前 feed 凭证</Button>
+            <Button type="danger">{t("撤销当前 feed 凭证")}</Button>
           </Popconfirm>
         )}
       </div>
 
       <div>
-        <Title heading={6}>轮换顺序（固定）</Title>
+        <Title heading={6}>{t("轮换顺序（固定）")}</Title>
         <Text type="tertiary">
-          暂停并确认旧 key 返回可重试 503 → prepare staged（旧凭证保持 active）→ X 原子替换 credential file →
-          systemctl restart（不可 reload）→ 用 staged key 确认同一 503 → activate 原子晋升新 key 并撤销旧 key → 手动恢复连接。
+
+          {t("暂停并确认旧 key 返回可重试 503 → prepare staged（旧凭证保持 active）→ X 原子替换 credential file → systemctl restart（不可 reload）→ 用 staged key 确认同一 503 → activate 原子晋升新 key 并撤销旧 key → 手动恢复连接。")}
         </Text>
       </div>
 

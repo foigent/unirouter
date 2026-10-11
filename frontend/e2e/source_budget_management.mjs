@@ -32,6 +32,8 @@ const clickAndResponse = async (locator, endpoint) => {
 };
 try {
   await page.goto('/login');
+  assert.equal(await page.locator('html').getAttribute('lang'), 'en-US', 'fresh sign-in defaults to English');
+  await page.getByRole('button', { name: '中文', exact: true }).click();
   await page.getByLabel('用户名').fill('source-browser-platform_admin');
   await page.locator('input[type="password"]').fill(fixture.password);
   await clickAndResponse(page.getByRole('button', { name: '登录', exact: true }), '/api/v1/auth/login');

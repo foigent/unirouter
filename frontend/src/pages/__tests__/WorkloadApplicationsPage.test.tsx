@@ -1,3 +1,4 @@
+import { setLocale } from '../../i18n';
 import { useLayoutEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -171,8 +172,25 @@ async function renderApplicationBAfterAdverseAccessOrdering() {
 }
 
 describe('ApplicationsV2Page', () => {
+  it('preserves application drafts, scope and access data when switching language', async () => {
+    const user = userEvent.setup();
+    render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /></MemoryRouter>);
+    await screen.findByText('Claims runtime');
+    await user.click(screen.getByRole('button', { name: /新建应用/ }));
+    await pasteValue(user, screen.getByLabelText('显示名称'), '服务草稿');
+    const reads = [clientMocks.getProjects, clientMocks.getApplications, clientMocks.getCredentials, accessMocks.listProjectGrants].map(mock => mock.mock.calls.length);
+    act(() => setLocale('en-US'));
+    expect(screen.getByLabelText('Display name')).toHaveValue('服务草稿');
+    expect(screen.getAllByText('理赔 Agent').length).toBeGreaterThan(0);
+    [clientMocks.getProjects, clientMocks.getApplications, clientMocks.getCredentials, accessMocks.listProjectGrants].forEach((mock, i) => expect(mock).toHaveBeenCalledTimes(reads[i]));
+    expect(clientMocks.createApplication).not.toHaveBeenCalled();
+    expect(accessMocks.createRequest).not.toHaveBeenCalled();
+    expect(accessMocks.issueCredential).not.toHaveBeenCalled();
+  });
+
   afterEach(async () => {
     await act(async () => {
+      setLocale('zh-CN');
       Modal.destroyAll();
       Toast.destroyAll();
       await Promise.resolve();

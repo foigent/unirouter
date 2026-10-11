@@ -1,8 +1,8 @@
 
 :root {
-  --ur-bg: #f4f1f8;
-  --ur-bg-elevated: rgba(255, 255, 255, 0.86);
-  --ur-bg-subtle: #f8f6fc;
+  --ur-bg: #f5f6f8;
+  --ur-bg-elevated: #ffffff;
+  --ur-bg-subtle: #f7f8fa;
   --ur-bg-strong: #ffffff;
   --ur-border: rgba(46, 36, 76, 0.11);
   --ur-border-soft: rgba(46, 36, 76, 0.075);
@@ -24,13 +24,13 @@
   --ur-cyan-soft: #e6f6f8;
   --ur-slate: #474d5c;
   --ur-slate-soft: #eef1f5;
-  --ur-radius: 18px;
-  --ur-radius-sm: 12px;
+  --ur-radius: 12px;
+  --ur-radius-sm: 8px;
   --ur-sider-width: 248px;
   --ur-inspector-width: clamp(400px, 36vw, 480px);
-  --ur-shadow-sm: 0 14px 40px rgba(57, 45, 87, 0.08);
-  --ur-shadow-md: 0 24px 64px rgba(57, 45, 87, 0.14);
-  --ur-shadow-card: 0 18px 48px rgba(82, 64, 124, 0.1), inset 0 1px 0 rgba(255,255,255,0.72);
+  --ur-shadow-sm: 0 2px 8px rgba(24, 34, 54, 0.04);
+  --ur-shadow-md: 0 12px 32px rgba(24, 34, 54, 0.10);
+  --ur-shadow-card: 0 1px 3px rgba(24, 34, 54, 0.025);
 }
 
 .ur-model-endpoint-kpis {
@@ -514,11 +514,10 @@ body {
 
 .ur-surface {
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.74);
+  border: 1px solid var(--ur-border);
   border-radius: var(--ur-radius);
   background: var(--ur-bg-elevated);
   box-shadow: var(--ur-shadow-card);
-  backdrop-filter: blur(18px);
 }
 
 .ur-surface-header {
@@ -559,9 +558,9 @@ body {
 .ur-metric {
   min-width: 0;
   min-height: 132px;
-  border: 1px solid rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--ur-border);
   border-radius: var(--ur-radius);
-  background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(255,255,255,0.72));
+  background: var(--ur-bg-strong);
   padding: 18px;
   box-shadow: var(--ur-shadow-card);
   backdrop-filter: blur(18px);

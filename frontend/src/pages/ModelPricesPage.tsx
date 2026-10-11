@@ -1,3 +1,5 @@
+import '../i18n/finance';
+import { translate as t, useI18n, translateLabel } from '../i18n';
 import { useEffect, useRef, useState } from 'react';
 import { Banner, Button, Modal, Form, Input, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
@@ -46,6 +48,7 @@ function mutationError(prefix: string, error: unknown) {
 }
 
 export default function ModelPricesPage({ embedded = false, onOpenRateCard }: { embedded?: boolean; onOpenRateCard?: () => void }) {
+  useI18n();
   const user = useAuthStore((s) => s.user);
   const canMutate = isPlatformAdminRole(organizationRoleForUser(user));
   const [prices, setPrices] = useState<any[]>([]);
@@ -92,10 +95,10 @@ export default function ModelPricesPage({ embedded = false, onOpenRateCard }: { 
 		cache_read_ratio: parseCachePriceRatio(v.cache_read_ratio ?? '1'),
 		cache_creation_ratio: parseCachePriceRatio(v.cache_creation_ratio ?? '1'),
       });
-      Toast.success('价格创建成功');
+      Toast.success(t("价格创建成功"));
       closeDrawer();
       load(1);
-    } catch (error) { Toast.error(mutationError('创建失败', error)); }
+    } catch (error) { Toast.error(mutationError(t("创建失败"), error)); }
   };
 
   const handleUpdate = async (v: any) => {
@@ -107,22 +110,24 @@ export default function ModelPricesPage({ embedded = false, onOpenRateCard }: { 
 		cache_read_ratio: parseCachePriceRatio(v.cache_read_ratio ?? '1'),
 		cache_creation_ratio: parseCachePriceRatio(v.cache_creation_ratio ?? '1'),
       });
-      Toast.success('更新成功');
+      Toast.success(t("更新成功"));
       closeDrawer();
       load();
-    } catch (error) { Toast.error(mutationError('更新失败', error)); }
+    } catch (error) { Toast.error(mutationError(t("更新失败"), error)); }
   };
 
   const handleDelete = (id: number) => {
     Modal.confirm({
-      title: '确认删除',
-      content: '确定要删除这个价格配置吗？',
+      okText: t("确认操作"),
+      cancelText: t("取消"),
+      title: t("确认删除"),
+      content: t("确定要删除这个价格配置吗？"),
       onOk: async () => {
         try {
           await api.deleteModelPrice(id);
-          Toast.success('已删除');
+          Toast.success(t("已删除"));
           load();
-        } catch { Toast.error('删除失败'); }
+        } catch { Toast.error(t("删除失败")); }
       },
     });
   };
@@ -140,19 +145,19 @@ export default function ModelPricesPage({ embedded = false, onOpenRateCard }: { 
 
   const columns: any[] = [
     { title: 'ID', dataIndex: 'id', width: 60 },
-    { title: '模型名称', dataIndex: 'model_name' },
-    { title: '普通 / 缓存未命中输入价', dataIndex: 'input_price_cny_per_million_tokens', render: formatCNYPerMillionPrice },
-    { title: '输出价格（CNY/百万 tokens）', dataIndex: 'output_price_cny_per_million_tokens', render: formatCNYPerMillionPrice },
-	{ title: '缓存命中价倍率', dataIndex: 'cache_read_ratio', width: 140, render: formatCachePriceRatio },
-	{ title: '缓存创建价倍率', dataIndex: 'cache_creation_ratio', width: 140, render: formatCachePriceRatio },
-    { title: '更新时间', dataIndex: 'updated_at', render: (v: string) => v || '-' },
+    { title: t("模型名称"), dataIndex: 'model_name' },
+    { title: t("普通 / 缓存未命中输入价"), dataIndex: 'input_price_cny_per_million_tokens', render: formatCNYPerMillionPrice },
+    { title: t("输出价格（CNY/百万 tokens）"), dataIndex: 'output_price_cny_per_million_tokens', render: formatCNYPerMillionPrice },
+	{ title: t("缓存命中价倍率"), dataIndex: 'cache_read_ratio', width: 140, render: formatCachePriceRatio },
+	{ title: t("缓存创建价倍率"), dataIndex: 'cache_creation_ratio', width: 140, render: formatCachePriceRatio },
+    { title: t("更新时间"), dataIndex: 'updated_at', render: (v: string) => v || '-' },
   ];
   if (canMutate) columns.push({
-      title: '操作', width: 120,
+      title: t("操作"), width: 120,
       render: (_: any, record: any) => (
         <Space>
-          <Button aria-label="编辑价格" icon={<IconEdit />} size="small" onClick={() => openEdit(record)} />
-          <Button aria-label="删除价格" icon={<IconDelete />} size="small" type="danger" onClick={() => handleDelete(record.id)} />
+          <Button aria-label={t("编辑价格")} icon={<IconEdit />} size="small" onClick={() => openEdit(record)} />
+          <Button aria-label={t("删除价格")} icon={<IconDelete />} size="small" type="danger" onClick={() => handleDelete(record.id)} />
         </Space>
       ),
     });
@@ -160,22 +165,22 @@ export default function ModelPricesPage({ embedded = false, onOpenRateCard }: { 
   return (
     <div className={embedded ? undefined : 'ur-page'}>
       {!embedded && <PageHeader
-        eyebrow="成本与财务"
-        title="兼容基础价格"
+        eyebrow={t("成本与财务")}
+        title={t("兼容基础价格")}
         description={canMutate
-          ? '仅维护旧版全天同价合同。需要峰谷时段或精确缓存命中价格时，请使用同页 Rate Card；未配置价格的模型拒绝计费与路由。'
-          : '只读查看旧版全天同价合同；峰谷与精确缓存价格以已激活 Rate Card 为准。'}
-        actions={canMutate ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增全天基础价格（兼容）</Button> : undefined}
+          ? t("仅维护旧版全天同价合同。需要峰谷时段或精确缓存命中价格时，请使用同页 Rate Card；未配置价格的模型拒绝计费与路由。")
+          : t("只读查看旧版全天同价合同；峰谷与精确缓存价格以已激活 Rate Card 为准。")}
+        actions={canMutate ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>{t("新增全天基础价格（兼容）")}</Button> : undefined}
       />}
 
       <Surface
-        title={embedded ? '兼容基础价格' : undefined}
+        title={embedded ? t("兼容基础价格") : undefined}
         description={embedded ? (canMutate
-          ? '旧版全天同价兼容入口；峰谷和四类精确价格请在 Rate Card 中维护。'
-          : '只读查看旧版全天同价合同。') : undefined}
+          ? t("旧版全天同价兼容入口；峰谷和四类精确价格请在 Rate Card 中维护。")
+          : t("只读查看旧版全天同价合同。")) : undefined}
         actions={embedded && canMutate ? <Space>
-          {onOpenRateCard ? <Button type="primary" onClick={onOpenRateCard}>配置分时 / 精确 Rate Card</Button> : null}
-          <Button icon={<IconPlus />} onClick={openCreate}>新增全天基础价格（兼容）</Button>
+          {onOpenRateCard ? <Button type="primary" onClick={onOpenRateCard}>{t("配置分时 / 精确 Rate Card")}</Button> : null}
+          <Button icon={<IconPlus />} onClick={openCreate}>{t("新增全天基础价格（兼容）")}</Button>
         </Space> : undefined}
       >
         <PagedTable
@@ -184,8 +189,8 @@ export default function ModelPricesPage({ embedded = false, onOpenRateCard }: { 
           loading={loading}
           rowKey="id"
           empty={loadError ? (
-            <EmptyState title="模型价格加载失败" description={loadError} actions={<Button type="primary" onClick={() => load()}>重新加载模型价格</Button>} minHeight={220} />
-          ) : <EmptyState title="暂无模型价格" minHeight={220} />}
+            <EmptyState title={t("模型价格加载失败")} description={translateLabel(loadError)} actions={<Button type="primary" onClick={() => load()}>{t("重新加载模型价格")}</Button>} minHeight={220} />
+          ) : <EmptyState title={t("暂无模型价格")} minHeight={220} />}
           page={page}
           pageSize={pageSize}
           total={total}
@@ -195,12 +200,12 @@ export default function ModelPricesPage({ embedded = false, onOpenRateCard }: { 
       </Surface>
 
       {canMutate && <SideSheet
-        title={editPrice ? '编辑全天基础价格（兼容）' : '新增全天基础价格（兼容）'}
+        title={editPrice ? t("编辑全天基础价格（兼容）") : t("新增全天基础价格（兼容）")}
         visible={showDrawer}
         onCancel={closeDrawer}
         width={480}
       >
-        <Banner type="info" description="DeepSeek 等供应商同时公布缓存命中 / 未命中价和峰谷价时，不要把所有价格压进本表的倍率。请在下方企业 Rate Card 直接填写四类价格和多个 UTC 特殊时段；请求只按供应商明确回传的缓存 Token 分类，不会猜测命中。" closeIcon={null} style={{ marginBottom: 12 }} />
+        <Banner type="info" description={t("DeepSeek 等供应商同时公布缓存命中 / 未命中价和峰谷价时，不要把所有价格压进本表的倍率。请在下方企业 Rate Card 直接填写四类价格和多个 UTC 特殊时段；请求只按供应商明确回传的缓存 Token 分类，不会猜测命中。")} closeIcon={null} style={{ marginBottom: 12 }} />
         <Form
           key={editPrice ? `edit-${editPrice.id}` : 'create'}
           getFormApi={(api: any) => setFormApi(api)}
@@ -213,22 +218,24 @@ export default function ModelPricesPage({ embedded = false, onOpenRateCard }: { 
           } : { cache_read_ratio: '1', cache_creation_ratio: '1' }}
         >
           {editPrice ? <div style={{ marginBottom: 12 }}>
-            <div style={{ marginBottom: 4, color: 'var(--semi-color-text-0)', fontSize: 14 }}>模型名称</div>
-            <Input aria-label="模型名称" disabled value={String(editPrice.model_name || '')} />
+            <div style={{ marginBottom: 4, color: 'var(--semi-color-text-0)', fontSize: 14 }}>{t("模型名称")}</div>
+            <Input aria-label={t("模型名称")} disabled value={String(editPrice.model_name || '')} />
             <div style={{ marginTop: 4, color: 'var(--semi-color-text-2)', fontSize: 12, lineHeight: 1.7 }}>
-              模型名称是计费、组织倍率、路由和模型治理共同使用的稳定标识，创建后不可修改。如需更名，请新建价格记录并单独迁移相关引用。
+
+              {t("模型名称是计费、组织倍率、路由和模型治理共同使用的稳定标识，创建后不可修改。如需更名，请新建价格记录并单独迁移相关引用。")}
             </div>
-          </div> : <Form.Input field="model_name" label="模型名称" rules={[{ required: true, message: '请输入模型名称' }]} placeholder="例如 gpt-4o" />}
-          <Form.Input field="input_price" label="普通 / 缓存未命中输入价（CNY/百万 tokens）" rules={[{ required: true, message: '必填' }]} placeholder="例如 18.00000" />
-          <Form.Input field="output_price" label="输出价格（CNY/百万 tokens）" rules={[{ required: true, message: '必填' }]} placeholder="例如 72.00000" />
-		  <Form.Input field="cache_read_ratio" label="缓存命中价 ÷ 未命中价（兼容倍率）" rules={[{ required: true, message: '必填' }]} placeholder="0.1" />
-		  <Form.Input field="cache_creation_ratio" label="缓存创建价 ÷ 未命中价（兼容倍率）" rules={[{ required: true, message: '必填' }]} placeholder="1" />
+          </div> : <Form.Input field="model_name" label={t("模型名称")} rules={[{ required: true, message: t("请输入模型名称") }]} placeholder={t("例如 gpt-4o")} />}
+          <Form.Input field="input_price" label={t("普通 / 缓存未命中输入价（CNY/百万 tokens）")} rules={[{ required: true, message: t("必填") }]} placeholder={t("例如 18.00000")} />
+          <Form.Input field="output_price" label={t("输出价格（CNY/百万 tokens）")} rules={[{ required: true, message: t("必填") }]} placeholder={t("例如 72.00000")} />
+		  <Form.Input field="cache_read_ratio" label={t("缓存命中价 ÷ 未命中价（兼容倍率）")} rules={[{ required: true, message: t("必填") }]} placeholder="0.1" />
+		  <Form.Input field="cache_creation_ratio" label={t("缓存创建价 ÷ 未命中价（兼容倍率）")} rules={[{ required: true, message: t("必填") }]} placeholder="1" />
           <div style={{ marginTop: 8, color: 'var(--semi-color-text-2)', fontSize: 12, lineHeight: 1.7 }}>
-            价格统一使用人民币/百万 Token。兼容倍率以“缓存未命中输入价”为基准，例如命中价 1 元、未命中价 10 元时填 0.1。DeepSeek 的部分价格比例不能被 6 位倍率精确表达，且有两个高峰区间，因此应使用 Rate Card 直接填金额。缓存创建字段仅在供应商明确回传对应 Token 时使用；DeepSeek 当前只回传命中/未命中时，该倍率不会凭空产生用量。
+
+            {t("价格统一使用人民币/百万 Token。兼容倍率以“缓存未命中输入价”为基准，例如命中价 1 元、未命中价 10 元时填 0.1。DeepSeek 的部分价格比例不能被 6 位倍率精确表达，且有两个高峰区间，因此应使用 Rate Card 直接填金额。缓存创建字段仅在供应商明确回传对应 Token 时使用；DeepSeek 当前只回传命中/未命中时，该倍率不会凭空产生用量。")}
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
-            <Button onClick={closeDrawer}>取消</Button>
-            <Button type="primary" onClick={() => formApi?.submitForm()}>{editPrice ? '更新' : '创建'}</Button>
+            <Button onClick={closeDrawer}>{t("取消")}</Button>
+            <Button type="primary" onClick={() => formApi?.submitForm()}>{editPrice ? t("更新") : t("创建")}</Button>
           </div>
         </Form>
       </SideSheet>}

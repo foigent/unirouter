@@ -1,3 +1,5 @@
+import { translate as t, translateLabel, useI18n } from '../i18n';
+import '../i18n/models';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Modal, Space, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconRefresh } from '@douyinfe/semi-icons';
@@ -36,6 +38,7 @@ export { comparableModelIdentity, formatModelSetItems, parseModelSetItems } from
 const { Text, Title } = Typography;
 
 export default function ModelGovernancePage({ embedded = false }: { embedded?: boolean } = {}) {
+  useI18n();
   const user = useAuthStore((state) => state.user);
   const platform = isPlatformAdminRole(organizationRoleForUser(user));
   const customerContext = resolveCustomerContext(user);
@@ -99,11 +102,11 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
   const assignmentRequestVersion = useRef(0);
 
   const tabs = [
-    { key: 'registry' as const, label: '模型目录' },
-    { key: 'aliases' as const, label: '企业别名' },
-    { key: 'sets' as const, label: '模型集' },
-    { key: 'assignments' as const, label: '项目分配' },
-    { key: 'optimization' as const, label: '调用优化' },
+    { key: 'registry' as const, label: t("模型目录") },
+    { key: 'aliases' as const, label: t("企业别名") },
+    { key: 'sets' as const, label: t("模型集") },
+    { key: 'assignments' as const, label: t("项目分配") },
+    { key: 'optimization' as const, label: t("调用优化") },
   ];
   const targetOrgID = platform ? effectiveCustomerOrgID(user) : undefined;
   const customerContextReady = !platform || customerContext.state === 'ready';
@@ -127,7 +130,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
     } catch {
       if (version !== registryRequestVersion.current) return;
       setRegistryLoadError('无法加载当前组织与筛选条件下的模型目录。');
-      Toast.error('模型目录加载失败');
+      Toast.error(t("模型目录加载失败"));
     } finally {
       if (version === registryRequestVersion.current) setRegistryLoading(false);
     }
@@ -154,7 +157,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
       if (version !== executionProfilesRequestVersion.current) return;
       setExecutionProfiles([]);
       setExecutionProfilesError('无法加载版本化执行 Profile；为避免保存未绑定的模型能力，编辑已禁用。');
-      Toast.error('模型执行 Profile 加载失败');
+      Toast.error(t("模型执行 Profile 加载失败"));
     } finally {
       if (version === executionProfilesRequestVersion.current) setExecutionProfilesLoading(false);
     }
@@ -176,7 +179,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
     } catch {
       if (version !== aliasRequestVersion.current) return;
       setAliasLoadError('无法加载当前组织的企业别名。');
-      Toast.error('别名加载失败');
+      Toast.error(t("别名加载失败"));
     } finally {
       if (version === aliasRequestVersion.current) setAliasLoading(false);
     }
@@ -198,7 +201,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
     } catch {
       if (version !== modelSetRequestVersion.current) return;
       setModelSetLoadError('无法加载当前组织的模型集。');
-      Toast.error('模型集加载失败');
+      Toast.error(t("模型集加载失败"));
     } finally {
       if (version === modelSetRequestVersion.current) setModelSetLoading(false);
     }
@@ -237,7 +240,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
     } catch {
       if (version !== assignmentBaseRequestVersion.current) return;
       setAssignmentBaseError('无法加载项目与可用模型集。');
-      Toast.error('项目模型集加载失败');
+      Toast.error(t("项目模型集加载失败"));
     } finally {
       if (version === assignmentBaseRequestVersion.current) setAssignmentLoading(false);
     }
@@ -258,7 +261,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
     } catch {
       if (version !== assignmentRequestVersion.current) return;
       setAssignmentLoadError('无法加载所选项目的模型集分配，保存已禁用。');
-      Toast.error('项目分配加载失败');
+      Toast.error(t("项目分配加载失败"));
     } finally {
       if (version === assignmentRequestVersion.current) setAssignmentLoading(false);
     }
@@ -318,7 +321,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
 
   const openCreateRegistry = () => {
     if (executionProfilesLoading || executionProfilesError || executionProfilesAvailableForBinding(executionProfiles).length === 0) {
-      Toast.error('执行 Profile 目录尚未就绪，暂不能新增模型');
+      Toast.error(t("执行 Profile 目录尚未就绪，暂不能新增模型"));
       return;
     }
     setSelectedExecutionProfileKey('auto');
@@ -327,7 +330,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
 
   const openEditRegistry = (record: ModelRegistryItem) => {
     if (executionProfilesLoading || executionProfilesError || executionProfiles.length === 0) {
-      Toast.error('执行 Profile 目录尚未就绪，暂不能编辑模型');
+      Toast.error(t("执行 Profile 目录尚未就绪，暂不能编辑模型"));
       return;
     }
     setSelectedExecutionProfileKey(record.execution_profile_id && record.execution_profile_version
@@ -365,15 +368,17 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
 
 	const retireRegistry = (record: ModelRegistryItem) => {
 		Modal.confirm({
-			title: `退役 ${record.model_name}？`,
-			content: '退役会使这个精确模型 ID 不再可调用，并把它移出项目目录；历史发布、审计证据和供应商连接仍会保留。',
+			okText: t("确认操作"),
+			cancelText: t("取消"),
+			title: t('退役 {model}？', { model: record.model_name }),
+			content: t("退役会使这个精确模型 ID 不再可调用，并把它移出项目目录；历史发布、审计证据和供应商连接仍会保留。"),
 			onOk: async () => {
 				try {
 					await api.updateModelRegistry(record.id, { lifecycle: 'retired', approved_catalog: false });
-					Toast.success('模型记录已退役并移出目录');
+					Toast.success(t("模型记录已退役并移出目录"));
 					loadRegistry();
 				} catch (error: any) {
-					Toast.error(`退役失败${error?.message ? `：${error.message}` : ''}`);
+					Toast.error(t('退役失败{detail}', { detail: error?.message ? `: ${error.message}` : '' }));
 				}
 			},
 		});
@@ -382,7 +387,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
   const handleRegistrySubmit = async (values: Record<string, any>) => {
     const parsedContextLength = parseExactTokenCount(values.context_length);
     if (!parsedContextLength.ok) {
-      Toast.error('模型上下文窗口上限必须是 0..2147483647 的整数 Token、十进制整数 K/M，或留空');
+      Toast.error(t("模型上下文窗口上限必须是 0..2147483647 的整数 Token、十进制整数 K/M，或留空"));
       return;
     }
     const profileKey = String(values.execution_profile_key || selectedExecutionProfileKey || 'auto');
@@ -392,13 +397,13 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
     const profile = executionProfilesAvailableForBinding(executionProfiles, retainedProfileKey)
       .find(item => modelExecutionProfileKey(item) === profileKey);
     if (profileKey !== 'auto' && !profile) {
-      Toast.error('所选执行 Profile 已变化，请刷新后重试');
+      Toast.error(t("所选执行 Profile 已变化，请刷新后重试"));
       return;
     }
     if (profileKey === 'auto' && executionProfilesAvailableForBinding(executionProfiles).filter(item =>
       item.aliases.some(alias => comparableModelIdentity(alias) === comparableModelIdentity(String(values.model_name || ''))),
     ).length > 1) {
-      Toast.error('模型名称对应多个 API surface，请明确选择执行 Profile');
+      Toast.error(t("模型名称对应多个 API surface，请明确选择执行 Profile"));
       return;
     }
     const payload = {
@@ -420,16 +425,16 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
       if (registrySheet?.mode === 'edit' && registrySheet.record) {
         if (targetOrgID) await api.updateModelRegistry(registrySheet.record.id, payload, targetOrgID);
         else await api.updateModelRegistry(registrySheet.record.id, payload);
-        Toast.success('模型目录已更新');
+        Toast.success(t("模型目录已更新"));
       } else {
         await api.createModelRegistry(payload);
-        Toast.success('模型已加入目录');
+        Toast.success(t("模型已加入目录"));
       }
       closeRegistrySheet();
       setRegistryPage(1);
       loadRegistry(1, registryPageSize);
     } catch (err: any) {
-      Toast.error(`保存失败${err?.message ? `：${err.message}` : ''}`);
+      Toast.error(t('保存失败{detail}', { detail: err?.message ? `: ${err.message}` : '' }));
     }
   };
 
@@ -460,15 +465,15 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
       if (aliasSheet?.mode === 'edit' && aliasSheet.record) {
         if (targetOrgID) await api.updateModelAlias(aliasSheet.record.id, payload, targetOrgID);
         else await api.updateModelAlias(aliasSheet.record.id, payload);
-        Toast.success('别名已更新');
+        Toast.success(t("别名已更新"));
       } else {
         await api.createModelAlias(payload);
-        Toast.success('别名已创建');
+        Toast.success(t("别名已创建"));
       }
       closeAliasSheet();
       loadAliases(aliasPage, aliasPageSize);
     } catch (err: any) {
-      Toast.error(`保存失败${err?.message ? `：${err.message}` : ''}`);
+      Toast.error(t('保存失败{detail}', { detail: err?.message ? `: ${err.message}` : '' }));
     }
   };
 
@@ -490,7 +495,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
     try {
       items = parseModelSetItems(String(values.items || ''));
     } catch {
-      Toast.error('模型集条目格式应为 model:gpt-4o 或 alias:company-chat，每行一条');
+      Toast.error(t("模型集条目格式应为 model:gpt-4o 或 alias:company-chat，每行一条"));
       return;
     }
     const name = String(values.name || '').trim();
@@ -504,12 +509,12 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
         items,
         ...(targetOrgID ? { org_id: targetOrgID } : {}),
       });
-      Toast.success('模型集已创建');
+      Toast.success(t("模型集已创建"));
       closeModelSetSheet();
       setModelSetPage(1);
       loadModelSets(1, modelSetPageSize);
     } catch (err: any) {
-      Toast.error(`创建失败${err?.message ? `：${err.message}` : ''}`);
+      Toast.error(t('创建失败{detail}', { detail: err?.message ? `: ${err.message}` : '' }));
     }
   };
 
@@ -523,7 +528,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
         : await api.getModelSetItems(record.id);
       setItemsText(formatModelSetItems((data?.data || []) as ModelSetItem[]));
     } catch (err: any) {
-      Toast.error(`条目加载失败${err?.message ? `：${err.message}` : ''}`);
+      Toast.error(t('条目加载失败{detail}', { detail: err?.message ? `: ${err.message}` : '' }));
     } finally {
       setItemsLoading(false);
     }
@@ -540,18 +545,18 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
     try {
       items = parseModelSetItems(itemsText);
     } catch {
-      Toast.error('模型集条目格式应为 model:gpt-4o 或 alias:company-chat，每行一条');
+      Toast.error(t("模型集条目格式应为 model:gpt-4o 或 alias:company-chat，每行一条"));
       return;
     }
     setItemsLoading(true);
     try {
       if (targetOrgID) await api.replaceModelSetItems(itemsSheet.id, { items }, targetOrgID);
       else await api.replaceModelSetItems(itemsSheet.id, { items });
-      Toast.success('模型集条目已更新');
+      Toast.success(t("模型集条目已更新"));
       closeItemsSheet();
       loadModelSets(modelSetPage, modelSetPageSize);
     } catch (err: any) {
-      Toast.error(`更新失败${err?.message ? `：${err.message}` : ''}`);
+      Toast.error(t('更新失败{detail}', { detail: err?.message ? `: ${err.message}` : '' }));
     } finally {
       setItemsLoading(false);
     }
@@ -562,10 +567,10 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
     setAssignmentLoading(true);
     try {
       await api.replaceProjectModelSets(selectedProjectId, assignedIds);
-      Toast.success('项目模型集已更新');
+      Toast.success(t("项目模型集已更新"));
       await loadProjectAssignment(selectedProjectId);
     } catch (err: any) {
-      Toast.error(`保存失败${err?.message ? `：${err.message}` : ''}`);
+      Toast.error(t('保存失败{detail}', { detail: err?.message ? `: ${err.message}` : '' }));
     } finally {
       setAssignmentLoading(false);
     }
@@ -576,13 +581,13 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
     return (
       <div className={embedded ? 'ur-embedded-page' : 'ur-page ur-page-wide'}>
         {!embedded && <PageHeader
-          eyebrow="模型接入"
-          title={blocker.title}
-          description="模型目录、别名、模型集和项目分配必须共享同一个可验证客户范围；系统不会把部署技术组织当作客户组织。"
+          eyebrow={t("模型接入")}
+          title={translateLabel(blocker.title)}
+          description={t("模型目录、别名、模型集和项目分配必须共享同一个可验证客户范围；系统不会把部署技术组织当作客户组织。")}
           actions={<ModelConnectionBackButton />}
         />}
         <Surface>
-          <EmptyState title={blocker.title} description={blocker.description} minHeight={260} />
+          <EmptyState title={translateLabel(blocker.title)} description={translateLabel(blocker.description)} minHeight={260} />
         </Surface>
       </div>
     );
@@ -591,23 +596,23 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
   return (
     <div className={embedded ? 'ur-embedded-page' : 'ur-page ur-page-wide'}>
       {!embedded && <PageHeader
-        eyebrow="模型接入"
-        title="模型治理"
-        description="维护企业模型目录、别名、项目范围与调用优化策略；高影响变化统一经过验证、Shadow、证据门禁、Canary 和回滚。"
+        eyebrow={t("模型接入")}
+        title={t("模型治理")}
+        description={t("维护企业模型目录、别名、项目范围与调用优化策略；高影响变化统一经过验证、Shadow、证据门禁、Canary 和回滚。")}
         actions={(
           <Space>
             <ModelConnectionBackButton />
-            {platform && <Text type="tertiary">客户范围：{customerContext.orgName || `客户 #${targetOrgID}`}</Text>}
-            {activeTab !== 'optimization' && <Button icon={<IconRefresh />} onClick={() => activeTab === 'assignments' ? loadAssignmentBase() : activeTab === 'sets' ? loadModelSets() : activeTab === 'aliases' ? loadAliases() : loadRegistry()}>刷新</Button>}
+            {platform && <Text type="tertiary">{t("客户范围：")}{customerContext.orgName || t('客户 #{id}', { id: targetOrgID || '—' })}</Text>}
+            {activeTab !== 'optimization' && <Button icon={<IconRefresh />} onClick={() => activeTab === 'assignments' ? loadAssignmentBase() : activeTab === 'sets' ? loadModelSets() : activeTab === 'aliases' ? loadAliases() : loadRegistry()}>{t("刷新")}</Button>}
           </Space>
         )}
       />}
 
       {embedded && <div className="ur-embedded-heading">
-        <div><Title heading={5} style={{ margin: 0 }}>模型目录与项目范围</Title><Text type="tertiary">运行路由在主页面管理；这里仅维护企业目录、别名和项目可见范围。</Text></div>
+        <div><Title heading={5} style={{ margin: 0 }}>{t("模型目录与项目范围")}</Title><Text type="tertiary">{t("运行路由在主页面管理；这里仅维护企业目录、别名和项目可见范围。")}</Text></div>
       </div>}
 
-      <div className="ur-modelgov-tabs" role="tablist" aria-label="模型治理视图">
+      <div className="ur-modelgov-tabs" role="tablist" aria-label={t("模型治理视图")}>
         {tabs.map(tab => (
           <Button
             key={tab.key}

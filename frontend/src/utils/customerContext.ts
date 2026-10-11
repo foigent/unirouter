@@ -1,5 +1,6 @@
 import { isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import type { UserProfile } from '../store/auth';
+import { translate as t } from '../i18n';
 
 export type CustomerContextState = 'ready' | 'not_initialized' | 'ambiguous' | 'inactive' | 'unavailable';
 
@@ -23,7 +24,7 @@ export function resolveCustomerContext(user: UserProfile | null | undefined): Ef
       positiveOrganizationID(user?.org_id) === contextOrgID &&
       user?.identity_scope === 'deployment_operator_and_customer';
     return contextOrgID
-      ? { state: 'ready', orgID: contextOrgID, orgName: adoptedDeploymentRoot ? '当前部署' : context.org_name?.trim() || undefined }
+      ? { state: 'ready', orgID: contextOrgID, orgName: adoptedDeploymentRoot ? t('当前部署') : context.org_name?.trim() || undefined }
       : { state: 'unavailable' };
   }
   if (context?.state === 'not_initialized') return { state: 'not_initialized' };
@@ -55,7 +56,7 @@ export function customerOrganizationDisplayName(
   user: UserProfile | null | undefined,
   organizationID?: unknown,
   organizationName?: unknown,
-  fallback = '当前客户',
+  fallback = t("当前客户"),
 ): string {
   const context = resolveCustomerContext(user);
   const requestedOrganizationID = positiveOrganizationID(organizationID);
@@ -71,30 +72,30 @@ export function customerOrganizationDisplayName(
     ? organizationName.trim()
     : '';
   if (requestedOrganizationName) return requestedOrganizationName;
-  return requestedOrganizationID ? `组织 #${requestedOrganizationID}` : fallback;
+  return requestedOrganizationID ? t('组织 #{id}', { id: requestedOrganizationID }) : fallback;
 }
 
 export function customerContextBlockerCopy(state: Exclude<CustomerContextState, 'ready'>) {
   switch (state) {
     case 'not_initialized':
       return {
-		title: '未找到部署组织',
-		description: '正常安装会自动采用唯一根组织并补齐默认项目。当前数据库没有可用根组织，请由部署管理员检查安装或恢复状态。',
+		title: t("未找到部署组织"),
+		description: t("正常安装会自动采用唯一根组织并补齐默认项目。当前数据库没有可用根组织，请由部署管理员检查安装或恢复状态。"),
       };
     case 'ambiguous':
       return {
-        title: '客户组织上下文不唯一',
-		description: '检测到多个无法唯一判定的根组织，系统不会猜测目标。请先由部署管理员修复组织基线，再继续客户域操作。',
+        title: t("客户组织上下文不唯一"),
+		description: t("检测到多个无法唯一判定的根组织，系统不会猜测目标。请先由部署管理员修复组织基线，再继续客户域操作。"),
       };
     case 'inactive':
       return {
-        title: '客户组织当前未启用',
-        description: '唯一客户组织已识别，但当前不是 active 状态。恢复客户组织后再继续账号、项目和用量操作。',
+        title: t("客户组织当前未启用"),
+        description: t("唯一客户组织已识别，但当前不是 active 状态。恢复客户组织后再继续账号、项目和用量操作。"),
       };
     default:
       return {
-        title: '无法确认客户组织上下文',
-        description: '当前会话没有可验证的客户组织绑定。系统不会把部署技术组织当作客户组织，请刷新会话或检查部署版本。',
+        title: t("无法确认客户组织上下文"),
+        description: t("当前会话没有可验证的客户组织绑定。系统不会把部署技术组织当作客户组织，请刷新会话或检查部署版本。"),
       };
   }
 }

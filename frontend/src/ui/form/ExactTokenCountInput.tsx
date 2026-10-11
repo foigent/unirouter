@@ -1,5 +1,6 @@
 import { useEffect, useState, type ComponentProps } from 'react';
 import { Form } from '@douyinfe/semi-ui';
+import { useI18n } from '../../i18n';
 
 type FormInputProps = ComponentProps<typeof Form.Input>;
 
@@ -54,17 +55,18 @@ export type ExactTokenCountInputProps = Omit<
 export default function ExactTokenCountInput({
   field,
   initialValue = 0,
-  label = '模型上下文窗口上限（Token，可选）',
+  label,
   resetKey,
   ...inputProps
 }: ExactTokenCountInputProps) {
+  const { t } = useI18n();
   const [raw, setRaw] = useState(initialValue > 0 ? String(initialValue) : '');
   const parsed = parseExactTokenCount(raw);
   const normalized = parsed.ok
     ? parsed.value === 0
-      ? '规范化：0 tokens（未声明 / 未知）'
-      : `规范化：${parsed.raw} → ${parsed.normalized}`
-    : '支持精确整数、整数 K 或 M；K=1000，M=1000000。';
+      ? t('规范化：0 tokens（未声明 / 未知）')
+      : t('规范化：{raw} → {normalized}', { raw: parsed.raw, normalized: parsed.normalized })
+    : t('支持精确整数、整数 K 或 M；K=1000，M=1000000。');
 
   useEffect(() => {
     setRaw(initialValue > 0 ? String(initialValue) : '');
@@ -75,12 +77,12 @@ export default function ExactTokenCountInput({
       {...inputProps}
       field={field}
       initValue={initialValue > 0 ? initialValue : ''}
-      label={label}
+      label={label ?? t('模型上下文窗口上限（Token，可选）')}
       placeholder="128K / 1M / 131072"
       validator={(fieldValue) => parseExactTokenCount(fieldValue).ok
         ? ''
-        : '请输入 0..2147483647 的整数 tokens，或使用十进制整数 K/M'}
-      extraText={`${normalized}；留空表示未知，不影响端点检测或路由。该字段用于目录说明和客户端规划，不替代供应商实际限制。首尾空白会被忽略，K/M 不区分大小写。`}
+        : t('请输入 0..2147483647 的整数 tokens，或使用十进制整数 K/M')}
+      extraText={t('{normalized}；留空表示未知，不影响端点检测或路由。该字段用于目录说明和客户端规划，不替代供应商实际限制。首尾空白会被忽略，K/M 不区分大小写。', { normalized })}
       onChange={(value) => setRaw(String(value ?? ''))}
     />
   );

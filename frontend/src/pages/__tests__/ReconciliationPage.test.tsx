@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ReconciliationPage from '../ReconciliationPage';
 
 const mockGetReconciliation = vi.fn();
@@ -90,6 +90,17 @@ const RECON_RESPONSE = {
 };
 
 describe('ReconciliationPage', () => {
+  it('does not present missing summary data as healthy zero totals', async () => {
+    let resolve!: (value: unknown) => void;
+    mockGetReconciliation.mockReturnValue(new Promise(done => { resolve = done; }));
+    render(<ReconciliationPage />);
+    expect(screen.getByText('正在加载数据')).toBeTruthy();
+    expect(screen.queryByText('估算占比')).toBeNull();
+    await act(async () => resolve({ data: [], total: 0 }));
+    expect(screen.getByText('汇总暂不可用')).toBeTruthy();
+    expect(screen.queryByText('估算占比')).toBeNull();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     auth.user = { id: 4, username: 'billing', role: 'billing_admin', org_id: 7 };

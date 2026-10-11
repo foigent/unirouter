@@ -1,4 +1,5 @@
-import { Suspense, useState, useCallback } from 'react';
+import { translate as t, translateLabel, useI18n, LanguageSwitcher } from './i18n';
+import { Suspense, useState, useCallback, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Nav, Button, Input, Tag, Typography, Avatar, Spin, Toast } from '@douyinfe/semi-ui';
 import {
@@ -6,6 +7,7 @@ import {
   IconBolt,
   IconSearch,
   IconMenu,
+  IconClose,
   IconBell,
   IconUser,
 } from '@douyinfe/semi-icons';
@@ -20,8 +22,8 @@ import {
   isPlatformAdminRole,
   isRouteAllowedForAuthz,
   isRouteLicensed,
-  licenseFeatureLabel,
   licenseRestrictionMessage,
+  licenseFeatureLabel,
 } from './navigation';
 import { roleLabel } from './utils/displayLabels';
 import { EmptyState, PageHeader, Surface } from './ui';
@@ -29,12 +31,29 @@ import { EmptyState, PageHeader, Surface } from './ui';
 const { Sider, Content } = Layout;
 const { Text } = Typography;
 
+function navigationLabel(item: { text: string; licenseLocked?: boolean }) {
+  const lockedSuffix = '（未授权）';
+  if (item.licenseLocked && item.text.endsWith(lockedSuffix)) {
+    return t('{label}（未授权）', { label: translateLabel(item.text.slice(0, -lockedSuffix.length)) });
+  }
+  return translateLabel(item.text);
+}
+
 export default function App() {
+  useI18n();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState('');
   const [loggingOut, setLoggingOut] = useState(false);
   const toggleSidebar = useCallback(() => setSidebarOpen(prev => !prev), []);
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeSidebar();
+    };
+    document.addEventListener('keydown', dismiss);
+    return () => document.removeEventListener('keydown', dismiss);
+  }, [sidebarOpen, closeSidebar]);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -43,9 +62,12 @@ export default function App() {
   const authz = authzContextForUser(user);
   const licenseAccess = user?.license_access;
   const routeWithSearch = `${location.pathname}${location.search}`;
-  const navItems = getNavItemsForAuthz(authz, licenseAccess);
+  const navItems = getNavItemsForAuthz(authz, licenseAccess).map(item => ({
+    ...item, text: navigationLabel(item),
+    items: item.items?.map(child => ({ ...child, text: navigationLabel(child) })),
+  }));
   const openKeys = navItems.filter(item => item.items?.length).map(item => item.itemKey);
-  const currentRoleLabel = roleLabel(authz.organizationRole, '未加载组织角色');
+  const currentRoleLabel = roleLabel(authz.organizationRole, t("未加载组织角色"));
   const canOpenNotifications = canOpenUnscopedNotifications(authz);
   const notificationsLicensed = hasLicensedFeature(licenseAccess, 'notifications');
   const notificationsRestrictionMessage = licenseAccess
@@ -86,7 +108,7 @@ export default function App() {
       await logout();
       navigate('/login');
     } catch {
-      Toast.error('退出失败，服务端尚未确认会话撤销，请稍后重试。');
+      Toast.error(t("退出失败，服务端尚未确认会话撤销，请稍后重试。"));
     } finally {
       setLoggingOut(false);
     }
@@ -98,13 +120,15 @@ export default function App() {
         className="mobile-menu-toggle"
         icon={<IconMenu />}
         onClick={toggleSidebar}
-        aria-label="打开导航"
+        aria-label={t("打开导航")}
+        aria-expanded={sidebarOpen}
       />
 
       <div className={`sidebar-overlay ${sidebarOpen ? "open" : ""}`} onClick={closeSidebar} />
 
       <Layout className="ur-app-shell">
       <Sider className={`ur-sider ${sidebarOpen ? 'open' : ''}`}>
+        {sidebarOpen && <Button className="ur-mobile-nav-close" icon={<IconClose />} theme="borderless" size="small" aria-label={t('关闭导航')} onClick={closeSidebar} />}
         <div className="ur-brand">
           <div className="ur-brand-mark">
             <IconBolt size="large" />
@@ -121,11 +145,11 @@ export default function App() {
           onClick={handleNavClick}
           style={{ border: 'none' }}
         />
-        <div className="ur-sider-footer">
+        <div className="ur-sider-footer"><div className="ur-mobile-language"><LanguageSwitcher /></div>
           <div
             className="ur-product-version"
-            aria-label={`UniRouter 版本 V${__UNIROUTER_VERSION__}`}
-            title="产品版本；部署制品另有精确运行时版本与提交标识"
+            aria-label={t('UniRouter 版本 V{version}', { version: __UNIROUTER_VERSION__ })}
+            title={t("产品版本；部署制品另有精确运行时版本与提交标识")}
           >
             V{__UNIROUTER_VERSION__}
           </div>
@@ -134,11 +158,10 @@ export default function App() {
             icon={<IconUser />}
             theme="borderless"
             block
-            aria-label="打开移动端我的账号"
+            aria-label={t("打开移动端我的账号")}
             onClick={() => { closeSidebar(); navigate('/settings'); }}
           >
-            我的账号
-          </Button>
+            {t("我的账号")}</Button>
           <Button
             icon={<IconExit />}
             theme="borderless"
@@ -147,20 +170,19 @@ export default function App() {
             disabled={loggingOut}
             onClick={handleLogout}
           >
-            退出登录
-          </Button>
+            {t("退出登录")}</Button>
         </div>
       </Sider>
       <Content className="ur-content">
         <header
           className={`ur-topbar${canSearchLogs ? '' : ' ur-topbar-without-search'}`}
           role="toolbar"
-          aria-label="全局工具栏"
+          aria-label={t("全局工具栏")}
         >
           {canSearchLogs && (
             <Input
               className="ur-global-search"
-              aria-label="全局搜索执行请求"
+              aria-label={t("全局搜索执行请求")}
               prefix={<IconSearch />}
               value={globalSearch}
               onChange={setGlobalSearch}
@@ -168,19 +190,19 @@ export default function App() {
               onKeyDown={(event) => {
                 if (event.key === 'Enter') submitGlobalSearch();
               }}
-              placeholder="搜索请求日志：请求、模型、供应商、错误或证据标识"
+              placeholder={t("搜索请求日志：请求、模型、供应商、错误或证据标识")}
               showClear
             />
           )}
-          <div className="ur-topbar-actions">
+          <div className="ur-topbar-actions"><LanguageSwitcher />
             <Tag className="ur-env-pill" color={envBadge.color as never}>{envBadge.label}</Tag>
             {canOpenNotifications && (
               <Button
                 icon={<IconBell />}
                 theme="borderless"
                 className="ur-icon-button"
-                aria-label={notificationsLicensed ? '通知' : '通知（商业授权不可用）'}
-                title={notificationsLicensed ? '通知' : notificationsRestrictionMessage || '当前商业授权不可用，通知中心暂不可用。'}
+                aria-label={notificationsLicensed ? t("通知") : t("通知（商业授权不可用）")}
+                title={notificationsLicensed ? t("通知") : notificationsRestrictionMessage || t("当前商业授权不可用，通知中心暂不可用。")}
                 disabled={!notificationsLicensed}
                 onClick={() => navigate('/notifications')}
               />
@@ -188,14 +210,14 @@ export default function App() {
             <button
               type="button"
               className="ur-user-chip"
-              aria-label="打开我的账号"
+              aria-label={t("打开我的账号")}
               onClick={() => navigate('/settings')}
               style={{ cursor: 'pointer', font: 'inherit', color: 'inherit', textAlign: 'left' }}
             >
               <Avatar size="small" color="purple">{(user?.username || 'U').slice(0, 1).toUpperCase()}</Avatar>
               <div className="ur-user-copy">
                 <Text className="ur-user-name">{user?.username || 'Operator'}</Text>
-                <Text className="ur-user-role">{currentRoleLabel}</Text>
+                <Text className="ur-user-role">{translateLabel(currentRoleLabel)}</Text>
               </div>
             </button>
           </div>
@@ -203,23 +225,23 @@ export default function App() {
         {licenseRestricted && requiredLicenseFeature && licenseAccess ? (
           <div className="ur-page">
             <PageHeader
-              eyebrow="商业授权"
-              title={`${licenseFeatureLabel(requiredLicenseFeature)}暂不可用`}
-              description="你的角色具备该功能权限，但当前部署的签名商业授权不允许使用它。"
+              eyebrow={t("商业授权")}
+              title={t('{feature}暂不可用', { feature: translateLabel(licenseFeatureLabel(requiredLicenseFeature)) })}
+              description={t("你的角色具备该功能权限，但当前部署的签名商业授权不允许使用它。")}
             />
             <Surface>
               <EmptyState
-                title="当前授权不可使用此功能"
+                title={t("当前授权不可使用此功能")}
                 description={restrictionMessage}
                 actions={isPlatformAdminRole(authz.organizationRole) ? (
-                  <Button type="primary" onClick={() => navigate('/license')}>查看或更新商业授权</Button>
+                  <Button type="primary" onClick={() => navigate('/license')}>{t("查看或更新商业授权")}</Button>
                 ) : undefined}
                 minHeight={320}
               />
             </Surface>
           </div>
         ) : (
-          <Suspense fallback={<div className="ur-route-loading" role="status" aria-label="正在加载页面"><Spin size="large" /><span>正在加载页面…</span></div>}>
+          <Suspense fallback={<div className="ur-route-loading" role="status" aria-label={t("正在加载页面")}><Spin size="large" /><span>{t("正在加载页面…")}</span></div>}>
             <Outlet />
           </Suspense>
         )}
@@ -234,19 +256,19 @@ function getEnvironmentBadge() {
   switch (raw) {
   case 'prod':
   case 'production':
-    return { label: '生产环境', color: 'green' };
+    return { label: t("生产环境"), color: 'green' };
   case 'staging':
   case 'stage':
-    return { label: '预发环境', color: 'blue' };
+    return { label: t("预发环境"), color: 'blue' };
   case 'canary':
-    return { label: '灰度环境', color: 'orange' };
+    return { label: t("灰度环境"), color: 'orange' };
   case 'dev':
   case 'development':
-    return { label: '开发环境', color: 'cyan' };
+    return { label: t("开发环境"), color: 'cyan' };
   case 'local':
-    return { label: '本地环境', color: 'grey' };
+    return { label: t("本地环境"), color: 'grey' };
   case '':
-    return { label: '环境未配置', color: 'grey' };
+    return { label: t("环境未配置"), color: 'grey' };
   default:
     return { label: raw, color: 'grey' };
   }

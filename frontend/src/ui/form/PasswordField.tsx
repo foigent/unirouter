@@ -1,6 +1,7 @@
 import { useEffect, useState, type ComponentProps } from 'react';
 import { Button, Form, Tooltip } from '@douyinfe/semi-ui';
 import { IconEyeClosed, IconEyeOpened } from '@douyinfe/semi-icons';
+import { useI18n } from '../../i18n';
 
 type FormInputProps = ComponentProps<typeof Form.Input>;
 
@@ -9,8 +10,9 @@ export type PasswordFieldProps = Omit<FormInputProps, 'mode' | 'suffix' | 'type'
 };
 
 export default function PasswordField({ visibilityResetKey, ...inputProps }: PasswordFieldProps) {
+  const { t } = useI18n();
   const [visible, setVisible] = useState(false);
-  const toggleLabel = visible ? '隐藏密码' : '显示密码';
+  const toggleLabel = t(visible ? '隐藏密码' : '显示密码');
 
   useEffect(() => {
     setVisible(false);

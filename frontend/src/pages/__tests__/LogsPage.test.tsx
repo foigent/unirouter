@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from '../../test/MemoryRouter';
 import LogsPage from '../LogsPage';
+import { setLocale } from '../../i18n';
 
 const mockGetLogs = vi.fn();
 const mockGetModelNames = vi.fn();
@@ -176,6 +177,45 @@ function renderLogs() {
 }
 
 describe('LogsPage', () => {
+  afterEach(() => act(() => setLocale('zh-CN')));
+  it('preserves the selected receipt and tab while switching languages without refetching', async () => {
+    const { container } = renderLogs();
+    await waitFor(() => expect(mockGetLogTrace).toHaveBeenCalledWith(1));
+    fireEvent.click(await screen.findByRole('button', { name: '成本与终态' }));
+    const reads = mockGetLogs.mock.calls.length;
+    const traces = mockGetLogTrace.mock.calls.length;
+    act(() => setLocale('en-US'));
+    expect(screen.getByRole('button', { name: 'Cost & settlement' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Tokens & recorded cost')).toBeInTheDocument();
+    expect(container.querySelector('.ur-request-id-full')).toHaveTextContent('req-001-aaa');
+    expect(screen.getByText('billing.settle.succeeded')).toBeInTheDocument();
+    expect(mockGetLogs).toHaveBeenCalledTimes(reads);
+    expect(mockGetLogTrace).toHaveBeenCalledTimes(traces);
+  });
+
+  it('keeps rapidly entered filters together and clears inputs along with the query', async () => {
+    renderLogs();
+    await waitFor(() => expect(mockGetLogTrace).toHaveBeenCalledWith(1));
+    fireEvent.change(screen.getByLabelText('操作 ID 精确匹配'), { target: { value: 'req-current' } });
+    fireEvent.change(screen.getByLabelText('Trace ID 精确匹配'), { target: { value: 'trace-current' } });
+    await waitFor(() => expect(mockGetLogs).toHaveBeenLastCalledWith(1, 50, expect.objectContaining({ request_id: 'req-current', trace_id: 'trace-current' })));
+    fireEvent.click(screen.getByRole('button', { name: '清除' }));
+    expect(screen.getByLabelText('操作 ID 精确匹配')).toHaveValue('');
+    expect(screen.getByLabelText('Trace ID 精确匹配')).toHaveValue('');
+    await waitFor(() => expect(mockGetLogs).toHaveBeenLastCalledWith(1, 50, {}));
+  });
+
+  it('ignores a stale list response after filters change', async () => {
+    let finish!: (value: unknown) => void;
+    mockGetLogs.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    renderLogs();
+    fireEvent.change(screen.getByLabelText('搜索执行请求'), { target: { value: 'current' } });
+    await waitFor(() => expect(mockGetLogs).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mockGetLogTrace).toHaveBeenCalledWith(1));
+    await act(async () => finish({ data: [{ ...MOCK_LOGS_RESPONSE.data[0], id: 999, request_id: 'stale-request' }], total: 1 }));
+    expect(screen.queryByText('stale-request')).not.toBeInTheDocument();
+    expect(mockGetLogTrace).not.toHaveBeenCalledWith(999);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     window.history.replaceState(null, '', '/logs');

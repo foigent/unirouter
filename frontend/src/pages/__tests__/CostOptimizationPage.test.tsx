@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from '../../test/MemoryRouter';
 import CostOptimizationPage from '../CostOptimizationPage';
 
@@ -25,6 +25,17 @@ vi.mock('../../store/auth', () => ({
 }));
 
 describe('CostOptimizationPage', () => {
+  it('keeps unavailable savings distinct from zero while loading or missing a summary', async () => {
+    let resolve!: (value: unknown) => void;
+    mockSummary.mockReturnValue(new Promise(done => { resolve = done; }));
+    render(<MemoryRouter><CostOptimizationPage /></MemoryRouter>);
+    expect(screen.getByText('正在加载数据')).toBeTruthy();
+    expect(screen.queryByText('Prompt Cache 净节省')).toBeNull();
+    await act(async () => resolve({}));
+    expect(screen.getByText('汇总暂不可用')).toBeTruthy();
+    expect(screen.queryByText('Prompt Cache 净节省')).toBeNull();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     auth.user = { role: 'org_admin', org_id: 7 };

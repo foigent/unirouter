@@ -12,7 +12,10 @@ describe('IntegrationsPage', () => {
 
     expect(screen.getByRole('heading', { name: '集成管理' })).toBeTruthy();
     expect(screen.getByText('X-Insight 执行记录订阅')).toBeTruthy();
-    expect(screen.getByText(/只提供来源事实/)).toBeTruthy();
+    expect(screen.getByText(/UniRouter 提供来源事实/)).toBeTruthy();
+    expect(screen.getByText(/X-Insight 异步接收已授权事实/)).toBeTruthy();
+    expect(screen.getByText(/已部署的受信 X-Insight/)).toBeTruthy();
+    expect(screen.getByText(/可配置不代表公开托管服务或已经连接/)).toBeTruthy();
     expect(screen.getByText('飞书企业机器人')).toBeTruthy();
     expect(screen.getByText(/不会自动获得模型、管理员或财务权限/)).toBeTruthy();
     expect(screen.getByText(/凭据与事件处理留在 Adapter/)).toBeTruthy();

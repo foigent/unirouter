@@ -1,3 +1,5 @@
+import '../i18n/people';
+import { translate as t, translateLabel, localizeOptions, useI18n } from '../i18n';
 import { useEffect, useRef, useState } from 'react';
 import { Button, Table, Modal, Form, Tag, Toast, SideSheet, Typography, Tabs, TabPane, Space } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit, IconUserGroup } from '@douyinfe/semi-icons';
@@ -24,6 +26,7 @@ const apiErrorCode = (error: ApiError) => {
 };
 
 export default function UsersPage({ embedded = false }: { embedded?: boolean }) {
+  useI18n();
   const currentUser = useAuthStore((state) => state.user);
   const customerContext = resolveCustomerContext(currentUser);
   const customerOrgID = effectiveCustomerOrgID(currentUser);
@@ -88,7 +91,7 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
 			return available;
 		} catch (error) {
 			setAccessProjects([]);
-			Toast.error(error instanceof ApiError ? error.message : '无法加载可授权项目');
+			Toast.error(error instanceof ApiError ? error.message : t("无法加载可授权项目"));
 			return [];
 		} finally {
 			setAccessLoading(false);
@@ -97,10 +100,10 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
 
   const mutationRestriction = (user: any) => {
     if (Number(user.id) === Number(currentUser?.id)) {
-      return '当前登录账号不能在这里修改角色、停用或删除';
+      return t("当前登录账号不能在这里修改角色、停用或删除");
     }
     if (!isPlatformAdminRole(organizationRoleForUser(currentUser)) && isPlatformAdminRole(canonicalOrganizationRole(user.organization_role, user.role))) {
-      return '组织管理员只能查看平台管理员，不能修改或删除';
+      return t("组织管理员只能查看平台管理员，不能修改或删除");
     }
     return '';
   };
@@ -112,10 +115,10 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
           organization_role: v.organization_role,
           status: v.status,
         });
-        Toast.success('更新成功');
+        Toast.success(t("更新成功"));
       } else {
         if (!customerOrgID) {
-          Toast.error('无法确认客户组织，未创建用户');
+          Toast.error(t("无法确认客户组织，未创建用户"));
           return;
         }
         const created = await api.createUser({
@@ -129,12 +132,12 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
 		if (initialProjectID > 0) {
 			try {
 				await api.upsertProjectMember(initialProjectID, Number(created.id), String(v.initial_project_role || 'project_user'));
-				Toast.success('用户已创建并获得项目访问；重新登录后可创建自己的 API Key');
+				Toast.success(t("用户已创建并获得项目访问；重新登录后可创建自己的 API Key"));
 			} catch (membershipError) {
-				Toast.warning(`用户已创建，但项目访问未授予${membershipError instanceof Error && membershipError.message ? `：${membershipError.message}` : ''}。请在用户列表点击“授予项目访问”重试。`);
+				Toast.warning(t('用户已创建，但项目访问未授予。请在用户列表点击“授予项目访问”重试。') + (membershipError instanceof Error && membershipError.message ? `: ${membershipError.message}` : ''));
 			}
 		} else {
-			Toast.success('用户已创建；该账号尚不能调用模型，请继续授予项目访问');
+			Toast.success(t("用户已创建；该账号尚不能调用模型，请继续授予项目访问"));
 		}
       }
       closeDrawer();
@@ -142,14 +145,14 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
     } catch (error) {
       const code = error instanceof ApiError ? apiErrorCode(error) : '';
       if (!editUser && code === 'local_login_id_conflict') {
-        Toast.error('本地登录名不可用，请使用其他登录名');
+        Toast.error(t("本地登录名不可用，请使用其他登录名"));
         return;
       }
       if (!editUser && error instanceof ApiError && code.startsWith('license_error.') && error.message) {
         Toast.error(error.message);
         return;
       }
-      Toast.error(editUser ? '更新失败' : '创建失败');
+      Toast.error(editUser ? t("更新失败") : t("创建失败"));
     }
   };
 
@@ -160,20 +163,22 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
       return;
     }
     Modal.confirm({
-      title: '确认账号离场',
-      content: `确定要让 ${u.username} 离场吗？UniRouter 将停用账号并收口会话、项目调用授权与凭据，同时保留审计身份和历史证据。`,
+      okText: t("确认操作"),
+      cancelText: t("取消"),
+      title: t("确认账号离场"),
+      content: t('确定要让 {name} 离场吗？UniRouter 将停用账号并收口会话、项目调用授权与凭据，同时保留审计身份和历史证据。', { name: u.username }),
       onOk: async () => {
         try {
           await api.deleteUser(u.id);
-          Toast.success('账号已离场');
+          Toast.success(t("账号已离场"));
           load();
         } catch (error) {
           const code = error instanceof ApiError ? apiErrorCode(error) : '';
           if (code === 'active_workload_sponsorship') {
-            Toast.error('该账号仍是活动 Workload 授权的业务 Sponsor。请先归档相关应用或撤销旧授权；如需保留应用访问，请建立由其他 Sponsor 承担的新授权，并撤销旧授权后再离场。');
+            Toast.error(t("该账号仍是活动 Workload 授权的业务 Sponsor。请先归档相关应用或撤销旧授权；如需保留应用访问，请建立由其他 Sponsor 承担的新授权，并撤销旧授权后再离场。"));
             return;
           }
-          Toast.error('账号离场失败');
+          Toast.error(t("账号离场失败"));
         }
       },
     });
@@ -220,11 +225,11 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
     setAccessLoading(true);
     try {
       await api.upsertProjectMember(Number(values.project_id), Number(accessUser.id), String(values.role || 'project_user'));
-      Toast.success(`${accessUser.username} 已获得项目访问；重新登录后可在项目工作台创建自己的项目访问凭证`);
+      Toast.success(t('{name} 已获得项目访问；重新登录后可在项目工作台创建自己的项目访问凭证', { name: accessUser.username }));
       setAccessUser(null);
       accessFormApi?.reset();
     } catch (error) {
-      Toast.error(error instanceof ApiError ? error.message : '授予项目访问失败');
+      Toast.error(error instanceof ApiError ? error.message : t("授予项目访问失败"));
     } finally {
       setAccessLoading(false);
     }
@@ -253,9 +258,9 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
   if (customerContext.state !== 'ready') {
     const blocker = customerContextBlockerCopy(customerContext.state);
     return (
-      <div className={embedded ? 'ur-embedded-page' : 'ur-page'}>
+      <div className={embedded ? 'ur-embedded-page ur-people-workspace' : 'ur-page ur-people-workspace'}>
         {!embedded ? (
-          <PageHeader eyebrow="访问与安全" title="用户管理" description="本页只管理当前部署唯一客户组织中的身份。" />
+          <PageHeader eyebrow={t("访问与安全")} title={t("用户管理")} description={t("本页只管理当前部署唯一客户组织中的身份。")} />
         ) : null}
         <Surface>
           <EmptyState title={blocker.title} description={blocker.description} minHeight={260} />
@@ -264,50 +269,46 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
     );
   }
   const columns = [
-    { title: 'ID', dataIndex: 'id', width: 60 },
     {
-      title: '用户名', dataIndex: 'username',
-      render: (username: string, record: any) => (
-        <span>
-          {username}
-          {Number(record.id) === Number(currentUser?.id) && <Tag color="blue" style={{ marginLeft: 8 }}>当前账号</Tag>}
-        </span>
-      ),
+      title: t('用户名'), dataIndex: 'username', width: 260,
+      render: (username: string, record: any) => <div className="ur-identity-cell">
+        <strong>{username} {Number(record.id) === Number(currentUser?.id) && <Tag color="blue">{t('当前账号')}</Tag>}</strong>
+        <span>{record.email || '—'}</span>
+        <small>#{record.id}</small>
+      </div>,
     },
     {
-      title: '所属组织',
-      key: 'organization',
-      render: (_: unknown, record: any) => Number(record.org_id) === Number(customerOrgID)
-        ? (customerContext.orgName || '当前客户范围')
-        : '非当前客户范围',
+      title: t('认证来源'), key: 'identity', width: 210,
+      render: (_: unknown, record: any) => <div className="ur-identity-cell">
+        <span>{record.auth_provider === 'oidc' ? t('企业 OIDC') : t('本地账号')}</span>
+        <small>{Number(record.org_id) === Number(customerOrgID) ? customerContext.orgName || t('当前客户范围') : t('非当前客户范围')}</small>
+      </div>,
     },
-    { title: '邮箱', dataIndex: 'email', render: (v: string) => v || '-' },
-    { title: '认证来源', dataIndex: 'auth_provider', width: 110, render: (v: string) => v === 'oidc' ? '企业 OIDC' : '本地账号' },
-    { title: '组织角色', dataIndex: 'organization_role', render: (v: string) => <Tag color={roleTagColor(v) as any}>{organizationRoleLabel(v)}</Tag> },
-    { title: '状态', dataIndex: 'status', render: (v: string) => <StatusTag status={v}>{v === 'active' ? '启用' : v === 'disabled' ? '停用' : v}</StatusTag> },
-    { title: '创建时间', dataIndex: 'created_at', render: (v: string) => formatDateTime(v) },
+    { title: t("组织角色"), dataIndex: 'organization_role', render: (v: string) => <Tag color={roleTagColor(v) as any}>{organizationRoleLabel(v)}</Tag> },
+    { title: t("状态"), dataIndex: 'status', render: (v: string) => <StatusTag status={v}>{v === 'active' ? t("启用") : v === 'disabled' ? t("停用") : v}</StatusTag> },
+    { title: t("创建时间"), dataIndex: 'created_at', render: (v: string) => formatDateTime(v) },
     {
-      title: '操作', width: 170,
+      title: t("操作"), width: 170,
       render: (_: any, record: any) => {
         const restriction = mutationRestriction(record);
         return (
           <span title={restriction || undefined}><Space>
             <Button
-              aria-label={`授予项目访问 ${record.username}`}
+              aria-label={t('授予项目访问 {name}', { name: record.username })}
               icon={<IconUserGroup />}
               size="small"
               disabled={!!restriction || record.status !== 'active'}
               onClick={() => void openProjectAccess(record)}
             />
             <Button
-              aria-label={`编辑用户 ${record.username}`}
+              aria-label={t('编辑用户 {name}', { name: record.username })}
               icon={<IconEdit />}
               size="small"
               disabled={!!restriction}
               onClick={() => openEdit(record)}
             />
             <Button
-              aria-label={`离场用户 ${record.username}`}
+              aria-label={t('离场用户 {name}', { name: record.username })}
               icon={<IconDelete />}
               size="small"
               type="danger"
@@ -321,43 +322,43 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
   ];
 
   return (
-    <div className={embedded ? 'ur-embedded-page' : 'ur-page'}>
+    <div className={embedded ? 'ur-embedded-page ur-people-workspace' : 'ur-page ur-people-workspace'}>
       {embedded ? (
         <div className="ur-embedded-heading">
           <div>
-            <Typography.Title heading={4} style={{ margin: 0 }}>账号与身份</Typography.Title>
-		  <Typography.Text type="tertiary">当前客户：{customerContext.orgName || `组织 #${customerOrgID}`}。创建客户登录账号并设置组织角色；部署管理员不属于客户人员，不在此列表中。项目角色在“项目与成员”中按项目独立维护。</Typography.Text>
+            <Typography.Title heading={4} style={{ margin: 0 }}>{t("账号与身份")}</Typography.Title>
+		  <Typography.Text type="tertiary">{t("当前客户：")}{customerContext.orgName || t('组织 #{id}', { id: customerOrgID || '—' })}{t("。创建客户登录账号并设置组织角色；部署管理员不属于客户人员，不在此列表中。项目角色在“项目与成员”中按项目独立维护。")}</Typography.Text>
           </div>
-			{providerScope === 'local' && <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增本地用户</Button>}
+			{providerScope === 'local' && <Button icon={<IconPlus />} type="primary" onClick={openCreate}>{t("新增本地用户")}</Button>}
         </div>
       ) : <PageHeader
-        eyebrow="访问与安全"
-        title="用户管理"
-        description="管理本地账号及企业 OIDC 映射账号的组织角色与状态；项目角色在项目入口独立维护。"
-		actions={providerScope === 'local' ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增本地用户</Button> : undefined}
+        eyebrow={t("访问与安全")}
+        title={t("用户管理")}
+        description={t("管理本地账号及企业 OIDC 映射账号的组织角色与状态；项目角色在项目入口独立维护。")}
+		actions={providerScope === 'local' ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>{t("新增本地用户")}</Button> : undefined}
       />}
 
       <Surface>
 		<Tabs activeKey={providerScope} onChange={(key) => setProviderScope(key as 'local' | 'enterprise')}>
-			<TabPane itemKey="local" tab="本地账号 / Local User" />
-			<TabPane itemKey="enterprise" tab="企业身份 / OIDC" />
+			<TabPane itemKey="local" tab={t("本地账号 / Local User")} />
+			<TabPane itemKey="enterprise" tab={t("企业身份 / OIDC")} />
 		</Tabs>
 		<Typography.Text type="tertiary">
 			{providerScope === 'local'
-				? '本页服务端只查询 auth_provider=local；可创建本地账号并管理本地生命周期。'
-				: '本页服务端只查询企业身份。OIDC / 企业目录拥有登录来源与外部身份属性；UniRouter 管理已映射账号的组织角色、启停与离场，项目成员关系仍在“项目与成员”中管理。'}
+				? t("本页服务端只查询 auth_provider=local；可创建本地账号并管理本地生命周期。")
+				: t("本页服务端只查询企业身份。OIDC / 企业目录拥有登录来源与外部身份属性；UniRouter 管理已映射账号的组织角色、启停与离场，项目成员关系仍在“项目与成员”中管理。")}
         </Typography.Text>
         <div className="ur-table-shell">
           {loading && users.length === 0 ? (
-            <EmptyState title="正在加载用户列表" description="正在读取当前客户的账号与身份，请稍候。" minHeight={220} />
+            <EmptyState title={t("正在加载用户列表")} description={t("正在读取当前客户的账号与身份，请稍候。")} minHeight={220} />
           ) : <Table
             columns={columns}
             dataSource={users}
             loading={loading}
             rowKey="id"
             empty={loadError ? (
-              <EmptyState title="用户列表加载失败" description={loadError} actions={<Button type="primary" onClick={() => load()}>重新加载用户列表</Button>} minHeight={220} />
-            ) : <EmptyState title="暂无用户" minHeight={220} />}
+              <EmptyState title={t("用户列表加载失败")} description={translateLabel(loadError)} actions={<Button type="primary" onClick={() => load()}>{t("重新加载用户列表")}</Button>} minHeight={220} />
+            ) : <EmptyState title={t("暂无用户")} minHeight={220} />}
             pagination={{
               currentPage: page, pageSize, total,
               pageSizeOpts: [20, 50, 100], showSizeChanger: true,
@@ -369,119 +370,121 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
       </Surface>
 
       <SideSheet
-        title={editUser ? '编辑 UniRouter 权限与状态' : '新增本地用户'}
+        title={editUser ? t("编辑 UniRouter 权限与状态") : t("新增本地用户")}
         visible={showDrawer}
         onCancel={closeDrawer}
-        width={480}
+        width="min(480px, 100vw)"
       >
         <Form key={`user-form-${formInstance}-${editUser?.id || 'create'}`} getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
           {editUser && editUser.auth_provider !== 'local' && <Typography.Paragraph type="tertiary">
-            登录来源、外部 subject、用户名与邮箱由 OIDC / 企业目录提供；下面的组织角色与账号状态是 UniRouter 本地治理事实。
+
+            {t("登录来源、外部 subject、用户名与邮箱由 OIDC / 企业目录提供；下面的组织角色与账号状态是 UniRouter 本地治理事实。")}
           </Typography.Paragraph>}
           <Form.Input
             field="username"
-            label="用户名"
+            label={t("用户名")}
             autoComplete="off"
             disabled={!!editUser}
-            rules={[{ required: true, message: '必填' }]}
-            extraText={!editUser ? '本地登录名在当前部署中全局唯一，忽略大小写和首尾空白。' : undefined}
+            rules={[{ required: true, message: t("必填") }]}
+            extraText={!editUser ? t("本地登录名在当前部署中全局唯一，忽略大小写和首尾空白。") : undefined}
           />
           {!editUser && <PasswordField
             field="password"
-            label="初始密码"
+            label={t("初始密码")}
             autoComplete="new-password"
             rules={[
-              { required: true, message: '必填' },
+              { required: true, message: t("必填") },
               {
                 validator: (_rule, value) => !value || localPasswordCodePointCount(String(value)) >= LOCAL_PASSWORD_MIN_CODE_POINTS,
-                message: '至少 12 个 Unicode 字符（按码点计）',
+                message: t("至少 12 个 Unicode 字符（按码点计）"),
               },
               {
                 validator: (_rule, value) => !value || localPasswordUTF8ByteCount(String(value)) <= LOCAL_PASSWORD_MAX_UTF8_BYTES,
-                message: '最多 72 个 UTF-8 字节',
+                message: t("最多 72 个 UTF-8 字节"),
               },
             ]}
             visibilityResetKey={`${showDrawer ? 'open' : 'closed'}-${editUser?.id || 'create'}`}
           />}
           <Form.Select
             field="organization_role"
-            label={<span id="user-organization-role-label">组织角色</span>}
+            label={<span id="user-organization-role-label">{t("组织角色")}</span>}
             aria-labelledby="user-organization-role-label"
-            optionList={roleOptions}
-            rules={[{ required: true, message: '必填' }]}
-            extraText="普通账号使用“普通成员”；项目管理员、项目使用者和项目只读在具体项目中分配。"
+            optionList={localizeOptions(roleOptions)}
+            rules={[{ required: true, message: t("必填") }]}
+            extraText={t("普通账号使用“普通成员”；项目管理员、项目使用者和项目只读在具体项目中分配。")}
           />
           <Form.Select
             field="status"
-            label={<span id="user-status-label">状态</span>}
+            label={<span id="user-status-label">{t("状态")}</span>}
             aria-labelledby="user-status-label"
-            optionList={[{ label: '启用', value: 'active' }, { label: '禁用', value: 'disabled' }]}
+            optionList={[{ label: t("启用"), value: 'active' }, { label: t("禁用"), value: 'disabled' }]}
             initValue="active"
           />
 		  {!editUser && <>
 			<Form.Select
 			  field="initial_project_id"
-			  label={<span id="user-initial-project-label">创建后加入项目（推荐）</span>}
+			  label={<span id="user-initial-project-label">{t("创建后加入项目（推荐）")}</span>}
 			  aria-labelledby="user-initial-project-label"
 			  loading={accessLoading}
 			  showClear
 			  optionList={accessProjects.map(project => ({ value: project.id, label: projectDisplayName(project) }))}
-			  emptyContent="当前没有启用项目；可先只创建账号"
-			  extraText="加入项目后，用户重新登录即可在项目工作台创建个人 API Key；不加入项目的账号不能调用模型。"
+			  emptyContent={t("当前没有启用项目；可先只创建账号")}
+			  extraText={t("加入项目后，用户重新登录即可在项目工作台创建个人 API Key；不加入项目的账号不能调用模型。")}
 			/>
 			<Form.Select
 			  field="initial_project_role"
-			  label={<span id="user-initial-project-role-label">初始项目角色</span>}
+			  label={<span id="user-initial-project-role-label">{t("初始项目角色")}</span>}
 			  aria-labelledby="user-initial-project-role-label"
 			  optionList={[
-				{ value: 'project_user', label: '项目使用者（可创建 API Key 并调用）' },
-				{ value: 'project_viewer', label: '项目只读（不可调用）' },
-				{ value: 'project_admin', label: '项目管理员' },
+				{ value: 'project_user', label: t("项目使用者（可创建 API Key 并调用）") },
+				{ value: 'project_viewer', label: t("项目只读（不可调用）") },
+				{ value: 'project_admin', label: t("项目管理员") },
 			  ]}
-			  extraText="普通模型使用请选择“项目使用者”。"
+			  extraText={t("普通模型使用请选择“项目使用者”。")}
 			/>
 		  </>}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
-            <Button onClick={closeDrawer}>取消</Button>
-            <Button type="primary" onClick={() => formApi?.submitForm()}>{editUser ? '更新' : '创建'}</Button>
+            <Button onClick={closeDrawer}>{t("取消")}</Button>
+            <Button type="primary" onClick={() => formApi?.submitForm()}>{editUser ? t("更新") : t("创建")}</Button>
           </div>
         </Form>
       </SideSheet>
 
       <SideSheet
-        title={accessUser ? `授予 ${accessUser.username} 项目访问` : '授予项目访问'}
+        title={accessUser ? t('授予 {name} 项目访问', { name: accessUser.username }) : t("授予项目访问")}
         visible={Boolean(accessUser)}
         onCancel={() => { setAccessUser(null); accessFormApi?.reset(); }}
-        width={480}
+        width="min(480px, 100vw)"
       >
         <Typography.Paragraph>
-          这是让用户能够使用模型的正常入口：先加入一个项目，再由项目使用者在“项目工作台”创建自己的项目访问凭证。工作负载应用则由项目管理员在“应用与 Agent”中管理。组织角色不等于项目访问；“高级模型限制”只用于进一步收窄权限。
+
+          {t("这是让用户能够使用模型的正常入口：先加入一个项目，再由项目使用者在“项目工作台”创建自己的项目访问凭证。工作负载应用则由项目管理员在“应用与 Agent”中管理。组织角色不等于项目访问；“高级模型限制”只用于进一步收窄权限。")}
         </Typography.Paragraph>
         <Form getFormApi={setAccessFormApi} onSubmit={grantProjectAccess} initValues={{ role: 'project_user' }}>
           <Form.Select
             field="project_id"
-            label={<span id="user-project-access-project-label">项目</span>}
+            label={<span id="user-project-access-project-label">{t("项目")}</span>}
             aria-labelledby="user-project-access-project-label"
             loading={accessLoading}
             optionList={accessProjects.map(project => ({ value: project.id, label: projectDisplayName(project) }))}
-            rules={[{ required: true, message: '请选择项目' }]}
-            emptyContent="当前没有可授权的启用项目"
+            rules={[{ required: true, message: t("请选择项目") }]}
+            emptyContent={t("当前没有可授权的启用项目")}
           />
           <Form.Select
             field="role"
-            label={<span id="user-project-access-role-label">项目角色</span>}
+            label={<span id="user-project-access-role-label">{t("项目角色")}</span>}
             aria-labelledby="user-project-access-role-label"
             optionList={[
-              { value: 'project_user', label: '项目使用者（可创建凭证并调用）' },
-              { value: 'project_viewer', label: '项目只读（不可调用）' },
-              { value: 'project_admin', label: '项目管理员（可管理成员与配置）' },
+              { value: 'project_user', label: t("项目使用者（可创建凭证并调用）") },
+              { value: 'project_viewer', label: t("项目只读（不可调用）") },
+              { value: 'project_admin', label: t("项目管理员（可管理成员与配置）") },
             ]}
-            rules={[{ required: true, message: '请选择项目角色' }]}
-            extraText="普通模型使用请选择“项目使用者”；只有确需维护项目成员和配置时才授予项目管理员。"
+            rules={[{ required: true, message: t("请选择项目角色") }]}
+            extraText={t("普通模型使用请选择“项目使用者”；只有确需维护项目成员和配置时才授予项目管理员。")}
           />
           <div className="ur-form-actions">
-            <Button onClick={() => setAccessUser(null)}>取消</Button>
-            <Button type="primary" loading={accessLoading} onClick={() => accessFormApi?.submitForm()}>授予项目访问</Button>
+            <Button onClick={() => setAccessUser(null)}>{t("取消")}</Button>
+            <Button type="primary" loading={accessLoading} onClick={() => accessFormApi?.submitForm()}>{t("授予项目访问")}</Button>
           </div>
         </Form>
       </SideSheet>

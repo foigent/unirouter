@@ -1,3 +1,5 @@
+import '../../i18n/models';
+import { translate as t, translateLabel, useI18n } from '../../i18n';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Banner, Button, Input, Modal, Space, Spin, Toast, Typography } from '@douyinfe/semi-ui';
 import {
@@ -9,7 +11,7 @@ import {
 } from '../../api/modelDeployments';
 import { LatencyText, StatusTag, Surface } from '../../ui';
 import { formatDateTime } from '../../utils/formatDate';
-import { endpointError } from './presentation';
+import { endpointError, endpointFailureText, type EndpointFailure } from './presentation';
 
 const { Text } = Typography;
 
@@ -26,11 +28,11 @@ const streamDiagnosticMembers = new Set([
 ]);
 
 function probeFailureDetail(stage?: string, member?: string): string {
-  if (!stage) return member ? `（成员：${member}）` : '';
-  if (stage === 'model_identity' && member === 'mismatch') return '（响应模型身份与绑定不一致）';
-  if (stage === 'sse' && member === 'unsupported_field') return '（SSE 包含未支持字段）';
+  if (!stage) return member ? t('（成员：{member}）', { member }) : '';
+  if (stage === 'model_identity' && member === 'mismatch') return t("（响应模型身份与绑定不一致）");
+  if (stage === 'sse' && member === 'unsupported_field') return t("（SSE 包含未支持字段）");
   return member && streamDiagnosticStages.has(stage) && streamDiagnosticMembers.has(member)
-    ? `（阶段：${stage}；原因：${member}）` : '';
+    ? t('（阶段：{stage}；原因：{member}）', { stage, member }) : '';
 }
 
 export type QualifiedCapabilityID = 'streaming' | 'reasoning' | 'reasoning_effort' | 'reasoning_budget' |
@@ -127,7 +129,7 @@ const capabilityPresentation: Record<QualifiedCapabilityID, {
 };
 
 export function capabilityShortName(value: string): string {
-  return isQualifiedCapabilityID(value) ? capabilityPresentation[value].shortName : value;
+  return isQualifiedCapabilityID(value) ? translateLabel(capabilityPresentation[value].shortName) : value;
 }
 
 export function isQualifiedCapabilityID(value: string): value is QualifiedCapabilityID {
@@ -154,13 +156,14 @@ function capabilityTone(state: string) {
 export default function ModelCapabilityQualificationPanel(props: Props) {
   const { selected, operation } = props;
   const capabilityID = props.capabilityID || 'streaming';
+  useI18n();
   const presentation = capabilityPresentation[capabilityID];
   const [qualification, setQualification] = useState<CanonicalCapabilityQualification | null>(null);
   const [loading, setLoading] = useState(false);
   const [workingBindingID, setWorkingBindingID] = useState(0);
   const [approving, setApproving] = useState(false);
-  const [error, setError] = useState('');
-  const [reason, setReason] = useState(presentation.defaultReason);
+  const [error, setError] = useState<EndpointFailure | null>(null);
+  const [reason, setReason] = useState(() => translateLabel(presentation.defaultReason));
   const deploymentID = selected.deployment.id;
   const operationID = operation.operation_id;
   const definitionDigest = operation.profile_definition_digest || '';
@@ -211,7 +214,7 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
     const requestIdentity = identity;
     const generation = ++loadGenerationRef.current;
     setLoading(true);
-    setError('');
+    setError(null);
     try {
       const result = await modelDeploymentApi.getCapabilityQualification(
         deploymentID,
@@ -223,7 +226,7 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
     } catch (loadError) {
       if (identityRef.current !== requestIdentity || loadGenerationRef.current !== generation) return;
       setQualification(null);
-      setError(endpointError(loadError, `无法读取${presentation.shortName}资格。`));
+      setError({ cause: loadError, fallback: '无法读取{capability}资格。' });
     } finally {
       if (identityRef.current === requestIdentity && loadGenerationRef.current === generation) setLoading(false);
     }
@@ -235,7 +238,7 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
     setQualification(null);
     setWorkingBindingID(0);
     setApproving(false);
-    setReason(presentation.defaultReason);
+    setReason(translateLabel(presentation.defaultReason));
     void load();
   }, [identity, load]);
 
@@ -256,17 +259,17 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
       );
       if (identityRef.current !== target.identity) return;
       if (result.success && result.current) {
-        Toast.success(`${presentation.shortName}探测通过；请审阅证据后再批准进入路由池`);
+        Toast.success(t('{capability}探测通过；请审阅证据后再批准进入路由池', { capability: translateLabel(presentation.shortName) }));
       } else if (result.provider_success && result.stale) {
-        Toast.warning(`供应商${presentation.shortName}响应成功，但配置已漂移；证据仅保留为历史记录`);
+        Toast.warning(t('供应商{capability}响应成功，但配置已漂移；证据仅保留为历史记录', { capability: translateLabel(presentation.shortName) }));
       } else {
         const diagnostic = probeFailureDetail(result.diagnostic_stage, result.diagnostic_member);
-        Toast.error(`${presentation.shortName}探测未通过：${result.contract_error_code || result.reason_code || result.provider_reason_code}${diagnostic}`);
+        Toast.error(t('{capability}探测未通过：{reason}{diagnostic}', { capability: translateLabel(presentation.shortName), reason: result.contract_error_code || result.reason_code || result.provider_reason_code, diagnostic }));
       }
       await load();
     } catch (probeError) {
       if (identityRef.current !== target.identity) return;
-      Toast.error(endpointError(probeError, `${presentation.shortName}探测失败`));
+      Toast.error(endpointError(probeError, t('{capability}探测失败', { capability: translateLabel(presentation.shortName) })));
     } finally {
       if (identityRef.current === target.identity) setWorkingBindingID(0);
     }
@@ -276,15 +279,16 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
     if (!profileIdentityReady) return;
     const target = targetSummary;
     confirmationRef.current = Modal.confirm({
-      title: `运行${presentation.shortName}探测？`,
+      cancelText: t("取消"),
+      title: t('运行{capability}探测？', { capability: translateLabel(presentation.shortName) }),
       content: <div>
-        <p>预计发起 1 次真实供应商调用，并计入已批准的测试调用上限。</p>
-        <p>供应商成本当前不可得；这不表示费用为 ¥0。</p>
+        <p>{t("预计发起 1 次真实供应商调用，并计入已批准的测试调用上限。")}</p>
+        <p>{t("供应商成本当前不可得；这不表示费用为 ¥0。")}</p>
         <p><Text code>Connection #{target.connectionID}@{target.connectionRevision} · Deployment #{target.deploymentID}@{target.deploymentRevision}</Text></p>
         <p><Text code>{target.operationID}@{target.operationRevision} · {target.executionProfile} · {target.protocolProfile}</Text></p>
-        <p>{presentation.probeContractSummary}</p>
+        <p>{translateLabel(presentation.probeContractSummary)}</p>
       </div>,
-      okText: `运行${presentation.shortName}探测（预计 1 次调用）`,
+      okText: t('运行{capability}探测（预计 1 次调用）', { capability: translateLabel(presentation.shortName) }),
       onOk: () => {
         confirmationRef.current = null;
         if (identityRef.current !== target.identity) return;
@@ -305,11 +309,11 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
         { capability_probe_id: probeID, reason: approvalReason },
       );
       if (identityRef.current !== target.identity) return;
-      Toast.success(`已批准当前环境的精确${presentation.shortName}进入路由池`);
+      Toast.success(t('已批准当前环境的精确{capability}进入路由池', { capability: translateLabel(presentation.shortName) }));
       await load();
     } catch (approvalError) {
       if (identityRef.current !== target.identity) return;
-      Toast.error(endpointError(approvalError, `${presentation.shortName}批准失败；请刷新并重新核对证据`));
+      Toast.error(endpointError(approvalError, t('{capability}批准失败；请刷新并重新核对证据', { capability: translateLabel(presentation.shortName) })));
     } finally {
       if (identityRef.current === target.identity) setApproving(false);
     }
@@ -321,15 +325,16 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
     const approvalReason = reason.trim();
     if (!probeID || !approvalReason) return;
     confirmationRef.current = Modal.confirm({
-      title: '批准在当前环境进入路由池？',
+      cancelText: t("取消"),
+      title: t("批准在当前环境进入路由池？"),
       content: <div>
-        <p>此动作会追加不可变批准记录，并绑定当前 Deployment、Operation、Execution Profile、协议 Profile 与探测合同。</p>
+        <p>{t("此动作会追加不可变批准记录，并绑定当前 Deployment、Operation、Execution Profile、协议 Profile 与探测合同。")}</p>
         <p><Text code>Connection #{target.connectionID}@{target.connectionRevision} · Deployment #{target.deploymentID}@{target.deploymentRevision}</Text></p>
         <p><Text code>{target.operationID}@{target.operationRevision} · {target.executionProfile} · {target.protocolProfile}</Text></p>
         <p><Text code>Probe #{probeID}</Text></p>
-        <p>它不等于 released、SLA 已验证或长期稳定性证明。</p>
+        <p>{t("它不等于 released、SLA 已验证或长期稳定性证明。")}</p>
       </div>,
-      okText: '批准在当前环境进入路由池',
+      okText: t("批准在当前环境进入路由池"),
       onOk: () => {
         confirmationRef.current = null;
         if (identityRef.current !== target.identity) return;
@@ -340,12 +345,12 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
   };
 
   return <Surface
-    title={presentation.title}
-    description={presentation.description}
+    title={translateLabel(presentation.title)}
+    description={translateLabel(presentation.description)}
   >
     {loading && !qualification ? <Spin /> : <Space vertical align="start" style={{ width: '100%' }}>
-      {error && <Banner type="danger" closeIcon={null} description={error} />}
-      {!profileIdentityReady && <Banner type="warning" closeIcon={null} description="执行合同身份不完整；请刷新后再探测或批准。" />}
+      {error && <Banner type="danger" closeIcon={null} description={endpointFailureText({ ...error, values: { capability: translateLabel(presentation.shortName) } })} />}
+      {!profileIdentityReady && <Banner type="warning" closeIcon={null} description={t("执行合同身份不完整；请刷新后再探测或批准。")} />}
       {qualification && <>
         <Space wrap>
           <StatusTag status={capabilityTone(qualification.state)}>{qualification.state}</StatusTag>
@@ -356,14 +361,14 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
         {qualification.qualification_state === 'probe_contract_stale' && <Banner
           type="warning"
           closeIcon={null}
-          description="探测合同已升级，原批准保留为历史证据但不再具备当前路由资格；请按当前合同重新探测并批准。"
+          description={t("探测合同已升级，原批准保留为历史证据但不再具备当前路由资格；请按当前合同重新探测并批准。")}
         />}
 
         {qualification.latest_probe ? <div>
           <Space wrap>
-            <Text strong>最近证据</Text>
+            <Text strong>{t("最近证据")}</Text>
             <StatusTag status={qualification.latest_probe.success && qualification.latest_probe.current ? 'success' : qualification.latest_probe.current ? 'failed' : 'stale'}>
-              {qualification.latest_probe.success && qualification.latest_probe.current ? '当前探测通过' : qualification.latest_probe.current ? '探测失败' : '探测已失效'}
+              {qualification.latest_probe.success && qualification.latest_probe.current ? t("当前探测通过") : qualification.latest_probe.current ? t("探测失败") : t("探测已失效")}
             </StatusTag>
             {qualification.latest_probe.latency_ms > 0 && <LatencyText value={qualification.latest_probe.latency_ms} />}
             <Text type="tertiary">HTTP {qualification.latest_probe.status_code || '-'} · {formatDateTime(qualification.latest_probe.tested_at)}</Text>
@@ -378,15 +383,16 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
           </Space>
           {qualification.latest_probe.error_summary && <Text type="danger">{qualification.latest_probe.error_summary}</Text>}
           {qualification.latest_probe.contract_error_code && <Text type="danger">
-            合同校验：{qualification.latest_probe.contract_error_code}
+
+            {t("合同校验：")}{qualification.latest_probe.contract_error_code}
             {probeFailureDetail(qualification.latest_probe.diagnostic_stage, qualification.latest_probe.diagnostic_member)}
           </Text>}
-        </div> : <Text type="tertiary">{presentation.emptyEvidence}</Text>}
+        </div> : <Text type="tertiary">{translateLabel(presentation.emptyEvidence)}</Text>}
 
         {qualification.qualified && <Banner
           type="success"
           closeIcon={null}
-          description={`已批准当前环境使用；approval_id=${qualification.preferred_approval_id || '-'}。这不是 released 或 SLA 证明。`}
+          description={t('已批准当前环境使用；approval_id={id}。这不是 released 或 SLA 证明。', { id: qualification.preferred_approval_id || '—' })}
         />}
 
         {props.canManage && qualification.probe_available && <Space vertical align="start" style={{ width: '100%' }}>
@@ -398,14 +404,14 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
             loading={workingBindingID === binding.id}
             title={props.gatewayLicensed ? undefined : props.gatewayRestriction}
             onClick={() => confirmProbe(binding)}
-          >运行{presentation.shortName}探测（预计 1 次调用） · binding #{binding.id}</Button>)}
-          {eligibleBindings.length === 0 && <Banner type="warning" closeIcon={null} description="当前批准仍可保持有效，但没有可用 credential binding；路由健康与能力批准是两个独立状态。" />}
+          >{t('运行{capability}探测（预计 1 次调用）', { capability: translateLabel(presentation.shortName) })} · binding #{binding.id}</Button>)}
+          {eligibleBindings.length === 0 && <Banner type="warning" closeIcon={null} description={t("当前批准仍可保持有效，但没有可用 credential binding；路由健康与能力批准是两个独立状态。")} />}
         </Space>}
 
         {qualification.state === 'probed_awaiting_approval' && <Space vertical align="start" style={{ width: '100%' }}>
           {props.canApprove ? <>
             <Input
-              aria-label={`${presentation.shortName}批准理由`}
+              aria-label={t('{capability}批准理由', { capability: translateLabel(presentation.shortName) })}
               value={reason}
               maxLength={512}
               onChange={setReason}
@@ -417,11 +423,11 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
               disabled={!profileIdentityReady || !reason.trim() || !props.gatewayLicensed}
               title={props.gatewayLicensed ? undefined : props.gatewayRestriction}
               onClick={confirmApproval}
-            >批准在当前环境进入路由池</Button>
-          </> : <Banner type="warning" closeIcon={null} description="探测已通过，等待平台管理员批准进入当前环境的路由池。" />}
+            >{t("批准在当前环境进入路由池")}</Button>
+          </> : <Banner type="warning" closeIcon={null} description={t("探测已通过，等待平台管理员批准进入当前环境的路由池。")} />}
         </Space>}
 
-        {!qualification.probe_available && <Banner type="warning" closeIcon={null} description={`当前精确 Profile 没有可执行的 typed ${capabilityID} probe（${qualification.probe_availability_reason_code}）。`} />}
+        {!qualification.probe_available && <Banner type="warning" closeIcon={null} description={t('当前精确 Profile 没有可执行的 typed {capability} probe（{reason}）。', { capability: capabilityID, reason: qualification.probe_availability_reason_code })} />}
       </>}
     </Space>}
   </Surface>;

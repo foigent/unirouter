@@ -1,3 +1,5 @@
+import { translate as t, translateLabel } from '../i18n';
+
 export interface SelectOption {
   label: string;
   value: string;
@@ -31,7 +33,7 @@ export const userManagementOrganizationRoleOptions: SelectOption[] = [
 export const userManagementRoleOptions = userManagementOrganizationRoleOptions;
 
 export function roleLabel(value?: string | null, fallback = '-') {
-  return roleLabels[value || ''] || value || fallback;
+  return Object.prototype.hasOwnProperty.call(roleLabels, value || '') ? translateLabel(roleLabels[value || '']) : value || fallback;
 }
 
 export function organizationRoleLabel(value?: string | null, fallback = '-') {
@@ -104,7 +106,8 @@ export const usageSourceOptions: SelectOption[] = [
 ];
 
 export function usageSourceLabel(value?: string) {
-  return usageSourceLabels[value || ''] || value || '-';
+  const label = Object.prototype.hasOwnProperty.call(usageSourceLabels, value || '') ? usageSourceLabels[value || ''] : undefined;
+  return label ? translateLabel(label) : value || '-';
 }
 
 const auditSourceLabels: Record<string, string> = {
@@ -124,7 +127,7 @@ export const auditSourceOptions: SelectOption[] = [
 ];
 
 export function auditSourceLabel(value?: string) {
-  return auditSourceLabels[value || ''] || value || '-';
+  return Object.prototype.hasOwnProperty.call(auditSourceLabels, value || '') ? translateLabel(auditSourceLabels[value || '']) : value || '-';
 }
 
 const eventTypeLabels: Record<string, string> = {
@@ -143,7 +146,7 @@ export const eventTypeOptions: SelectOption[] = [
 ];
 
 export function eventTypeLabel(value?: string) {
-  return eventTypeLabels[value || ''] || value || '-';
+  return Object.prototype.hasOwnProperty.call(eventTypeLabels, value || '') ? translateLabel(eventTypeLabels[value || '']) : value || '-';
 }
 
 export function eventTypeListLabel(value: unknown) {
@@ -176,7 +179,7 @@ export const severityOptions: SelectOption[] = [
 ];
 
 export function severityLabel(value?: string) {
-  return severityLabels[value || ''] || value || '-';
+  return Object.prototype.hasOwnProperty.call(severityLabels, value || '') ? translateLabel(severityLabels[value || '']) : value || '-';
 }
 
 const eventStatusLabels: Record<string, string> = {
@@ -186,7 +189,7 @@ const eventStatusLabels: Record<string, string> = {
 };
 
 export function eventStatusLabel(value?: string) {
-  return eventStatusLabels[value || ''] || value || '-';
+  return Object.prototype.hasOwnProperty.call(eventStatusLabels, value || '') ? translateLabel(eventStatusLabels[value || '']) : value || '-';
 }
 
 const deliveryStateLabels: Record<string, string> = {
@@ -212,7 +215,7 @@ export const deliveryStatusOptions: SelectOption[] = [
 ];
 
 export function deliveryStateLabel(value?: string) {
-  return deliveryStateLabels[value || ''] || value || '-';
+  return Object.prototype.hasOwnProperty.call(deliveryStateLabels, value || '') ? translateLabel(deliveryStateLabels[value || '']) : value || '-';
 }
 
 const notificationResourceLabels: Record<string, string> = {
@@ -226,21 +229,21 @@ const notificationResourceLabels: Record<string, string> = {
 
 export function notificationResourceLabel(resource?: string, resourceId?: string | number | null) {
   if (!resource) return '-';
-  const label = notificationResourceLabels[resource] || resource;
+  const label = Object.prototype.hasOwnProperty.call(notificationResourceLabels, resource) ? translateLabel(notificationResourceLabels[resource]) : resource;
   return resourceId !== undefined && resourceId !== null && String(resourceId) !== ''
     ? `${label} #${resourceId}`
     : label;
 }
 
 export function notificationTitleLabel(eventType?: string, title?: string) {
-  if (eventType === 'api_key.disabled') return '访问凭证已停用';
+  if (eventType === 'api_key.disabled') return t('访问凭证已停用');
   return title || '-';
 }
 
 export function notificationMessageLabel(eventType?: string, message?: string) {
   if (eventType === 'api_key.disabled') {
     const match = String(message || '').match(/^API key (.+) was disabled$/);
-    if (match) return `访问凭证 ${match[1]} 已停用`;
+    if (match) return t('访问凭证 {name} 已停用', { name: match[1] });
   }
   return message || '-';
 }
@@ -252,5 +255,5 @@ const internalStatusLabels: Record<string, string> = {
 };
 
 export function internalStatusLabel(value?: string) {
-  return internalStatusLabels[value || ''] || value || '-';
+  return Object.prototype.hasOwnProperty.call(internalStatusLabels, value || '') ? translateLabel(internalStatusLabels[value || '']) : value || '-';
 }

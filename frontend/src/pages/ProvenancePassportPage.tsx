@@ -1,3 +1,6 @@
+import '../i18n/security';
+import type { MessageKey } from '../i18n/catalog';
+import { translate as t, useI18n, labelFor } from '../i18n';
 import { useEffect, useMemo, useState } from 'react';
 import { Banner, Button, Table, Tag, TextArea, Typography } from '@douyinfe/semi-ui';
 import { api, ApiError } from '../api/client';
@@ -150,16 +153,17 @@ const compactRef = (value: string) => value.length > 30
   : value;
 
 export default function ProvenancePassportPage() {
+  const { locale } = useI18n();
   const [contract, setContract] = useState<ProvenancePassportContract | null>(null);
   const [input, setInput] = useState('');
   const [report, setReport] = useState<ProvenancePassportReport | null>(null);
   const [selectedKey, setSelectedKey] = useState('reference');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<{key: MessageKey; values?: Record<string, string | number>} | null>(null);
 
   const preview = (body: string) => {
     setLoading(true);
-    setError('');
+    setError(null);
     return api.previewProvenancePassport(body)
       .then((next: ProvenancePassportReport) => {
         setReport(next);
@@ -168,9 +172,7 @@ export default function ProvenancePassportPage() {
       .catch((previewError: unknown) => {
         setReport(null);
         setSelectedKey('reference');
-        setError(previewError instanceof ApiError
-          ? `校验失败（${previewError.status}）：${previewError.message}`
-          : 'Provenance Passport 不满足严格合同。');
+        setError(previewError instanceof ApiError ? {key: '校验失败（{status}）：{detail}', values: {status: previewError.status, detail: previewError.message}} : {key: 'Provenance Passport 不满足严格合同。'});
       })
       .finally(() => setLoading(false));
   };
@@ -187,16 +189,14 @@ export default function ProvenancePassportPage() {
       })
       .catch((loadError: unknown) => {
         if (!active) return;
-        setError(loadError instanceof ApiError
-          ? `合同加载失败（${loadError.status}）：${loadError.message}`
-          : 'Provenance Passport 合同暂不可用。');
+        setError(loadError instanceof ApiError ? {key: '合同加载失败（{status}）：{detail}', values: {status: loadError.status, detail: loadError.message}} : {key: 'Provenance Passport 合同暂不可用。'});
       });
     return () => { active = false; };
   }, []);
 
   const connectors: ConnectorRow[] = report ? [
-    { ...report.reference_connector, key: 'reference', role: '首个 Reference Connector' },
-    { ...report.second_connector, key: 'second', role: '异构一致性 Connector' },
+    { ...report.reference_connector, key: 'reference', role: t("首个 Reference Connector") },
+    { ...report.second_connector, key: 'second', role: t("异构一致性 Connector") },
   ] : [];
   const selectedConnector = connectors.find(item => item.key === selectedKey) || connectors[0] || null;
   const fieldRows = report
@@ -210,7 +210,7 @@ export default function ProvenancePassportPage() {
 
   const connectorColumns = useMemo(() => [
     {
-      title: '角色',
+      title: t("角色"),
       dataIndex: 'role',
       width: 180,
     },
@@ -221,41 +221,41 @@ export default function ProvenancePassportPage() {
       render: (value: string) => <span className="ur-mono-break">{value}</span>,
     },
     {
-      title: '一致性',
+      title: t("一致性"),
       dataIndex: 'status',
       width: 110,
       render: (value: string) => <Tag color={value === 'pass' ? 'green' : 'red'}>{value}</Tag>,
     },
     {
-      title: '运行态',
+      title: t("运行态"),
       dataIndex: 'runtime_registered',
-      render: (value: boolean) => value ? 'UniRouter 已注册' : '仅共享一致性',
+      render: (value: boolean) => value ? t("UniRouter 已注册") : t("仅共享一致性"),
     },
-  ], []);
+  ], [locale]);
 
   const fieldColumns = useMemo(() => [
     {
-      title: '分类',
+      title: t("分类"),
       dataIndex: 'classification',
       width: 125,
       render: (value: string) => (
         <Tag color={value === 'direct' ? 'blue' : value === 'missing' ? 'orange' : 'grey'}>
-          {classNames[value] || value}
+          {labelFor(classNames, value)}
         </Tag>
       ),
     },
     {
-      title: '字段 / Claim',
+      title: t("字段 / Claim"),
       dataIndex: 'field',
       width: 250,
       render: (value: string) => <span className="ur-mono-break">{value}</span>,
     },
     {
-      title: '证据路径',
+      title: t("证据路径"),
       dataIndex: 'evidence_path',
       render: (value: string) => <span className="ur-mono-break">{value}</span>,
     },
-  ], []);
+  ], [locale]);
 
   const restoreFixture = () => {
     if (!contract) return;
@@ -265,15 +265,15 @@ export default function ProvenancePassportPage() {
   };
 
   return (
-    <div className="ur-page">
+    <div className="ur-page ur-security-workspace">
       <PageHeader
-        eyebrow="可观测与集成"
+        eyebrow={t("可观测与集成")}
         title="Provenance & Capture-Gap Passport"
-        description="把来源原字节、共享事件身份、直接/派生/声明/缺失证据、四类 Capture Gap 与 Connector 一致性放到同一个可复核工作区。"
+        description={t("把来源原字节、共享事件身份、直接/派生/声明/缺失证据、四类 Capture Gap 与 Connector 一致性放到同一个可复核工作区。")}
       />
       <Banner
         type="info"
-        description="LiteLLM 是共享协议权威中的第二个异构 Connector，仅用于跨语言一致性证明；它没有进入 UniRouter 运行时 registry，也不由 UniRouter 持有其凭据、Cursor 或 Checkpoint。OpenInference 仍是元数据观察投影，不被误称为来源事实或 Connector 运行时。"
+        description={t("LiteLLM 是共享协议权威中的第二个异构 Connector，仅用于跨语言一致性证明；它没有进入 UniRouter 运行时 registry，也不由 UniRouter 持有其凭据、Cursor 或 Checkpoint。OpenInference 仍是元数据观察投影，不被误称为来源事实或 Connector 运行时。")}
         closeIcon={null}
         style={{ marginBottom: 16 }}
       />
@@ -282,9 +282,9 @@ export default function ProvenancePassportPage() {
         <main className="ur-explorer-panel">
           <div className="ur-panel-title">
             <div>
-              <Typography.Title heading={5} style={{ margin: 0 }}>来源 Passport 与 Connector 证据</Typography.Title>
+              <Typography.Title heading={5} style={{ margin: 0 }}>{t("来源 Passport 与 Connector 证据")}</Typography.Title>
               <Typography.Text className="ur-panel-hint">
-                {contract ? `${contract.contract_version} · product protocol v${report?.protocol.version || '—'}` : '正在读取离线合同'}
+                {contract ? `${contract.contract_version} · product protocol v${report?.protocol.version || '—'}` : t("正在读取离线合同")}
               </Typography.Text>
             </div>
             <Tag color="blue">exact-source-bytes</Tag>
@@ -306,14 +306,14 @@ export default function ProvenancePassportPage() {
 
           {report && (
             <div className="ur-kpi-grid ur-governance-kpis">
-              <MetricTile label="直接事实" value={formatInteger(report.field_groups.direct.length)} tone="blue" />
-              <MetricTile label="派生 / 声明" value={formatInteger(report.field_groups.derived.length + report.field_groups.declared.length)} tone="green" />
-              <MetricTile label="缺失 Claims" value={formatInteger(report.field_groups.missing.length)} tone="amber" />
+              <MetricTile label={t("直接事实")} value={formatInteger(report.field_groups.direct.length)} tone="blue" />
+              <MetricTile label={t("派生 / 声明")} value={formatInteger(report.field_groups.derived.length + report.field_groups.declared.length)} tone="green" />
+              <MetricTile label={t("缺失 Claims")} value={formatInteger(report.field_groups.missing.length)} tone="amber" />
               <MetricTile label="Source bytes" value={formatInteger(report.source.source_bytes)} tone="blue" />
             </div>
           )}
 
-          <Typography.Title heading={6}>字段来源与缺口</Typography.Title>
+          <Typography.Title heading={6}>{t("字段来源与缺口")}</Typography.Title>
           <div className="ur-table-shell">
             <Table
               rowKey="key"
@@ -324,7 +324,7 @@ export default function ProvenancePassportPage() {
             />
           </div>
 
-          <Typography.Title heading={6}>当前 Passport JSON</Typography.Title>
+          <Typography.Title heading={6}>{t("当前 Passport JSON")}</Typography.Title>
           <TextArea
             aria-label="Provenance Passport JSON"
             value={input}
@@ -332,22 +332,22 @@ export default function ProvenancePassportPage() {
               setInput(value);
               setReport(null);
               setSelectedKey('reference');
-              setError('');
+              setError(null);
             }}
             autosize={{ minRows: 9, maxRows: 16 }}
           />
           <div className="ur-governance-actions">
-            <Button type="primary" loading={loading} onClick={() => void preview(input)}>生成离线 Passport</Button>
-            <Button disabled={!contract} onClick={restoreFixture}>恢复安全示例</Button>
+            <Button type="primary" loading={loading} onClick={() => void preview(input)}>{t("生成离线 Passport")}</Button>
+            <Button disabled={!contract} onClick={restoreFixture}>{t("恢复安全示例")}</Button>
           </div>
-          {error && <Banner type="danger" description={error} style={{ marginTop: 12 }} />}
+          {error && <Banner type="danger" description={error ? t(error.key, error.values) : undefined} style={{ marginTop: 12 }} />}
         </main>
 
-        <aside className="ur-explorer-panel ur-explorer-detail" aria-label="Provenance Passport 检查器">
+        <aside className="ur-explorer-panel ur-explorer-detail" aria-label={t("Provenance Passport 检查器")}>
           <div className="ur-detail-header">
             <div>
-              <Typography.Text className="ur-panel-hint">来源凭证检查器</Typography.Text>
-              <Typography.Title heading={5} style={{ margin: 0 }}>来源、兼容性与隔离边界</Typography.Title>
+              <Typography.Text className="ur-panel-hint">{t("来源凭证检查器")}</Typography.Text>
+              <Typography.Title heading={5} style={{ margin: 0 }}>{t("来源、兼容性与隔离边界")}</Typography.Title>
             </div>
             <Tag color={selectedConnector?.runtime_registered ? 'green' : 'blue'}>
               {selectedConnector?.runtime_registered ? 'Reference runtime' : 'conformance-only'}
@@ -356,29 +356,29 @@ export default function ProvenancePassportPage() {
           {report && selectedConnector ? (
             <dl className="ur-financial-truth-detail">
               <dt>Request</dt><dd className="ur-mono-break">{report.source.request_ref}</dd>
-              <dt>终态 / Revision</dt><dd>{report.source.terminal_status} / {report.source.source_revision}</dd>
-              <dt>Source 原字节</dt><dd>{report.source.exact_bytes_preserved ? '精确保留' : '未证明'}</dd>
+              <dt>{t("终态 / Revision")}</dt><dd>{report.source.terminal_status} / {report.source.source_revision}</dd>
+              <dt>{t("Source 原字节")}</dt><dd>{report.source.exact_bytes_preserved ? t("精确保留") : t("未证明")}</dd>
               <dt>Source hash</dt><dd className="ur-mono-break">{compactRef(report.source.source_hash)}</dd>
               <dt>Envelope hash</dt><dd className="ur-mono-break">{compactRef(report.source.envelope_hash)}</dd>
               <dt>Idempotency</dt><dd className="ur-mono-break">{compactRef(report.source.idempotency_key)}</dd>
-              <dt>固定 Capture Gaps</dt><dd>{formatInteger(report.capture_gaps.length)} 条</dd>
+              <dt>{t("固定 Capture Gaps")}</dt><dd>{formatInteger(report.capture_gaps.length)}  {t("条")}</dd>
               <dt>Feed endpoint</dt><dd className="ur-mono-break">{report.compatibility.endpoint}</dd>
-              <dt>DTO / Feed / Cursor</dt><dd>{report.compatibility.existing_dto_unchanged && report.compatibility.feed_wire_unchanged && report.compatibility.cursor_behavior_unchanged ? '保持兼容' : '存在冲突'}</dd>
-              <dt>当前 Connector</dt><dd className="ur-mono-break">{selectedConnector.connector_id}@{selectedConnector.connector_version}</dd>
+              <dt>DTO / Feed / Cursor</dt><dd>{report.compatibility.existing_dto_unchanged && report.compatibility.feed_wire_unchanged && report.compatibility.cursor_behavior_unchanged ? t("保持兼容") : t("存在冲突")}</dd>
+              <dt>{t("当前 Connector")}</dt><dd className="ur-mono-break">{selectedConnector.connector_id}@{selectedConnector.connector_version}</dd>
               <dt>Source / Event Schema</dt><dd className="ur-mono-break">{selectedConnector.source_schema} → {selectedConnector.event_schema}</dd>
               <dt>Manifest</dt><dd className="ur-mono-break">{compactRef(selectedConnector.manifest_sha256)}</dd>
               <dt>Mapping</dt><dd className="ur-mono-break">{compactRef(selectedConnector.source_mapping_sha256)}</dd>
               <dt>Conformance</dt><dd>{selectedConnector.conformance_cases}/{selectedConnector.conformance_cases} cases · {selectedConnector.conformance_classes} classes · 2 languages</dd>
-              <dt>供应商核心分支</dt><dd>{selectedConnector.core_vendor_branch_required ? '需要' : '不需要'}</dd>
-              <dt>UniRouter runtime</dt><dd>{selectedConnector.runtime_registered ? '已注册 Reference' : '未注册'}</dd>
-              <dt>凭据 / Checkpoint</dt><dd>{selectedConnector.credential_owned || selectedConnector.checkpoint_owned ? '产品持有部分状态' : 'UniRouter 不持有'}</dd>
-              <dt>OpenInference</dt><dd>{report.openinference.creates_source_truth ? '来源事实' : 'metadata observer'}</dd>
-              <dt>同步依赖 / 运行时变更</dt><dd>{report.runtime_boundary.synchronous_dependency ? '是' : '否'} / {report.runtime_boundary.runtime_mutation}</dd>
+              <dt>{t("供应商核心分支")}</dt><dd>{selectedConnector.core_vendor_branch_required ? t("需要") : t("不需要")}</dd>
+              <dt>UniRouter runtime</dt><dd>{selectedConnector.runtime_registered ? t("已注册 Reference") : t("未注册")}</dd>
+              <dt>{t("凭据 / Checkpoint")}</dt><dd>{selectedConnector.credential_owned || selectedConnector.checkpoint_owned ? t("产品持有部分状态") : t("UniRouter 不持有")}</dd>
+              <dt>OpenInference</dt><dd>{report.openinference.creates_source_truth ? t("来源事实") : 'metadata observer'}</dd>
+              <dt>{t("同步依赖 / 运行时变更")}</dt><dd>{report.runtime_boundary.synchronous_dependency ? t("是") : t("否")} / {report.runtime_boundary.runtime_mutation}</dd>
             </dl>
           ) : (
             <EmptyState
-              title="等待严格映射"
-              description="安全示例载入后会自动生成 Passport 并选中 Reference Connector；无需点击展开右侧检查器。"
+              title={t("等待严格映射")}
+              description={t("安全示例载入后会自动生成 Passport 并选中 Reference Connector；无需点击展开右侧检查器。")}
               minHeight={260}
             />
           )}

@@ -1,3 +1,5 @@
+import '../i18n/integrations';
+import { translate as t, useI18n } from '../i18n';
 import { useState } from 'react';
 import { Banner, Button, Tabs, Tag, Typography } from '@douyinfe/semi-ui';
 import { useSearchParams } from 'react-router-dom';
@@ -16,11 +18,12 @@ interface IntegrationCardProps {
 }
 
 function IntegrationCard({ title, state, description, boundary, action }: IntegrationCardProps) {
+  useI18n();
   const statePresentation = state === 'available'
-    ? { color: 'blue', label: '可配置' }
+    ? { color: 'blue', label: t("可配置") }
     : state === 'configured'
-      ? { color: 'green', label: '已配置' }
-      : { color: 'orange', label: '规划中' };
+      ? { color: 'green', label: t("已配置") }
+      : { color: 'orange', label: t("规划中") };
   return (
     <Surface className="ur-integration-card">
       <div className="ur-detail-header">
@@ -29,15 +32,16 @@ function IntegrationCard({ title, state, description, boundary, action }: Integr
       </div>
       <Paragraph>{description}</Paragraph>
       <dl className="ur-financial-truth-detail">
-        <dt>权限边界</dt><dd>{boundary}</dd>
-        <dt>运行方式</dt><dd>独立连接服务，不在 UniRouter 模型网关进程内运行</dd>
-        <dt>当前动作</dt><dd>{action || '等待具备真实企业环境后验证'}</dd>
+        <dt>{t("权限边界")}</dt><dd>{boundary}</dd>
+        <dt>{t("运行方式")}</dt><dd>{t("独立连接服务，不在 UniRouter 模型网关进程内运行")}</dd>
+        <dt>{t("当前动作")}</dt><dd>{action || t("等待具备真实企业环境后验证")}</dd>
       </dl>
     </Surface>
   );
 }
 
 export default function IntegrationsPage() {
+  useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
   const requested = searchParams.get('tab');
   const [activeTab, setActiveTab] = useState(['xinsight', 'feishu', 'enterprise'].includes(requested || '') ? requested! : 'catalog');
@@ -48,64 +52,64 @@ export default function IntegrationsPage() {
   };
 
   return (
-    <div className="ur-page ur-page-wide">
+    <div className="ur-page ur-page-wide ur-integration-workspace">
       <PageHeader
-        eyebrow="系统与集成"
-        title="集成管理"
-        description="统一查看可用或规划中的外部系统连接，以及每项连接能读取和写入什么；外部系统仍独立管理账号、数据和最终操作。"
+        eyebrow={t("系统与集成")}
+        title={t("集成管理")}
+        description={t("统一查看可用或规划中的外部系统连接，以及每项连接能读取和写入什么；外部系统仍独立管理账号、数据和最终操作。")}
       />
       <Banner
         type="info"
-        description="所有集成都按最小权限隔离运行，不进入模型请求关键路径。连接 X-Insight、飞书或其他企业系统，不会自动获得模型、管理员或财务权限。"
+        description={t("所有集成都按最小权限隔离运行，不进入模型请求关键路径。连接 X-Insight、飞书或其他企业系统，不会自动获得模型、管理员或财务权限。")}
         closeIcon={null}
         style={{ marginBottom: 16 }}
       />
       <Tabs activeKey={activeTab} onChange={changeTab} type="line">
-        <TabPane tab="集成目录" itemKey="catalog">
+        <TabPane tab={t("集成目录")} itemKey="catalog">
           <div className="ur-integration-grid">
             <IntegrationCard
-              title="X-Insight 执行记录订阅"
+              title={t("X-Insight 执行记录订阅")}
               state="available"
-              description="提供执行来源事实；可另行明确授权同步可用正文。完成请求摘要通道仅含元数据，不授予模型或管理员权限。"
-              boundary="UniRouter 只提供来源事实；X-Insight 独立负责存储、分析与调查。"
-              action="在“X-Insight”页签确认接入并查看同步状态"
+              description={t("在 Foigent 中，UniRouter 管理执行、用量与费用事实；X-Insight 异步接收已授权事实，用于证据分析与调查。完成请求摘要仅含元数据；来源类别和正文副本另行明确授权。")}
+              boundary={t("UniRouter 提供来源事实，X-Insight 独立管理证据。接入需要已部署的受信 X-Insight、当前项目权限和两端确认；可配置不代表公开托管服务或已经连接。")}
+              action={t("在“X-Insight”页签确认接入并查看同步状态")}
             />
             <IntegrationCard
-              title="飞书企业机器人"
+              title={t("飞书企业机器人")}
               state="planned"
-              description="面向企业群聊与机器人事件的隔离适配器；需要 3 秒内确认、至少一次处理与事件幂等。"
-              boundary="机器人凭据与事件处理留在 Adapter；UniRouter 只接收经过身份绑定的模型调用。"
+              description={t("面向企业群聊与机器人事件的隔离适配器；需要 3 秒内确认、至少一次处理与事件幂等。")}
+              boundary={t("机器人凭据与事件处理留在 Adapter；UniRouter 只接收经过身份绑定的模型调用。")}
             />
             <IntegrationCard
-              title="飞书 Aily"
+              title={t("飞书 Aily")}
               state="planned"
-              description="需要真实 Aily 租户和应用环境才能冻结精确适配合同，本轮只保留架构位置。"
-              boundary="Aily 平台配置和凭据不进入 UniRouter 核心路由、计费或 IAM 扩展入口。"
+              description={t("需要真实 Aily 租户和应用环境才能冻结精确适配合同，本轮只保留架构位置。")}
+              boundary={t("Aily 平台配置和凭据不进入 UniRouter 核心路由、计费或 IAM 扩展入口。")}
             />
             <IntegrationCard
-              title="企业目录 / HCM / IAM"
+              title={t("企业目录 / HCM / IAM")}
               state="planned"
-              description="未来对接飞书、钉钉、AD 等权威组织源，支持增量同步、离职停权和有效期证据。"
-              boundary="UniRouter 保存映射、有效权限与审计；权威人员和组织事实仍由企业目录拥有。"
+              description={t("未来对接飞书、钉钉、AD 等权威组织源，支持增量同步、离职停权和有效期证据。")}
+              boundary={t("UniRouter 保存映射、有效权限与审计；权威人员和组织事实仍由企业目录拥有。")}
             />
           </div>
         </TabPane>
         <TabPane tab="X-Insight" itemKey="xinsight">
           {activeTab === 'xinsight' && <DataExchangePage />}
         </TabPane>
-        <TabPane tab="飞书" itemKey="feishu">
-          <Surface title="飞书适配准备" description="暂无真实租户，因此不创建凭据、不接入流量、不声明已验证。">
+        <TabPane tab={t("飞书")} itemKey="feishu">
+          <Surface title={t("飞书适配准备")} description={t("暂无真实租户，因此不创建凭据、不接入流量、不声明已验证。")}>
             <div className="ur-readiness-axis-list">
-              <div className="ur-readiness-axis"><div><strong>企业机器人事件合同</strong><Tag color="orange">待环境验证</Tag></div><Text>预留事件去重、快速 ACK、异步模型调用、重试与审计边界。</Text></div>
-              <div className="ur-readiness-axis"><div><strong>Aily 适配合同</strong><Tag color="orange">待环境验证</Tag></div><Text>仅记录 IntegrationInstance 位置；不根据公开说明猜测客户环境配置。</Text></div>
-              <div className="ur-readiness-axis"><div><strong>密钥与隔离</strong><Tag color="green">边界已冻结</Tag></div><Text>飞书 App Secret 不进入 UniRouter 通用前端或网关进程，适配器采用独立最小权限凭据。</Text></div>
+              <div className="ur-readiness-axis"><div><strong>{t("企业机器人事件合同")}</strong><Tag color="orange">{t("待环境验证")}</Tag></div><Text>{t("预留事件去重、快速 ACK、异步模型调用、重试与审计边界。")}</Text></div>
+              <div className="ur-readiness-axis"><div><strong>{t("Aily 适配合同")}</strong><Tag color="orange">{t("待环境验证")}</Tag></div><Text>{t("仅记录 IntegrationInstance 位置；不根据公开说明猜测客户环境配置。")}</Text></div>
+              <div className="ur-readiness-axis"><div><strong>{t("密钥与隔离")}</strong><Tag color="green">{t("边界已冻结")}</Tag></div><Text>{t("飞书 App Secret 不进入 UniRouter 通用前端或网关进程，适配器采用独立最小权限凭据。")}</Text></div>
             </div>
-            <Button disabled>配置飞书实例（需要真实环境）</Button>
+            <Button disabled>{t("配置飞书实例（需要真实环境）")}</Button>
           </Surface>
         </TabPane>
-        <TabPane tab="企业系统" itemKey="enterprise">
-          <Surface title="企业集成目录" description="HCM、AD、飞书/钉钉组织架构与 ERP 只在客户 POC 环境具备后接入。">
-            <Text>当前可以创建本地账号、组织、项目与应用；外部组织同步不会被伪装成已实现能力。</Text>
+        <TabPane tab={t("企业系统")} itemKey="enterprise">
+          <Surface title={t("企业集成目录")} description={t("HCM、AD、飞书/钉钉组织架构与 ERP 只在客户 POC 环境具备后接入。")}>
+            <Text>{t("当前可以创建本地账号、组织、项目与应用；外部组织同步不会被伪装成已实现能力。")}</Text>
           </Surface>
         </TabPane>
       </Tabs>
