@@ -1,3 +1,5 @@
+import '../i18n/people';
+import { translate as t, localizeOptions, useI18n } from '../i18n';
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Form, SideSheet, Table, Toast } from '@douyinfe/semi-ui';
 import { IconEdit, IconRefresh } from '@douyinfe/semi-icons';
@@ -22,6 +24,7 @@ const periodOptions = [
 ];
 
 export default function ProjectBudgetPanel() {
+  useI18n();
   const [projects, setProjects] = useState<ProjectBudget[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -40,7 +43,7 @@ export default function ProjectBudgetPanel() {
       .catch(() => {
         setProjects([]);
         setTotal(0);
-        Toast.error('项目预算加载失败');
+        Toast.error(t("项目预算加载失败"));
       })
       .finally(() => setLoading(false));
   }, [page, pageSize]);
@@ -58,7 +61,7 @@ export default function ProjectBudgetPanel() {
     if (!editing) return;
     const yuan = Number(values.budget_yuan || 0);
     if (!Number.isFinite(yuan) || yuan < 0 || yuan > maxProjectBudgetYuan) {
-      Toast.error(`预算金额需在 0 至 ${maxProjectBudgetYuan.toFixed(2)} 元之间`);
+      Toast.error(t('预算金额需在 0 至 {max} 元之间', { max: maxProjectBudgetYuan.toFixed(2) }));
       return;
     }
     try {
@@ -66,35 +69,35 @@ export default function ProjectBudgetPanel() {
         budget_cents: Math.round(yuan * 100),
         budget_period: values.budget_period,
       });
-      Toast.success('项目预算已更新');
+      Toast.success(t("项目预算已更新"));
       setEditing(null);
       await load(page, pageSize);
     } catch {
-      Toast.error('项目预算更新失败');
+      Toast.error(t("项目预算更新失败"));
     }
   };
 
   const columns = [
-    { title: '项目', dataIndex: 'name' },
-    { title: '标识', dataIndex: 'slug' },
-    { title: '状态', dataIndex: 'status', render: (status: string) => <StatusTag status={status}>{status === 'active' ? '启用' : status === 'disabled' ? '停用' : '归档'}</StatusTag> },
+    { title: t("项目"), dataIndex: 'name' },
+    { title: t("标识"), dataIndex: 'slug' },
+    { title: t("状态"), dataIndex: 'status', render: (status: string) => <StatusTag status={status}>{status === 'active' ? t("启用") : status === 'disabled' ? t("停用") : t("归档")}</StatusTag> },
     {
-      title: '预算',
+      title: t("预算"),
       render: (_: unknown, project: ProjectBudget) => project.budget_period === 'none' || !project.budget_cents
-        ? '不限制'
-        : `¥${(project.budget_cents / 100).toFixed(2)} / ${project.budget_period === 'daily' ? '日' : '月'}`,
+        ? t("不限制")
+        : `¥${(project.budget_cents / 100).toFixed(2)} / ${project.budget_period === 'daily' ? t("日") : t("月")}`,
     },
-    { title: '操作', render: (_: unknown, project: ProjectBudget) => <Button icon={<IconEdit />} onClick={() => setEditing(project)}>调整预算</Button> },
+    { title: t("操作"), render: (_: unknown, project: ProjectBudget) => <Button icon={<IconEdit />} onClick={() => setEditing(project)}>{t("调整预算")}</Button> },
   ];
 
   if (!loading && projects.length === 0) {
-    return <EmptyState title="暂无项目预算" description="项目创建后会在这里显示；账务管理员只能修改预算金额与周期。" />;
+    return <EmptyState title={t("暂无项目预算")} description={t("项目创建后会在这里显示；账务管理员只能修改预算金额与周期。")} />;
   }
 
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-        <Button icon={<IconRefresh />} onClick={() => load(page, pageSize)}>刷新</Button>
+        <Button icon={<IconRefresh />} onClick={() => load(page, pageSize)}>{t("刷新")}</Button>
       </div>
       <div className="ur-table-shell">
         <Table
@@ -113,19 +116,19 @@ export default function ProjectBudgetPanel() {
           }}
         />
       </div>
-      <SideSheet title={editing ? `调整预算 · ${editing.name}` : '调整预算'} visible={!!editing} onCancel={() => setEditing(null)} width={440}>
+      <SideSheet title={editing ? t('调整预算 · {name}', { name: editing.name }) : t("调整预算")} visible={!!editing} onCancel={() => setEditing(null)} width="min(440px, 100vw)">
         <Form getFormApi={setFormApi} onSubmit={save}>
           <Form.InputNumber
             field="budget_yuan"
-            label="预算金额（元）"
+            label={t("预算金额（元）")}
             min={0}
             max={maxProjectBudgetYuan}
             precision={2}
-            extraText="0 表示不限制；最大值由当前数据库金额字段上限决定。"
+            extraText={t("0 表示不限制；最大值由当前数据库金额字段上限决定。")}
             style={{ width: '100%' }}
           />
-          <Form.Select field="budget_period" aria-label="项目预算周期" label="预算周期" optionList={periodOptions} style={{ width: '100%' }} />
-          <Button type="primary" htmlType="submit">保存预算</Button>
+          <Form.Select field="budget_period" aria-label={t("项目预算周期")} label={t("预算周期")} optionList={localizeOptions(periodOptions)} style={{ width: '100%' }} />
+          <Button type="primary" htmlType="submit">{t("保存预算")}</Button>
         </Form>
       </SideSheet>
     </>

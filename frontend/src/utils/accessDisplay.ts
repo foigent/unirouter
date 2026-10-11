@@ -1,3 +1,5 @@
+import '../i18n/access';
+import { translate as t, translateLabel } from '../i18n';
 import { roleLabel } from './displayLabels';
 
 const scopeModeLabels: Record<string, string> = {
@@ -36,9 +38,9 @@ const reasonLabels: Record<string, string> = {
 };
 
 export function accessScopeLabel(projectRole?: string, scopeMode?: string) {
-  return `${roleLabel(projectRole)} · ${scopeModeLabels[scopeMode || ''] || scopeMode || '未说明范围'}`;
+  return `${roleLabel(projectRole)} · ${Object.prototype.hasOwnProperty.call(scopeModeLabels, scopeMode || '') ? translateLabel(scopeModeLabels[scopeMode || '']) : scopeMode || t('未说明范围')}`;
 }
 
 export function accessReasonLabel(reason?: string) {
-  return reasonLabels[reason || ''] || reason || '未说明原因';
+  return Object.prototype.hasOwnProperty.call(reasonLabels, reason || '') ? translateLabel(reasonLabels[reason || '']) : reason || t('未说明原因');
 }

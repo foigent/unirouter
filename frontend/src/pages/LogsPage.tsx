@@ -1,5 +1,6 @@
+import '../i18n/operations';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Typography, Table, Tag, Input, Select, Button, Space, Descriptions, Tooltip, Divider, Toast } from '@douyinfe/semi-ui';
+import { Typography, Table, Tag, Input, Select, Button, Space, Descriptions, Tooltip, Toast } from '@douyinfe/semi-ui';
 import { IconSearch, IconRefresh, IconCopy } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
@@ -8,6 +9,7 @@ import { useAuthStore } from '../store/auth';
 import { EmptyState, LatencyText, microsRatio, MoneyText, PageHeader, StatusTag, Surface } from '../ui';
 import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { usageSourceLabel, usageSourceOptions } from '../utils/displayLabels';
+import { translate as t, translateLabel, useI18n } from '../i18n';
 
 const { Title, Text } = Typography;
 
@@ -189,9 +191,9 @@ async function copyToClipboard(text: string) {
     } else if (!fallbackCopyText(text)) {
       throw new Error('fallback copy failed');
     }
-    Toast.success('已复制 Request ID');
+    Toast.success(t("已复制 Request ID"));
   } catch {
-    Toast.error('复制失败，请手动复制');
+    Toast.error(t("复制失败，请手动复制"));
   }
 }
 
@@ -214,11 +216,11 @@ function compactEvidenceValue(value?: string | null, max = 18) {
 }
 
 function cacheUsageLabel(status?: string) {
-  if (status === 'cache_read_reported') return '已回传缓存读取';
-  if (status === 'cache_write_reported') return '已回传缓存写入';
-  if (status === 'cache_hit_miss_reported') return '已回传命中/未命中';
-  if (status === 'cache_read_write_reported') return '已回传缓存读/写';
-  return '供应商未回传';
+  if (status === 'cache_read_reported') return t("已回传缓存读取");
+  if (status === 'cache_write_reported') return t("已回传缓存写入");
+  if (status === 'cache_hit_miss_reported') return t("已回传命中/未命中");
+  if (status === 'cache_read_write_reported') return t("已回传缓存读/写");
+  return t("供应商未回传");
 }
 
 function priceRatio(ratio?: number, cachePrice?: string, inputPrice?: string) {
@@ -317,6 +319,7 @@ function routeAttemptsFromTrace(events: TraceEvent[]): RouteAttempt[] {
 }
 
 export default function LogsPage() {
+  const { locale } = useI18n();
   const user = useAuthStore((state) => state.user);
   const platform = isPlatformAdminRole(organizationRoleForUser(user));
   const customerContext = resolveCustomerContext(user);
@@ -327,6 +330,9 @@ export default function LogsPage() {
   const [pageSize, setPageSize] = useState(50);
   const [total, setTotal] = useState(0);
   const [filters, setFilters] = useState<LogFilters>(paramsToFilters);
+  const [draftFilters, setDraftFilters] = useState<LogFilters>(paramsToFilters);
+  const pendingFilters = useRef<LogFilters>({});
+  const listRequestRef = useRef(0);
   const [selectedLog, setSelectedLog] = useState<Log | null>(null);
   const [receiptTab, setReceiptTab] = useState<ReceiptTab>('decision');
   const [traceEvents, setTraceEvents] = useState<TraceEvent[]>([]);
@@ -378,11 +384,17 @@ export default function LogsPage() {
   }, [loadTrace]);
 
   const fetchLogs = useCallback(async (p?: number) => {
+    const requestSequence = ++listRequestRef.current;
+    traceRequestRef.current += 1;
     setLoading(true);
     setLogsError(null);
+    setSelectedLog(null);
+    setTraceEvents([]);
+    setTraceError(null);
     try {
       const currentPage = p ?? page;
       const data = await api.getLogs(currentPage, pageSize, targetOrgID ? { ...filters, org_id: targetOrgID } : filters);
+      if (requestSequence !== listRequestRef.current) return;
       const nextLogs = Array.isArray(data.data) ? data.data : [];
       setLogs(nextLogs);
       setTotal(data.total || 0);
@@ -398,6 +410,7 @@ export default function LogsPage() {
         setTraceError(null);
       }
     } catch (e) {
+      if (requestSequence !== listRequestRef.current) return;
       console.error('Failed to fetch logs', e);
       setLogs([]);
       setTotal(0);
@@ -409,13 +422,14 @@ export default function LogsPage() {
       setTraceError(null);
       setLogsError('请求日志加载失败；当前筛选结果不可用。');
     } finally {
-      setLoading(false);
+      if (requestSequence === listRequestRef.current) setLoading(false);
     }
   }, [page, pageSize, filters, targetOrgID, selectLog]);
 
   useEffect(() => {
     if (!customerContextReady) return;
     fetchLogs();
+    return () => { listRequestRef.current += 1; traceRequestRef.current += 1; };
   }, [customerContextReady, fetchLogs]);
 
   useEffect(() => {
@@ -438,11 +452,19 @@ export default function LogsPage() {
   }, [filters, selectedLog?.id]);
 
   const updateFilter = useCallback((key: keyof LogFilters, value: string) => {
+    setDraftFilters(prev => ({ ...prev, [key]: value }));
+    pendingFilters.current[key] = value || undefined;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      setFilters(prev => ({ ...prev, [key]: value || undefined }));
+      const changes = pendingFilters.current;
+      pendingFilters.current = {};
+      setFilters(prev => ({ ...prev, ...changes }));
       setPage(1);
     }, 300);
+  }, []);
+
+  useEffect(() => () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
   }, []);
 
   useEffect(() => {
@@ -470,17 +492,23 @@ export default function LogsPage() {
   }, [logs, selectedLog?.id, selectLog]);
 
   const clearFilters = () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    pendingFilters.current = {};
+    setDraftFilters({});
     setFilters({});
+    setCustomTimeStart('');
+    setCustomTimeEnd('');
+    setSelectedPreset('');
     setPage(1);
   };
 
   const hasActiveFilters = Object.values(filters).some(v => v);
   const timePresets = [
-    { label: '最近 15 分钟', value: '15m' },
-    { label: '最近 1 小时', value: '1h' },
-    { label: '最近 24 小时', value: '24h' },
-    { label: '最近 7 天', value: '7d' },
-    { label: '自定义', value: 'custom' },
+    { label: t("最近 15 分钟"), value: '15m' },
+    { label: t("最近 1 小时"), value: '1h' },
+    { label: t("最近 24 小时"), value: '24h' },
+    { label: t("最近 7 天"), value: '7d' },
+    { label: t("自定义"), value: 'custom' },
   ];
 
   const handleTimePreset = (preset: string) => {
@@ -509,49 +537,50 @@ export default function LogsPage() {
   const tableColumns = useMemo(() => {
     const columns = [
     {
-      title: 'Request ID',
+      title: t('请求 / 时间'),
       dataIndex: 'request_id',
       key: 'request_id',
       width: 140,
-      render: (v: string) => (
+      render: (v: string, record: Log) => <div className="ur-log-cell">
         <div className="ur-request-id-cell">
-          <Text code style={{ fontSize: 12, maxWidth: 100 }} ellipsis={{ showTooltip: false }}>{v.slice(0, 12)}…</Text>
-          <Tooltip content="复制">
+          <Text code className="ur-log-request-id" title={v}>{v}</Text>
+          <Tooltip content={t("复制")}>
             <Button
               type="tertiary"
               size="small"
               icon={<IconCopy />}
               onClick={(e) => { e.stopPropagation(); copyToClipboard(v); }}
               className="ur-copy-button"
-              aria-label="复制 Request ID"
+              aria-label={t("复制 Request ID")}
             />
           </Tooltip>
         </div>
-      ),
+        <Text type="tertiary" size="small">{formatDateTime(record.created_at)}</Text>
+      </div>,
     },
     {
-      title: '模型',
+      title: t("模型"),
       dataIndex: 'model',
       key: 'model',
       width: 150,
-      render: (v: string) => <Tag size="small">{v}</Tag>,
+      render: (v: string, record: Log) => <div className="ur-log-cell"><Text size="small">{v}</Text><Text type="tertiary" size="small">{record.provider || '—'}</Text></div>,
     },
     {
-      title: '供应商',
+      title: t("供应商"),
       dataIndex: 'provider',
       key: 'provider',
       width: 110,
       render: (v: string) => <Tag size="small" color="blue">{v}</Tag>,
     },
     {
-      title: '状态码',
+      title: t("状态码"),
       dataIndex: 'status_code',
       key: 'status_code',
       width: 86,
       render: (v: number) => <StatusTag status={v}>{v}</StatusTag>,
     },
     {
-      title: '延迟',
+      title: t('延迟'),
       dataIndex: 'latency_ms',
       key: 'latency_ms',
       width: 90,
@@ -570,25 +599,25 @@ export default function LogsPage() {
       key: 'cache_usage_status',
       width: 132,
       render: (_: string, record: Log) => record.cache_usage_schema
-        ? <Tag size="small" color={(record.cache_read_tokens || 0) > 0 ? 'green' : 'blue'}>读 {(record.cache_read_tokens || 0).toLocaleString()} / 写 {(record.cache_creation_tokens || 0).toLocaleString()}</Tag>
-        : <Tag size="small">未回传</Tag>,
+        ? <Tag size="small" color={(record.cache_read_tokens || 0) > 0 ? 'green' : 'blue'}>{t('读 {read} / 写 {write}', { read: (record.cache_read_tokens || 0).toLocaleString(), write: (record.cache_creation_tokens || 0).toLocaleString() })}</Tag>
+        : <Tag size="small">{t("未回传")}</Tag>,
     },
     {
-      title: '来源',
+      title: t("来源"),
       dataIndex: 'usage_source',
       key: 'usage_source',
       width: 122,
       render: (v: string) => v ? <StatusTag status={v}>{usageSourceLabel(v)}</StatusTag> : '-',
     },
     {
-      title: '费用',
+      title: t("费用"),
       dataIndex: 'cost_micros',
       key: 'cost_micros',
       width: 90,
       render: (v: string) => <MoneyText micros={v || '0'} precision={6} tone="cost" />,
     },
     {
-      title: '时间',
+      title: t("时间"),
       dataIndex: 'created_at',
       key: 'created_at',
       width: 160,
@@ -596,15 +625,16 @@ export default function LogsPage() {
     },
     ];
     const compactColumnWidths: Record<string, number> = {
-      request_id: 124,
-      model: 116,
-      provider: 86,
-      status_code: 68,
+      request_id: 180,
+      model: 160,
+      status_code: 80,
+      latency_ms: 80,
+      cost_micros: 110,
     };
     return columns
-      .filter(col => ['request_id', 'model', 'provider', 'status_code'].includes(col.key as string))
+      .filter(col => ['request_id', 'model', 'status_code', 'latency_ms', 'cost_micros'].includes(col.key as string))
       .map(col => ({ ...col, width: compactColumnWidths[col.key as string] }));
-  }, []);
+  }, [locale]);
   const traceIDs = uniqueEvidenceValues(traceEvents, 'trace_id');
   const captureModes = uniqueEvidenceValues(traceEvents, 'capture_mode');
   const payloadModes = uniqueEvidenceValues(traceEvents, 'payload_capture_mode');
@@ -647,74 +677,74 @@ export default function LogsPage() {
       ? 'failed'
       : 'warning';
   const billingTerminalLabel = billingTerminalStatus === 'settled'
-    ? '已结算'
+    ? t('已结算')
     : billingTerminalStatus === 'cancelled_no_billable_output' || billingTerminalStatus === 'cancellation outcome captured'
-      ? '已取消（无可计费输出）'
+      ? t("已取消（无可计费输出）")
       : billingTerminalStatus === 'not captured'
-        ? '未捕获'
+        ? t("未捕获")
         : billingTerminalStatus === 'unavailable'
-          ? '不可用'
+          ? t("不可用")
           : billingTerminalStatus;
   const authoritySummary = traceLoading
-    ? '加载中'
+    ? t("加载中")
     : traceError
-    ? '不可用'
+    ? t("不可用")
     : actorRefs.length > 0
     ? `${actorTypes[0] || 'unknown'}:${compactEvidenceValue(actorRefs[0], 20)}`
-    : actorTypes[0] || '未捕获';
+    : actorTypes[0] || t("未捕获");
 
   if (!customerContextReady) {
     const blocker = customerContextBlockerCopy(customerContext.state as Exclude<typeof customerContext.state, 'ready'>);
     return (
       <div className="ur-page ur-page-wide">
-        <PageHeader eyebrow="监控与用量" title={blocker.title} description="执行请求、成本与证据必须绑定唯一客户；系统不会查询部署技术组织作为替代。" />
-        <Surface><EmptyState title={blocker.title} description={blocker.description} minHeight={260} /></Surface>
+        <PageHeader eyebrow={t("监控与用量")} title={translateLabel(blocker.title)} description={t("执行请求、成本与证据必须绑定唯一客户；系统不会查询部署技术组织作为替代。")} />
+        <Surface><EmptyState title={translateLabel(blocker.title)} description={translateLabel(blocker.description)} minHeight={260} /></Surface>
       </div>
     );
   }
 
   return (
-    <div className="ur-page ur-page-wide">
+    <div className="ur-page ur-page-wide ur-logs-workspace">
       <PageHeader
-        eyebrow="监控与用量"
-        title="执行请求"
-        description="以执行决策凭证定位权限、路由、策略、安全、成本终态和证据缺口。"
+        eyebrow={t("监控与用量")}
+        title={t("执行请求")}
+        description={t("以执行决策凭证定位权限、路由、策略、安全、成本终态和证据缺口。")}
         actions={(
           <>
-            {platform && <Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${targetOrgID}`}</Text>}
-            <Tag color="blue">{total} 条</Tag>
-            <Tooltip content="刷新">
-              <Button aria-label="刷新执行请求" icon={<IconRefresh />} size="small" onClick={() => fetchLogs()} />
+            {platform && <Text type="tertiary">{t('客户范围：{name}', { name: customerContext.orgName || t('组织 #{id}', { id: targetOrgID || '—' }) })}</Text>}
+            <Tag color="blue">{t('{count} 条', { count: total })}</Tag>
+            <Tooltip content={t("刷新")}>
+              <Button aria-label={t("刷新执行请求")} icon={<IconRefresh />} size="small" onClick={() => fetchLogs()} />
             </Tooltip>
           </>
         )}
       />
 
-      <div className="ur-explorer ur-explorer-with-detail">
-        <aside className="ur-explorer-panel ur-explorer-filters">
+      <section className="ur-logs-filters" aria-label={t('筛选器')}>
           <div className="ur-panel-title">
-            <Title heading={5} style={{ margin: 0 }}>筛选器</Title>
+            <Title heading={5} style={{ margin: 0 }}>{t("筛选器")}</Title>
             {hasActiveFilters && (
-              <Button type="tertiary" size="small" onClick={clearFilters}>清除</Button>
+              <Button type="tertiary" size="small" onClick={clearFilters}>{t("清除")}</Button>
             )}
           </div>
 
+          <div className="ur-logs-primary-filters">
           <div className="ur-filter-group">
-            <Text className="ur-filter-label">搜索</Text>
+            <Text className="ur-filter-label">{t('搜索')}</Text>
             <Input
               ref={searchRef as any}
-              aria-label="搜索执行请求"
+              aria-label={t("搜索执行请求")}
               prefix={<IconSearch />}
-              placeholder="请求、模型、供应商或证据标识"
+              placeholder={t("请求、模型、供应商或证据标识")}
               onChange={(v) => updateFilter('search', v)}
-              defaultValue={filters.search || ''}
+              value={draftFilters.search || ''}
               showClear
               size="small"
             />
           </div>
 
           <div className="ur-filter-group">
-            <Text className="ur-filter-label">时间范围</Text>
+            <Text className="ur-filter-label">{t("时间范围")}</Text>
             <div className="ur-chip-row">
               {timePresets.map(p => (
                 <Button
@@ -730,21 +760,24 @@ export default function LogsPage() {
             </div>
             {selectedPreset === 'custom' && (
               <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
-                <Input aria-label="自定义开始时间" size="small" type="datetime-local" value={customTimeStart} onChange={setCustomTimeStart} />
-                <Input aria-label="自定义结束时间" size="small" type="datetime-local" value={customTimeEnd} onChange={setCustomTimeEnd} />
-                <Button size="small" type="primary" onClick={() => handleTimePreset('custom')}>确定</Button>
+                <Input aria-label={t("自定义开始时间")} size="small" type="datetime-local" value={customTimeStart} onChange={setCustomTimeStart} />
+                <Input aria-label={t("自定义结束时间")} size="small" type="datetime-local" value={customTimeEnd} onChange={setCustomTimeEnd} />
+                <Button size="small" type="primary" onClick={() => handleTimePreset('custom')}>{t("确定")}</Button>
               </div>
             )}
           </div>
 
-          <Divider style={{ margin: '12px 0' }} />
+          </div>
+          <details className="ur-advanced-filters">
+          <summary>{t('高级筛选')}</summary>
+          <div className="ur-logs-filter-grid">
 
           <div className="ur-filter-group">
-            <Text id="logs-provider-filter-label" className="ur-filter-label">供应商</Text>
+            <Text id="logs-provider-filter-label" className="ur-filter-label">{t("供应商")}</Text>
             <Select
               aria-labelledby="logs-provider-filter-label"
               size="small"
-              placeholder="选择供应商"
+              placeholder={t("选择供应商")}
               value={filters.provider || undefined}
               onChange={(v) => { setFilters(prev => ({ ...prev, provider: v as string || undefined })); setPage(1); }}
               style={{ width: '100%' }}
@@ -756,11 +789,11 @@ export default function LogsPage() {
           </div>
 
           <div className="ur-filter-group">
-            <Text id="logs-model-filter-label" className="ur-filter-label">模型</Text>
+            <Text id="logs-model-filter-label" className="ur-filter-label">{t("模型")}</Text>
             <Select
               aria-labelledby="logs-model-filter-label"
               size="small"
-              placeholder="模型名称"
+              placeholder={t("模型名称")}
               value={filters.model || undefined}
               onChange={(v) => { setFilters(prev => ({ ...prev, model: v as string || undefined })); setPage(1); }}
               style={{ width: '100%' }}
@@ -772,128 +805,133 @@ export default function LogsPage() {
           </div>
 
           <div className="ur-filter-group">
-            <Text id="logs-status-filter-label" className="ur-filter-label">状态码</Text>
+            <Text id="logs-status-filter-label" className="ur-filter-label">{t("状态码")}</Text>
             <Select
               aria-labelledby="logs-status-filter-label"
               size="small"
-              placeholder="选择状态码"
+              placeholder={t("选择状态码")}
               style={{ width: '100%' }}
               onChange={(v) => setFilters(prev => ({ ...prev, status_code: v as string || undefined }))}
               value={filters.status_code || undefined}
             >
-              <Select.Option value="2xx">2xx 成功</Select.Option>
-              <Select.Option value="4xx">4xx 客户端错误</Select.Option>
-              <Select.Option value="429">429 限流</Select.Option>
-              <Select.Option value="5xx">5xx 服务端错误</Select.Option>
+              <Select.Option value="2xx">{t("2xx 成功")}</Select.Option>
+              <Select.Option value="4xx">{t("4xx 客户端错误")}</Select.Option>
+              <Select.Option value="429">{t("429 限流")}</Select.Option>
+              <Select.Option value="5xx">{t("5xx 服务端错误")}</Select.Option>
             </Select>
           </div>
 
           <div className="ur-filter-group">
-            <Text id="logs-usage-source-filter-label" className="ur-filter-label">计量来源</Text>
+            <Text id="logs-usage-source-filter-label" className="ur-filter-label">{t("计量来源")}</Text>
             <Select
               aria-labelledby="logs-usage-source-filter-label"
               size="small"
-              placeholder="来源"
+              placeholder={t("来源")}
               style={{ width: '100%' }}
               onChange={(v) => { setFilters(prev => ({ ...prev, usage_source: v as string || undefined })); setPage(1); }}
               value={filters.usage_source || undefined}
             >
               {usageSourceOptions.map(option => (
-                <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>
+                <Select.Option key={option.value} value={option.value}>{translateLabel(option.label)}</Select.Option>
               ))}
             </Select>
           </div>
 
           <div className="ur-filter-group">
-            <Text className="ur-filter-label">延迟范围（毫秒）</Text>
+            <Text className="ur-filter-label">{t("延迟范围（毫秒）")}</Text>
             <Space>
               <Input
-                aria-label="最小延迟毫秒数"
+                aria-label={t("最小延迟毫秒数")}
                 size="small"
-                placeholder="最小"
+                placeholder={t("最小")}
                 style={{ width: 104 }}
                 onChange={(v) => updateFilter('latency_min', v)}
-                defaultValue={filters.latency_min || ''}
+                value={draftFilters.latency_min || ''}
               />
               <Text type="tertiary">-</Text>
               <Input
-                aria-label="最大延迟毫秒数"
+                aria-label={t("最大延迟毫秒数")}
                 size="small"
-                placeholder="最大"
+                placeholder={t("最大")}
                 style={{ width: 104 }}
                 onChange={(v) => updateFilter('latency_max', v)}
-                defaultValue={filters.latency_max || ''}
+                value={draftFilters.latency_max || ''}
               />
             </Space>
           </div>
 
           <div className="ur-filter-group">
-            <Text className="ur-filter-label">操作 ID（Request ID）</Text>
+            <Text className="ur-filter-label">{t("操作 ID（Request ID）")}</Text>
             <Input
-              aria-label="操作 ID 精确匹配"
+              aria-label={t("操作 ID 精确匹配")}
               size="small"
-              placeholder="精确匹配"
+              placeholder={t("精确匹配")}
               onChange={(v) => updateFilter('request_id', v)}
-              defaultValue={filters.request_id || ''}
+              value={draftFilters.request_id || ''}
               showClear
             />
             <Input
-              aria-label="客户端请求 ID 精确匹配"
+              aria-label={t("客户端请求 ID 精确匹配")}
               size="small"
-              placeholder="客户端请求 ID（精确匹配）"
+              placeholder={t("客户端请求 ID（精确匹配）")}
               onChange={(v) => updateFilter('client_request_id', v)}
-              defaultValue={filters.client_request_id || ''}
+              value={draftFilters.client_request_id || ''}
               showClear
               style={{ marginTop: 6 }}
             />
           </div>
 
-          <Divider style={{ margin: '12px 0' }} />
-
-          <div className="ur-filter-group">
-            <Text className="ur-filter-label">证据标识</Text>
+          <div className="ur-filter-group ur-logs-evidence-filters">
+            <Text className="ur-filter-label">{t("证据标识")}</Text>
             <div style={{ display: 'grid', gap: 6 }}>
-              <Input aria-label="Trace ID 精确匹配" size="small" placeholder="Trace ID（精确匹配）" onChange={(v) => updateFilter('trace_id', v)} defaultValue={filters.trace_id || ''} showClear />
-              <Input aria-label="工作流 ID 精确匹配" size="small" placeholder="工作流 ID（精确匹配）" onChange={(v) => updateFilter('workflow_id', v)} defaultValue={filters.workflow_id || ''} showClear />
-              <Input aria-label="Agent ID 精确匹配" size="small" placeholder="Agent ID（精确匹配）" onChange={(v) => updateFilter('agent_id', v)} defaultValue={filters.agent_id || ''} showClear />
-              <Input aria-label="尝试 ID 精确匹配" size="small" placeholder="尝试 ID（精确匹配）" onChange={(v) => updateFilter('attempt_id', v)} defaultValue={filters.attempt_id || ''} showClear />
-              <Input aria-label="上游 Request ID 精确匹配" size="small" placeholder="上游 Request ID（精确匹配）" onChange={(v) => updateFilter('upstream_request_id', v)} defaultValue={filters.upstream_request_id || ''} showClear />
-              <Input aria-label="证据引用精确匹配" size="small" placeholder="证据引用（精确匹配）" onChange={(v) => updateFilter('evidence_ref', v)} defaultValue={filters.evidence_ref || ''} showClear />
-              <Input aria-label="来源事件哈希精确匹配" size="small" placeholder="来源事件哈希（精确匹配）" onChange={(v) => updateFilter('source_event_hash', v)} defaultValue={filters.source_event_hash || ''} showClear />
+              <Input aria-label={t("Trace ID 精确匹配")} size="small" placeholder={t("Trace ID（精确匹配）")} onChange={(v) => updateFilter('trace_id', v)} value={draftFilters.trace_id || ''} showClear />
+              <Input aria-label={t("工作流 ID 精确匹配")} size="small" placeholder={t("工作流 ID（精确匹配）")} onChange={(v) => updateFilter('workflow_id', v)} value={draftFilters.workflow_id || ''} showClear />
+              <Input aria-label={t("Agent ID 精确匹配")} size="small" placeholder={t("Agent ID（精确匹配）")} onChange={(v) => updateFilter('agent_id', v)} value={draftFilters.agent_id || ''} showClear />
+              <Input aria-label={t("尝试 ID 精确匹配")} size="small" placeholder={t("尝试 ID（精确匹配）")} onChange={(v) => updateFilter('attempt_id', v)} value={draftFilters.attempt_id || ''} showClear />
+              <Input aria-label={t("上游 Request ID 精确匹配")} size="small" placeholder={t("上游 Request ID（精确匹配）")} onChange={(v) => updateFilter('upstream_request_id', v)} value={draftFilters.upstream_request_id || ''} showClear />
+              <Input aria-label={t("证据引用精确匹配")} size="small" placeholder={t("证据引用（精确匹配）")} onChange={(v) => updateFilter('evidence_ref', v)} value={draftFilters.evidence_ref || ''} showClear />
+              <Input aria-label={t("来源事件哈希精确匹配")} size="small" placeholder={t("来源事件哈希（精确匹配）")} onChange={(v) => updateFilter('source_event_hash', v)} value={draftFilters.source_event_hash || ''} showClear />
             </div>
           </div>
 
+          </div>
+          </details>
           {hasActiveFilters && (
             <div className="ur-filter-group">
-              <Text className="ur-filter-label">当前筛选</Text>
+              <Text className="ur-filter-label">{t("当前筛选")}</Text>
               <div className="ur-chip-row">
                 {Object.entries(filters).filter(([, v]) => v).map(([k, v]) => (
                   <Tag
                     key={k}
                     size="small"
                     closable
-                    onClose={() => setFilters(prev => { const n = { ...prev }; delete (n as any)[k]; return n; })}
+                    onClose={() => {
+                      delete pendingFilters.current[k as keyof LogFilters];
+                      setDraftFilters(prev => ({ ...prev, [k]: '' }));
+                      setFilters(prev => { const n = { ...prev }; delete (n as any)[k]; return n; });
+                      setPage(1);
+                    }}
                   >
-                    {filterLabels[k as keyof LogFilters] || k}: {filterValueLabel(k, v)}
+                    {translateLabel(filterLabels[k as keyof LogFilters] || k)}: {filterValueLabel(k, v)}
                   </Tag>
                 ))}
               </div>
             </div>
           )}
-        </aside>
-
+      </section>
+      <div className="ur-explorer ur-explorer-with-detail">
         <main className="ur-explorer-panel">
           <div className="ur-panel-title">
-            <Title heading={5} style={{ margin: 0 }}>日志记录</Title>
-            <Text className="ur-panel-hint">默认选择最新记录 · ↑/↓ 切换</Text>
+            <Title heading={5} style={{ margin: 0 }}>{t("日志记录")}</Title>
+            <Text className="ur-panel-hint">{t("默认选择最新记录 · ↑/↓ 切换")}</Text>
           </div>
 
           {logsError && (
             <div className="ur-detail-card ur-detail-card-error" role="alert">
-              <Text className="ur-detail-card-title">请求列表不可用</Text>
-              <Text size="small">{logsError}</Text>
+              <Text className="ur-detail-card-title">{t("请求列表不可用")}</Text>
+              <Text size="small">{translateLabel(logsError)}</Text>
               <div>
-                <Button size="small" type="primary" onClick={() => fetchLogs()}>重试列表</Button>
+                <Button size="small" type="primary" onClick={() => fetchLogs()}>{t("重试列表")}</Button>
               </div>
             </div>
           )}
@@ -921,77 +959,77 @@ export default function LogsPage() {
                 pageSizeOpts: [10, 20, 50, 100],
                 onChange: (p, ps) => { setPage(p); setPageSize(ps); },
               }}
-              empty="暂无日志记录"
+              empty={t("暂无日志记录")}
             />
           </div>
         </main>
 
-        <aside className="ur-explorer-panel ur-explorer-detail" aria-label="执行决策凭证">
+        <aside className="ur-explorer-panel ur-explorer-detail" aria-label={t("执行决策凭证")}>
           <div className="ur-detail-header">
             <div>
-              <Text className="ur-panel-hint">执行证据检查器</Text>
-              <Title heading={5} style={{ margin: 0 }}>执行决策凭证</Title>
+              <Text className="ur-panel-hint">{t("执行证据检查器")}</Text>
+              <Title heading={5} style={{ margin: 0 }}>{t("执行决策凭证")}</Title>
             </div>
-            <Tag size="small" color={selectedLog ? 'blue' : undefined}>{selectedLog ? '常驻检查器' : '等待记录'}</Tag>
+            <Tag size="small" color={selectedLog ? 'blue' : undefined}>{selectedLog ? t("常驻检查器") : t("等待记录")}</Tag>
           </div>
 
           {!selectedLog ? (
             <div className="ur-receipt-empty" role="status">
-              <Title heading={5}>{logsError ? '等待可验证的请求列表' : '暂无可检查的执行'}</Title>
+              <Title heading={5}>{logsError ? t("等待可验证的请求列表") : t("暂无可检查的执行")}</Title>
               <Text type="tertiary">
                 {logsError
-                  ? '列表加载失败时不会保留旧凭证或把失败解释为空结果。'
-                  : '日志出现后将自动选择最新记录；无需再次点击打开详情。'}
+                  ? t("列表加载失败时不会保留旧凭证或把失败解释为空结果。")
+                  : t("日志出现后将自动选择最新记录；无需再次点击打开详情。")}
               </Text>
             </div>
           ) : (
             <div className="ur-detail-stack">
               <div className="ur-detail-hero">
                 <div>
-                  <Text type="tertiary" size="small">操作 ID（Request ID）</Text>
+                  <Text type="tertiary" size="small">{t("操作 ID（Request ID）")}</Text>
                   <div className="ur-request-id-full">
                     <Text code>{selectedLog.request_id}</Text>
-                    <Button type="tertiary" size="small" icon={<IconCopy />} onClick={() => copyToClipboard(selectedLog.request_id)} className="ur-copy-button" aria-label="复制当前 Request ID" />
+                    <Button type="tertiary" size="small" icon={<IconCopy />} onClick={() => copyToClipboard(selectedLog.request_id)} className="ur-copy-button" aria-label={t("复制当前 Request ID")} />
                   </div>
                 </div>
                 <StatusTag status={selectedLog.status_code}>{selectedLog.status_code}</StatusTag>
               </div>
 
-              <div className="ur-receipt-summary" aria-label="执行凭证摘要">
+              <div className="ur-receipt-summary" aria-label={t("执行凭证摘要")}>
                 <div>
-                  <Text type="tertiary" size="small">权限主体</Text>
+                  <Text type="tertiary" size="small">{t("权限主体")}</Text>
                   <Text strong size="small">{authoritySummary}</Text>
                 </div>
                 <div>
-                  <Text type="tertiary" size="small">路由尝试</Text>
-                  <Text strong size="small">{traceLoading ? '加载中' : traceError ? '不可用' : `${routeAttempts.length} 次`}</Text>
+                  <Text type="tertiary" size="small">{t("路由尝试")}</Text>
+                  <Text strong size="small">{traceLoading ? t("加载中") : traceError ? t("不可用") : t('{count} 次', { count: routeAttempts.length })}</Text>
                 </div>
                 <div>
-                  <Text type="tertiary" size="small">财务终态</Text>
-                  <StatusTag status={billingTerminalTone}>{traceLoading ? '加载中' : billingTerminalLabel}</StatusTag>
+                  <Text type="tertiary" size="small">{t("财务终态")}</Text>
+                  <StatusTag status={billingTerminalTone}>{traceLoading ? t("加载中") : billingTerminalLabel}</StatusTag>
                 </div>
                 <div>
-                  <Text type="tertiary" size="small">已声明缺口</Text>
-                  <StatusTag status={traceError ? 'warning' : gapEvents.length > 0 ? 'warning' : 'success'}>{traceLoading ? '加载中' : traceError ? '不可用' : gapEvents.length}</StatusTag>
+                  <Text type="tertiary" size="small">{t("已声明缺口")}</Text>
+                  <StatusTag status={traceError ? 'warning' : gapEvents.length > 0 ? 'warning' : 'success'}>{traceLoading ? t("加载中") : traceError ? t("不可用") : gapEvents.length}</StatusTag>
                 </div>
               </div>
 
               {traceLoading ? (
                 <div className="ur-detail-card" role="status">
-                  <Text className="ur-detail-card-title">执行证据加载中</Text>
-                  <Text type="tertiary" size="small">正在读取当前请求的结构化 Trace；加载完成前不作缺失或终态判断。</Text>
+                  <Text className="ur-detail-card-title">{t("执行证据加载中")}</Text>
+                  <Text type="tertiary" size="small">{t("正在读取当前请求的结构化 Trace；加载完成前不作缺失或终态判断。")}</Text>
                 </div>
               ) : traceError ? (
                 <div className="ur-detail-card ur-detail-card-error" role="alert">
-                  <Text className="ur-detail-card-title">执行证据不可用</Text>
-                  <Text size="small">{traceError}</Text>
+                  <Text className="ur-detail-card-title">{t("执行证据不可用")}</Text>
+                  <Text size="small">{translateLabel(traceError)}</Text>
                   <div>
-                    <Button size="small" type="primary" onClick={() => loadTrace(selectedLog)}>重试证据</Button>
+                    <Button size="small" type="primary" onClick={() => loadTrace(selectedLog)}>{t("重试证据")}</Button>
                   </div>
                 </div>
               ) : (
                 <>
-                  <nav className="ur-receipt-tabs" aria-label="执行凭证视图">
+                  <nav className="ur-receipt-tabs" aria-label={t("执行凭证视图")}>
                     {receiptTabs.map(tab => (
                       <Button
                         key={tab.key}
@@ -1001,7 +1039,7 @@ export default function LogsPage() {
                         aria-pressed={receiptTab === tab.key}
                         onClick={() => setReceiptTab(tab.key)}
                       >
-                        {tab.label}
+                        {translateLabel(tab.label)}
                       </Button>
                     ))}
                   </nav>
@@ -1009,59 +1047,59 @@ export default function LogsPage() {
                   {receiptTab === 'decision' && (
                 <>
                   <div className="ur-detail-card">
-                    <Text className="ur-detail-card-title">执行结论</Text>
+                    <Text className="ur-detail-card-title">{t("执行结论")}</Text>
                     <div className="ur-detail-grid">
                       <div>
-                        <Text type="tertiary" size="small">模型</Text>
+                        <Text type="tertiary" size="small">{t("模型")}</Text>
                         <div><Tag size="small">{selectedLog.model}</Tag></div>
                       </div>
                       <div>
-                        <Text type="tertiary" size="small">请求模型</Text>
+                        <Text type="tertiary" size="small">{t("请求模型")}</Text>
                         <div><Text size="small">{selectedLog.requested_model || '-'}</Text></div>
                       </div>
                       <div>
-                        <Text type="tertiary" size="small">供应商 / 通道</Text>
+                        <Text type="tertiary" size="small">{t("供应商 / 通道")}</Text>
                         <div><Text size="small">{selectedLog.provider || '-'} / {selectedLog.channel || '-'}</Text></div>
                       </div>
                       <div>
-                        <Text type="tertiary" size="small">时间</Text>
+                        <Text type="tertiary" size="small">{t("时间")}</Text>
                         <div><Text size="small">{formatDateTime(selectedLog.created_at)}</Text></div>
                       </div>
                       <div>
-                        <Text type="tertiary" size="small">客户端请求 ID</Text>
+                        <Text type="tertiary" size="small">{t("客户端请求 ID")}</Text>
                         <div><Text code size="small">{selectedLog.client_request_id || '-'}</Text></div>
                       </div>
                       <div>
-                        <Text type="tertiary" size="small">工作流 / Agent</Text>
+                        <Text type="tertiary" size="small">{t("工作流 / Agent")}</Text>
                         <div><Text code size="small">{selectedLog.workflow_id || '-'} / {selectedLog.agent_id || '-'}</Text></div>
                       </div>
                     </div>
                   </div>
 
                   <div className="ur-detail-card">
-                    <Text className="ur-detail-card-title">权限与委托</Text>
+                    <Text className="ur-detail-card-title">{t("权限与委托")}</Text>
                     <Descriptions
                       row
                       size="small"
                       data={[
-                        { key: '主体类型', value: actorTypes.length > 0 ? actorTypes.map(v => <Tag key={v} size="small">{v}</Tag>) : '未捕获' },
-                        { key: '主体标识', value: actorRefs.length > 0 ? actorRefs.map(v => <Text key={v} code size="small">{compactEvidenceValue(v, 28)}</Text>) : '未捕获' },
-                        { key: '代表主体', value: onBehalfOf.length > 0 ? onBehalfOf.map(v => <Text key={v} code size="small">{compactEvidenceValue(v, 28)}</Text>) : '未声明' },
+                        { key: t("主体类型"), value: actorTypes.length > 0 ? actorTypes.map(v => <Tag key={v} size="small">{v}</Tag>) : t("未捕获") },
+                        { key: t("主体标识"), value: actorRefs.length > 0 ? actorRefs.map(v => <Text key={v} code size="small">{compactEvidenceValue(v, 28)}</Text>) : t("未捕获") },
+                        { key: t("代表主体"), value: onBehalfOf.length > 0 ? onBehalfOf.map(v => <Text key={v} code size="small">{compactEvidenceValue(v, 28)}</Text>) : t("未声明") },
                         { key: 'IP', value: selectedLog.ip_address || '-' },
                       ]}
                     />
                     {actorTypes.length === 0 && !traceLoading && (
-                      <Text type="tertiary" size="small">本次 Trace 未捕获权限主体；不会据此推断为匿名或未鉴权。</Text>
+                      <Text type="tertiary" size="small">{t("本次 Trace 未捕获权限主体；不会据此推断为匿名或未鉴权。")}</Text>
                     )}
                   </div>
 
                   <div className="ur-detail-card">
                     <div className="ur-panel-title" style={{ marginBottom: 10 }}>
-                      <Text className="ur-detail-card-title">决策链</Text>
-                      <Tag size="small" color="blue">{decisionEvents.length} 个</Tag>
+                      <Text className="ur-detail-card-title">{t("决策链")}</Text>
+                      <Tag size="small" color="blue">{t('{count} 个', { count: decisionEvents.length })}</Tag>
                     </div>
                     {traceLoading ? (
-                      <Text type="tertiary" size="small">加载中</Text>
+                      <Text type="tertiary" size="small">{t("加载中")}</Text>
                     ) : decisionEvents.length > 0 ? (
                       <div className="ur-receipt-event-list">
                         {decisionEvents.map(event => (
@@ -1076,7 +1114,7 @@ export default function LogsPage() {
                         ))}
                       </div>
                     ) : (
-                      <Text type="tertiary" size="small">本次 Trace 未捕获结构化决策事件；不会从最终 HTTP 状态反推决策原因。</Text>
+                      <Text type="tertiary" size="small">{t("本次 Trace 未捕获结构化决策事件；不会从最终 HTTP 状态反推决策原因。")}</Text>
                     )}
                   </div>
                 </>
@@ -1085,29 +1123,29 @@ export default function LogsPage() {
                   {receiptTab === 'attempts' && (
                 <>
                   <div className="ur-detail-card">
-                    <Text className="ur-detail-card-title">状态与性能</Text>
+                    <Text className="ur-detail-card-title">{t("状态与性能")}</Text>
                     <Descriptions
                       row
                       size="small"
                       data={[
-                        { key: '状态码', value: <StatusTag status={selectedLog.status_code}>{selectedLog.status_code}</StatusTag> },
-                        { key: '上游状态', value: selectedLog.upstream_status_code ? <StatusTag status={selectedLog.upstream_status_code}>{selectedLog.upstream_status_code}</StatusTag> : '-' },
-                        { key: '延迟', value: <LatencyText value={selectedLog.latency_ms} /> },
+                        { key: t("状态码"), value: <StatusTag status={selectedLog.status_code}>{selectedLog.status_code}</StatusTag> },
+                        { key: t("上游状态"), value: selectedLog.upstream_status_code ? <StatusTag status={selectedLog.upstream_status_code}>{selectedLog.upstream_status_code}</StatusTag> : '-' },
+                        { key: t('延迟'), value: <LatencyText value={selectedLog.latency_ms} /> },
                         { key: 'TTFT', value: selectedLog.ttft_ms ? `${selectedLog.ttft_ms}ms` : '-' },
-                        { key: '流式', value: selectedLog.is_stream ? <Tag size="small" color="blue">是</Tag> : <Tag size="small">否</Tag> },
+                        { key: t("流式"), value: selectedLog.is_stream ? <Tag size="small" color="blue">{t("是")}</Tag> : <Tag size="small">{t("否")}</Tag> },
                       ]}
                     />
                   </div>
 
                   <div className="ur-detail-card">
-                    <Text className="ur-detail-card-title">路由与故障切换</Text>
+                    <Text className="ur-detail-card-title">{t("路由与故障切换")}</Text>
                     <Descriptions
                       row
                       size="small"
                       data={[
-                        { key: '路由尝试', value: traceLoading ? '加载中' : `${routeAttempts.length} 次` },
-                        { key: '故障切换', value: traceLoading ? '加载中' : routeAttempts.length > 1 ? `${routeAttempts.length - 1} 次` : '0 次' },
-                        { key: '最终结果', value: traceLoading ? '-' : noRoute ? <StatusTag status="failed">无可用路由</StatusTag> : routeAttempts[routeAttempts.length - 1]?.outcome === 'accepted' ? <StatusTag status="success">上游接受</StatusTag> : <StatusTag status="warning">未确认</StatusTag> },
+                        { key: t("路由尝试"), value: traceLoading ? t("加载中") : t('{count} 次', { count: routeAttempts.length }) },
+                        { key: t("故障切换"), value: traceLoading ? t("加载中") : t('{count} 次', { count: Math.max(0, routeAttempts.length - 1) }) },
+                        { key: t("最终结果"), value: traceLoading ? '-' : noRoute ? <StatusTag status="failed">{t("无可用路由")}</StatusTag> : routeAttempts[routeAttempts.length - 1]?.outcome === 'accepted' ? <StatusTag status="success">{t("上游接受")}</StatusTag> : <StatusTag status="warning">{t("未确认")}</StatusTag> },
                       ]}
                     />
                     {!traceLoading && routeAttempts.length > 0 ? (
@@ -1125,13 +1163,13 @@ export default function LogsPage() {
                         ))}
                       </div>
                     ) : !traceLoading ? (
-                      <Text type="tertiary" size="small">本次 Trace 未捕获路由尝试；不会将日志中的供应商字段解释为完整路由链。</Text>
+                      <Text type="tertiary" size="small">{t("本次 Trace 未捕获路由尝试；不会将日志中的供应商字段解释为完整路由链。")}</Text>
                     ) : null}
                   </div>
 
                   {selectedLog.upstream_error && (
                     <div className="ur-detail-card ur-detail-card-error">
-                      <Text className="ur-detail-card-title">上游错误</Text>
+                      <Text className="ur-detail-card-title">{t("上游错误")}</Text>
                       <Text size="small">{selectedLog.upstream_error}</Text>
                     </div>
                   )}
@@ -1141,9 +1179,9 @@ export default function LogsPage() {
                   {receiptTab === 'policy' && (
                 <>
                   <div className="ur-detail-card">
-                    <Text className="ur-detail-card-title">策略与内容安全决策</Text>
+                    <Text className="ur-detail-card-title">{t("策略与内容安全决策")}</Text>
                     {traceLoading ? (
-                      <Text type="tertiary" size="small">加载中</Text>
+                      <Text type="tertiary" size="small">{t("加载中")}</Text>
                     ) : policyEvents.length > 0 ? (
                       <div className="ur-receipt-event-list">
                         {policyEvents.map(event => (
@@ -1159,19 +1197,19 @@ export default function LogsPage() {
                         ))}
                       </div>
                     ) : (
-                      <Text type="tertiary" size="small">本次 Trace 未捕获策略或内容安全决策；这不表示策略未执行，只表示当前凭证不能证明。</Text>
+                      <Text type="tertiary" size="small">{t("本次 Trace 未捕获策略或内容安全决策；这不表示策略未执行，只表示当前凭证不能证明。")}</Text>
                     )}
                   </div>
 
                   <div className="ur-detail-card">
-                    <Text className="ur-detail-card-title">Payload 策略边界</Text>
+                    <Text className="ur-detail-card-title">{t("Payload 策略边界")}</Text>
                     <Descriptions
                       row
                       size="small"
                       data={[
-                        { key: '请求体采集', value: payloadModes.length > 0 ? payloadModes.map(v => <Tag key={v} size="small" color="cyan">{v}</Tag>) : '未捕获' },
-                        { key: '请求体引用', value: traceEvents.some(event => event.payload_ref) ? '已声明' : '未声明' },
-                        { key: '原始请求体', value: '不在此页面存储或展示' },
+                        { key: t("请求体采集"), value: payloadModes.length > 0 ? payloadModes.map(v => <Tag key={v} size="small" color="cyan">{v}</Tag>) : t("未捕获") },
+                        { key: t("请求体引用"), value: traceEvents.some(event => event.payload_ref) ? t("已声明") : t("未声明") },
+                        { key: t("原始请求体"), value: t("不在此页面存储或展示") },
                       ]}
                     />
                   </div>
@@ -1181,62 +1219,62 @@ export default function LogsPage() {
                   {receiptTab === 'cost' && (
                 <>
                   <div className="ur-detail-card">
-                    <Text className="ur-detail-card-title">财务终态</Text>
+                    <Text className="ur-detail-card-title">{t("财务终态")}</Text>
                     <Descriptions
                       row
                       size="small"
                       data={[
-                        { key: '终态', value: traceLoading ? '加载中' : <StatusTag status={billingTerminalTone}>{billingTerminalStatus}</StatusTag> },
-                        { key: '计费状态', value: exactBillingStatus || '未捕获' },
-                        { key: '计量来源', value: metadataString(billingTerminalEvent, 'usage_source') || '未捕获' },
-                        { key: '计量置信度', value: metadataString(billingTerminalEvent, 'usage_confidence') || '未捕获' },
-                        { key: '实际成本', value: metadataString(billingTerminalEvent, 'actual_cost_micros') ? <MoneyText micros={metadataString(billingTerminalEvent, 'actual_cost_micros')} precision={6} /> : '未捕获' },
-                        { key: '实际扣费', value: metadataString(billingTerminalEvent, 'charged_cost_micros') ? <MoneyText micros={metadataString(billingTerminalEvent, 'charged_cost_micros')} precision={6} strong tone="cost" /> : '未捕获' },
-                        { key: '金额合同', value: metadataString(billingTerminalEvent, 'money_schema') || '未捕获' },
-                        { key: '计价版本', value: metadataString(billingTerminalEvent, 'pricing_version') || '未捕获' },
-                        { key: '证据事件', value: billingTerminalEvent?.event_type || '未捕获' },
+                        { key: t("终态"), value: traceLoading ? t("加载中") : <StatusTag status={billingTerminalTone}>{billingTerminalStatus}</StatusTag> },
+                        { key: t("计费状态"), value: exactBillingStatus || t("未捕获") },
+                        { key: t("计量来源"), value: metadataString(billingTerminalEvent, 'usage_source') || t("未捕获") },
+                        { key: t("计量置信度"), value: metadataString(billingTerminalEvent, 'usage_confidence') || t("未捕获") },
+                        { key: t("实际成本"), value: metadataString(billingTerminalEvent, 'actual_cost_micros') ? <MoneyText micros={metadataString(billingTerminalEvent, 'actual_cost_micros')} precision={6} /> : t("未捕获") },
+                        { key: t("实际扣费"), value: metadataString(billingTerminalEvent, 'charged_cost_micros') ? <MoneyText micros={metadataString(billingTerminalEvent, 'charged_cost_micros')} precision={6} strong tone="cost" /> : t("未捕获") },
+                        { key: t("金额合同"), value: metadataString(billingTerminalEvent, 'money_schema') || t("未捕获") },
+                        { key: t("计价版本"), value: metadataString(billingTerminalEvent, 'pricing_version') || t("未捕获") },
+                        { key: t("证据事件"), value: billingTerminalEvent?.event_type || t("未捕获") },
                       ]}
                     />
                     {!billingTerminalEvent && !traceLoading && (
-                      <Text type="tertiary" size="small">HTTP 成功和日志费用不会被当作财务终态；只有 Billing terminal evidence 能证明 settled。</Text>
+                      <Text type="tertiary" size="small">{t("HTTP 成功和日志费用不会被当作财务终态；只有 Billing terminal evidence 能证明 settled。")}</Text>
                     )}
-                    <Text type="tertiary" size="small">当前脱敏 Trace 合同不暴露 usage_authority、usage_finality 或 usage_purpose；本凭证不会从事件名或日志字段补推这些值。</Text>
+                    <Text type="tertiary" size="small">{t("当前脱敏 Trace 合同不暴露 usage_authority、usage_finality 或 usage_purpose；本凭证不会从事件名或日志字段补推这些值。")}</Text>
                   </div>
 
                   <div className="ur-detail-card">
-                    <Text className="ur-detail-card-title">Token & 日志费用</Text>
+                    <Text className="ur-detail-card-title">{t("Token & 日志费用")}</Text>
                     <Descriptions
                       row
                       size="small"
                       data={[
-                        { key: '提示词', value: selectedLog.prompt_tokens.toLocaleString() },
-                        { key: '生成', value: selectedLog.completion_tokens.toLocaleString() },
-                        { key: '合计', value: <Text strong>{selectedLog.total_tokens.toLocaleString()}</Text> },
-                        { key: '日志费用', value: <MoneyText micros={selectedLog.cost_micros || '0'} precision={6} strong tone="cost" /> },
-                        { key: '计量来源', value: usageSourceLabel(selectedLog.usage_source) },
+                        { key: t("提示词"), value: selectedLog.prompt_tokens.toLocaleString() },
+                        { key: t("生成"), value: selectedLog.completion_tokens.toLocaleString() },
+                        { key: t("合计"), value: <Text strong>{selectedLog.total_tokens.toLocaleString()}</Text> },
+                        { key: t("日志费用"), value: <MoneyText micros={selectedLog.cost_micros || '0'} precision={6} strong tone="cost" /> },
+                        { key: t("计量来源"), value: usageSourceLabel(selectedLog.usage_source) },
                       ]}
                     />
                   </div>
 
                   <div className="ur-detail-card">
-                    <Text className="ur-detail-card-title">供应商 Prompt Cache</Text>
+                    <Text className="ur-detail-card-title">{t("供应商 Prompt Cache")}</Text>
                     <Descriptions
                       row
                       size="small"
                       data={[
-                        { key: '回传状态', value: <StatusTag status={selectedLog.cache_usage_schema ? 'success' : 'pending'}>{cacheUsageLabel(selectedLog.cache_usage_status)}</StatusTag> },
-                        { key: '普通输入', value: (selectedLog.uncached_prompt_tokens ?? selectedLog.prompt_tokens).toLocaleString() },
-                        { key: '缓存读取', value: (selectedLog.cache_read_tokens || 0).toLocaleString() },
-                        { key: '缓存写入', value: (selectedLog.cache_creation_tokens || 0).toLocaleString() },
-                        { key: '读取倍率', value: priceRatio(selectedLog.cache_read_ratio, selectedLog.effective_cache_read_price_micros_per_million, selectedLog.effective_input_price_micros_per_million) },
-                        { key: '写入倍率', value: priceRatio(selectedLog.cache_creation_ratio, selectedLog.effective_cache_creation_price_micros_per_million, selectedLog.effective_input_price_micros_per_million) },
-                        { key: '读取费用', value: <MoneyText micros={selectedLog.cache_read_cost_micros || '0'} precision={6} /> },
-                        { key: '写入费用', value: <MoneyText micros={selectedLog.cache_creation_cost_micros || '0'} precision={6} /> },
-                        { key: '价格版本', value: selectedLog.pricing_version ? <Text code size="small">{compactEvidenceValue(selectedLog.pricing_version, 28)}</Text> : '-' },
-                        { key: '字段合同', value: selectedLog.cache_usage_schema || '-' },
+                        { key: t("回传状态"), value: <StatusTag status={selectedLog.cache_usage_schema ? 'success' : 'pending'}>{cacheUsageLabel(selectedLog.cache_usage_status)}</StatusTag> },
+                        { key: t("普通输入"), value: (selectedLog.uncached_prompt_tokens ?? selectedLog.prompt_tokens).toLocaleString() },
+                        { key: t("缓存读取"), value: (selectedLog.cache_read_tokens || 0).toLocaleString() },
+                        { key: t("缓存写入"), value: (selectedLog.cache_creation_tokens || 0).toLocaleString() },
+                        { key: t("读取倍率"), value: priceRatio(selectedLog.cache_read_ratio, selectedLog.effective_cache_read_price_micros_per_million, selectedLog.effective_input_price_micros_per_million) },
+                        { key: t("写入倍率"), value: priceRatio(selectedLog.cache_creation_ratio, selectedLog.effective_cache_creation_price_micros_per_million, selectedLog.effective_input_price_micros_per_million) },
+                        { key: t("读取费用"), value: <MoneyText micros={selectedLog.cache_read_cost_micros || '0'} precision={6} /> },
+                        { key: t("写入费用"), value: <MoneyText micros={selectedLog.cache_creation_cost_micros || '0'} precision={6} /> },
+                        { key: t("价格版本"), value: selectedLog.pricing_version ? <Text code size="small">{compactEvidenceValue(selectedLog.pricing_version, 28)}</Text> : '-' },
+                        { key: t("字段合同"), value: selectedLog.cache_usage_schema || '-' },
                       ]}
                     />
-                    <Text type="tertiary" size="small">只展示供应商明确回传的 Prompt Cache 用量；“未回传”不会推测命中，也不会获得缓存折扣。</Text>
+                    <Text type="tertiary" size="small">{t("只展示供应商明确回传的 Prompt Cache 用量；“未回传”不会推测命中，也不会获得缓存折扣。")}</Text>
                   </div>
                 </>
                   )}
@@ -1244,30 +1282,30 @@ export default function LogsPage() {
                   {receiptTab === 'provenance' && (
                 <>
                   <div className="ur-detail-card">
-                    <Text className="ur-detail-card-title">来源证据摘要</Text>
+                    <Text className="ur-detail-card-title">{t("来源证据摘要")}</Text>
                     <Descriptions
                       row
                       size="small"
                       data={[
-                        { key: 'Trace ID', value: traceIDs.length > 0 ? <Text code>{compactEvidenceValue(traceIDs[0], 28)}</Text> : '未捕获' },
-                        { key: 'Schema', value: schemaVersions.length > 0 ? schemaVersions.map(v => <Tag key={v} size="small">{v}</Tag>) : '未捕获' },
-                        { key: '来源组件', value: sourceComponents.length > 0 ? sourceComponents.map(v => <Tag key={v} size="small">{v}</Tag>) : '未捕获' },
-                        { key: '采集模式', value: captureModes.length > 0 ? captureModes.map(v => <Tag key={v} size="small" color="blue">{v}</Tag>) : '未捕获' },
-                        { key: '上游 ID', value: upstreamRequestIDs.length > 0 ? <Text code>{compactEvidenceValue(upstreamRequestIDs[0], 28)}</Text> : '未捕获' },
-                        { key: '证据引用', value: evidenceRefs.length },
-                        { key: '来源哈希', value: sourceEventHashes.length },
-                        { key: '已声明缺口', value: <StatusTag status={gapEvents.length > 0 ? 'warning' : 'success'}>{gapEvents.length}</StatusTag> },
+                        { key: 'Trace ID', value: traceIDs.length > 0 ? <Text code>{compactEvidenceValue(traceIDs[0], 28)}</Text> : t("未捕获") },
+                        { key: 'Schema', value: schemaVersions.length > 0 ? schemaVersions.map(v => <Tag key={v} size="small">{v}</Tag>) : t("未捕获") },
+                        { key: t("来源组件"), value: sourceComponents.length > 0 ? sourceComponents.map(v => <Tag key={v} size="small">{v}</Tag>) : t("未捕获") },
+                        { key: t("采集模式"), value: captureModes.length > 0 ? captureModes.map(v => <Tag key={v} size="small" color="blue">{v}</Tag>) : t("未捕获") },
+                        { key: t("上游 ID"), value: upstreamRequestIDs.length > 0 ? <Text code>{compactEvidenceValue(upstreamRequestIDs[0], 28)}</Text> : t("未捕获") },
+                        { key: t("证据引用"), value: evidenceRefs.length },
+                        { key: t("来源哈希"), value: sourceEventHashes.length },
+                        { key: t("已声明缺口"), value: <StatusTag status={gapEvents.length > 0 ? 'warning' : 'success'}>{gapEvents.length}</StatusTag> },
                       ]}
                     />
                     {!traceLoading && gapEvents.length === 0 && (
-                      <Text type="tertiary" size="small">0 仅表示本次 Trace 没有声明 Gap，不代表其他产品、Feed 或外部系统实现了完整采集。</Text>
+                      <Text type="tertiary" size="small">{t("0 仅表示本次 Trace 没有声明 Gap，不代表其他产品、Feed 或外部系统实现了完整采集。")}</Text>
                     )}
                   </div>
 
                   <div className="ur-detail-card">
-                    <Text className="ur-detail-card-title">采集缺口</Text>
+                    <Text className="ur-detail-card-title">{t("采集缺口")}</Text>
                     {traceLoading ? (
-                      <Text type="tertiary" size="small">加载中</Text>
+                      <Text type="tertiary" size="small">{t("加载中")}</Text>
                     ) : gapEvents.length > 0 ? (
                       <div className="ur-receipt-event-list">
                         {gapEvents.map(event => (
@@ -1279,17 +1317,17 @@ export default function LogsPage() {
                         ))}
                       </div>
                     ) : (
-                      <Text type="tertiary" size="small">本次 Trace 没有声明 Capture Gap。</Text>
+                      <Text type="tertiary" size="small">{t("本次 Trace 没有声明 Capture Gap。")}</Text>
                     )}
                   </div>
 
                   <div className="ur-detail-card">
                     <div className="ur-panel-title" style={{ marginBottom: 10 }}>
-                      <Text className="ur-detail-card-title">请求路径</Text>
-                      {traceLoading ? <Tag size="small">加载中</Tag> : <Tag size="small" color="blue">{traceEvents.length} 事件</Tag>}
+                      <Text className="ur-detail-card-title">{t("请求路径")}</Text>
+                      {traceLoading ? <Tag size="small">{t("加载中")}</Tag> : <Tag size="small" color="blue">{t('{count} 事件', { count: traceEvents.length })}</Tag>}
                     </div>
                     {traceLoading ? (
-                      <Text type="tertiary" size="small">加载中</Text>
+                      <Text type="tertiary" size="small">{t("加载中")}</Text>
                     ) : traceEvents.length > 0 ? (
                       <div className="ur-receipt-event-list">
                         {traceEvents.map(event => (
@@ -1316,13 +1354,13 @@ export default function LogsPage() {
                         ))}
                       </div>
                     ) : (
-                      <Text type="tertiary" size="small">暂无请求路径事件。</Text>
+                      <Text type="tertiary" size="small">{t("暂无请求路径事件。")}</Text>
                     )}
                   </div>
 
                   <div className="ur-detail-card">
-                    <Text className="ur-detail-card-title">隐私边界</Text>
-                    <Text type="tertiary" size="small">请求体与响应体内容未在本页面存储或展示。Payload 状态只来自结构化采集字段，不从日志文本推断。</Text>
+                    <Text className="ur-detail-card-title">{t("隐私边界")}</Text>
+                    <Text type="tertiary" size="small">{t("请求体与响应体内容未在本页面存储或展示。Payload 状态只来自结构化采集字段，不从日志文本推断。")}</Text>
                   </div>
                 </>
                   )}

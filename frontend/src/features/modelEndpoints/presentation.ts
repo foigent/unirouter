@@ -1,5 +1,19 @@
+import '../../i18n/models';
 import type { ModelEndpointTarget } from '../../api/modelEndpoints';
 import { ApiError } from '../../api/transport';
+import { translate as t } from '../../i18n';
+import type { MessageKey } from '../../i18n/catalog';
+
+export type EndpointFailure = { cause?: unknown; fallback: MessageKey; prefix?: MessageKey; values?: Record<string, string | number> };
+
+export class EndpointUIError extends Error {
+  constructor(public readonly key: MessageKey) { super(key); }
+}
+
+export function endpointFailureText(failure: EndpointFailure) {
+  const message = endpointError(failure.cause, t(failure.fallback, failure.values));
+  return failure.prefix ? t(failure.prefix, { error: message }) : message;
+}
 
 const stateCopy: Record<string, { label: string; help: string }> = {
   active: { label: '稳定路由', help: '当前稳定发布可选中至少一个供应商端点。项目或应用能否调用仍由高级调用诊断确认。' },
@@ -25,13 +39,14 @@ export function stateHelp(state: string) {
 }
 
 export function endpointError(error: unknown, fallback: string) {
+  if (error instanceof EndpointUIError) return t(error.key);
   if (error instanceof ApiError) {
     const payload = error.payload as { code?: string; canonical_model?: string; message?: string } | null;
     if (payload?.code === 'model_identity_conflict' && payload.canonical_model) {
-      return `检测到同一公共模型已存在：${payload.canonical_model}。请选择这个现有 ID，并把当前供应商配置为它的另一个端点。`;
+      return t('检测到同一公共模型已存在：{model}。请选择这个现有 ID，并把当前供应商配置为它的另一个端点。', { model: payload.canonical_model });
     }
-    if (payload?.code === 'model_retired') return '该公共模型已退役；请先在高级运营中恢复其生命周期，再启用端点。';
-    if (payload?.code === 'automatic_release_cleanup_failed') return payload.message || '自动发布记录未能安全终止，请先到发布记录处理。';
+    if (payload?.code === 'model_retired') return t('该公共模型已退役；请先在高级运营中恢复其生命周期，再启用端点。');
+    if (payload?.code === 'automatic_release_cleanup_failed') return payload.message || t('自动发布记录未能安全终止，请先到发布记录处理。');
     return error.message;
   }
   return error instanceof Error && error.message ? error.message : fallback;

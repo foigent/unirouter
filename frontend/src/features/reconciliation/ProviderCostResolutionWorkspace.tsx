@@ -1,3 +1,6 @@
+import '../../i18n/finance';
+import type { MessageKey } from '../../i18n/catalog';
+import { translate as t, useI18n } from '../../i18n';
 import { useCallback, useEffect, useState } from 'react';
 import { Banner, Button, Input, Modal, Table, Tag, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconRefresh } from '@douyinfe/semi-icons';
@@ -11,19 +14,20 @@ import { EmptyState, StatusTag, Surface } from '../../ui';
 import { formatInteger } from '../../utils/formatNumber';
 
 function exactAmount(value: string | undefined, scale: number, currency: string) {
-  if (value === undefined) return '未写入';
+  if (value === undefined) return t("未写入");
   return `${value} / ${formatInteger(scale)} ${currency}`;
 }
 
 function reconciliationError(error: unknown) {
-  if (error instanceof ApiError) return `协调失败（${error.status}）：${error.message}`;
-  return '协调失败：未决供应商成本状态不可用。';
+  if (error instanceof ApiError) return t("协调失败（{v0}）：{v1}", { v0: String(error.status), v1: String(error.message) });
+  return t("协调失败：未决供应商成本状态不可用。");
 }
 
 export function ProviderCostResolutionWorkspace({ orgId }: { orgId: number }) {
+  useI18n();
   const [items, setItems] = useState<PendingProviderCost[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
+  const [loadError, setLoadError] = useState<{key: MessageKey; values?: Record<string, string | number>} | null>(null);
   const [selected, setSelected] = useState<PendingProviderCost | null>(null);
   const [reason, setReason] = useState('');
   const [evidenceRef, setEvidenceRef] = useState('');
@@ -33,14 +37,12 @@ export function ProviderCostResolutionWorkspace({ orgId }: { orgId: number }) {
   const load = useCallback(() => {
     if (!orgId) return;
     setLoading(true);
-    setLoadError('');
+    setLoadError(null);
     providerCostApi.listPending(orgId)
       .then(response => setItems(response.data || []))
       .catch((error: unknown) => {
         setItems([]);
-        setLoadError(error instanceof ApiError
-          ? `未决成本加载失败（${error.status}）：${error.message}`
-          : '未决成本加载失败。');
+        setLoadError(error instanceof ApiError ? {key: "未决成本加载失败（{v0}）：{v1}", values: { v0: String(error.status), v1: String(error.message) }} : {key: "未决成本加载失败。"});
       })
       .finally(() => setLoading(false));
   }, [orgId]);
@@ -49,7 +51,7 @@ export function ProviderCostResolutionWorkspace({ orgId }: { orgId: number }) {
 
   const openRefund = (item: PendingProviderCost) => {
     setSelected(item);
-    setReason('上游响应未交付；在 cost_observation 模式下解除未决冻结并生成零收费协调收据。');
+    setReason(t("上游响应未交付；在 cost_observation 模式下解除未决冻结并生成零收费协调收据。"));
     setEvidenceRef(`provider-attempt:${item.attempt_id}`);
   };
 
@@ -63,7 +65,7 @@ export function ProviderCostResolutionWorkspace({ orgId }: { orgId: number }) {
   const reconcile = async () => {
     if (!selected || mutating) return;
     if (!reason.trim() || !evidenceRef.trim()) {
-      Toast.warning({ content: '原因和证据引用均为必填项。' });
+      Toast.warning({ content: t("原因和证据引用均为必填项。") });
       return;
     }
     setMutating(true);
@@ -80,7 +82,7 @@ export function ProviderCostResolutionWorkspace({ orgId }: { orgId: number }) {
       setSelected(null);
       setReason('');
       setEvidenceRef('');
-      Toast.success({ content: '未决冻结已解除，零收费观察收据已生成。' });
+      Toast.success({ content: t("未决冻结已解除，零收费观察收据已生成。") });
       load();
     } catch (error) {
       Toast.error({ content: reconciliationError(error) });
@@ -91,7 +93,7 @@ export function ProviderCostResolutionWorkspace({ orgId }: { orgId: number }) {
 
   const columns = [
     {
-      title: '请求 / 尝试',
+      title: t("请求 / 尝试"),
       key: 'identity',
       width: 260,
       render: (_: unknown, item: PendingProviderCost) => (
@@ -103,7 +105,7 @@ export function ProviderCostResolutionWorkspace({ orgId }: { orgId: number }) {
       ),
     },
     {
-      title: '供应商 / 通道',
+      title: t("供应商 / 通道"),
       key: 'provider',
       width: 180,
       render: (_: unknown, item: PendingProviderCost) => (
@@ -111,7 +113,7 @@ export function ProviderCostResolutionWorkspace({ orgId }: { orgId: number }) {
       ),
     },
     {
-      title: '状态',
+      title: t("状态"),
       key: 'state',
       width: 180,
       render: (_: unknown, item: PendingProviderCost) => (
@@ -119,56 +121,58 @@ export function ProviderCostResolutionWorkspace({ orgId }: { orgId: number }) {
       ),
     },
     {
-      title: '冻结时计费模式',
+      title: t("冻结时计费模式"),
       dataIndex: 'billing_mode',
       width: 170,
       render: (value: string) => <Tag color={value === 'cost_observation' ? 'blue' : 'orange'}>{value}</Tag>,
     },
     {
-      title: '供应商成本 / 客户收费',
+      title: t("供应商成本 / 客户收费"),
       key: 'amounts',
       width: 230,
       render: (_: unknown, item: PendingProviderCost) => (
         <span>
-          成本：{exactAmount(item.calculated_cost_micros, item.amount_scale, item.currency)}
+
+          {t("成本：")}{exactAmount(item.calculated_cost_micros, item.amount_scale, item.currency)}
           <br />
-          收费：{exactAmount(item.charged_cost_micros, item.amount_scale, item.currency)}
+
+          {t("收费：")}{exactAmount(item.charged_cost_micros, item.amount_scale, item.currency)}
         </span>
       ),
     },
     {
-      title: '操作',
+      title: t("操作"),
       key: 'actions',
       width: 160,
       fixed: 'right' as const,
       render: (_: unknown, item: PendingProviderCost) => item.billing_mode === 'cost_observation'
-        ? <Button type="primary" theme="light" onClick={() => openRefund(item)}>零收费协调</Button>
-        : <Typography.Text type="tertiary">转账务审批</Typography.Text>,
+        ? <Button type="primary" theme="light" onClick={() => openRefund(item)}>{t("零收费协调")}</Button>
+        : <Typography.Text type="tertiary">{t("转账务审批")}</Typography.Text>,
     },
   ];
 
   return (
-    <Surface title="未决供应商成本">
+    <Surface title={t("未决供应商成本")}>
       <Banner
         type="warning"
         closeIcon={null}
-        description="这里只允许平台管理员处理正式后端报告的未决项。cost_observation 的 refund 不接收金额、不产生客户扣费或钱包交易，只解除冻结并生成不可变观察收据；其他计费模式不会在这里提供快捷操作。"
+        description={t("这里只允许平台管理员处理正式后端报告的未决项。cost_observation 的 refund 不接收金额、不产生客户扣费或钱包交易，只解除冻结并生成不可变观察收据；其他计费模式不会在这里提供快捷操作。")}
         style={{ marginBottom: 12 }}
       />
       {lastResult && (
         <Banner
           type="success"
           closeIcon={null}
-          description={`最近完成：${lastResult.request_id} / ${lastResult.attempt_id}；观察收据 #${lastResult.terminal_observation_receipt_id || '—'}；客户收费 ${lastResult.customer_charged_micros}，退款 ${lastResult.customer_refund_micros}（${lastResult.currency}/${formatInteger(lastResult.amount_scale)}）。`}
+          description={t("最近完成：{v0} / {v1}；观察收据 #{v2}；客户收费 {v3}，退款 {v4}（{v5}/{v6}）。", { v0: String(lastResult.request_id), v1: String(lastResult.attempt_id), v2: String(lastResult.terminal_observation_receipt_id || '—'), v3: String(lastResult.customer_charged_micros), v4: String(lastResult.customer_refund_micros), v5: String(lastResult.currency), v6: String(formatInteger(lastResult.amount_scale)) })}
           style={{ marginBottom: 12 }}
         />
       )}
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-        <Button icon={<IconRefresh />} onClick={load} loading={loading}>刷新未决项</Button>
+        <Button icon={<IconRefresh />} onClick={load} loading={loading}>{t("刷新未决项")}</Button>
       </div>
-      {loadError && <Banner type="danger" description={loadError} closeIcon={null} style={{ marginBottom: 12 }} />}
+      {loadError && <Banner type="danger" description={loadError ? t(loadError.key, loadError.values) : undefined} closeIcon={null} style={{ marginBottom: 12 }} />}
       {!loading && !loadError && items.length === 0 ? (
-        <EmptyState title="没有未决供应商成本" description="当前客户组织不存在需要人工协调的供应商成本冻结。" minHeight={180} />
+        <EmptyState title={t("没有未决供应商成本")} description={t("当前客户组织不存在需要人工协调的供应商成本冻结。")} minHeight={180} />
       ) : (
         <div className="ur-table-shell">
           <Table
@@ -182,14 +186,14 @@ export function ProviderCostResolutionWorkspace({ orgId }: { orgId: number }) {
         </div>
       )}
       <Modal
-        title="确认零收费供应商成本协调"
+        title={t("确认零收费供应商成本协调")}
         visible={Boolean(selected)}
         onCancel={close}
         onOk={reconcile}
-        okText="解除冻结并生成收据"
-        cancelText="取消"
-        okButtonProps={{ 'aria-label': '解除冻结并生成收据' }}
-        cancelButtonProps={{ 'aria-label': '取消零收费协调' }}
+        okText={t("解除冻结并生成收据")}
+        cancelText={t("取消")}
+        okButtonProps={{ 'aria-label': t("解除冻结并生成收据") }}
+        cancelButtonProps={{ 'aria-label': t("取消零收费协调") }}
         confirmLoading={mutating}
         closeOnEsc={!mutating}
         maskClosable={!mutating}
@@ -199,21 +203,21 @@ export function ProviderCostResolutionWorkspace({ orgId }: { orgId: number }) {
             <Banner
               type="info"
               closeIcon={null}
-              description={`请求 ${selected.request_id}；尝试 ${selected.attempt_id}。该操作固定为 refund，服务端不接受金额。`}
+              description={t("请求 {v0}；尝试 {v1}。该操作固定为 refund，服务端不接受金额。", { v0: String(selected.request_id), v1: String(selected.attempt_id) })}
               style={{ marginBottom: 12 }}
             />
-            <Typography.Text strong>协调原因</Typography.Text>
+            <Typography.Text strong>{t("协调原因")}</Typography.Text>
             <TextArea
-              aria-label="协调原因"
+              aria-label={t("协调原因")}
               value={reason}
               onChange={setReason}
               maxCount={500}
               autosize={{ minRows: 3, maxRows: 5 }}
               style={{ marginTop: 6, marginBottom: 12 }}
             />
-            <Typography.Text strong>证据引用</Typography.Text>
+            <Typography.Text strong>{t("证据引用")}</Typography.Text>
             <Input
-              aria-label="证据引用"
+              aria-label={t("证据引用")}
               value={evidenceRef}
               onChange={setEvidenceRef}
               maxLength={255}

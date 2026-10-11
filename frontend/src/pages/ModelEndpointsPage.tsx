@@ -1,3 +1,5 @@
+import '../i18n/models';
+import { translate as t, useI18n } from '../i18n';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Banner, Button, Input, Modal, SideSheet, Space, Table, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconPlus, IconRefresh, IconSearch } from '@douyinfe/semi-icons';
@@ -57,6 +59,7 @@ function axisTone(state: string) {
 }
 
 export default function ModelEndpointsPage() {
+  useI18n();
   const [search, setSearch] = useSearchParams();
   const user = useAuthStore(state => state.user);
   const organizationRole = organizationRoleForUser(user);
@@ -69,8 +72,8 @@ export default function ModelEndpointsPage() {
   const [detail, setDetail] = useState<CanonicalModelApplication | null>(null);
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [loadError, setLoadError] = useState('');
-  const [detailError, setDetailError] = useState('');
+  const [loadError, setLoadError] = useState<unknown>(null);
+  const [detailError, setDetailError] = useState<unknown>(null);
   const [filter, setFilter] = useState('');
   const [entryOpen, setEntryOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -95,14 +98,14 @@ export default function ModelEndpointsPage() {
     }
     const version = ++listVersion.current;
     setLoading(true);
-    setLoadError('');
+    setLoadError(null);
     try {
       const result = await modelDeploymentApi.list();
       if (version === listVersion.current) setProjection(result);
     } catch (error) {
       if (version !== listVersion.current) return;
       setProjection(null);
-      setLoadError(endpointError(error, '无法读取模型接入状态。'));
+      setLoadError(error);
     } finally {
       if (version === listVersion.current) setLoading(false);
     }
@@ -113,20 +116,20 @@ export default function ModelEndpointsPage() {
   useEffect(() => {
     if (!canRead || auxiliaryView || !deploymentID || !operationID) {
       setDetail(null);
-      setDetailError('');
+      setDetailError(null);
       setDetailLoading(false);
       return;
     }
     const version = ++detailVersion.current;
     setDetail(null);
     setDetailLoading(true);
-    setDetailError('');
+    setDetailError(null);
     void modelDeploymentApi.get(deploymentID, operationID).then(result => {
       if (version === detailVersion.current) setDetail(result);
     }).catch(error => {
       if (version !== detailVersion.current) return;
       setDetail(null);
-      setDetailError(endpointError(error, '无法读取该 deployment 与 operation 的精确详情。'));
+      setDetailError(error);
     }).finally(() => {
       if (version === detailVersion.current) setDetailLoading(false);
     });
@@ -146,10 +149,10 @@ export default function ModelEndpointsPage() {
     setSearch(next, { replace: true });
   };
 
-  const viewNavigation = <Space>
-    <Button type={!auxiliaryView ? 'primary' : 'tertiary'} onClick={() => selectView()}>模型执行目标</Button>
-    <Button type={selectedView === 'catalog' ? 'primary' : 'tertiary'} onClick={() => selectView('catalog')}>公共模型目录</Button>
-    <Button type={selectedView === 'diagnostics' ? 'primary' : 'tertiary'} onClick={() => selectView('diagnostics')}>执行诊断</Button>
+  const viewNavigation = <Space wrap>
+    <Button type={!auxiliaryView ? 'primary' : 'tertiary'} onClick={() => selectView()}>{t("模型执行目标")}</Button>
+    <Button type={selectedView === 'catalog' ? 'primary' : 'tertiary'} onClick={() => selectView('catalog')}>{t("公共模型目录")}</Button>
+    <Button type={selectedView === 'diagnostics' ? 'primary' : 'tertiary'} onClick={() => selectView('diagnostics')}>{t("执行诊断")}</Button>
   </Space>;
 
   const rows = useMemo<ApplicationOperationRow[]>(() => (projection?.applications || []).flatMap(application =>
@@ -191,7 +194,7 @@ export default function ModelEndpointsPage() {
   const closeDetail = () => {
     detailVersion.current += 1;
     setDetail(null);
-    setDetailError('');
+    setDetailError(null);
     const next = new URLSearchParams(search);
     next.delete('deployment_id');
     next.delete('operation_id');
@@ -207,7 +210,7 @@ export default function ModelEndpointsPage() {
   const inspectReleaseFromDetail = (releaseRef: string) => {
     detailVersion.current += 1;
     setDetail(null);
-    setDetailError('');
+    setDetailError(null);
     const next = new URLSearchParams(search);
     next.delete('deployment_id');
     next.delete('operation_id');
@@ -225,7 +228,7 @@ export default function ModelEndpointsPage() {
     } catch (error) {
       if (version !== detailVersion.current) return;
       setDetail(null);
-      setDetailError(endpointError(error, 'Canonical 状态已变化，但精确 deployment 详情刷新失败。'));
+      setDetailError(error);
     }
   }, [canRead, deploymentID, load, operationID]);
 
@@ -254,17 +257,17 @@ export default function ModelEndpointsPage() {
         credential_binding_id: binding.id,
       });
       if (result.success && result.current) {
-        Toast.success(`Deployment #${result.deployment_id} · ${result.operation_id} 精确探测通过`);
+        Toast.success(t('Deployment #{id} · {operation} 精确探测通过', { id: result.deployment_id, operation: result.operation_id }));
       } else if (result.provider_success && result.stale) {
-        Toast.warning('供应商请求成功，但提交后的 revision 已变化；结果仅保留为历史证据');
+        Toast.warning(t("供应商请求成功，但提交后的 revision 已变化；结果仅保留为历史证据"));
       } else {
-        Toast.error(`精确探测未通过：${result.reason_code || result.provider_reason_code}`);
+        Toast.error(t('精确探测未通过：{reason}', { reason: result.reason_code || result.provider_reason_code }));
       }
       await load();
       const refreshed = await modelDeploymentApi.get(detail.deployment.id, selectedOperation.operation_id);
       setDetail(refreshed);
     } catch (error) {
-      Toast.error(endpointError(error, 'Canonical operation 精确探测失败'));
+      Toast.error(endpointError(error, t("Canonical operation 精确探测失败")));
       await load();
     } finally {
       setWorkingBindingID(0);
@@ -274,22 +277,22 @@ export default function ModelEndpointsPage() {
   const confirmProbe = (binding: CanonicalCredentialBinding) => {
     if (!detail || !selectedOperation || !canManage || !gatewayLicensed) return;
     Modal.confirm({
-      title: `探测 Deployment #${detail.deployment.id}？`,
+      title: t('探测 Deployment #{id} · {operation}？', { id: detail.deployment.id, operation: selectedOperation.operation_id }),
       content: <div>
-        <p>将向真实供应商发起一次最小请求，可能产生少量供应商费用。</p>
+        <p>{t("将向真实供应商发起一次最小请求，可能产生少量供应商费用。")}</p>
         <p><Text code>deployment_id={detail.deployment.id}</Text></p>
         <p><Text code>operation_id={selectedOperation.operation_id}</Text></p>
         <p><Text code>credential_binding_id={binding.id}</Text></p>
-        <p>服务端只解析这组精确绑定；不会回退到同模型、同连接或其他 credential。</p>
+        <p>{t("服务端只解析这组精确绑定；不会回退到同模型、同连接或其他 credential。")}</p>
       </div>,
-      okText: '发起精确探测',
+      okText: t("发起精确探测"),
       onOk: () => executeProbe(binding),
     });
   };
 
   const columns = [
     {
-      title: '公共模型', key: 'model', width: 210,
+      title: t("公共模型"), key: 'model', width: 210,
       render: (_: unknown, row: ApplicationOperationRow) => <div className="ur-model-endpoint-name">
         <Text strong>{row.application.public_model.display_name || row.application.public_model.model_name}</Text>
         <Text code size="small">{row.application.public_model.model_name}</Text>
@@ -311,18 +314,18 @@ export default function ModelEndpointsPage() {
       </div>,
     },
     {
-      title: '独立状态轴', key: 'axes',
+      title: t("独立状态轴"), key: 'axes',
       render: (_: unknown, row: ApplicationOperationRow) => <div className="ur-model-endpoint-targets">
-        <StatusTag status={axisTone(row.application.connection.admin_state)}>连接 {row.application.connection.admin_state}</StatusTag>
+        <StatusTag status={axisTone(row.application.connection.admin_state)}>{t("连接")} {row.application.connection.admin_state}</StatusTag>
         <StatusTag status={axisTone(row.application.deployment.admin_state)}>Deployment {row.application.deployment.admin_state}</StatusTag>
-        <StatusTag status={axisTone(row.application.credential.state)}>凭证 {row.application.credential.state}</StatusTag>
-        <StatusTag status={axisTone(row.operation.probe_state)}>探测 {row.operation.probe_state}</StatusTag>
-        <StatusTag status={axisTone(row.operation.runtime.state)}>运行时 {row.operation.runtime.state}</StatusTag>
-        <StatusTag status={axisTone(row.application.callability.state)}>调用 {row.application.callability.state}</StatusTag>
+        <StatusTag status={axisTone(row.application.credential.state)}>{t("凭证")} {row.application.credential.state}</StatusTag>
+        <StatusTag status={axisTone(row.operation.probe_state)}>{t("探测")} {row.operation.probe_state}</StatusTag>
+        <StatusTag status={axisTone(row.operation.runtime.state)}>{t("运行时")} {row.operation.runtime.state}</StatusTag>
+        <StatusTag status={axisTone(row.application.callability.state)}>{t("调用")} {row.application.callability.state}</StatusTag>
       </div>,
     },
     {
-      title: '操作', key: 'actions', width: 100,
+      title: t("操作"), key: 'actions', width: 100,
       render: (_: unknown, row: ApplicationOperationRow) => <Button
         type="primary"
         theme="borderless"
@@ -330,25 +333,25 @@ export default function ModelEndpointsPage() {
           event.stopPropagation();
           selectExactIdentity(row.application.deployment.id, row.operation.operation_id);
         }}
-      >查看详情</Button>,
+      >{t("查看详情")}</Button>,
     },
   ];
 
   if (!canRead) {
     return <div className="ur-page ur-page-wide">
-      <PageHeader eyebrow="模型接入" title="模型接入" description="供应商连接与模型执行目标只对平台管理员、组织管理员和组织只读角色开放。" />
-      <EmptyState title="当前身份无权读取供应商部署" description="项目成员不会收到 provider、Base URL、credential 或 deployment 管理状态。请从项目工作台使用已授权的公共模型。" minHeight={360} />
+      <PageHeader eyebrow={t("模型接入")} title={t("模型接入")} description={t("供应商连接与模型执行目标只对平台管理员、组织管理员和组织只读角色开放。")} />
+      <EmptyState title={t("当前身份无权读取供应商部署")} description={t("项目成员不会收到 provider、Base URL、credential 或 deployment 管理状态。请从项目工作台使用已授权的公共模型。")} minHeight={360} />
     </div>;
   }
 
   if (selectedView === 'catalog') {
     return <div className="ur-page ur-page-wide">
       <PageHeader
-        eyebrow="模型接入"
-        title="公共模型目录"
-        description="维护经过验证的模型执行边界、企业别名和项目可见范围；不会修改 canonical runtime。"
-        actions={viewNavigation}
+        eyebrow={t("模型接入")}
+        title={t("公共模型目录")}
+        description={t("维护经过验证的模型执行边界、企业别名和项目可见范围；不会修改 canonical runtime。")}
       />
+      <nav className="ur-workspace-tabs">{viewNavigation}</nav>
       <ModelGovernancePage embedded />
     </div>;
   }
@@ -356,80 +359,81 @@ export default function ModelEndpointsPage() {
   if (selectedView === 'diagnostics') {
     return <div className="ur-page ur-page-wide">
       <PageHeader
-        eyebrow="模型接入"
-        title="执行诊断"
-        description="按 deployment_id + operation_id 检查调用者、路由、凭证、探测、运行时与授权事实。"
-        actions={viewNavigation}
+        eyebrow={t("模型接入")}
+        title={t("执行诊断")}
+        description={t("按 deployment_id + operation_id 检查调用者、路由、凭证、探测、运行时与授权事实。")}
       />
+      <nav className="ur-workspace-tabs">{viewNavigation}</nav>
       <ModelReadinessPage embedded forceConnectionMode />
     </div>;
   }
 
   return <div className="ur-page ur-page-wide">
     <PageHeader
-      eyebrow="模型接入"
-      title="模型接入"
-      description="连接模型平台，复用凭证批量配置模型，并分别查看验证、发布和应用授权状态。"
+      eyebrow={t("模型接入")}
+      title={t("模型接入")}
+      description={t("连接模型平台，复用凭证批量配置模型，并分别查看验证、发布和应用授权状态。")}
       actions={<Space>
-        {viewNavigation}
-        <Button icon={<IconRefresh />} loading={loading} onClick={() => void load()}>刷新</Button>
+        <Button icon={<IconRefresh />} loading={loading} onClick={() => void load()}>{t("刷新")}</Button>
         {canManage && <Button
           icon={<IconPlus />}
           type="primary"
           disabled={!gatewayLicensed}
           title={!gatewayLicensed ? gatewayRestriction : undefined}
           onClick={() => setEntryOpen(true)}
-        >接入模型</Button>}
+        >{t("接入模型")}</Button>}
       </Space>}
     />
+
+    <nav className="ur-workspace-tabs">{viewNavigation}</nav>
 
     {!canManage && <Banner
       type="info"
       closeIcon={null}
-      description="当前为组织只读视图：可读取 canonical list/detail 和五轴状态；不展示 credential binding 身份，也不提供创建、探测或发布操作。"
+      description={t("当前为组织只读视图：可读取 canonical list/detail 和五轴状态；不展示 credential binding 身份，也不提供创建、探测或发布操作。")}
       style={{ marginBottom: 16 }}
     />}
     {canManage && !gatewayLicensed && <Banner
       type="warning"
       closeIcon={null}
-      description={`${gatewayRestriction || '模型网关商业授权不可用。'} Canonical 状态仍可读取；创建与真实探测保持禁用。`}
+      description={t('{reason} Canonical 状态仍可读取；创建与真实探测保持禁用。', { reason: gatewayRestriction || t('模型网关商业授权不可用。') })}
       style={{ marginBottom: 16 }}
     />}
     {hasLegacyIdentity && <Banner
       type="warning"
       closeIcon={null}
-      description="旧 channel_id/public_model 深链不是 canonical deployment 身份，系统不会猜测映射。请从列表选择精确 deployment_id + operation_id。"
+      description={t("旧 channel_id/public_model 深链不是 canonical deployment 身份，系统不会猜测映射。请从列表选择精确 deployment_id + operation_id。")}
       style={{ marginBottom: 16 }}
     />}
-    {detailError && <Banner
+    {!!detailError && <Banner
       type="danger"
       closeIcon={null}
-      description={detailError}
+      description={endpointError(detailError, t('无法读取该 deployment 与 operation 的精确详情。'))}
       style={{ marginBottom: 16 }}
     />}
 
     <div className="ur-model-endpoint-kpis">
-      <MetricTile label="执行目标" value={projection?.summary.deployments ?? '-'} meta="持久 deployment identity" />
-      <MetricTile label="凭证可选" value={projection?.summary.credentials_ready ?? '-'} tone="green" meta={`暂停连接 ${projection?.summary.connections_paused ?? '-'}`} />
-      <MetricTile label="探测就绪" value={projection?.summary.probes_ready ?? '-'} tone="blue" meta="operation 级当前证据" />
-      <MetricTile label="运行时成员" value={projection?.summary.runtime_assigned_operations ?? '-'} tone="amber" meta="不等同调用者已授权" />
+      <MetricTile label={t("执行目标")} value={projection?.summary.deployments ?? '-'} meta={t("持久 deployment identity")} />
+      <MetricTile label={t("凭证可选")} value={projection?.summary.credentials_ready ?? '-'} tone="green" meta={t('暂停连接 {count}', { count: projection?.summary.connections_paused ?? '—' })} />
+      <MetricTile label={t("探测就绪")} value={projection?.summary.probes_ready ?? '-'} tone="blue" meta={t("operation 级当前证据")} />
+      <MetricTile label={t("运行时成员")} value={projection?.summary.runtime_assigned_operations ?? '-'} tone="amber" meta={t("不等同调用者已授权")} />
     </div>
 
     <Surface
-      title="模型执行目标"
-      description="每行对应一个精确 Deployment × Operation；可查看内部持久身份，系统不会按公共模型或旧 channel 回退选择。"
+      title={t("模型执行目标")}
+      description={t("每行对应一个精确 Deployment × Operation；可查看内部持久身份，系统不会按公共模型或旧 channel 回退选择。")}
       actions={<Input
-        aria-label="搜索模型执行目标"
+        aria-label={t("搜索模型执行目标")}
         prefix={<IconSearch />}
         value={filter}
         onChange={setFilter}
-        placeholder="模型、deployment、operation 或供应商"
+        placeholder={t("模型、deployment、operation 或供应商")}
         style={{ width: 320 }}
       />}
     >
-      {loadError ? <EmptyState title="模型接入状态暂时不可用" description={loadError} actions={<Button type="primary" onClick={() => void load()}>重试</Button>} minHeight={320} />
-        : loading && !projection ? <EmptyState title="正在读取模型执行目标" description="正在加载持久身份与五轴状态。" minHeight={320} />
-          : <Table
+      {loadError ? <EmptyState title={t("模型接入状态暂时不可用")} description={endpointError(loadError, t('无法读取模型接入状态。'))} actions={<Button type="primary" onClick={() => void load()}>{t("重试")}</Button>} minHeight={320} />
+        : loading && !projection ? <EmptyState title={t("正在读取模型执行目标")} description={t("正在加载持久身份与五轴状态。")} minHeight={320} />
+          : <div className="ur-table-shell"><Table
             rowKey="key"
             loading={loading}
             dataSource={filteredRows}
@@ -440,12 +444,12 @@ export default function ModelEndpointsPage() {
               style: { cursor: 'pointer' },
             })}
             empty={<EmptyState
-              title="还没有模型执行目标"
-              description={canManage ? '接入第一个模型；创建后仍需分别完成精确 Operation 探测与发布。' : '当前组织还没有可读取的模型执行目标。'}
-              actions={canManage ? <Button type="primary" disabled={!gatewayLicensed} title={!gatewayLicensed ? gatewayRestriction : undefined} onClick={() => setEntryOpen(true)}>接入模型</Button> : undefined}
+              title={t("还没有模型执行目标")}
+              description={canManage ? t("接入第一个模型；创建后仍需分别完成精确 Operation 探测与发布。") : t("当前组织还没有可读取的模型执行目标。")}
+              actions={canManage ? <Button type="primary" disabled={!gatewayLicensed} title={!gatewayLicensed ? gatewayRestriction : undefined} onClick={() => setEntryOpen(true)}>{t("接入模型")}</Button> : undefined}
               minHeight={300}
             />}
-          />}
+          /></div>}
     </Surface>
 
     <div id="model-release-workspace"><ModelReleaseWorkspace
@@ -468,16 +472,16 @@ export default function ModelEndpointsPage() {
       onInspectRelease={inspectReleaseFromDetail}
       onOpenReleaseWorkspace={() => { closeDetail(); document.getElementById('model-release-workspace')?.scrollIntoView({ behavior: 'smooth' }); }}
     />
-    {detailLoading && deploymentID > 0 && operationID && !detail && <Text type="tertiary">正在读取精确 deployment 详情…</Text>}
-    {canManage && entryOpen && <SideSheet title="接入模型" visible onCancel={() => setEntryOpen(false)} width="min(680px, 100vw)">
-      <Typography.Paragraph>一个平台连接可复用 API Key，配置多个模型。先选择连接方式，再选择模型。</Typography.Paragraph>
+    {detailLoading && deploymentID > 0 && operationID && !detail && <Text type="tertiary">{t("正在读取精确 deployment 详情…")}</Text>}
+    {canManage && entryOpen && <SideSheet title={t("接入模型")} visible onCancel={() => setEntryOpen(false)} width="min(680px, 100vw)">
+      <Typography.Paragraph>{t("一个平台连接可复用 API Key，配置多个模型。先选择连接方式，再选择模型。")}</Typography.Paragraph>
       <Space vertical align="start">
         <Button type="primary" disabled={!projection?.applications.some(a => !a.connection.retired_at)} onClick={() => {
           setEntryOpen(false); setBatchInitial({ connectionID: 0, bindingID: 0 }); setBatchOpen(true);
-        }}>向已有连接添加模型</Button>
-        <Text type="tertiary">复用已保存的地域、业务空间和凭证，多选模型后统一保存。</Text>
-        <Button onClick={() => { setEntryOpen(false); setCreateOpen(true); }}>新建平台连接</Button>
-        <Text type="tertiary">选择平台并保存首个模型，随后继续为该连接选择更多模型。手动 ID 和详细配置也在此完成。</Text>
+        }}>{t("向已有连接添加模型")}</Button>
+        <Text type="tertiary">{t("复用已保存的地域、业务空间和凭证，多选模型后统一保存。")}</Text>
+        <Button onClick={() => { setEntryOpen(false); setCreateOpen(true); }}>{t("新建平台连接")}</Button>
+        <Text type="tertiary">{t("选择平台并保存首个模型，随后继续为该连接选择更多模型。手动 ID 和详细配置也在此完成。")}</Text>
       </Space>
     </SideSheet>}
     {canManage && batchOpen && <ModelEndpointBatchSheet

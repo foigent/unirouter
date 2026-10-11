@@ -1,3 +1,5 @@
+import '../i18n/security';
+import { translate as t, useI18n, translateLabel, localizeOptions } from '../i18n';
 import { formatDateTime } from '../utils/formatDate';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, DatePicker, Input, Select, Space, Table, Tag, Toast, Typography } from '@douyinfe/semi-ui';
@@ -153,10 +155,10 @@ function scopedIdentity(name: string | undefined, id: number | null | undefined,
 
 function actorIdentity(row: any) {
   if (row.actor?.kind === 'service') return `${row.actor.display_name || 'X-Insight service'} (${row.actor.ref})`;
-  if (row.actor?.kind === 'system') return row.actor.display_name || '系统';
-  if (row.actor?.kind === 'human') return scopedIdentity(row.actor.display_name, row.user_id, '用户');
-  if (row.actor_id === 0 && row.source === 'system') return '系统';
-  return scopedIdentity(row.actor_name, row.actor_id, '用户');
+  if (row.actor?.kind === 'system') return row.actor.display_name || t("系统");
+  if (row.actor?.kind === 'human') return scopedIdentity(row.actor.display_name, row.user_id, t("用户"));
+  if (row.actor_id === 0 && row.source === 'system') return t("系统");
+  return scopedIdentity(row.actor_name, row.actor_id, t("用户"));
 }
 
 function projectIdentity(name: string | undefined, id: number | null | undefined) {
@@ -166,6 +168,7 @@ function projectIdentity(name: string | undefined, id: number | null | undefined
 }
 
 export default function AuditLogsPage() {
+  const { locale } = useI18n();
   const user = useAuthStore((state) => state.user);
   const initialState = useRef(readInitialAuditState()).current;
   const [logs, setLogs] = useState<AuditLog[]>([]);
@@ -276,14 +279,14 @@ export default function AuditLogsPage() {
       normalizeAuditFilters(draftFilters) || {},
     );
     if (!next.saved) {
-      Toast.error('视图名称需为 1 至 40 个字符，并且浏览器存储必须可用。');
+      Toast.error(t("视图名称需为 1 至 40 个字符，并且浏览器存储必须可用。"));
       return;
     }
     const name = savedViewName.trim();
     setSavedViews(next.views);
     setSelectedSavedView(name);
     setSavedViewName(name);
-    Toast.success('筛选视图已保存在此浏览器');
+    Toast.success(t("筛选视图已保存在此浏览器"));
   };
 
   const applySavedView = (name: string) => {
@@ -298,75 +301,57 @@ export default function AuditLogsPage() {
     if (!selectedSavedView) return;
     const next = deleteLocalView(auditSavedViewStorageKey, savedViews, selectedSavedView);
     if (!next.deleted) {
-      Toast.error('无法删除此浏览器中的视图');
+      Toast.error(t("无法删除此浏览器中的视图"));
       return;
     }
     setSavedViews(next.views);
     setSelectedSavedView(undefined);
     setSavedViewName('');
-    Toast.success('已删除此浏览器中的筛选视图');
+    Toast.success(t("已删除此浏览器中的筛选视图"));
   };
 
   const selectedLog = useMemo(
     () => logs.find(log => log.id === selectedLogID) || null,
-    [logs, selectedLogID],
+    [logs, selectedLogID, locale],
   );
   const appliedFilterCount = Object.values(filters).filter(Boolean).length;
   const organizationIdentity = (row: AuditLog) => scopedIdentity(
-    customerOrganizationDisplayName(user, row.org_id, row.org_name, '当前客户'),
+    customerOrganizationDisplayName(user, row.org_id, row.org_name, t("当前客户")),
     row.org_id,
-    '组织',
+    t("组织"),
   );
 
   const columns = [
-    { title: '时间', dataIndex: 'created_at', width: 170, render: (v: string) => formatDateTime(v) },
-    {
-      title: '范围', width: 220,
-      render: (_: unknown, row: AuditLog) => row.project_id
-        ? `${organizationIdentity(row)} / ${projectIdentity(row.project_name, row.project_id)}`
-        : organizationIdentity(row),
-    },
-    { title: '操作者', dataIndex: 'actor_id', width: 170, render: (_: number, row: AuditLog) => actorIdentity(row) },
-    {
-      title: '动作', dataIndex: 'action',
-      width: 180,
-      render: (v: string) => <Tag color={actionColor(v)}>{v}</Tag>,
-    },
-    { title: '目标', width: 190, render: (_: unknown, row: AuditLog) => `${row.resource || '-'}${row.resource_id ? ` #${row.resource_id}` : ''}` },
-    { title: '来源', dataIndex: 'source', width: 150, render: (v: string) => v ? <Tag>{auditSourceLabel(v)}</Tag> : '-' },
+    { title: t('动作'), key: 'event', width: 200, render: (_: unknown, row: AuditLog) => <div className="ur-event-copy"><Tag color={actionColor(row.action)}>{row.action}</Tag><small>{formatDateTime(row.created_at)}</small></div> },
+    { title: t('范围'), key: 'scope', width: 180, render: (_: unknown, row: AuditLog) => <div className="ur-event-copy"><span>{organizationIdentity(row)}</span>{row.project_id ? <small>{projectIdentity(row.project_name, row.project_id)}</small> : null}</div> },
+    { title: t('操作者'), key: 'actor', width: 170, render: (_: unknown, row: AuditLog) => <div className="ur-event-copy"><span>{actorIdentity(row)}</span><small>{row.source ? auditSourceLabel(row.source) : '—'}</small></div> },
+    { title: t('目标'), key: 'target', width: 160, render: (_: unknown, row: AuditLog) => <div className="ur-event-copy"><span>{row.resource || '—'}</span>{row.resource_id ? <small>#{row.resource_id}</small> : null}</div> },
   ];
 
   return (
-    <div className="ur-page">
+    <div className="ur-page ur-security-workspace">
       <PageHeader
-        eyebrow="访问与安全"
-        title="审计日志"
-        description="查看登录、配置变更、入账、额度调整和结算等关键后台动作。"
+        eyebrow={t("访问与安全")}
+        title={t("审计日志")}
+        description={t("查看登录、配置变更、入账、额度调整和结算等关键后台动作。")}
       />
-      <Surface title="筛选与保存视图" description="先编辑筛选草稿，再应用查询；命名视图只保存在当前浏览器，不上传审计内容。">
+      <Surface title={t("筛选与保存视图")} description={t("先编辑筛选草稿，再应用查询；命名视图只保存在当前浏览器，不上传审计内容。")}>
         <div className="ur-audit-filter-grid">
-          <Input aria-label="项目 ID 筛选" prefix="项目" placeholder="项目 ID" value={draftFilters.project_id || ''} onChange={(v) => updateFilter('project_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
-          <Input aria-label="操作者 ID 筛选" prefix="操作者" placeholder="操作者 ID" value={draftFilters.actor_id || ''} onChange={(v) => updateFilter('actor_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
-          <Select aria-label="操作者类型筛选" placeholder="操作者类型" value={draftFilters.actor_kind || undefined} onChange={(v) => updateFilter('actor_kind', v as string)} style={{ width: '100%' }} showClear>
-            <Select.Option value="human">UR 用户</Select.Option><Select.Option value="service">服务</Select.Option><Select.Option value="system">系统</Select.Option>
-          </Select>
-          <Input aria-label="操作者引用筛选" placeholder="操作者引用" value={draftFilters.actor_ref || ''} onChange={(v) => updateFilter('actor_ref', v)} onEnterPress={() => commitFilters(draftFilters)} />
-          <Input aria-label="审计动作筛选" placeholder="动作" value={draftFilters.action || ''} onChange={(v) => updateFilter('action', v)} onEnterPress={() => commitFilters(draftFilters)} />
-          <Input aria-label="目标类型筛选" placeholder="目标类型" value={draftFilters.resource || ''} onChange={(v) => updateFilter('resource', v)} onEnterPress={() => commitFilters(draftFilters)} />
-          <Input aria-label="目标 ID 筛选" placeholder="目标 ID" value={draftFilters.resource_id || ''} onChange={(v) => updateFilter('resource_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
-          <Input aria-label="操作 ID 筛选" placeholder="操作 ID（Request ID）" value={draftFilters.request_id || ''} onChange={(v) => updateFilter('request_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
-          <Input aria-label="客户端请求 ID 筛选" placeholder="客户端请求 ID" value={draftFilters.client_request_id || ''} onChange={(v) => updateFilter('client_request_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
-          <Select aria-labelledby="audit-source-filter-label" insetLabel="来源" insetLabelId="audit-source-filter-label" placeholder="选择来源" value={draftFilters.source || undefined} onChange={(v) => updateFilter('source', v as string)} style={{ width: '100%' }} showClear>
-            {auditSourceOptions.map(option => <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>)}
+          <Input aria-label={t("项目 ID 筛选")} prefix={t("项目")} placeholder={t("项目 ID")} value={draftFilters.project_id || ''} onChange={(v) => updateFilter('project_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
+          <Input aria-label={t("操作者 ID 筛选")} prefix={t("操作者")} placeholder={t("操作者 ID")} value={draftFilters.actor_id || ''} onChange={(v) => updateFilter('actor_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
+          <Input aria-label={t("审计动作筛选")} placeholder={t("动作")} value={draftFilters.action || ''} onChange={(v) => updateFilter('action', v)} onEnterPress={() => commitFilters(draftFilters)} />
+          <Select aria-labelledby="audit-source-filter-label" insetLabel={t("来源")} insetLabelId="audit-source-filter-label" placeholder={t("选择来源")} value={draftFilters.source || undefined} onChange={(v) => updateFilter('source', v as string)} style={{ width: '100%' }} showClear>
+            {localizeOptions(auditSourceOptions).map(option => <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>)}
           </Select>
           <DatePicker
             aria-labelledby="audit-time-range-label"
-            insetLabel={<span id="audit-time-range-label">时间范围</span>}
+            insetLabel={<span id="audit-time-range-label">{t("时间范围")}</span>}
             type="dateTimeRange"
             format="yyyy-MM-dd HH:mm:ss"
-            placeholder={['开始时间', '结束时间']}
+            placeholder={[t("开始时间"), t("结束时间")]}
             showClear
             className="ur-audit-date-range"
+            dropdownClassName="ur-audit-calendar"
             style={{ width: '100%' }}
             value={draftFilters.start_time && draftFilters.end_time ? [new Date(draftFilters.start_time), new Date(draftFilters.end_time)] : undefined}
             onChange={(value) => {
@@ -379,26 +364,39 @@ export default function AuditLogsPage() {
             }}
           />
         </div>
+        <details className="ur-advanced-filters">
+          <summary>{t('高级筛选')}</summary>
+          <div className="ur-audit-filter-grid">
+          <Select aria-label={t("操作者类型筛选")} placeholder={t("操作者类型")} value={draftFilters.actor_kind || undefined} onChange={(v) => updateFilter('actor_kind', v as string)} style={{ width: '100%' }} showClear>
+            <Select.Option value="human">{t("UR 用户")}</Select.Option><Select.Option value="service">{t("服务")}</Select.Option><Select.Option value="system">{t("系统")}</Select.Option>
+          </Select>
+          <Input aria-label={t("操作者引用筛选")} placeholder={t("操作者引用")} value={draftFilters.actor_ref || ''} onChange={(v) => updateFilter('actor_ref', v)} onEnterPress={() => commitFilters(draftFilters)} />
+          <Input aria-label={t("目标类型筛选")} placeholder={t("目标类型")} value={draftFilters.resource || ''} onChange={(v) => updateFilter('resource', v)} onEnterPress={() => commitFilters(draftFilters)} />
+          <Input aria-label={t("目标 ID 筛选")} placeholder={t("目标 ID")} value={draftFilters.resource_id || ''} onChange={(v) => updateFilter('resource_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
+          <Input aria-label={t("操作 ID 筛选")} placeholder={t("操作 ID（Request ID）")} value={draftFilters.request_id || ''} onChange={(v) => updateFilter('request_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
+          <Input aria-label={t("客户端请求 ID 筛选")} placeholder={t("客户端请求 ID")} value={draftFilters.client_request_id || ''} onChange={(v) => updateFilter('client_request_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
+          </div>
+        </details>
         <div className="ur-audit-filter-actions">
           <Space wrap>
-            <Button size="small" onClick={() => setRecentRange(15 * 60 * 1000)}>最近 15 分钟</Button>
-            <Button size="small" onClick={() => setRecentRange(60 * 60 * 1000)}>最近 1 小时</Button>
-            <Button size="small" onClick={() => setRecentRange(24 * 60 * 60 * 1000)}>最近 24 小时</Button>
-            <Button size="small" onClick={() => setRecentRange(7 * 24 * 60 * 60 * 1000)}>最近 7 天</Button>
+            <Button size="small" onClick={() => setRecentRange(15 * 60 * 1000)}>{t("最近 15 分钟")}</Button>
+            <Button size="small" onClick={() => setRecentRange(60 * 60 * 1000)}>{t("最近 1 小时")}</Button>
+            <Button size="small" onClick={() => setRecentRange(24 * 60 * 60 * 1000)}>{t("最近 24 小时")}</Button>
+            <Button size="small" onClick={() => setRecentRange(7 * 24 * 60 * 60 * 1000)}>{t("最近 7 天")}</Button>
           </Space>
           <Space>
-            <Tag color={appliedFilterCount ? 'blue' : 'grey'}>{appliedFilterCount ? `已应用 ${appliedFilterCount} 项` : '未筛选'}</Tag>
-            <Button aria-label="应用筛选" type="primary" icon={<IconSearch />} onClick={() => commitFilters(draftFilters)}>应用筛选</Button>
-            <Button aria-label="重置筛选" icon={<IconRefresh />} onClick={clearFilters}>重置</Button>
+            <Tag color={appliedFilterCount ? 'blue' : 'grey'}>{appliedFilterCount ? t('已应用 {count} 项', {count: appliedFilterCount}) : t("未筛选")}</Tag>
+            <Button aria-label={t("应用筛选")} type="primary" icon={<IconSearch />} onClick={() => commitFilters(draftFilters)}>{t("应用筛选")}</Button>
+            <Button aria-label={t("重置筛选")} icon={<IconRefresh />} onClick={clearFilters}>{t("重置")}</Button>
           </Space>
         </div>
         <div className="ur-saved-view-bar">
-          <div role="group" aria-label="已保存的审计视图">
+          <div role="group" aria-label={t("已保存的审计视图")}>
             <Select
               aria-labelledby="audit-saved-view-label"
-              insetLabel="视图"
+              insetLabel={t("视图")}
               insetLabelId="audit-saved-view-label"
-              placeholder="已保存视图（此浏览器）"
+              placeholder={t("已保存视图（此浏览器）")}
               value={selectedSavedView}
               optionList={savedViews.map(view => ({ label: view.name, value: view.name }))}
               onChange={value => applySavedView(String(value))}
@@ -408,15 +406,15 @@ export default function AuditLogsPage() {
             />
           </div>
           <Input
-            aria-label="审计视图名称"
-            placeholder="视图名称"
+            aria-label={t("审计视图名称")}
+            placeholder={t("视图名称")}
             value={savedViewName}
             maxLength={40}
             onChange={setSavedViewName}
             onEnterPress={saveCurrentView}
           />
-          <Button onClick={saveCurrentView}>保存 / 覆盖</Button>
-          <Button disabled={!selectedSavedView} onClick={deleteSavedView}>删除</Button>
+          <Button onClick={saveCurrentView}>{t("保存 / 覆盖")}</Button>
+          <Button disabled={!selectedSavedView} onClick={deleteSavedView}>{t("删除")}</Button>
         </div>
       </Surface>
 
@@ -424,30 +422,31 @@ export default function AuditLogsPage() {
         <main className="ur-explorer-panel">
           <div className="ur-panel-title">
             <div>
-              <Typography.Title heading={5} style={{ margin: 0 }}>审计记录</Typography.Title>
-              <Text className="ur-panel-hint">默认选择首条记录 · 详情始终在右侧</Text>
+              <Typography.Title heading={5} style={{ margin: 0 }}>{t("审计记录")}</Typography.Title>
+              <Text className="ur-panel-hint">{t("默认选择首条记录 · 详情始终在右侧")}</Text>
             </div>
             <Space>
-              <Tag size="small">{loading && logs.length === 0 ? '读取中' : `${total} 条事件`}</Tag>
+              <Tag size="small">{loading && logs.length === 0 ? t("读取中") : t('{count} 条事件', {count: total})}</Tag>
               <Button
                 size="small"
                 icon={<IconRefresh />}
                 loading={loading}
                 onClick={() => setReloadVersion(version => version + 1)}
               >
-                刷新
+
+                {t("刷新")}
               </Button>
             </Space>
           </div>
           <div className="ur-table-shell">
             {loading && logs.length === 0 ? (
-              <EmptyState title="正在加载审计记录" description="正在读取当前筛选范围的审计事实，请稍候。" minHeight={220} />
+              <EmptyState title={t("正在加载审计记录")} description={t("正在读取当前筛选范围的审计事实，请稍候。")} minHeight={220} />
             ) : <Table
               columns={columns}
               dataSource={logs}
               loading={loading}
               rowKey="id"
-              scroll={{ x: 1080, y: 620 }}
+              scroll={{ x: 710, y: 620 }}
               onRow={(record) => ({
                 onClick: () => record && selectLog(record as AuditLog),
                 onKeyDown: (event) => {
@@ -465,12 +464,12 @@ export default function AuditLogsPage() {
               })}
               empty={loadError ? (
                 <EmptyState
-                  title="审计记录加载失败"
-                  description={loadError}
-                  actions={<Button type="primary" onClick={() => setReloadVersion(version => version + 1)}>重新加载审计记录</Button>}
+                  title={t("审计记录加载失败")}
+                  description={translateLabel(loadError)}
+                  actions={<Button type="primary" onClick={() => setReloadVersion(version => version + 1)}>{t("重新加载审计记录")}</Button>}
                   minHeight={220}
                 />
-              ) : <EmptyState title="暂无审计记录" minHeight={220} />}
+              ) : <EmptyState title={t("暂无审计记录")} minHeight={220} />}
               pagination={{
                 currentPage: page,
                 pageSize,
@@ -484,29 +483,29 @@ export default function AuditLogsPage() {
           </div>
         </main>
 
-        <aside className="ur-explorer-panel ur-explorer-detail" aria-label="审计事件检查器">
+        <aside className="ur-explorer-panel ur-explorer-detail" aria-label={t("审计事件检查器")}>
           <div className="ur-detail-header">
             <div>
-              <Text className="ur-panel-hint">审计事件</Text>
-              <Typography.Title heading={5} style={{ margin: 0 }}>审计事件检查器</Typography.Title>
+              <Text className="ur-panel-hint">{t("审计事件")}</Text>
+              <Typography.Title heading={5} style={{ margin: 0 }}>{t("审计事件检查器")}</Typography.Title>
             </div>
-            <Tag size="small" color={selectedLog ? 'blue' : undefined}>{selectedLog ? `AUD-${selectedLog.id}` : '等待事件'}</Tag>
+            <Tag size="small" color={selectedLog ? 'blue' : undefined}>{selectedLog ? `AUD-${selectedLog.id}` : t("等待事件")}</Tag>
           </div>
 
           {!selectedLog ? (
             <div className="ur-receipt-empty" role="status">
-              <Typography.Title heading={5}>{loading ? '正在加载审计事实' : loadError ? '等待可验证记录' : '暂无审计事件'}</Typography.Title>
+              <Typography.Title heading={5}>{loading ? t("正在加载审计事实") : loadError ? t("等待可验证记录") : t("暂无审计事件")}</Typography.Title>
               <Text type="tertiary">
                 {loadError
-                  ? '加载失败时不会保留上一筛选范围的旧详情。'
-                  : '有记录时会自动选择当前页第一项，无需再次点击打开详情。'}
+                  ? t("加载失败时不会保留上一筛选范围的旧详情。")
+                  : t("有记录时会自动选择当前页第一项，无需再次点击打开详情。")}
               </Text>
             </div>
           ) : (
             <div className="ur-detail-stack">
               <div className="ur-detail-hero">
                 <div>
-                  <Text type="tertiary" size="small">事件</Text>
+                  <Text type="tertiary" size="small">{t("事件")}</Text>
                   <div><Text strong>{selectedLog.action}</Text></div>
                   <Text code size="small">audit:{selectedLog.id}</Text>
                 </div>
@@ -516,30 +515,30 @@ export default function AuditLogsPage() {
               </div>
 
               <section className="ur-detail-section">
-                <Text strong>主体与范围</Text>
+                <Text strong>{t("主体与范围")}</Text>
                 <div className="ur-audit-fact-grid">
-                  <span><Text type="tertiary">发生时间</Text><code>{formatDateTime(selectedLog.created_at)}</code></span>
-                  <span><Text type="tertiary">操作者</Text><code>{actorIdentity(selectedLog)}</code></span>
-                  <span><Text type="tertiary">组织</Text><code>{organizationIdentity(selectedLog)}</code></span>
-                  <span><Text type="tertiary">项目</Text><code>{selectedLog.project_id ? projectIdentity(selectedLog.project_name, selectedLog.project_id) : '组织级'}</code></span>
-                  <span><Text type="tertiary">操作对象</Text><code>{`${selectedLog.resource || '-'}${selectedLog.resource_id ? ` #${selectedLog.resource_id}` : ''}`}</code></span>
+                  <span><Text type="tertiary">{t("发生时间")}</Text><code>{formatDateTime(selectedLog.created_at)}</code></span>
+                  <span><Text type="tertiary">{t("操作者")}</Text><code>{actorIdentity(selectedLog)}</code></span>
+                  <span><Text type="tertiary">{t("组织")}</Text><code>{organizationIdentity(selectedLog)}</code></span>
+                  <span><Text type="tertiary">{t("项目")}</Text><code>{selectedLog.project_id ? projectIdentity(selectedLog.project_name, selectedLog.project_id) : t("组织级")}</code></span>
+                  <span><Text type="tertiary">{t("操作对象")}</Text><code>{`${selectedLog.resource || '-'}${selectedLog.resource_id ? ` #${selectedLog.resource_id}` : ''}`}</code></span>
                 </div>
               </section>
 
               <section className="ur-detail-section">
-                <Text strong>调查关联</Text>
+                <Text strong>{t("调查关联")}</Text>
                 <div className="ur-audit-fact-grid">
-                  <span><Text type="tertiary">操作 ID</Text><code>{selectedLog.request_id || '-'}</code></span>
-                  <span><Text type="tertiary">客户端请求 ID</Text><code>{selectedLog.client_request_id || '-'}</code></span>
+                  <span><Text type="tertiary">{t("操作 ID")}</Text><code>{selectedLog.request_id || '-'}</code></span>
+                  <span><Text type="tertiary">{t("客户端请求 ID")}</Text><code>{selectedLog.client_request_id || '-'}</code></span>
                   <span><Text type="tertiary">IP</Text><code>{selectedLog.ip || '-'}</code></span>
                   <span><Text type="tertiary">User-Agent</Text><code>{selectedLog.user_agent || '-'}</code></span>
                 </div>
               </section>
 
               {([
-                ['详情', selectedLog.detail],
-                ['变更前', selectedLog.before],
-                ['变更后', selectedLog.after],
+                [t("详情"), selectedLog.detail],
+                [t("变更前"), selectedLog.before],
+                [t("变更后"), selectedLog.after],
               ] as Array<[string, unknown]>).map(([label, value]) => (
                 <section className="ur-detail-section" key={String(label)}>
                   <Text strong>{label}</Text>

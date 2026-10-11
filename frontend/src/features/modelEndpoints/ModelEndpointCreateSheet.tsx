@@ -1,3 +1,5 @@
+import '../../i18n/models';
+import { translate as t, translateLabel, localizeOptions, useI18n } from '../../i18n';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Banner, Button, Form, SideSheet, Toast, Typography } from '@douyinfe/semi-ui';
 import {
@@ -121,10 +123,10 @@ export function canonicalOperationOriginError(operationID: CanonicalOperationID,
   if (!exactHTTPSOriginOperations.has(operationID)) return '';
   const baseURL = String(rawBaseURL || '').replace(/^ +| +$/gu, '');
   if (!baseURL || /[^\x20-\x7e]/u.test(baseURL)) {
-    return '该 operation 要求仅包含 ASCII 的 path-free HTTPS origin，例如 https://api.openai.com';
+    return t("该 operation 要求仅包含 ASCII 的 path-free HTTPS origin，例如 https://api.openai.com");
   }
   if (/[?#]/u.test(baseURL)) {
-    return '该 operation 要求 path-free HTTPS origin；不能包含 query 或 fragment 分隔符';
+    return t("该 operation 要求 path-free HTTPS origin；不能包含 query 或 fragment 分隔符");
   }
   try {
     const parsed = new URL(baseURL);
@@ -139,10 +141,10 @@ export function canonicalOperationOriginError(operationID: CanonicalOperationID,
       || parsed.hash
       || authority.endsWith(':')
     ) {
-      return '该 operation 要求 path-free HTTPS origin；不能包含 /v1、其他路径、凭证、query 或 fragment';
+      return t("该 operation 要求 path-free HTTPS origin；不能包含 /v1、其他路径、凭证、query 或 fragment");
     }
   } catch {
-    return '该 operation 要求有效的 path-free HTTPS origin，例如 https://api.openai.com';
+    return t("该 operation 要求有效的 path-free HTTPS origin，例如 https://api.openai.com");
   }
   return '';
 }
@@ -157,14 +159,14 @@ export function providerPresetBaseURLError(
 
   const baseURL = String(rawBaseURL || '').trim();
   if (/[?#]/u.test(baseURL)) {
-    return '官方模板 Base URL 不能包含 query 或 fragment 分隔符';
+    return t("官方模板 Base URL 不能包含 query 或 fragment 分隔符");
   }
   if (presetValue === 'openai' || presetValue === 'openai-responses') {
     const expectedOperation = presetValue === 'openai-responses'
       ? 'openai.responses.v1'
       : 'openai.chat_completions.v1';
     if (operationID !== expectedOperation) {
-      return `OpenAI ${presetValue === 'openai-responses' ? 'Responses' : 'Chat Completions'} 模板不能绑定到 ${operationID}`;
+      return t('OpenAI {surface} 模板不能绑定到 {operation}', { surface: presetValue === 'openai-responses' ? 'Responses' : 'Chat Completions', operation: operationID });
     }
     try {
       const parsed = new URL(baseURL);
@@ -181,9 +183,9 @@ export function providerPresetBaseURLError(
         && !parsed.hash
         && path === expectedPath
         ? ''
-        : `OpenAI 官方模板要求精确使用 https://api.openai.com${expectedPath}`;
+        : t('OpenAI 官方模板要求精确使用 https://api.openai.com{path}', { path: expectedPath });
     } catch {
-      return `OpenAI 官方模板要求精确使用 https://api.openai.com${operationID === 'openai.responses.v1' ? '' : '/v1'}`;
+      return t('OpenAI 官方模板要求精确使用 https://api.openai.com{path}', { path: operationID === 'openai.responses.v1' ? '' : '/v1' });
     }
   }
   if (presetValue === 'gemini') {
@@ -200,9 +202,9 @@ export function providerPresetBaseURLError(
         && !parsed.hash
         && parsed.pathname.replace(/\/$/u, '') === '/v1beta/openai'
         ? ''
-        : 'Gemini 官方模板要求精确使用 https://generativelanguage.googleapis.com/v1beta/openai';
+        : t("Gemini 官方模板要求精确使用 https://generativelanguage.googleapis.com/v1beta/openai");
     } catch {
-      return 'Gemini 官方模板要求精确使用 https://generativelanguage.googleapis.com/v1beta/openai';
+      return t("Gemini 官方模板要求精确使用 https://generativelanguage.googleapis.com/v1beta/openai");
     }
   }
   if (presetValue === 'deepseek') {
@@ -219,9 +221,9 @@ export function providerPresetBaseURLError(
         && !parsed.hash
         && parsed.pathname.replace(/\/$/u, '') === ''
         ? ''
-        : 'DeepSeek 官方模板要求精确使用 https://api.deepseek.com';
+        : t("DeepSeek 官方模板要求精确使用 https://api.deepseek.com");
     } catch {
-      return 'DeepSeek 官方模板要求精确使用 https://api.deepseek.com';
+      return t("DeepSeek 官方模板要求精确使用 https://api.deepseek.com");
     }
   }
   if (presetValue === 'kimi') {
@@ -238,9 +240,9 @@ export function providerPresetBaseURLError(
         && !parsed.hash
         && parsed.pathname.replace(/\/$/u, '') === '/v1'
         ? ''
-        : 'Kimi 开放平台模板要求精确使用 https://api.moonshot.cn/v1';
+        : t("Kimi 开放平台模板要求精确使用 https://api.moonshot.cn/v1");
     } catch {
-      return 'Kimi 开放平台模板要求精确使用 https://api.moonshot.cn/v1';
+      return t("Kimi 开放平台模板要求精确使用 https://api.moonshot.cn/v1");
     }
   }
   if (presetValue === 'minimax') {
@@ -257,9 +259,9 @@ export function providerPresetBaseURLError(
         && !parsed.hash
         && parsed.pathname.replace(/\/$/u, '') === '/v1'
         ? ''
-        : 'MiniMax 中国区官方模板要求精确使用 https://api.minimax.cn/v1';
+        : t("MiniMax 中国区官方模板要求精确使用 https://api.minimax.cn/v1");
     } catch {
-      return 'MiniMax 中国区官方模板要求精确使用 https://api.minimax.cn/v1';
+      return t("MiniMax 中国区官方模板要求精确使用 https://api.minimax.cn/v1");
     }
   }
   if (presetValue === 'xai') {
@@ -276,9 +278,9 @@ export function providerPresetBaseURLError(
         && !parsed.hash
         && parsed.pathname.replace(/\/$/u, '') === '/v1'
         ? ''
-        : 'xAI 官方模板要求精确使用 https://api.x.ai/v1';
+        : t("xAI 官方模板要求精确使用 https://api.x.ai/v1");
     } catch {
-      return 'xAI 官方模板要求精确使用 https://api.x.ai/v1';
+      return t("xAI 官方模板要求精确使用 https://api.x.ai/v1");
     }
   }
   if (presetValue !== 'dashscope' && presetValue !== 'dashscope-shared' && presetValue !== 'qianwen') return '';
@@ -288,7 +290,7 @@ export function providerPresetBaseURLError(
     if (presetValue === 'dashscope-shared' || presetValue === 'qianwen') {
       return baseURL.replace(/\/$/u, '') === 'https://dashscope.aliyuncs.com/compatible-mode/v1'
         ? ''
-        : '北京共享兼容模板只接受 https://dashscope.aliyuncs.com/compatible-mode/v1';
+        : t("北京共享兼容模板只接受 https://dashscope.aliyuncs.com/compatible-mode/v1");
     }
     const workspaceSuffix = '.cn-beijing.maas.aliyuncs.com';
     const workspaceID = parsed.hostname.endsWith(workspaceSuffix)
@@ -308,10 +310,10 @@ export function providerPresetBaseURLError(
       || parsed.search
       || parsed.hash
     ) {
-      return '北京业务空间模板只接受 https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1；其他地域必须使用独立 Profile 与价格证据';
+      return t("北京业务空间模板只接受 https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1；其他地域必须使用独立 Profile 与价格证据");
     }
   } catch {
-    return '请粘贴完整的北京业务空间 API Host，例如 https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1';
+    return t("请粘贴完整的北京业务空间 API Host，例如 https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1");
   }
   return '';
 }
@@ -397,6 +399,7 @@ async function importOfficialOnboardingPricingDraft(template: OfficialPricingDra
 }
 
 export default function ModelEndpointCreateSheet({ open, applications, onCancel, onCreated }: Props) {
+  useI18n();
   const [formApi, setFormApi] = useState<any>(null);
   const [connectionMode, setConnectionMode] = useState<'new' | 'existing'>('new');
   const [publicModelMode, setPublicModelMode] = useState<'new' | 'existing'>('new');
@@ -462,7 +465,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     }).catch(() => {
       if (!current) return;
       setExecutionProfiles([]);
-      setExecutionProfilesError('无法加载版本化执行 Profile；仍可按“自定义 / 未验证”方式接入，但系统不会猜测模型能力或执行边界。');
+      setExecutionProfilesError("无法加载版本化执行 Profile；仍可按“自定义 / 未验证”方式接入，但系统不会猜测模型能力或执行边界。");
     }).finally(() => {
       if (current) setExecutionProfilesLoading(false);
     });
@@ -508,7 +511,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
       route_role: formApi.getValue('route_role') || 'primary',
       model_template: option.key,
       ...(connectionMode === 'new' ? {
-        connection_name: `${preset.label.replace(/（.*）/u, '').trim()}连接`,
+        connection_name: t('{provider}连接', { provider: translateLabel(preset.label).replace(/（.*）/u, '').trim() }),
         provider: preset.provider,
         base_url: nextBaseURL,
         adapter_type: preset.adapterType,
@@ -594,7 +597,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
       const result = await modelExecutionProfileApi.forStableModel(id);
       if (generation === dataProfileRequest.current) setDataProfiles(result.data);
     } catch {
-      if (generation === dataProfileRequest.current) Toast.error('无法读取该稳定模型的已发布执行合同');
+      if (generation === dataProfileRequest.current) Toast.error(t("无法读取该稳定模型的已发布执行合同"));
     } finally {
       if (generation === dataProfileRequest.current) setDataProfilesLoading(false);
     }
@@ -636,11 +639,11 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
       ? publicModels.find(item => item.id === Number(values.public_model_id))
       : undefined;
     if (!deploymentMaxContext || !deploymentDefaultMaxOutput) {
-      Toast.error('请填写有效的 Deployment 执行边界；每项必须是正整数 Token');
+      Toast.error(t("请填写有效的 Deployment 执行边界；每项必须是正整数 Token"));
       return;
     }
     if (publicModelMode === 'new' && (!publicContextLength || !publicOutputLimit)) {
-      Toast.error('请填写有效的公共模型执行边界；每项必须是正整数 Token');
+      Toast.error(t("请填写有效的公共模型执行边界；每项必须是正整数 Token"));
       return;
     }
     if (createPricingDraft && (
@@ -648,12 +651,12 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
       || submittedPricingDraft.state !== 'available'
       || !officialPricingDraftIsFresh(submittedPricingDraft)
     )) {
-      Toast.error('当前官方价格证据不可生成新鲜、可审查的 Pricing Profile 草稿；请取消该选项或重新同步官方来源');
+      Toast.error(t("当前官方价格证据不可生成新鲜、可审查的 Pricing Profile 草稿；请取消该选项或重新同步官方来源"));
       return;
     }
     if (publicModelMode === 'existing'
       && (!selectedExistingPublicModel || !canonicalPublicModelExecutionLimitsReady(selectedExistingPublicModel))) {
-      Toast.error('所选公共模型缺少正整数 context/output 执行边界；请先在公共模型目录修复后再复用');
+      Toast.error(t("所选公共模型缺少正整数 context/output 执行边界；请先在公共模型目录修复后再复用"));
       return;
     }
     const submittedOriginError = providerPresetBaseURLError(
@@ -662,7 +665,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
       connectionMode === 'existing' ? selectedExistingConnection?.base_url : values.base_url,
     );
     if (submittedOriginError) {
-      Toast.error(`无法创建模型接入：${submittedOriginError}`);
+      Toast.error(t('无法创建模型接入：{error}', { error: submittedOriginError }));
       return;
     }
     const connection = connectionMode === 'existing'
@@ -696,12 +699,12 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
       ? { binding_id: Number(values.binding_id) }
       : { api_key: String(values.api_key || '').trim() };
     if (publicModelMode === 'new' && catalogSource === 'published' && (!activeReviewedModel || executionProfilesLoading || executionProfilesError)) {
-      Toast.error('请从已加载的正式合同中选择精确版本');
+      Toast.error(t("请从已加载的正式合同中选择精确版本"));
       return;
     }
     const definitionDigest = publicModelMode === 'existing' ? String(values.profile_definition_digest || '') : activeReviewedModel?.profile.profile_definition_digest || '';
     if (publicModelMode === 'existing' && definitionDigest && !dataProfiles.some(profile => profile.profile_definition_digest === definitionDigest)) {
-      Toast.error('执行合同不属于当前公共模型，请重新选择');
+      Toast.error(t("执行合同不属于当前公共模型，请重新选择"));
       return;
     }
     const input: CanonicalModelApplicationCreateRequest = {
@@ -724,7 +727,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     if (createIntent.current && (actor !== createIntent.current.actor || now < createIntent.current.lastCheckedAt || now - createIntent.current.startedAt >= modelBatchRetryWindowMS)) {
       createIntent.current = null;
       formApi?.setValue('api_key', '');
-      Toast.warning('创建重试窗口或登录身份已变化；请刷新现有配置并核对结果，选择明确的现有连接与凭证后继续。');
+      Toast.warning(t("创建重试窗口或登录身份已变化；请刷新现有配置并核对结果，选择明确的现有连接与凭证后继续。"));
       return;
     }
     const fingerprint = JSON.stringify(input);
@@ -746,24 +749,24 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
             String(values.model_name || '').trim(),
           );
         } catch (pricingError) {
-          Toast.warning(`模型接入已创建，但待审核 Pricing Profile 草稿创建失败：${pricingError instanceof Error && pricingError.message ? pricingError.message : '请在模型计费页重新导入官方来源'}`);
+          Toast.warning(t('模型接入已创建，但待审核 Pricing Profile 草稿创建失败：{error}', { error: pricingError instanceof Error && pricingError.message ? pricingError.message : t('请在模型计费页重新导入官方来源') }));
           await onCreated(result);
           return;
         }
       }
       Toast.success(result.idempotency_replay
-        ? '已安全重放原创建结果；没有重复创建连接、deployment 或凭证'
+        ? t("已安全重放原创建结果；没有重复创建连接、deployment 或凭证")
         : pricingDraftState === 'created'
-          ? '模型接入与待审核 Pricing Profile 草稿已创建；价格没有批准、激活或影响运行时'
+          ? t("模型接入与待审核 Pricing Profile 草稿已创建；价格没有批准、激活或影响运行时")
           : pricingDraftState === 'reused'
-            ? '模型接入已创建；相同来源的待审核 Pricing Profile 草稿已存在，未重复写入'
-            : '模型接入草稿与精确 Operation 已创建；尚未完成探测或发布到运行时');
+            ? t("模型接入已创建；相同来源的待审核 Pricing Profile 草稿已存在，未重复写入")
+            : t("模型接入草稿与精确 Operation 已创建；尚未完成探测或发布到运行时"));
       await onCreated(result);
     } catch (error) {
       if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
         createIntent.current = null;
       }
-      Toast.error(endpointError(error, '模型接入创建失败'));
+      Toast.error(endpointError(error, t("模型接入创建失败")));
     } finally {
       setSaving(false);
     }
@@ -790,20 +793,20 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     onCancel();
   };
 
-  return <SideSheet title="接入模型" visible={open} onCancel={cancel} width="min(680px, 100vw)">
+  return <SideSheet title={t("接入模型")} visible={open} onCancel={cancel} width="min(680px, 100vw)">
     <Banner
       type="info"
       closeIcon={null}
-      description="选择平台和模型，保存连接与 API Key。已有连接可直接复用，也可在列表页批量添加模型。保存后还需验证和发布，才会对应用开放。"
+      description={t("选择平台和模型，保存连接与 API Key。已有连接可直接复用，也可在列表页批量添加模型。保存后还需验证和发布，才会对应用开放。")}
       style={{ marginBottom: 16 }}
     />
     <Form key={open ? 'canonical-create-open' : 'canonical-create-closed'} getFormApi={setFormApi} initValues={initialFormValues} onSubmit={submit}>
       <Form.RadioGroup
         field="connection_mode"
         initValue="new"
-        label="供应商连接"
+        label={t("供应商连接")}
         type="button"
-        options={[{ label: '新建连接', value: 'new' }, { label: '复用现有连接', value: 'existing' }]}
+        options={[{ label: t("新建连接"), value: 'new' }, { label: t("复用现有连接"), value: 'existing' }]}
         onChange={(event) => {
           const mode = String(event?.target?.value || 'new') as 'new' | 'existing';
           setConnectionMode(mode);
@@ -832,7 +835,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
       />
       {connectionMode === 'existing' ? <Form.Select
         field="connection_id"
-        label={<span id="canonical-connection-label">现有连接</span>}
+        label={<span id="canonical-connection-label">{t("现有连接")}</span>}
         aria-labelledby="canonical-connection-label"
         filter
         optionList={connections.map(connection => ({
@@ -840,7 +843,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
           label: `${connection.name} · ${connection.provider} · #${connection.id}`,
           disabled: connection.admin_state !== 'enabled',
         }))}
-        rules={[{ required: true, message: '请选择连接' }]}
+        rules={[{ required: true, message: t("请选择连接") }]}
         onChange={(value) => {
           const id = Number(value);
           const selected = connections.find(connection => connection.id === id);
@@ -866,80 +869,94 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
           setOperationID((firstOperation || '') as CanonicalOperationID);
           formApi?.setValue('operation_id', firstOperation || '');
         }}
-        extraText="已暂停或 retired 的连接不能通过创建流程重新启用。"
+        extraText={t("已暂停或 retired 的连接不能通过创建流程重新启用。")}
       /> : <>
-        <Form.Select field="platform" initValue="deepseek" label="平台"
-          optionList={providerPlatforms} filter
+        <Form.Select field="platform" initValue="deepseek" label={t("平台")}
+          optionList={localizeOptions(providerPlatforms)} filter
           onChange={value => { const preset = presetsForPlatform(String(value))[0]; if (preset) selectPreset(preset.value); }}
-          extraText="先选择平台，再选择该平台支持的接口与地域。业务空间只需配置一次，可复用连接批量添加模型。"
+          extraText={t("先选择平台，再选择该平台支持的接口与地域。业务空间只需配置一次，可复用连接批量添加模型。")}
         />
         <Form.Select
           field="preset"
           initValue="deepseek"
-          label={<span id="canonical-preset-label">接口与地域</span>}
+          label={<span id="canonical-preset-label">{t("接口与地域")}</span>}
           aria-labelledby="canonical-preset-label"
           disabled={executionProfilesLoading}
-          optionList={presetsForPlatform(platformForPreset(providerPreset(selectedPreset))).map(preset => ({ label: preset.label, value: preset.value }))}
+          optionList={presetsForPlatform(platformForPreset(providerPreset(selectedPreset))).map(preset => ({ label: translateLabel(preset.label), value: preset.value }))}
           onChange={selectPreset}
-          extraText={providerPreset(selectedPreset).note}
+          extraText={<><span>{t('接口和地域由模板固定；具体能力以所选执行合同和实时验证为准。')}</span><details className="ur-workspace-notes"><summary>{t('模板合同说明（原文）')}</summary><p lang="zh-CN">{providerPreset(selectedPreset).note}</p></details></>}
         />
         <div className="ur-model-endpoint-form-grid">
-          <Form.Input field="connection_name" label="连接名称" rules={[{ required: true, message: '必填' }]} extraText="已按官方模板生成建议名称；可按团队命名规范修改。" />
-          <Form.Input field="provider" label="供应商标识" disabled={selectedPreset !== 'custom'} rules={[{ required: true, message: '必填' }]} />
+          <Form.Input field="connection_name" label={t("连接名称")} rules={[{ required: true, message: t("必填") }]} extraText={t("已按官方模板生成建议名称；可按团队命名规范修改。")} />
+          <Form.Input field="provider" label={t("供应商标识")} disabled={selectedPreset !== 'custom'} rules={[{ required: true, message: t("必填") }]} />
         </div>
         <Form.Input
           field="base_url"
           label="Base URL"
-          placeholder={selectedProviderPreset.editableBaseURL ? '粘贴业务空间 API Host（含 /compatible-mode/v1）' : 'https://...'}
+          placeholder={selectedProviderPreset.editableBaseURL ? t("粘贴业务空间 API Host（含 /compatible-mode/v1）") : 'https://...'}
           disabled={selectedPreset !== 'custom' && !selectedProviderPreset.editableBaseURL}
           onChange={value => setNewConnectionBaseURL(String(value || ''))}
           rules={[
-            { required: true, message: '必填' },
+            { required: true, message: t("必填") },
             {
               validator: (_rule, value) => !providerPresetBaseURLError(selectedPreset, operationID, value),
-              message: 'Base URL 与当前 operation 或地域模板不匹配；北京业务空间只接受专属 cn-beijing Host，其他地域必须使用独立 Profile 与价格证据',
+              message: t("Base URL 与当前 operation 或地域模板不匹配；北京业务空间只接受专属 cn-beijing Host，其他地域必须使用独立 Profile 与价格证据"),
             },
           ]}
         />
-        <Text type="tertiary">协议适配器由模板确定：<Text code>{adapterType || '-'}</Text>。服务端仍会验证 adapter 与 operation 的组合。</Text>
-        {adapterType === 'azure_openai' && <Form.Input field="azure_api_version" label="Azure API Version" placeholder="2024-10-21" rules={[{ required: true, message: '必填' }]} />}
+        <Text type="tertiary">{t('协议适配器由模板确定：{adapter}。服务端仍会验证 adapter 与 operation 的组合。', { adapter: adapterType || '—' })}</Text>
+        {adapterType === 'azure_openai' && <Form.Input field="azure_api_version" label="Azure API Version" placeholder="2024-10-21" rules={[{ required: true, message: t("必填") }]} />}
       </>}
 
       {publicModelMode === 'new' && <Form.Select
-        field="profile_catalog_source" label="模型合同来源" initValue="compiled"
-        optionList={[{ value: 'compiled', label: '内置模型合同' }, { value: 'published', label: '已发布模型合同' }]}
+        field="profile_catalog_source" label={t("模型合同来源")} initValue="compiled"
+        optionList={[{ value: 'compiled', label: t("内置模型合同") }, { value: 'published', label: t("已发布模型合同") }]}
         onChange={value => { clearReviewedModelDraft(); setExecutionProfiles([]); setCatalogSource(value as ProfileCatalogSource); }}
-        extraText="已发布合同可以创建新模型；验证与发布到运行时仍单独进行。"
+        extraText={t("已发布合同可以创建新模型；验证与发布到运行时仍单独进行。")}
       />}
       {executionProfilesLoading && <Banner
         type="info"
         closeIcon={null}
-        description="正在加载版本化模型执行 Profile…"
+        description={t("正在加载版本化模型执行 Profile…")}
         style={{ marginBottom: 16 }}
       />}
       {executionProfilesError && <Banner
         type="warning"
         closeIcon={null}
-        description={executionProfilesError}
+        description={translateLabel(executionProfilesError)}
         style={{ marginBottom: 16 }}
       />}
       {reviewedModels.length > 0 && publicModelMode === 'new' && <>
         <Form.Select
           field="model_template"
-          label={<span id="reviewed-model-template-label">模型模板</span>}
+          label={<span id="reviewed-model-template-label">{t("模型模板")}</span>}
           aria-labelledby="reviewed-model-template-label"
           optionList={reviewedModels.map(option => ({
             value: option.key,
             label: `${option.profile.label} · v${option.profile.version}${option.profile.profile_definition_digest ? ` · ${option.profile.profile_definition_digest.slice(0, 12)}` : ''}`,
           }))}
-          rules={[{ required: true, message: '请选择模型模板' }]}
+          rules={[{ required: true, message: t("请选择模型模板") }]}
           onChange={selectReviewedModel}
-          extraText="这里只展示本地合同子集，不代表该模型已完整适配。供应商 live probe、Release 和 Pricing 仍需各自验证。"
+          extraText={t("这里只展示本地合同子集，不代表该模型已完整适配。供应商 live probe、Release 和 Pricing 仍需各自验证。")}
         />
         {selectedReviewedModel && selectedReviewedLimits && <Banner
           type="info"
           closeIcon={null}
-          description={`${selectedReviewedModel.profile.id}@${selectedReviewedModel.profile.version} · ${selectedReviewedModel.profile.provider} / ${selectedReviewedModel.profile.region} / ${selectedReviewedModel.profile.api_surface} · Operation ${selectedReviewedModel.operationIDs.join(' / ')} · 协议 ${selectedReviewedModel.profile.protocol_profile}${selectedReviewedModel.profile.protocol_profile_version ? `@${selectedReviewedModel.profile.protocol_profile_version}` : ''} · Catalog 证据 ${selectedReviewedModel.profile.catalog_evidence_state}（不代表 live/released）· 供应商上限 context ${selectedReviewedLimits.providerContextWindow ? selectedReviewedLimits.providerContextWindow.toLocaleString() : '未文档化'} / output ${selectedReviewedLimits.providerMaxOutput ? selectedReviewedLimits.providerMaxOutput.toLocaleString() : '未文档化或无固定上限'} · 当前可执行上限 context ${selectedReviewedLimits.executableContextWindow ? selectedReviewedLimits.executableContextWindow.toLocaleString() : '未建模'} / output ${selectedReviewedLimits.executableMaxOutput ? selectedReviewedLimits.executableMaxOutput.toLocaleString() : '未单独收窄'} · 请求默认 context ${selectedReviewedModel.profile.default_context_window.toLocaleString()} / output ${selectedReviewedModel.profile.default_output_limit.toLocaleString()}（${selectedReviewedModel.profile.default_output_authority}）· 官方文档能力 ${selectedReviewedModel.profile.provider_capabilities.join(' / ') || '无'} · 仓库已建模可执行能力 ${selectedReviewedModel.profile.capabilities.join(' / ') || (selectedReviewedModel.profile.catalog_evidence_state === 'locally_conformant' ? '严格文本基础合同' : '待逐项验证')}${selectedReviewedModel.profile.processing_tier_policy ? ` · Processing tier ${selectedReviewedModel.profile.processing_tier_policy}：default/flex/priority 已建模为请求级协议与运行证据；显式 flex/priority 目前只允许 cost_observation，不代表客户计费、live verified 或 released` : ''}`}
+          description={<div className="ur-profile-facts">
+            <Text code>{selectedReviewedModel.profile.id}@{selectedReviewedModel.profile.version}</Text>
+            <p>{t('供应商上限 context {context} / output {output}', { context: selectedReviewedLimits.providerContextWindow?.toLocaleString() || t('未文档化'), output: selectedReviewedLimits.providerMaxOutput?.toLocaleString() || t('未文档化或无固定上限') })}</p>
+            <p>{t('当前可执行上限 context {context} / output {output}', { context: selectedReviewedLimits.executableContextWindow?.toLocaleString() || t('未建模'), output: selectedReviewedLimits.executableMaxOutput?.toLocaleString() || t('未单独收窄') })}</p>
+            <p>{t('请求默认 context {context} / output {output}（{authority}）', { context: selectedReviewedModel.profile.default_context_window.toLocaleString(), output: selectedReviewedModel.profile.default_output_limit.toLocaleString(), authority: selectedReviewedModel.profile.default_output_authority })}</p>
+            <details className="ur-workspace-notes">
+              <summary>{t('执行合同详情')}</summary>
+              <p>{selectedReviewedModel.profile.provider} / {selectedReviewedModel.profile.region} / {selectedReviewedModel.profile.api_surface}</p>
+              <p>Operation: {selectedReviewedModel.operationIDs.join(' / ')} · {t('协议')}: {selectedReviewedModel.profile.protocol_profile}@{selectedReviewedModel.profile.protocol_profile_version || '—'}</p>
+              <p>{t('Catalog 证据（不代表 live/released）')}: {selectedReviewedModel.profile.catalog_evidence_state}</p>
+              <p>{t('官方文档能力')}: {selectedReviewedModel.profile.provider_capabilities.join(' / ') || t('无')}</p>
+              <p>{t('仓库已建模可执行能力')}: {selectedReviewedModel.profile.capabilities.join(' / ') || (selectedReviewedModel.profile.catalog_evidence_state === 'locally_conformant' ? t('严格文本基础合同') : t('待逐项验证'))}</p>
+              {selectedReviewedModel.profile.processing_tier_policy && <p>{t('Processing tier {policy}：default/flex/priority 已建模为请求级协议与运行证据；显式 flex/priority 目前只允许 cost_observation，不代表客户计费、live verified 或 released', { policy: selectedReviewedModel.profile.processing_tier_policy })}</p>}
+            </details>
+          </div>}
           style={{ marginBottom: 16 }}
         />}
       </>}
@@ -947,51 +964,51 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
       <Form.RadioGroup
         field="public_model_mode"
         initValue="new"
-        label="公共模型"
+        label={t("公共模型")}
         type="button"
-        options={[{ label: '新建公共模型', value: 'new' }, { label: '复用现有公共模型', value: 'existing' }]}
+        options={[{ label: t("新建公共模型"), value: 'new' }, { label: t("复用现有公共模型"), value: 'existing' }]}
         onChange={(event) => setPublicModelMode(String(event?.target?.value || 'new') as 'new' | 'existing')}
       />
       {publicModelMode === 'existing' ? <><Form.Select
         field="public_model_id"
         onChange={value => { void loadDataProfiles(value); }}
-        label={<span id="canonical-public-model-label">现有公共模型</span>}
+        label={<span id="canonical-public-model-label">{t("现有公共模型")}</span>}
         aria-labelledby="canonical-public-model-label"
         filter
         optionList={publicModels.map(model => {
           const executionLimitsReady = canonicalPublicModelExecutionLimitsReady(model);
           return {
             value: model.id,
-            label: `${model.display_name || model.model_name} · ${model.model_name} · #${model.id}${executionLimitsReady ? '' : ' · 缺少 context/output 执行边界'}`,
+            label: `${model.display_name || model.model_name} · ${model.model_name} · #${model.id}${executionLimitsReady ? '' : ` ${t('· 缺少 context/output 执行边界')}`}`,
             disabled: !executionLimitsReady,
           };
         })}
-        extraText="缺少正整数 context_length 或 output_limit 的公共模型不可复用；请先在公共模型目录修复执行边界。"
+        extraText={t("缺少正整数 context_length 或 output_limit 的公共模型不可复用；请先在公共模型目录修复执行边界。")}
       />
-      <Form.Select field="profile_definition_digest" label="执行合同 revision" initValue=""
+      <Form.Select field="profile_definition_digest" label={t("执行合同 revision")} initValue=""
         loading={dataProfilesLoading} onChange={selectDataProfile}
-        optionList={[{ value: '', label: '沿用公共模型基础合同' }, ...dataProfiles.map(profile => ({
+        optionList={[{ value: '', label: t("沿用公共模型基础合同") }, ...dataProfiles.map(profile => ({
           value: profile.profile_definition_digest!, label: `${profile.id}@${profile.version} · ${profile.profile_definition_digest!.slice(0, 12)}`,
         }))]}
-        extraText="选择已发布 revision 会创建独立候选 Deployment；资格验证和 Release 激活后才用于请求。"
+        extraText={t("选择已发布 revision 会创建独立候选 Deployment；资格验证和 Release 激活后才用于请求。")}
       /></> : <>
         <div className="ur-model-endpoint-form-grid">
           {selectedReviewedModel ? <Form.Input
             field="model_name"
-            label={<span id="reviewed-public-model-id-label">公共模型 ID</span>}
+            label={<span id="reviewed-public-model-id-label">{t("公共模型 ID")}</span>}
             aria-labelledby="reviewed-public-model-id-label"
             rules={[
-              { required: true, message: '必填' },
-              { validator: (_rule, value) => !value || /^[a-z0-9][a-z0-9._-]{0,99}$/.test(String(value).trim()), message: '只使用小写字母、数字、点、短横线或下划线' },
+              { required: true, message: t("必填") },
+              { validator: (_rule, value) => !value || /^[a-z0-9][a-z0-9._-]{0,99}$/.test(String(value).trim()), message: t("只使用小写字母、数字、点、短横线或下划线") },
             ]}
-            extraText="面向调用方的稳定模型 ID，可为新版本使用唯一 ID；供应商模型身份由下方 Profile 与上游模型独立锁定。"
-          /> : <Form.Input field="model_name" label="公共模型 ID" placeholder="例如 deepseek-v4-flash" rules={[
-            { required: true, message: '必填' },
-            { validator: (_rule, value) => !value || /^[a-z0-9][a-z0-9._-]{0,99}$/.test(String(value).trim()), message: '只使用小写字母、数字、点、短横线或下划线' },
+            extraText={t("面向调用方的稳定模型 ID，可为新版本使用唯一 ID；供应商模型身份由下方 Profile 与上游模型独立锁定。")}
+          /> : <Form.Input field="model_name" label={t("公共模型 ID")} placeholder={t("例如 deepseek-v4-flash")} rules={[
+            { required: true, message: t("必填") },
+            { validator: (_rule, value) => !value || /^[a-z0-9][a-z0-9._-]{0,99}$/.test(String(value).trim()), message: t("只使用小写字母、数字、点、短横线或下划线") },
           ]} />}
-          <Form.Input field="display_name" label="展示名称（可选）" />
-          <Form.Input field="provider_family" label="模型家族（可选）" disabled={Boolean(selectedReviewedModel)} extraText={selectedReviewedModel ? '由官方接入模板固定。' : '留空时服务端使用连接供应商。'} />
-          <Form.Select field="lifecycle" initValue="staging" label="目录生命周期" optionList={[
+          <Form.Input field="display_name" label={t("展示名称（可选）")} />
+          <Form.Input field="provider_family" label={t("模型家族（可选）")} disabled={Boolean(selectedReviewedModel)} extraText={selectedReviewedModel ? t("由官方接入模板固定。") : t("留空时服务端使用连接供应商。")} />
+          <Form.Select field="lifecycle" initValue="staging" label={t("目录生命周期")} optionList={[
             { label: 'Staging', value: 'staging' },
             { label: 'GA', value: 'ga' },
             { label: 'Deprecated', value: 'deprecated' },
@@ -1000,41 +1017,41 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
         <div className="ur-model-endpoint-form-grid">
           <Form.InputNumber
             field="public_context_length"
-            label="公共模型上下文上限（Token）"
+            label={t("公共模型上下文上限（Token）")}
             min={1}
             max={maxCanonicalTokenLimit}
             precision={0}
             disabled={Boolean(selectedReviewedModel)}
             style={{ width: '100%' }}
             rules={[
-              { required: true, message: '必填' },
-              { validator: (_rule, value) => positiveCanonicalTokenLimit(value) > 0, message: '必须是正整数 Token' },
+              { required: true, message: t("必填") },
+              { validator: (_rule, value) => positiveCanonicalTokenLimit(value) > 0, message: t("必须是正整数 Token") },
             ]}
             extraText={selectedReviewedModel
               ? selectedReviewedLimits?.executableContextWindow !== selectedReviewedLimits?.providerContextWindow
-                ? '使用该 Profile 的 UniRouter 已审查可执行 context 上限；供应商虽支持更大窗口，当前计费合同不能无损执行。'
-                : '使用该 Profile 已文档化的供应商 context 上限；Release 可以经审查后进一步收窄。'
-              : '面向调用者公开的模型级执行边界；不能为空或为 0。'}
+                ? t("使用该 Profile 的 UniRouter 已审查可执行 context 上限；供应商虽支持更大窗口，当前计费合同不能无损执行。")
+                : t("使用该 Profile 已文档化的供应商 context 上限；Release 可以经审查后进一步收窄。")
+              : t("面向调用者公开的模型级执行边界；不能为空或为 0。")}
           />
           <Form.InputNumber
             field="public_output_limit"
-            label="公共模型单次输出上限（Token）"
+            label={t("公共模型单次输出上限（Token）")}
             min={1}
             max={maxCanonicalTokenLimit}
             precision={0}
             disabled={Boolean(selectedReviewedModel)}
             style={{ width: '100%' }}
             rules={[
-              { required: true, message: '必填' },
-              { validator: (_rule, value) => positiveCanonicalTokenLimit(value) > 0, message: '必须是正整数 Token' },
+              { required: true, message: t("必填") },
+              { validator: (_rule, value) => positiveCanonicalTokenLimit(value) > 0, message: t("必须是正整数 Token") },
             ]}
             extraText={selectedReviewedModel
               ? selectedReviewedLimits?.providerMaxOutput
-                ? '使用该 Profile 已文档化的供应商最大输出；Release 可以经审查后进一步收窄。'
+                ? t("使用该 Profile 已文档化的供应商最大输出；Release 可以经审查后进一步收窄。")
                 : selectedReviewedLimits?.executableMaxOutput
-                  ? '供应商未文档化固定最大输出；使用该 Profile 的 UniRouter 已审查可执行策略上限，不能冒充供应商最大值。'
-                  : '供应商未文档化固定最大输出且没有单独可执行上限；暂以请求默认值作为安全公开上限。'
-              : '面向调用者公开的单次输出边界；不能为空或为 0。'}
+                  ? t("供应商未文档化固定最大输出；使用该 Profile 的 UniRouter 已审查可执行策略上限，不能冒充供应商最大值。")
+                  : t("供应商未文档化固定最大输出且没有单独可执行上限；暂以请求默认值作为安全公开上限。")
+              : t("面向调用者公开的单次输出边界；不能为空或为 0。")}
           />
         </div>
       </>}
@@ -1043,11 +1060,11 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
 
       {activeReviewedModel ? <Form.Select
         field="upstream_model"
-        label={<span id="reviewed-upstream-model-label">上游模型 / 部署 ID</span>}
+        label={<span id="reviewed-upstream-model-label">{t("上游模型 / 部署 ID")}</span>}
         aria-labelledby="reviewed-upstream-model-label"
         filter
         optionList={activeReviewedModel.upstreamModelIDs.map(value => ({ label: value, value }))}
-        rules={[{ required: true, message: '必填' }]}
+        rules={[{ required: true, message: t("必填") }]}
         onChange={value => {
           const upstreamModelID = String(value || '');
           setSelectedUpstreamModelID(upstreamModelID);
@@ -1058,43 +1075,43 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
           );
           formApi?.setValue('pricing_draft_enabled', pricingDraftEnabledByDefault(pricingDraft));
         }}
-        extraText="只允许该 Profile 审查过的精确上游 ID；创建后的真实可用性仍由供应商模型列表与 Operation 探测确认。"
-      /> : <Form.Input field="upstream_model" label="上游模型 / 部署 ID" rules={[
-        { required: true, message: '必填' },
-        { validator: (_rule, value) => !value || (!/\s/u.test(String(value)) && String(value).trim().length <= 200), message: '必须是无空格的精确供应商 ID' },
+        extraText={t("只允许该 Profile 审查过的精确上游 ID；创建后的真实可用性仍由供应商模型列表与 Operation 探测确认。")}
+      /> : <Form.Input field="upstream_model" label={t("上游模型 / 部署 ID")} rules={[
+        { required: true, message: t("必填") },
+        { validator: (_rule, value) => !value || (!/\s/u.test(String(value)) && String(value).trim().length <= 200), message: t("必须是无空格的精确供应商 ID") },
       ]} />}
       <div className="ur-model-endpoint-form-grid">
         <Form.InputNumber
           field="deployment_max_context"
-          label="Deployment 上下文上限（Token）"
+          label={t("Deployment 上下文上限（Token）")}
           min={1}
           max={maxCanonicalTokenLimit}
           precision={0}
           disabled={Boolean(activeReviewedModel)}
           style={{ width: '100%' }}
           rules={[
-            { required: true, message: '必填' },
-            { validator: (_rule, value) => positiveCanonicalTokenLimit(value) > 0, message: '必须是正整数 Token' },
+            { required: true, message: t("必填") },
+            { validator: (_rule, value) => positiveCanonicalTokenLimit(value) > 0, message: t("必须是正整数 Token") },
           ]}
           extraText={activeReviewedModel
             ? selectedReviewedLimits?.executableContextWindow !== selectedReviewedLimits?.providerContextWindow
-              ? '使用该 Profile 的 UniRouter 已审查可执行 context 上限；Release 仍会冻结最终有效边界。'
-              : '使用该 Profile 已文档化的供应商 context 上限；Release 仍会冻结最终有效边界。'
-            : '该精确供应商 Deployment 已核实的上下文执行边界。'}
+              ? t("使用该 Profile 的 UniRouter 已审查可执行 context 上限；Release 仍会冻结最终有效边界。")
+              : t("使用该 Profile 已文档化的供应商 context 上限；Release 仍会冻结最终有效边界。")
+            : t("该精确供应商 Deployment 已核实的上下文执行边界。")}
         />
         <Form.InputNumber
           field="deployment_default_max_output"
-          label={activeReviewedModel ? '请求默认单次输出（Profile 投影，Token）' : 'Deployment 默认单次输出（Token）'}
+          label={activeReviewedModel ? t("请求默认单次输出（Profile 投影，Token）") : t("Deployment 默认单次输出（Token）")}
           min={1}
           max={maxCanonicalTokenLimit}
           precision={0}
           disabled={Boolean(activeReviewedModel)}
           style={{ width: '100%' }}
           rules={[
-            { required: true, message: '必填' },
-            { validator: (_rule, value) => positiveCanonicalTokenLimit(value) > 0, message: '必须是正整数 Token' },
+            { required: true, message: t("必填") },
+            { validator: (_rule, value) => positiveCanonicalTokenLimit(value) > 0, message: t("必须是正整数 Token") },
           ]}
-          extraText={activeReviewedModel ? `Canonical 请求默认由 Profile 与公共 cap 决定；此字段保存相同投影供路由证据使用，不能作为独立的每 Deployment 覆盖。权威为 ${activeReviewedModel.profile.default_output_authority}；它不是供应商最大输出。` : '该精确供应商 Deployment 已核实的默认输出执行边界。'}
+          extraText={activeReviewedModel ? t('Canonical 请求默认由 Profile 与公共 cap 决定；此字段保存相同投影供路由证据使用，不能作为独立的每 Deployment 覆盖。权威为 {authority}；它不是供应商最大输出。', { authority: activeReviewedModel.profile.default_output_authority }) : t("该精确供应商 Deployment 已核实的默认输出执行边界。")}
         />
       </div>
 
@@ -1102,44 +1119,52 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
         <Banner
           type={officialPricingDraftIsFresh(selectedOfficialPricingDraft) ? 'warning' : 'danger'}
           closeIcon={null}
-          description={`待审核 Pricing Profile 草稿 · 地域 ${selectedOfficialPricingDraft.pricingRegion} · ${selectedOfficialPricingDraft.pricingScope} · ${selectedOfficialPricingDraft.currency}/百万 Token：输入 ${selectedOfficialPricingDraft.inputPrice} / 输出 ${selectedOfficialPricingDraft.outputPrice} / cacheRead ${selectedOfficialPricingDraft.cacheReadPrice} / cacheCreate ${selectedOfficialPricingDraft.cacheCreationPrice} · 来源获取 ${selectedOfficialPricingDraft.fetchedAt.slice(0, 10)} · 新鲜度截止 ${selectedOfficialPricingDraft.staleAfter.slice(0, 10)}${selectedOfficialPricingDraft.effectiveTo ? ` · 有效期截止 ${selectedOfficialPricingDraft.effectiveTo.slice(0, 10)}` : ''}。${selectedOfficialPricingDraft.reviewNote}${selectedOfficialPricingDraft.currency === 'USD' ? ' USD 草稿只保存原币审核证据；当前 CNY 请求结算不会批准或激活它。' : ''}`}
+          description={<div className="ur-profile-facts">
+            <p>{t('待审核 Pricing Profile 草稿 · 地域 {region} · {scope} · {currency}/百万 Token：输入 {input} / 输出 {output} / cacheRead {read} / cacheCreate {write} · 来源获取 {fetched} · 新鲜度截止 {stale}', { region: selectedOfficialPricingDraft.pricingRegion, scope: selectedOfficialPricingDraft.pricingScope, currency: selectedOfficialPricingDraft.currency, input: selectedOfficialPricingDraft.inputPrice, output: selectedOfficialPricingDraft.outputPrice, read: selectedOfficialPricingDraft.cacheReadPrice, write: selectedOfficialPricingDraft.cacheCreationPrice, fetched: selectedOfficialPricingDraft.fetchedAt.slice(0, 10), stale: selectedOfficialPricingDraft.staleAfter.slice(0, 10) })}</p>
+            {selectedOfficialPricingDraft.effectiveTo && <p>{t('有效期截止 {date}', { date: selectedOfficialPricingDraft.effectiveTo.slice(0, 10) })}</p>}
+            {selectedOfficialPricingDraft.currency === 'USD' && <p>{t('USD 草稿只保存原币审核证据；当前 CNY 请求结算不会批准或激活它。')}</p>}
+            <details className="ur-workspace-notes"><summary>{t('价格证据说明（原文）')}</summary><p lang="zh-CN">{selectedOfficialPricingDraft.reviewNote}</p></details>
+          </div>}
           style={{ marginBottom: 12 }}
         />
         <Form.Checkbox
           field="pricing_draft_enabled"
-          aria-label="同时创建待审核 Pricing Profile 草稿"
+          aria-label={t("同时创建待审核 Pricing Profile 草稿")}
           disabled={!officialPricingDraftIsFresh(selectedOfficialPricingDraft)}
         >
           {selectedOfficialPricingDraft.requiresPayGoConfirmation
-            ? '我确认这是普通按量 API Key，同时创建 provider_list 待审核草稿'
-            : '同时创建 provider_list 待审核草稿（不会批准、激活或切换计价权威）'}
+            ? t("我确认这是普通按量 API Key，同时创建 provider_list 待审核草稿")
+            : t("同时创建 provider_list 待审核草稿（不会批准、激活或切换计价权威）")}
         </Form.Checkbox>
       </>}
       {activeReviewedModel && selectedOfficialPricingDraft?.state === 'manual_review_required' && <Banner
         type="warning"
         closeIcon={null}
-        description={`官方价格已记录（${selectedOfficialPricingDraft.pricingRegion} / ${selectedOfficialPricingDraft.currency}）：${selectedOfficialPricingDraft.documentedPricingSummary} Pricing Profile 不自动生成：${selectedOfficialPricingDraft.reason} 来源 ${selectedOfficialPricingDraft.sourceURL}`}
+        description={<div className="ur-profile-facts">
+          <p>{t('官方价格已记录（{region} / {currency}）；需要人工审查，不会自动生成 Pricing Profile。', { region: selectedOfficialPricingDraft.pricingRegion, currency: selectedOfficialPricingDraft.currency })}</p>
+          <details className="ur-workspace-notes"><summary>{t('价格证据说明（原文）')}</summary><p lang="zh-CN">{selectedOfficialPricingDraft.documentedPricingSummary} {selectedOfficialPricingDraft.reason}</p><Text code>{selectedOfficialPricingDraft.sourceURL}</Text></details>
+        </div>}
         style={{ marginBottom: 12 }}
       />}
 
       {connectionMode === 'existing' && existingBindings.length > 0 && <Form.RadioGroup
         field="credential_mode"
-        label="凭证绑定"
+        label={t("凭证绑定")}
         type="button"
-        options={[{ label: '新增凭证', value: 'new' }, { label: '复用已有绑定', value: 'existing' }]}
+        options={[{ label: t("新增凭证"), value: 'new' }, { label: t("复用已有绑定"), value: 'existing' }]}
         onChange={(event) => setCredentialMode(String(event?.target?.value || 'new') as 'new' | 'existing')}
       />}
       {credentialMode === 'existing' && connectionMode === 'existing' ? <Form.Select
         field="binding_id"
-        label={<span id="canonical-binding-label">已有凭证绑定</span>}
+        label={<span id="canonical-binding-label">{t("已有凭证绑定")}</span>}
         aria-labelledby="canonical-binding-label"
         optionList={existingBindings.map(binding => ({
           value: binding.id,
           label: `Binding #${binding.id} · ${binding.status} · revision ${binding.state_revision}`,
           disabled: !binding.eligible,
         }))}
-        rules={[{ required: true, message: '请选择凭证绑定' }]}
-      /> : <PasswordField field="api_key" label="供应商 API Key" rules={[{ required: true, message: '必填' }]} autoComplete="new-password" visibilityResetKey={open ? 'canonical-create-open' : 'closed'} />}
+        rules={[{ required: true, message: t("请选择凭证绑定") }]}
+      /> : <PasswordField field="api_key" label={t("供应商 API Key")} rules={[{ required: true, message: t("必填") }]} autoComplete="new-password" visibilityResetKey={open ? 'canonical-create-open' : 'closed'} />}
 
       <Form.Select
         field="operation_id"
@@ -1147,7 +1172,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
         label={<span id="canonical-operation-label">Operation</span>}
         aria-labelledby="canonical-operation-label"
         optionList={adapterOperations}
-        rules={[{ required: true, message: '请选择与连接协议一致的 operation' }]}
+        rules={[{ required: true, message: t("请选择与连接协议一致的 operation") }]}
         onChange={(value) => {
           const nextOperation = String(value) as CanonicalOperationID;
           setOperationID(nextOperation);
@@ -1164,25 +1189,25 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
             formApi?.setValue('base_url', nextBaseURL);
           }
         }}
-        extraText={activeReviewedModel ? '已按模型 Profile 收敛为兼容的 Operation；operation_id 仍是持久身份。' : 'operation_id 是持久身份；公开路径仅是该身份的传输映射。'}
+        extraText={activeReviewedModel ? t("已按模型 Profile 收敛为兼容的 Operation；operation_id 仍是持久身份。") : t("operation_id 是持久身份；公开路径仅是该身份的传输映射。")}
       />
       {exactHTTPSOriginOperations.has(operationID) && <Text type={operationOriginError ? 'danger' : 'success'}>
-        {operationOriginError || `已使用 path-free HTTPS origin：${effectiveBaseURL}`}
+        {operationOriginError || t('已使用 path-free HTTPS origin：{url}', { url: effectiveBaseURL })}
       </Text>}
-      <Form.Select field="route_role" initValue="primary" label="候选优先级" optionList={[
-        { label: '主候选（priority 100）', value: 'primary' },
-        { label: '备用候选（priority 200）', value: 'backup' },
-      ]} extraText="未选择时按主候选（priority 100）；只写 deployment 配置，不会创建或推进运行时发布。" />
+      <Form.Select field="route_role" initValue="primary" label={t("候选优先级")} optionList={[
+        { label: t("主候选（priority 100）"), value: 'primary' },
+        { label: t("备用候选（priority 200）"), value: 'backup' },
+      ]} extraText={t("未选择时按主候选（priority 100）；只写 deployment 配置，不会创建或推进运行时发布。")} />
 
       <div className="ur-form-actions">
-        <Button onClick={cancel}>取消</Button>
+        <Button onClick={cancel}>{t('取消')}</Button>
         <Button
           type="primary"
           loading={saving}
           disabled={Boolean(operationOriginError)}
           title={operationOriginError || undefined}
           onClick={() => formApi?.submitForm()}
-        >创建模型接入</Button>
+        >{t("创建模型接入")}</Button>
       </div>
     </Form>
   </SideSheet>;

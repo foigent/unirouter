@@ -93,6 +93,8 @@ async function login(role, baseURL = fixture.base_url) {
   const oidcConfigPromise = page.waitForResponse((response) =>
     response.url().endsWith('/api/v1/auth/oidc/config') && response.request().method() === 'GET');
   await page.goto('/login');
+  assert.equal(await page.locator('html').getAttribute('lang'), 'en-US', 'fresh sign-in defaults to English');
+  await page.getByRole('button', { name: '中文', exact: true }).click();
   const oidcConfigResponse = await oidcConfigPromise;
   assert.equal(oidcConfigResponse.status(), 200, 'OIDC availability must be readable without presenting a false login error');
   assert.equal((await oidcConfigResponse.json()).enabled, false, 'unconfigured OIDC must be unavailable');
@@ -480,9 +482,8 @@ try {
 			'legacy channel inventory must not be presented as a canonical route');
     assert.equal(await facts.getByText('当前部署的模型网关商业授权未就绪，请由平台管理员检查许可证', { exact: true }).count(), 0);
     const commercialAxis = readiness.page.locator('section[aria-label="模型网关授权诊断"]');
-    await commercialAxis.locator('summary').click();
-    await visible(commercialAxis.getByText('commercial_license_not_required', { exact: true }));
-    assert.equal(await commercialAxis.locator('a').count(), 0, 'retired commercial check must not offer a repair link');
+    assert.equal(await commercialAxis.count(), 0, 'open-source readiness omits the retired commercial axis');
+    assert.equal(await readiness.page.locator('a[href="/license"]').count(), 0, 'retired commercial check must not offer a repair link');
 
     const runtimePath = `/model-readiness?project_id=${fixture.project_a}&model=${encodeURIComponent(fixture.runtime_only_model)}&endpoint=${encodeURIComponent('/v1/chat/completions')}&caller=self`;
     await readiness.page.goto(runtimePath);

@@ -1,9 +1,10 @@
 import React, { lazy, Suspense } from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { LocaleProvider, Spin } from '@douyinfe/semi-ui'
-import zh_CN from '@douyinfe/semi-ui/lib/es/locale/source/zh_CN'
+import { Spin } from '@douyinfe/semi-ui'
+import { I18nProvider, useI18n } from './i18n'
 import './index.css'
+import './workspace.css'
 import { ROUTER_FUTURE_FLAGS } from './routing/routerFuture'
 import ErrorBoundary from './components/ErrorBoundary'
 import { useAuthStore } from './store/auth'
@@ -47,10 +48,11 @@ const MediaJobsPage = lazy(() => import('./pages/MediaJobsPage'))
 const OrganizationMembersPage = lazy(() => import('./pages/OrganizationMembersPage'))
 
 function RouteLoading() {
+  const { t } = useI18n();
   return (
-    <div className="ur-route-loading" role="status" aria-label="正在加载页面">
+    <div className="ur-route-loading" role="status" aria-label={t('正在加载页面')}>
       <Spin size="large" />
-      <span>正在加载页面…</span>
+      <span>{t('正在加载页面…')}</span>
     </div>
   )
 }
@@ -98,9 +100,9 @@ function XInsightConnectorInstallRoute() {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
+    <I18nProvider>
     <ErrorBoundary>
       <Suspense fallback={<RouteLoading />}>
-        <LocaleProvider locale={zh_CN}>
           <BrowserRouter future={ROUTER_FUTURE_FLAGS}>
             <Routes>
             <Route path="/login" element={<LoginPage />} />
@@ -151,8 +153,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             </Route>
             </Routes>
           </BrowserRouter>
-        </LocaleProvider>
       </Suspense>
     </ErrorBoundary>
+    </I18nProvider>
   </React.StrictMode>
 )

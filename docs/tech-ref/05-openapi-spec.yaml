@@ -3603,7 +3603,27 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
 
   /api/v1/dashboard/stats:
-    get: *operation_get
+    get:
+      tags: [Admin]
+      summary: Customer-scoped overview statistics
+      description: |
+        Request aggregates use the selected inclusive start and exclusive end.
+        model_distribution includes all resolved models in that organization and
+        interval, without a top-N limit. Each row includes cost_micros as an exact
+        integer string in micro-CNY (1 CNY = 1000000 micros), alongside requests,
+        success/failure counts, success rate and latency statistics. Model fallback
+        follows the existing trimmed model, then requested_model, then (unknown).
+        Older backends may omit per-model cost_micros; absence is not zero.
+        Current deployment availability and recent_logs have distinct current/latest
+        semantics. Summary and distribution are separate reads, not one snapshot.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: start_time, in: query, schema: { type: string, format: date-time } }
+        - { name: end_time, in: query, schema: { type: string, format: date-time } }
+        - { name: org_id, in: query, description: Explicit customer scope for a platform administrator. Other roles retain their authenticated scope., schema: { type: integer, format: int64 } }
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "403": { $ref: "#/components/responses/Error" }
 
   /api/v1/usage/analytics:
     get:

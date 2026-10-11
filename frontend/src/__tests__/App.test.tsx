@@ -70,6 +70,18 @@ function renderApp(
 }
 
 describe('App shell', () => {
+  it('exposes a close action and Escape dismissal for the mobile navigation', () => {
+    renderApp();
+    const toggle = screen.getByRole('button', { name: '打开导航' });
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(screen.getByRole('button', { name: '关闭导航' }));
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: '关闭导航' })).not.toBeInTheDocument();
+  });
   beforeEach(() => {
 	vi.restoreAllMocks();
 	localStorage.clear();

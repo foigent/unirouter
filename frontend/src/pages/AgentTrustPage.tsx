@@ -1,3 +1,6 @@
+import '../i18n/security';
+import type { MessageKey } from '../i18n/catalog';
+import { translate as t, useI18n, labelFor } from '../i18n';
 import { useEffect, useMemo, useState } from 'react';
 import { Banner, Button, Table, Tag, TextArea, Typography } from '@douyinfe/semi-ui';
 import { api, ApiError } from '../api/client';
@@ -124,16 +127,17 @@ const compactRef = (value: string) => value.length > 24
   : value;
 
 export function OfflineAgentTrustWorkspace() {
+  const { locale } = useI18n();
   const [contract, setContract] = useState<AgentTrustContract | null>(null);
   const [input, setInput] = useState('');
   const [report, setReport] = useState<AgentTrustReport | null>(null);
   const [selectedRef, setSelectedRef] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<{key: MessageKey; values?: Record<string, string | number>} | null>(null);
 
   const preview = (body: string) => {
     setLoading(true);
-    setError('');
+    setError(null);
     return api.previewAgentTrust(body)
       .then((next: AgentTrustReport) => {
         setReport(next);
@@ -146,9 +150,7 @@ export function OfflineAgentTrustWorkspace() {
       .catch((previewError: unknown) => {
         setReport(null);
         setSelectedRef('');
-        setError(previewError instanceof ApiError
-          ? `校验失败（${previewError.status}）：${previewError.message}`
-          : 'Agent 信任审查不满足严格合同。');
+        setError(previewError instanceof ApiError ? {key: '校验失败（{status}）：{detail}', values: {status: previewError.status, detail: previewError.message}} : {key: 'Agent 信任审查不满足严格合同。'});
       })
       .finally(() => setLoading(false));
   };
@@ -165,9 +167,7 @@ export function OfflineAgentTrustWorkspace() {
       })
       .catch((loadError: unknown) => {
         if (!active) return;
-        setError(loadError instanceof ApiError
-          ? `合同加载失败（${loadError.status}）：${loadError.message}`
-          : 'Agent Trust 合同暂不可用。');
+        setError(loadError instanceof ApiError ? {key: '合同加载失败（{status}）：{detail}', values: {status: loadError.status, detail: loadError.message}} : {key: 'Agent Trust 合同暂不可用。'});
       });
     return () => { active = false; };
   }, []);
@@ -180,7 +180,7 @@ export function OfflineAgentTrustWorkspace() {
 
   const columns = useMemo(() => [
     {
-      title: '深度',
+      title: t("深度"),
       dataIndex: 'depth',
       width: 80,
       render: (value: number) => `L${value}`,
@@ -192,21 +192,21 @@ export function OfflineAgentTrustWorkspace() {
       render: (value: string) => <span className="ur-mono-break">{compactRef(value)}</span>,
     },
     {
-      title: '状态',
+      title: t("状态"),
       dataIndex: 'state',
       width: 120,
       render: (value: string) => (
         <Tag color={value === 'active' ? 'green' : value === 'revoked' ? 'red' : 'orange'}>
-          {stateNames[value] || value}
+          {labelFor(stateNames, value)}
         </Tag>
       ),
     },
     {
-      title: '剩余 TTL',
+      title: t("剩余 TTL"),
       dataIndex: 'remaining_ttl_seconds',
-      render: (value: string) => `${value} 秒`,
+      render: (value: string) => t('{value} 秒', {value}),
     },
-  ], []);
+  ], [locale]);
 
   const restoreFixture = () => {
     if (!contract) return;
@@ -219,7 +219,7 @@ export function OfflineAgentTrustWorkspace() {
     <div>
       <Banner
         type="info"
-        description="离线 Agent 能力证据仍保留为人工审查工具：不接收签名私钥，不读取运行时能力，不同步依赖风险服务，也不会晋级策略或执行撤销。Fixture 公钥只证明密码学有效，不是生产信任根。"
+        description={t("离线 Agent 能力证据仍保留为人工审查工具：不接收签名私钥，不读取运行时能力，不同步依赖风险服务，也不会晋级策略或执行撤销。Fixture 公钥只证明密码学有效，不是生产信任根。")}
         closeIcon={null}
         style={{ marginBottom: 16 }}
       />
@@ -228,12 +228,12 @@ export function OfflineAgentTrustWorkspace() {
         <main className="ur-explorer-panel">
           <div className="ur-panel-title">
             <div>
-              <Typography.Title heading={5} style={{ margin: 0 }}>高级模型限制合同与离线证据</Typography.Title>
+              <Typography.Title heading={5} style={{ margin: 0 }}>{t("高级模型限制合同与离线证据")}</Typography.Title>
               <Typography.Text className="ur-panel-hint">
-                {contract ? `${contract.contract_version} · ${contract.receipt_version}` : '正在读取离线合同'}
+                {contract ? `${contract.contract_version} · ${contract.receipt_version}` : t("正在读取离线合同")}
               </Typography.Text>
             </div>
-            <Tag color="grey">规划中 · metadata-only</Tag>
+            <Tag color="grey">{t("规划中 · metadata-only")}</Tag>
           </div>
 
           <div className="ur-table-shell">
@@ -250,71 +250,71 @@ export function OfflineAgentTrustWorkspace() {
             />
           </div>
 
-          <Typography.Title heading={6}>当前审查 JSON</Typography.Title>
+          <Typography.Title heading={6}>{t("当前审查 JSON")}</Typography.Title>
           <TextArea
-            aria-label="Agent Trust 审查 JSON"
+            aria-label={t("Agent Trust 审查 JSON")}
             value={input}
             onChange={value => {
               setInput(value);
               setReport(null);
               setSelectedRef('');
-              setError('');
+              setError(null);
             }}
             autosize={{ minRows: 10, maxRows: 18 }}
           />
           <div className="ur-governance-actions">
-            <Button type="primary" loading={loading} onClick={() => void preview(input)}>运行离线审查</Button>
-            <Button disabled={!contract} onClick={restoreFixture}>恢复安全示例</Button>
+            <Button type="primary" loading={loading} onClick={() => void preview(input)}>{t("运行离线审查")}</Button>
+            <Button disabled={!contract} onClick={restoreFixture}>{t("恢复安全示例")}</Button>
           </div>
-          {error && <Banner type="danger" description={error} style={{ marginTop: 12 }} />}
+          {error && <Banner type="danger" description={error ? t(error.key, error.values) : undefined} style={{ marginTop: 12 }} />}
 
           {report && (
             <div className="ur-kpi-grid ur-governance-kpis">
-              <MetricTile label="权限节点" value={formatInteger(report.effective_authority_tree.length)} tone="blue" />
-              <MetricTile label="衰减证明" value={formatInteger(report.attenuation_diffs.length)} tone="green" />
-              <MetricTile label="撤销事件" value={formatInteger(report.revocation_timeline.length)} tone={report.revocation_timeline.length ? 'amber' : 'blue'} />
-              <MetricTile label="治理结论" value={decisionNames[report.decision] || report.decision} tone={report.decision === 'deny' ? 'red' : 'amber'} />
+              <MetricTile label={t("权限节点")} value={formatInteger(report.effective_authority_tree.length)} tone="blue" />
+              <MetricTile label={t("衰减证明")} value={formatInteger(report.attenuation_diffs.length)} tone="green" />
+              <MetricTile label={t("撤销事件")} value={formatInteger(report.revocation_timeline.length)} tone={report.revocation_timeline.length ? 'amber' : 'blue'} />
+              <MetricTile label={t("治理结论")} value={labelFor(decisionNames, report.decision)} tone={report.decision === 'deny' ? 'red' : 'amber'} />
             </div>
           )}
         </main>
 
-        <aside className="ur-explorer-panel ur-explorer-detail" aria-label="Agent Trust 检查器">
+        <aside className="ur-explorer-panel ur-explorer-detail" aria-label={t("Agent Trust 检查器")}>
           <div className="ur-detail-header">
             <div>
-              <Typography.Text className="ur-panel-hint">信任证据检查器</Typography.Text>
-              <Typography.Title heading={5} style={{ margin: 0 }}>权限与收据证据</Typography.Title>
+              <Typography.Text className="ur-panel-hint">{t("信任证据检查器")}</Typography.Text>
+              <Typography.Title heading={5} style={{ margin: 0 }}>{t("权限与收据证据")}</Typography.Title>
             </div>
             <Tag color={selectedNode?.state === 'active' ? 'green' : 'red'}>
-              {selectedNode ? stateNames[selectedNode.state] || selectedNode.state : '等待审查'}
+              {selectedNode ? labelFor(stateNames, selectedNode.state) : t("等待审查")}
             </Tag>
           </div>
           {report && selectedNode ? (
             <dl className="ur-financial-truth-detail">
               <dt>Agent</dt><dd className="ur-mono-break">{selectedNode.agent_ref}</dd>
-              <dt>父级</dt><dd className="ur-mono-break">{selectedNode.parent_agent_ref || 'root'}</dd>
-              <dt>深度 / 谱系</dt><dd>L{selectedNode.depth} / {formatInteger(selectedNode.lineage.length)} 节点</dd>
-              <dt>剩余 TTL</dt><dd>{selectedNode.remaining_ttl_seconds} 秒</dd>
-              <dt>祖先预算</dt><dd>{formatInteger(selectedBudget?.ancestor_budget_refs.length || 0)} 层共同扣减</dd>
-              <dt>成本上限</dt><dd>{selectedBudget?.effective_limits.cost_budget_cents ?? 0} cents</dd>
-              <dt>Token 上限</dt><dd>{selectedBudget?.effective_limits.token_budget ?? 0}</dd>
-              <dt>并发上限</dt><dd>{selectedBudget?.effective_limits.concurrency_limit ?? 0}</dd>
-              <dt>衰减字段</dt><dd>{selectedDiff?.reduced_fields.join('、') || '根能力 / 无'}</dd>
-              <dt>撤销证明</dt><dd className="ur-mono-break">{selectedNode.revocation_event_ref || '无'}</dd>
-              <dt>数字孪生风险</dt><dd>{report.digital_twin.overall_risk}</dd>
-              <dt>路由 / Pack 差异</dt><dd>{report.digital_twin.route_changes.length} / {report.digital_twin.provider_pack_changes.length}</dd>
-              <dt>签名验证</dt><dd>{report.receipt_verification.cryptographically_valid ? '密码学有效' : '无效'}</dd>
-              <dt>Key / 版本</dt><dd>{report.receipt_verification.key_id} / {report.receipt_verification.key_version}</dd>
-              <dt>租户 / Audience</dt><dd>{report.receipt_verification.tenant_bound && report.receipt_verification.audience_bound ? '已绑定' : '未绑定'}</dd>
-              <dt>生产信任根</dt><dd>{report.receipt_verification.runtime_trusted ? '已授权' : '未授权（fixture）'}</dd>
-              <dt>同步运行时依赖</dt><dd>{report.synchronous_runtime_dependency ? '是' : '否'}</dd>
-              <dt>运行时执行授权</dt><dd>{report.runtime_enforcement_authorized ? '是' : '否'}</dd>
-              <dt>运行时变更</dt><dd>{report.runtime_mutation}</dd>
-              <dt>收据哈希</dt><dd className="ur-mono-break">{report.receipt_verification.payload_hash}</dd>
+              <dt>{t("父级")}</dt><dd className="ur-mono-break">{selectedNode.parent_agent_ref || 'root'}</dd>
+              <dt>{t("深度 / 谱系")}</dt><dd>L{selectedNode.depth} / {formatInteger(selectedNode.lineage.length)}  {t("节点")}</dd>
+              <dt>{t("剩余 TTL")}</dt><dd>{selectedNode.remaining_ttl_seconds}  {t("秒")}</dd>
+              <dt>{t("祖先预算")}</dt><dd>{formatInteger(selectedBudget?.ancestor_budget_refs.length || 0)}  {t("层共同扣减")}</dd>
+              <dt>{t("成本上限")}</dt><dd>{selectedBudget?.effective_limits.cost_budget_cents ?? 0} cents</dd>
+              <dt>{t("Token 上限")}</dt><dd>{selectedBudget?.effective_limits.token_budget ?? 0}</dd>
+              <dt>{t("并发上限")}</dt><dd>{selectedBudget?.effective_limits.concurrency_limit ?? 0}</dd>
+              <dt>{t("衰减字段")}</dt><dd>{selectedDiff?.reduced_fields.join('、') || t("根能力 / 无")}</dd>
+              <dt>{t("撤销证明")}</dt><dd className="ur-mono-break">{selectedNode.revocation_event_ref || t("无")}</dd>
+              <dt>{t("数字孪生风险")}</dt><dd>{report.digital_twin.overall_risk}</dd>
+              <dt>{t("路由 / Pack 差异")}</dt><dd>{report.digital_twin.route_changes.length} / {report.digital_twin.provider_pack_changes.length}</dd>
+              <dt>{t("签名验证")}</dt><dd>{report.receipt_verification.cryptographically_valid ? t("密码学有效") : t("无效")}</dd>
+              <dt>{t("Key / 版本")}</dt><dd>{report.receipt_verification.key_id} / {report.receipt_verification.key_version}</dd>
+              <dt>{t("租户 / Audience")}</dt><dd>{report.receipt_verification.tenant_bound && report.receipt_verification.audience_bound ? t("已绑定") : t("未绑定")}</dd>
+              <dt>{t("生产信任根")}</dt><dd>{report.receipt_verification.runtime_trusted ? t("已授权") : t("未授权（fixture）")}</dd>
+              <dt>{t("同步运行时依赖")}</dt><dd>{report.synchronous_runtime_dependency ? t("是") : t("否")}</dd>
+              <dt>{t("运行时执行授权")}</dt><dd>{report.runtime_enforcement_authorized ? t("是") : t("否")}</dd>
+              <dt>{t("运行时变更")}</dt><dd>{report.runtime_mutation}</dd>
+              <dt>{t("收据哈希")}</dt><dd className="ur-mono-break">{report.receipt_verification.payload_hash}</dd>
             </dl>
           ) : (
             <EmptyState
-              title="等待严格审查"
-              description="安全示例载入后会自动校验并选中首个 Agent；无需点击展开右侧检查器。"
+              title={t("等待严格审查")}
+              description={t("安全示例载入后会自动校验并选中首个 Agent；无需点击展开右侧检查器。")}
               minHeight={260}
             />
           )}
@@ -325,14 +325,15 @@ export function OfflineAgentTrustWorkspace() {
 }
 
 export default function AgentTrustPage() {
+  useI18n();
   const navigate = useNavigate();
   return (
-    <div className="ur-page ur-page-wide">
+    <div className="ur-page ur-page-wide ur-security-workspace">
       <PageHeader
-        eyebrow="访问与安全"
-        title="高级模型限制"
-        description="在项目与应用 Key 已经授予访问后，按凭证、项目、人员或 Agent 进一步收窄模型与端点；本页不能为用户开通基础访问。"
-        actions={<Button onClick={() => navigate('/agent-trust-evidence')}>离线合同验证</Button>}
+        eyebrow={t("访问与安全")}
+        title={t("高级模型限制")}
+        description={t("在项目与应用 Key 已经授予访问后，按凭证、项目、人员或 Agent 进一步收窄模型与端点；本页不能为用户开通基础访问。")}
+        actions={<Button onClick={() => navigate('/agent-trust-evidence')}>{t("离线合同验证")}</Button>}
       />
       <ModelAuthorizationWorkspace />
     </div>

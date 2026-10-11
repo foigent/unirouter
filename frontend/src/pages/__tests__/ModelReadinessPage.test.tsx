@@ -1,9 +1,10 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { MemoryRouter } from '../../test/MemoryRouter';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ModelReadinessPage from '../ModelReadinessPage';
 import { ApiError } from '../../api/transport';
+import { setLocale } from '../../i18n';
 
 const mocks = vi.hoisted(() => ({
   getProjects: vi.fn(),
@@ -81,6 +82,7 @@ function deferred<T>() {
 }
 
 describe('ModelReadinessPage', () => {
+  afterEach(() => { act(() => setLocale('zh-CN')); });
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getProjects.mockResolvedValue({ data: [{ id: 11, name: 'Core', status: 'active' }], total: 1 });
@@ -115,6 +117,34 @@ describe('ModelReadinessPage', () => {
     });
     mocks.getWorkloadApplications.mockResolvedValue({ data: [{ application_ref: 'app_core', display_name: 'Core App', project_id: 11, environment: 'production', status: 'active' }] });
     mocks.modelReadiness.mockResolvedValue(readiness);
+  });
+
+  it('preserves connection scope and evidence across locale changes, without showing retired commercial licensing', async () => {
+    mocks.modelReadiness.mockResolvedValue({
+      ...readiness,
+      scope: { mode: 'connection', org_id: 1, project_id: 0, deployment_id: 12, requested_model: 'deepseek-v4-pro', resolved_model: 'deepseek-v4-pro', endpoint: '/v1/chat/completions', model_operation_id: 'openai.chat_completions.v1', caller: '' },
+      platform_model: { ...readiness.platform_model, gateway_license: axis('not_applicable', 'commercial_license_not_required') },
+    });
+    setLocale('en-US');
+    render(<MemoryRouter initialEntries={['/model-readiness?from=connections&deployment_id=12&operation_id=openai.chat_completions.v1&model=deepseek-v4-pro']}><ModelReadinessPage /></MemoryRouter>);
+    expect(await screen.findByText('Model: deepseek-v4-pro')).toBeInTheDocument();
+    const reads = mocks.modelReadiness.mock.calls.length;
+    const lists = mocks.listModelDeployments.mock.calls.length;
+    expect(screen.queryByText('Gateway entitlement')).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Model or alias' })).toHaveTextContent('DeepSeek V4 Pro');
+    await act(async () => setLocale('zh-CN'));
+    expect(screen.getByText('当前模型：deepseek-v4-pro')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: '模型或 Alias' })).toHaveTextContent('DeepSeek V4 Pro');
+    expect(screen.queryByText('模型网关授权')).not.toBeInTheDocument();
+    expect(mocks.modelReadiness).toHaveBeenCalledTimes(reads);
+    expect(mocks.listModelDeployments).toHaveBeenCalledTimes(lists);
+  });
+
+  it('leaves an unselected deployment empty and does not diagnose an incomplete connection', async () => {
+    render(<MemoryRouter initialEntries={['/model-readiness?mode=connection']}><ModelReadinessPage /></MemoryRouter>);
+    await waitFor(() => expect(mocks.listModelDeployments).toHaveBeenCalled());
+    expect(screen.getByRole('combobox', { name: '模型部署' })).toHaveTextContent('请先选择模型');
+    expect(mocks.modelReadiness).not.toHaveBeenCalled();
   });
 
   it('renders four independent facts and preserves unavailable as unknown', async () => {

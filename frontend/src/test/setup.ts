@@ -2,6 +2,10 @@ import '@testing-library/jest-dom'
 import { cleanup } from '@testing-library/react'
 import { afterEach } from 'vitest'
 
+// Existing page fixtures choose Chinese explicitly; bootstrap locale tests
+// clear this preference to exercise the product's English default.
+localStorage.setItem('unirouter.ui.locale', 'zh-CN')
+
 afterEach(() => {
   cleanup()
 })

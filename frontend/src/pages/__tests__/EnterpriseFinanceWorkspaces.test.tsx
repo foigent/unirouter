@@ -1,5 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { setLocale, translate as t } from '../../i18n';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildUTCOverridePriceBands, buildUTCValleyPriceBands, EnterpriseRateCardWorkspace } from '../EnterpriseFinanceWorkspaces';
 
 const apiMocks = vi.hoisted(() => ({
@@ -15,6 +16,26 @@ const apiMocks = vi.hoisted(() => ({
 vi.mock('../../api/enterpriseFinance', () => ({ enterpriseFinanceApi: apiMocks }));
 
 describe('EnterpriseRateCardWorkspace request-pricing authority', () => {
+  it('preserves exact rate-card drafts and authority when the language changes', async () => {
+    render(<EnterpriseRateCardWorkspace orgId={9} canManage />);
+    await screen.findByText('尚无版本化 Rate Card');
+    fireEvent.click(screen.getByText('新建 Rate Card'));
+    fireEvent.change(screen.getByLabelText('Rate Card 供应商'), { target: { value: '测试供应商' } });
+    fireEvent.change(screen.getByLabelText('Rate Card 模型'), { target: { value: 'model-v1' } });
+    fireEvent.change(screen.getByLabelText('Rate Card 输入 Token每百万价格'), { target: { value: '0.000001' } });
+    const reads = apiMocks.getRateCards.mock.calls.length;
+    act(() => setLocale('en-US'));
+    expect(screen.getByLabelText('Rate-card provider')).toHaveValue('测试供应商');
+    expect(screen.getByLabelText(t('Rate Card {v0}每百万价格', { v0: t('输入 Token') }))).toHaveValue('0.000001');
+    expect(apiMocks.getRateCards).toHaveBeenCalledTimes(reads);
+    expect(apiMocks.createRateCardDraft).not.toHaveBeenCalled();
+    expect(apiMocks.approveRateCard).not.toHaveBeenCalled();
+    expect(apiMocks.activateRateCard).not.toHaveBeenCalled();
+    act(() => setLocale('zh-CN'));
+    expect(screen.getByLabelText('Rate Card 输入 Token每百万价格')).toHaveValue('0.000001');
+  });
+
+  afterEach(() => act(() => setLocale('zh-CN')));
   beforeEach(() => {
     Object.values(apiMocks).forEach(mock => mock.mockReset());
     apiMocks.createRateCardDraft.mockResolvedValue({});

@@ -1,3 +1,4 @@
+import { translate as t, translateLabel, useI18n, LanguageSwitcher } from '../i18n';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Form, Button, Typography, Tag } from '@douyinfe/semi-ui';
@@ -11,6 +12,7 @@ import { PasswordField } from '../ui';
 const { Title, Text } = Typography;
 
 export default function LoginPage() {
+  useI18n();
   const navigate = useNavigate();
   const login = useAuthStore((s) => s.login);
   const loadProfile = useAuthStore((s) => s.loadProfile);
@@ -94,7 +96,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="ur-login-page">
+    <div className="ur-login-page"><div className="ur-login-language"><LanguageSwitcher /></div>
       <div className="ur-login-shell">
         <section className="ur-login-showcase">
           <div className="ur-login-showcase-head">
@@ -111,23 +113,23 @@ export default function LoginPage() {
               <span />
               <span />
               <span />
-                <Tag color="violet">产品能力</Tag>
+                <Tag color="violet">{t("产品能力")}</Tag>
             </div>
             <div className="ur-preview-metrics">
               <div>
                 <IconHistogram />
-                <strong>多供应商</strong>
-                <span>统一接入</span>
+                <strong>{t("多供应商")}</strong>
+                <span>{t("统一接入")}</span>
               </div>
               <div>
                 <IconShield />
-                <strong>微元精度</strong>
-                <span>计量口径</span>
+                <strong>{t("微元精度")}</strong>
+                <span>{t("计量口径")}</span>
               </div>
               <div>
                 <IconServer />
-                <strong>签名校验</strong>
-                <span>离线升级</span>
+                <strong>{t("签名校验")}</strong>
+                <span>{t("离线升级")}</span>
               </div>
             </div>
             <div className="ur-preview-chart">
@@ -141,30 +143,30 @@ export default function LoginPage() {
               <span style={{ height: '84%' }} />
             </div>
             <div className="ur-preview-list">
-              <div><span /> 策略路由 <strong>统一配置</strong></div>
-              <div><span /> 访问控制 <strong>基于角色</strong></div>
-              <div><span /> 审计追踪 <strong>请求级</strong></div>
+              <div><span /> {t("策略路由")}<strong>{t("统一配置")}</strong></div>
+              <div><span /> {t("访问控制")}<strong>{t("基于角色")}</strong></div>
+              <div><span /> {t("审计追踪")}<strong>{t("请求级")}</strong></div>
             </div>
           </div>
         </section>
 
         <section className="ur-login-panel">
           <div className="ur-login-brand">
-            <Text className="ur-page-eyebrow">安全控制台</Text>
-            <Title heading={3} className="ur-login-title">登录控制台</Title>
-            <Text className="ur-page-description">统一治理模型接入、访问凭证、用量成本、审计日志与运行状态。</Text>
+            <Text className="ur-page-eyebrow">{t("安全控制台")}</Text>
+            <Title heading={3} className="ur-login-title">{t("登录控制台")}</Title>
+            <Text className="ur-page-description">{t("统一治理模型接入、访问凭证、用量成本、审计日志与运行状态。")}</Text>
           </div>
           {error && (
             <div className="ur-login-error">
-              {error}
+              {translateLabel(error)}
             </div>
           )}
-          {hasXInsightLoginContinuation() && <p role="status">登录后将继续本次 X-Insight 邀请，并重新核对当前账号权限。刷新页面或使用企业登录后，请从 XI 重新打开邀请。</p>}
-          {profileRetry && <Button disabled={loading} onClick={() => { void retryProfile(); }}>重试核对登录状态</Button>}
+          {hasXInsightLoginContinuation() && <p role="status">{t("登录后将继续本次 X-Insight 邀请，并重新核对当前账号权限。刷新页面或使用企业登录后，请从 XI 重新打开邀请。")}</p>}
+          {profileRetry && <Button disabled={loading} onClick={() => { void retryProfile(); }}>{t("重试核对登录状态")}</Button>}
           <Form onSubmit={handleSubmit} className="ur-login-form">
-            <Form.Input field="username" label="用户名" placeholder="请输入用户名" autoComplete="username" rules={[{ required: true, message: '请输入用户名' }]} />
-            <PasswordField field="password" label="密码" placeholder="请输入密码" autoComplete="current-password" rules={[{ required: true, message: '请输入密码' }]} />
-            <Button htmlType="submit" theme="solid" block loading={loading} disabled={profileRetry} className="ur-primary-action">登录</Button>
+            <Form.Input field="username" label={t("用户名")} placeholder={t("请输入用户名")} autoComplete="username" rules={[{ required: true, message: t("请输入用户名") }]} />
+            <PasswordField field="password" label={t("密码")} placeholder={t("请输入密码")} autoComplete="current-password" rules={[{ required: true, message: t("请输入密码") }]} />
+            <Button htmlType="submit" theme="solid" block loading={loading} disabled={profileRetry} className="ur-primary-action">{t("登录")}</Button>
           </Form>
           {oidcConfig?.enabled && (
             <Button
@@ -175,13 +177,12 @@ export default function LoginPage() {
               onClick={handleOIDCLogin}
               className="ur-secondary-action"
             >
-              使用 {oidcConfig.provider_name || 'OIDC'} 登录
-            </Button>
+              {t('使用 {provider} 登录', { provider: oidcConfig.provider_name || 'OIDC' })}</Button>
           )}
           {oidcConfigState === 'error' && (
             <div className="ur-login-identity-status" role="status">
-              <Text type="secondary">企业登录配置暂时无法确认；这不代表企业登录未启用。</Text>
-              <Button size="small" onClick={loadOIDCConfig}>重新检查企业登录</Button>
+              <Text type="secondary">{t("企业登录配置暂时无法确认；这不代表企业登录未启用。")}</Text>
+              <Button size="small" onClick={loadOIDCConfig}>{t("重新检查企业登录")}</Button>
             </div>
           )}
         </section>

@@ -1,3 +1,5 @@
+import '../i18n/integrations';
+import { translate as t, useI18n, labelFor, translateLabel } from '../i18n';
 import { useEffect, useState } from 'react';
 import { xInsightSetupApi, type SetupConsentPut, type SetupCoverage, type SetupPeer, type SetupPolicyAccess, type SetupPreview, type SetupStatus, type SetupProjectMember } from '../api/xInsightSetup';
 
@@ -48,13 +50,14 @@ const issueNames: Record<string, string> = {
 
 };
 function issueDescription(code: string) {
-  return Object.prototype.hasOwnProperty.call(issueNames, code) ? issueNames[code] : '尚无法解释此接入条件。请重新读取或预览；若持续存在，请将接入诊断提供给管理员。';
+  return Object.prototype.hasOwnProperty.call(issueNames, code) ? labelFor(issueNames, code) : t("尚无法解释此接入条件。请重新读取或预览；若持续存在，请将接入诊断提供给管理员。");
 }
 function IssueDiagnostic({ code, installation }: { code: string; installation: string }) {
+  useI18n();
   if (Object.prototype.hasOwnProperty.call(issueNames, code)) return null;
-  const publicCode = /^[a-z][a-z0-9_]{0,63}$/.test(code) && !/^(xiiv1_|ur_xf1_)/.test(code) ? code : '诊断代码不可用';
-  const locator = /^xci_[A-Za-z0-9_-]{22}$/.test(installation) ? installation : '接入编号不可用';
-  return <details><summary>接入诊断</summary><p>诊断代码：{publicCode}；接入编号：{locator}</p></details>;
+  const publicCode = /^[a-z][a-z0-9_]{0,63}$/.test(code) && !/^(xiiv1_|ur_xf1_)/.test(code) ? code : t("诊断代码不可用");
+  const locator = /^xci_[A-Za-z0-9_-]{22}$/.test(installation) ? installation : t("接入编号不可用");
+  return <details><summary>{t("接入诊断")}</summary><p>{t("诊断代码：")}{publicCode}{t("；接入编号：")}{locator}</p></details>;
 }
 const stateNames: Record<string, string> = { waiting_consent: '等待确认', provisioning: '正在配置', needs_action: '需要处理', waiting_data: '等待首次真实数据', ready: '已开始同步', failed: '接入失败' };
 const kindNames: Record<SetupPolicyAccess['target_kind'], string> = { enterprise_default: '企业正文默认策略', project_policy: '项目正文策略', user_exception: '成员正文例外' };
@@ -68,6 +71,7 @@ interface Props {
   onSaved: () => void;
 }
 export default function XInsightSetup({ actorId, actorOrgId, orgId, projectId, projectName, projects, invitationFragment = '', installationId, enabled, onSaved }: Props) {
+  useI18n();
   const fragment = new URLSearchParams(invitationFragment.replace(/^#/, ''));
   const invitationToken = fragment.get('invitation') || '';
   const fragmentOrigin = fragment.get('xinsight_origin') || '';
@@ -134,9 +138,9 @@ export default function XInsightSetup({ actorId, actorOrgId, orgId, projectId, p
   function policyPut(): SetupConsentPut['ur_policy'] {
     if (!preview || policyScope === 'reuse') return null;
     const layer = policyScope === 'enterprise' ? preview.ur_policy.enterprise : preview.ur_policy.project;
-    if (!layer) throw new Error('当前策略层不可读，请刷新。');
+    if (!layer) throw new Error(t("当前策略层不可读，请刷新。"));
     const capabilities = preview.ur_policy.policy_capabilities;
-    if (!capabilities) throw new Error('UR 当前正文能力未确认，请刷新。');
+    if (!capabilities) throw new Error(t("UR 当前正文能力未确认，请刷新。"));
     const put: ScopedPayloadPut = {
       schema_version: 'unirouter.payload-policy.v2', expected_policy_ref: layer.policy_ref,
       expected_version: layer.desired?.policy_version || '0', expected_vector: policyScope === 'enterprise' ? `{"enterprise":${layer.effective?.policy_version || '0'}}` : preview.ur_policy.version_vector,
@@ -163,75 +167,75 @@ export default function XInsightSetup({ actorId, actorOrgId, orgId, projectId, p
       if (recoveryKey) sessionStorage.setItem(recoveryKey, put.invitation.installation_id);
       const next = await xInsightSetupApi.create(orgId, put); receiveStatus(next);
       window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`); onSaved();
-    } catch (e) { if(e instanceof ApiError&&[400,403,409].includes(e.status)){if(recoveryKey)sessionStorage.removeItem(recoveryKey);setSubmitted(undefined);setConfirmed(false);setRequestId(crypto.randomUUID());}setError(e instanceof Error ? e.message : '确认结果未明，请重读状态后再用同一请求重试。'); }
+    } catch (e) { if(e instanceof ApiError&&[400,403,409].includes(e.status)){if(recoveryKey)sessionStorage.removeItem(recoveryKey);setSubmitted(undefined);setConfirmed(false);setRequestId(crypto.randomUUID());}setError(e instanceof Error ? e.message : "确认结果未明，请重读状态后再用同一请求重试。"); }
     finally { setBusy(false); }
   }
   const enterpriseWrite = access.some(a => a.target_kind === 'enterprise_default' && a.write);
   const bodyInherits = preview?.ur_policy.enterprise.effective?.config.mode === 'full_content';
 
-  return <section aria-label="连接 X-Insight" style={{ border: '1px solid var(--semi-color-border)', borderRadius: 8, padding: 16 }}>
-    <h3>连接 X-Insight</h3>
-    <p>核对 XI 地址，在 XI 登录并确认保管设置，然后在这里确认供数范围和管理权限。确认保存后，关闭页面也会由后台继续。</p>
-    {error && <p role="alert">{error}</p>}
+  return <section className="ur-xinsight-setup" aria-label={t("连接 X-Insight")} style={{ border: '1px solid var(--semi-color-border)', borderRadius: 8, padding: 16 }}>
+    <h3>{t("连接 X-Insight")}</h3>
+    <p>{t("核对 XI 地址，在 XI 登录并确认保管设置，然后在这里确认供数范围和管理权限。确认保存后，关闭页面也会由后台继续。")}</p>
+    {error && <p role="alert">{translateLabel(error)}</p>}
     {!status && !preview && !installationId && <>
-      <label>XI 地址 <input aria-label="XI 地址" value={address} disabled={!enabled || busy} onChange={e => setAddress(e.target.value)} placeholder="https://xi.example.com" /></label>
-      <button disabled={!enabled || !peer?.trust_ready || address !== peer.xi_origin} onClick={() => { if (peer && address === peer.xi_origin) {if(actorId)sessionStorage.setItem(`xinsight.setup-project:${actorId}:${actorOrgId ?? orgId}`,String(projectId));window.location.assign(peer.xi_setup_url);} }}>在 XI 登录并确认</button>
-      {peer && !peer.trust_ready && <p role="status">尚未配置受信 XI 对端。请运维使用正式安装工具准备并回读；本页不登记任意地址。</p>}
-      {peer?.trust_ready && address && address !== peer.xi_origin && <p role="status">输入地址与当前受信 XI 不一致，请核对准确地址。</p>}
+      <label>{t("XI 地址")} <input aria-label={t("XI 地址")} value={address} disabled={!enabled || busy} onChange={e => setAddress(e.target.value)} placeholder="https://xi.example.com" /></label>
+      <button disabled={!enabled || !peer?.trust_ready || address !== peer.xi_origin} onClick={() => { if (peer && address === peer.xi_origin) {if(actorId)sessionStorage.setItem(`xinsight.setup-project:${actorId}:${actorOrgId ?? orgId}`,String(projectId));window.location.assign(peer.xi_setup_url);} }}>{t("在 XI 登录并确认")}</button>
+      {peer && !peer.trust_ready && <p role="status">{t("尚未配置受信 XI 对端。请运维使用正式安装工具准备并回读；本页不登记任意地址。")}</p>}
+      {peer?.trust_ready && address && address !== peer.xi_origin && <p role="status">{t("输入地址与当前受信 XI 不一致，请核对准确地址。")}</p>}
     </>}
-    {oldConnection && <p>已有连接。当前状态与授权可在维护详情中核对；本页不会改写历史同意。</p>}
+    {oldConnection && <p>{t("已有连接。当前状态与授权可在维护详情中核对；本页不会改写历史同意。")}</p>}
  {preview && !status && <fieldset disabled={busy || !!submitted}>
-      <legend>最终确认</legend><button type="button" onClick={()=>{if(invitation)void xInsightSetupApi.preview(orgId,projectId,invitationToken).then(v=>{setPreview(v);setConfirmed(false);}).catch(()=>setError('预览仍未确认，请核对邀请和当前范围。'));}}>重新预览当前范围</button>
-      <p>XI 已由其登录者确认保管：{preview.xi_consent.custody.mode === 'full_content' ? '允许正文副本' : '关闭正文副本'}，保存 {preview.xi_consent.custody.retention_seconds / 86400} 天；确认到期后需在 XI 重新发起。</p>
-      <p>{preview.receiver_mode === 'adopt_existing' ? '接管现有连接，保留原凭据和同步进度。' : '创建本次新连接。'}</p>
-      <label>供数项目范围 <select aria-label="供数项目范围" value={coverage} onChange={e => { setCoverage(e.target.value as SetupCoverage); setExcluded([]); setConfirmed(false); }}>
-        {preview.allowed_coverage.map(v => <option key={v} value={v}>{v === 'exact' ? `当前项目：${projectName}` : '本组织当前及未来全部项目'}</option>)}
+      <legend>{t("最终确认")}</legend><button type="button" onClick={()=>{if(invitation)void xInsightSetupApi.preview(orgId,projectId,invitationToken).then(v=>{setPreview(v);setConfirmed(false);}).catch(()=>setError('预览仍未确认，请核对邀请和当前范围。'));}}>{t("重新预览当前范围")}</button>
+      <p>{t("XI 已由其登录者确认保管：")}{preview.xi_consent.custody.mode === 'full_content' ? t("允许正文副本") : t("关闭正文副本")}{t("，保存")} {preview.xi_consent.custody.retention_seconds / 86400}  {t("天；确认到期后需在 XI 重新发起。")}</p>
+      <p>{preview.receiver_mode === 'adopt_existing' ? t("接管现有连接，保留原凭据和同步进度。") : t("创建本次新连接。")}</p>
+      <label>{t("供数项目范围")} <select aria-label={t("供数项目范围")} value={coverage} onChange={e => { setCoverage(e.target.value as SetupCoverage); setExcluded([]); setConfirmed(false); }}>
+        {preview.allowed_coverage.map(v => <option key={v} value={v}>{v === 'exact' ? t("当前项目：{v0}", { v0: String(projectName) }) : t("本组织当前及未来全部项目")}</option>)}
       </select></label>
-      {coverage === 'all_current_future' && <div><p>排除这些现有项目的供数。排除不会缩小企业默认或全项目策略管理权限。</p>{projects.filter(p => p.org_id === orgId && p.id !== projectId).map(p => <label key={p.id} style={{ display: 'block' }}><input type="checkbox" checked={excluded.includes(String(p.id))} onChange={e => { setExcluded(v => e.target.checked ? [...v, String(p.id)].sort() : v.filter(id => id !== String(p.id))); setConfirmed(false); }} />{p.name}</label>)}</div>}
-      <p>选择数据类别。未来项目继承这些选择；新增数据类别不会自动加入。</p>
- {preview.existing_profiles.length>0 && <p>已读取原来源选择。本次接管保留匹配的原凭据、绑定和同步进度；如需改变这些类别，请先按原来源流程处理后重新预览。</p>}
-      {preview.available_profiles.map(p => <label key={p} style={{ display: 'block' }}><input type="checkbox" checked={profiles.includes(p)} onChange={e => { setProfiles(v => e.target.checked ? [...v, p].sort() : v.filter(x => x !== p)); setConfirmed(false); }} />{profileNames[p] || '其他可用数据类别'}</label>)}
-      <label style={{ display: 'block' }}><input type="checkbox" checked={includeContent} disabled={!preview.content_available || preview.xi_consent.custody.mode !== 'full_content'} onChange={e => { setIncludeContent(e.target.checked); setConfirmed(false); }} />同步所授权范围内可用的正文</label>
-      <label style={{ display: 'block' }}>UR 初始正文策略 <select aria-label="UR 初始正文策略" value={policyScope} onChange={e => { setPolicyScope(e.target.value as typeof policyScope); setConfirmed(false); }}>
-        <option value="reuse">复用当前已生效策略</option>{preview.allowed_policy_scopes.map(s => <option key={s} value={s}>{s === 'enterprise' ? '明确修改企业默认正文策略' : '明确修改当前项目正文策略'}</option>)}
+      {coverage === 'all_current_future' && <div><p>{t("排除这些现有项目的供数。排除不会缩小企业默认或全项目策略管理权限。")}</p>{projects.filter(p => p.org_id === orgId && p.id !== projectId).map(p => <label key={p.id} style={{ display: 'block' }}><input type="checkbox" checked={excluded.includes(String(p.id))} onChange={e => { setExcluded(v => e.target.checked ? [...v, String(p.id)].sort() : v.filter(id => id !== String(p.id))); setConfirmed(false); }} />{p.name}</label>)}</div>}
+      <p>{t("选择数据类别。未来项目继承这些选择；新增数据类别不会自动加入。")}</p>
+ {preview.existing_profiles.length>0 && <p>{t("已读取原来源选择。本次接管保留匹配的原凭据、绑定和同步进度；如需改变这些类别，请先按原来源流程处理后重新预览。")}</p>}
+      {preview.available_profiles.map(p => <label key={p} style={{ display: 'block' }}><input type="checkbox" checked={profiles.includes(p)} onChange={e => { setProfiles(v => e.target.checked ? [...v, p].sort() : v.filter(x => x !== p)); setConfirmed(false); }} />{labelFor(profileNames, p) || t("其他可用数据类别")}</label>)}
+      <label style={{ display: 'block' }}><input type="checkbox" checked={includeContent} disabled={!preview.content_available || preview.xi_consent.custody.mode !== 'full_content'} onChange={e => { setIncludeContent(e.target.checked); setConfirmed(false); }} />{t("同步所授权范围内可用的正文")}</label>
+      <label style={{ display: 'block' }}>{t("UR 初始正文策略")} <select aria-label={t("UR 初始正文策略")} value={policyScope} onChange={e => { setPolicyScope(e.target.value as typeof policyScope); setConfirmed(false); }}>
+        <option value="reuse">{t("复用当前已生效策略")}</option>{preview.allowed_policy_scopes.map(s => <option key={s} value={s}>{s === 'enterprise' ? t("明确修改企业默认正文策略") : t("明确修改当前项目正文策略")}</option>)}
       </select></label>
-      {includeContent && coverage === 'all_current_future' && !bodyInherits && policyScope !== 'enterprise' && <p role="alert">未来项目正文需要有效的企业默认策略，仅修改当前项目不能覆盖未来项目。</p>}
+      {includeContent && coverage === 'all_current_future' && !bodyInherits && policyScope !== 'enterprise' && <p role="alert">{t("未来项目正文需要有效的企业默认策略，仅修改当前项目不能覆盖未来项目。")}</p>}
       {policyScope !== 'reuse' && <>
-        <p>{policyScope === 'enterprise' ? '企业默认可能影响本组织未同步的项目；原项目与成员例外保留。' : '只修改当前项目；成员例外保留。'}此初始策略修改与下方后续管理委托分别确认。</p>
-        <label>UR 正文保留（天） <input type="number" min={1 / 86400} max={365} step="any" value={retentionDays} onChange={e => { setRetentionDays(Number(e.target.value)); setConfirmed(false); }} /></label>
-        <label>项目限额（MiB） <input type="number" min={1 / 1048576} value={quotaMiB} onChange={e => { setQuotaMiB(Number(e.target.value)); setConfirmed(false); }} /></label>
-        <label>单条上限（MiB） <input type="number" min={1 / 1048576} value={maximumMiB} onChange={e => { setMaximumMiB(Number(e.target.value)); setConfirmed(false); }} /></label>
+        <p>{policyScope === 'enterprise' ? t("企业默认可能影响本组织未同步的项目；原项目与成员例外保留。") : t("只修改当前项目；成员例外保留。")}{t("此初始策略修改与下方后续管理委托分别确认。")}</p>
+        <label>{t("UR 正文保留（天）")} <input type="number" min={1 / 86400} max={365} step="any" value={retentionDays} onChange={e => { setRetentionDays(Number(e.target.value)); setConfirmed(false); }} /></label>
+        <label>{t("项目限额（MiB）")} <input type="number" min={1 / 1048576} value={quotaMiB} onChange={e => { setQuotaMiB(Number(e.target.value)); setConfirmed(false); }} /></label>
+        <label>{t("单条上限（MiB）")} <input type="number" min={1 / 1048576} value={maximumMiB} onChange={e => { setMaximumMiB(Number(e.target.value)); setConfirmed(false); }} /></label>
       </>}
-      <h4>允许 XI 后续管理的策略</h4>
-      <p>管理权限独立于供数。企业默认可能影响未同步项目；全部项目权限包括供数中排除的项目。未勾选的权限不会授予。</p>
+      <h4>{t("允许 XI 后续管理的策略")}</h4>
+      <p>{t("管理权限独立于供数。企业默认可能影响未同步项目；全部项目权限包括供数中排除的项目。未勾选的权限不会授予。")}</p>
       {(['enterprise_default', 'project_policy', 'user_exception'] as const).map(kind => {
         const options = preview.allowed_policy_access.filter(a => a.target_kind === kind);
         if (!options.length) return null;
         const selected = access.find(a => a.target_kind === kind);
-        return <div key={kind}><label><input type="checkbox" checked={!!selected} onChange={e => changeAccess(kind, {}, e.target.checked)} />{kindNames[kind]}</label>
+        return <div key={kind}><label><input type="checkbox" checked={!!selected} onChange={e => changeAccess(kind, {}, e.target.checked)} />{labelFor(kindNames, kind)}</label>
           {selected && <>
-            <label>作用范围 <select aria-label={`${kindNames[kind]}作用范围`} value={selected.coverage} onChange={e => changeAccess(kind, { coverage: e.target.value as SetupCoverage })}>
-              {options.map(a => <option key={a.coverage} value={a.coverage}>{kind === 'enterprise_default' ? '整个组织的默认策略' : a.coverage === 'exact' ? '当前项目' : kind === 'user_exception' ? '整个组织当前及未来成员' : '整个组织当前及未来项目'}</option>)}
+            <label>{t("作用范围")} <select aria-label={t("{v0}作用范围", { v0: String(labelFor(kindNames, kind)) })} value={selected.coverage} onChange={e => changeAccess(kind, { coverage: e.target.value as SetupCoverage })}>
+              {options.map(a => <option key={a.coverage} value={a.coverage}>{kind === 'enterprise_default' ? t("整个组织的默认策略") : a.coverage === 'exact' ? t("当前项目") : kind === 'user_exception' ? t("整个组织当前及未来成员") : t("整个组织当前及未来项目")}</option>)}
             </select></label>
-            <label><input type="checkbox" checked={selected.read} onChange={e => changeAccess(kind, { read: e.target.checked })} />读取</label>
-            <label><input type="checkbox" checked={selected.write} onChange={e => changeAccess(kind, { write: e.target.checked })} />修改</label>
-            {kind === 'user_exception' && selected.coverage === 'exact' && <label>当前项目成员 <select aria-label="成员正文例外成员" value={selected.user_id || ''} onChange={e=>changeAccess(kind,{user_id:e.target.value})}><option value="">请选择成员</option>{members.map(m=><option key={m.user_id} value={String(m.user_id)}>{m.username}</option>)}</select></label>}
+            <label><input type="checkbox" checked={selected.read} onChange={e => changeAccess(kind, { read: e.target.checked })} />{t("读取")}</label>
+            <label><input type="checkbox" checked={selected.write} onChange={e => changeAccess(kind, { write: e.target.checked })} />{t("修改")}</label>
+            {kind === 'user_exception' && selected.coverage === 'exact' && <label>{t("当前项目成员")} <select aria-label={t("成员正文例外成员")} value={selected.user_id || ''} onChange={e=>changeAccess(kind,{user_id:e.target.value})}><option value="">{t("请选择成员")}</option>{members.map(m=><option key={m.user_id} value={String(m.user_id)}>{m.username}</option>)}</select></label>}
           </>}
         </div>;
       })}
-      {!enterpriseWrite && <p role="status">{issueNames.enterprise_joint_management_not_granted}</p>}
+      {!enterpriseWrite && <p role="status">{labelFor(issueNames, 'enterprise_joint_management_not_granted')}</p>}
       {preview.issues.map((i, index) => <div key={index}><p role={i.requires_choice ? 'alert' : 'status'}>{issueDescription(i.code)}</p><IssueDiagnostic code={i.code} installation={preview.installation_id} /></div>)}
-      <label style={{ display: 'block', marginTop: 12 }}><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />我确认上述两端设置、供数范围及实际策略管理权限。</label>
-      <button onClick={() => { void save(); }} disabled={!enabled || !confirmed || !profiles.length || preview.issues.some(i => i.requires_choice) || access.some(a => !a.read && !a.write || a.target_kind === 'user_exception' && a.coverage === 'exact' && !a.user_id)}>确认并连接</button>
+      <label style={{ display: 'block', marginTop: 12 }}><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />{t("我确认上述两端设置、供数范围及实际策略管理权限。")}</label>
+      <button onClick={() => { void save(); }} disabled={!enabled || !confirmed || !profiles.length || preview.issues.some(i => i.requires_choice) || access.some(a => !a.read && !a.write || a.target_kind === 'user_exception' && a.coverage === 'exact' && !a.user_id)}>{t("确认并连接")}</button>
     </fieldset>}
-    {submitted && !status && <div><p>此请求已保留。先读回；重试使用完全相同的确认，不重复扩大授权。</p><button onClick={()=>{void xInsightSetupApi.status(orgId,submitted.invitation.installation_id).then(receiveStatus).catch(()=>setError('此请求状态尚未确认，可使用同一确认重试。'));}}>读取确认结果</button><button disabled={busy} onClick={()=>{void save();}}>重试同一确认</button></div>}
+    {submitted && !status && <div><p>{t("此请求已保留。先读回；重试使用完全相同的确认，不重复扩大授权。")}</p><button onClick={()=>{void xInsightSetupApi.status(orgId,submitted.invitation.installation_id).then(receiveStatus).catch(()=>setError('此请求状态尚未确认，可使用同一确认重试。'));}}>{t("读取确认结果")}</button><button disabled={busy} onClick={()=>{void save();}}>{t("重试同一确认")}</button></div>}
     {status && <>
-      {status.consent_revision > 0 && <p>本次确认已登记。重新读取只核对状态，不会重复授权。</p>}
-      <p role="status">{stateNames[status.state]}。配置{status.configuration_ready ? '已就绪' : '尚未就绪'}。</p>
-      {status.credential && <p>控制凭据：{{healthy:'当前有效',rotation_due:'即将自动轮换',rotation_pending:'轮换待确认',committed_unpromoted:'对端已确认，本端待接续',expired_recovery_required:'已过期，需管理员恢复',revoked:'连接已撤销',credential_unavailable:'不可用'}[status.credential.state]}。数据新鲜度与正文读取另按实际接收核对。</p>}
-      {status.xi && <><p>已收到：{status.xi.receiving.profiles_received.map(p => profileNames[p] || '其他类别').join('、') || '尚无实际数据'}。尚未出现的事件类别不会被当作错误。</p><p>正文副本：{status.xi.receiving.content_received_at ? '已有实际副本' : '尚未收到'}；受保护读取：{status.xi.receiving.content_read_verified_at ? '已有服务端授权读取验证' : '尚无实际读取验证'}。</p></>}
+      {status.consent_revision > 0 && <p>{t("本次确认已登记。重新读取只核对状态，不会重复授权。")}</p>}
+      <p role="status">{labelFor(stateNames, status.state)}{t("。配置")}{status.configuration_ready ? t("已就绪") : t("尚未就绪")}。</p>
+      {status.credential && <p>{t("控制凭据：")}{{healthy:t("当前有效"),rotation_due:t("即将自动轮换"),rotation_pending:t("轮换待确认"),committed_unpromoted:t("对端已确认，本端待接续"),expired_recovery_required:t("已过期，需管理员恢复"),revoked:t("连接已撤销"),credential_unavailable:t("不可用")}[status.credential.state]}{t("。数据新鲜度与正文读取另按实际接收核对。")}</p>}
+      {status.xi && <><p>{t("已收到：")}{status.xi.receiving.profiles_received.map(p => labelFor(profileNames, p) || t("其他类别")).join('、') || t("尚无实际数据")}{t("。尚未出现的事件类别不会被当作错误。")}</p><p>{t("正文副本：")}{status.xi.receiving.content_received_at ? t("已有实际副本") : t("尚未收到")}{t("；受保护读取：")}{status.xi.receiving.content_read_verified_at ? t("已有服务端授权读取验证") : t("尚无实际读取验证")}。</p></>}
       {status.issues.map((i, index) => <div key={index}><p role={i.requires_choice ? 'alert' : 'status'}>{issueDescription(i.code)}</p><IssueDiagnostic code={i.code} installation={status.installation_id} /></div>)}
-      <button onClick={() => { if (currentInstallation) void xInsightSetupApi.status(orgId, currentInstallation).then(receiveStatus).catch(() => setError('状态读取失败，请稍后重试。')); }}>重新读取接入状态</button>
+      <button onClick={() => { if (currentInstallation) void xInsightSetupApi.status(orgId, currentInstallation).then(receiveStatus).catch(() => setError('状态读取失败，请稍后重试。')); }}>{t("重新读取接入状态")}</button>
     </>}
   </section>;
 }

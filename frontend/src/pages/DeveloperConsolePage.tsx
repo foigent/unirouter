@@ -1,3 +1,5 @@
+import '../i18n/developer';
+import { translate as t, useI18n, translateLabel } from '../i18n';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Form, Input, Modal, Select, SideSheet, Space, Table, TextArea, Toast, Tooltip, Typography } from '@douyinfe/semi-ui';
@@ -156,6 +158,7 @@ function fallbackCopyText(text: string) {
 }
 
 export default function DeveloperConsolePage() {
+  const { locale } = useI18n();
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const organizationRole = organizationRoleForUser(user);
@@ -182,14 +185,13 @@ export default function DeveloperConsolePage() {
   const [modelPage, setModelPage] = useState(1);
   const [modelPageSize, setModelPageSize] = useState(20);
   const [logs, setLogs] = useState<CallLog[]>([]);
-  const [logTotal, setLogTotal] = useState(0);
   const [usageSummary, setUsageSummary] = useState<UsageAnalyticsSummary | null>(null);
   const [usageByModel, setUsageByModel] = useState<UsageAnalyticsRow[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [projectsLoadError, setProjectsLoadError] = useState('');
   const [dataLoading, setDataLoading] = useState(true);
   const [projectDataError, setProjectDataError] = useState('');
-  const [usageLoadError, setUsageLoadError] = useState('');
+  const [usageLoadError, setUsageLoadError] = useState<{ detail: string } | null>(null);
   const [showKeySheet, setShowKeySheet] = useState(false);
   const [formApi, setFormApi] = useState<any>(null);
   const [createdKey, setCreatedKey] = useState<{ key: string; key_prefix: string; name: string } | null>(null);
@@ -198,7 +200,7 @@ export default function DeveloperConsolePage() {
   const [lookupResult, setLookupResult] = useState<CallLog | null>(null);
   const [playgroundKey, setPlaygroundKey] = useState('');
   const [playgroundModel, setPlaygroundModel] = useState('');
-  const [playgroundPrompt, setPlaygroundPrompt] = useState('请用一句话返回当前项目的健康检查结果。');
+  const [playgroundPrompt, setPlaygroundPrompt] = useState(t("请用一句话返回当前项目的健康检查结果。"));
   const [playgroundMode, setPlaygroundMode] = useState('non_stream');
   const [playgroundMaxTokens, setPlaygroundMaxTokens] = useState('');
   const [playgroundThinking, setPlaygroundThinking] = useState('');
@@ -225,32 +227,32 @@ export default function DeveloperConsolePage() {
   const selectedProject = projects.find(project => project.id === selectedProjectId);
   const selectedProjectMembershipRole = canonicalProjectMembershipRole(selectedProject?.current_user_membership_role);
   const selectedProjectAuthz = authzContextForUser(user, selectedProjectMembershipRole, true);
-  const projectRoleLabel = formatRoleLabel(selectedProjectMembershipRole || organizationRole, '未分配项目角色');
+  const projectRoleLabel = formatRoleLabel(selectedProjectMembershipRole || organizationRole, t("未分配项目角色"));
   const mayCreateKey = canCreateProjectKey(selectedProjectAuthz);
   const mayDisableKey = canDisableProjectKey(selectedProjectAuthz);
   const developerOwnKeyOnly = selectedProjectMembershipRole === 'project_user';
   const mayRunPlayground = canInvokeProject(selectedProjectAuthz);
   const projectReadOnly = selectedProjectMembershipRole === 'project_viewer';
   const keySurfaceDescription = !gatewayLicensed
-    ? `${gatewayRestriction} 仍可管理凭证，但模型调用会被后端拒绝。`
+    ? t("{v0} 仍可管理凭证，但模型调用会被后端拒绝。", { v0: String(gatewayRestriction) })
     : mayCreateKey
-      ? '创建后只显示一次完整凭证；列表仅显示前缀。'
-      : '只读查看当前项目的凭证前缀和使用范围；创建或停用请联系项目管理员。';
+      ? t("创建后只显示一次完整凭证；列表仅显示前缀。")
+      : t("只读查看当前项目的凭证前缀和使用范围；创建或停用请联系项目管理员。");
   const emptyKeyDescription = mayCreateKey
-    ? '创建项目凭证后即可从内部应用调用网关。'
-    : '当前项目暂无可见凭证；如需调用权限，请联系项目管理员。';
+    ? t("创建项目凭证后即可从内部应用调用网关。")
+    : t("当前项目暂无可见凭证；如需调用权限，请联系项目管理员。");
   const workbenchDescription = projectReadOnly
-    ? '查看当前项目的个人用量、已启用模型和最近调用，并按 Request ID 排查请求。'
+    ? t("查看当前项目的个人用量、已启用模型和最近调用，并按 Request ID 排查请求。")
     : isProjectAdminMembership(selectedProjectMembershipRole)
-      ? '创建和停用项目访问凭证、查看已启用模型、调试调用并排查当前项目请求。'
-      : '创建项目访问凭证、停用本人拥有的凭证、查看已启用模型、调试调用并排查当前项目请求。';
-  const noProjectDescription = '请联系组织管理员或项目管理员把你的账号加入项目后，再使用项目工作台。';
+      ? t("创建和停用项目访问凭证、查看已启用模型、调试调用并排查当前项目请求。")
+      : t("创建项目访问凭证、停用本人拥有的凭证、查看已启用模型、调试调用并排查当前项目请求。");
+  const noProjectDescription = t("请联系组织管理员或项目管理员把你的账号加入项目后，再使用项目工作台。");
 
   const modelOptions = useMemo(() => {
     return Array.from(new Set(models
       .map(model => String(model.request_model || model.model_name || '').trim())
       .filter(Boolean))).sort();
-  }, [models]);
+  }, [models, locale]);
 
   useEffect(() => {
     // Choose an initial catalog model once; a later refresh must not silently
@@ -286,10 +288,10 @@ export default function DeveloperConsolePage() {
         totalCostMicros: usageSummary.cost_micros || '0',
         errorRate: usageSummary.total_requests ? (usageSummary.failed_requests || 0) / usageSummary.total_requests * 100 : 0,
         avgLatency: usageSummary.avg_latency_ms || 0,
-        sourceLabel: '我的 Key 聚合',
+        sourceLabel: t("我的 Key 聚合"),
       };
     }
-    const requestCount = logTotal;
+    const requestCount = logs.length;
     const totalTokens = logs.reduce((sum, log) => sum + (log.total_tokens || 0), 0);
     const totalCostMicros = logs.reduce((sum, log) => sum + parseMicros(log.cost_micros || '0'), 0n);
     const failed = logs.filter(log => log.status_code >= 400 || log.status_code === 0).length;
@@ -302,15 +304,14 @@ export default function DeveloperConsolePage() {
       totalCostMicros,
       errorRate: logs.length ? failed / logs.length * 100 : 0,
       avgLatency,
-      sourceLabel: '最近 20 条合计',
+      sourceLabel: t("最近 20 条合计"),
     };
-  }, [logTotal, logs, usageSummary]);
+  }, [logs, usageSummary, locale]);
 
   const clearProjectData = useCallback(() => {
     setKeys([]);
     setModels([]);
     setLogs([]);
-    setLogTotal(0);
     setUsageSummary(null);
     setUsageByModel([]);
     setKeyPage(1);
@@ -338,7 +339,7 @@ export default function DeveloperConsolePage() {
       setProjects([]);
       setSelectedProjectId(undefined);
       setProjectsLoadError('无法读取当前账号可访问的项目。请检查网络或服务状态后重试。');
-      Toast.error(`项目加载失败${err?.message ? `：${err.message}` : ''}`);
+      Toast.error(t("项目加载失败{v0}", { v0: String(err?.message ? `：${err.message}` : '') }));
     } finally {
       setInitialLoading(false);
     }
@@ -353,10 +354,10 @@ export default function DeveloperConsolePage() {
     const requestVersion = ++projectDataRequestVersion.current;
     clearProjectData();
     setProjectDataError('');
-    setUsageLoadError('');
+    setUsageLoadError(null);
     setDataLoading(true);
     try {
-      let usageFailure = '';
+      let usageFailure: { detail: string } | null = null;
       const [keyItems, modelItems, logData, usageData] = await Promise.all([
         loadAllPages<ApiKey>((page, pageSize) => api.getKeys(page, pageSize, { project_id: projectId })),
         modelGovernanceLicensed
@@ -367,7 +368,7 @@ export default function DeveloperConsolePage() {
           : Promise.resolve([] as CatalogModel[]),
         api.getLogs(1, 20, { project_id: projectId }),
         api.getUsageAnalytics({ project_id: projectId, scope: 'my', group_by: 'alias' }).catch((err: any) => {
-          usageFailure = `无法读取当前项目的个人用量汇总${err?.message ? `：${err.message}` : ''}`;
+          usageFailure = { detail: err?.message || '' };
           return null;
         }),
       ]);
@@ -375,15 +376,13 @@ export default function DeveloperConsolePage() {
       setKeys(keyItems);
       setModels(modelItems);
       setLogs((logData?.data || []) as CallLog[]);
-      setLogTotal(Number(logData?.total || 0));
       setUsageSummary((usageData?.summary || null) as UsageAnalyticsSummary | null);
       setUsageByModel((usageData?.data || []) as UsageAnalyticsRow[]);
       setUsageLoadError(usageFailure);
-      if (usageFailure) Toast.warning(usageFailure);
     } catch (err: any) {
       if (projectDataRequestVersion.current !== requestVersion) return;
       setProjectDataError('无法读取当前项目的凭证、模型或调用数据。请检查网络或服务状态后重试。');
-      Toast.error(`项目数据加载失败${err?.message ? `：${err.message}` : ''}`);
+      Toast.error(t("项目数据加载失败{v0}", { v0: String(err?.message ? `：${err.message}` : '') }));
     } finally {
       if (projectDataRequestVersion.current === requestVersion) setDataLoading(false);
     }
@@ -395,7 +394,7 @@ export default function DeveloperConsolePage() {
     projectDataRequestVersion.current += 1;
     clearProjectData();
     setProjectDataError('');
-    setUsageLoadError('');
+    setUsageLoadError(null);
     setLookupRequestId('');
     setLookupResult(null);
     setPlaygroundKey('');
@@ -445,25 +444,25 @@ export default function DeveloperConsolePage() {
         name: values.name,
       });
       setPlaygroundKey(result.key);
-      Toast.success('项目 Key 已创建');
+      Toast.success(t("项目 Key 已创建"));
       closeCreateKey();
       loadProjectData();
     } catch (err: any) {
-      Toast.error(`创建失败${err?.message ? `：${err.message}` : ''}`);
+      Toast.error(t("创建失败{v0}", { v0: String(err?.message ? `：${err.message}` : '') }));
     }
   };
 
   const handleDisableKey = (record: ApiKey) => {
     Modal.confirm({
-      title: '确认停用项目 Key',
-      content: `停用 ${record.name} 后，使用该 Key 的项目调用会被拒绝。`,
+      title: t("确认停用项目 Key"),
+      content: t("停用 {v0} 后，使用该 Key 的项目调用会被拒绝。", { v0: String(record.name) }),
       onOk: async () => {
         try {
           await api.disableKey(record.id);
-          Toast.success('项目 Key 已停用');
+          Toast.success(t("项目 Key 已停用"));
           loadProjectData();
         } catch (err: any) {
-          Toast.error(`停用失败${err?.message ? `：${err.message}` : ''}`);
+          Toast.error(t("停用失败{v0}", { v0: String(err?.message ? `：${err.message}` : '') }));
         }
       },
     });
@@ -477,9 +476,9 @@ export default function DeveloperConsolePage() {
       } else if (!fallbackCopyText(createdKey.key)) {
         throw new Error('fallback copy failed');
       }
-      Toast.success('已复制完整 Key');
+      Toast.success(t("已复制完整 Key"));
     } catch {
-      Toast.error('复制失败，请手动复制');
+      Toast.error(t("复制失败，请手动复制"));
     }
   };
 
@@ -492,13 +491,13 @@ export default function DeveloperConsolePage() {
       const list = await api.getLogs(1, 1, { project_id: selectedProjectId, request_id: requestID });
       const first = list?.data?.[0] as CallLog | undefined;
       if (!first) {
-        Toast.warning('未找到该 Request ID');
+        Toast.warning(t("未找到该 Request ID"));
         return;
       }
       const detail = await api.getLogDetail(first.id);
       setLookupResult(detail as CallLog);
     } catch (err: any) {
-      Toast.error(`查询失败${err?.message ? `：${err.message}` : ''}`);
+      Toast.error(t("查询失败{v0}", { v0: String(err?.message ? `：${err.message}` : '') }));
     } finally {
       setLookupLoading(false);
     }
@@ -508,7 +507,7 @@ export default function DeveloperConsolePage() {
     const key = playgroundKey.trim();
     const prompt = playgroundPrompt.trim();
     if (!key || !prompt || !effectivePlaygroundModel || maxTokensInvalid) {
-      Toast.warning('请填写项目访问凭证、模型和提示词');
+      Toast.warning(t("请填写项目访问凭证、模型和提示词"));
       return;
     }
     setPlaygroundLoading(true);
@@ -600,7 +599,7 @@ export default function DeveloperConsolePage() {
             latency_ms: elapsed(),
             headers_ms: headersMS,
             billing_status: streamError?.billing_status || finalMeta?.billing_status,
-            error: [streamError?.code, streamError?.message].filter(Boolean).join('：') || '流式响应失败',
+            error: [streamError?.code, streamError?.message].filter(Boolean).join('：') || t("流式响应失败"),
           });
           return;
         }
@@ -620,7 +619,7 @@ export default function DeveloperConsolePage() {
       }
 
       const payload = await response.json().catch(() => {
-        throw new Error('响应不是合法 JSON；不能作为成功的模型输出。');
+        throw new Error(t("响应不是合法 JSON；不能作为成功的模型输出。"));
       });
       if (!response.ok) {
         const error = payload?.error;
@@ -638,14 +637,14 @@ export default function DeveloperConsolePage() {
       const responseHasText = typeof responseMessage?.content === 'string';
       const responseHasToolCalls = Array.isArray(responseMessage?.tool_calls) && responseMessage.tool_calls.length > 0;
       if (!payload || payload.error || !Array.isArray(payload.choices) || (!responseHasText && !responseHasToolCalls)) {
-        throw new Error('响应不符合 Chat 文本或工具调用合同；不能作为成功的模型输出。');
+        throw new Error(t("响应不符合 Chat 文本或工具调用合同；不能作为成功的模型输出。"));
       }
       const uniroute = payload?._uniroute || {};
       setPlaygroundResult({
         status: response.status,
         content: responseHasToolCalls
           ? JSON.stringify(responseMessage.tool_calls, null, 2)
-          : responseMessage.content || '(空文本响应)',
+          : responseMessage.content || t("(空文本响应)"),
         request_id: uniroute?.request_id || payload?.id,
         cost_micros: uniroute?.cost?.charged_cost_micros,
         total_tokens: payload?.usage?.total_tokens,
@@ -661,7 +660,7 @@ export default function DeveloperConsolePage() {
         content: '',
         latency_ms: elapsed(),
         headers_ms: headersMS,
-        error: err?.message || '调试请求失败',
+        error: err?.message || t("调试请求失败"),
       });
     } finally {
       setPlaygroundLoading(false);
@@ -669,13 +668,13 @@ export default function DeveloperConsolePage() {
   };
 
   const keyColumns = [
-    { title: '名称', dataIndex: 'name', key: 'name' },
-    { title: 'Key 前缀', dataIndex: 'key_prefix', key: 'key_prefix', render: (value: string) => <Text code>{value}***</Text> },
-    { title: '允许模型', dataIndex: 'allowed_models', key: 'allowed_models', render: (value: string) => value || '继承项目模型集' },
-    { title: '限额', key: 'limits', render: (_: unknown, record: ApiKey) => keyQuotaText(record) },
-    { title: '状态', dataIndex: 'status', key: 'status', render: (value: string) => <StatusTag status={value}>{value}</StatusTag> },
+    { title: t("名称"), dataIndex: 'name', key: 'name' },
+    { title: t("Key 前缀"), dataIndex: 'key_prefix', key: 'key_prefix', render: (value: string) => <Text code>{value}***</Text> },
+    { title: t("允许模型"), dataIndex: 'allowed_models', key: 'allowed_models', render: (value: string) => value || t("继承项目模型集") },
+    { title: t("限额"), key: 'limits', render: (_: unknown, record: ApiKey) => keyQuotaText(record) },
+    { title: t("状态"), dataIndex: 'status', key: 'status', render: (value: string) => <StatusTag status={value}>{value}</StatusTag> },
     {
-      title: '操作',
+      title: t("操作"),
       key: 'actions',
       width: 96,
       render: (_: unknown, record: ApiKey) => {
@@ -685,8 +684,8 @@ export default function DeveloperConsolePage() {
         return (
           canDisableRecord
             ? (
-              <Tooltip content="停用项目 Key">
-                <Button icon={<IconDelete />} size="small" type="danger" onClick={() => handleDisableKey(record)} aria-label="停用项目 Key" />
+              <Tooltip content={t("停用项目 Key")}>
+                <Button icon={<IconDelete />} size="small" type="danger" onClick={() => handleDisableKey(record)} aria-label={t("停用项目 Key")} />
               </Tooltip>
             )
             : <Text type="tertiary">-</Text>
@@ -697,7 +696,7 @@ export default function DeveloperConsolePage() {
 
   const modelColumns = [
     {
-      title: '模型 / 别名',
+      title: t("模型 / 别名"),
       dataIndex: 'model_name',
       key: 'model_name',
       render: (value: string, record: CatalogModel) => (
@@ -713,36 +712,36 @@ export default function DeveloperConsolePage() {
         </div>
       ),
     },
-    { title: '供应商族', dataIndex: 'provider_family', key: 'provider_family', render: (value: string) => value || '-' },
-    { title: '生命周期', dataIndex: 'lifecycle', key: 'lifecycle', render: (value: string) => <StatusTag status={value}>{value}</StatusTag> },
-    { title: '上下文', dataIndex: 'context_length', key: 'context_length', render: (value: number) => value ? compactNumber(value) : '-' },
-    { title: '能力', dataIndex: 'capability_tags', key: 'capability_tags', render: (value: string) => splitCSV(value).slice(0, 4).join(', ') || '-' },
-    { title: '数据驻留', dataIndex: 'data_residency', key: 'data_residency', render: (value: string) => value || '-' },
+    { title: t("供应商族"), dataIndex: 'provider_family', key: 'provider_family', render: (value: string) => value || '-' },
+    { title: t("生命周期"), dataIndex: 'lifecycle', key: 'lifecycle', render: (value: string) => <StatusTag status={value}>{value}</StatusTag> },
+    { title: t("上下文"), dataIndex: 'context_length', key: 'context_length', render: (value: number) => value ? compactNumber(value) : '-' },
+    { title: t("能力"), dataIndex: 'capability_tags', key: 'capability_tags', render: (value: string) => splitCSV(value).slice(0, 4).join(', ') || '-' },
+    { title: t("数据驻留"), dataIndex: 'data_residency', key: 'data_residency', render: (value: string) => value || '-' },
   ];
 
   const logColumns = [
     { title: 'Request ID', dataIndex: 'request_id', key: 'request_id', render: (value: string) => <Text code copyable={{ content: value }}>{value}</Text> },
-    { title: '模型', key: 'model', render: (_: unknown, record: CallLog) => record.requested_model || record.model },
-    { title: '状态', dataIndex: 'status_code', key: 'status_code', render: (value: number) => <StatusTag status={value}>{value}</StatusTag> },
+    { title: t("模型"), key: 'model', render: (_: unknown, record: CallLog) => record.requested_model || record.model },
+    { title: t("状态"), dataIndex: 'status_code', key: 'status_code', render: (value: number) => <StatusTag status={value}>{value}</StatusTag> },
     { title: 'Token', dataIndex: 'total_tokens', key: 'total_tokens', render: (value: number) => compactNumber(value || 0) },
-    { title: '费用', dataIndex: 'cost_micros', key: 'cost_micros', render: (value: string) => <MoneyText micros={value || '0'} precision={6} tone="cost" /> },
-    { title: '延迟', dataIndex: 'latency_ms', key: 'latency_ms', render: (value: number) => `${value || 0}ms` },
+    { title: t("费用"), dataIndex: 'cost_micros', key: 'cost_micros', render: (value: string) => <MoneyText micros={value || '0'} precision={6} tone="cost" /> },
+    { title: t("延迟"), dataIndex: 'latency_ms', key: 'latency_ms', render: (value: number) => `${value || 0}ms` },
   ];
 
   const usageModelColumns = [
-    { title: '模型 / 别名', dataIndex: 'key', key: 'key', render: (value: string) => <Text code>{value || '(unknown)'}</Text> },
-    { title: '请求数', dataIndex: 'total_requests', key: 'total_requests', render: (value: number) => compactNumber(value || 0) },
-    { title: '成功 / 失败', key: 'status_mix', render: (_: unknown, row: UsageAnalyticsRow) => `${row.success_requests || 0} / ${row.failed_requests || 0}` },
+    { title: t("模型 / 别名"), dataIndex: 'key', key: 'key', render: (value: string) => <Text code>{value || '(unknown)'}</Text> },
+    { title: t("请求数"), dataIndex: 'total_requests', key: 'total_requests', render: (value: number) => compactNumber(value || 0) },
+    { title: t("成功 / 失败"), key: 'status_mix', render: (_: unknown, row: UsageAnalyticsRow) => `${row.success_requests || 0} / ${row.failed_requests || 0}` },
     { title: 'Token', dataIndex: 'total_tokens', key: 'total_tokens', render: (value: number) => compactNumber(value || 0) },
-    { title: '费用', dataIndex: 'cost_micros', key: 'cost_micros', render: (value: string) => <MoneyText micros={value || '0'} precision={6} tone="cost" /> },
-    { title: '平均延迟', dataIndex: 'avg_latency_ms', key: 'avg_latency_ms', render: (value: number) => `${Math.round(value || 0)}ms` },
+    { title: t("费用"), dataIndex: 'cost_micros', key: 'cost_micros', render: (value: string) => <MoneyText micros={value || '0'} precision={6} tone="cost" /> },
+    { title: t("平均延迟"), dataIndex: 'avg_latency_ms', key: 'avg_latency_ms', render: (value: number) => `${Math.round(value || 0)}ms` },
   ];
 
   if (initialLoading) {
     return (
-      <div className="ur-page">
+      <div className="ur-page ur-developer-workspace">
         <Surface>
-          <div className="ur-dev-loading"><IconRefresh /> 正在加载项目上下文</div>
+          <div className="ur-dev-loading"><IconRefresh />  {t("正在加载项目上下文")}</div>
         </Surface>
       </div>
     );
@@ -750,17 +749,17 @@ export default function DeveloperConsolePage() {
 
   if (projectsLoadError) {
     return (
-      <div className="ur-page">
+      <div className="ur-page ur-developer-workspace">
         <PageHeader
-          eyebrow="项目空间"
-          title="项目工作台"
-          description="读取项目上下文后才能展示当前账号的凭证、模型和用量。"
+          eyebrow={t("项目空间")}
+          title={t("项目工作台")}
+          description={t("读取项目上下文后才能展示当前账号的凭证、模型和用量。")}
         />
         <Surface>
           <EmptyState
-            title="项目列表加载失败"
-            description={projectsLoadError}
-            actions={<Button type="primary" icon={<IconRefresh />} onClick={loadProjects}>重新加载项目</Button>}
+            title={t("项目列表加载失败")}
+            description={translateLabel(projectsLoadError)}
+            actions={<Button type="primary" icon={<IconRefresh />} onClick={loadProjects}>{t("重新加载项目")}</Button>}
             minHeight={320}
           />
         </Surface>
@@ -770,14 +769,14 @@ export default function DeveloperConsolePage() {
 
   if (projects.length === 0) {
     return (
-      <div className="ur-page">
+      <div className="ur-page ur-developer-workspace">
         <PageHeader
-          eyebrow="项目空间"
-          title="项目工作台"
-          description="当前账号没有可访问项目。"
+          eyebrow={t("项目空间")}
+          title={t("项目工作台")}
+          description={t("当前账号没有可访问项目。")}
         />
         <EmptyState
-          title="没有可访问项目"
+          title={t("没有可访问项目")}
           description={noProjectDescription}
           minHeight={320}
         />
@@ -788,8 +787,8 @@ export default function DeveloperConsolePage() {
   const projectHeader = (
     <>
       <PageHeader
-        eyebrow="项目空间"
-        title="项目工作台"
+        eyebrow={t("项目空间")}
+        title={t("项目工作台")}
         description={workbenchDescription}
         actions={(
           <Space>
@@ -798,59 +797,59 @@ export default function DeveloperConsolePage() {
               onChange={handleProjectChange}
               optionList={projects.map(projectOption)}
               style={{ width: 280 }}
-              aria-label="选择项目"
+              aria-label={t("选择项目")}
             />
             {(isOrgAdminRole(organizationRole) || isProjectAdminMembership(selectedProjectMembershipRole)) && selectedProjectId && (
-              <Tooltip content={notificationsLicensed ? '打开当前项目通知' : notificationsRestriction}>
+              <Tooltip content={notificationsLicensed ? t("打开当前项目通知") : notificationsRestriction}>
                 <span>
                   <Button
                     icon={<IconBell />}
-                    aria-label={notificationsLicensed ? '打开当前项目通知' : '项目通知（商业授权不可用）'}
+                    aria-label={notificationsLicensed ? t("打开当前项目通知") : t("项目通知（商业授权不可用）")}
                     disabled={!notificationsLicensed}
                     onClick={() => navigate(`/notifications?project_id=${selectedProjectId}`)}
                   >
-                    {notificationsLicensed ? '项目通知' : '项目通知（商业授权不可用）'}
+                    {notificationsLicensed ? t("项目通知") : t("项目通知（商业授权不可用）")}
                   </Button>
                 </span>
               </Tooltip>
             )}
-            <Button icon={<IconRefresh />} onClick={loadProjectData} loading={dataLoading}>刷新</Button>
+            <Button icon={<IconRefresh />} onClick={loadProjectData} loading={dataLoading}>{t("刷新")}</Button>
           </Space>
         )}
       />
 
       <section className="ur-dev-context">
         <div>
-          <Text className="ur-page-eyebrow">当前项目</Text>
+          <Text className="ur-page-eyebrow">{t("当前项目")}</Text>
           <strong>{projectDisplayName(selectedProject)}</strong>
           <Text type="tertiary">/{selectedProject?.slug}</Text>
         </div>
         <StatusTag status={selectedProject?.status || 'active'}>{selectedProject?.status || 'active'}</StatusTag>
         <StatusTag status={projectRoleLabel}>{projectRoleLabel}</StatusTag>
-        <Text type="tertiary">项目标识：{selectedProject?.slug || '-'}</Text>
+        <Text type="tertiary">{t("项目标识：")}{selectedProject?.slug || '-'}</Text>
       </section>
     </>
   );
 
   const workbenchTaskNav = (
-    <nav className="ur-dev-task-nav" aria-label="项目工作台任务入口">
-      <Text strong>快速定位</Text>
+    <nav className="ur-dev-task-nav" aria-label={t("项目工作台任务入口")}>
+      <Text strong>{t("快速定位")}</Text>
       <div className="ur-dev-task-links">
-        <a href="#project-usage">概览与用量</a>
-        <a href="#project-access">项目凭证</a>
-        <a href="#project-api">API 快速接入</a>
-        {mayRunPlayground && <a href="#project-debug">{gatewayLicensed ? '调试与排障' : '调试与排障（授权未包含）'}</a>}
-        <a href="#project-models">{modelGovernanceLicensed ? '已启用模型' : '已启用模型（商业授权不可用）'}</a>
+        <a href="#project-usage">{t("概览与用量")}</a>
+        <a href="#project-access">{t("项目凭证")}</a>
+        <a href="#project-api">{t("API 快速接入")}</a>
+        {mayRunPlayground && <a href="#project-debug">{gatewayLicensed ? t("调试与排障") : t("调试与排障（授权未包含）")}</a>}
+        <a href="#project-models">{modelGovernanceLicensed ? t("已启用模型") : t("已启用模型（商业授权不可用）")}</a>
       </div>
     </nav>
   );
 
   if (dataLoading) {
     return (
-      <div className="ur-page ur-page-wide">
+      <div className="ur-page ur-page-wide ur-developer-workspace">
         {projectHeader}
         <Surface>
-          <div className="ur-dev-loading"><IconRefresh /> 正在加载当前项目数据</div>
+          <div className="ur-dev-loading"><IconRefresh />  {t("正在加载当前项目数据")}</div>
         </Surface>
       </div>
     );
@@ -858,13 +857,13 @@ export default function DeveloperConsolePage() {
 
   if (projectDataError) {
     return (
-      <div className="ur-page ur-page-wide">
+      <div className="ur-page ur-page-wide ur-developer-workspace">
         {projectHeader}
         <Surface>
           <EmptyState
-            title="项目数据加载失败"
-            description={projectDataError}
-            actions={<Button type="primary" icon={<IconRefresh />} onClick={loadProjectData}>重新加载当前项目</Button>}
+            title={t("项目数据加载失败")}
+            description={translateLabel(projectDataError)}
+            actions={<Button type="primary" icon={<IconRefresh />} onClick={loadProjectData}>{t("重新加载当前项目")}</Button>}
             minHeight={320}
           />
         </Surface>
@@ -873,24 +872,24 @@ export default function DeveloperConsolePage() {
   }
 
   return (
-    <div className="ur-page ur-page-wide">
+    <div className="ur-page ur-page-wide ur-developer-workspace">
       {projectHeader}
       {workbenchTaskNav}
 
       <section id="project-usage" className="ur-dev-section-stack">
         <div className="ur-kpi-grid">
-          <MetricTile label="请求数" value={compactNumber(usageSnapshot.requestCount)} icon={<IconFile />} tone="blue" meta={usageSnapshot.sourceLabel} />
+          <MetricTile label={t("请求数")} value={compactNumber(usageSnapshot.requestCount)} icon={<IconFile />} tone="blue" meta={usageSnapshot.sourceLabel} />
           <MetricTile label="Token" value={compactNumber(usageSnapshot.totalTokens)} icon={<IconServer />} tone="violet" meta={usageSnapshot.sourceLabel} />
-          <MetricTile label="费用" value={<MoneyText micros={usageSnapshot.totalCostMicros} precision={6} strong tone="cost" />} icon={<IconCoinMoney />} tone="green" meta={usageSnapshot.sourceLabel} />
-          <MetricTile label="错误率" value={`${usageSnapshot.errorRate.toFixed(1)}%`} icon={<IconAlertTriangle />} tone={usageSnapshot.errorRate > 5 ? 'red' : 'amber'} meta={`平均延迟 ${usageSnapshot.avgLatency.toFixed(0)}ms`} />
+          <MetricTile label={t("费用")} value={<MoneyText micros={usageSnapshot.totalCostMicros} precision={6} strong tone="cost" />} icon={<IconCoinMoney />} tone="green" meta={usageSnapshot.sourceLabel} />
+          <MetricTile label={t("错误率")} value={`${usageSnapshot.errorRate.toFixed(1)}%`} icon={<IconAlertTriangle />} tone={usageSnapshot.errorRate > 5 ? 'red' : 'amber'} meta={t("平均延迟 {v0}ms", { v0: String(usageSnapshot.avgLatency.toFixed(0)) })} />
         </div>
 
-        <Surface title="我的模型用量" description="按当前账号名下 API Key 聚合当前项目的模型用量和费用；历史未归属 Owner 的调用不会被计入。">
+        <Surface title={t("我的模型用量")} description={t("按当前账号名下 API Key 聚合当前项目的模型用量和费用；历史未归属 Owner 的调用不会被计入。")}>
           {usageLoadError ? (
             <EmptyState
-              title="个人用量加载失败"
-              description={`${usageLoadError}。上方指标暂按最近 20 条调用计算，并非完整用量汇总。`}
-              actions={<Button icon={<IconRefresh />} onClick={loadProjectData}>重新加载当前项目</Button>}
+              title={t("个人用量加载失败")}
+              description={t("{v0}。上方指标暂按最近 20 条调用计算，并非完整用量汇总。", { v0: t("无法读取当前项目的个人用量汇总{v0}", { v0: usageLoadError.detail ? `: ${usageLoadError.detail}` : '' }) })}
+              actions={<Button icon={<IconRefresh />} onClick={loadProjectData}>{t("重新加载当前项目")}</Button>}
               minHeight={180}
             />
           ) : (
@@ -901,7 +900,7 @@ export default function DeveloperConsolePage() {
                 rowKey="key"
                 loading={dataLoading}
                 pagination={false}
-                empty={<EmptyState title="暂无我的用量" description="使用当前账号名下的项目 Key 调用后，会在这里按模型显示请求、Token 和费用。" minHeight={180} />}
+                empty={<EmptyState title={t("暂无我的用量")} description={t("使用当前账号名下的项目 Key 调用后，会在这里按模型显示请求、Token 和费用。")} minHeight={180} />}
                 size="small"
               />
             </div>
@@ -911,9 +910,9 @@ export default function DeveloperConsolePage() {
 
       <div id="project-access" className="ur-dev-main-grid ur-dev-section-anchor">
         <Surface
-          title="项目访问凭证"
+          title={t("项目访问凭证")}
           description={keySurfaceDescription}
-          actions={mayCreateKey && <Button icon={<IconPlus />} type="primary" onClick={openCreateKey}>创建项目凭证</Button>}
+          actions={mayCreateKey && <Button icon={<IconPlus />} type="primary" onClick={openCreateKey}>{t("创建项目凭证")}</Button>}
         >
           <div className="ur-table-shell">
             <Table
@@ -931,7 +930,7 @@ export default function DeveloperConsolePage() {
                 onPageChange: (page: number) => setKeyPage(page),
                 onPageSizeChange: (pageSize: number) => { setKeyPageSize(pageSize); setKeyPage(1); },
               }}
-              empty={<EmptyState title="暂无项目凭证" description={emptyKeyDescription} minHeight={180} />}
+              empty={<EmptyState title={t("暂无项目凭证")} description={emptyKeyDescription} minHeight={180} />}
               size="small"
             />
           </div>
@@ -946,7 +945,7 @@ export default function DeveloperConsolePage() {
             gatewayAvailable={gatewayLicensed}
             unavailableReason={gatewayRestriction}
             modelWarning={!modelGovernanceLicensed
-              ? `${modelGovernanceRestriction} 请使用管理员提供的现有模型或别名替换示例占位符。`
+              ? t("{v0} 请使用管理员提供的现有模型或别名替换示例占位符。", { v0: String(modelGovernanceRestriction) })
               : undefined}
             troubleshootingHref="/docs#developer-errors"
           />
@@ -957,8 +956,8 @@ export default function DeveloperConsolePage() {
         <div id="project-debug" className="ur-dev-section-anchor">
           {gatewayLicensed ? (
             <Surface
-              title="请求调试台"
-              description="使用项目访问凭证直接调用兼容 OpenAI 协议的网关；提示词和响应仅保留在当前页面，不写入历史。"
+              title={t("请求调试台")}
+              description={t("使用项目访问凭证直接调用兼容 OpenAI 协议的网关；提示词和响应仅保留在当前页面，不写入历史。")}
             >
               <div className="ur-playground-grid">
                 <div className="ur-playground-controls">
@@ -967,7 +966,7 @@ export default function DeveloperConsolePage() {
                       value={playgroundKey}
                       onChange={setPlaygroundKey}
                       type="password"
-                      placeholder="粘贴项目访问凭证"
+                      placeholder={t("粘贴项目访问凭证")}
                       style={{ width: 260 }}
                     />
                     {modelGovernanceLicensed ? (
@@ -977,21 +976,21 @@ export default function DeveloperConsolePage() {
                         optionList={modelOptions.map(model => ({ label: model, value: model }))}
                         onChange={handlePlaygroundModelChange}
                         style={{ width: 220 }}
-                        placeholder="选择已批准模型或别名"
+                        placeholder={t("选择已批准模型或别名")}
                       />
                     ) : (
                       <Input
                         value={playgroundModel}
                         onChange={handlePlaygroundModelChange}
                         style={{ width: 220 }}
-                        placeholder="输入现有模型或别名"
+                        placeholder={t("输入现有模型或别名")}
                       />
                     )}
                     <Select
                       value={playgroundMode}
                       optionList={[
-                        { label: '非流式', value: 'non_stream' },
-                        { label: '流式', value: 'stream' },
+                        { label: t("非流式"), value: 'non_stream' },
+                        { label: t("流式"), value: 'stream' },
                       ]}
                       onChange={(value) => setPlaygroundMode(String(value || 'non_stream'))}
                       disabled={playgroundScenario !== 'text'}
@@ -999,20 +998,20 @@ export default function DeveloperConsolePage() {
                     />
                     <Button type="primary" icon={<IconBolt />} loading={playgroundLoading}
                       disabled={!effectivePlaygroundModel || dataLoading || Boolean(projectDataError) || maxTokensInvalid}
-                      onClick={handlePlaygroundRun}>运行</Button>
+                      onClick={handlePlaygroundRun}>{t("运行")}</Button>
                   </div>
-                  <Text id="playground-model-label" type="tertiary">调试模型</Text>
-                  {modelGovernanceLicensed && !modelOptions.length && <Text type="warning">项目没有可选的稳定模型，不能运行调试请求。</Text>}
+                  <Text id="playground-model-label" type="tertiary">{t("调试模型")}</Text>
+                  {modelGovernanceLicensed && !modelOptions.length && <Text type="warning">{t("项目没有可选的稳定模型，不能运行调试请求。")}</Text>}
                   {modelGovernanceLicensed && modelOptions.length > 0 && playgroundModel && !effectivePlaygroundModel &&
-                    <Text type="warning">之前选择的模型已不在当前目录，请重新选择；不会自动切换到其他模型。</Text>}
+                    <Text type="warning">{t("之前选择的模型已不在当前目录，请重新选择；不会自动切换到其他模型。")}</Text>}
                   <div className="ur-inline-controls" style={{ marginTop: 12 }}>
                     <label>
-                      <Text>max_tokens（可选）</Text>
-                      <Input aria-label="max_tokens（可选）" value={playgroundMaxTokens}
-                        onChange={setPlaygroundMaxTokens} placeholder="例如 128；留空不发送" style={{ width: 230 }} />
+                      <Text>{t("max_tokens（可选）")}</Text>
+                      <Input aria-label={t("max_tokens（可选）")} value={playgroundMaxTokens}
+                        onChange={setPlaygroundMaxTokens} placeholder={t("例如 128；留空不发送")} style={{ width: 230 }} />
                     </label>
                     <div>
-                      <Text id="playground-thinking-label">thinking.type（可选）</Text>
+                      <Text id="playground-thinking-label">{t("thinking.type（可选）")}</Text>
                       <Select aria-labelledby="playground-thinking-label" value={playgroundThinking}
                         onChange={value => {
                           const next = String(value || '');
@@ -1020,13 +1019,13 @@ export default function DeveloperConsolePage() {
                           if (next === 'disabled') setPlaygroundReasoningEffort('');
                         }}
                         optionList={[
-                          { label: '不指定（不发送）', value: '' },
-                          { label: 'disabled（关闭）', value: 'disabled' },
-                          { label: 'enabled（开启）', value: 'enabled' },
+                          { label: t("不指定（不发送）"), value: '' },
+                          { label: t("disabled（关闭）"), value: 'disabled' },
+                          { label: t("enabled（开启）"), value: 'enabled' },
                         ]} style={{ width: 200 }} />
                     </div>
                     <div>
-                      <Text id="playground-reasoning-effort-label">reasoning_effort（可选）</Text>
+                      <Text id="playground-reasoning-effort-label">{t("reasoning_effort（可选）")}</Text>
                       <Select aria-labelledby="playground-reasoning-effort-label" value={playgroundReasoningEffort}
                         onChange={value => {
                           const next = String(value || '');
@@ -1034,7 +1033,7 @@ export default function DeveloperConsolePage() {
                           if (next) setPlaygroundThinking('');
                         }}
                         optionList={[
-                          { label: '不指定（不发送）', value: '' },
+                          { label: t("不指定（不发送）"), value: '' },
                           { label: 'low', value: 'low' },
                           { label: 'medium', value: 'medium' },
                           { label: 'high', value: 'high' },
@@ -1043,7 +1042,7 @@ export default function DeveloperConsolePage() {
                         ]} style={{ width: 210 }} />
                     </div>
                     <div>
-                      <Text id="playground-scenario-label">能力场景</Text>
+                      <Text id="playground-scenario-label">{t("能力场景")}</Text>
                       <Select aria-labelledby="playground-scenario-label" value={playgroundScenario}
                         onChange={value => {
                           const next = String(value || 'text');
@@ -1051,7 +1050,7 @@ export default function DeveloperConsolePage() {
                           if (next !== 'text') setPlaygroundMode('non_stream');
                         }}
                         optionList={[
-                          { label: '普通文本', value: 'text' },
+                          { label: t("普通文本"), value: 'text' },
                           { label: 'Function Tool · Provider default', value: 'function_default' },
                           { label: 'Function Tool · auto', value: 'function_auto' },
                           { label: 'Function Tool · required', value: 'function_required' },
@@ -1060,17 +1059,18 @@ export default function DeveloperConsolePage() {
                         ]} style={{ width: 220 }} />
                     </div>
                   </div>
-                  <Text type="tertiary">这些字段仅在显式填写时发送；thinking 与 reasoning_effort 是供应商或 surface 扩展，并非所有模型都支持。值域和输出上限仍由精确 Profile 校验；留空不是零输出，也不是供应商最大输出。</Text>
-                  {maxTokensInvalid && <Text type="danger">max_tokens 必须是正整数。</Text>}
+                  <Text type="tertiary">{t("这些字段仅在显式填写时发送；thinking 与 reasoning_effort 是供应商或 surface 扩展，并非所有模型都支持。值域和输出上限仍由精确 Profile 校验；留空不是零输出，也不是供应商最大输出。")}</Text>
+                  {maxTokensInvalid && <Text type="danger">{t("max_tokens 必须是正整数。")}</Text>}
                   {playgroundScenario === 'function_default' && <Text type="tertiary">
-                    仅发送 tools，不发送 tool_choice；是否采用默认 auto 仍由服务端精确 Profile 校验，不代表强制调用工具。
+
+                    {t("仅发送 tools，不发送 tool_choice；是否采用默认 auto 仍由服务端精确 Profile 校验，不代表强制调用工具。")}
                   </Text>}
-                  {!modelGovernanceLicensed && <Text type="warning">{modelGovernanceRestriction} 调试仍可使用管理员提供的现有模型或别名。</Text>}
+                  {!modelGovernanceLicensed && <Text type="warning">{modelGovernanceRestriction}  {t("调试仍可使用管理员提供的现有模型或别名。")}</Text>}
                   <TextArea
                     value={playgroundPrompt}
                     onChange={setPlaygroundPrompt}
                     rows={5}
-                    placeholder="输入本次测试提示词"
+                    placeholder={t("输入本次测试提示词")}
                     style={{ width: '100%', marginTop: 12 }}
                   />
                 </div>
@@ -1085,41 +1085,41 @@ export default function DeveloperConsolePage() {
                         {playgroundResult.request_id && <Text code>{playgroundResult.request_id}</Text>}
                         {playgroundResult.total_tokens !== undefined && <StatusTag status="tokens">{playgroundResult.total_tokens} tokens</StatusTag>}
                         {playgroundResult.cost_micros !== undefined && <MoneyText micros={playgroundResult.cost_micros} precision={6} tone="cost" />}
-                        {playgroundResult.latency_ms !== undefined && <Text type="tertiary">客户端完整耗时 {playgroundResult.latency_ms}ms</Text>}
-                        {playgroundResult.headers_ms !== undefined && <Text type="tertiary">响应头耗时 {playgroundResult.headers_ms}ms</Text>}
+                        {playgroundResult.latency_ms !== undefined && <Text type="tertiary">{t("客户端完整耗时")} {playgroundResult.latency_ms}ms</Text>}
+                        {playgroundResult.headers_ms !== undefined && <Text type="tertiary">{t("响应头耗时")} {playgroundResult.headers_ms}ms</Text>}
                         {playgroundResult.billing_status && <Text type="tertiary">billing_status：{playgroundResult.billing_status}</Text>}
                       </div>
                       {playgroundResult.error ? (
                         <div className="ur-playground-error">
                           <Text type="danger">{playgroundResult.error}</Text>
-                          {playgroundResult.doc_url && <a href={playgroundResult.doc_url}>查看错误文档</a>}
+                          {playgroundResult.doc_url && <a href={playgroundResult.doc_url}>{t("查看错误文档")}</a>}
                         </div>
                       ) : (
                         <pre className="ur-dev-code">{playgroundResult.content}</pre>
                       )}
                       {playgroundResult.finish_reason && <Text>finish_reason：{playgroundResult.finish_reason}</Text>}
-                      {playgroundResult.finish_reason === 'length' && <Text type="warning">输出达到上限，响应可能未完成。</Text>}
+                      {playgroundResult.finish_reason === 'length' && <Text type="warning">{t("输出达到上限，响应可能未完成。")}</Text>}
                       {playgroundResult.usage !== undefined && <details>
-                        <summary>usage（响应原值）</summary>
+                        <summary>{t("usage（响应原值）")}</summary>
                         <pre className="ur-dev-code">{JSON.stringify(playgroundResult.usage, null, 2)}</pre>
                       </details>}
                     </>
                   ) : (
-                    <EmptyState title="等待运行" description="填写项目 Key、现有模型或别名后运行一次测试。" minHeight={180} />
+                    <EmptyState title={t("等待运行")} description={t("填写项目 Key、现有模型或别名后运行一次测试。")} minHeight={180} />
                   )}
                 </div>
               </div>
             </Surface>
           ) : (
-            <Surface title="请求调试台" description="此区块需要模型网关授权。">
-              <EmptyState title="调试调用暂不可用" description={gatewayRestriction} minHeight={180} />
+            <Surface title={t("请求调试台")} description={t("此区块需要模型网关授权。")}>
+              <EmptyState title={t("调试调用暂不可用")} description={gatewayRestriction} minHeight={180} />
             </Surface>
           )}
         </div>
       )}
 
       <div id="project-models" className="ur-dev-section-anchor">
-        <Surface title="已启用模型" description="只展示当前项目可直接调用的稳定模型 ID 和已明确配置的别名。">
+        <Surface title={t("已启用模型")} description={t("只展示当前项目可直接调用的稳定模型 ID 和已明确配置的别名。")}>
           {modelGovernanceLicensed ? (
             <div className="ur-table-shell">
               <Table
@@ -1137,18 +1137,18 @@ export default function DeveloperConsolePage() {
                   onPageChange: (page: number) => setModelPage(page),
                   onPageSizeChange: (pageSize: number) => { setModelPageSize(pageSize); setModelPage(1); },
                 }}
-                empty={<EmptyState title="暂无已启用模型" description="请先在“模型连接”完成该模型的真实检测与启用。" minHeight={180} />}
+                empty={<EmptyState title={t("暂无已启用模型")} description={t("请先在“模型连接”完成该模型的真实检测与启用。")} minHeight={180} />}
                 size="small"
               />
             </div>
           ) : (
-            <EmptyState title="模型目录暂不可用" description={modelGovernanceRestriction} minHeight={180} />
+            <EmptyState title={t("模型目录暂不可用")} description={modelGovernanceRestriction} minHeight={180} />
           )}
         </Surface>
       </div>
 
       <div className="ur-dev-main-grid">
-        <Surface title="最近调用" description="项目最近请求，用于快速确认状态、token、费用和延迟。">
+        <Surface title={t("最近调用")} description={t("项目最近请求，用于快速确认状态、token、费用和延迟。")}>
           <div className="ur-table-shell">
             <Table
               columns={logColumns}
@@ -1156,13 +1156,13 @@ export default function DeveloperConsolePage() {
               rowKey="id"
               loading={dataLoading}
               pagination={false}
-              empty={<EmptyState title="暂无调用记录" description="项目完成调用后会显示最近请求。" minHeight={180} />}
+              empty={<EmptyState title={t("暂无调用记录")} description={t("项目完成调用后会显示最近请求。")} minHeight={180} />}
               size="small"
             />
           </div>
         </Surface>
 
-        <Surface title="请求定位" description="按 Request ID 定位项目内请求，不展示上游凭证、完整访问凭证、提示词或响应。">
+        <Surface title={t("请求定位")} description={t("按 Request ID 定位项目内请求，不展示上游凭证、完整访问凭证、提示词或响应。")}>
           <div className="ur-dev-lookup">
             <Space align="start">
               <Input
@@ -1173,84 +1173,85 @@ export default function DeveloperConsolePage() {
                 style={{ width: 300 }}
                 onEnterPress={handleLookup}
               />
-              <Button icon={<IconSearch />} type="primary" loading={lookupLoading} onClick={handleLookup}>查询</Button>
+              <Button icon={<IconSearch />} type="primary" loading={lookupLoading} onClick={handleLookup}>{t("查询")}</Button>
             </Space>
             {lookupResult ? (
               <div className="ur-dev-lookup-grid">
-                <div><Text type="tertiary">状态</Text><StatusTag status={lookupResult.status_code}>{lookupResult.status_code}</StatusTag></div>
-                <div><Text type="tertiary">模型</Text><strong>{lookupResult.requested_model || lookupResult.model}</strong></div>
+                <div><Text type="tertiary">{t("状态")}</Text><StatusTag status={lookupResult.status_code}>{lookupResult.status_code}</StatusTag></div>
+                <div><Text type="tertiary">{t("模型")}</Text><strong>{lookupResult.requested_model || lookupResult.model}</strong></div>
                 {isOrgAdminRole(organizationRole) && (
-                  <div><Text type="tertiary">路由模型</Text><strong>{lookupResult.model}</strong></div>
+                  <div><Text type="tertiary">{t("路由模型")}</Text><strong>{lookupResult.model}</strong></div>
                 )}
-                <div><Text type="tertiary">供应商</Text><strong>{lookupResult.provider || '-'}</strong></div>
-                <div><Text type="tertiary">通道</Text><strong>{lookupResult.channel || '-'}</strong></div>
+                <div><Text type="tertiary">{t("供应商")}</Text><strong>{lookupResult.provider || '-'}</strong></div>
+                <div><Text type="tertiary">{t("通道")}</Text><strong>{lookupResult.channel || '-'}</strong></div>
                 <div><Text type="tertiary">Token</Text><strong>{compactNumber(lookupResult.total_tokens || 0)}</strong></div>
-                <div><Text type="tertiary">费用</Text><MoneyText micros={lookupResult.cost_micros || '0'} precision={6} strong tone="cost" /></div>
-                <div><Text type="tertiary">延迟</Text><strong>{lookupResult.latency_ms || 0}ms</strong></div>
+                <div><Text type="tertiary">{t("费用")}</Text><MoneyText micros={lookupResult.cost_micros || '0'} precision={6} strong tone="cost" /></div>
+                <div><Text type="tertiary">{t("延迟")}</Text><strong>{lookupResult.latency_ms || 0}ms</strong></div>
                 {lookupResult.upstream_error && (
                   <div className="ur-dev-lookup-wide">
-                    <Text type="tertiary">上游错误</Text>
+                    <Text type="tertiary">{t("上游错误")}</Text>
                     <Text>{lookupResult.upstream_error}</Text>
                   </div>
                 )}
               </div>
             ) : (
-              <EmptyState title="等待查询" description="输入项目内 Request ID 后显示排障摘要。" minHeight={180} />
+              <EmptyState title={t("等待查询")} description={t("输入项目内 Request ID 后显示排障摘要。")} minHeight={180} />
             )}
           </div>
         </Surface>
       </div>
 
       <SideSheet
-        title="创建项目访问凭证"
+        title={t("创建项目访问凭证")}
         visible={showKeySheet}
         onCancel={closeCreateKey}
         width={500}
       >
         <Form getFormApi={(apiRef: any) => setFormApi(apiRef)} onSubmit={handleCreateKey} initValues={{ rpm_limit: 60, rps_limit: 10 }}>
-          <Form.Input field="name" label="凭证名称" placeholder="frontend-prod" rules={[{ required: true, message: '请输入凭证名称' }]} />
+          <Form.Input field="name" label={t("凭证名称")} placeholder="frontend-prod" rules={[{ required: true, message: t("请输入凭证名称") }]} />
           {modelGovernanceLicensed ? (
             <Form.Select
               field="allowed_models"
-              aria-label="允许模型或别名"
-              label="允许模型 / 别名"
-              placeholder="留空表示继承项目模型集"
+              aria-label={t("允许模型或别名")}
+              label={t("允许模型 / 别名")}
+              placeholder={t("留空表示继承项目模型集")}
               multiple
               optionList={modelOptions.map(model => ({ label: model, value: model }))}
               style={{ width: '100%' }}
             />
           ) : (
-            <Text type="warning">{modelGovernanceRestriction} 新凭证将继承项目现有模型范围。</Text>
+            <Text type="warning">{modelGovernanceRestriction}  {t("新凭证将继承项目现有模型范围。")}</Text>
           )}
-          <Form.Input field="allowed_ips" label="允许 IP" placeholder="留空表示不限制，多个 IP 用逗号分隔" />
-          <Form.InputNumber field="rpm_limit" label="RPM 限速" min={1} style={{ width: '100%' }} />
-          <Form.InputNumber field="rps_limit" label="RPS 限速" min={1} style={{ width: '100%' }} />
-          <Text type="tertiary" size="small">TPM 暂未配置为 Key 级限额；当前仅展示口径，不启用 Scheduler V2。</Text>
+          <Form.Input field="allowed_ips" label={t("允许 IP")} placeholder={t("留空表示不限制，多个 IP 用逗号分隔")} />
+          <Form.InputNumber field="rpm_limit" label={t("RPM 限速")} min={1} style={{ width: '100%' }} />
+          <Form.InputNumber field="rps_limit" label={t("RPS 限速")} min={1} style={{ width: '100%' }} />
+          <Text type="tertiary" size="small">{t("TPM 暂未配置为 Key 级限额；当前仅展示口径，不启用 Scheduler V2。")}</Text>
           <div className="ur-form-actions">
-            <Button onClick={closeCreateKey}>取消</Button>
-            <Button type="primary" onClick={() => formApi?.submitForm()}>创建</Button>
+            <Button onClick={closeCreateKey}>{t("取消")}</Button>
+            <Button type="primary" onClick={() => formApi?.submitForm()}>{t("创建")}</Button>
           </div>
         </Form>
       </SideSheet>
 
       <Modal
-        title="请立即保存完整项目 Key"
+        title={t("请立即保存完整项目 Key")}
         visible={!!createdKey}
         onCancel={() => setCreatedKey(null)}
         footer={(
           <Space>
-            <Button icon={<IconCopy />} onClick={copyCreatedKey}>复制 Key</Button>
-            <Button type="primary" onClick={() => setCreatedKey(null)}>我已保存</Button>
+            <Button icon={<IconCopy />} onClick={copyCreatedKey}>{t("复制 Key")}</Button>
+            <Button type="primary" onClick={() => setCreatedKey(null)}>{t("我已保存")}</Button>
           </Space>
         )}
       >
         <Text type="warning">
-          完整 Key 只在创建后显示一次。关闭后系统只保留哈希，无法再次查看。
+
+          {t("完整 Key 只在创建后显示一次。关闭后系统只保留哈希，无法再次查看。")}
         </Text>
         <div className="ur-secret-reveal">
           <Text strong>{createdKey?.name}</Text>
           <code>{createdKey?.key}</code>
-          <Text type="tertiary">前缀：{createdKey?.key_prefix}***</Text>
+          <Text type="tertiary">{t("前缀：")}{createdKey?.key_prefix}***</Text>
         </div>
       </Modal>
     </div>

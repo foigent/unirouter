@@ -4,6 +4,16 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.12.0] - 2026-10-11
+
+- Refresh the console workspaces with model request/cost composition, aligned request and cost trends, persistent model details, and contextual settlement/notification actions. Current deployment availability remains separate from selected-window statistics.
+- Default to English while retaining existing explicit Chinese preferences. Add persistent Chinese/English preferences throughout the shell, sign-in, settings, overview, model lifecycle, requests/usage, monitoring, access/people, security/audit, finance, integrations, developer workspace and API reference. Customer names, protocol values and original evidence retain their identity.
+- Put request filters above the list, expose request time, model/provider, status, latency and cost beside the evidence inspector, and preserve all exact evidence filters. Combine rapid filter edits and reject stale query responses. Usage analytics puts scoped metrics first and explicitly labels its top-50 grouped rows versus complete summary/CSV scope.
+- Group audit and people records into readable columns, prioritize request records in reconciliation, default pricing to the available customer workspace, and make the permitted API endpoint directory searchable. Missing financial summaries remain unavailable rather than appearing as zero.
+- Load domain translations with their lazy pages, retaining shared labels and deterministic conflict checks. Language changes preserve drafts, filters, selection, exact pricing and duration/size payloads without repeating reads or invoking providers. Improve narrow-screen forms, date labels and mobile navigation dismissal.
+- Include exact per-model `cost_micros` strings in the existing dashboard aggregation. Compositions include all models, preserve model identities, and explicitly handle older backends without this field.
+- Local candidate only. No CI, release, deployment or Production acceptance is asserted by this entry.
+
 ## [1.11.0] - 2026-10-11
 
 - Add an online Linux amd64 community bootstrap candidate: pin download identities, verify the existing signed package, prepare declared files, then call the established installer.

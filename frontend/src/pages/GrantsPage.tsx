@@ -1,3 +1,5 @@
+import '../i18n/finance';
+import { translate as t, useI18n } from '../i18n';
 import { useState, useEffect, useRef } from 'react';
 import { Button, Form, Toast, SideSheet } from '@douyinfe/semi-ui';
 import { IconPlus } from '@douyinfe/semi-icons';
@@ -12,6 +14,7 @@ interface GrantCreditsPanelProps {
 }
 
 export function GrantCreditsPanel({ orgId, canCreate = true, onChanged }: GrantCreditsPanelProps) {
+  useI18n();
   const [grants, setGrants] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -42,7 +45,7 @@ export function GrantCreditsPanel({ orgId, canCreate = true, onChanged }: GrantC
       })
       .catch((error: any) => {
         if (version !== requestVersion.current) return;
-        Toast.error(`赠送额度加载失败${error?.message ? `：${error.message}` : ''}`);
+        Toast.error(t("赠送额度加载失败{v0}", { v0: String(error?.message ? `：${error.message}` : '') }));
       })
       .finally(() => {
         if (version === requestVersion.current) setLoading(false);
@@ -73,7 +76,7 @@ export function GrantCreditsPanel({ orgId, canCreate = true, onChanged }: GrantC
         reason,
         client_request_id: operationID,
       });
-      Toast.success('赠送额度已发放');
+      Toast.success(t("赠送额度已发放"));
       setShowDrawer(false);
       setClientRequestID('');
       formApi?.reset();
@@ -81,11 +84,11 @@ export function GrantCreditsPanel({ orgId, canCreate = true, onChanged }: GrantC
       onChanged?.();
     } catch (error: any) {
       const message = error?.message === 'reason is required'
-        ? '请填写发放原因或工单号'
+        ? t("请填写发放原因或工单号")
         : error?.message?.startsWith('invalid amount') || error?.message?.startsWith('amount out of range')
-          ? '请输入最多两位小数的正金额'
-          : (error?.message || '请稍后重试');
-      Toast.error(`发放失败：${message}`);
+          ? t("请输入最多两位小数的正金额")
+          : (error?.message || t("请稍后重试"));
+      Toast.error(t("发放失败：{v0}", { v0: String(message) }));
     } finally {
       setSubmitting(false);
     }
@@ -106,19 +109,19 @@ export function GrantCreditsPanel({ orgId, canCreate = true, onChanged }: GrantC
 
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60 },
-    { title: '组织', dataIndex: 'org_name', render: (v: string) => v || '-' },
-    { title: '金额（元）', dataIndex: 'amount_micros', render: (v: string) => <MoneyText micros={v || '0'} tone="income" /> },
-    { title: '原因', dataIndex: 'reason' },
-    { title: '请求ID', dataIndex: 'client_request_id', render: (v: string) => <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{v}</span> },
-    { title: '时间', dataIndex: 'created_at', render: (v: string) => formatDateTime(v) },
+    { title: t("组织"), dataIndex: 'org_name', render: (v: string) => v || '-' },
+    { title: t("金额（元）"), dataIndex: 'amount_micros', render: (v: string) => <MoneyText micros={v || '0'} tone="income" /> },
+    { title: t("原因"), dataIndex: 'reason' },
+    { title: t("请求ID"), dataIndex: 'client_request_id', render: (v: string) => <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{v}</span> },
+    { title: t("时间"), dataIndex: 'created_at', render: (v: string) => formatDateTime(v) },
   ];
 
   return (
     <>
       <Surface
-        title="赠送额度记录"
-        description="赠送额度是平台发放的正向余额，不等同于现金调整；如需纠错，请通过资金流水和审计记录追踪。"
-        actions={canCreate ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>发放赠送额度</Button> : undefined}
+        title={t("赠送额度记录")}
+        description={t("赠送额度是平台发放的正向余额，不等同于现金调整；如需纠错，请通过资金流水和审计记录追踪。")}
+        actions={canCreate ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>{t("发放赠送额度")}</Button> : undefined}
       >
         <PagedTable
           columns={columns}
@@ -134,18 +137,18 @@ export function GrantCreditsPanel({ orgId, canCreate = true, onChanged }: GrantC
       </Surface>
 
       <SideSheet
-        title="发放赠送额度"
+        title={t("发放赠送额度")}
         visible={showDrawer}
         onCancel={closeCreate}
         closable={!submitting}
         width={480}
       >
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleCreate}>
-          <Form.Input field="amount" label="金额（元）" rules={[{ required: true, message: '必填' }]} placeholder="100.00" />
-          <Form.Input field="reason" label="原因 / 工单号" placeholder="授信调整 / 商务补偿 / TICKET-001" rules={[{ required: true, message: '必填' }]} />
+          <Form.Input field="amount" label={t("金额（元）")} rules={[{ required: true, message: t("必填") }]} placeholder="100.00" />
+          <Form.Input field="reason" label={t("原因 / 工单号")} placeholder={t("授信调整 / 商务补偿 / TICKET-001")} rules={[{ required: true, message: t("必填") }]} />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
-            <Button onClick={closeCreate} disabled={submitting}>取消</Button>
-            <Button type="primary" loading={submitting} disabled={submitting} onClick={() => formApi?.submitForm()}>确认发放</Button>
+            <Button onClick={closeCreate} disabled={submitting}>{t("取消")}</Button>
+            <Button type="primary" loading={submitting} disabled={submitting} onClick={() => formApi?.submitForm()}>{t("确认发放")}</Button>
           </div>
         </Form>
       </SideSheet>
@@ -154,12 +157,13 @@ export function GrantCreditsPanel({ orgId, canCreate = true, onChanged }: GrantC
 }
 
 export default function GrantsPage() {
+  useI18n();
   return (
-    <div className="ur-page">
+    <div className="ur-page ur-finance-workspace">
       <PageHeader
-        eyebrow="成本与财务"
-        title="赠送额度"
-        description="查看并发放兼容赠送额度。正式入口已合并到“预算与成本中心”，本路径仅保留旧链接兼容。"
+        eyebrow={t("成本与财务")}
+        title={t("赠送额度")}
+        description={t("查看并发放兼容赠送额度。正式入口已合并到“预算与成本中心”，本路径仅保留旧链接兼容。")}
       />
       <GrantCreditsPanel />
     </div>

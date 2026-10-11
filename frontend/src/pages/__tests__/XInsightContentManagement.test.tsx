@@ -1,5 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { setLocale } from '../../i18n';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Toast } from '@douyinfe/semi-ui';
 import { ApiError } from '../../api/transport';
 import { api } from '../../api/client';
@@ -92,6 +93,37 @@ const registration = {
 };
 
 describe('project content management', () => {
+  it('preserves an edited policy and exact units across languages without rereading or writing', async () => {
+    const fullConfig = { ...config, mode: 'full_content' as const, retention_seconds: 48 * 3600, quota_bytes: 512 * 1024 ** 2, max_saved_bytes: 16 * 1024 ** 2, allowed_purposes: ['human_review'], on_limit: 'record_capture_gap' as const };
+    const next = { ...policy, desired: { policy_version: '2', config: fullConfig }, effective: { policy_version: '2', config: fullConfig } };
+    vi.mocked(contentManagementApi.getPolicy).mockResolvedValueOnce(policy).mockResolvedValue(next);
+    vi.mocked(contentManagementApi.putPolicy).mockResolvedValue(next);
+    render(<XInsightContentManagement projectId={2} expansionAllowed />);
+    await screen.findByText(/关闭 v1 \/ 关闭 v1/);
+    fireEvent.change(screen.getByLabelText('正文策略模式'), { target: { value: 'full_content' } });
+    fireEvent.change(screen.getByLabelText('正文保留期限单位'), { target: { value: '小时' } });
+    fireEvent.change(screen.getByLabelText('正文保留期限'), { target: { value: '48' } });
+    fireEvent.change(screen.getByLabelText('正文项目容量单位'), { target: { value: 'MiB' } });
+    fireEvent.change(screen.getByLabelText('正文项目容量'), { target: { value: '512' } });
+    fireEvent.change(screen.getByLabelText('正文单项上限'), { target: { value: '16' } });
+    const policyReads = vi.mocked(contentManagementApi.getScopedPolicy).mock.calls.length;
+    const connectionReads = vi.mocked(contentManagementApi.getConnection).mock.calls.length;
+    act(() => setLocale('en-US'));
+    expect(screen.getByLabelText('Content retention')).toHaveValue('48');
+    expect(screen.getByLabelText('Content retention unit')).toHaveValue('小时');
+    expect(screen.getByRole('option', { name: 'hours' })).toBeTruthy();
+    expect(screen.getByLabelText('Content project capacity')).toHaveValue('512');
+    expect(screen.getByLabelText('Content per-item limit')).toHaveValue('16');
+    expect(contentManagementApi.getScopedPolicy).toHaveBeenCalledTimes(policyReads);
+    expect(contentManagementApi.getConnection).toHaveBeenCalledTimes(connectionReads);
+    expect(contentManagementApi.putScopedPolicy).not.toHaveBeenCalled();
+    expect(contentManagementApi.control).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Save scope policy' }));
+    fireEvent.click(await screen.findByRole('button', { name: '确定' }));
+    await waitFor(() => expect(contentManagementApi.putScopedPolicy).toHaveBeenCalledWith('project', 1, 2, undefined, expect.objectContaining({ expected_version: '1', desired: fullConfig })));
+  });
+
+  afterEach(() => act(() => setLocale('zh-CN')));
   beforeEach(() => {
     vi.resetAllMocks();
     vi.mocked(contentManagementApi.getPolicy).mockResolvedValue(policy);

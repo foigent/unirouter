@@ -1,3 +1,5 @@
+import '../i18n/monitoring';
+import { translate as t, useI18n } from '../i18n';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Banner,
@@ -9,6 +11,7 @@ import {
   Tag,
   Typography,
 } from '@douyinfe/semi-ui';
+import type { MessageKey } from '../i18n/catalog';
 import { api, ApiError } from '../api/client';
 import {
   authzContextForUser,
@@ -137,6 +140,7 @@ function outputReadable(job: MediaJob, nowMilliseconds: number) {
 }
 
 export default function MediaJobsPage() {
+  useI18n();
   const user = useAuthStore((state) => state.user);
   const organizationRole = organizationRoleForUser(user);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -148,16 +152,21 @@ export default function MediaJobsPage() {
   const [loading, setLoading] = useState(false);
   const [contentLoading, setContentLoading] = useState(false);
   const [outputURL, setOutputURL] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<{ key: MessageKey; status?: number; detail?: string } | null>(null);
   const [clock, setClock] = useState(() => Date.now());
   const selected = useMemo(
-    () => jobs.find((job) => job.job_id === selectedID) || jobs[0] || null,
-    [jobs, selectedID],
+    () => jobs.find((job) => job.job_id === selectedID && job.scope.project_id === projectID)
+      || jobs.find((job) => job.scope.project_id === projectID) || null,
+    [jobs, selectedID, projectID],
   );
   const selectedProject = projects.find((project) => project.id === projectID);
   const selectedProjectMembershipRole = canonicalProjectMembershipRole(selectedProject?.current_user_membership_role);
   const selectedProjectAuthz = authzContextForUser(user, selectedProjectMembershipRole, true);
   const outputURLRef = useRef('');
+  const jobsRequestVersion = useRef(0);
+  const outputRequestVersion = useRef(0);
+  const currentProjectID = useRef(projectID);
+  currentProjectID.current = projectID;
   const canCancel = canInvokeProject(selectedProjectAuthz) && selected?.lifecycle.execution !== 'terminal';
   const selectedOutputReadable = Boolean(selected && outputReadable(selected, clock));
   const nextOutputExpiry = useMemo(() => {
@@ -168,19 +177,23 @@ export default function MediaJobsPage() {
   }, [clock, jobs]);
 
   const clearOutput = useCallback(() => {
+    outputRequestVersion.current += 1;
+    setContentLoading(false);
     if (outputURLRef.current) URL.revokeObjectURL(outputURLRef.current);
     outputURLRef.current = '';
     setOutputURL('');
   }, []);
 
   const loadJobs = useCallback(async (silent = false) => {
-    if (!selectedProject) return;
+    if (!selectedProject || currentProjectID.current !== selectedProject.id) return;
+    const version = ++jobsRequestVersion.current;
     if (!silent) setLoading(true);
     try {
       const [nextContract, nextJobs] = await Promise.all([
         api.getMediaJobContract(selectedProject.id, selectedProject.org_id),
         api.getMediaJobs(selectedProject.id, selectedProject.org_id),
       ]);
+      if (version !== jobsRequestVersion.current || currentProjectID.current !== selectedProject.id) return;
       const data = responseData<MediaJob>(nextJobs);
       setContract(nextContract as RuntimeContract);
       setJobs(data);
@@ -188,18 +201,19 @@ export default function MediaJobsPage() {
       setSelectedID((current) => (
         data.some((job) => job.job_id === current) ? current : data[0]?.job_id || ''
       ));
-      setError('');
+      setError(null);
     } catch (loadError) {
+      if (version !== jobsRequestVersion.current || currentProjectID.current !== selectedProject.id) return;
       setError(loadError instanceof ApiError
-        ? `任务读取失败（${loadError.status}）：${loadError.message}`
-        : '暂时无法读取图像任务。');
+        ? { key: '任务读取失败', status: loadError.status, detail: loadError.message }
+        : { key: '暂时无法读取图像任务。' });
       if (!silent) {
         setContract(null);
         setJobs([]);
         setSelectedID('');
       }
     } finally {
-      if (!silent) setLoading(false);
+      if (version === jobsRequestVersion.current) setLoading(false);
     }
   }, [selectedProject]);
 
@@ -223,8 +237,8 @@ export default function MediaJobsPage() {
         if (!active) return;
         setProjects([]);
         setError(loadError instanceof ApiError
-          ? `项目读取失败（${loadError.status}）：${loadError.message}`
-          : '暂时无法读取项目。');
+          ? { key: '项目读取失败', status: loadError.status, detail: loadError.message }
+          : { key: '暂时无法读取项目。' });
       })
       .finally(() => {
         if (active) setProjectsLoading(false);
@@ -237,7 +251,11 @@ export default function MediaJobsPage() {
 
   useEffect(() => {
     clearOutput();
+    setJobs([]);
+    setContract(null);
+    setSelectedID('');
     loadJobs();
+    return () => { jobsRequestVersion.current += 1; };
   }, [clearOutput, loadJobs]);
 
   useEffect(() => {
@@ -270,40 +288,44 @@ export default function MediaJobsPage() {
       await api.cancelMediaJob(selected.job_id, selectedProject.id, selectedProject.org_id);
       await loadJobs(true);
     } catch (cancelError) {
+      if (currentProjectID.current !== selectedProject.id) return;
       setError(cancelError instanceof ApiError
-        ? `取消失败（${cancelError.status}）：${cancelError.message}`
-        : '暂时无法请求取消任务。');
+        ? { key: '取消失败', status: cancelError.status, detail: cancelError.message }
+        : { key: '暂时无法请求取消任务。' });
     } finally {
-      setLoading(false);
+      if (currentProjectID.current === selectedProject.id) setLoading(false);
     }
   };
 
   const loadOutput = async () => {
     if (!selected?.output || !selectedProject || !selectedOutputReadable) return;
-    setContentLoading(true);
     clearOutput();
+    const version = outputRequestVersion.current;
+    setContentLoading(true);
     try {
       const blob = await api.getMediaJobContent(
         selected.job_id,
         selectedProject.id,
         selectedProject.org_id,
       );
+      if (version !== outputRequestVersion.current) return;
       const nextURL = URL.createObjectURL(blob as Blob);
       outputURLRef.current = nextURL;
       setOutputURL(nextURL);
     } catch (contentError) {
+      if (version !== outputRequestVersion.current) return;
       setError(contentError instanceof ApiError
-        ? `输出读取失败（${contentError.status}）：${contentError.message}`
-        : '暂时无法读取图像输出。');
+        ? { key: '输出读取失败', status: contentError.status, detail: contentError.message }
+        : { key: '暂时无法读取图像输出。' });
     } finally {
-      setContentLoading(false);
+      if (version === outputRequestVersion.current) setContentLoading(false);
     }
   };
 
   const columns = [
     {
       key: 'job',
-      title: '任务',
+      title: t("任务"),
       dataIndex: 'job_id',
       render: (value: string, record: MediaJob) => (
         <button
@@ -321,21 +343,21 @@ export default function MediaJobsPage() {
     },
     {
       key: 'execution',
-      title: '执行',
+      title: t("执行"),
       dataIndex: 'lifecycle',
       width: 126,
       render: (value: Lifecycle) => <Tag color={lifecycleColor(value.execution)}>{value.execution}</Tag>,
     },
     {
       key: 'outcome',
-      title: '结果',
+      title: t("结果"),
       dataIndex: 'lifecycle',
       width: 126,
       render: (value: Lifecycle) => <Tag color={lifecycleColor(value.provider_outcome)}>{value.provider_outcome}</Tag>,
     },
     {
       key: 'created_at',
-      title: '创建时间',
+      title: t("创建时间"),
       dataIndex: 'created_at',
       width: 170,
       render: displayTime,
@@ -343,75 +365,75 @@ export default function MediaJobsPage() {
   ];
 
   return (
-    <div className="ur-page">
+    <div className="ur-page ur-monitoring-workspace">
       <PageHeader
-        eyebrow="监控与用量"
-        title="异步模型任务"
-        description="异步模型执行的统一工作区；当前仅实现 Image V1 Endpoint Profile，不代表文字、语音或视频任务已经可用。右侧检查器始终可见。"
+        eyebrow={t("监控与用量")}
+        title={t("异步模型任务")}
+        description={t("异步模型执行的统一工作区；当前仅实现 Image V1 Endpoint Profile，不代表文字、语音或视频任务已经可用。右侧检查器始终可见。")}
         actions={(
           <Space>
             <Select
               aria-labelledby="media-jobs-project-label"
-              insetLabel="项目"
+              insetLabel={t("项目")}
               insetLabelId="media-jobs-project-label"
               value={projectID}
-              placeholder="选择项目"
+              placeholder={t("选择项目")}
               style={{ width: 220 }}
               optionList={projects.map(projectOption)}
               onChange={(value) => setProjectID(Number(value))}
             />
-            <Button onClick={() => loadJobs()} loading={loading}>刷新</Button>
+            <Button onClick={() => loadJobs()} loading={loading}>{t("刷新")}</Button>
           </Space>
         )}
       />
 
-      {error && <Banner type="danger" description={error} closeIcon={null} />}
+      {error && <Banner type="danger" description={`${t(error.key)}${error.status ? ` (${error.status})` : ''}${error.detail ? `: ${error.detail}` : ''}`} closeIcon={null} />}
       {contract && !contract.runtime_enabled && (
         <Banner
           type="warning"
-          description="当前部署未启用 Image V1 异步任务 worker 与对象存储；仅任务元数据和合同证据可读取。"
+          description={t("当前部署未启用 Image V1 异步任务 worker 与对象存储；仅任务元数据和合同证据可读取。")}
           closeIcon={null}
         />
       )}
       {contract?.runtime_enabled && !contract.admission_enabled && (
         <Banner
           type="warning"
-          description="新任务受理已暂停；现有任务的恢复、到期读取关闭与对象清理仍继续。"
+          description={t("新任务受理已暂停；现有任务的恢复、到期读取关闭与对象清理仍继续。")}
           closeIcon={null}
         />
       )}
 
       <div className="ur-kpi-grid ur-media-kpis">
-        <MetricTile label="本页任务" value={projectsLoading || loading ? '—' : String(jobs.length)} meta={projectsLoading || loading ? '正在读取当前范围' : '当前项目最近 50 条'} />
+        <MetricTile label={t("本页任务")} value={projectsLoading || loading || !contract ? '—' : String(jobs.length)} meta={projectsLoading || loading ? t("正在读取当前范围") : t("当前项目最近 50 条")} />
         <MetricTile
-          label="进行中"
-          value={projectsLoading || loading ? '—' : String(jobs.filter((job) => job.lifecycle.execution !== 'terminal').length)}
-          meta="队列、租约与运行状态独立追踪"
+          label={t("进行中")}
+          value={projectsLoading || loading || !contract ? '—' : String(jobs.filter((job) => job.lifecycle.execution !== 'terminal').length)}
+          meta={t("队列、租约与运行状态独立追踪")}
         />
         <MetricTile
-          label="输出可用"
-          value={projectsLoading || loading ? '—' : String(jobs.filter((job) => outputReadable(job, clock)).length)}
-          meta="到期后读取立即关闭"
+          label={t("输出可用")}
+          value={projectsLoading || loading || !contract ? '—' : String(jobs.filter((job) => outputReadable(job, clock)).length)}
+          meta={t("到期后读取立即关闭")}
         />
-        <MetricTile label="固定保留" value={contract?.retention || '—'} meta={contract ? '七天后读取关闭并进入删除' : '正在读取运行时合同'} />
+        <MetricTile label={t("固定保留")} value={contract?.retention || '—'} meta={contract ? t("七天后读取关闭并进入删除") : t("正在读取运行时合同")} />
       </div>
 
       <div className="ur-context-explorer ur-media-explorer">
         <main className="ur-explorer-panel">
           <div className="ur-panel-title">
             <div>
-              <Title heading={5}>任务队列</Title>
-              <Text type="tertiary">只展示当前项目范围；Prompt、凭据和对象定位符不会返回。</Text>
+              <Title heading={5}>{t("任务队列")}</Title>
+              <Text type="tertiary">{t("只展示当前项目范围；Prompt、凭据和对象定位符不会返回。")}</Text>
             </div>
           </div>
           {projectsLoading ? (
-            <EmptyState title="正在读取项目范围" description="正在确认当前账号可读取的项目，请稍候。" />
+            <EmptyState title={t("正在读取项目范围")} description={t("正在确认当前账号可读取的项目，请稍候。")} />
           ) : projects.length === 0 ? (
-            <EmptyState title="没有可见项目" description="当前账号没有可读取的项目范围。" />
+            <EmptyState title={t("没有可见项目")} description={t("当前账号没有可读取的项目范围。")} />
           ) : loading && jobs.length === 0 ? (
-            <EmptyState title="正在读取异步模型任务" description="正在读取当前项目的任务与运行时合同，请稍候。" />
+            <EmptyState title={t("正在读取异步模型任务")} description={t("正在读取当前项目的任务与运行时合同，请稍候。")} />
           ) : jobs.length === 0 && !loading ? (
-            <EmptyState title="暂无异步模型任务" description="通过项目 API Key 提交当前已支持的异步 Endpoint Profile 后，状态会在这里出现。" />
+            <EmptyState title={t("暂无异步模型任务")} description={t("通过项目 API Key 提交当前已支持的异步 Endpoint Profile 后，状态会在这里出现。")} />
           ) : (
             <Table
               rowKey="job_id"
@@ -424,11 +446,11 @@ export default function MediaJobsPage() {
           )}
         </main>
 
-        <aside className="ur-explorer-panel ur-explorer-detail" aria-label="异步模型任务检查器">
+        <aside className="ur-explorer-panel ur-explorer-detail" aria-label={t("异步模型任务检查器")}>
           <div className="ur-panel-title">
             <div>
-              <Title heading={5}>任务检查器</Title>
-              <Text type="tertiary">状态轴、输出保留与计费事实</Text>
+              <Title heading={5}>{t("任务检查器")}</Title>
+              <Text type="tertiary">{t("状态轴、输出保留与计费事实")}</Text>
             </div>
             {selected && (
               <Button
@@ -438,82 +460,83 @@ export default function MediaJobsPage() {
                 loading={loading}
                 onClick={cancelSelected}
               >
-                请求取消
+
+                {t("请求取消")}
               </Button>
             )}
           </div>
           {!selected ? (
-            <EmptyState title="等待任务" description="检查器会常驻；有任务后自动选择最新一条。" />
+            <EmptyState title={t("等待任务")} description={t("检查器会常驻；有任务后自动选择最新一条。")} />
           ) : (
             <>
               <Descriptions
                 align="left"
                 size="small"
                 data={[
-                  { key: '任务 ID', value: selected.job_id },
-                  { key: '请求 ID', value: selected.request_id },
-                  { key: '请求模型', value: selected.requested_model },
-                  { key: '路由模型', value: selected.routing_model },
-                  { key: '供应商模型', value: selected.mapped_model || '—' },
-                  { key: '尝试', value: `${selected.attempt} / ${selected.max_attempts}` },
-                  { key: '请求摘要', value: selected.request_sha256 },
-                  { key: '执行暂存', value: selected.request_expires_at ? `${selected.execution_storage_mode || '—'} · ${selected.content_policy_ref || '—'} v${selected.content_policy_version || '—'}` : '旧任务：原生命周期' },
-                  { key: '请求截止', value: selected.request_expires_at ? `${displayTime(selected.request_expires_at)}${!selected.request_cleared_at && Date.parse(selected.request_expires_at) <= clock ? ' · 已逾期，等待 worker 清理' : ''}` : '旧任务：无固定截止' },
-                  { key: '请求密文实际清空', value: selected.request_cleared_at ? displayTime(selected.request_cleared_at) : '尚未确认' },
-                  { key: '终态时间', value: displayTime(selected.terminal_at) },
+                  { key: t("任务 ID"), value: selected.job_id },
+                  { key: t("请求 ID"), value: selected.request_id },
+                  { key: t("请求模型"), value: selected.requested_model },
+                  { key: t("路由模型"), value: selected.routing_model },
+                  { key: t("供应商模型"), value: selected.mapped_model || '—' },
+                  { key: t("尝试"), value: `${selected.attempt} / ${selected.max_attempts}` },
+                  { key: t("请求摘要"), value: selected.request_sha256 },
+                  { key: t("执行暂存"), value: selected.request_expires_at ? `${selected.execution_storage_mode || '—'} · ${selected.content_policy_ref || '—'} v${selected.content_policy_version || '—'}` : t("旧任务：原生命周期") },
+                  { key: t("请求截止"), value: selected.request_expires_at ? `${displayTime(selected.request_expires_at)}${!selected.request_cleared_at && Date.parse(selected.request_expires_at) <= clock ? t(" · 已逾期，等待 worker 清理") : ''}` : t("旧任务：无固定截止") },
+                  { key: t("请求密文实际清空"), value: selected.request_cleared_at ? displayTime(selected.request_cleared_at) : t("尚未确认") },
+                  { key: t("终态时间"), value: displayTime(selected.terminal_at) },
                 ]}
               />
-              <div className="ur-media-state-grid">
+              <div className="ur-media-state-grid" aria-label={t('任务生命周期')}>
                 {Object.entries(selected.lifecycle).map(([axis, value]) => (
                   <div key={axis}>
-                    <span>{axis.replace('provider_outcome', 'outcome')}</span>
+                    <span>{t(({ admission: '准入', queue: '队列', lease: '租约', execution: '执行', provider_outcome: '供应商结果', cancellation: '取消状态', object: '对象状态', settlement: '结算状态' } as const)[axis as keyof Lifecycle])}</span>
                     <Tag color={lifecycleColor(value)}>{value}</Tag>
                   </div>
                 ))}
               </div>
 
               <section className="ur-media-detail-section">
-                <Title heading={6}>输出</Title>
+                <Title heading={6}>{t("输出")}</Title>
                 {selected.output ? (
                   <>
                     <Descriptions
                       align="left"
                       size="small"
                       data={[
-                        { key: '类型', value: selected.output.media_type },
-                        { key: '大小', value: `${selected.output.size_bytes.toLocaleString()} bytes` },
-                        { key: '内容摘要', value: selected.output.content_sha256 },
-                        { key: '持久化', value: displayTime(selected.output.persisted_at) },
-                        { key: '到期', value: displayTime(selected.output.expires_at) },
-                        { key: '清除', value: displayTime(selected.output.purged_at) },
+                        { key: t("类型"), value: selected.output.media_type },
+                        { key: t("大小"), value: `${selected.output.size_bytes.toLocaleString()} bytes` },
+                        { key: t("内容摘要"), value: selected.output.content_sha256 },
+                        { key: t("持久化"), value: displayTime(selected.output.persisted_at) },
+                        { key: t("到期"), value: displayTime(selected.output.expires_at) },
+                        { key: t("清除"), value: displayTime(selected.output.purged_at) },
                       ]}
                     />
                     {selectedOutputReadable && (
-                      <Button loading={contentLoading} onClick={loadOutput}>鉴权查看输出</Button>
+                      <Button loading={contentLoading} onClick={loadOutput}>{t("鉴权查看输出")}</Button>
                     )}
                     {outputURL && (
-                      <img className="ur-media-output" src={outputURL} alt={`任务 ${selected.job_id} 的图像输出`} />
+                      <img className="ur-media-output" src={outputURL} alt={t('任务 {id} 的图像输出', { id: selected.job_id })} />
                     )}
                   </>
-                ) : <Text type="tertiary">尚无持久化输出。</Text>}
+                ) : <Text type="tertiary">{t("尚无持久化输出。")}</Text>}
               </section>
 
               <section className="ur-media-detail-section">
-                <Title heading={6}>计费事实</Title>
+                <Title heading={6}>{t("计费事实")}</Title>
                 {selected.charge_fact ? (
                   <>
                     <Banner
                       type="info"
-                      description="已记录收费资格事实，但当前媒体价格表尚未冻结，因此没有扣减钱包或推断金额。"
+                      description={t("已记录收费资格事实，但当前媒体价格表尚未冻结，因此没有扣减钱包或推断金额。")}
                       closeIcon={null}
                     />
                     <Descriptions
                       align="left"
                       size="small"
                       data={[
-                        { key: '事实 ID', value: selected.charge_fact.fact_id },
-                        { key: '金额状态', value: selected.charge_fact.amount_state },
-                        { key: '记录时间', value: displayTime(selected.charge_fact.recorded_at) },
+                        { key: t("事实 ID"), value: selected.charge_fact.fact_id },
+                        { key: t("金额状态"), value: selected.charge_fact.amount_state },
+                        { key: t("记录时间"), value: displayTime(selected.charge_fact.recorded_at) },
                       ]}
                     />
                     <div className="ur-media-units">
@@ -525,7 +548,7 @@ export default function MediaJobsPage() {
                       ))}
                     </div>
                   </>
-                ) : <Text type="tertiary">只有供应商终态成功且输出已持久化，才会记录事实。</Text>}
+                ) : <Text type="tertiary">{t("只有供应商终态成功且输出已持久化，才会记录事实。")}</Text>}
               </section>
             </>
           )}

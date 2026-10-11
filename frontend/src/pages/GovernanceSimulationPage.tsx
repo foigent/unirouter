@@ -1,3 +1,6 @@
+import '../i18n/security';
+import type { MessageKey } from '../i18n/catalog';
+import { translate as t, useI18n, labelFor } from '../i18n';
 import { useEffect, useMemo, useState } from 'react';
 import { Banner, Button, Table, Tag, TextArea, Typography } from '@douyinfe/semi-ui';
 import { api, ApiError } from '../api/client';
@@ -120,16 +123,18 @@ const riskMetricLabel: Record<string, string> = {
 };
 
 function RiskTag({ risk }: { risk: string }) {
-  return <Tag color={riskColor[risk] || 'grey'}>{riskLabel[risk] || risk}</Tag>;
+  useI18n();
+  return <Tag color={riskColor[risk] || 'grey'}>{labelFor(riskLabel, risk)}</Tag>;
 }
 
 export default function GovernanceSimulationPage() {
+  const { locale } = useI18n();
   const [contract, setContract] = useState<GovernanceContract | null>(null);
   const [input, setInput] = useState('');
   const [report, setReport] = useState<GovernanceReport | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<{key: MessageKey; values?: Record<string, string | number>} | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -141,9 +146,7 @@ export default function GovernanceSimulationPage() {
       })
       .catch((loadError: unknown) => {
         if (!active) return;
-        setError(loadError instanceof ApiError
-          ? `合同加载失败（${loadError.status}）：${loadError.message}`
-          : '离线治理合同暂不可用。');
+        setError(loadError instanceof ApiError ? {key: '合同加载失败（{status}）：{detail}', values: {status: loadError.status, detail: loadError.message}} : {key: '离线治理合同暂不可用。'});
       });
     return () => { active = false; };
   }, []);
@@ -157,11 +160,11 @@ export default function GovernanceSimulationPage() {
 
   const runPreview = () => {
     if (!input.trim()) {
-      setError('请粘贴或载入符合离线合同的 JSON 快照。');
+      setError({key: '请粘贴或载入符合离线合同的 JSON 快照。'});
       return;
     }
     setLoading(true);
-    setError('');
+    setError(null);
     api.previewGovernanceSimulation(input)
       .then((next: GovernanceReport) => {
         setReport(next);
@@ -174,9 +177,7 @@ export default function GovernanceSimulationPage() {
       .catch((previewError: unknown) => {
         setReport(null);
         setSelection(null);
-        setError(previewError instanceof ApiError
-          ? `模拟失败（${previewError.status}）：${previewError.message}`
-          : '模拟失败：离线快照不可用。');
+        setError(previewError instanceof ApiError ? {key: '模拟失败（{status}）：{detail}', values: {status: previewError.status, detail: previewError.message}} : {key: '模拟失败：离线快照不可用。'});
       })
       .finally(() => setLoading(false));
   };
@@ -184,7 +185,7 @@ export default function GovernanceSimulationPage() {
   const loadFile = (file?: File) => {
     if (!file) return;
     if (file.size > 2 * 1024 * 1024) {
-      setError('文件超过 2 MiB 离线模拟上限。');
+      setError({key: '文件超过 2 MiB 离线模拟上限。'});
       return;
     }
     file.text()
@@ -192,9 +193,9 @@ export default function GovernanceSimulationPage() {
         setInput(text);
         setReport(null);
         setSelection(null);
-        setError('');
+        setError(null);
       })
-      .catch(() => setError('无法读取所选文件。'));
+      .catch(() => setError({key: '无法读取所选文件。'}));
   };
 
   const providerColumns = useMemo(() => [
@@ -204,41 +205,41 @@ export default function GovernanceSimulationPage() {
       width: 240,
     },
     {
-      title: '版本变化',
+      title: t("版本变化"),
       width: 180,
       render: (_: unknown, row: ProviderPackChange) =>
-        `${row.baseline_version || '新增'} → ${row.candidate_version || '移除'}`,
+        `${row.baseline_version || t("新增")} → ${row.candidate_version || t("移除")}`,
     },
     {
-      title: '风险',
+      title: t("风险"),
       dataIndex: 'risk',
       width: 130,
       render: (value: string) => <RiskTag risk={value} />,
     },
-  ], []);
+  ], [locale]);
 
   const routeColumns = useMemo(() => [
-    { title: '路由/策略字段', dataIndex: 'field', width: 190 },
+    { title: t("路由/策略字段"), dataIndex: 'field', width: 190 },
     {
-      title: '风险',
+      title: t("风险"),
       dataIndex: 'risk',
       width: 130,
       render: (value: string) => <RiskTag risk={value} />,
     },
-    { title: '原因', dataIndex: 'reason', width: 240 },
-  ], []);
+    { title: t("原因"), dataIndex: 'reason', width: 240 },
+  ], [locale]);
 
   return (
-    <div className="ur-page">
+    <div className="ur-page ur-security-workspace">
       <PageHeader
-        eyebrow="模型接入"
-        title="变更防火墙"
-        description="用同一套路由内核离线比较策略、通道和 Provider Pack；结果只生成审计证据，不提升任何运行时配置。"
+        eyebrow={t("模型接入")}
+        title={t("变更防火墙")}
+        description={t("用同一套路由内核离线比较策略、通道和 Provider Pack；结果只生成审计证据，不提升任何运行时配置。")}
       />
 
       <Banner
         type="info"
-        description="这是零网络、零持久化的治理模拟。shadow / canary / enforced 仅表示被评估的目标模式；真正上线仍需独立外部授权。"
+        description={t("这是零网络、零持久化的治理模拟。shadow / canary / enforced 仅表示被评估的目标模式；真正上线仍需独立外部授权。")}
         closeIcon={null}
         style={{ marginBottom: 16 }}
       />
@@ -246,39 +247,40 @@ export default function GovernanceSimulationPage() {
         <main className="ur-explorer-panel">
           <div className="ur-panel-title">
             <div>
-              <Typography.Title heading={5} style={{ margin: 0 }}>不可变快照对比</Typography.Title>
+              <Typography.Title heading={5} style={{ margin: 0 }}>{t("不可变快照对比")}</Typography.Title>
               <Typography.Text className="ur-panel-hint">
                 {contract
                   ? `${contract.contract_version} · ${contract.selection_version}`
-                  : '正在读取离线合同'}
+                  : t("正在读取离线合同")}
               </Typography.Text>
             </div>
             <Tag color="blue">zero runtime mutation</Tag>
           </div>
           <TextArea
-            aria-label="治理模拟 JSON"
+            aria-label={t("治理模拟 JSON")}
             value={input}
             onChange={value => {
               setInput(value);
               setReport(null);
               setSelection(null);
-              setError('');
+              setError(null);
             }}
             autosize={{ minRows: 10, maxRows: 18 }}
-            placeholder="载入 baseline / candidate 快照和 release intent"
+            placeholder={t("载入 baseline / candidate 快照和 release intent")}
           />
           <div className="ur-governance-actions">
             <label className="semi-button semi-button-tertiary semi-button-light" tabIndex={0}>
-              载入 JSON 文件
+
+              {t("载入 JSON 文件")}
               <input
-                aria-label="载入治理模拟 JSON 文件"
+                aria-label={t("载入治理模拟 JSON 文件")}
                 type="file"
                 accept="application/json,.json"
                 hidden
                 onChange={event => loadFile(event.target.files?.[0])}
               />
             </label>
-            <Button type="primary" loading={loading} onClick={runPreview}>运行离线模拟</Button>
+            <Button type="primary" loading={loading} onClick={runPreview}>{t("运行离线模拟")}</Button>
             <Button
               disabled={!contract}
               onClick={() => {
@@ -286,21 +288,22 @@ export default function GovernanceSimulationPage() {
                 setInput(JSON.stringify(contract.sample_request, null, 2));
                 setReport(null);
                 setSelection(null);
-                setError('');
+                setError(null);
               }}
             >
-              恢复安全示例
+
+              {t("恢复安全示例")}
             </Button>
           </div>
-          {error && <Banner type="danger" description={error} style={{ marginTop: 12 }} />}
+          {error && <Banner type="danger" description={error ? t(error.key, error.values) : undefined} style={{ marginTop: 12 }} />}
 
           {report && (
             <>
               <div className="ur-kpi-grid ur-governance-kpis">
-                <MetricTile label="总体风险" value={riskMetricLabel[report.overall_risk] || report.overall_risk} tone={report.overall_risk === 'breaking' ? 'red' : 'amber'} />
-                <MetricTile label="需评审变化" value={formatInteger(report.summary.review_required)} tone="amber" />
-                <MetricTile label="阻断变化" value={formatInteger(report.summary.breaking)} tone="red" />
-                <MetricTile label="候选路由" value={formatInteger(report.candidate.candidates.length)} tone="blue" />
+                <MetricTile label={t("总体风险")} value={labelFor(riskMetricLabel, report.overall_risk)} tone={report.overall_risk === 'breaking' ? 'red' : 'amber'} />
+                <MetricTile label={t("需评审变化")} value={formatInteger(report.summary.review_required)} tone="amber" />
+                <MetricTile label={t("阻断变化")} value={formatInteger(report.summary.breaking)} tone="red" />
+                <MetricTile label={t("候选路由")} value={formatInteger(report.candidate.candidates.length)} tone="blue" />
               </div>
 
               <Typography.Title heading={6}>Provider Change Firewall</Typography.Title>
@@ -321,7 +324,7 @@ export default function GovernanceSimulationPage() {
                 />
               </div>
 
-              <Typography.Title heading={6}>路由与策略差异</Typography.Title>
+              <Typography.Title heading={6}>{t("路由与策略差异")}</Typography.Title>
               <div className="ur-table-shell">
                 <Table
                   rowKey={(row?: RouteChange) => row?.field || 'missing'}
@@ -342,31 +345,31 @@ export default function GovernanceSimulationPage() {
           )}
         </main>
 
-        <aside className="ur-explorer-panel ur-explorer-detail" aria-label="治理变更检查器">
+        <aside className="ur-explorer-panel ur-explorer-detail" aria-label={t("治理变更检查器")}>
           <div className="ur-detail-header">
             <div>
-              <Typography.Text className="ur-panel-hint">治理变更检查器</Typography.Text>
-              <Typography.Title heading={5} style={{ margin: 0 }}>证据与上线边界</Typography.Title>
+              <Typography.Text className="ur-panel-hint">{t("治理变更检查器")}</Typography.Text>
+              <Typography.Title heading={5} style={{ margin: 0 }}>{t("证据与上线边界")}</Typography.Title>
             </div>
             <RiskTag risk={report?.overall_risk || 'unchanged'} />
           </div>
           {report ? (
             <dl className="ur-financial-truth-detail">
-              <dt>模拟 ID</dt><dd>{report.simulation_id}</dd>
-              <dt>评估模式</dt><dd>{report.evaluation_mode}</dd>
-              <dt>发布决策</dt><dd>{report.release.decision}</dd>
-              <dt>模拟阶段</dt><dd>{report.release.from_stage} → {report.release.simulated_stage}</dd>
-              <dt>运行时变更</dt><dd>{report.runtime_mutation}</dd>
-              <dt>运行时提升授权</dt><dd>{report.release.runtime_promotion_authorized ? '是' : '否'}</dd>
-              <dt>选中变化</dt>
+              <dt>{t("模拟 ID")}</dt><dd>{report.simulation_id}</dd>
+              <dt>{t("评估模式")}</dt><dd>{report.evaluation_mode}</dd>
+              <dt>{t("发布决策")}</dt><dd>{report.release.decision}</dd>
+              <dt>{t("模拟阶段")}</dt><dd>{report.release.from_stage} → {report.release.simulated_stage}</dd>
+              <dt>{t("运行时变更")}</dt><dd>{report.runtime_mutation}</dd>
+              <dt>{t("运行时提升授权")}</dt><dd>{report.release.runtime_promotion_authorized ? t("是") : t("否")}</dd>
+              <dt>{t("选中变化")}</dt>
               <dd>
                 {selectedProvider
-                  ? `${selectedProvider.pack_id} · ${riskLabel[selectedProvider.risk] || selectedProvider.risk}`
+                  ? `${selectedProvider.pack_id} · ${labelFor(riskLabel, selectedProvider.risk)}`
                   : selectedRoute
-                    ? `${selectedRoute.field} · ${riskLabel[selectedRoute.risk] || selectedRoute.risk}`
-                    : '没有语义变化'}
+                    ? `${selectedRoute.field} · ${labelFor(riskLabel, selectedRoute.risk)}`
+                    : t("没有语义变化")}
               </dd>
-              <dt>原因</dt>
+              <dt>{t("原因")}</dt>
               <dd>
                 {selectedProvider
                   ? selectedProvider.reasons.join('、')
@@ -384,14 +387,14 @@ export default function GovernanceSimulationPage() {
                   ? selectedProvider.candidate_version || '—'
                   : selectedRoute?.candidate || report.candidate.snapshot_hash}
               </dd>
-              <dt>语义输入哈希</dt><dd className="ur-mono-break">{report.input_semantic_hash}</dd>
-              <dt>审计事件</dt><dd className="ur-mono-break">{report.release.audit_event_id}</dd>
-              <dt>上线门禁</dt><dd>{report.release.promotion_gate}</dd>
+              <dt>{t("语义输入哈希")}</dt><dd className="ur-mono-break">{report.input_semantic_hash}</dd>
+              <dt>{t("审计事件")}</dt><dd className="ur-mono-break">{report.release.audit_event_id}</dd>
+              <dt>{t("上线门禁")}</dt><dd>{report.release.promotion_gate}</dd>
             </dl>
           ) : (
             <EmptyState
-              title="等待离线模拟"
-              description="检查器始终可见；运行后会自动选中第一项 Provider 变化，无需再次点击打开。"
+              title={t("等待离线模拟")}
+              description={t("检查器始终可见；运行后会自动选中第一项 Provider 变化，无需再次点击打开。")}
               minHeight={320}
             />
           )}

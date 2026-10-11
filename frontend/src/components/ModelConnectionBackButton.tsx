@@ -1,3 +1,5 @@
+import { translate as t, useI18n } from '../i18n';
+import '../i18n/models';
 import { Button } from '@douyinfe/semi-ui';
 
 export function modelConnectionReturnPath(search = window.location.search) {
@@ -13,10 +15,11 @@ export function modelConnectionReturnPath(search = window.location.search) {
 }
 
 export default function ModelConnectionBackButton() {
+  useI18n();
   const path = modelConnectionReturnPath();
   if (!path) return null;
   return <Button onClick={() => {
     window.history.pushState(null, '', path);
     window.dispatchEvent(new PopStateEvent('popstate'));
-  }}>返回模型部署</Button>;
+  }}>{t("返回模型部署")}</Button>;
 }

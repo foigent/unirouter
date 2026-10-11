@@ -1,3 +1,5 @@
+import '../../i18n/models';
+import { translate as t, translateLabel, useI18n } from '../../i18n';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Banner,
@@ -98,7 +100,7 @@ function shouldRotateIntent(error: unknown) {
 }
 
 function optionalIdentity(value?: number) {
-  return value === undefined ? '未分配' : String(value);
+  return value === undefined ? t("未分配") : String(value);
 }
 
 function stageTone(stage: string) {
@@ -110,20 +112,20 @@ function stageTone(stage: string) {
 
 function AuthoringReceiptPanel({ receipt }: { receipt: CanonicalDeploymentReleaseAuthoringReceipt }) {
   return <Surface
-    title={`原子发布编排收据 #${receipt.receipt_id}`}
-    description="收据冻结了服务端接受的 baseline、selection 与 sealed candidate；authoring 本身不激活流量。"
+    title={t('原子发布编排收据 #{id}', { id: receipt.receipt_id })}
+    description={t("收据冻结了服务端接受的 baseline、selection 与 sealed candidate；authoring 本身不激活流量。")}
   >
     <Descriptions row size="small" data={[
       { key: 'Release', value: <Text code>{receipt.release.release_ref}</Text> },
-      { key: '结果', value: <Space><StatusTag status={receipt.release.stage}>{receipt.release.stage}</StatusTag><Text>version {receipt.release.version}</Text></Space> },
+      { key: t("结果"), value: <Space><StatusTag status={receipt.release.stage}>{receipt.release.stage}</StatusTag><Text>version {receipt.release.version}</Text></Space> },
       { key: 'Baseline', value: <Text code>{receipt.baseline.kind} · slot {receipt.baseline.expected_slot_version}</Text> },
-      { key: '幂等结论', value: receipt.idempotency_replay ? '安全重放原收据' : '首次完成' },
-      { key: '原始 HTTP / Location', value: <Text code>{receipt.original_http_status} · {receipt.original_location}</Text> },
+      { key: t("幂等结论"), value: receipt.idempotency_replay ? t("安全重放原收据") : t("首次完成") },
+      { key: t("原始 HTTP / Location"), value: <Text code>{receipt.original_http_status} · {receipt.original_location}</Text> },
       { key: 'Route items', value: `${receipt.release.route_items_count} · ${receipt.release.route_items_hash}` },
-      { key: '完成时间', value: formatDateTime(receipt.completed_at) },
+      { key: t("完成时间"), value: formatDateTime(receipt.completed_at) },
     ]} />
     <div className="ur-model-endpoint-probe">
-      <Text strong>冻结的 Selection</Text>
+      <Text strong>{t("冻结的 Selection")}</Text>
       {receipt.selections.map(selection => <Text code key={`${selection.deployment_id}:${selection.operation_id}`}>
         deployment_id={selection.deployment_id} · {selection.operation_id}
       </Text>)}
@@ -134,31 +136,31 @@ function AuthoringReceiptPanel({ receipt }: { receipt: CanonicalDeploymentReleas
 function LifecycleReceiptPanel({ receipt }: { receipt: CanonicalDeploymentLifecycleReceipt }) {
   const isLegacyIdentityTransition = receipt.action === 'cutover_legacy' || receipt.action === 'rollback_legacy';
   return <Surface
-    title={`Lifecycle 收据 #${receipt.receipt_id}`}
-    description="展示本次 CAS 的 before/after slot、release 状态和资格快照；重放不会把当前状态冒充为历史执行时状态。"
+    title={t('Lifecycle 收据 #{id}', { id: receipt.receipt_id })}
+    description={t("展示本次 CAS 的 before/after slot、release 状态和资格快照；重放不会把当前状态冒充为历史执行时状态。")}
   >
     <Descriptions row size="small" data={[
       { key: 'Action', value: <Text code>{receipt.action}</Text> },
       { key: 'Release', value: <Text code>{receipt.target_release_ref}</Text> },
-      { key: '幂等结论', value: receipt.idempotency_replay ? '安全重放原收据' : '首次完成' },
+      { key: t("幂等结论"), value: receipt.idempotency_replay ? t("安全重放原收据") : t("首次完成") },
       { key: 'Slot version', value: `${receipt.slot.before_version} → ${receipt.slot.after_version}` },
       { key: 'Logical public model', value: <Text code>public_model_id={receipt.slot.public_model_id} · {receipt.slot.model_name}</Text> },
       { key: 'Raw public model identity', value: isLegacyIdentityTransition
         ? `${optionalIdentity(receipt.slot.before_public_model_id)} → ${optionalIdentity(receipt.slot.after_public_model_id)}`
-        : '不适用：canonical action 的 v1 收据冻结 logical public_model_id；raw before/after identity 仅为 legacy cutover/rollback 保留' },
+        : t("不适用：canonical action 的 v1 收据冻结 logical public_model_id；raw before/after identity 仅为 legacy cutover/rollback 保留") },
       { key: 'Stable release ID', value: `${optionalIdentity(receipt.slot.before_stable_release_id)} → ${optionalIdentity(receipt.slot.after_stable_release_id)}` },
-      { key: 'Legacy parity hash', value: receipt.legacy_plan_hash || '不适用' },
-      { key: 'Deployment parity hash', value: receipt.deployment_plan_hash || '不适用' },
-      { key: '完成时间', value: formatDateTime(receipt.completed_at) },
+      { key: 'Legacy parity hash', value: receipt.legacy_plan_hash || t("不适用") },
+      { key: 'Deployment parity hash', value: receipt.deployment_plan_hash || t("不适用") },
+      { key: t("完成时间"), value: formatDateTime(receipt.completed_at) },
     ]} />
     <div className="ur-model-endpoint-probe">
-      <Text strong>Release 状态快照</Text>
+      <Text strong>{t("Release 状态快照")}</Text>
       {receipt.releases.map(release => <Text code key={`${release.role}:${release.release_id}`}>
         {release.role} · {release.release_ref} · {release.before_stage}@{release.before_version} → {release.after_stage}@{release.after_version}
       </Text>)}
     </div>
     <div className="ur-model-endpoint-probe">
-      <Text strong>资格快照（{receipt.qualifications.length}）</Text>
+      <Text strong>{t('资格快照（{count}）', { count: receipt.qualifications.length })}</Text>
       {receipt.qualifications.map(qualification => <Text code key={`${qualification.release_id}:${qualification.ordinal}`}>
         deployment_id={qualification.deployment_id} · {qualification.operation_id} · {qualification.qualification_state}
       </Text>)}
@@ -168,16 +170,16 @@ function LifecycleReceiptPanel({ receipt }: { receipt: CanonicalDeploymentLifecy
 
 function StagingSuccessorReceiptPanel({ receipt }: { receipt: StagingModelSuccessorCutoverReceipt }) {
   return <Surface
-    title={`Staging successor cutover 收据 #${receipt.lifecycle.receipt_id}`}
-    description="一个事务完成首个 stable Slot、旧 staging canonical 退役、稳定 Alias、model-set 转换与审计。"
+    title={t('Staging successor cutover 收据 #{id}', { id: receipt.lifecycle.receipt_id })}
+    description={t("一个事务完成首个 stable Slot、旧 staging canonical 退役、稳定 Alias、model-set 转换与审计。")}
   >
     <Descriptions row size="small" data={[
       { key: 'Stable request identity', value: <Text code>{receipt.stable_request_model}</Text> },
       { key: 'Predecessor', value: <Text code>{receipt.predecessor_before.model_name} · {receipt.predecessor_before.lifecycle} → {receipt.predecessor_after.lifecycle}</Text> },
       { key: 'Successor', value: <Text code>{receipt.successor_before.model_name} · {receipt.successor_before.lifecycle} → {receipt.successor_after.lifecycle}</Text> },
       { key: 'Alias', value: <Text code>{receipt.alias_after.alias} → {receipt.alias_after.target_model}</Text> },
-      { key: 'Model sets', value: `${receipt.model_sets.length} 个完整 before-state 已转换` },
-      { key: '幂等结论', value: receipt.lifecycle.idempotency_replay ? '安全重放原收据' : '首次完成' },
+      { key: 'Model sets', value: t('{count} 个完整 before-state 已转换', { count: receipt.model_sets.length }) },
+      { key: t("幂等结论"), value: receipt.lifecycle.idempotency_replay ? t("安全重放原收据") : t("首次完成") },
     ]} />
   </Surface>;
 }
@@ -188,12 +190,13 @@ export default function ModelReleaseWorkspace({
   onSelectRelease,
   onCanonicalStateChanged,
 }: Props) {
+  useI18n();
   const [collection, setCollection] = useState<CanonicalDeploymentReleaseCollection | null>(null);
   const [collectionLoading, setCollectionLoading] = useState(true);
-  const [collectionError, setCollectionError] = useState('');
+  const [collectionError, setCollectionError] = useState<unknown>(null);
   const [lifecycle, setLifecycle] = useState<CanonicalDeploymentLifecycleView | null>(null);
   const [lifecycleLoading, setLifecycleLoading] = useState(false);
-  const [lifecycleError, setLifecycleError] = useState('');
+  const [lifecycleError, setLifecycleError] = useState<unknown>(null);
   const [authorOpen, setAuthorOpen] = useState(false);
   const [authorModelID, setAuthorModelID] = useState(0);
   const [authorSelections, setAuthorSelections] = useState<string[]>([]);
@@ -217,14 +220,14 @@ export default function ModelReleaseWorkspace({
   const loadCollection = useCallback(async () => {
     const version = ++collectionVersion.current;
     setCollectionLoading(true);
-    setCollectionError('');
+    setCollectionError(null);
     try {
       const result = await modelDeploymentReleaseApi.list();
       if (version === collectionVersion.current) setCollection(result);
     } catch (error) {
       if (version !== collectionVersion.current) return;
       setCollection(null);
-      setCollectionError(errorText(error, '无法读取 canonical release collection。'));
+      setCollectionError(error);
     } finally {
       if (version === collectionVersion.current) setCollectionLoading(false);
     }
@@ -243,19 +246,19 @@ export default function ModelReleaseWorkspace({
     const version = ++lifecycleVersion.current;
     if (!releaseRef) {
       setLifecycle(null);
-      setLifecycleError('');
+      setLifecycleError(null);
       setLifecycleLoading(false);
       return;
     }
     setLifecycleLoading(true);
-    setLifecycleError('');
+    setLifecycleError(null);
     try {
       const result = await modelDeploymentLifecycleApi.current(releaseRef);
       if (version === lifecycleVersion.current) setLifecycle(result);
     } catch (error) {
       if (version !== lifecycleVersion.current) return;
       setLifecycle(null);
-      setLifecycleError(errorText(error, '无法读取 canonical lifecycle。'));
+      setLifecycleError(error);
     } finally {
       if (version === lifecycleVersion.current) setLifecycleLoading(false);
     }
@@ -344,14 +347,14 @@ export default function ModelReleaseWorkspace({
     const selected = authorOption.selection_options.filter(option => authorSelections.includes(selectionKey(option)));
     const revisions = new Set(selected.map(option => option.profile_definition_digest || ''));
     if (revisions.size !== 1) {
-      Toast.error('一个 Release 的所有 Deployment 必须使用同一执行合同 revision');
+      Toast.error(t("一个 Release 的所有 Deployment 必须使用同一执行合同 revision"));
       return;
     }
     const definitionDigest = selected[0]?.profile_definition_digest;
     const contextLimit = Number(authorContextLimit);
     const outputLimit = Number(authorOutputLimit);
     if (definitionDigest && (!validPublicLimit(contextLimit) || !validPublicLimit(outputLimit))) {
-      Toast.error('请输入有效的公开上下文与输出上限（正整数）');
+      Toast.error(t("请输入有效的公开上下文与输出上限（正整数）"));
       return;
     }
     const selections = selected.map(option => ({ deployment_id: option.deployment_id, operation_id: option.operation_id }));
@@ -379,26 +382,26 @@ export default function ModelReleaseWorkspace({
       setReceipt({ kind: 'authoring', value: result });
       setAuthorOpen(false);
       Toast.success(result.idempotency_replay
-        ? '已安全重放原 authoring 收据；没有重复创建 release'
-        : '已原子生成 sealed validated release；尚未激活任何流量');
+        ? t("已安全重放原 authoring 收据；没有重复创建 release")
+        : t("已原子生成 sealed validated release；尚未激活任何流量"));
       onSelectRelease(result.release.release_ref);
       try {
         await Promise.all([loadCollection(), Promise.resolve(onCanonicalStateChanged())]);
       } catch (refreshError) {
-        Toast.warning(`Release 已成功生成，但关联 canonical 状态刷新不完整：${errorText(refreshError, '请手动刷新')}`);
+        Toast.warning(t('Release 已成功生成，但关联 canonical 状态刷新不完整：{error}', { error: errorText(refreshError, t('请手动刷新')) }));
       }
     } catch (error) {
       if (shouldRotateIntent(error)) authorIntent.current = null;
       if (error instanceof ApiError && error.status === 409
         && apiErrorCode(error) === 'canonical_deployment_release_authoring_conflict') {
-        Toast.warning('Release 编排与当前服务端事实冲突；不会自动重试，正在刷新当前事实。');
+        Toast.warning(t("Release 编排与当前服务端事实冲突；不会自动重试，正在刷新当前事实。"));
         try {
           await refreshFacts();
         } catch (refreshError) {
-          Toast.error(`Authoring 未重试，且关联 canonical 状态刷新不完整：${errorText(refreshError, '请手动刷新')}`);
+          Toast.error(t('Authoring 未重试，且关联 canonical 状态刷新不完整：{error}', { error: errorText(refreshError, t('请手动刷新')) }));
         }
       } else {
-        Toast.error(errorText(error, 'Canonical release authoring 失败'));
+        Toast.error(errorText(error, t("Canonical release authoring 失败")));
       }
     } finally {
       setAuthoring(false);
@@ -445,16 +448,16 @@ export default function ModelReleaseWorkspace({
       setStagingPredecessorID(0);
       setStagingCutoverReason('');
       Toast.success(result.lifecycle.idempotency_replay
-        ? '已安全重放原 staging successor 收据'
-        : '已原子完成 staging successor 切换');
+        ? t("已安全重放原 staging successor 收据")
+        : t("已原子完成 staging successor 切换"));
       try {
         await refreshFacts(lifecycle.release.release_ref);
       } catch (refreshError) {
-        Toast.warning(`Staging successor 已成功完成，但关联 canonical 状态刷新不完整：${errorText(refreshError, '请手动刷新')}`);
+        Toast.warning(t('Staging successor 已成功完成，但关联 canonical 状态刷新不完整：{error}', { error: errorText(refreshError, t('请手动刷新')) }));
       }
     } catch (error) {
       if (shouldRotateIntent(error)) stagingCutoverIntent.current = null;
-      Toast.error(errorText(error, 'Staging successor cutover 失败'));
+      Toast.error(errorText(error, t("Staging successor cutover 失败")));
       if (error instanceof ApiError && error.status === 409) {
         try {
           await refreshFacts(lifecycle.release.release_ref);
@@ -470,14 +473,14 @@ export default function ModelReleaseWorkspace({
   const confirmStagingSuccessorCutover = () => {
     if (!lifecycle || !selectedStagingPredecessor || !stagingSuccessorReady) return;
     Modal.confirm({
-      title: '原子激活 Staging successor？',
+      title: t("原子激活 Staging successor？"),
       content: <div>
-        <p>稳定请求身份：<Text code>{selectedStagingPredecessor.public_model.model_name}</Text></p>
-        <p>旧 staging canonical：<Text code>{selectedStagingPredecessor.public_model.model_name}</Text></p>
-        <p>不可变 successor：<Text code>{lifecycle.release.model_name}</Text></p>
-        <p>提交前将重新读取完整 model-set before-state；服务端随后在一个事务中验证 Release、Slot、Alias、registry 与 model-set 状态。</p>
+        <p>{t("稳定请求身份：")}<Text code>{selectedStagingPredecessor.public_model.model_name}</Text></p>
+        <p>{t("旧 staging canonical：")}<Text code>{selectedStagingPredecessor.public_model.model_name}</Text></p>
+        <p>{t("不可变 successor：")}<Text code>{lifecycle.release.model_name}</Text></p>
+        <p>{t("提交前将重新读取完整 model-set before-state；服务端随后在一个事务中验证 Release、Slot、Alias、registry 与 model-set 状态。")}</p>
       </div>,
-      okText: '原子激活 Staging successor',
+      okText: t("原子激活 Staging successor"),
       onOk: submitStagingSuccessorCutover,
     });
   };
@@ -544,24 +547,24 @@ export default function ModelReleaseWorkspace({
       lifecycleIntent.current = null;
       setReceipt({ kind: 'lifecycle', value: result });
       Toast.success(result.idempotency_replay
-        ? '已安全重放原 lifecycle 收据；没有重复切换流量'
-        : `${actionLabels[descriptor.action]}已完成`);
+        ? t("已安全重放原 lifecycle 收据；没有重复切换流量")
+        : t('{action}已完成', { action: translateLabel(actionLabels[descriptor.action]) }));
       try {
         await refreshFacts(lifecycle.release.release_ref);
       } catch (refreshError) {
-        Toast.warning(`Lifecycle 已成功完成，但关联 canonical 状态刷新不完整：${errorText(refreshError, '请手动刷新')}`);
+        Toast.warning(t('Lifecycle 已成功完成，但关联 canonical 状态刷新不完整：{error}', { error: errorText(refreshError, t('请手动刷新')) }));
       }
     } catch (error) {
       if (shouldRotateIntent(error)) lifecycleIntent.current = null;
       if (error instanceof ApiError && error.status === 409) {
-        Toast.warning('Lifecycle 状态已变化；不会自动重试，正在刷新当前事实。');
+        Toast.warning(t("Lifecycle 状态已变化；不会自动重试，正在刷新当前事实。"));
         try {
           await refreshFacts(lifecycle.release.release_ref);
         } catch (refreshError) {
-          Toast.error(`Lifecycle 未重试，且关联 canonical 状态刷新不完整：${errorText(refreshError, '请手动刷新')}`);
+          Toast.error(t('Lifecycle 未重试，且关联 canonical 状态刷新不完整：{error}', { error: errorText(refreshError, t('请手动刷新')) }));
         }
       } else {
-        Toast.error(errorText(error, `${actionLabels[descriptor.action]}失败`));
+        Toast.error(errorText(error, t('{action}失败', { action: translateLabel(actionLabels[descriptor.action]) })));
       }
     } finally {
       setMutatingAction('');
@@ -571,14 +574,13 @@ export default function ModelReleaseWorkspace({
   const confirmLifecycle = (descriptor: CanonicalDeploymentLifecycleActionDescriptor) => {
     if (!canManage || !descriptor.available || !lifecycle) return;
     Modal.confirm({
-      title: `${actionLabels[descriptor.action]}？`,
+      title: t('{action}？', { action: translateLabel(actionLabels[descriptor.action]) }),
       content: <div>
         <p><Text code>{lifecycle.release.release_ref}</Text></p>
-        <p>将提交 release version {lifecycle.release.version}
-          {descriptor.required_fields.includes('expected_slot_version') ? ` 与 slot version ${lifecycle.slot.version}` : ''} 的精确 CAS。</p>
-        <p>服务端会在事务内重新核对 route、资格、权限与当前版本。</p>
+        <p>{t('将提交 release version {version} 的精确 CAS。', { version: lifecycle.release.version })} {descriptor.required_fields.includes('expected_slot_version') ? t('与 slot version {version}', { version: lifecycle.slot.version }) : ''}</p>
+        <p>{t("服务端会在事务内重新核对 route、资格、权限与当前版本。")}</p>
       </div>,
-      okText: actionLabels[descriptor.action],
+      okText: translateLabel(actionLabels[descriptor.action]),
       onOk: () => executeLifecycle(descriptor),
     });
   };
@@ -592,14 +594,14 @@ export default function ModelReleaseWorkspace({
       </div>,
     },
     {
-      title: '阶段', dataIndex: 'stage', width: 130,
+      title: t("阶段"), dataIndex: 'stage', width: 130,
       render: (stage: string) => <StatusTag status={stageTone(stage)}>{stage}</StatusTag>,
     },
     { title: 'Version', dataIndex: 'version', width: 100 },
     { title: 'Routes', dataIndex: 'route_items_count', width: 90 },
-    { title: '更新时间', dataIndex: 'updated_at', render: (value: string) => formatDateTime(value) },
+    { title: t("更新时间"), dataIndex: 'updated_at', render: (value: string) => formatDateTime(value) },
     {
-      title: '操作', width: 100,
+      title: t("操作"), width: 100,
       render: (_: unknown, release: CanonicalDeploymentReleaseCollection['releases'][number]) => <Button
         type="primary"
         theme="borderless"
@@ -607,7 +609,7 @@ export default function ModelReleaseWorkspace({
           event.stopPropagation();
           onSelectRelease(release.release_ref);
         }}
-      >查看发布</Button>,
+      >{t("查看发布")}</Button>,
     },
   ];
 
@@ -626,9 +628,9 @@ export default function ModelReleaseWorkspace({
   return <div className="ur-runtime-release-workspace">
     <Surface
       title="Canonical Release Workspace"
-      description="先以服务端 baseline 和 selection options 原子生成 sealed validated release，再由服务端 action descriptors 驱动独立 lifecycle；authoring 不会自动获得流量。"
+      description={t("先以服务端 baseline 和 selection options 原子生成 sealed validated release，再由服务端 action descriptors 驱动独立 lifecycle；authoring 不会自动获得流量。")}
       actions={<Space>
-        <Button icon={<IconRefresh />} loading={collectionLoading} onClick={() => void refreshFacts()}>刷新发布事实</Button>
+        <Button icon={<IconRefresh />} loading={collectionLoading} onClick={() => void refreshFacts()}>{t("刷新发布事实")}</Button>
         {canManage && <Button
           type="primary"
           icon={<IconPlus />}
@@ -637,19 +639,19 @@ export default function ModelReleaseWorkspace({
             ? collection.models[0].authoring.reason_code
             : undefined}
           onClick={openAuthor}
-        >编排新 Release</Button>}
+        >{t("编排新 Release")}</Button>}
       </Space>}
     >
       {!canManage && <Banner
         type="info"
         closeIcon={null}
-        description="组织只读角色可查看 canonical release、slot、父级与 action descriptor，但不会收到 authoring 或 lifecycle 写入口。"
+        description={t("组织只读角色可查看 canonical release、slot、父级与 action descriptor，但不会收到 authoring 或 lifecycle 写入口。")}
         style={{ marginBottom: 12 }}
       />}
       {collectionError ? <EmptyState
-        title="Canonical release collection 暂时不可用"
-        description={collectionError}
-        actions={<Button type="primary" onClick={() => void loadCollection()}>重试</Button>}
+        title={t("Canonical release collection 暂时不可用")}
+        description={errorText(collectionError, t('无法读取 canonical release collection。'))}
+        actions={<Button type="primary" onClick={() => void loadCollection()}>{t("重试")}</Button>}
         minHeight={220}
       /> : <Table
         rowKey="release_ref"
@@ -662,53 +664,53 @@ export default function ModelReleaseWorkspace({
           style: { cursor: 'pointer' },
         })}
         empty={<EmptyState
-          title="尚无可推进的 Canonical Release"
-          description={canManage ? '使用服务端给出的 baseline 与 deployment operation 选项编排第一个 sealed candidate。' : '当前组织尚无 validated、canary 或 active canonical release。'}
+          title={t("尚无可推进的 Canonical Release")}
+          description={canManage ? t("使用服务端给出的 baseline 与 deployment operation 选项编排第一个 sealed candidate。") : t("当前组织尚无 validated、canary 或 active canonical release。")}
           minHeight={200}
         />}
       />}
     </Surface>
 
-    {lifecycleError && <Banner
+    {!!lifecycleError && <Banner
       type="danger"
       closeIcon={null}
-      description={lifecycleError}
+      description={errorText(lifecycleError, t('无法读取 canonical lifecycle。'))}
       style={{ marginTop: 12 }}
     />}
 
-    {lifecycleLoading && !lifecycle ? <Surface><Text type="tertiary">正在读取精确 lifecycle 与 action descriptors…</Text></Surface> : lifecycle && <Surface
+    {lifecycleLoading && !lifecycle ? <Surface><Text type="tertiary">{t("正在读取精确 lifecycle 与 action descriptors…")}</Text></Surface> : lifecycle && <Surface
       title={`${lifecycle.release.model_name} · ${lifecycle.release.release_ref}`}
-      description="按钮是否可用、需要哪些并发字段、是否要求 Gateway License 均来自本次服务端 descriptor。"
+      description={t("按钮是否可用、需要哪些并发字段、是否要求 Gateway License 均来自本次服务端 descriptor。")}
     >
       <Descriptions row size="small" data={[
         { key: 'Release', value: <Space><StatusTag status={stageTone(lifecycle.release.stage)}>{lifecycle.release.stage}</StatusTag><Text>version {lifecycle.release.version}</Text></Space> },
         { key: 'Candidate', value: <Text code>{lifecycle.release.candidate_version} · {lifecycle.release.route_items_count} routes</Text> },
         { key: 'Execution contract', value: lifecycle.release.execution_profile_id
           ? <Text code>{lifecycle.release.execution_profile_id}@{lifecycle.release.execution_profile_version} · context={lifecycle.release.public_context_limit} · output={lifecycle.release.public_output_limit}</Text>
-          : '当前读取未包含密封执行 Profile' },
+          : t("当前读取未包含密封执行 Profile") },
         { key: 'Slot', value: lifecycle.slot.exists
           ? <Text code>version {lifecycle.slot.version} · assigned_public_model_id={optionalIdentity(lifecycle.slot.assigned_public_model_id)} · stable={optionalIdentity(lifecycle.slot.stable_release_id)} · canary={optionalIdentity(lifecycle.slot.canary_release_id)}</Text>
-          : '尚无 runtime slot' },
+          : t("尚无 runtime slot") },
         { key: 'Stable parent', value: lifecycle.stable_parent
           ? <Text code>{lifecycle.stable_parent.release_ref} · {lifecycle.stable_parent.candidate_version} · {lifecycle.stable_parent.stage}@{lifecycle.stable_parent.version}</Text>
-          : '无父稳定版本' },
+          : t("无父稳定版本") },
       ]} />
 
       {canManage && <div className="ur-model-endpoint-form-grid" style={{ marginTop: 14 }}>
         <label>
-          <Text strong>Lifecycle reason{lifecycle.actions.some(action => action.required_fields.includes('reason')) ? '（Legacy 动作必填）' : '（可选）'}</Text>
+          <Text strong>Lifecycle reason{lifecycle.actions.some(action => action.required_fields.includes('reason')) ? t("（Legacy 动作必填）") : t("（可选）")}</Text>
           <TextArea
             aria-label="Lifecycle reason"
             value={lifecycleReason}
             maxCount={1000}
             onChange={setLifecycleReason}
-            placeholder="记录本次流量切换的业务原因"
+            placeholder={t("记录本次流量切换的业务原因")}
           />
         </label>
         {lifecycle.actions.some(action => action.required_fields.includes('canary_basis_points')) && <label>
-          <Text strong>灰度基点（1–5000）</Text>
+          <Text strong>{t("灰度基点（1–5000）")}</Text>
           <input
-            aria-label="灰度基点"
+            aria-label={t("灰度基点")}
             type="number"
             min={1}
             max={5000}
@@ -729,15 +731,15 @@ export default function ModelReleaseWorkspace({
           title={!descriptor.available
             ? descriptor.reason_code
             : !descriptorInputReady(descriptor)
-              ? '请先填写 Lifecycle reason'
+              ? t("请先填写 Lifecycle reason")
               : undefined}
           onClick={() => confirmLifecycle(descriptor)}
-        >{actionLabels[descriptor.action]}</Button>) : <Text type="tertiary">只读视图不提供 lifecycle 写操作。</Text>}
+        >{translateLabel(actionLabels[descriptor.action])}</Button>) : <Text type="tertiary">{t("只读视图不提供 lifecycle 写操作。")}</Text>}
       </Space>
       {canManage && lifecycle.release.stage === 'validated' && !lifecycle.slot.exists
         && lifecycleModel?.public_model.lifecycle === 'staging' && <Surface
         title="Never-activated staging successor"
-        description="仅用于替换从未获得 Slot、sealed/executable predecessor Release 或 active Alias 的 staging canonical；服务端在一个事务中重新核对全部 before-state。"
+        description={t("仅用于替换从未获得 Slot、sealed/executable predecessor Release 或 active Alias 的 staging canonical；服务端在一个事务中重新核对全部 before-state。")}
       >
         <Space vertical align="start" style={{ width: '100%' }}>
           <label style={{ width: '100%' }}>
@@ -753,7 +755,7 @@ export default function ModelReleaseWorkspace({
                 value: option.public_model.id,
                 label: `${option.public_model.display_name || option.public_model.model_name} · ${option.public_model.model_name}`,
               }))}
-              placeholder="选择将被原子退役的旧 staging canonical"
+              placeholder={t("选择将被原子退役的旧 staging canonical")}
               style={{ width: '100%', marginTop: 8 }}
             />
           </label>
@@ -772,7 +774,7 @@ export default function ModelReleaseWorkspace({
                 setStagingCutoverReason(value);
                 stagingCutoverIntent.current = null;
               }}
-              placeholder="记录为什么该 never-activated staging identity 必须由当前 immutable successor 替换"
+              placeholder={t("记录为什么该 never-activated staging identity 必须由当前 immutable successor 替换")}
               style={{ marginTop: 8 }}
             />
           </label>
@@ -781,7 +783,7 @@ export default function ModelReleaseWorkspace({
             loading={stagingCutoverRunning}
             disabled={!stagingSuccessorReady || stagingCutoverRunning}
             onClick={confirmStagingSuccessorCutover}
-          >原子激活 Staging successor</Button>
+          >{t("原子激活 Staging successor")}</Button>
         </Space>
       </Surface>}
       <Space wrap style={{ marginTop: 10 }}>
@@ -796,9 +798,9 @@ export default function ModelReleaseWorkspace({
     {receipt?.kind === 'staging_successor' && <StagingSuccessorReceiptPanel receipt={receipt.value} />}
 
     <SideSheet
-      title="编排 Canonical Release"
+      title={t("编排 Canonical Release")}
       visible={authorOpen}
-      width={720}
+      width="min(720px, 100vw)"
       onCancel={() => {
         authorIntent.current = null;
         setAuthorOpen(false);
@@ -807,14 +809,14 @@ export default function ModelReleaseWorkspace({
       <Banner
         type="info"
         closeIcon={null}
-        description="Baseline、slot、stable parent 和可选 deployment operation 均由服务端投影。提交只生成 sealed validated release；不会自动调用任何 lifecycle action。"
+        description={t("Baseline、slot、stable parent 和可选 deployment operation 均由服务端投影。提交只生成 sealed validated release；不会自动调用任何 lifecycle action。")}
         style={{ marginBottom: 14 }}
       />
       <Space vertical align="start" style={{ width: '100%' }}>
         <label style={{ width: '100%' }}>
-          <Text strong>公共模型</Text>
+          <Text strong>{t("公共模型")}</Text>
           <Select
-            aria-label="Release 公共模型"
+            aria-label={t("Release 公共模型")}
             value={authorModelID || undefined}
             onChange={changeAuthorModel}
             optionList={(collection?.models || []).map(option => ({
@@ -829,10 +831,10 @@ export default function ModelReleaseWorkspace({
           { key: 'Authoring readiness', value: <Space><StatusTag status={authorOption.authoring.available ? 'ready' : 'blocked'}>{authorOption.authoring.available ? 'available' : 'blocked'}</StatusTag><Text code>{authorOption.authoring.reason_code}</Text></Space> },
           { key: 'Server baseline', value: authorOption.authoring.baseline
             ? <Text code>{authorOption.authoring.baseline.kind} · slot {authorOption.authoring.baseline.expected_slot_version}{authorOption.authoring.baseline.stable_release_ref ? ` · ${authorOption.authoring.baseline.stable_release_ref}@${authorOption.authoring.baseline.expected_stable_release_version}` : ''}</Text>
-            : '服务端未提供可提交 baseline' },
+            : t("服务端未提供可提交 baseline") },
           { key: 'Raw slot identity', value: authorOption.authoring.slot.exists
             ? <Text code>assigned_public_model_id={optionalIdentity(authorOption.authoring.slot.assigned_public_model_id)} · stable={optionalIdentity(authorOption.authoring.slot.stable_release_id)} · version {authorOption.authoring.slot.version}</Text>
-            : '无 slot（initial）' },
+            : t("无 slot（initial）") },
         ]} />}
 
         <div style={{ width: '100%' }}>
@@ -843,30 +845,30 @@ export default function ModelReleaseWorkspace({
               return <label key={key} className="ur-canonical-binding-row" style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                 <input
                   type="checkbox"
-                  aria-label={`选择 deployment ${option.deployment_id} ${option.operation_id}`}
+                  aria-label={t('选择 deployment {id} {operation}', { id: option.deployment_id, operation: option.operation_id })}
                   checked={authorSelections.includes(key)}
                   onChange={event => toggleSelection(option, event.target.checked)}
                 />
                 <span className="ur-model-endpoint-name">
                   <Text code>deployment_id={option.deployment_id} · {option.operation_id}</Text>
-                  <Text type="tertiary">{option.upstream_model || '未提供 upstream label'} · {option.connection_name || '未提供 connection label'}</Text>
-                  {option.profile_definition_digest && <Text type="tertiary">合同 {option.profile_definition_digest.slice(0, 12)} · Deployment 上下文 {option.max_context} / 请求默认输出 {option.default_max_output} · {option.capability_approval_ids?.length || 0} 项资格批准</Text>}
+                  <Text type="tertiary">{option.upstream_model || t("未提供 upstream label")} · {option.connection_name || t("未提供 connection label")}</Text>
+                  {option.profile_definition_digest && <Text type="tertiary">{t("合同")} {option.profile_definition_digest.slice(0, 12)}  {t("· Deployment 上下文")} {option.max_context}  {t("/ 请求默认输出")} {option.default_max_output} · {option.capability_approval_ids?.length || 0}  {t("项资格批准")}</Text>}
                 </span>
               </label>;
             })}
-            {authorOption && authorOption.selection_options.length === 0 && <Text type="tertiary">服务端没有返回可 author 的 deployment operation。</Text>}
+            {authorOption && authorOption.selection_options.length === 0 && <Text type="tertiary">{t("服务端没有返回可 author 的 deployment operation。")}</Text>}
           </div>
         </div>
 
         {authorHasData && <Space vertical align="start" style={{ width: '100%' }}>
-          <Text type="tertiary">公开上限独立于请求默认值；已有稳定 Release 的上限可预填，最终由服务端校验所选合同。</Text>
+          <Text type="tertiary">{t("公开上限独立于请求默认值；已有稳定 Release 的上限可预填，最终由服务端校验所选合同。")}</Text>
           <label style={{ width: '100%' }}>
-            <Text strong>公开上下文上限</Text>
-            <Input aria-label="公开上下文上限" inputMode="numeric" value={authorContextLimit} onChange={setAuthorContextLimit} />
+            <Text strong>{t("公开上下文上限")}</Text>
+            <Input aria-label={t("公开上下文上限")} inputMode="numeric" value={authorContextLimit} onChange={setAuthorContextLimit} />
           </label>
           <label style={{ width: '100%' }}>
-            <Text strong>公开输出上限</Text>
-            <Input aria-label="公开输出上限" inputMode="numeric" value={authorOutputLimit} onChange={setAuthorOutputLimit} />
+            <Text strong>{t("公开输出上限")}</Text>
+            <Input aria-label={t("公开输出上限")} inputMode="numeric" value={authorOutputLimit} onChange={setAuthorOutputLimit} />
           </label>
         </Space>}
 
@@ -880,7 +882,7 @@ export default function ModelReleaseWorkspace({
               setAuthorReason(value);
               authorIntent.current = null;
             }}
-            placeholder="说明为什么需要这一 sealed candidate"
+            placeholder={t("说明为什么需要这一 sealed candidate")}
             style={{ marginTop: 8 }}
           />
         </label>
@@ -892,7 +894,7 @@ export default function ModelReleaseWorkspace({
           disabled={!selectedAuthorReady || authoring}
           title={authorOption && !authorOption.authoring.available ? authorOption.authoring.reason_code : undefined}
           onClick={() => void submitAuthor()}
-        >生成 Sealed Validated Release</Button>
+        >{t("生成 Sealed Validated Release")}</Button>
       </Space>
     </SideSheet>
   </div>;

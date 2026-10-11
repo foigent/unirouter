@@ -1,5 +1,60 @@
 # Current Execution Record
 
+## UI workspace iteration — local candidate, 2026-10-11
+
+The owner accepted the design and requested formal implementation. An isolated
+worktree based on `300592e36c28e8836e37c1a2085401b8701d29d6` contains the 1.12.0
+candidate: shared workspace styling, bilingual shell/sign-in/account states,
+the customer overview, model access and its catalog/diagnostics/rollout
+workspaces, execution receipts, usage, monitoring, access/people, security,
+finance, integrations, developer workspace and API reference. Business
+translations load with their lazy page modules; language changes retain drafts,
+scope and original evidence. First visits default to English; explicit Chinese
+preferences are retained. Invalid/unavailable storage and external preference
+removal or clear also use English without losing drafts or repeating reads.
+Final frontend regression passed 100 files / 905 tests, with zero unexpected
+stderr, React act or Semi Form warnings.
+The build and unchanged bundle budget passed (100 JS assets; largest 371438
+bytes). Representative desktop/390px browser fixture checks passed. No commit,
+push, external write or deployment was performed.
+Final browser checks also verified English bootstrap, restored preferences and
+external storage changes without losing login/date drafts or repeating reads.
+The audit calendar stacks both months on phones after fixing a 568px overflow;
+both languages now keep 390px document width. Its 16 focused regressions and
+final build passed. Unavailable X-Insight trust displays no external link.
+[Scope, independent review and validation](reviews/ui-workspace-iteration-20261011.md)
+records the completed local frontend migration and the now-passed dashboard
+PostgreSQL integration run: 10 top-level tests, including three PostgreSQL tests,
+on isolated PG 16.14 with the exact M126 test schema. A free shared-memory slot
+became available; no old IPC resource or host setting was modified. The temporary
+server was stopped after its generated databases were cleaned up. Existing
+public-source acceptance below is unchanged; local checks do not assert CI,
+deployed end-to-end, Target or Production acceptance. 经验文件无需变化。
+
+The final candidate is in the attached `bilingual-ui-main` worktree, preserving
+the earlier UI worktree and original dirty checkout. All 13 non-overlapping
+installer/main files are byte-identical to main; the five shared version/record
+files preserve both batches. Dashboard source/test hashes match the passed
+PostgreSQL run, so no database retest was needed for the locale/main integration.
+The touched Foigent integration entry retains separate UR execution/cost and
+X-Insight asynchronous evidence authority, trusted-peer and bilateral consent.
+
+The local delivery branch is `codex/bilingual-workspace-ui-main`, targeting
+`foigent/unirouter:main`. The PR description is prepared; the next external
+batch is commit, push, PR creation and existing CI, pending explicit owner
+authorization under AGENT-PROTOCOL section 4. Merge and deployment are separate.
+
+The owner subsequently explicitly approved both bounded UR candidates entering
+PR and CI on 2026-10-11: “批准两批进入 PR 和 CI（推荐）”. This UI batch may
+commit with DCO sign-off, push to `foigent/unirouter`, create its independent PR
+and run existing required CI within unchanged budgets. Merge, official release,
+deployment and paid provider calls remain excluded. The candidate does not include
+the other batch's nine open-source documents. Existing real-backend browser
+journeys now assert fresh English, select Chinese explicitly for their existing
+business checks and locate the updated exact probe/lifecycle buttons. Retired
+commercial diagnosis is asserted absent rather than requiring its old visible
+axis; authorization, financial, egress and lifecycle assertions are retained.
+
 ## Community bootstrap source integration — accepted — 2026-10-11
 
 The owner's explicit approval covers public PR/CI and merge after success,
