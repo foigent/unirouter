@@ -10,8 +10,9 @@ anything. It does not silently update a deployment and it does not accept an
 arbitrary Admin Console upload. Apply remains a separate backup, maintenance,
 migration, image switch and health-check procedure.
 
-Upgrade signing uses a public-key ring independent from License signing. In a
-formal release, both rings are compiled into the backend binary:
+In UniRouter 1.10.0 and later, commercial-License admission is retired.
+Formal releases still compile the independent upgrade public-key ring into the
+backend binary; a License public-key ring is no longer required:
 
 ```text
 UNIROUTER_RELEASE_TRUST_MODE=release
@@ -21,9 +22,10 @@ UNIROUTER_UPGRADE_TRUST_BUNDLE_B64=REPLACE_WITH_BASE64URL_PUBLIC_RING_JSON
 The release binary rejects a runtime `UPGRADE_PUBLIC_KEYS` override. Source
 development may still use that variable explicitly. Only public keys enter the
 customer runtime; a trusted release private key must stay in separately
-approved offline/HSM custody. License Studio generates this key separately from
-the License key and displays the public build argument without exposing the
-private key to the browser.
+approved offline/HSM custody. The retained vendor key-generation tooling can
+generate a separate upgrade key. Its historical License-related name does not
+mean customers must obtain or import a commercial License. Do not reuse a
+historical License key or synthetic test key for official upgrade signing.
 
 ## Bundle Contract
 
@@ -51,6 +53,11 @@ backslashes, symlinks/devices/non-regular files, hash/size mismatch, and
 trailing data or another gzip stream. Verification does not extract files.
 
 ## Vendor Pack And Independent Verify
+
+The commands below illustrate the historical offline bundle format and use old
+version/schema/time examples. They are not current public installer commands
+or a release-sequence allocation. Use the [community installer runbook](../ops/COMMUNITY-INSTALLER.md)
+for M126 fresh installation, current preparation and distribution boundaries.
 
 Use a release key pair separate from the License key pair. The existing keygen
 creates generic Ed25519 material; using a distinct path and key ID preserves

@@ -13,7 +13,8 @@
 
 ## 安装前准备
 
-第一版支持 Linux amd64／arm64 服务器，使用新的安装目录和 Docker Compose 项目。
+在线下载入口的第一版候选支持 Linux amd64；原有直接使用已验证发布目录的源码路径
+仍保留 amd64／arm64 支持，公开 arm64 制品还需要单独实机验收。请使用新的安装目录和 Docker Compose 项目。
 服务器需要 Python 3.10 以上、Bash、本机以 root 权限运行的 Docker Engine 和
 Compose v2；Compose 须支持 `up --wait` 与 `config --environment`。
 Docker 的准备方法见[官方 Linux 安装说明](https://docs.docker.com/compose/install/linux/)。
@@ -26,7 +27,19 @@ Docker 的准备方法见[官方 Linux 安装说明](https://docs.docker.com/com
 校验程序和公钥文件。第一版不自动安装 Docker、不修改防火墙，会拒绝占用已有项目，
 并检查 Docker 子网冲突。管理页面只监听 `127.0.0.1`，数据库不开放宿主机端口。
 
-## 检查并安装
+## 下载并准备正式发布包
+
+1.11.0 源码候选新增了[下载准备入口（英文）](../../deploy/community/README.md)。
+正式发布时，需要先从已审核、固定提交的官方说明获取入口脚本、发布 JSON 和独立核对的摘要。
+脚本随后下载并校验指定校验程序、公钥及安装包，再准备文件、调用包内安装器。
+目前还没有公开的正式下载地址和摘要。
+
+使用 `install` 可以连同下载准备一起安装，也可以先 `prepare`、再 `check`、再 `install`。
+全程使用同一个 root 身份和 root 控制的准备目录。保留原目录、发布 JSON 和摘要，
+中断后用 `resume`；检查及恢复不会重新下载。单独 `prepare` 不启动服务、不创建安装密码。
+[入口说明](../../deploy/community/README.md#actions)解释了发布文件目录与运行数据目录的区别。
+
+## 直接使用已准备发布目录时的检查与安装
 
 将下列路径替换为对应发布提供的真实路径。发布目录中须有 `release.tar.gz` 和已准备的
 `payload/` 文件。校验程序须支持本版新增的 `manifest_sha256` 结果；旧版会在写入前被拒绝。

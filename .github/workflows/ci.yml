@@ -123,6 +123,7 @@ jobs:
           python3 -B scripts/test-capability-carrier.py
           python3 -B scripts/test-internal-target-build-images.py
           python3 -B scripts/test-community-installer.py
+          python3 -B scripts/test-community-bootstrap.py
           python3 -B scripts/internal-target-rollout.py environment-check
 
   backend:

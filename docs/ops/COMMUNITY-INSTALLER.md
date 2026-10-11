@@ -1,10 +1,11 @@
 # Linux community installer candidate
 
-Status: Local checks and disposable Linux amd64 installation acceptance passed
-at `b7432803a8ae7ef3b946501ae5f3e9ff0a905273`. See the
-[accepted native result](#accepted-native-result). Public distribution remains
-pending. This work has not published a package, registry image or npm package,
-or installed to an existing Target.
+Status: the accepted 1.10.0 source candidate `71b5a4ee72d649d08e1137e68edb8b4d866f0987`
+passed disposable Linux amd64 installation and was merged. See the
+[final native result](#accepted-native-result) and
+[public distribution preparation](#public-installer-distribution-preparation--2026-10-11).
+Public package distribution remains pending. This work has not published a
+package, registry image or npm package, or installed to an existing Target.
 
 The owner selected Linux servers, including ECS, for the first simplified
 installation. Existing ECS onboarding/model evidence remains valid for its
@@ -250,3 +251,271 @@ not a crash during migration. It does not establish ARM64, an existing M125
 database's Docker/NGINX maintenance path, public trust/download bootstrap,
 Target, Provider or Production acceptance. Failed runs above retain their own
 identities and results.
+
+## Public installer distribution preparation — 2026-10-11
+
+Status: **local preparation and proposal; no official signing or publication**.
+The source baseline is main `69d1ef753a2121e5f288b4618bcc4bf1a5d29d48`,
+tree `48affd17183df1d70818fa9fe9c57998a3507219`, version 1.10.0/M126.
+The repository identity and main were read back from GitHub on 2026-10-11.
+The only existing UR release is an unpublished historical 1.1.9/sequence-11
+customer draft. It is not the community installer and must not be overwritten,
+published, reused as the new release, or used as proof of a public signing key.
+
+### Distribution proposed for the first public package
+
+Use a downloadable Linux amd64 release and public container images, preserving
+the six-service installation and the existing production-mode verification.
+Native acceptance currently covers amd64; arm64 support needs its own actual
+installation evidence before it is advertised for a public package. This does
+not withdraw any existing source-level architecture support.
+
+- Publish UR-owned backend/frontend images under `ghcr.io/foigent`, associated
+  with `foigent/unirouter`, with exact content digests recorded in the signed
+  descriptor. Repository visibility does not imply package visibility. Verify
+  a new package's anonymous pull explicitly before advertising installation.
+  [GitHub's registry documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)
+  supports public anonymous pulls.
+- Keep PostgreSQL, Redis, Prometheus and Grafana as upstream-published images at
+  reviewed digests. Do not silently replace Redis, downgrade it, make monitoring
+  optional or rebuild/rehost third-party images in this distribution batch.
+- The first download is an online installation. It must say that network image
+  pulls are required. It is not the existing fully offline customer bundle:
+  that path retains its six-image-archive delivery requirements.
+- Preserve the installer, Compose, fresh-install owner, read-only `check`,
+  retained plans, resume, loopback console and no-Provider-call boundaries.
+  End-user setup still requires supported Python, Bash and Docker Compose.
+  Automatic Docker installation and an npm launcher remain separate work.
+- Begin with a clearly labelled public preview/pre-release, pending exact
+  package and public-download acceptance. Do not claim a production support
+  window from the source CI or the synthetic installer run.
+
+### Package contents and trust bootstrap
+
+The existing `uniroute-upgrade pack` and `verify` remain the signing format and
+verification authority; this proposal introduces no replacement cryptography.
+The backend must embed the approved public upgrade ring at build time. Only the
+public ring enters CI build arguments or an image. Commercial-License admission
+stays retired; release signing authenticates a publisher's files and does not
+charge users, control their organizations or prevent their own source builds.
+
+The reviewed payload list is:
+
+1. `payload/install.json` with the six exact approved image references;
+2. the four installer/template inputs and the four monitoring configuration files;
+3. English/Chinese installation guidance and the customer recovery instructions;
+4. the exact `scripts/source-budget-restore-rebase.sql` recovery helper;
+5. project LICENSE/NOTICE, a third-party index and unmodified notice texts;
+6. exact build provenance, actual-image component inventories, applicable source
+   delivery information and the release notes.
+
+The staged documentation must be adapted to its delivered paths. Relative
+links to pages outside the payload are changed to exact source-commit URLs and
+checked against that tree; release-specific entry points must use the final
+package identity. The first public guide must explicitly distinguish an amd64
+preview artifact from source-level arm64 support.
+
+The signed archive permits at most 64 payload entries. The existing 390 source
+notice files therefore belong in a deterministic, indexed companion archive
+as one declared payload entry, not 390 extra outer entries. Nested notice
+materials are documentation and are never executed by the installer. Their
+index must distinguish reviewed source notices from actual image coverage.
+
+The download also needs a release-matched verifier and public ring obtained
+**before executing any downloaded installer**. They cannot acquire trust merely
+by being included beside the package they verify. A concrete bootstrap proposal
+is to publish the verifier hash, public-ring hash/fingerprint and exact release
+identity in a reviewed, commit-pinned official repository entry, independently
+of the signed package. The authenticated repository/HTTPS channel is that
+initial trust root; a second URL on the same GitHub account does not protect
+against compromise of that account. A user with an established independently
+trusted public ring keeps it; an archive cannot replace it.
+
+The 1.11.0 source candidate implements this download/prepare entry in
+`deploy/community/bootstrap.py`. It first authenticates the bootstrap input,
+then verify the package with the existing verifier, and only then prepare the
+exact declared regular files. It must reject unsafe paths, links, duplicate or
+undeclared entries and size/digest mismatches, create a new private destination,
+and never overwrites a user's existing directory or executes package code during
+preparation. The underlying installer still consumes a prepared directory. The
+wrapper adds preparation and delegates installation/check/resume to it; official
+bootstrap publication, fresh native acceptance and real public-download evidence
+remain pending. There is still no advertised one-command public install.
+
+No final tag, release sequence, expiry, package hash or image digest is assigned
+by this proposal. Allocate those only after the current delivery history and
+exact candidate are checked, with no overwrite. The historical sequence-11
+draft must be accounted for; a fresh-install example's sequence 1 is not an
+authorized production allocation. The supported existing-database upgrade
+window also cannot be inferred from fresh-install sequence-zero acceptance.
+
+Select an explicit installation/recovery validity window before signing. Every
+`check`, `install` and `resume` currently verifies the original package against
+the current time; resume also binds its original SHA-256. If that package has
+expired, a newly signed package cannot resume the same installation. Preserve
+the original package, plans and data and stop for the supported recovery
+procedure; do not change the clock, use `--at`, bypass expiry or blindly restart
+an installation. A short historical example expiry is not a public-release
+default. This proposal introduces no new expired-package recovery mechanism.
+
+### Third-party findings and commercial scope
+
+The source-notice review has 315 components and 390 original notice/license
+files (747,514 bytes). All file hashes and sizes were checked again; Go and
+frontend lock inputs are unchanged between inventory source `6bd3ae19` and
+current main. This validates reuse of those source materials, not clearance of
+the final built frontend, Go binary, base images or operating-system packages.
+
+The native fixture currently uses Redis 7.4.11 and Grafana 11.0.0. Redis 7.4.11
+provides [RSALv2 or SSPLv1](https://github.com/redis/redis/blob/7.4.11/LICENSE.txt),
+not Apache-2.0 or the older Redis BSD license. Grafana OSS uses
+[AGPLv3](https://grafana.com/licensing/). These component terms do not become
+Apache-2.0 because UR is Apache-2.0. Redis 8's additional license option does
+not apply retroactively to the pinned 7.4 fixture. Upstream image pulls do not
+by themselves settle the project's license/source-delivery obligations.
+
+For the proposed exact distribution, record whether each image is referenced,
+redistributed or modified; retain original notices, tie sources/build recipes
+to the actual image contents, and satisfy the applicable source-delivery terms
+before publication. Do not treat a Docker tag, license label or top-level
+source URL as a complete component inventory. This preparation does not decide
+legal compatibility for a future paid hosted product. A Redis/Valkey change or
+monitoring split may be considered separately when its product/compatibility
+tradeoff is accepted; neither is silently included here.
+
+### Remaining execution and owner decisions
+
+Local work can stage unchanged release files, compile the existing verifier,
+validate source notices and prepare exact file receipts without credentials,
+Docker or production access. This machine has no Docker executable. Existing
+synthetic native results remain valid for their exact code and environment;
+local cross-compilation cannot replace actual Linux or public-pull acceptance.
+
+Before a formal backend build, the owner must select the official upgrade
+public ring and private-key custody. Prefer a dedicated community-release
+upgrade key, separate from historical License keys and every synthetic test
+key. Reuse of an existing upgrade key is an alternative only after its purpose,
+public identity and custody are confirmed. No secret is to be pasted into chat,
+read for discovery, or placed in the repository, ordinary CI artifact or log.
+The current release contract calls for approved offline/HSM custody; storing a
+private release key in GitHub Actions Secrets is not an already accepted substitute.
+
+After that choice, complete exact image builds/content review, verifier and
+bootstrap acceptance, wrong-key/tamper/no-write tests, fresh install/resume/login,
+and anonymous downloads/pulls on the supported platform. Public-download
+acceptance necessarily follows approved publication to a clearly labelled
+preview channel; promote only the same bytes that pass, without rebuilding.
+Keep the full required CI and exact-main protocol evidence for changed code.
+
+Creating or reusing signing credentials, allocating/signing immutable release
+identities, pushing GHCR images, publishing tags/releases, or changing package
+permissions each requires scope covered by the owner's approval. The earlier
+source-publication batch excluded these operations. Prepare the exact candidate,
+channel, key/public identity, verification and recovery plan before requesting
+that approval. ECS/Production, real databases/traffic and Provider calls remain
+outside this installer distribution work.
+
+### 1.11.0 bootstrap candidate and validation scope
+
+The local candidate adds `deploy/community/bootstrap.py` and its
+[operator/metadata contract](../../deploy/community/README.md). Initial script
+and bootstrap hashes must come from independently reviewed, commit-pinned release
+instructions. The downloaded verifier/ring/package each have an exact size and
+hash. HTTPS redirects cannot downgrade transport or add URL credentials.
+There is no official populated bootstrap JSON, key adoption or published asset.
+
+A read-only bounded scan inspects physical USTAR headers and total decompression
+before invoking the existing verifier; it rejects implicit PAX/GNU/sparse data,
+links, duplicate/unsafe paths and undeclared files. Only the verifier-bound
+canonical manifest then authorizes preparation. In particular, its signed key ID
+is checked from the bound manifest because the verifier does not emit that field.
+Every reuse rechecks assets, signature, expiry and prepared payload bytes.
+
+Preparation and reuse require an owner-private directory with protected ancestry.
+A root installation cannot reuse lower-privilege prepared files; no automatic
+chown or trust import occurs. The bootstrap's `check` and `resume` need completed
+preparation and perform no downloads or preparation writes. `check` retains the
+original installer's fresh-install preconditions; it is not a running-system
+health check. Existing partial output and original plans are retained on error.
+
+The existing native acceptance harness now prepares its signed fixture through
+this entry, then runs all original installation/interruption/identity/login
+checks against the resulting payload. It also checks bootstrap read-only reuse
+and completed resume. The fixture uses locally supplied bytes with the same
+hash and signature checks; it starts no extra download server and exposes no
+TLS-bypass CLI flag. The root-owned temporary directory is below `/var/tmp`
+because root execution must not reuse runner-user-controlled ancestry. Original
+45-minute runner, synthetic-only, no-provider/no-ECS/no-publication boundaries
+remain. Workflow path filters and the existing delivery preflight include the
+new entry; required CI and exact-main protocol evidence are retained.
+
+Native execution for this changed candidate and actual public HTTPS/anonymous
+image pulls are still pending. The accepted 1.10.0 results retain their original
+scope. Local exact results and independent review are recorded in the execution
+record; version/CHANGELOG metadata advances to 1.11.0 because the installation
+entry is a new shipped capability. The earlier 69d1ef75 unsigned staged files
+remain historical preparation and are not a current installable release.
+
+### Owner-local encrypted NAS backup preparation
+
+The owner chose a UGREEN NAS and requested local files for manual transfer.
+The prepared macOS operator kit is at
+`/Users/m4/Desktop/UniRouter-Release-Setup`. It contains tools and instructions,
+not a generated official key. The user must run its interactive ceremony after
+quitting Codex and disconnecting networking, supplying a separate password
+locally. The tool never requests a password through chat or stores it in
+arguments, environment variables, a file or Keychain.
+
+The existing keygen writes directly into a verified AES-256 APFS image mounted
+under a task-private temporary directory. It never separately saves a plaintext
+private key on Desktop or in the repository. After normal detach, it copies the
+encrypted image, verifies its hash, opens the copy read-only, compares recovered
+keys and closes it. Only then does it publish `Copy-to-NAS/READY.txt`, the public
+ring and copy-verification metadata. Existing or partial output is refused;
+errors retain encrypted artifacts and attempt normal detach of only this run's
+exact images. A failed or uncertain detach is reported, not called complete.
+
+The owner can copy the complete `Copy-to-NAS` folder to the NAS while retaining
+`Local-Copy` and an independently stored password. Copy verification and an
+actual NAS restore remain pending. The NAS stores encrypted bytes, not an
+unlocked key or a signing service. This scoped backup arrangement is not proof
+of offline/HSM protection; the kit relies on human-attested offline operation,
+and cannot protect an unlocked key on a compromised Mac. Official public-ring
+adoption and approved signing custody must still be checked before a formal
+build. The existing release requirements and publication permissions are not
+silently replaced by this operator kit.
+
+Validation used temporary synthetic credentials only: ten local test methods
+with failure/interruption cases, existing keygen tests, and a real macOS image
+round trip with wrong-password refusal, matching keys, unchanged ciphertext
+and all test images normally detached. Desktop copies match the reviewed kit;
+no official private key has yet been created, accessed or adopted. Exact kit
+hashes are in its `VERIFICATION.json`; test and review evidence is under
+`/private/tmp/unirouter-release-custody-20261011`.
+
+### Independent review and local result
+
+Pre-code review by `/root/distribution_precode_review` bound proposal SHA-256
+`e38e91cb2b937057ebf9b472ab37cfdd247fad87d86d1daeb4c34739702ccd7e`
+to the source baseline above. No blocker applies to local unsigned preparation.
+Required corrections were the expiry/resume boundary and package documentation
+links; both are incorporated here. Official trust/custody remains an owner
+decision. Actual-image licensing and the public download/prepare implementation
+remain required for distribution, not completed by this review.
+
+Local preparation staged 15 payload files. The 390 original source notices
+were verified and packed deterministically with their index and scope note;
+the companion archive SHA-256 is
+`7e0503ffa15e155edf0680fd2915d3c7e09de889bc863100a47c84858ebf6892`.
+The current Linux amd64 source dependency graph exactly matches all 42 Go
+module notice entries. The existing verifier was compiled with Go 1.25.12 and
+`-trimpath -buildvcs=false`, without network downloads or signing material.
+Two builds were byte-identical (SHA-256
+`d4081b251de6faf2f95664d82657beb7b8a3104249e9e9504542a3e1e00bf942`);
+this is local cross-compilation, not native Linux execution or trusted public
+distribution. No `release.tar.gz` or pretend `install.json` was produced.
+
+Evidence and staged files are retained locally under
+`/private/tmp/unirouter-distribution-prep-20261011/`. They are incomplete,
+unsigned preparation, not an installation command or public release. No new
+experience-file entry is warranted.
