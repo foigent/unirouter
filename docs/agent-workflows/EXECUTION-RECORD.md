@@ -1,5 +1,143 @@
 # Current Execution Record
 
+## Community download/bootstrap candidate — local validation — 2026-10-11
+
+The owner asked to continue while deferring the encrypted NAS-kit test.
+The new local 1.11.0 candidate continues from public source
+`69d1ef753a2121e5f288b4618bcc4bf1a5d29d48` in the existing isolated task
+worktree. The original checkout, prior local preparation and `frontend/output/`
+remain untouched. No official key, public bootstrap identity or release is
+allocated. Earlier entries below retain their original evidence scope.
+
+`deploy/community/bootstrap.py` adds pinned HTTPS download and bounded package
+preparation before calling the existing signed customer installer. The initial
+script and bootstrap hashes must be obtained through reviewed commit-pinned
+instructions. Every reuse revalidates assets, the signature and current expiry,
+release identity and prepared bytes. The entry supports Linux amd64; the direct
+installer retains its existing source-level amd64/arm64 contract. English-first
+instructions, a Chinese installation companion and 1.11.0 metadata are prepared.
+
+Pre-code independent review `/root/community_bootstrap_review` bound plan
+SHA-256 `473b37455337f308637c9ec8db3629eaa8c5310b36915de6356462f7c8783b73`.
+Its four required findings are implemented: bounded physical USTAR scanning
+before the existing Go verifier, protected same-owner preparation and ancestry,
+key ID comparison from the verifier-bound manifest, and native/preflight routing
+coverage with original recovery semantics. The single independent closing
+review found no blocker to a source PR and no new code correction requirement.
+It verified all 17 file hashes and frozen patch SHA-256
+`0d9404a4e3571e420ac08bae579a6a95eab30e151d1caa4af9bcfea8679bf32b`.
+Only this execution-record result was added after that snapshot; implementation
+and test bytes are unchanged. Required CI/native acceptance still precedes
+merge; the review grants no signing or external-write authority.
+
+Local checks passed:
+
+- 18 Python bootstrap tests, including tampered identities, archive attacks,
+  bounded downloads and HTTPS redirects, unsafe ownership, read-only reuse and
+  failure before installer delegation;
+- the real Go verifier against valid, expired, wrong-key and wrong-key-ID
+  synthetic packages, with the original installer accepting prepared bytes;
+  `go test ./cmd/uniroute-upgrade ./internal/upgradebundle` also passed;
+- all 23 existing customer-installer tests and 19 release-policy/router tests;
+  the installer suite needed its existing bind-and-close loopback probes outside
+  the filesystem sandbox (no listening server or real Docker process);
+- the actual CI classifier routes the new bootstrap/test/workflow paths through
+  Backend, Frontend and Docker; original eight native checks are retained and
+  two bootstrap checks added, without reduced CI or changed budgets;
+- Python 3.10 grammar, relative links/anchors, unchanged frontend dependency
+  structure, consistent 1.11.0 version metadata and `git diff --check`.
+
+The native harness now consumes prepared synthetic package files and tests
+wrapper check/resume. Its new candidate has not run on GitHub; earlier 1.10.0
+native results do not cover it. Fixture transport is local, so anonymous public
+HTTPS downloads and image pulls still need exact published-artifact acceptance.
+There is no Docker executable on this Mac. No service, official credential,
+GitHub write, image/tag/release, NAS access, ECS/Production or provider call was
+performed. Official custody/adoption and artifact publication remain separate.
+
+The owner explicitly approved this candidate's public commit/push/PR, existing
+CI and disposable Linux installation tests, followed by merge to main after
+checks pass and post-merge verification, on 2026-10-11. Existing budgets and
+hard stops remain; official artifacts, ECS and official signing keys are
+excluded. The next source branch is `codex/community-release-bootstrap`.
+Main still reads back as `69d1ef753a2121e5f288b4618bcc4bf1a5d29d48`; there were
+no open UR PRs at the pre-publication check. This approval covers this source
+integration batch, not formal signed distribution or Production.
+The owner can test the NAS kit later. The signed-distribution runbook records
+remaining artifact/licensing/custody work. Experience file: no change warranted;
+this batch does not change model/Provider adaptation.
+
+## Local encrypted NAS backup setup — 2026-10-11
+
+The owner selected a UGREEN NAS and requested local preparation for manual
+transfer. A local operator kit is at
+`/Users/m4/Desktop/UniRouter-Release-Setup`; it has no official key or generated
+backup yet. The owner must quit Codex, disconnect networking and enter an
+independent password in the kit's local Terminal ceremony. No password or
+existing private key was read by the agent.
+
+The kit reuses the unchanged Ed25519 keygen from source
+`69d1ef753a2121e5f288b4618bcc4bf1a5d29d48`, compiled natively with Go 1.25.12.
+It writes directly into a verified AES-256 encrypted APFS image, closes it,
+copies ciphertext and verifies recovery through a read-only mount. READY is
+written only after the copies match and both images are closed. Partial output
+is preserved, not replaced. The proposed key ID remains provisional until
+owner custody completion and reviewed adoption. The NAS stores ciphertext;
+it is not a signer or HSM. Offline preparation is human-attested, not proven
+by the tool. A compromised Mac can access secrets while the image is unlocked.
+
+Ten local test methods (including six failure and three partial-attach
+subcases), existing Go keygen tests and an actual macOS synthetic-key image
+round trip passed. The real round trip included wrong-password rejection,
+read-only recovery, matching private/public files, unchanged ciphertext and
+normal detach. No task image remains mounted. Desktop copy hashes and its
+read-only preflight passed. Review and receipts are retained at
+`/private/tmp/unirouter-release-custody-20261011`; the kit's VERIFICATION.json
+records exact file hashes. This proves the local tool, not an official key,
+NAS copy/recovery, adopted trust root or published installer.
+
+Independent pre-code and closing review bound the plan and exact kit. No
+release, key adoption, NAS login, service, ECS, registry, tag or GitHub write
+occurred. Original checkout files and existing worktree changes are preserved.
+Product version remains 1.10.0; this kit is a local operator aid and no shipped
+product contract changed. Experience file: no change is warranted.
+
+## Public installer distribution preparation — local only — 2026-10-11
+
+Continue from public main `69d1ef753a2121e5f288b4618bcc4bf1a5d29d48` / tree
+`48affd17183df1d70818fa9fe9c57998a3507219`. Main and repository identity were
+read back from GitHub. The original user checkout and its dirty files remain
+untouched; this preparation uses the existing task worktree.
+
+The [installer runbook](../ops/COMMUNITY-INSTALLER.md#public-installer-distribution-preparation--2026-10-11)
+now contains the reviewed distribution proposal, expiry/resume limitation, exact
+local material checks and boundaries. Fifteen incomplete unsigned payload
+inputs, a deterministic source-notice archive and a byte-reproducible Linux
+amd64 verifier are retained at `/private/tmp/unirouter-distribution-prep-20261011`.
+All 390 notice files match their recorded hashes; the current Linux source graph
+exactly matches the 42 Go module entries. Thirteen staged Markdown links were
+bound to existing files at the exact source commit. Actual built-image licensing,
+the download/prepare entry, native official-artifact acceptance and publication
+remain unfinished. Existing native evidence has not been relabelled.
+
+Independent pre-code review `/root/distribution_precode_review` found no blocker
+for local preparation. Its required expiry and documentation corrections are
+recorded in the runbook; it grants no signing/publication authority. The owner
+is unsure whether an official upgrade key already exists and requested an
+explanation. The inspected first Target evidence identifies a **test** upgrade
+key; the older trust-hardening merge explicitly created no production key.
+This does not prove no later key exists. No private key or secret was read for
+discovery, reused or created. Official public-key identity and approved
+offline/HSM custody remain undecided.
+
+No Docker executable is available on this machine. No service, CI run, ECS,
+Provider call, registry image, tag/release, credential or permission was changed.
+No commit/push/PR was performed in this local preparation batch. Product version
+stays 1.10.0 because this diff only corrects/describes documents; a shipped new
+installation/prepare entry needs its own version/CHANGELOG and acceptance.
+Experience file: no change is warranted.
+
+
 ## Public source publication and contributor CI — 2026-10-11
 
 The owner explicitly approved merging and publishing UR and both complete

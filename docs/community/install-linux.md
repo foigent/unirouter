@@ -16,8 +16,10 @@ X-Insight is optional and is not required to install UniRouter.
 
 ## Before you start
 
-Use a new installation directory and a new Docker Compose project on a Linux
-amd64 or arm64 server. You need:
+Use a new installation directory and a new Docker Compose project. The first
+online bootstrap candidate supports Linux amd64. The existing direct prepared-
+release path retains source-level amd64/arm64 support; the public arm64 artifact
+still needs native acceptance. You need:
 
 - Python 3.10 or later and Bash;
 - a local, rootful Docker Engine with Compose v2, supporting `up --wait` and
@@ -34,7 +36,23 @@ file-space check does not estimate image size or future database growth.
 The directory is private to root. The management port binds to `127.0.0.1`;
 PostgreSQL and Redis have no published host ports.
 
-## Check, then install
+## Download and prepare an official release
+
+The 1.11.0 source candidate adds [a community bootstrap](../../deploy/community/README.md).
+Once a release is published, its reviewed, commit-pinned instructions must provide
+the bootstrap script, JSON and independently verified hashes. The script then
+downloads and checks the exact verifier, public ring and package before preparing
+files or running the signed installer. No official values are published yet.
+
+Run the bootstrap with `install` to combine preparation and installation, or
+use `prepare` followed by `check` and `install`. Use the same root identity and
+a root-controlled preparation directory throughout. Keep that directory and
+the original bootstrap/hash for `resume`; checks and resume do not redownload.
+Preparation does not start services or create installation credentials.
+The [bootstrap instructions](../../deploy/community/README.md#actions) describe
+these arguments and distinguish the release directory from runtime data.
+
+## Check, then install a directly prepared package
 
 Replace the paths below with those supplied for the reviewed release. The
 directory must contain `release.tar.gz` and its prepared `payload/` files.

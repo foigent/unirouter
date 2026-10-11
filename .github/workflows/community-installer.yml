@@ -7,6 +7,8 @@ on:
       - .github/workflows/community-installer.yml
       - .github/tests/community-installer.py
       - deploy/customer/**
+      - deploy/community/**
+      - scripts/test-community-bootstrap.py
       - cmd/uniroute/fresh_install_cli.go
       - cmd/uniroute/upgrade_cli.go
       - cmd/uniroute-upgrade/**

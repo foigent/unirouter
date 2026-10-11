@@ -9,6 +9,7 @@ import argparse
 import base64
 from datetime import datetime, timedelta, timezone
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -199,6 +200,42 @@ class Acceptance:
         self.result["images"] = self.images
         self.result["test_package_sha256"] = sha(self.release / "release.tar.gz")
         self.passed("exact signed test release prepared")
+        # Real preparation/verification; fixture transport is local and never
+        # exposed as a CLI TLS bypass. Public HTTPS acceptance remains separate.
+        sources = {"verifier": self.verifier, "public_keys": self.ring,
+                   "package": self.release / "release.tar.gz"}
+        bootstrap_value = {
+            "schema_version": "unirouter.community-bootstrap.v1",
+            "platform": {"os": "linux", "arch": "amd64"},
+            "release": {"version": self.version, "commit": self.commit,
+                        "release_sequence": 1, "key_id": "installer-native-test", "target_schema": SCHEMA},
+            "assets": {key: {"url": "https://example.invalid/" + key,
+                             "size": path.stat().st_size, "sha256": sha(path)}
+                       for key, path in sources.items()}}
+        self.bootstrap_file = self.root / "bootstrap.json"
+        private_write(self.bootstrap_file, json.dumps(bootstrap_value).encode())
+        self.bootstrap_sha = sha(self.bootstrap_file)
+        spec = importlib.util.spec_from_file_location("community_bootstrap", self.repo / "deploy/community/bootstrap.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        anchor = module.Bootstrap(self.bootstrap_file.read_bytes(), self.bootstrap_sha)
+        def fixture_fetch(asset, target):
+            private_write(target, sources[asset["url"].rsplit("/", 1)[-1]].read_bytes())
+        prepared = self.root / "prepared-release"
+        try:
+            module.prepare(anchor, prepared, fetch=fixture_fetch)
+        except module.BootstrapError as exc:
+            raise Failed("community bootstrap preparation failed") from exc
+        self.release = prepared
+        self.result["bootstrap_sha256"] = self.bootstrap_sha
+        self.result["bootstrap_transport"] = "local fixture; no public-download claim"
+        self.passed("pinned synthetic bootstrap prepares the exact signed installer")
+
+    def bootstrap_command(self, action, directory, project):
+        return [sys.executable, "-I", "-B", self.repo / "deploy/community/bootstrap.py", action,
+                "--bootstrap", self.bootstrap_file, "--bootstrap-sha256", self.bootstrap_sha,
+                "--directory", self.release, "--install-directory", directory,
+                "--name", project, "--port", "13000"]
 
     def command(self, action, directory, project, *, release=None, ring=None):
         return [sys.executable, "-B", self.release / "payload/deploy/install.py", action,
@@ -207,6 +244,8 @@ class Acceptance:
 
     def negative_checks(self, directory, project):
         before = self.inventory(), files(self.release), files(self.instances)
+        self.run("read-only bootstrap check", self.bootstrap_command("check", directory, project))
+        require(before == (self.inventory(), files(self.release), files(self.instances)), "bootstrap check changed state")
         self.run("read-only installer check", self.command("check", directory, project))
         require(before == (self.inventory(), files(self.release), files(self.instances)), "check changed state")
         self.passed("check has no filesystem or Docker side effects")
@@ -351,6 +390,9 @@ os.kill(parent, signal.SIGKILL)
         before = self.facts(directory, project)
         self.run("repeat completed resume", self.command("resume", directory, project))
         require(before == self.facts(directory, project), "completed resume changed installation authority")
+        self.run("repeat completed bootstrap resume", self.bootstrap_command("resume", directory, project))
+        require(before == self.facts(directory, project), "bootstrap resume changed installation authority")
+        self.passed("bootstrap resume preserves the completed original installation")
         inventory = self.inventory()
         code, _ = self.run("reject wrong project on resume", self.command("resume", directory, project + "-wrong"), ok=False)
         require(code != 0, "wrong project resume accepted")
@@ -447,7 +489,9 @@ def main():
             "requires a disposable GitHub-hosted Linux amd64 runner as root")
     require(sys.version_info >= (3, 10), "Python 3.10+ required")
     repo = Path(__file__).resolve().parents[2]
-    root = Path(tempfile.mkdtemp(prefix="ur-community-native-", dir=os.environ["RUNNER_TEMP"]))
+    # Root executes prepared files; do not put them below runner-owned ancestry.
+    # The disposable runner lifecycle still owns all fixture resources.
+    root = Path(tempfile.mkdtemp(prefix="ur-community-native-", dir="/var/tmp")).resolve()
     os.chmod(root, 0o700)
     fixture = Acceptance(repo, root, args.expected_commit)
     try:

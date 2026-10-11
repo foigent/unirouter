@@ -68,6 +68,12 @@ package and image digests, complete third-party notices/source delivery for thei
 actual contents, publish the separately trusted verifier and public verification
 ring, and test the resulting public downloads. The installer remains a preview;
 there is no published npm installer or supported production release from this batch.
+The [distribution preparation](../ops/COMMUNITY-INSTALLER.md#public-installer-distribution-preparation--2026-10-11)
+records the proposed download/trust path, checked local materials, expiry/resume
+limit and outstanding official-key decision. A local 1.11.0 bootstrap candidate
+now implements pinned download, verification and preparation before delegating
+to the existing installer. Its changed native/public-download acceptance and
+official artifact publication remain pending; no official signing is implied.
 
 The accepted architecture, X-Insight boundary, source-notice findings and bounded
 history review are retained below. X-Insight publication, ECS/Production changes,

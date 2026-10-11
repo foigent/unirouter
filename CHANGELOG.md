@@ -4,6 +4,12 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.11.0] - 2026-10-11
+
+- Add an online Linux amd64 community bootstrap candidate: pin download identities, verify the existing signed package, prepare declared files, then call the established installer.
+- Reject unsafe archives, excessive decompression, changed or incomplete preparation, and root reuse of another user's files. Check/resume reuse the original package and current expiry without downloads or credential resets.
+- Preserve the existing direct installer and source-level arm64 path. Official public key adoption, artifact publication and native/public-download acceptance for this candidate remain pending.
+
 ## [1.10.0] - 2026-10-10
 
 - Adopt Apache-2.0 with bilingual project and contributor documentation.
