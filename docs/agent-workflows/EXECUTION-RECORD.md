@@ -1,5 +1,28 @@
 # Current Execution Record
 
+## Community bootstrap source integration — accepted — 2026-10-11
+
+The owner's explicit approval covers public PR/CI and merge after success,
+using the existing budget and disposable GitHub environment. Source commit
+`87b0a6dc600436b213a8cf943e3c68f188083c7b`, tree
+`247594ff534c886b91b61ccf1dc0bedd139167de`, was merged through [PR 448](https://github.com/foigent/unirouter/pull/448)
+at `7f397f6d2e76b353ee3d3ccb148171fa9298b2ad`; the merge tree is identical.
+Native run [38109442307](https://github.com/foigent/unirouter/actions/runs/38109442307)
+passed all ten checks. The report/fixture identities and precise boundary are
+in the [installer runbook](../ops/COMMUNITY-INSTALLER.md#accepted-native-bootstrap-result--2026-10-11).
+[Full CI 38109442312](https://github.com/foigent/unirouter/actions/runs/38109442312)
+passed Change Routing, Backend Tests, Frontend Build, PR4 Browser E2E and Docker
+Build on that source candidate. All six PR checks passed before the protected
+branch merge; no administrator bypass was used. This dated record binds the
+source candidate and implementation merge. Any later main protocol result must
+be read from the check attached to that exact commit.
+
+Official artifacts, signing credentials/adoption, NAS testing, ECS/Production,
+provider calls, budget changes and branch-protection changes remain excluded.
+The original checkout and pre-existing `frontend/output/` remain untouched.
+Experience file: no change warranted; no model/Provider behavior changed.
+The following local preparation entries retain their original cutoff.
+
 ## Community download/bootstrap candidate — local validation — 2026-10-11
 
 The owner asked to continue while deferring the encrypted NAS-kit test.

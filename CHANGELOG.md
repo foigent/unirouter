@@ -8,7 +8,7 @@ those build identities do not replace the product version.
 
 - Add an online Linux amd64 community bootstrap candidate: pin download identities, verify the existing signed package, prepare declared files, then call the established installer.
 - Reject unsafe archives, excessive decompression, changed or incomplete preparation, and root reuse of another user's files. Check/resume reuse the original package and current expiry without downloads or credential resets.
-- Preserve the existing direct installer and source-level arm64 path. Official public key adoption, artifact publication and native/public-download acceptance for this candidate remain pending.
+- Preserve the existing direct installer and source-level arm64 path. All ten synthetic Linux amd64 installation/recovery checks passed; official public key adoption, artifact publication and public-download acceptance remain pending.
 
 ## [1.10.0] - 2026-10-10
 
