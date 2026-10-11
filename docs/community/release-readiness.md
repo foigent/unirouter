@@ -24,7 +24,25 @@ entry points and contributions welcome.
   assets matched their original SHA-256 values. The [N1 download page](https://github.com/foigent/integration-control/releases/tag/v0.1.0-candidate.1)
   links the complete accompanying license materials; the assets remain unchanged.
 
-## Verified implementation and installation
+## Verified community bootstrap source — 1.11.0
+
+[PR 448](https://github.com/foigent/unirouter/pull/448) merged the Linux amd64
+download/verify/prepare entry, delegating installation and resume to the original
+installer. Source `87b0a6dc600436b213a8cf943e3c68f188083c7b`, tree
+`247594ff534c886b91b61ccf1dc0bedd139167de`, passed all ten synthetic native
+checks in [run 38109442307](https://github.com/foigent/unirouter/actions/runs/38109442307).
+[Full CI 38109442312](https://github.com/foigent/unirouter/actions/runs/38109442312)
+also passed Change Routing, Backend Tests, Frontend Build, PR4 Browser E2E and
+Docker Build. Main merge `7f397f6d2e76b353ee3d3ccb148171fa9298b2ad` preserves
+the tested tree.
+
+The [accepted native result](../ops/COMMUNITY-INSTALLER.md#accepted-native-bootstrap-result--2026-10-11)
+binds the report and fixture identities. English installation guidance is primary,
+with a Chinese companion. Official trust adoption, signed assets and actual
+public downloads remain pending. This result used local fixture transport,
+temporary signing trust and zero provider calls.
+
+## Previously accepted implementation and installation — 1.10.0
 
 The accepted 1.10.0 candidate is `71b5a4ee72d649d08e1137e68edb8b4d866f0987`,
 tree `463c5de2405e52cce44423c0f1fa7cfcd6cb6a61`. It was merged through
@@ -70,10 +88,11 @@ ring, and test the resulting public downloads. The installer remains a preview;
 there is no published npm installer or supported production release from this batch.
 The [distribution preparation](../ops/COMMUNITY-INSTALLER.md#public-installer-distribution-preparation--2026-10-11)
 records the proposed download/trust path, checked local materials, expiry/resume
-limit and outstanding official-key decision. A local 1.11.0 bootstrap candidate
-now implements pinned download, verification and preparation before delegating
-to the existing installer. Its changed native/public-download acceptance and
-official artifact publication remain pending; no official signing is implied.
+limit and outstanding official-key decision. The merged 1.11.0 bootstrap
+implements pinned download, verification and preparation before delegating
+to the existing installer. Its synthetic native acceptance passed; actual
+public-download acceptance and official artifact publication remain pending.
+No official signing is implied.
 
 The accepted architecture, X-Insight boundary, source-notice findings and bounded
 history review are retained below. X-Insight publication, ECS/Production changes,

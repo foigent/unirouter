@@ -1,5 +1,20 @@
 # UniRouter Current Status
 
+## Community bootstrap source accepted — 1.11.0 — 2026-10-11
+
+The Linux amd64 download/verify/prepare entry was merged through [PR 448](https://github.com/foigent/unirouter/pull/448)
+at `7f397f6d2e76b353ee3d3ccb148171fa9298b2ad`, preserving the tested source tree.
+All ten disposable native installation/recovery checks and
+[full CI](https://github.com/foigent/unirouter/actions/runs/38109442312) passed at
+source `87b0a6dc600436b213a8cf943e3c68f188083c7b`. The English-first instructions and
+Chinese companion distinguish this source preview from a published installer.
+[Release readiness](../community/release-readiness.md) and the
+[native acceptance record](COMMUNITY-INSTALLER.md#accepted-native-bootstrap-result--2026-10-11)
+retain exact run, report and fixture identities. Official key custody/adoption,
+signed distribution, public download/image-pull acceptance and ECS/Production
+remain outside this source integration result. Earlier Target observations
+below retain their original versions and timestamps.
+
 ## Public source and contributor acceptance — 2026-10-11
 
 UniRouter, integration-control and event-connector-spec are public under

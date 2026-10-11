@@ -449,12 +449,42 @@ because root execution must not reuse runner-user-controlled ancestry. Original
 remain. Workflow path filters and the existing delivery preflight include the
 new entry; required CI and exact-main protocol evidence are retained.
 
-Native execution for this changed candidate and actual public HTTPS/anonymous
-image pulls are still pending. The accepted 1.10.0 results retain their original
-scope. Local exact results and independent review are recorded in the execution
-record; version/CHANGELOG metadata advances to 1.11.0 because the installation
-entry is a new shipped capability. The earlier 69d1ef75 unsigned staged files
-remain historical preparation and are not a current installable release.
+Native execution for this changed candidate passed as recorded below. Actual
+public HTTPS/anonymous image-pull acceptance remains pending. The accepted
+1.10.0 results retain their original scope. Local results and independent review
+are recorded in the execution record; version/CHANGELOG metadata advances to
+1.11.0 because the installation entry is a new shipped capability. The earlier
+69d1ef75 unsigned staged files remain historical preparation and are not a
+current installable release.
+
+### Accepted native bootstrap result — 2026-10-11
+
+[Run 38109442307](https://github.com/foigent/unirouter/actions/runs/38109442307)
+passed all ten checks for source `87b0a6dc600436b213a8cf943e3c68f188083c7b`,
+tree `247594ff534c886b91b61ccf1dc0bedd139167de`, version 1.11.0.
+The disposable Linux amd64 runner used Python 3.10.22, Docker 28.0.4 and
+Compose 2.38.2. It prepared the signed fixture through the new bootstrap, then
+verified the original fresh-install/interruption/recovery path, unchanged
+installation identity, M126/image/database bindings, one administrator password
+rotation, real NGINX login and `license.status=not_required`. Bootstrap check
+had no filesystem/Docker side effects and completed bootstrap resume preserved
+the original installation.
+
+The allowlisted report has SHA-256
+`da6a5bf0a2c29639ce6db4e72a41ca70a08d10b26712bad5ac978d53a98385ee`.
+Its synthetic package SHA-256 is
+`5e98715e4f6ebe51483ddf0aa524a0cec931c451590590c80f3ff14fa80ca1a0`,
+and synthetic bootstrap SHA-256 is
+`b5caeca3dce49a3aa1cbe3c80d10bd882345c07ffe021ecc9188502b48e58ca3`.
+The report is retained as the run's `community-installer-87b0a6dc600436b213a8cf943e3c68f188083c7b`
+artifact. These hashes identify test evidence, not downloadable official assets.
+
+All signing keys, credentials and database contents were disposable synthetic
+fixtures; provider calls were zero. Transport supplied fixture bytes locally,
+so this does not prove public HTTPS downloads, anonymous public image pulls,
+ARM64, official signing custody, an existing ECS/Production upgrade or a new
+maintenance-migration result. The prior 1.10.0 maintenance acceptance retains
+its own exact source and result.
 
 ### Owner-local encrypted NAS backup preparation
 
