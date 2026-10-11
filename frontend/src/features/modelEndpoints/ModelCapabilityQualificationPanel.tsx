@@ -279,6 +279,7 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
     if (!profileIdentityReady) return;
     const target = targetSummary;
     confirmationRef.current = Modal.confirm({
+      cancelText: t("取消"),
       title: t('运行{capability}探测？', { capability: translateLabel(presentation.shortName) }),
       content: <div>
         <p>{t("预计发起 1 次真实供应商调用，并计入已批准的测试调用上限。")}</p>
@@ -324,6 +325,7 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
     const approvalReason = reason.trim();
     if (!probeID || !approvalReason) return;
     confirmationRef.current = Modal.confirm({
+      cancelText: t("取消"),
       title: t("批准在当前环境进入路由池？"),
       content: <div>
         <p>{t("此动作会追加不可变批准记录，并绑定当前 Deployment、Operation、Execution Profile、协议 Profile 与探测合同。")}</p>

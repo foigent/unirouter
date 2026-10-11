@@ -122,6 +122,8 @@ export default function AccessReviewPage() {
 		}
     const approving = decision === 'approve';
     Modal.confirm({
+      okText: t("确认操作"),
+      cancelText: t("取消"),
       title: approving ? t('批准访问请求') : t('拒绝访问请求'),
       content: t(approving ? '确认批准{name}的访问申请？系统会在保存前再次核对你的权限、项目状态和申请范围。' : '确认拒绝{name}的访问申请？系统会在保存前再次核对你的权限、项目状态和申请范围。', { name: accessSubjectLabel(request) }),
       onOk: async () => {

@@ -473,6 +473,7 @@ export default function ModelReleaseWorkspace({
   const confirmStagingSuccessorCutover = () => {
     if (!lifecycle || !selectedStagingPredecessor || !stagingSuccessorReady) return;
     Modal.confirm({
+      cancelText: t("取消"),
       title: t("原子激活 Staging successor？"),
       content: <div>
         <p>{t("稳定请求身份：")}<Text code>{selectedStagingPredecessor.public_model.model_name}</Text></p>
@@ -481,6 +482,7 @@ export default function ModelReleaseWorkspace({
         <p>{t("提交前将重新读取完整 model-set before-state；服务端随后在一个事务中验证 Release、Slot、Alias、registry 与 model-set 状态。")}</p>
       </div>,
       okText: t("原子激活 Staging successor"),
+      okButtonProps: { 'aria-label': t("原子激活 Staging successor") },
       onOk: submitStagingSuccessorCutover,
     });
   };
@@ -574,6 +576,7 @@ export default function ModelReleaseWorkspace({
   const confirmLifecycle = (descriptor: CanonicalDeploymentLifecycleActionDescriptor) => {
     if (!canManage || !descriptor.available || !lifecycle) return;
     Modal.confirm({
+      cancelText: t("取消"),
       title: t('{action}？', { action: translateLabel(actionLabels[descriptor.action]) }),
       content: <div>
         <p><Text code>{lifecycle.release.release_ref}</Text></p>
@@ -581,6 +584,7 @@ export default function ModelReleaseWorkspace({
         <p>{t("服务端会在事务内重新核对 route、资格、权限与当前版本。")}</p>
       </div>,
       okText: translateLabel(actionLabels[descriptor.action]),
+      okButtonProps: { 'aria-label': translateLabel(actionLabels[descriptor.action]) },
       onOk: () => executeLifecycle(descriptor),
     });
   };

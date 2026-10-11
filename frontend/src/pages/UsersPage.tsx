@@ -163,6 +163,8 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
       return;
     }
     Modal.confirm({
+      okText: t("确认操作"),
+      cancelText: t("取消"),
       title: t("确认账号离场"),
       content: t('确定要让 {name} 离场吗？UniRouter 将停用账号并收口会话、项目调用授权与凭据，同时保留审计身份和历史证据。', { name: u.username }),
       onOk: async () => {

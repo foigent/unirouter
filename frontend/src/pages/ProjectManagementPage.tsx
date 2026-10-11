@@ -571,6 +571,8 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
     if (!selectedProject) return;
     const project = selectedProject;
     Modal.confirm({
+      okText: t("确认操作"),
+      cancelText: t("取消"),
       title: t("移除项目成员"),
       content: t('确认从 {project} 移除 {name}？这不会改变其组织角色或其他项目成员关系。', { project: projectDisplayName(project), name: member.username }),
       onOk: async () => {

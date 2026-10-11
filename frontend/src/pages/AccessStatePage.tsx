@@ -259,6 +259,8 @@ export default function AccessStatePage() {
     const locator = family.versions.find((version) => version.status === 'active') || family.versions[0];
     if (!selectedGrant || !locator) return;
     Modal.confirm({
+      okText: t("确认操作"),
+      cancelText: t("取消"),
       title: t("撤销 API Key"),
       content: t("此操作会使这个 Key 的全部历史版本立即失效，且不能恢复。"),
       onOk: async () => {

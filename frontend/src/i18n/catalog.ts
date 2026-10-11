@@ -14,6 +14,7 @@ export const messages = {
   "历史商业授权入口已退役。账号权限、项目策略、预算和模型发布校验仍然生效。": "The legacy commercial-license entry is retired. Account permissions, project policies, budgets and model release checks still apply.",
   "软件许可条款请参阅仓库中的 LICENSE；第三方组件保留各自许可声明。": "See LICENSE in the repository for software terms. Third-party components retain their own license notices.",
   "正在加载数据": "Loading data",
+  "确认操作": "Confirm",
   "正在读取当前范围，请稍候。": "Loading the current scope. Please wait.",
   "暂无数据": "No data yet",
   "关闭导航": "Close navigation",

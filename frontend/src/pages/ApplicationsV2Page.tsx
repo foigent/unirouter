@@ -480,6 +480,8 @@ export default function ApplicationsV2Page() {
 		return;
 	}
     Modal.confirm({
+      okText: t("确认操作"),
+      cancelText: t("取消"),
       title: t("撤销应用 Key？"),
       content: t('{name} 的全部历史版本将立即失效，且不能恢复。', { name: family.name }),
       okType: 'danger',
@@ -517,6 +519,8 @@ export default function ApplicationsV2Page() {
 		return;
 	}
     Modal.confirm({
+      okText: t("确认操作"),
+      cancelText: t("取消"),
       title: t("归档应用？"),
       content: t("归档是终态操作：现有授权与应用 Key 会失效，历史申请、审计与执行证据仍会保留。"),
       okType: 'danger',

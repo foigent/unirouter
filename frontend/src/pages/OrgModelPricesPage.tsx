@@ -89,6 +89,8 @@ export default function OrgModelPricesPage({ embedded = false }: { embedded?: bo
 
   const handleDelete = (id: number) => {
     Modal.confirm({
+      okText: t("确认操作"),
+      cancelText: t("取消"),
       title: t("确认删除"),
       content: t("删除后，该组织会恢复使用 1.0 倍基础价格。确定继续吗？"),
       onOk: async () => {

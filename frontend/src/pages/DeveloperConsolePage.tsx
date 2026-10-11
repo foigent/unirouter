@@ -454,6 +454,8 @@ export default function DeveloperConsolePage() {
 
   const handleDisableKey = (record: ApiKey) => {
     Modal.confirm({
+      okText: t("确认操作"),
+      cancelText: t("取消"),
       title: t("确认停用项目 Key"),
       content: t("停用 {v0} 后，使用该 Key 的项目调用会被拒绝。", { v0: String(record.name) }),
       onOk: async () => {

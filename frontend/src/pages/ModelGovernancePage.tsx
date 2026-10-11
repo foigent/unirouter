@@ -368,6 +368,8 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
 
 	const retireRegistry = (record: ModelRegistryItem) => {
 		Modal.confirm({
+			okText: t("确认操作"),
+			cancelText: t("取消"),
 			title: t('退役 {model}？', { model: record.model_name }),
 			content: t("退役会使这个精确模型 ID 不再可调用，并把它移出项目目录；历史发布、审计证据和供应商连接仍会保留。"),
 			onOk: async () => {

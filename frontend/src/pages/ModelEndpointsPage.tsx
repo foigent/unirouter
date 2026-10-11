@@ -277,6 +277,7 @@ export default function ModelEndpointsPage() {
   const confirmProbe = (binding: CanonicalCredentialBinding) => {
     if (!detail || !selectedOperation || !canManage || !gatewayLicensed) return;
     Modal.confirm({
+      cancelText: t("取消"),
       title: t('探测 Deployment #{id} · {operation}？', { id: detail.deployment.id, operation: selectedOperation.operation_id }),
       content: <div>
         <p>{t("将向真实供应商发起一次最小请求，可能产生少量供应商费用。")}</p>
@@ -286,6 +287,7 @@ export default function ModelEndpointsPage() {
         <p>{t("服务端只解析这组精确绑定；不会回退到同模型、同连接或其他 credential。")}</p>
       </div>,
       okText: t("发起精确探测"),
+      okButtonProps: { 'aria-label': t("发起精确探测") },
       onOk: () => executeProbe(binding),
     });
   };

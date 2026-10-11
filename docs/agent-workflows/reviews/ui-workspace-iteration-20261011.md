@@ -327,3 +327,35 @@ is delegated to the existing `PR4 Browser E2E` job, not claimed from syntax chec
 The PR preview uses only synthetic fixture data:
 
 ![AI overview with synthetic data](assets/ui-overview-1.12.0-en.png)
+
+### First PR browser result and correction
+
+PR 451 / run `38119862748` tested head `500ed966`. Frontend Build passed;
+the real access/credential/readiness and source-budget browser journeys passed.
+Model onboarding created the intended exact deployment, then stopped before
+the probe POST: Semi's default `aria-label="confirm"` overrode the displayed
+localized action name. The dialog title and visible action were correct, with
+no browser errors. The correction supplies the component's supported
+`okButtonProps` aria-label for exact probes and model lifecycle confirmations,
+matching their existing visible localized action text. Request payloads,
+confirmation handlers and server contracts are unchanged. This is a new UI
+candidate revision, not a passed browser result or a reason to reduce the job.
+
+The 52 targeted model tests and production build passed for the accessible-name
+correction. A real Semi dialog with synthetic local data exposed
+`发起精确探测` / `Run exact probe` as the actual accessible button names. No probe
+confirmation was submitted. The English dialog also exposed Semi's Chinese
+default cancel label: static dialogs do not inherit the page LocaleProvider.
+The follow-up explicitly localizes cancel labels in all 15 remaining existing
+confirmations, and the 10 default confirmation labels. It changes only visible
+text, retaining existing accessible `confirm`/`cancel` defaults outside the
+three model actions and all mutation/permission/CAS handlers. Full frontend
+regression and build are rerun for this expanded text correction.
+
+Final local correction checks passed: 100 frontend files / 905 tests;
+unexpected stderr, React act and Semi Form warnings remained zero;
+the production build retained 100 JavaScript assets and a 371,438-byte largest
+asset within the 460,800-byte limit. A fresh English synthetic browser dialog
+showed `Cancel` and `Run exact probe`, with the latter's matching aria-label.
+The browser and task preview were closed without submitting a probe. Backend
+sources are unchanged and the existing PostgreSQL dashboard evidence is retained.

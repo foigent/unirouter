@@ -118,6 +118,8 @@ export default function ModelPricesPage({ embedded = false, onOpenRateCard }: { 
 
   const handleDelete = (id: number) => {
     Modal.confirm({
+      okText: t("确认操作"),
+      cancelText: t("取消"),
       title: t("确认删除"),
       content: t("确定要删除这个价格配置吗？"),
       onOk: async () => {
