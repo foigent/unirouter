@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes, useLocation } from 'react-router-dom';
 import App from '../App';
 import { api } from '../api/client';
 import { useAuthStore } from '../store/auth';
 import type { LicenseAccess } from '../navigation';
 import { MemoryRouter } from '../test/MemoryRouter';
+import { setLocale } from '../i18n';
 
 const PARTIAL_LICENSE: LicenseAccess = {
   status: 'active',
@@ -83,6 +84,7 @@ describe('App shell', () => {
     expect(screen.queryByRole('button', { name: '关闭导航' })).not.toBeInTheDocument();
   });
   beforeEach(() => {
+	setLocale('zh-CN');
 	vi.restoreAllMocks();
 	localStorage.clear();
     useAuthStore.setState({
@@ -247,6 +249,25 @@ describe('App shell', () => {
     expect(await screen.findByText('模型与端点')).toBeTruthy();
     expect(await screen.findByText('内容安全')).toBeTruthy();
     expect(screen.getByRole('button', { name: '通知' }).hasAttribute('disabled')).toBe(false);
+  });
+
+  it('localizes legacy-locked navigation while retaining its restriction and search draft', () => {
+    renderApp('platform_admin', {
+      licenseAccess: { ...PARTIAL_LICENSE, features: { ...PARTIAL_LICENSE.features, notifications: false } },
+    });
+    expect(screen.getByText('通知中心（未授权）')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: '全局搜索执行请求' }), { target: { value: 'req-保留-42' } });
+    const toolbar = screen.getByRole('toolbar', { name: '全局工具栏' });
+    fireEvent.click(within(toolbar).getByRole('button', { name: 'English' }));
+    const lockedItem = screen.getByText('Notifications (unlicensed)');
+    expect(screen.queryByText('通知中心（未授权）')).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox')).toHaveValue('req-保留-42');
+    expect(screen.getByRole('button', { name: /Notifications.*legacy license/i })).toBeDisabled();
+    fireEvent.click(lockedItem);
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/);
+    fireEvent.click(within(toolbar).getByRole('button', { name: '中文' }));
+    expect(screen.getByText('通知中心（未授权）')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '全局搜索执行请求' })).toHaveValue('req-保留-42');
   });
 
   it('replaces a role-allowed direct URL with one unified license explanation before the page mounts', () => {

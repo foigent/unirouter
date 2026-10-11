@@ -31,6 +31,14 @@ import { EmptyState, PageHeader, Surface } from './ui';
 const { Sider, Content } = Layout;
 const { Text } = Typography;
 
+function navigationLabel(item: { text: string; licenseLocked?: boolean }) {
+  const lockedSuffix = '（未授权）';
+  if (item.licenseLocked && item.text.endsWith(lockedSuffix)) {
+    return t('{label}（未授权）', { label: translateLabel(item.text.slice(0, -lockedSuffix.length)) });
+  }
+  return translateLabel(item.text);
+}
+
 export default function App() {
   useI18n();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -54,7 +62,10 @@ export default function App() {
   const authz = authzContextForUser(user);
   const licenseAccess = user?.license_access;
   const routeWithSearch = `${location.pathname}${location.search}`;
-  const navItems = getNavItemsForAuthz(authz, licenseAccess).map(item => ({ ...item, text: translateLabel(item.text), items: item.items?.map(child => ({ ...child, text: translateLabel(child.text) })) }));
+  const navItems = getNavItemsForAuthz(authz, licenseAccess).map(item => ({
+    ...item, text: navigationLabel(item),
+    items: item.items?.map(child => ({ ...child, text: navigationLabel(child) })),
+  }));
   const openKeys = navItems.filter(item => item.items?.length).map(item => item.itemKey);
   const currentRoleLabel = roleLabel(authz.organizationRole, t("未加载组织角色"));
   const canOpenNotifications = canOpenUnscopedNotifications(authz);

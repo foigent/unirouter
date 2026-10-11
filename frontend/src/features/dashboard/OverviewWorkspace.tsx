@@ -151,7 +151,7 @@ export default function OverviewWorkspace({ stats, attention, attentionState }: 
         </>}
         {platform && <div className="ur-overview-notifications">
           <span className="ur-fact-caption">{t('未确认通知')}</span>
-          <strong className="ur-settlement-value">{attentionState === 'ready' && attention ? count(attention.open_critical + attention.open_warning) : t(attentionState === 'loading' ? '读取中' : '读取失败')}</strong>
+          <strong className="ur-settlement-value">{attentionState === 'ready' && attention ? count(attention.open_critical + attention.open_warning) : t(attentionState === 'locked' ? '通知功能未授权' : attentionState === 'loading' ? '读取中' : '读取失败')}</strong>
           {attentionState === 'ready' && attention && <p>{t('严重 {critical} · 预警 {warning}', { critical: attention.open_critical, warning: attention.open_warning })}</p>}
           <div className="ur-inspector-actions">
             {canOpen('/notifications') && attentionState !== 'locked' && <Button block onClick={() => navigate('/notifications')}>{t('处理通知')}</Button>}

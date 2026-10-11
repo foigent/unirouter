@@ -256,6 +256,24 @@ describe('DashboardPage', () => {
     expect(screen.queryByRole('button', { name: /X-Insight 数据交换/ })).toBeNull();
   });
 
+  it.each(['zh-CN', 'en-US'] as const)('distinguishes legacy-locked notifications from a read failure in %s', async locale => {
+    setLocale(locale);
+    const user = useAuthStore.getState().user!;
+    useAuthStore.setState({ user: { ...user, license_access: {
+      ...PARTIAL_LICENSE, features: { ...PARTIAL_LICENSE.features, notifications: false },
+    } } });
+    renderDashboard();
+    expect(await screen.findByText(locale === 'zh-CN' ? '通知功能未授权' : 'Notifications not licensed')).toBeInTheDocument();
+    expect(screen.queryByText(locale === 'zh-CN' ? '读取失败' : 'Unavailable')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: locale === 'zh-CN' ? '处理通知' : 'Review notifications' })).not.toBeInTheDocument();
+    expect(mockGetInternalStatus).not.toHaveBeenCalled();
+    expect(mockGetDashboardStats).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: locale === 'zh-CN' ? 'English' : '中文' }));
+    expect(await screen.findByText(locale === 'zh-CN' ? 'Notifications not licensed' : '通知功能未授权')).toBeInTheDocument();
+    expect(mockGetInternalStatus).not.toHaveBeenCalled();
+    expect(mockGetDashboardStats).toHaveBeenCalledTimes(1);
+  });
+
   it('passes time range params to API', async () => {
     renderDashboard();
     await waitFor(() => {
