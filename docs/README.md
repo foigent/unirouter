@@ -1,6 +1,6 @@
 # UniRouter documentation
 
-[简体中文](README.zh-CN.md) · [Project overview](../README.md)
+[Foigent](https://github.com/foigent) · [简体中文](README.zh-CN.md) · [Project overview](../README.md)
 
 English is the primary language for public guides and project updates.
 Start with the path below that matches what you want to do. Historical
@@ -14,7 +14,7 @@ engineering records retain their original language and evidence boundaries.
 | How does it work, and where does X-Insight fit? | [Architecture](community/architecture.md) |
 | How do selected gateway implementations differ? | [Source-based design comparison](community/gateway-design-comparison.md) |
 | What is recorded, retained or sent elsewhere? | [Data handling](community/data-handling.md) |
-| What is open source, and what could be commercial? | [License and commercial boundaries](community/commercial-boundaries.md) |
+| Understand the open-source product scope and license terms | [Licensing and product scope](community/commercial-boundaries.md) |
 | What is being worked on? | [Roadmap](../ROADMAP.md) |
 
 ## Install and make a request
@@ -25,6 +25,9 @@ engineering records retain their original language and evidence boundaries.
    access, make a request and inspect usage and the execution receipt.
 3. Consult the [API contract](tech-ref/05-openapi-spec.yaml) and
    [client examples](../examples/client-compatibility/README.md) for integration.
+4. To combine execution with analysis and review, follow the
+   [X-Insight integration entry](community/getting-started.md#optional-x-insight-integration).
+   X-Insight source publication and the public joint walkthrough are pending.
 
 This is an unreleased candidate. Native installation has passed on a disposable
 Linux amd64 runner with synthetic data; a public download is still pending.
@@ -38,8 +41,8 @@ release-matched migration and recovery procedures.
   policy and the Developer Certificate of Origin.
 - [Contribution map](community/contribution-map.md): find the relevant code
   and documentation for a focused change.
-- [Starter issue drafts](community/starter-issues.md): three bounded tasks
-  prepared for maintainer review; these are not yet published GitHub issues.
+- [Starter contribution issues](community/starter-issues.md): three published
+  tasks with entry points and acceptance criteria; check each issue's availability.
 - [Security reporting](../SECURITY.md) and [Code of Conduct](../CODE_OF_CONDUCT.md).
 - [Changelog](../CHANGELOG.md): the current candidate entry is in English;
   older release records retain their original language.

@@ -4,12 +4,22 @@ Status on **2026-10-11: source published; official signed installer distribution
 is not available yet**. English is the primary community language, with Chinese
 entry points and contributions welcome.
 
+The accepted direction is to open-source the complete UniRouter (UR) and
+X-Insight (XI) products under Apache-2.0, without a community/commercial edition split.
+Foigent has no current plan for a commercial product. Third-party license terms
+and each project's actual publication status remain separately applicable;
+see [licensing and product scope](commercial-boundaries.md).
+
 ## Published source and community
 
 - [UniRouter](https://github.com/foigent/unirouter),
   [integration-control](https://github.com/foigent/integration-control) and
   [event-connector-spec](https://github.com/foigent/event-connector-spec) are public
   under Apache-2.0 for project-owned material. Third-party terms remain applicable.
+- Event Connector Spec and Integration Control are shared protocol/verification
+  components, not additional end-user products. X-Insight source is preparing
+  for publication; the [Foigent overview](https://github.com/foigent) links the
+  available product entry points without requiring private-repository access.
 - The owner approved publication of the existing Git history and retained records
   after the bounded disclosure review below. No history was rewritten or deleted.
 - GitHub private vulnerability reporting is enabled for all three repositories.
@@ -34,7 +44,10 @@ checks in [run 38109442307](https://github.com/foigent/unirouter/actions/runs/38
 [Full CI 38109442312](https://github.com/foigent/unirouter/actions/runs/38109442312)
 also passed Change Routing, Backend Tests, Frontend Build, PR4 Browser E2E and
 Docker Build. Main merge `7f397f6d2e76b353ee3d3ccb148171fa9298b2ad` preserves
-the tested tree.
+the tested tree. Documentation-only [PR 449](https://github.com/foigent/unirouter/pull/449)
+merged as `300592e36c28e8836e37c1a2085401b8701d29d6`, which passed
+[exact-main protocol run 38111877810](https://github.com/foigent/unirouter/actions/runs/38111877810).
+The tested implementation is unchanged between these source and documentation merges.
 
 The [accepted native result](../ops/COMMUNITY-INSTALLER.md#accepted-native-bootstrap-result--2026-10-11)
 binds the report and fixture identities. English installation guidance is primary,
@@ -77,6 +90,16 @@ out PR merge `ec59f102beff070991b377d052e7f4fe91087ac2`, with the same tree
 qualifier/action inputs and read-only token permissions. No private App secret
 is referenced by either workflow. Existing required checks and branch protection
 remain unchanged. Existing App secret revocation is outside this batch.
+
+## Public two-product walkthrough — pending
+
+The [existing integration entry](getting-started.md#optional-x-insight-integration)
+links UniRouter's setup API, credential lifecycle and recorded combinations.
+The earlier Target observations retain their specific versions and scope;
+UniRouter 1.11.0 installation/protocol CI does not establish a new joint result.
+X-Insight source publication, public installation/invitation/reader guidance
+and an exact synthetic execution-to-review acceptance remain necessary for a
+newcomer to reproduce the complete path using public sources.
 
 ## Remaining signed-distribution work
 

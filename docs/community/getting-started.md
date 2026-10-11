@@ -1,4 +1,7 @@
-# Getting started
+# Getting started with UniRouter
+
+[Foigent](https://github.com/foigent) · [Project overview](../../README.md) ·
+[简体中文项目入口](../../README.zh-CN.md)
 
 **Unreleased candidate:** fresh installation without a commercial License,
 interrupted-plan recovery and console login passed on a disposable Linux amd64
@@ -46,7 +49,8 @@ Complete administrator password rotation/login and the first-customer
 bootstrap using the supported control surface. Any legacy bootstrap state
 specified by the runbook remains isolated from client traffic.
 
-The 1.10.0 candidate requires no commercial License import. Follow the
+Accepted UniRouter source since 1.10.0 requires no commercial License import;
+the 1.11.0 bootstrap retains M126. Follow the
 [M126 contract](../ops/COMMERCIAL-LICENSE-RETIREMENT.md) when upgrading M125;
 older License instructions apply only to the older Artifact. Full installation
 acceptance is tracked in [release readiness](release-readiness.md).
@@ -98,3 +102,46 @@ business-task completion. Keep missing provider evidence explicit.
 
 For a report, retain version, sanitized error code, request ID and reproduction
 conditions; remove real prompts and credentials.
+
+## Optional X-Insight integration
+
+UniRouter can operate independently. Combine it with X-Insight when you want to
+associate its execution, usage and economic facts with other authorized sources
+for analysis and review. Facts are transferred asynchronously; X-Insight is not
+part of the synchronous model request path.
+
+X-Insight's source is **preparing for publication**. The
+[Foigent overview](https://github.com/foigent) will link available product entry
+points. A newcomer cannot yet reproduce the complete two-product walkthrough
+from public source alone. UniRouter's completed installation checks and shared
+protocol checks do not establish that joint result.
+
+Use the existing sources for the relevant step:
+
+- [UniRouter API contract](../tech-ref/05-openapi-spec.yaml): the organization-scoped
+  `xinsight/setup-previews` and `xinsight/setups` operations define the invitation,
+  preview and consent path. Administrator setup does not grant every reader
+  access to the resulting facts.
+- [Connection-credential lifecycle](../ops/XINSIGHT-CONTROL-CREDENTIAL-LIFECYCLE.md):
+  rotation and recovery for an already established connection, with its original
+  identity and authorization. It does not create a new connection.
+- [Configuration and data boundaries](data-handling.md) and
+  [.env.example](../../.env.example): feed and connector enablement are explicit;
+  capture, content access and model-call permission have separate scopes.
+- [Architecture and recorded combinations](architecture.md#integration-entry-and-verified-scope):
+  pinned shared interfaces, dated Target observations and unperformed joint work.
+
+The public walkthrough still needs X-Insight's installation/invitation and
+reader-access documentation, an exact supported version/configuration pair,
+and a synthetic execution whose original source/request and usage/billing
+facts can be found by an ordinary authorized reader. Record the denied-access
+case as well. Preserve original identifiers, amounts, units and provenance;
+report unexecuted steps and gaps explicitly. These are the acceptance goals,
+not new installation or authorization commands.
+
+For a failed step, start with the corresponding API error/status, the connection
+lifecycle runbook and release-matched [deployment troubleshooting](../ops/deployment-runbook.md#七故障排查).
+Include sanitized versions, source/request or operation identifiers and the
+exact failing step in [Issues](https://github.com/foigent/unirouter/issues);
+follow [Security](../../SECURITY.md) for sensitive reports and
+[Contributing](../../CONTRIBUTING.md) for patches and DCO.

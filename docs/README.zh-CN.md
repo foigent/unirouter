@@ -1,6 +1,6 @@
 # UniRouter 文档目录
 
-[English](README.md) · [中文项目入口](../README.zh-CN.md)
+[Foigent](https://github.com/foigent) · [English](README.md) · [中文项目入口](../README.zh-CN.md)
 
 面向使用者与贡献者的默认文档以英文为准。下方保留原有中文工程与历史证据导航；各记录仅适用于其标明的版本、时间和环境。
 
@@ -11,9 +11,10 @@
 
 - [开始使用](community/getting-started.md) — 安装路径、首次请求与候选限制
 - [架构与 X-Insight](community/architecture.md) — 请求链路及产品职责
+- [X-Insight 接入入口（英文）](community/getting-started.md#optional-x-insight-integration) — 已有合同、验证组合与公开联合上手限制
 - [数据处理](community/data-handling.md) — 本地记录、Provider、遥测与证据外发
 - [贡献指南](../CONTRIBUTING.md)与[贡献地图](community/contribution-map.md)
-- [路线图](../ROADMAP.md)与[商业边界](community/commercial-boundaries.md)
+- [路线图](../ROADMAP.md)与[开源许可与产品范围（英文）](community/commercial-boundaries.md)
 - [开源发布准备状态](community/release-readiness.md) — 当前缺口及验证边界
 
 下方保留工程与历史证据导航；初次使用无需从历史阶段记录开始阅读。
