@@ -2,12 +2,12 @@
 
 **Model execution, policy and accountable usage for enterprise AI.**
 
-[简体中文](README.zh-CN.md) · [Why UniRouter](docs/community/why-unirouter.md) ·
+[Foigent](https://github.com/foigent) · [简体中文](README.zh-CN.md) · [Why UniRouter](docs/community/why-unirouter.md) ·
 [Getting started](docs/community/getting-started.md) ·
 [Architecture](docs/community/architecture.md) · [Contributing](CONTRIBUTING.md) ·
 [Roadmap](ROADMAP.md) · [License](LICENSE)
 
-UniRouter gives applications and agents a shared model endpoint and an
+UniRouter (UR) gives applications and agents a shared model endpoint and an
 administration console. It brings model access policies, routing, budgets,
 usage, billing and execution receipts together, so operators can inspect how a
 request was handled and what its charges are based on.
@@ -52,6 +52,7 @@ Choose the path that matches your task:
 | Understand the product and its boundaries | [Architecture and X-Insight](docs/community/architecture.md) |
 | Install and make a first request | [Getting started](docs/community/getting-started.md) |
 | Preview simplified Linux/ECS installation | [Linux installer](docs/community/install-linux.md) |
+| Combine execution facts with X-Insight | [Integration entry and current limits](docs/community/getting-started.md#optional-x-insight-integration) |
 | Understand data capture and outbound connections | [Data handling](docs/community/data-handling.md) |
 | Build, test or contribute | [Contributing](CONTRIBUTING.md) and [contribution map](docs/community/contribution-map.md) |
 | Inspect implementation and historical evidence | [Documentation index](docs/README.md) |
@@ -71,12 +72,21 @@ flowchart LR
     F -.->|"Authorized asynchronous facts"| X["X-Insight"]
 ```
 
-UniRouter owns model-call decisions and its customer ledger. X-Insight is an
-independent evidence and investigation product: it associates source facts and
-helps users examine related activity. It is optional and does not sit in the
-synchronous model request path. Other applications can use UniRouter without
-X-Insight. Integration availability is described separately from product
-direction.
+UniRouter owns model execution, routing, policy, usage and economic facts,
+including its customer ledger.
+Use it independently for model access and accountable execution. X-Insight is
+an independent evidence and investigation product: it associates source facts
+and supports analysis and review. Combine them when you need to investigate
+UniRouter execution alongside other authorized sources. X-Insight receives
+facts asynchronously and does not sit in the synchronous model request path.
+
+The [Foigent overview](https://github.com/foigent) is the product selection entry.
+X-Insight's source is preparing for publication; this page links only to public
+materials. Follow the [existing integration entry](docs/community/getting-started.md#optional-x-insight-integration)
+for contracts, recorded combinations and remaining public-onboarding work.
+Shared protocol and Integration Control repositories provide infrastructure
+for the products and their verification; they are not additional end-user
+products to choose or assemble.
 
 An execution receipt makes recorded decisions inspectable. It does not prove
 that a model answer is correct or that a business task succeeded; those claims
@@ -95,18 +105,21 @@ for reproducible bugs and scoped proposals. The [starter tasks](docs/community/s
 include concrete entry points and acceptance criteria. See [Security](SECURITY.md) for sensitive reports and
 [Code of Conduct](CODE_OF_CONDUCT.md) for participation expectations.
 
-## License and commercial services
+## License and product scope
 
-UniRouter project code is licensed under [Apache-2.0](LICENSE). Third-party
-components retain their own licenses and notices. The copyright attribution
-retains the repository's existing Foigent attribution.
+UniRouter is a complete open-source product under [Apache-2.0](LICENSE).
+The accepted direction for UniRouter and X-Insight is to open-source both
+complete products under Apache-2.0, without a community/commercial edition split.
+Foigent has no current plan for a commercial product. Each project's publication
+and release status is tracked independently.
 
-The accepted product direction removes runtime commercial activation
-requirements from the open core. [Release readiness](docs/community/release-readiness.md)
-tracks implementation and validation; changing the source license alone does
-not remove an installed version's runtime checks.
+Runtime commercial activation has been retired in the accepted UniRouter
+source and verified in disposable fresh-install and maintenance-upgrade tests.
+Product authentication, tenant isolation, budgets, financial and audit integrity,
+release verification and data protection remain. Existing deployments need
+their own supported upgrade; official signed downloads are still pending.
+See [release readiness](docs/community/release-readiness.md) for the evidence.
 
-Commercial support, private deployment, managed services and independently
-licensed future additions may be offered separately. See
-[commercial boundaries](docs/community/commercial-boundaries.md). No service
-availability or SLA is promised by this source release.
+Third-party components retain their own licenses and notices; Foigent attribution
+is preserved. See [licensing and product scope](docs/community/commercial-boundaries.md)
+for contribution terms and permitted third-party commercial use.

@@ -1,32 +1,35 @@
-# Open source and commercial boundaries
+# Open-source licensing and product scope
 
-UniRouter project code uses [Apache-2.0](../../LICENSE). Third-party code
-retains its original license and notices. This document does not replace them.
+UniRouter is a complete open-source product under [Apache-2.0](../../LICENSE).
+Third-party code retains its original licenses and notices. This document does
+not replace those terms; the repository's existing Foigent attribution remains.
 
-## Open core
+## Complete products
 
-The intended open core includes independently usable model access,
-routing/governance, organization/project authorization, budgets, usage,
-billing and execution receipts. Runtime commercial activation, expiry and
-commercial resource limits are being retired. Actual implementation and
-validation are tracked in [release readiness](release-readiness.md).
+The accepted direction is to open-source the complete UniRouter and X-Insight
+products under Apache-2.0, without a community/commercial edition split. Foigent
+has no current plan for a commercial product. Each repository's actual source
+publication, artifacts and supported releases are tracked independently.
 
-Business permissions, operator budgets/quotas, qualification evidence,
-release signatures and schema compatibility remain product safety mechanisms.
+UniRouter includes independently usable model access, routing and governance,
+organization/project authorization, budgets, usage, billing and execution
+receipts. Runtime commercial activation, expiry and commercial resource limits
+have been retired in the accepted source. Disposable installation and
+maintenance-upgrade checks passed; see [release readiness](release-readiness.md)
+for their precise source and environment boundaries. Existing deployments still
+need their own supported upgrade, and official signed downloads are pending.
 
-## Commercial possibilities
+Product authentication, tenant isolation, operator budgets and quotas,
+qualification evidence, financial and audit integrity, release signatures,
+schema compatibility and data protection remain part of the product.
 
-Official support, private deployment, migration assistance and managed
-operation may be offered through separate contracts. Future independent
-commercial modules must have clear code/license boundaries and must not be
-required to build or use the open core.
+## Third-party commercial use
 
-These are business directions, not a current price list or SLA. This task
-does not relicense or publish X-Insight or other repositories.
-
-Apache-2.0 also permits third-party commercial use, modification and
-distribution under its terms. It does not reserve hosting to the project owner.
-Existing compliant grants are not withdrawn by a later license change.
+[Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) permits commercial use,
+modification and distribution under its terms. It does not reserve hosting to
+the project owner. These license permissions do not describe a Foigent commercial
+product or service plan. Existing compliant grants are not withdrawn by a later
+license change.
 
 ## Attribution and contributions
 
@@ -35,6 +38,6 @@ license or permission to claim official endorsement. Describe forks and
 services accurately. This file does not assert trademark registration or a
 legal entity beyond the existing Foigent attribution.
 
-[CONTRIBUTING](../../CONTRIBUTING.md) defines contribution licensing and DCO.
-Make proposed commercial boundaries clear before accepting work that would
-fall outside the open core.
+[CONTRIBUTING](../../CONTRIBUTING.md) defines Apache-2.0 contribution licensing
+and DCO. English is the primary documentation language; Chinese counterparts
+are provided where available. Contributions in either language are welcome.

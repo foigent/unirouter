@@ -8,17 +8,49 @@ explain that split.
 This is a direction and participation guide. Items are not release promises,
 delivery dates or claims that a deployment has been verified.
 
-## Open-source preparation — in progress
+## Completed source publication and verification
 
-- Establish Apache-2.0 licensing and clear commercial-service boundaries.
-- Retire runtime commercial License requirements while preserving access
-  control, budgets, financial records and release verification.
-- Validate an independently reproducible installation and first-request path.
-- Provide a contributor workflow that works from an external fork.
-- Review source/history/publication surfaces and verify private reporting contacts.
+- UniRouter and its required protocol sources are public under Apache-2.0 for
+  project-owned material, with third-party terms and notices preserved.
+- Runtime commercial License requirements were retired in the accepted source;
+  access control, tenant isolation, budgets, financial and audit integrity,
+  signatures and data protection remain.
+- Disposable Linux amd64 fresh-install, interruption/resume and M125 maintenance
+  upgrade/restore checks passed. The 1.11.0 bootstrap passed all ten native checks.
+- Public fork CI passed using fixed public dependency sources and a read-only
+  job token. Required tests and branch protections were retained.
+- English-first contribution guidance, Chinese entry points, Discussions,
+  starter issues and private vulnerability reporting are available. The bounded
+  source/history disclosure review is recorded.
 
-See [release readiness](docs/community/release-readiness.md) for exact
-remaining conditions.
+See [release readiness](docs/community/release-readiness.md) for the exact
+versions, runs and evidence boundaries. These results do not establish that an
+existing ECS or Production installation has been upgraded.
+
+## Remaining signed-distribution work
+
+- Complete the owner's signing-key custody and recovery testing.
+- Prepare and publish the official signed package, verifier, public verification
+  ring and exact image identities with their applicable notices.
+- Verify public downloads, anonymous image pulls and the documented first-request
+  path for that release, including usage and receipts.
+
+Official signed downloads are not available yet. Source publication and the
+completed synthetic installation checks are recorded separately from this work.
+
+## Public UniRouter and X-Insight walkthrough — pending
+
+X-Insight source publication is preparing. When both product sources and their
+formal installation/connection instructions are public, reproduce one bounded
+synthetic chain: UniRouter records execution and usage/billing facts, an
+explicitly authorized connection transfers those facts asynchronously, and an
+ordinary authorized X-Insight reader finds the same execution and original
+source with its supporting evidence. Verify the denied-access boundary as well.
+
+Record the exact product versions, shared pins, configuration and executed steps;
+keep gaps and failures explicit. This joint result cannot be inferred from two
+separate product tests. Reuse the [existing integration entry](docs/community/getting-started.md#optional-x-insight-integration)
+and the products' existing contracts.
 
 ## Contributions we welcome
 
@@ -37,8 +69,9 @@ changes before coding.
 Make model execution a reliable source of facts for enterprise AI operations.
 Support asynchronous evidence consumers through explicit interfaces, preserve
 source ownership, and distinguish observed facts from estimates and hypotheses.
-Managed services and independent commercial extensions may be explored as
-repeated user needs become clear.
+The direction is to open-source the complete UniRouter and X-Insight products
+under Apache-2.0, without a community/commercial edition split. No commercial
+product is currently planned. See [licensing and product scope](docs/community/commercial-boundaries.md).
 
 Read the owner's [Why UniRouter](docs/community/why-unirouter.md) essay
 ([简体中文](docs/community/why-unirouter.zh-CN.md)) for the motivation, design

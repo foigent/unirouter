@@ -2,11 +2,11 @@
 
 **企业 AI 的模型执行与可信事实底座。**
 
-[English](README.md) · [设计理念](docs/community/why-unirouter.zh-CN.md) · [开始使用](docs/community/getting-started.md) ·
+[Foigent](https://github.com/foigent) · [English](README.md) · [设计理念](docs/community/why-unirouter.zh-CN.md) · [开始使用](docs/community/getting-started.md) ·
 [架构与 X-Insight](docs/community/architecture.md) · [参与贡献](CONTRIBUTING.md) ·
 [路线图](ROADMAP.md) · [许可证](LICENSE)
 
-UniRouter 为应用和 Agent 提供统一模型入口及管理控制台，将模型访问策略、
+UniRouter（UR）为应用和 Agent 提供统一模型入口及管理控制台，将模型访问策略、
 路由、预算、用量、计费和执行回执放在同一条可检查的链路中。你可以追溯请求
 如何执行，以及费用依据如何形成。
 
@@ -38,6 +38,7 @@ UniRouter 为应用和 Agent 提供统一模型入口及管理控制台，将模
 | 理解产品与职责边界 | [架构与 X-Insight](docs/community/architecture.md) |
 | 安装并发出第一次请求 | [开始使用](docs/community/getting-started.md) |
 | 了解 Linux／ECS 简易安装预览版 | [Linux 安装说明](docs/community/install-linux.zh-CN.md) |
+| 将执行事实与 X-Insight 组合使用 | [接入入口与当前限制（英文）](docs/community/getting-started.md#optional-x-insight-integration) |
 | 了解数据保存和外发 | [数据处理说明](docs/community/data-handling.md) |
 | 构建、测试或贡献 | [贡献指南](CONTRIBUTING.md)、[贡献地图](docs/community/contribution-map.md) |
 | 深入源码和历史验证 | [文档索引](docs/README.zh-CN.md) |
@@ -48,10 +49,16 @@ UniRouter 为应用和 Agent 提供统一模型入口及管理控制台，将模
 
 ## 与 X-Insight 的关系
 
-UR 负责模型执行决定和自身客户账务。X-Insight 是独立的证据与调查产品，
-负责关联不同来源的事实、支持比较和调查。两者通过经授权的异步接口协作；
-X-Insight 不进入模型调用的同步关键路径。UR 可以独立使用，X-Insight 的
-具体集成可用性按其发布状态单独说明。
+UniRouter 负责模型执行、路由、策略、用量与经济事实，包括自身客户账务，可以独立用于模型接入与
+可追溯的执行。X-Insight 是独立的证据与调查产品，关联不同来源的事实，支持分析和
+审阅。需要把 UniRouter 执行与其他获授权来源一起调查时，可以组合使用两者；
+X-Insight 异步接收事实，不进入模型调用的同步关键路径。
+
+[Foigent 首页](https://github.com/foigent) 是产品选择入口。X-Insight 源码正在准备公开，
+此页只链接可公开访问的资料。已有合同、验证过的组合及公开上手路径的剩余工作见
+[接入入口（英文）](docs/community/getting-started.md#optional-x-insight-integration)。
+共享协议与 Integration Control 为产品及验证提供基础组件，不是需要用户另行选择或
+自行拼装的其他产品。
 
 “可信”指已记录的执行与费用依据可检查、可追溯。模型回答是否正确、业务任务
 是否完成，仍需来自相应来源的证据。
@@ -67,15 +74,16 @@ X-Insight 不进入模型调用的同步关键路径。UR 可以独立使用，X
 [首次贡献任务](docs/community/starter-issues.md)列出了具体入口与验收要求。
 敏感问题请按[安全报告说明](SECURITY.md)处理，社区协作遵循[行为准则](CODE_OF_CONDUCT.md)。
 
-## 开源与商业服务
+## 开源许可与产品范围
 
-UR 项目代码使用 [Apache-2.0](LICENSE)；第三方组件保留原许可证及声明。
-版权署名沿用仓库已有的 Foigent 署名。
+UniRouter 是采用 [Apache-2.0](LICENSE) 的完整开源产品。已接受的方向是让
+UniRouter 与 X-Insight 两个完整产品都采用 Apache-2.0 开源，不划分社区版和商业版。
+Foigent 目前没有商业产品规划。各项目的源码公开与制品发布状态分别记录。
 
-已接受的产品方向是移除核心产品的运行时商业激活要求，其实现和验证见
-[发布准备状态](docs/community/release-readiness.md)。仅修改源码许可证，
-不会改变已安装旧版本的运行时行为。
+UniRouter 已接受的源码已退役运行时商业激活要求，并通过临时环境中的全新安装和
+维护升级测试。产品鉴权、租户隔离、预算、财务与审计完整性、发布校验及数据保护
+继续保留。现有部署仍需执行各自受支持的升级；正式签名下载包尚未发布。
+具体证据见[发布准备状态](docs/community/release-readiness.md)。
 
-企业支持、私有化交付、托管服务及未来独立商业模块可以分别提供，详见
-[商业边界](docs/community/commercial-boundaries.md)。源码发布本身不承诺
-某项收费服务已经开放，也不附带 SLA。
+第三方组件保留原许可证及声明，Foigent 署名继续保留。贡献许可和第三方可以进行
+商业使用的条件见[开源许可与产品范围（英文）](docs/community/commercial-boundaries.md)。
