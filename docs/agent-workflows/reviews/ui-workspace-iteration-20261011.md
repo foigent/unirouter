@@ -359,3 +359,13 @@ asset within the 460,800-byte limit. A fresh English synthetic browser dialog
 showed `Cancel` and `Run exact probe`, with the latter's matching aria-label.
 The browser and task preview were closed without submitting a probe. Backend
 sources are unchanged and the existing PostgreSQL dashboard evidence is retained.
+
+Run `38121001430` at `d792ecdd` passed Change Routing, Frontend Build and
+all three real-backend browser acceptances. The completed first run's backend
+failure identified this batch's dashboard OpenAPI flow-style `org_id`
+description without quotes. Docker stopped at its existing routed prerequisite
+guard because the required backend/browser checks had not all passed; this was
+not an image build failure. The next revision quotes only that description,
+preserving parameter meaning and schema. All 12 existing `TestOpenAPI*` checks
+passed locally with the installed Go 1.25.12 toolchain (1.472s). The unchanged
+frontend and PostgreSQL evidence is retained; final exact-head CI is required.
