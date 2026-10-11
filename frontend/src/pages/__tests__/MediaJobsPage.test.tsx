@@ -1,3 +1,4 @@
+import { LanguageSwitcher, setLocale } from '../../i18n';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAuthStore } from '../../store/auth';
@@ -83,6 +84,7 @@ const JOB = {
 
 describe('MediaJobsPage', () => {
   beforeEach(() => {
+    setLocale('zh-CN');
     vi.clearAllMocks();
     window.history.replaceState(null, '', '/media-jobs');
     useAuthStore.setState({
@@ -203,4 +205,37 @@ describe('MediaJobsPage', () => {
     expect(screen.queryByRole('button', { name: '鉴权查看输出' })).toBeNull();
     expect(mocks.getMediaJobContent).not.toHaveBeenCalled();
   });
+  it('switches locale without rereading a job or its output', async () => {
+    setLocale('en-US');
+    render(<><LanguageSwitcher /><MediaJobsPage /></>);
+    expect(await screen.findByRole('heading', { name: 'Job queue' })).toBeTruthy();
+    await screen.findAllByText('company-image');
+    expect(screen.getByText('pricing_pending_media_rate_card')).toBeTruthy();
+    const calls = mocks.getMediaJobs.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: '中文' }));
+    expect(screen.getByRole('heading', { name: '任务队列' })).toBeTruthy();
+    expect(mocks.getMediaJobs).toHaveBeenCalledTimes(calls);
+    expect(mocks.getMediaJobContent).not.toHaveBeenCalled();
+    expect(mocks.cancelMediaJob).not.toHaveBeenCalled();
+  });
+
+  it('discards an old project response after the user changes scope', async () => {
+    const oldRequest = deferred<any>();
+    mocks.getProjects.mockResolvedValue({ data: [
+      { id: 7, org_id: 1, name: 'First project', status: 'active' },
+      { id: 8, org_id: 1, name: 'Second project', status: 'active' },
+    ] });
+    mocks.getMediaJobs.mockImplementation((id: number) => id === 7 ? oldRequest.promise : Promise.resolve({ data: [{ ...JOB, job_id: 'job_second_project', requested_model: 'second-model', scope: { org_id: 1, project_id: 8 } }] }));
+    render(<MediaJobsPage />);
+    await waitFor(() => expect(mocks.getMediaJobs).toHaveBeenCalledWith(7, 1));
+    fireEvent.click(screen.getByRole('combobox', { name: '项目' }));
+    fireEvent.click(await screen.findByText('Second project'));
+    await waitFor(() => expect(mocks.getMediaJobs).toHaveBeenCalledWith(8, 1));
+    await screen.findAllByText('second-model');
+    await act(async () => oldRequest.resolve({ data: [JOB] }));
+    expect(screen.queryByText('company-image')).toBeNull();
+    expect(screen.getByText('job_second_project')).toBeTruthy();
+    expect(mocks.cancelMediaJob).not.toHaveBeenCalled();
+  });
+
 });

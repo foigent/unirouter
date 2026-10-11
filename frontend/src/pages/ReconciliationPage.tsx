@@ -1,4 +1,7 @@
-import { useState, useEffect } from 'react';
+import '../i18n/finance';
+import type { MessageKey } from '../i18n/catalog';
+import { translate as t, useI18n, labelFor, localizeOptions } from '../i18n';
+import { useState, useEffect, useRef } from 'react';
 import { Banner, Button, Table, Select, TextArea, Toast, Tag, Typography } from '@douyinfe/semi-ui';
 import { IconAlertTriangle, IconCoinMoney, IconRefresh, IconServer } from '@douyinfe/semi-icons';
 import { api, ApiError } from '../api/client';
@@ -122,20 +125,21 @@ function exactAmountLabel(amount?: COGSAmount) {
 }
 
 function ProviderCOGSOfflineWorkspace() {
+  useI18n();
   const [evidence, setEvidence] = useState('');
   const [report, setReport] = useState<COGSReport | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<{key: MessageKey; values?: Record<string, string | number>} | null>(null);
   const selected = report?.matches[selectedIndex] || null;
 
   const preview = () => {
     if (!evidence.trim()) {
-      setError('请粘贴或载入符合离线合同的 JSON 证据。');
+      setError({key: '请粘贴或载入符合离线合同的 JSON 证据。'});
       return;
     }
     setLoading(true);
-    setError('');
+    setError(null);
     api.previewProviderCOGSOffline(evidence)
       .then((next: COGSReport) => {
         setReport(next);
@@ -144,9 +148,7 @@ function ProviderCOGSOfflineWorkspace() {
       .catch((previewError: unknown) => {
         setReport(null);
         setSelectedIndex(0);
-        setError(previewError instanceof ApiError
-          ? `校验失败（${previewError.status}）：${previewError.message}`
-          : '校验失败：离线证据不可用。');
+        setError(previewError instanceof ApiError ? {key: "校验失败（{v0}）：{v1}", values: { v0: String(previewError.status), v1: String(previewError.message) }} : {key: "校验失败：离线证据不可用。"});
       })
       .finally(() => setLoading(false));
   };
@@ -154,7 +156,7 @@ function ProviderCOGSOfflineWorkspace() {
   const loadFile = (file?: File) => {
     if (!file) return;
     if (file.size > 4 * 1024 * 1024) {
-      setError('文件超过 4 MiB 离线预览上限。');
+      setError({key: '文件超过 4 MiB 离线预览上限。'});
       return;
     }
     file.text()
@@ -162,32 +164,32 @@ function ProviderCOGSOfflineWorkspace() {
         setEvidence(text);
         setReport(null);
         setSelectedIndex(0);
-        setError('');
+        setError(null);
       })
-      .catch(() => setError('无法读取所选文件。'));
+      .catch(() => setError({key: '无法读取所选文件。'}));
   };
 
   const columns = [
     {
-      title: '状态',
+      title: t("状态"),
       dataIndex: 'status',
       width: 150,
       render: (value: string) => (
         <StatusTag status={value === 'exact_request_matched' ? 'success' : value}>
-          {cogsStatusLabel[value] || value}
+          {labelFor(cogsStatusLabel, value)}
         </StatusTag>
       ),
     },
-    { title: '供应商行', dataIndex: 'line_id', width: 160, render: (value: string) => value || '—' },
-    { title: 'UniRouter 请求', dataIndex: 'request_id', width: 180, render: (value: string) => value || '—' },
+    { title: t("供应商行"), dataIndex: 'line_id', width: 160, render: (value: string) => value || '—' },
+    { title: t("UniRouter 请求"), dataIndex: 'request_id', width: 180, render: (value: string) => value || '—' },
     {
-      title: '供应商成本',
+      title: t("供应商成本"),
       dataIndex: 'provider_cost',
       width: 190,
       render: (value: COGSAmount | undefined) => exactAmountLabel(value),
     },
     {
-      title: '证据级别',
+      title: t("证据级别"),
       dataIndex: 'evidence_level',
       width: 180,
       render: (value: string) => <Tag>{value}</Tag>,
@@ -195,10 +197,10 @@ function ProviderCOGSOfflineWorkspace() {
   ];
 
   return (
-    <Surface title="导入供应商账单证据（高级）">
+    <Surface title={t("导入供应商账单证据（高级）")}>
       <Banner
         type="info"
-        description="当供应商没有实时账单连接器时，可把从供应商后台导出的 JSON 在这里做一次本地对账预览。内容只在当前浏览器内存中校验：不上传保存、不连接供应商、不接收凭据、不修改客户账。普通运营不需要使用本工具。"
+        description={t("当供应商没有实时账单连接器时，可把从供应商后台导出的 JSON 在这里做一次本地对账预览。内容只在当前浏览器内存中校验：不上传保存、不连接供应商、不接收凭据、不修改客户账。普通运营不需要使用本工具。")}
         closeIcon={null}
         style={{ marginBottom: 16 }}
       />
@@ -206,57 +208,60 @@ function ProviderCOGSOfflineWorkspace() {
         <main className="ur-explorer-panel">
           <div className="ur-panel-title">
             <div>
-              <Typography.Title heading={5} style={{ margin: 0 }}>供应商账单文件内容（JSON）</Typography.Title>
+              <Typography.Title heading={5} style={{ margin: 0 }}>{t("供应商账单文件内容（JSON）")}</Typography.Title>
               <Typography.Text className="ur-panel-hint">
-                合同 unirouter.provider-cogs-offline.v1 · 原始 JSON 不写入浏览器存储
+
+                {t("合同 unirouter.provider-cogs-offline.v1 · 原始 JSON 不写入浏览器存储")}
               </Typography.Text>
             </div>
-            <Tag color="blue">不持久化</Tag>
+            <Tag color="blue">{t("不持久化")}</Tag>
           </div>
           <TextArea
-            aria-label="供应商成本离线证据 JSON"
+            aria-label={t("供应商成本离线证据 JSON")}
             value={evidence}
             onChange={value => {
               setEvidence(value);
               setReport(null);
               setSelectedIndex(0);
-              setError('');
+              setError(null);
             }}
             autosize={{ minRows: 8, maxRows: 16 }}
-            placeholder="粘贴符合当前合同的供应商账单 JSON，或从本机载入文件"
+            placeholder={t("粘贴符合当前合同的供应商账单 JSON，或从本机载入文件")}
           />
           <div className="ur-financial-truth-actions">
             <label className="semi-button semi-button-tertiary semi-button-light" tabIndex={0}>
-              载入 JSON 文件
+
+              {t("载入 JSON 文件")}
               <input
-                aria-label="载入供应商成本 JSON 文件"
+                aria-label={t("载入供应商成本 JSON 文件")}
                 type="file"
                 accept="application/json,.json"
                 hidden
                 onChange={event => loadFile(event.target.files?.[0])}
               />
             </label>
-            <Button type="primary" loading={loading} onClick={preview}>严格校验并预览</Button>
+            <Button type="primary" loading={loading} onClick={preview}>{t("严格校验并预览")}</Button>
             <Button
               disabled={!evidence && !report}
               onClick={() => {
                 setEvidence('');
                 setReport(null);
                 setSelectedIndex(0);
-                setError('');
+                setError(null);
               }}
             >
-              清空本地内容
+
+              {t("清空本地内容")}
             </Button>
           </div>
-          {error && <Banner type="danger" description={error} style={{ marginTop: 12 }} />}
+          {error && <Banner type="danger" description={error ? t(error.key, error.values) : undefined} style={{ marginTop: 12 }} />}
           {report && (
             <>
               <div className="ur-kpi-grid ur-financial-truth-kpis">
-                <MetricTile label="供应商总成本" value={`${report.summary.supplier_total_minor} / ${report.amount_scale} ${report.currency}`} tone="blue" />
-                <MetricTile label="请求级精确匹配" value={formatInteger(report.summary.exact_request_matches)} tone="green" />
-                <MetricTile label="聚合未归因" value={formatInteger(report.summary.aggregate_unattributed)} tone="amber" />
-                <MetricTile label="冲突性候选" value={formatInteger(report.summary.ambiguous)} tone="red" />
+                <MetricTile label={t("供应商总成本")} value={`${report.summary.supplier_total_minor} / ${report.amount_scale} ${report.currency}`} tone="blue" />
+                <MetricTile label={t("请求级精确匹配")} value={formatInteger(report.summary.exact_request_matches)} tone="green" />
+                <MetricTile label={t("聚合未归因")} value={formatInteger(report.summary.aggregate_unattributed)} tone="amber" />
+                <MetricTile label={t("冲突性候选")} value={formatInteger(report.summary.ambiguous)} tone="red" />
               </div>
               <div className="ur-table-shell">
                 <Table
@@ -279,35 +284,36 @@ function ProviderCOGSOfflineWorkspace() {
             </>
           )}
         </main>
-        <aside className="ur-explorer-panel ur-explorer-detail" aria-label="供应商成本证据检查器">
+        <aside className="ur-explorer-panel ur-explorer-detail" aria-label={t("供应商成本证据检查器")}>
           <div className="ur-detail-header">
             <div>
-              <Typography.Text className="ur-panel-hint">财务事实检查器</Typography.Text>
-              <Typography.Title heading={5} style={{ margin: 0 }}>证据与权限边界</Typography.Title>
+              <Typography.Text className="ur-panel-hint">{t("财务事实检查器")}</Typography.Text>
+              <Typography.Title heading={5} style={{ margin: 0 }}>{t("证据与权限边界")}</Typography.Title>
             </div>
             <Tag color={report?.customer_ledger_mutation === 'none' ? 'green' : 'red'}>
-              客户账：{report?.customer_ledger_mutation || '无操作'}
+
+              {t("客户账：")}{report?.customer_ledger_mutation || t("无操作")}
             </Tag>
           </div>
           {selected ? (
             <dl className="ur-financial-truth-detail">
-              <dt>结论</dt><dd>{cogsStatusLabel[selected.status] || selected.status}</dd>
-              <dt>证据级别</dt><dd>{selected.evidence_level}</dd>
-              <dt>供应商行</dt><dd>{selected.line_id || '—'}</dd>
-              <dt>UniRouter 请求 / 尝试</dt><dd>{selected.request_id || '—'} / {selected.attempt_id || '—'}</dd>
-              <dt>上游请求</dt><dd>{selected.upstream_request_id || '—'}</dd>
-              <dt>供应商成本</dt><dd>{exactAmountLabel(selected.provider_cost)}</dd>
-              <dt>UniRouter 成本估算</dt><dd>{exactAmountLabel(selected.provider_estimate)}</dd>
-              <dt>供应商差额</dt><dd>{selected.provider_variance_minor || '—'}</dd>
-              <dt>客户收入证据</dt><dd>{exactAmountLabel(selected.customer_revenue)}</dd>
-              <dt>客户欠款动作</dt><dd>{selected.customer_debt_action}</dd>
-              <dt>语义证据哈希</dt><dd className="ur-mono-break">{report?.import_semantic_hash}</dd>
-              <dt>来源快照哈希</dt><dd className="ur-mono-break">{report?.source_snapshot_hash}</dd>
+              <dt>{t("结论")}</dt><dd>{labelFor(cogsStatusLabel, selected.status)}</dd>
+              <dt>{t("证据级别")}</dt><dd>{selected.evidence_level}</dd>
+              <dt>{t("供应商行")}</dt><dd>{selected.line_id || '—'}</dd>
+              <dt>{t("UniRouter 请求 / 尝试")}</dt><dd>{selected.request_id || '—'} / {selected.attempt_id || '—'}</dd>
+              <dt>{t("上游请求")}</dt><dd>{selected.upstream_request_id || '—'}</dd>
+              <dt>{t("供应商成本")}</dt><dd>{exactAmountLabel(selected.provider_cost)}</dd>
+              <dt>{t("UniRouter 成本估算")}</dt><dd>{exactAmountLabel(selected.provider_estimate)}</dd>
+              <dt>{t("供应商差额")}</dt><dd>{selected.provider_variance_minor || '—'}</dd>
+              <dt>{t("客户收入证据")}</dt><dd>{exactAmountLabel(selected.customer_revenue)}</dd>
+              <dt>{t("客户欠款动作")}</dt><dd>{selected.customer_debt_action}</dd>
+              <dt>{t("语义证据哈希")}</dt><dd className="ur-mono-break">{report?.import_semantic_hash}</dd>
+              <dt>{t("来源快照哈希")}</dt><dd className="ur-mono-break">{report?.source_snapshot_hash}</dd>
             </dl>
           ) : (
             <EmptyState
-              title="等待离线证据"
-              description="检查器始终可见；校验成功后会自动选择第一条结果，无需再次点击打开。"
+              title={t("等待离线证据")}
+              description={t("检查器始终可见；校验成功后会自动选择第一条结果，无需再次点击打开。")}
               minHeight={280}
             />
           )}
@@ -318,6 +324,7 @@ function ProviderCOGSOfflineWorkspace() {
 }
 
 export default function ReconciliationPage() {
+  useI18n();
   const user = useAuthStore((state) => state.user);
   const organizationRole = organizationRoleForUser(user);
   const platform = isPlatformAdminRole(organizationRole);
@@ -330,6 +337,8 @@ export default function ReconciliationPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const requestVersion = useRef(0);
   const [modelFilter, setModelFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [usageSourceFilter, setUsageSourceFilter] = useState('');
@@ -338,7 +347,9 @@ export default function ReconciliationPage() {
 
   const load = (p = page) => {
     if (!customerContextReady) return;
+    const version = ++requestVersion.current;
     setLoading(true);
+    setLoadError(false);
     api.getReconciliation(p, pageSize, {
       ...(targetOrgID ? { org_id: targetOrgID } : {}),
       model: modelFilter,
@@ -346,15 +357,20 @@ export default function ReconciliationPage() {
       usage_source: usageSourceFilter,
     })
       .then((res: any) => {
+        if (version !== requestVersion.current) return;
         setRecords(res.data || []);
         setSummary(res.summary || null);
         setTotal(res.total || 0);
       })
-      .catch(() => Toast.error({ content: '加载失败' }))
-      .finally(() => setLoading(false));
+      .catch(() => {
+        if (version !== requestVersion.current) return;
+        setRecords([]); setSummary(null); setTotal(0); setLoadError(true);
+        Toast.error({ content: t('加载失败') });
+      })
+      .finally(() => { if (version === requestVersion.current) setLoading(false); });
   };
 
-  useEffect(() => { load(); }, [customerContextReady, page, pageSize, modelFilter, statusFilter, usageSourceFilter, targetOrgID]);
+  useEffect(() => { load(); return () => { requestVersion.current += 1; }; }, [customerContextReady, page, pageSize, modelFilter, statusFilter, usageSourceFilter, targetOrgID]);
   useEffect(() => {
     if (!customerContextReady) return;
     api.getModelNames().then((d: any) => setModelNames(d.data || [])).catch(() => {});
@@ -362,38 +378,38 @@ export default function ReconciliationPage() {
 
   const columns = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 80 },
-    { title: '操作 ID', dataIndex: 'request_id', key: 'request_id', ellipsis: true },
-    { title: '模型', dataIndex: 'model', key: 'model', width: 150 },
-    { title: '估算 Token', dataIndex: 'estimated_tokens', key: 'estimated_tokens', width: 120 },
+    { title: t("操作 ID"), dataIndex: 'request_id', key: 'request_id', ellipsis: true },
+    { title: t("模型"), dataIndex: 'model', key: 'model', width: 150 },
+    { title: t("估算 Token"), dataIndex: 'estimated_tokens', key: 'estimated_tokens', width: 120 },
     {
-      title: '记账 Token', dataIndex: 'actual_tokens', key: 'actual_tokens', width: 150,
+      title: t("记账 Token"), dataIndex: 'actual_tokens', key: 'actual_tokens', width: 150,
       render: (value: number, record: ReconRecord) => (
         <span>
           {formatInteger(value)}
           <Tag size="small" color={['upstream', 'api', ''].includes(record.usage_source || '') ? 'blue' : 'orange'} style={{ marginLeft: 6 }}>
-            {['upstream', 'api', ''].includes(record.usage_source || '') ? '上游回传' : '本地计量'}
+            {['upstream', 'api', ''].includes(record.usage_source || '') ? t("上游回传") : t("本地计量")}
           </Tag>
         </span>
       ),
     },
     {
-      title: '来源',
+      title: t("来源"),
       dataIndex: 'usage_source',
       key: 'usage_source',
       width: 132,
       render: (v: string) => v ? <StatusTag status={v}>{usageSourceLabel(v)}</StatusTag> : '-',
     },
     {
-      title: '供应商 Prompt Cache',
+      title: t("供应商 Prompt Cache"),
       dataIndex: 'cache_usage_status',
       key: 'cache_usage_status',
       width: 190,
       render: (_: string, record: ReconRecord) => record.cache_usage_schema
-        ? <Tag color={(record.cache_read_tokens || 0) > 0 ? 'green' : 'blue'}>读 {formatInteger(record.cache_read_tokens)} / 写 {formatInteger(record.cache_creation_tokens)}</Tag>
-        : <Tag>未回传</Tag>,
+        ? <Tag color={(record.cache_read_tokens || 0) > 0 ? 'green' : 'blue'}>{t("读")} {formatInteger(record.cache_read_tokens)}  {t("/ 写")} {formatInteger(record.cache_creation_tokens)}</Tag>
+        : <Tag>{t("未回传")}</Tag>,
     },
     {
-      title: '差值',
+      title: t("差值"),
       dataIndex: 'delta',
       key: 'delta',
       width: 100,
@@ -404,153 +420,156 @@ export default function ReconciliationPage() {
       ),
     },
     {
-      title: '偏差率',
+      title: t("偏差率"),
       dataIndex: 'variance_ratio',
       key: 'variance_ratio',
       width: 100,
       render: (v: number) => <Tag color={(v || 0) > 0 ? 'red' : (v || 0) < 0 ? 'green' : 'grey'}>{formatPercent(v)}</Tag>,
     },
     {
-      title: '置信度',
+      title: t("置信度"),
       dataIndex: 'source_confidence',
       key: 'source_confidence',
       width: 100,
       render: (v: number) => formatPercent(v),
     },
     {
-      title: '状态',
+      title: t("状态"),
       dataIndex: 'status',
       key: 'status',
       width: 100,
       render: (v: string) => (
         <StatusTag status={v === 'reconciled' ? 'success' : v === 'pending' ? 'pending' : 'failed'}>
-          {v === 'reconciled' ? '正常' : v === 'error' ? '错误' : v}
+          {v === 'reconciled' ? t("正常") : v === 'error' ? t("错误") : v}
         </StatusTag>
       ),
     },
-    { title: '时间', dataIndex: 'created_at', key: 'created_at', width: 180 },
+    { title: t("时间"), dataIndex: 'created_at', key: 'created_at', width: 180 },
   ];
 
   if (!customerContextReady) {
     const blocker = customerContextBlockerCopy(customerContext.state as Exclude<typeof customerContext.state, 'ready'>);
     return (
-      <div className="ur-page">
-        <PageHeader eyebrow="成本与财务" title="分摊与对账" description="对账数据必须绑定当前部署唯一客户组织。" />
+      <div className="ur-page ur-finance-workspace">
+        <PageHeader eyebrow={t("成本与财务")} title={t("分摊与对账")} description={t("对账数据必须绑定当前部署唯一客户组织。")} />
         <Surface><EmptyState title={blocker.title} description={blocker.description} minHeight={320} /></Surface>
       </div>
     );
   }
 
   return (
-    <div className="ur-page">
+    <div className="ur-page ur-finance-workspace">
       <PageHeader
-        eyebrow="成本与财务"
-        title="分摊与对账"
-        description="核对客户结算账、UniRouter 成本估算与供应商成本证据；任何估算、聚合账单或离线预览都不会自动变成应收、应付或总账事实。"
+        eyebrow={t("成本与财务")}
+        title={t("分摊与对账")}
+        description={t("核对客户结算账、UniRouter 成本估算与供应商成本证据；任何估算、聚合账单或离线预览都不会自动变成应收、应付或总账事实。")}
       />
       <Banner
         type="info"
-        description="当前已实现请求级对账、企业分摊运行、关账门禁、调整/冲销流水和离线供应商证据。ERP/总账导出仍未配置；跨期异常关联和深度调查继续由 X-Insight 承担。"
+        description={t("当前已实现请求级对账、企业分摊运行、关账门禁、调整/冲销流水和离线供应商证据。ERP/总账导出仍未配置；跨期异常关联和深度调查继续由 X-Insight 承担。")}
         closeIcon={null}
         style={{ marginBottom: 16 }}
       />
-	  {platform && targetOrgID && <ProviderCostResolutionWorkspace orgId={targetOrgID} />}
-	  <EnterpriseAllocationWorkspace orgId={targetOrgID} canManage={canManageEnterpriseFinance} />
-      <Surface title="筛选条件">
+      <Surface title={t("筛选条件")}>
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-          {platform && <Typography.Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${targetOrgID}`}</Typography.Text>}
+          {platform && <Typography.Text type="tertiary">{t("客户范围：")}{customerContext.orgName || t("组织 #{v0}", { v0: String(targetOrgID) })}</Typography.Text>}
           <Select
             aria-labelledby="reconciliation-model-label"
-            insetLabel="模型"
+            insetLabel={t("模型")}
             insetLabelId="reconciliation-model-label"
-            placeholder="模型筛选"
+            placeholder={t("模型筛选")}
             style={{ width: 200 }}
             value={modelFilter || undefined}
             onChange={(v) => { setModelFilter((v as string) || ''); setPage(1); }}
             optionList={[
-              { label: '全部模型', value: '' },
+              { label: t("全部模型"), value: '' },
               ...modelNames.map(m => ({ label: m, value: m })),
             ]}
           />
           <Select
             aria-labelledby="reconciliation-status-label"
-            insetLabel="状态"
+            insetLabel={t("状态")}
             insetLabelId="reconciliation-status-label"
-            placeholder="状态筛选"
+            placeholder={t("状态筛选")}
             style={{ width: 150 }}
             value={statusFilter || undefined}
             onChange={(v) => { setStatusFilter((v as string) || ''); setPage(1); }}
             optionList={[
-              { label: '全部', value: '' },
-              { label: '正常', value: 'reconciled' },
-              { label: '错误', value: 'error' },
+              { label: t("全部"), value: '' },
+              { label: t("正常"), value: 'reconciled' },
+              { label: t("错误"), value: 'error' },
             ]}
           />
           <Select
             aria-labelledby="reconciliation-source-label"
-            insetLabel="计量来源"
+            insetLabel={t("计量来源")}
             insetLabelId="reconciliation-source-label"
-            placeholder="来源筛选"
+            placeholder={t("来源筛选")}
             style={{ width: 190 }}
             value={usageSourceFilter || undefined}
             onChange={(v) => { setUsageSourceFilter((v as string) || ''); setPage(1); }}
-            optionList={usageSourceOptions}
+            optionList={localizeOptions(usageSourceOptions)}
           />
-          <Button icon={<IconRefresh />} onClick={() => load()}>刷新</Button>
+          <Button icon={<IconRefresh />} onClick={() => load()}>{t("刷新")}</Button>
         </div>
       </Surface>
+      {loading || loadError || !summary ? (
+        <Surface><EmptyState title={loading ? t('正在加载数据') : t('汇总暂不可用')} description={loading ? t('正在读取当前范围，请稍候。') : t('当前响应未提供汇总，不能按零解读。')} minHeight={180} /></Surface>
+      ) : (
       <div className="ur-kpi-grid">
         <MetricTile
-          label="估算占比"
+          label={t("估算占比")}
           value={formatPercent(summary?.estimated_ratio)}
           icon={<IconAlertTriangle />}
           tone={summary?.estimated_usage_alert ? 'red' : 'green'}
           meta={(
             <span>
-              阈值 {formatPercent(summary?.estimated_ratio_alert_threshold)}
+
+              {t("阈值")} {formatPercent(summary?.estimated_ratio_alert_threshold)}
               {' '}
               <StatusTag status={summary?.estimated_usage_alert ? 'warning' : 'success'}>
-                {summary?.estimated_usage_alert ? '已触发' : '正常'}
+                {summary?.estimated_usage_alert ? t("已触发") : t("正常")}
               </StatusTag>
             </span>
           )}
         />
         <MetricTile
-          label="估算来源 Token"
+          label={t("估算来源 Token")}
           value={formatInteger(summary?.estimated_tokens)}
           icon={<IconServer />}
           tone="amber"
-          meta={`口径 ${summary?.estimated_ratio_scope === 'filtered_query' ? '当前筛选口径' : summary?.estimated_ratio_scope || '当前筛选口径'}`}
+          meta={t("口径 {v0}", { v0: String(summary?.estimated_ratio_scope === 'filtered_query' ? t("当前筛选口径") : summary?.estimated_ratio_scope || t("当前筛选口径")) })}
         />
         <MetricTile
-          label="上游回传 Token"
+          label={t("上游回传 Token")}
           value={formatInteger(summary?.upstream_tokens)}
           icon={<IconCoinMoney />}
           tone="blue"
-          meta={`记账合计 ${formatInteger(summary?.actual_tokens)}`}
+          meta={t("记账合计 {v0}", { v0: String(formatInteger(summary?.actual_tokens)) })}
         />
         <MetricTile
-          label="估算与记账总偏差"
+          label={t("估算与记账总偏差")}
           value={formatSignedInteger(summary?.variance_tokens)}
           icon={<IconAlertTriangle />}
           tone={(summary?.variance_tokens || 0) === 0 ? 'slate' : 'violet'}
-          meta={`记账合计 − 请求前估算；偏差率 ${formatPercent(summary?.variance_ratio)} / 置信度 ${formatPercent(summary?.average_source_confidence)}`}
+          meta={t("记账合计 − 请求前估算；偏差率 {v0} / 置信度 {v1}", { v0: String(formatPercent(summary?.variance_ratio)), v1: String(formatPercent(summary?.average_source_confidence)) })}
         />
         <MetricTile
-          label="缓存读取 Token"
+          label={t("缓存读取 Token")}
           value={formatInteger(summary?.cache_read_tokens)}
           icon={<IconCoinMoney />}
           tone="green"
-          meta={`读取费用 ${formatMoney(summary?.cache_read_cost_micros || '0', 6)}；权威回传 ${formatInteger(summary?.authoritative_cache_records)} 条`}
+          meta={t("读取费用 {v0}；权威回传 {v1} 条", { v0: String(formatMoney(summary?.cache_read_cost_micros || '0', 6)), v1: String(formatInteger(summary?.authoritative_cache_records)) })}
         />
         <MetricTile
-          label="缓存写入 Token"
+          label={t("缓存写入 Token")}
           value={formatInteger(summary?.cache_creation_tokens)}
           icon={<IconServer />}
           tone="violet"
-          meta={`写入费用 ${formatMoney(summary?.cache_creation_cost_micros || '0', 6)}；未回传 ${formatInteger(summary?.unreported_cache_records)} 条`}
+          meta={t("写入费用 {v0}；未回传 {v1} 条", { v0: String(formatMoney(summary?.cache_creation_cost_micros || '0', 6)), v1: String(formatInteger(summary?.unreported_cache_records)) })}
         />
       </div>
+      )}
       <Surface>
         <div className="ur-table-shell">
           <Table
@@ -570,9 +589,11 @@ export default function ReconciliationPage() {
           />
         </div>
       </Surface>
+      {platform && targetOrgID && <ProviderCostResolutionWorkspace orgId={targetOrgID} />}
+      <EnterpriseAllocationWorkspace orgId={targetOrgID} canManage={canManageEnterpriseFinance} />
       <details className="ur-advanced-disclosure">
-        <summary>高级：导入供应商账单证据</summary>
-        <Typography.Paragraph type="tertiary">仅当你已经从供应商后台导出兼容 JSON，且需要核对供应商成本时使用。展开不会读取文件或发送请求。</Typography.Paragraph>
+        <summary>{t("高级：导入供应商账单证据")}</summary>
+        <Typography.Paragraph type="tertiary">{t("仅当你已经从供应商后台导出兼容 JSON，且需要核对供应商成本时使用。展开不会读取文件或发送请求。")}</Typography.Paragraph>
         <ProviderCOGSOfflineWorkspace />
       </details>
     </div>

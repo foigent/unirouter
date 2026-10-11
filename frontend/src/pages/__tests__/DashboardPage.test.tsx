@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from '../../test/MemoryRouter';
+import { I18nProvider, LanguageSwitcher, setLocale } from '../../i18n';
 import DashboardPage from '../DashboardPage';
 import { useAuthStore } from '../../store/auth';
 import type { LicenseAccess } from '../../navigation';
@@ -79,8 +80,8 @@ const MOCK_STATS = {
     { date: '2026-06-29', requests: 7345, cost_micros: '36780000' },
   ],
   model_distribution: [
-    { model: 'gpt-4o', requests: 8000, success_count: 7980, fail_count: 20, success_rate: 0.9975, p95_latency_ms: 620 },
-    { model: 'claude-3.5-sonnet', requests: 4345, success_count: 4200, fail_count: 145, success_rate: 0.9666, p95_latency_ms: 980 },
+    { model: 'gpt-4o', requests: 8000, cost_micros: '40000000', avg_latency_ms: 300, success_count: 7980, fail_count: 20, success_rate: 0.9975, p95_latency_ms: 620 },
+    { model: 'claude-3.5-sonnet', requests: 4345, cost_micros: '16780000', avg_latency_ms: 450, success_count: 4200, fail_count: 145, success_rate: 0.9666, p95_latency_ms: 980 },
   ],
   channel_health: [
     { id: 1, deployment_id: 1, model_operation_id: 'openai.chat_completions.v1', name: 'OpenAI Main', provider: 'openai', base_url: 'https://api.openai.com/v1', public_model: 'gpt-4o', public_models: ['gpt-4o'], enabled: true, available: true, credential_ready: true, status: 'healthy', success_count: 10000, fail_count: 50 },
@@ -93,13 +94,14 @@ const MOCK_STATS = {
 function renderDashboard() {
   return render(
     <MemoryRouter>
-      <DashboardPage />
+      <I18nProvider><LanguageSwitcher /><DashboardPage /></I18nProvider>
     </MemoryRouter>
   );
 }
 
 describe('DashboardPage', () => {
   beforeEach(() => {
+    setLocale('zh-CN');
     vi.clearAllMocks();
     mockGetDashboardStats.mockResolvedValue(MOCK_STATS);
     mockGetOrganizations.mockResolvedValue({
@@ -142,7 +144,7 @@ describe('DashboardPage', () => {
     expect(html).toContain('概览');
     expect(html).toContain('客户运营总览');
     expect(html).toContain('数据范围：北区组织');
-    expect(html).toContain('统一观察当前客户的请求量、成功率、延迟、成本和模型部署健康状态。');
+    expect(html).toContain('统一观察模型使用、运行质量与请求费用。');
     expect(html).not.toContain('Gateway overview');
     expect(html).not.toContain('AI Gateway 控制台');
   });
@@ -150,14 +152,12 @@ describe('DashboardPage', () => {
   it('summarizes verifiable risks and contextual actions without duplicating the navigation taxonomy', async () => {
     renderDashboard();
 
-    expect(await screen.findByText('运行关注与待处理动作')).toBeTruthy();
+    expect(await screen.findByText('结算与通知')).toBeTruthy();
     expect(mockGetInternalStatus).toHaveBeenCalledWith({ org_id: 1 });
-    expect(screen.getByText('运行信号')).toBeTruthy();
-    expect(screen.getByText('需要关注')).toBeTruthy();
-    expect(screen.getByText(/异常部署操作 1 · 失败请求 350/)).toBeTruthy();
-    expect(screen.getByText('预警 · 3')).toBeTruthy();
+    expect(screen.getByText('未确认通知')).toBeTruthy();
+    expect(screen.getAllByText('窗口失败')[0]).toBeTruthy();
     expect(screen.getByText('严重 1 · 预警 2')).toBeTruthy();
-    expect(screen.getByText('结算风险')).toBeTruthy();
+    expect(screen.getByText('低余额阈值')).toBeTruthy();
     expect(screen.getByRole('button', { name: '查看运行状态' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '处理通知' })).toBeTruthy();
     expect(screen.queryByText('任务入口')).toBeNull();
@@ -175,9 +175,9 @@ describe('DashboardPage', () => {
 
     renderDashboard();
 
-    expect(await screen.findByText('暂无可判定样本')).toBeTruthy();
+    expect(await screen.findByText('暂无样本')).toBeTruthy();
     expect(await screen.findByText('读取失败')).toBeTruthy();
-    expect(screen.getByText('不以缺失或读取失败冒充零事件')).toBeTruthy();
+    expect(screen.queryByText('0.00%')).toBeNull();
     expect(screen.queryByText('当前窗口正常')).toBeNull();
   });
 
@@ -195,10 +195,10 @@ describe('DashboardPage', () => {
     mockGetDashboardStats.mockResolvedValue({ ...MOCK_STATS, recent_logs: [] });
     renderDashboard();
 
-    expect(await screen.findByText('暂无请求记录')).toBeTruthy();
+    expect(await screen.findByText('调用尚未发生或当前没有可见记录。')).toBeTruthy();
     await waitFor(() => expect(mockGetDashboardStats).toHaveBeenCalledWith(expect.any(String), expect.any(String), 1));
     expect(await screen.findByText(/数据范围：北区组织/)).toBeTruthy();
-    expect(screen.getByText('暂无请求记录')).toBeTruthy();
+    expect(screen.getByText('调用尚未发生或当前没有可见记录。')).toBeTruthy();
   });
 
   it('blocks dashboard reads when the deployment has no unique customer context', () => {
@@ -256,6 +256,24 @@ describe('DashboardPage', () => {
     expect(screen.queryByRole('button', { name: /X-Insight 数据交换/ })).toBeNull();
   });
 
+  it.each(['zh-CN', 'en-US'] as const)('distinguishes legacy-locked notifications from a read failure in %s', async locale => {
+    setLocale(locale);
+    const user = useAuthStore.getState().user!;
+    useAuthStore.setState({ user: { ...user, license_access: {
+      ...PARTIAL_LICENSE, features: { ...PARTIAL_LICENSE.features, notifications: false },
+    } } });
+    renderDashboard();
+    expect(await screen.findByText(locale === 'zh-CN' ? '通知功能未授权' : 'Notifications not licensed')).toBeInTheDocument();
+    expect(screen.queryByText(locale === 'zh-CN' ? '读取失败' : 'Unavailable')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: locale === 'zh-CN' ? '处理通知' : 'Review notifications' })).not.toBeInTheDocument();
+    expect(mockGetInternalStatus).not.toHaveBeenCalled();
+    expect(mockGetDashboardStats).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: locale === 'zh-CN' ? 'English' : '中文' }));
+    expect(await screen.findByText(locale === 'zh-CN' ? 'Notifications not licensed' : '通知功能未授权')).toBeInTheDocument();
+    expect(mockGetInternalStatus).not.toHaveBeenCalled();
+    expect(mockGetDashboardStats).toHaveBeenCalledTimes(1);
+  });
+
   it('passes time range params to API', async () => {
     renderDashboard();
     await waitFor(() => {
@@ -270,8 +288,8 @@ describe('DashboardPage', () => {
     const { container } = renderDashboard();
     await waitFor(() => {
       const html = container.textContent || '';
-      // total_requests 12345 => "12.3K" formatted
-      expect(html).toContain('12.3K');
+      // The full count remains visible beside the composition.
+      expect(html).toContain('12,345');
     });
   });
 
@@ -282,7 +300,7 @@ describe('DashboardPage', () => {
       expect(html).toContain('结算可用额度');
       expect(html).toContain('¥1200.00');
       expect(html).toContain('余额正常');
-      expect(html).toContain('阈值 ¥10.00');
+      expect(html).toContain('低余额阈值¥10.00');
       expect(html).not.toContain('预算进度');
     });
   });
@@ -300,20 +318,18 @@ describe('DashboardPage', () => {
     expect(await screen.findByText('已触发低余额')).toBeTruthy();
   });
 
-  it('labels selected-window cost and hides the fixed 24h comparison for longer ranges', async () => {
-    renderDashboard();
-
-    expect(await screen.findByText('当前窗口费用')).toBeTruthy();
-    expect(screen.getAllByText('较前 24h').length).toBeGreaterThan(0);
-
-    fireEvent.click(screen.getByRole('button', { name: '7 天' }));
-
+  it('applies the selected window to both model compositions without duplicating cost totals', async () => {
+    const { container } = renderDashboard();
+    expect(await screen.findByRole('heading', { name: '模型费用构成' })).toBeTruthy();
+    expect(container.querySelectorAll('.ur-composition-total')[1].textContent).toBe('¥56.78');
+    fireEvent.click(screen.getByRole('button', { name: '最近 7 天' }));
     await waitFor(() => expect(mockGetDashboardStats).toHaveBeenCalledTimes(2));
+    const [start, end] = mockGetDashboardStats.mock.calls[1];
+    expect(new Date(end).getTime() - new Date(start).getTime()).toBe(7 * 86400000);
     expect(screen.queryByText('较前 24h')).toBeNull();
-    expect(screen.getByText('按所选时间窗口累计')).toBeTruthy();
   });
 
-  it('renders model prices with model_name field', async () => {
+  it('preserves resolved model names in the overview', async () => {
     const { container } = renderDashboard();
     await waitFor(() => {
       const html = container.textContent || '';
@@ -334,11 +350,12 @@ describe('DashboardPage', () => {
     const openAIConnection = await screen.findByRole('button', { name: '查看模型部署 OpenAI Main' });
     expect(openAIConnection).toBeTruthy();
     expect(screen.getByText('Azure Backup')).toBeTruthy();
-    expect(screen.getByText('模型：gpt-4o · api.openai.com')).toBeTruthy();
+    expect(openAIConnection.textContent).toContain('gpt-4o');
+    expect(openAIConnection.textContent).toContain('openai.chat_completions.v1');
     expect(screen.getByText('当前可路由部署操作')).toBeTruthy();
     expect(screen.getByText('2/3')).toBeTruthy();
     fireEvent.click(openAIConnection);
-    expect(mockNavigate).toHaveBeenCalledWith('/model-endpoints?deployment_id=1&operation_id=openai.chat_completions.v1');
+    expect(mockNavigate).toHaveBeenCalledWith('/channels?deployment_id=1&operation_id=openai.chat_completions.v1');
   });
 
   it('shows no sample instead of a zero success rate for a healthy idle connection', async () => {
@@ -365,7 +382,7 @@ describe('DashboardPage', () => {
     const card = await screen.findByRole('button', { name: '查看模型部署 Idle healthy endpoint' });
     expect(card.textContent).toContain('暂无样本');
     expect(card.textContent).not.toContain('0.0%');
-    expect(card.textContent).toContain('健康');
+    expect(card.textContent).toContain('可路由');
   });
 
   it('shows the immutable canonical deployment operation on each recent request', async () => {
@@ -409,8 +426,8 @@ describe('DashboardPage', () => {
 
     expect(await screen.findByText('缺少凭证')).toBeTruthy();
     expect(screen.getByText('0/1')).toBeTruthy();
-    expect(screen.getByText('100.0%')).toBeTruthy();
-    expect(screen.getByText('按 canonical deployment + operation 判定')).toBeTruthy();
+    expect(screen.getByText('100.00%')).toBeTruthy();
+    expect(screen.getByText('当前状态 · 不随时间筛选')).toBeTruthy();
   });
 
   it('explains stale and unavailable route projections instead of showing healthy', async () => {
@@ -439,7 +456,7 @@ describe('DashboardPage', () => {
     expect(screen.getByText('0/2')).toBeTruthy();
   });
 
-  it('labels channel provider without repeating identical channel names', async () => {
+  it('preserves provider and operation identifiers', async () => {
     mockGetDashboardStats.mockResolvedValue({
       ...MOCK_STATS,
       channel_health: [
@@ -455,20 +472,16 @@ describe('DashboardPage', () => {
     });
 
     const html = container.textContent || '';
-    expect(html).toContain('供应商：兼容 OpenAI 协议');
+    expect(html).toContain('openai · openai.chat_completions.v1');
     expect(html).not.toContain('供应商：deepseek');
   });
 
-  it('renders trend metrics as selectable checkboxes', async () => {
+  it('shows requests and cost in aligned charts with separate units', async () => {
     const { container } = renderDashboard();
-    await waitFor(() => {
-      expect(mockGetDashboardStats).toHaveBeenCalled();
-    });
-
-    const trendControls = container.querySelectorAll('.ur-trend-checklist input[type="checkbox"]');
-    expect(trendControls).toHaveLength(2);
-    expect(container.textContent || '').toContain('请求数');
-    expect(container.textContent || '').toContain('费用');
+    expect(await screen.findByText('请求与费用趋势')).toBeTruthy();
+    expect(container.querySelectorAll('.ur-overview-trend')).toHaveLength(2);
+    expect(screen.getByRole('heading', { name: '请求数' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '费用 · CNY' })).toBeTruthy();
   });
 
   it('renders latency percentiles and the aligned dashboard layout sections', async () => {
@@ -479,12 +492,12 @@ describe('DashboardPage', () => {
 
     const html = container.textContent || '';
     expect(html).toContain('P95 延迟');
-    expect(html).toContain('780ms');
+    expect(html).toContain('780 ms');
     expect(html).toContain('P99');
-    expect(html).toContain('1290ms');
-    expect(container.querySelector('.ur-dashboard-status-strip')).toBeTruthy();
-    expect(container.querySelector('.ur-dashboard-analytics-grid')).toBeTruthy();
-    expect(container.querySelector('.ur-latency-surface')).toBeTruthy();
+    expect(html).toContain('1,290 ms');
+    expect(container.querySelector('.ur-overview-kpis')).toBeTruthy();
+    expect(container.querySelector('.ur-overview-trends')).toBeTruthy();
+    expect(container.querySelector('.ur-overview-inspector')).toBeTruthy();
   });
 
   it('shows an explicit retry state instead of rendering failed data as zeros', async () => {
@@ -504,11 +517,72 @@ describe('DashboardPage', () => {
     renderDashboard();
 
     expect(await screen.findByText('组织只读总览')).toBeTruthy();
-    expect(screen.getByText(/当前只读角色不提供日志明细入口/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '查看执行请求' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '查看用量分析' })).toBeNull();
     expect(screen.queryByText('结算可用额度')).toBeNull();
     expect(screen.queryByText('当前可路由部署操作')).toBeNull();
     expect(screen.queryByText('模型部署可用状态')).toBeNull();
     fireEvent.click(screen.getByText(/req-abc-123/));
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+  it('switches locale without refetching or losing selected model and time range', async () => {
+    renderDashboard();
+    expect(await screen.findByRole('heading', { name: '模型费用构成' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '最近 7 天' }));
+    await waitFor(() => expect(mockGetDashboardStats).toHaveBeenCalledTimes(2));
+    fireEvent.change(screen.getByRole('combobox', { name: '选择模型' }), { target: { value: 'gpt-4o' } });
+    fireEvent.click(screen.getByRole('button', { name: 'English' }));
+    expect(screen.getByRole('heading', { name: 'Costs by model' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: 'Select a model' })).toHaveValue('gpt-4o');
+    expect(screen.getByRole('button', { name: 'Last 7 days' })).toHaveAttribute('aria-pressed', 'true');
+    expect(mockGetDashboardStats).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('Scope: 北区组织')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect executions' }));
+    expect(mockNavigate).toHaveBeenCalledWith('/logs?model=gpt-4o');
+  });
+
+  it('shows unavailable cost composition for an older backend, not an invented zero', async () => {
+    mockGetDashboardStats.mockResolvedValue({ ...MOCK_STATS, model_distribution: MOCK_STATS.model_distribution.map(({ cost_micros: _cost, ...model }) => model) });
+    renderDashboard();
+    expect(await screen.findByText('费用构成暂不可用')).toBeTruthy();
+    expect(screen.getByRole('img', { name: '模型调用构成' })).toBeTruthy();
+    expect(screen.queryByRole('img', { name: '模型费用构成' })).toBeNull();
+  });
+
+  it('discards a late response from a previous organization context', async () => {
+    let finishOld!: (data: typeof MOCK_STATS) => void;
+    mockGetDashboardStats.mockReturnValueOnce(new Promise(resolve => { finishOld = resolve; }));
+    renderDashboard();
+    await waitFor(() => expect(mockGetDashboardStats).toHaveBeenCalledTimes(1));
+    act(() => useAuthStore.setState({ user: { id: 2, username: 'new', role: 'org_viewer', org_id: 2, org_name: '新组织' } }));
+    await waitFor(() => expect(mockGetDashboardStats).toHaveBeenCalledTimes(2));
+    await act(async () => finishOld({ ...MOCK_STATS, recent_logs: [{ ...MOCK_STATS.recent_logs[0], request_id: 'old-org-private-request' }] }));
+    expect(screen.queryByText('old-org-private-request')).toBeNull();
+    expect(screen.getByText('数据范围：新组织')).toBeTruthy();
+  });
+
+  it('preserves summary totals but marks a missing distribution unavailable', async () => {
+    mockGetDashboardStats.mockResolvedValue({ ...MOCK_STATS, model_distribution: undefined });
+    const { container } = renderDashboard();
+    expect(await screen.findByText('模型构成暂不可用')).toBeTruthy();
+    expect(screen.getByText('费用构成暂不可用')).toBeTruthy();
+    const totals = container.querySelectorAll('.ur-composition-total');
+    expect(totals[0].textContent).toBe('12,345');
+    expect(totals[1].textContent).toBe('¥56.78');
+    expect(screen.queryByText('暂无请求')).toBeNull();
+    expect(screen.queryByText('暂无费用')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'English' }));
+    expect(screen.getByText('Model breakdown unavailable')).toBeTruthy();
+    expect(screen.getByText('Cost breakdown unavailable')).toBeTruthy();
+    expect(totals[0].textContent).toBe('12,345');
+    expect(totals[1].textContent).toBe('¥56.78');
+  });
+
+  it('does not replace absent latency or balance data with successful zero values', async () => {
+    mockGetDashboardStats.mockResolvedValue({ ...MOCK_STATS, p95_latency_ms: undefined, wallet_balance_micros: undefined, wallet_granted_micros: undefined });
+    const { container } = renderDashboard();
+    expect(await screen.findByText('结算与通知')).toBeTruthy();
+    expect(within(container.querySelector('.ur-overview-kpis') as HTMLElement).queryByText('0 ms')).toBeNull();
+    expect(screen.queryByText('余额正常')).toBeNull();
   });
 });

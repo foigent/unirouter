@@ -1,5 +1,6 @@
+import { LanguageSwitcher, setLocale } from '../../i18n';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import InternalStatusPage from '../InternalStatusPage';
 
 const mockGetInternalStatus = vi.fn();
@@ -19,6 +20,7 @@ vi.mock('../../store/auth', () => ({
 
 describe('InternalStatusPage', () => {
   beforeEach(() => {
+    setLocale('zh-CN');
     vi.clearAllMocks();
     auth.user = {
       role: 'platform_admin',
@@ -312,4 +314,20 @@ describe('InternalStatusPage', () => {
     expect(screen.queryByText('未确认预警事件')).toBeNull();
     expect(screen.queryByText('Prometheus')).toBeNull();
   });
+  it('puts observed health first and translates errors without fetching again', async () => {
+    setLocale('en-US');
+    render(<><LanguageSwitcher /><InternalStatusPage /></>);
+    const health = await screen.findByText('Runtime observations');
+    const notification = await screen.findByText('Notification attention');
+    expect(health.compareDocumentPosition(notification) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    mockGetRuntimeStatus.mockRejectedValueOnce(new Error('raw_failure_code'));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: /Refresh/ })));
+    expect((await screen.findAllByText(/raw_failure_code/)).length).toBeGreaterThan(0);
+    const calls = mockGetRuntimeStatus.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: '中文' }));
+    expect(screen.getByText('运行时状态加载失败')).toBeTruthy();
+    expect(screen.getAllByText(/raw_failure_code/).length).toBeGreaterThan(0);
+    expect(mockGetRuntimeStatus).toHaveBeenCalledTimes(calls);
+  });
+
 });

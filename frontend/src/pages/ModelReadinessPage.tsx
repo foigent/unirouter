@@ -1,3 +1,5 @@
+import { translate as t, translateLabel, useI18n } from '../i18n';
+import '../i18n/models';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Form, Space, Tag, Typography } from '@douyinfe/semi-ui';
 import { IconRefresh } from '@douyinfe/semi-icons';
@@ -105,14 +107,14 @@ const reasonCopy: Record<string, string> = {
 };
 
 function summaryStateCopy(state: ReadinessAxis['state'], reasonCode?: string) {
-	if (reasonCode && reasonCopy[reasonCode]) return reasonCopy[reasonCode];
-  if (reasonCode?.startsWith('license_error.')) return '当前部署的模型网关商业授权未就绪，请由平台管理员检查许可证';
+	if (reasonCode && reasonCopy[reasonCode]) return translateLabel(reasonCopy[reasonCode]);
+  if (reasonCode?.startsWith('license_error.')) return t("当前部署的模型网关商业授权未就绪，请由平台管理员检查许可证");
   return ({
-    ready: '条件已满足',
-    blocked: '需要处理后才能使用',
-    warning: '可以使用，但建议检查',
-    not_applicable: '当前流程不要求',
-    unavailable: '证据源暂时不可用',
+    ready: t("条件已满足"),
+    blocked: t("需要处理后才能使用"),
+    warning: t("可以使用，但建议检查"),
+    not_applicable: t("当前流程不要求"),
+    unavailable: t("证据源暂时不可用"),
   } as const)[state];
 }
 
@@ -121,7 +123,7 @@ function ReadinessSummaryCard({ label, state, reasonCode }: { label: string; sta
   return <div className={`ur-readiness-summary-card ur-readiness-summary-${state}`}>
     <div className="ur-readiness-summary-card-head">
       <Text strong>{label}</Text>
-      <Tag color={presentation.color}>{presentation.label}</Tag>
+      <Tag color={presentation.color}>{translateLabel(presentation.label)}</Tag>
     </div>
 	<Text type={state === 'blocked' ? 'danger' : 'tertiary'} size="small">{summaryStateCopy(state, reasonCode)}</Text>
   </div>;
@@ -130,22 +132,23 @@ function ReadinessSummaryCard({ label, state, reasonCode }: { label: string; sta
 function AxisCard({ label, axis, onFix }: { label: string; axis: ReadinessAxis; onFix: (route: string) => void }) {
   const presentation = statePresentation[axis.state];
   return (
-    <section aria-label={`${label}诊断`} style={{ border: '1px solid var(--semi-color-border)', borderRadius: 10, padding: 14, minHeight: 150 }}>
+    <section aria-label={t('{label}诊断', { label })} style={{ border: '1px solid var(--semi-color-border)', borderRadius: 10, padding: 14, minHeight: 150 }}>
       <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-        <Text strong>{label}</Text><Tag color={presentation.color}>{presentation.label}</Tag>
+        <Text strong>{label}</Text><Tag color={presentation.color}>{translateLabel(presentation.label)}</Tag>
       </Space>
 	  <div style={{ marginTop: 10 }}><Text type="tertiary">{summaryStateCopy(axis.state, axis.reason_code)}</Text></div>
 	  <details style={{ marginTop: 8 }}>
-		<summary style={{ cursor: 'pointer' }}>技术证据</summary>
+		<summary style={{ cursor: 'pointer' }}>{t("技术证据")}</summary>
 		<div style={{ marginTop: 8 }}><Text code>{axis.reason_code}</Text></div>
 		{Object.keys(axis.safe_evidence || {}).length > 0 && <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12, color: 'var(--semi-color-text-2)' }}>{JSON.stringify(axis.safe_evidence, null, 2)}</pre>}
 	  </details>
-      {axis.fix_route ? <Button size="small" onClick={() => onFix(axis.fix_route!)}>前往修复</Button> : axis.fix_owner ? <Text type="tertiary">修复责任：{axis.fix_owner}</Text> : null}
+      {axis.fix_route ? <Button size="small" onClick={() => onFix(axis.fix_route!)}>{t("前往修复")}</Button> : axis.fix_owner ? <Text type="tertiary">{t("修复责任：")}{axis.fix_owner}</Text> : null}
     </section>
   );
 }
 
 export default function ModelReadinessPage({ embedded = false, forceConnectionMode = false }: { embedded?: boolean; forceConnectionMode?: boolean } = {}) {
+  useI18n();
   const navigate = useNavigate();
   const location = useLocation();
   const [search, setSearch] = useSearchParams();
@@ -225,7 +228,7 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
           options.set(application.public_model.model_name, application.public_model.display_name || application.public_model.model_name);
         }
       } catch {
-        nextError = '模型部署列表暂时不可用，无法安全选择诊断模型。';
+        nextError = "模型部署列表暂时不可用，无法安全选择诊断模型。";
       }
     } else if (query.project_id) {
       try {
@@ -238,7 +241,7 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
           if (requestModel) options.set(requestModel, model.display_name || requestModel);
         }
       } catch {
-        nextError = '当前项目的已启用模型目录暂时不可用，无法安全选择诊断模型。';
+        nextError = "当前项目的已启用模型目录暂时不可用，无法安全选择诊断模型。";
       }
     }
     if (modelOptionsGeneration.current !== generation) return;
@@ -297,10 +300,10 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
     } catch (readinessError) {
       if (readinessGeneration.current !== generation || queryScopeKey !== scopeKey) return;
       setError(readinessError instanceof ApiError && readinessError.status === 503
-        ? '诊断证据源暂时不可用，当前状态是“暂时无法判断”，不是“未配置”或“受阻”。'
+        ? "诊断证据源暂时不可用，当前状态是“暂时无法判断”，不是“未配置”或“受阻”。"
         : query.mode === 'connection'
-          ? '无法读取当前模型连接的诊断结果。'
-          : '无法读取所选项目与调用主体的诊断结果。');
+          ? "无法读取当前模型连接的诊断结果。"
+          : "无法读取所选项目与调用主体的诊断结果。");
     } finally {
       if (readinessGeneration.current === generation && queryScopeKey === scopeKey) setLoading(false);
     }
@@ -322,7 +325,11 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
     setDraftCaller(query.caller || 'self');
     setDraftModel(query.model);
     setDraftEndpoint(query.endpoint);
-    if (formApi) formApi.setValues(query);
+    if (formApi) formApi.setValues({
+      ...query,
+      project_id: query.project_id || undefined,
+      deployment_id: query.deployment_id || undefined,
+    });
   }, [formApi, query]);
 
   const submit = (values: Record<string, any>) => {
@@ -368,34 +375,34 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
   return (
     <div className={embedded ? 'ur-embedded-page' : 'ur-page'}>
       {!embedded && <PageHeader
-        eyebrow="高级诊断"
-        title={connectionMode ? '模型连接诊断' : '调用条件诊断'}
+        eyebrow={t("高级诊断")}
+        title={connectionMode ? t("模型连接诊断") : t("调用条件诊断")}
         description={connectionMode
-          ? '检查模型网关授权、供应商连接、供应商凭证和当前路由；不需要项目，不会请求供应商，也不会自动修改配置。'
-          : '回答“这个项目或应用为什么还不能调用该模型”。诊断本身不会请求供应商，也不会自动修改配置。'}
-        actions={<Space><ModelConnectionBackButton /><Button icon={<IconRefresh />} loading={loading} onClick={loadReadiness}>刷新诊断</Button></Space>}
+          ? t("检查供应商连接、凭证、操作与当前路由；不请求供应商，也不会自动修改配置。")
+          : t("回答“这个项目或应用为什么还不能调用该模型”。诊断本身不会请求供应商，也不会自动修改配置。")}
+        actions={<Space><ModelConnectionBackButton /><Button icon={<IconRefresh />} loading={loading} onClick={loadReadiness}>{t("刷新诊断")}</Button></Space>}
       />}
       {embedded && <div className="ur-embedded-heading">
-        <div><Title heading={5} style={{ margin: 0 }}>{connectionMode ? '模型连接诊断' : '调用条件诊断'}</Title><Text type="tertiary">只读取当前证据，不请求供应商，也不会自动修改配置。</Text></div>
-        <Button icon={<IconRefresh />} loading={loading} onClick={loadReadiness}>刷新诊断</Button>
+        <div><Title heading={5} style={{ margin: 0 }}>{connectionMode ? t("模型连接诊断") : t("调用条件诊断")}</Title><Text type="tertiary">{t("只读取当前证据，不请求供应商，也不会自动修改配置。")}</Text></div>
+        <Button icon={<IconRefresh />} loading={loading} onClick={loadReadiness}>{t("刷新诊断")}</Button>
       </div>}
       <Surface
-        title={connectionMode ? '选择要检查的模型连接' : '选择要诊断的调用'}
+        title={connectionMode ? t("选择要检查的模型连接") : t("选择要诊断的调用")}
         description={connectionMode
-          ? '从当前已录入的模型中选择；这里只检查连接层，不要求先建立项目或应用。'
-          : '调用授权、API Key 和模型范围按项目隔离；只有一个有效项目时系统会自动使用它。'}
+          ? t("从当前已录入的模型中选择；这里只检查连接层，不要求先建立项目或应用。")
+          : t("调用授权、API Key 和模型范围按项目隔离；只有一个有效项目时系统会自动使用它。")}
       >
-        {!connectionMode && projectsError && <div><Text type="warning">{projectsError}</Text></div>}
-        {modelOptionsError && <div><Text type="warning">{modelOptionsError}</Text></div>}
-        {!connectionMode && applicationsError && <div><Text type="warning">{applicationsError}</Text></div>}
+        {!connectionMode && projectsError && <div><Text type="warning">{translateLabel(projectsError)}</Text></div>}
+        {modelOptionsError && <div><Text type="warning">{translateLabel(modelOptionsError)}</Text></div>}
+        {!connectionMode && applicationsError && <div><Text type="warning">{translateLabel(applicationsError)}</Text></div>}
         <Form layout="horizontal" getFormApi={setFormApi} onSubmit={submit}>
           {!connectionMode && projects.length > 1 && <Form.Select
             field="project_id"
-            label={<span id="readiness-project-label">项目</span>}
+            label={<span id="readiness-project-label">{t("项目")}</span>}
             aria-labelledby="readiness-project-label"
             filter
             optionList={projects.map(projectOption)}
-            rules={[{ required: true, message: '请选择项目' }]}
+            rules={[{ required: true, message: t("请选择项目") }]}
             style={{ width: 220 }}
             onChange={(value) => {
               setDraftProjectID(Number(value || 0));
@@ -403,18 +410,18 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
             }}
           />}
           {!connectionMode && projects.length === 1 && <div className="ur-readiness-sole-project" role="status">
-            <Text type="tertiary" size="small">项目</Text>
+            <Text type="tertiary" size="small">{t("项目")}</Text>
             <Text strong>{projects[0].name}</Text>
-            <Tag color="blue">唯一有效项目，已自动选择</Tag>
+            <Tag color="blue">{t("唯一有效项目，已自动选择")}</Tag>
           </div>}
           <Form.Select
             field="model"
-            label={<span id="readiness-model-label">模型或 Alias</span>}
+            label={<span id="readiness-model-label">{t("模型或 Alias")}</span>}
             aria-labelledby="readiness-model-label"
             filter
             optionList={modelOptions}
-            placeholder="选择或搜索已录入模型"
-            rules={[{ required: true, message: '请选择模型' }]}
+            placeholder={t("选择或搜索已录入模型")}
+            rules={[{ required: true, message: t("请选择模型") }]}
             style={{ width: 250 }}
             onChange={(value) => {
               const model = String(value || '');
@@ -427,10 +434,10 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
           />
           <Form.Select
             field="endpoint"
-            label={<span id="readiness-endpoint-label">调用类型</span>}
+            label={<span id="readiness-endpoint-label">{t("调用类型")}</span>}
             aria-labelledby="readiness-endpoint-label"
-            optionList={canonicalReadinessEndpoints.map(({ value, label }) => ({ value, label }))}
-            rules={[{ required: true, message: '请选择调用类型' }]}
+            optionList={canonicalReadinessEndpoints.map(({ value, label }) => ({ value, label: translateLabel(label) }))}
+            rules={[{ required: true, message: t("请选择调用类型") }]}
             style={{ width: 230 }}
             onChange={(value) => {
               const endpoint = String(value || '');
@@ -443,24 +450,24 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
           />
           {connectionMode && <Form.Select
             field="deployment_id"
-            label={<span id="readiness-deployment-label">模型部署</span>}
+            label={<span id="readiness-deployment-label">{t("模型部署")}</span>}
             aria-labelledby="readiness-deployment-label"
             filter
             optionList={deploymentOptions}
-            placeholder={draftModel ? '选择支持该调用操作的精确部署' : '请先选择模型'}
+            placeholder={draftModel ? t("选择支持该调用操作的精确部署") : t("请先选择模型")}
             disabled={!draftModel}
-            rules={[{ required: true, message: '请选择模型部署' }]}
+            rules={[{ required: true, message: t("请选择模型部署") }]}
             style={{ width: 300 }}
           />}
           {!connectionMode && <Form.Select
             field="caller"
-            label={<span id="readiness-caller-label">谁来调用</span>}
+            label={<span id="readiness-caller-label">{t("谁来调用")}</span>}
             aria-labelledby="readiness-caller-label"
             optionList={[
-			  { value: 'self', label: '当前账号的个人 API Key' },
-              { value: 'workload_application', label: '应用 / Agent' },
+			  { value: 'self', label: t("当前账号的个人 API Key") },
+              { value: 'workload_application', label: t("应用 / Agent") },
             ]}
-            rules={[{ required: true, message: '请选择调用主体' }]}
+            rules={[{ required: true, message: t("请选择调用主体") }]}
             style={{ width: 190 }}
             onChange={(value) => {
               const caller = value === 'workload_application' ? 'workload_application' : 'self';
@@ -470,13 +477,13 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
           />}
           {!connectionMode && draftCaller === 'workload_application' && <Form.Select
             field="application_ref"
-            label={<span id="readiness-application-label">应用 / Agent</span>}
+            label={<span id="readiness-application-label">{t("应用 / Agent")}</span>}
             aria-labelledby="readiness-application-label"
             filter
             optionList={applicationOptions}
-            placeholder={draftProjectID ? '选择所选项目中的应用' : '请先选择项目'}
+            placeholder={draftProjectID ? t("选择所选项目中的应用") : t("请先选择项目")}
             disabled={!draftProjectID}
-            rules={[{ required: true, message: '请选择应用' }]}
+            rules={[{ required: true, message: t("请选择应用") }]}
             style={{ width: 240 }}
           />}
           <Button
@@ -484,40 +491,40 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
             type="primary"
             loading={loading}
             disabled={!connectionMode && projects.length === 0}
-          >{connectionMode ? '诊断连接条件' : '诊断调用条件'}</Button>
+          >{connectionMode ? t("诊断连接条件") : t("诊断调用条件")}</Button>
         </Form>
       </Surface>
 
-      {error ? <Surface><EmptyState title="暂时无法判断" description={error} actions={<Button onClick={loadReadiness}>重试</Button>} /></Surface> : !scopedReadiness ? <Surface><EmptyState title={connectionMode ? '选择模型后开始连接诊断' : '选择项目、模型与调用主体后开始诊断'} /></Surface> : <>
-        <Surface title="诊断结果" description={`当前模型：${scopedReadiness.scope.resolved_model}`}>
+      {error ? <Surface><EmptyState title={t("暂时无法判断")} description={translateLabel(error)} actions={<Button onClick={loadReadiness}>{t("重试")}</Button>} /></Surface> : !scopedReadiness ? <Surface><EmptyState title={connectionMode ? t("选择模型后开始连接诊断") : t("选择项目、模型与调用主体后开始诊断")} /></Surface> : <>
+        <Surface title={t("诊断结果")} description={t('当前模型：{model}', { model: scopedReadiness.scope.resolved_model })}>
           <div className="ur-readiness-summary-grid">
             {connectionMode ? <>
-			  <ReadinessSummaryCard label="模型网关授权" state={scopedReadiness.platform_model.gateway_license.state} reasonCode={scopedReadiness.platform_model.gateway_license.reason_code} />
-			  <ReadinessSummaryCard label="模型部署" state={scopedReadiness.platform_model.deployment.state} reasonCode={scopedReadiness.platform_model.deployment.reason_code} />
-			  <ReadinessSummaryCard label="供应商凭证" state={scopedReadiness.platform_model.provider_credential.state} reasonCode={scopedReadiness.platform_model.provider_credential.reason_code} />
-			  <ReadinessSummaryCard label="调用操作" state={scopedReadiness.platform_model.operation.state} reasonCode={scopedReadiness.platform_model.operation.reason_code} />
-			  <ReadinessSummaryCard label="当前可用路由" state={scopedReadiness.platform_model.base_route.state} reasonCode={scopedReadiness.platform_model.base_route.reason_code} />
+			  {scopedReadiness.platform_model.gateway_license.reason_code !== 'commercial_license_not_required' && <ReadinessSummaryCard label={t("模型网关授权")} state={scopedReadiness.platform_model.gateway_license.state} reasonCode={scopedReadiness.platform_model.gateway_license.reason_code} />}
+			  <ReadinessSummaryCard label={t("模型部署")} state={scopedReadiness.platform_model.deployment.state} reasonCode={scopedReadiness.platform_model.deployment.reason_code} />
+			  <ReadinessSummaryCard label={t("供应商凭证")} state={scopedReadiness.platform_model.provider_credential.state} reasonCode={scopedReadiness.platform_model.provider_credential.reason_code} />
+			  <ReadinessSummaryCard label={t("调用操作")} state={scopedReadiness.platform_model.operation.state} reasonCode={scopedReadiness.platform_model.operation.reason_code} />
+			  <ReadinessSummaryCard label={t("当前可用路由")} state={scopedReadiness.platform_model.base_route.state} reasonCode={scopedReadiness.platform_model.base_route.reason_code} />
             </> : <>
-			  <ReadinessSummaryCard label="模型记录" state={scopedReadiness.summary.registered.state} reasonCode={scopedReadiness.summary.registered.reason_code} />
-			  <ReadinessSummaryCard label="项目目录可见" state={scopedReadiness.summary.catalog_visible.state} reasonCode={scopedReadiness.summary.catalog_visible.reason_code} />
-			  <ReadinessSummaryCard label="当前可用路由" state={scopedReadiness.summary.routable.state} reasonCode={scopedReadiness.summary.routable.reason_code} />
-			  <ReadinessSummaryCard label="所选调用身份可用" state={scopedReadiness.summary.current_project_caller_callable.state} reasonCode={scopedReadiness.summary.current_project_caller_callable.reason_code} />
+			  <ReadinessSummaryCard label={t("模型记录")} state={scopedReadiness.summary.registered.state} reasonCode={scopedReadiness.summary.registered.reason_code} />
+			  <ReadinessSummaryCard label={t("项目目录可见")} state={scopedReadiness.summary.catalog_visible.state} reasonCode={scopedReadiness.summary.catalog_visible.reason_code} />
+			  <ReadinessSummaryCard label={t("当前可用路由")} state={scopedReadiness.summary.routable.state} reasonCode={scopedReadiness.summary.routable.reason_code} />
+			  <ReadinessSummaryCard label={t("所选调用身份可用")} state={scopedReadiness.summary.current_project_caller_callable.state} reasonCode={scopedReadiness.summary.current_project_caller_callable.reason_code} />
             </>}
           </div>
         </Surface>
         <Surface>
           <details>
-            <summary style={{ cursor: 'pointer', fontWeight: 600 }}>查看高级诊断证据</summary>
+            <summary style={{ cursor: 'pointer', fontWeight: 600 }}>{t("查看高级诊断证据")}</summary>
             <div style={{ marginTop: 16 }}>
-              <Title heading={6}>模型与供应商连接</Title>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>{platformAxes.map(([key, axis]) => <AxisCard key={key} label={platformLabels[key] || key} axis={axis} onFix={navigate} />)}</div>
+              <Title heading={6}>{t("模型与供应商连接")}</Title>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>{platformAxes.filter(([key, axis]) => key !== 'gateway_license' || axis.reason_code !== 'commercial_license_not_required').map(([key, axis]) => <AxisCard key={key} label={platformLabels[key] ? translateLabel(platformLabels[key]) : key} axis={axis} onFix={navigate} />)}</div>
               {!connectionMode && <>
-                <Title heading={6} style={{ marginTop: 20 }}>项目、应用与权限</Title>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>{projectAxes.map(([key, axis]) => <AxisCard key={key} label={projectLabels[key] || key} axis={axis} onFix={navigate} />)}</div>
+                <Title heading={6} style={{ marginTop: 20 }}>{t("项目、应用与权限")}</Title>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>{projectAxes.map(([key, axis]) => <AxisCard key={key} label={projectLabels[key] ? translateLabel(projectLabels[key]) : key} axis={axis} onFix={navigate} />)}</div>
               </>}
               <Space vertical align="start" style={{ marginTop: 16 }}>
-                <Text type="tertiary">诊断时间：{scopedReadiness.as_of}</Text>
-                <Text type="tertiary">只展示安全证据；不包含供应商 Key、Base URL、密文、Token 或 Secret。</Text>
+                <Text type="tertiary">{t("诊断时间：")}{scopedReadiness.as_of}</Text>
+                <Text type="tertiary">{t("只展示安全证据；不包含供应商 Key、Base URL、密文、Token 或 Secret。")}</Text>
               </Space>
             </div>
           </details>

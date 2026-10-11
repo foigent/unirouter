@@ -399,7 +399,7 @@ func (h *Handler) dashboardModelDistribution(ctx context.Context, orgID int64, s
 	rows, err := h.db.Query(ctx,
 		`WITH normalized_logs AS (
 		   SELECT COALESCE(NULLIF(BTRIM(model),''),NULLIF(BTRIM(requested_model),''),'(unknown)') AS model,
-		          status_code,latency_ms
+		          status_code,latency_ms,cost_micros
 		     FROM call_logs
 		    WHERE org_id=$1 AND created_at >= $2 AND created_at < $3
 		 )
@@ -409,7 +409,8 @@ func (h *Handler) dashboardModelDistribution(ctx context.Context, orgID int64, s
 		        COUNT(*) FILTER (WHERE status_code < 200 OR status_code >= 300)::int AS fail_count,
 		        COALESCE(AVG(latency_ms) FILTER (WHERE latency_ms > 0),0)::float8 AS avg_latency_ms,
 		        COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms)
-		          FILTER (WHERE latency_ms > 0),0)::float8 AS p95_latency_ms
+		          FILTER (WHERE latency_ms > 0),0)::float8 AS p95_latency_ms,
+		        COALESCE(SUM(cost_micros),0)::bigint AS cost_micros
 		   FROM normalized_logs
 		  GROUP BY model
 		  ORDER BY requests DESC,model ASC`, orgID, startTime, endTime)
@@ -422,7 +423,8 @@ func (h *Handler) dashboardModelDistribution(ctx context.Context, orgID int64, s
 		var model string
 		var requests, successCount, failCount int
 		var avgLatencyMS, p95LatencyMS float64
-		if err := rows.Scan(&model, &requests, &successCount, &failCount, &avgLatencyMS, &p95LatencyMS); err != nil {
+		var costMicros int64
+		if err := rows.Scan(&model, &requests, &successCount, &failCount, &avgLatencyMS, &p95LatencyMS, &costMicros); err != nil {
 			return nil, err
 		}
 		successRate := 0.0
@@ -433,6 +435,7 @@ func (h *Handler) dashboardModelDistribution(ctx context.Context, orgID int64, s
 			"model": model, "requests": requests,
 			"success_count": successCount, "fail_count": failCount, "success_rate": successRate,
 			"avg_latency_ms": avgLatencyMS, "p95_latency_ms": p95LatencyMS,
+			"cost_micros": strconv.FormatInt(costMicros, 10),
 		})
 	}
 	if err := rows.Err(); err != nil {

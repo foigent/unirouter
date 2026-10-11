@@ -1,5 +1,6 @@
+import { LanguageSwitcher, setLocale } from '../../i18n';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Modal, Toast } from '@douyinfe/semi-ui';
 import NotificationCenterPage from '../NotificationCenterPage';
 
@@ -42,6 +43,7 @@ vi.mock('../../store/auth', () => ({
 
 describe('NotificationCenterPage', () => {
   beforeEach(() => {
+    setLocale('zh-CN');
     Modal.destroyAll();
     Toast.destroyAll();
     vi.clearAllMocks();
@@ -101,6 +103,7 @@ describe('NotificationCenterPage', () => {
       Toast.destroyAll();
       await Promise.resolve();
     });
+    cleanup();
     document.querySelectorAll('.semi-portal').forEach(portal => portal.remove());
     document.body.removeAttribute('style');
   });
@@ -336,4 +339,21 @@ describe('NotificationCenterPage', () => {
     expect(await screen.findByRole('heading', { name: '通知事件加载失败' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '重新加载通知事件' })).toBeTruthy();
   });
+  it('keeps webhook drafts and raw names while switching locale without new requests', async () => {
+    setLocale('en-US');
+    render(<><LanguageSwitcher /><NotificationCenterPage /></>);
+    await screen.findByText('Budget reached');
+    fireEvent.click(screen.getByRole('tab', { name: 'Webhook' }));
+    fireEvent.click(screen.getByRole('button', { name: /Add webhook/ }));
+    const nameField = await screen.findByLabelText('Name');
+    await act(async () => fireEvent.change(nameField, { target: { value: '中文客户 draft' } }));
+    const calls = [mockGetNotificationEvents.mock.calls.length, mockGetNotificationDeliveries.mock.calls.length, mockGetNotificationWebhooks.mock.calls.length];
+    fireEvent.click(screen.getByRole('button', { name: '中文' }));
+    expect(screen.getByLabelText('名称')).toHaveValue('中文客户 draft');
+    expect([mockGetNotificationEvents.mock.calls.length, mockGetNotificationDeliveries.mock.calls.length, mockGetNotificationWebhooks.mock.calls.length]).toEqual(calls);
+    expect(mockCreateNotificationWebhook).not.toHaveBeenCalled();
+    expect(mockUpdateNotificationWebhook).not.toHaveBeenCalled();
+    expect(mockVerifyNotificationWebhookScope).not.toHaveBeenCalled();
+  });
+
 });

@@ -1,3 +1,4 @@
+import { translate as t, translateLabel, useI18n } from '../i18n';
 import React from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Button, Spin } from '@douyinfe/semi-ui'
@@ -6,14 +7,15 @@ import { captureXInsightLoginContinuation, continueXInsightAfterProfile, hasXIns
 
 function RouteLoading() {
   return (
-    <div className="ur-route-loading" role="status" aria-label="正在加载页面">
+    <div className="ur-route-loading" role="status" aria-label={t("正在加载页面")}>
       <Spin size="large" />
-      <span>正在加载页面…</span>
+      <span>{t("正在加载页面…")}</span>
     </div>
   )
 }
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  useI18n()
   const navigate = useNavigate()
   const location = useLocation()
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
@@ -42,9 +44,9 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   if (profileNeedsLoad && profileError) {
     return (
       <div className="ur-route-error" role="alert">
-        <strong>暂时无法验证登录状态</strong>
-        <span>{profileError}</span>
-        <Button theme="solid" onClick={() => loadProfile().catch(() => {})}>重试</Button>
+        <strong>{t("暂时无法验证登录状态")}</strong>
+        <span>{translateLabel(profileError)}</span>
+        <Button theme="solid" onClick={() => loadProfile().catch(() => {})}>{t("重试")}</Button>
       </div>
     )
   }

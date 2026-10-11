@@ -31,6 +31,8 @@ export type DashboardTrendPoint = {
 export type DashboardModelHealth = {
   model: string;
   requests: number;
+  /** Recorded request costs, exact micro-CNY. Absent on older servers. */
+  cost_micros?: string;
   success_count: number;
   fail_count: number;
   success_rate: number;

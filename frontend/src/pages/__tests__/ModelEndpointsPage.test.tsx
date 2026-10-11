@@ -5,6 +5,7 @@ import { MemoryRouter } from '../../test/MemoryRouter';
 import { pasteValue } from '../../test/user';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ModelEndpointsPage from '../ModelEndpointsPage';
+import { setLocale } from '../../i18n';
 import {
   canonicalOperationBaseURLForPreset,
   canonicalOperationOriginError,
@@ -321,7 +322,28 @@ async function chooseSelectOption(
 }
 
 describe('ModelEndpointsPage canonical deployment UI', () => {
+  it('keeps an edited model draft and avoids new reads or mutations when language changes', async () => {
+    const user = userEvent.setup({ skipHover: true });
+    renderPage();
+    await user.click((await screen.findByText('接入模型')).closest('button')!);
+    await user.click(await screen.findByRole('button', { name: '新建平台连接' }));
+    const modelID = await screen.findByLabelText('公共模型 ID');
+    await act(async () => {
+      fireEvent.change(modelID, { target: { value: 'draft-local-model' } });
+    });
+    const lists = mocks.list.mock.calls.length;
+    const profiles = mocks.profileList.mock.calls.length;
+    await act(async () => setLocale('en-US'));
+    expect(screen.getByLabelText('Public model ID')).toHaveValue('draft-local-model');
+    expect(screen.getByRole('button', { name: 'Save model setup' })).toBeInTheDocument();
+    expect(screen.getByText('Execution contract details')).toBeInTheDocument();
+    expect(mocks.list).toHaveBeenCalledTimes(lists);
+    expect(mocks.profileList).toHaveBeenCalledTimes(profiles);
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.probe).not.toHaveBeenCalled();
+  });
   afterEach(() => {
+    act(() => setLocale('zh-CN'));
     vi.restoreAllMocks();
     Modal.destroyAll();
   });
@@ -852,7 +874,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
 
     const button = await screen.findByRole('button', { name: '用此绑定探测精确 Operation' });
     fireEvent.click(button);
-    expect(confirmationConfig.title).toBe('探测 Deployment #41？');
+    expect(confirmationConfig.title).toBe('探测 Deployment #41 · openai.responses.v1？');
     expect(confirmationConfig.okText).toBe('发起精确探测');
     await act(async () => { await confirmationConfig.onOk(); });
 
@@ -1129,7 +1151,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     await user.click(await screen.findByRole('button', { name: '新建平台连接' }));
     expect(await screen.findByText(/deepseek\.v4-flash\.api@1\.5\.0/)).toBeTruthy();
     expect(screen.getByText(/deepseek \/ cn \/ openai_chat_completions/)).toBeTruthy();
-    expect(screen.getByText(/Catalog 证据 locally_conformant（不代表 live\/released）/)).toBeTruthy();
+    expect(screen.getByText(/Catalog 证据（不代表 live\/released）: locally_conformant/)).toBeTruthy();
     expect(screen.getByText(/这里只展示本地合同子集，不代表该模型已完整适配/)).toBeTruthy();
     expect(screen.getByText(/供应商上限 context 1,000,000 \/ output 384,000/)).toBeTruthy();
     expect(screen.getByText(/请求默认 context 1,000,000 \/ output 32,768/)).toBeTruthy();

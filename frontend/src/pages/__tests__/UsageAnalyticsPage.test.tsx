@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import UsageAnalyticsPage from '../UsageAnalyticsPage';
+import { setLocale } from '../../i18n';
 
 const mockGetUsageAnalytics = vi.fn();
 const mockGetOrganizations = vi.fn();
@@ -24,6 +25,7 @@ vi.mock('../../store/auth', () => ({
 }));
 
 describe('UsageAnalyticsPage', () => {
+  afterEach(() => act(() => setLocale('zh-CN')));
   beforeEach(() => {
     vi.clearAllMocks();
     auth.user = null;
@@ -78,6 +80,20 @@ describe('UsageAnalyticsPage', () => {
 
     expect(await screen.findByText('uiaccept（用户 #34）')).toBeTruthy();
     expect(screen.queryByText('34')).toBeNull();
+  });
+
+  it('switches language without refetching, resetting filters, or translating customer labels', async () => {
+    render(<UsageAnalyticsPage />);
+    await screen.findByText('全部请求');
+    fireEvent.change(screen.getByLabelText('模型筛选'), { target: { value: '我的模型-v1' } });
+    await waitFor(() => expect(mockGetUsageAnalytics).toHaveBeenCalledTimes(2));
+    await screen.findByText('全部请求');
+    act(() => setLocale('en-US'));
+    expect(screen.getByRole('heading', { name: 'Usage analytics' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Filter by model')).toHaveValue('我的模型-v1');
+    expect(screen.getByText('全部请求')).toBeInTheDocument();
+    expect(screen.getByText(/up to 50 rows/)).toBeInTheDocument();
+    expect(mockGetUsageAnalytics).toHaveBeenCalledTimes(2);
   });
 
   it('loads usage analytics with the default overall group and visible semantics', async () => {

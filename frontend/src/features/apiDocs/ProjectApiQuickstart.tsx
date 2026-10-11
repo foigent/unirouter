@@ -1,3 +1,5 @@
+import '../../i18n/developer';
+import { translate as t, useI18n, translateLabel } from '../../i18n';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Select, Tag, Typography } from '@douyinfe/semi-ui';
@@ -33,10 +35,11 @@ export default function ProjectApiQuickstart({
   gatewayAvailable,
   unavailableReason,
   modelWarning,
-  title = 'API 快速接入',
-  description = '使用当前项目的访问凭证和已启用模型调用 OpenAI 兼容接口。',
+  title = t("API 快速接入"),
+  description = t("使用当前项目的访问凭证和已启用模型调用 OpenAI 兼容接口。"),
   troubleshootingHref,
 }: ProjectApiQuickstartProps) {
+  useI18n();
   const fallbackModel = modelOptions[0] || '<APPROVED_MODEL_OR_ALIAS>';
   const [selectedModel, setSelectedModel] = useState(fallbackModel);
 
@@ -52,24 +55,24 @@ export default function ProjectApiQuickstart({
   return (
     <Surface title={title} description={description}>
       {!gatewayAvailable ? (
-        <EmptyState title="模型接入暂不可用" description={unavailableReason || '当前模型网关不可用。'} minHeight={180} />
+        <EmptyState title={t("模型接入暂不可用")} description={unavailableReason || t("当前模型网关不可用。")} minHeight={180} />
       ) : !canInvoke ? (
         <EmptyState
-          title="当前项目角色为只读"
-          description="你可以查看项目模型和请求记录，但不能创建或使用项目访问凭证；需要调用权限时请联系项目管理员。"
+          title={t("当前项目角色为只读")}
+          description={t("你可以查看项目模型和请求记录，但不能创建或使用项目访问凭证；需要调用权限时请联系项目管理员。")}
           minHeight={180}
         />
       ) : (
         <div className="ur-dev-docs">
           <div>
-            <Text className="ur-filter-label">OpenAI 兼容 Base URL</Text>
+            <Text className="ur-filter-label">{t("OpenAI 兼容 Base URL")}</Text>
             <div><Text code>{baseUrl}/v1</Text></div>
           </div>
           <div>
-            <Text className="ur-filter-label">模型 / 别名</Text>
+            <Text className="ur-filter-label">{t("模型 / 别名")}</Text>
             {modelOptions.length > 0 ? (
               <Select
-                aria-label="快速接入模型"
+                aria-label={t("快速接入模型")}
                 value={selectedModel}
                 optionList={modelOptions.map(model => ({ label: model, value: model }))}
                 onChange={value => setSelectedModel(String(value || fallbackModel))}
@@ -81,33 +84,34 @@ export default function ProjectApiQuickstart({
           </div>
           {modelWarning && <Text type="warning">{modelWarning}</Text>}
           <div>
-            <Text className="ur-filter-label">常用兼容接口</Text>
+            <Text className="ur-filter-label">{t("常用兼容接口")}</Text>
             <div>
-              <Text type="tertiary">具体可用性取决于所选模型已验证的能力；系统不会按模型名称推断。</Text>
+              <Text type="tertiary">{t("具体可用性取决于所选模型已验证的能力；系统不会按模型名称推断。")}</Text>
             </div>
             <div className="ur-api-endpoint-list">
               {coreEndpoints.map(([method, path, label]) => (
                 <div key={`${method}:${path}`}>
                   <Tag color={method === 'GET' ? 'blue' : 'green'}>{method}</Tag>
                   <Text code>{path}</Text>
-                  <Text type="tertiary">{label}</Text>
+                  <Text type="tertiary">{translateLabel(label)}</Text>
                 </div>
               ))}
             </div>
           </div>
           <Text>
-            在请求头使用 <Text code>Authorization: Bearer &lt;项目 API Key&gt;</Text>；控制台登录会话不能替代项目 API Key。
+
+            {t("在请求头使用")} <Text code>{`Authorization: Bearer <${t("项目 API Key")}>`}</Text>{t("；控制台登录会话不能替代项目 API Key。")}
           </Text>
           <pre className="ur-dev-code">{curl}</pre>
           <details className="ur-inline-details">
-            <summary>高级请求标识</summary>
+            <summary>{t("高级请求标识")}</summary>
             <div className="ur-dev-docs">
-              <Text><Text code>X-Request-ID</Text> 由 UniRouter 返回，用于串联请求日志、计费与审计。</Text>
-              <Text><Text code>X-UniRouter-Client-Request-ID</Text> 可由调用方提供，仅用于关联查询。</Text>
-              <Text><Text code>Idempotency-Key</Text> 用于需要安全重试的请求；同一键必须保持请求内容一致。</Text>
+              <Text><Text code>X-Request-ID</Text>  {t("由 UniRouter 返回，用于串联请求日志、计费与审计。")}</Text>
+              <Text><Text code>X-UniRouter-Client-Request-ID</Text>  {t("可由调用方提供，仅用于关联查询。")}</Text>
+              <Text><Text code>Idempotency-Key</Text>  {t("用于需要安全重试的请求；同一键必须保持请求内容一致。")}</Text>
             </div>
           </details>
-          {troubleshootingHref && <Link to={troubleshootingHref}>查看错误排查与错误码</Link>}
+          {troubleshootingHref && <Link to={troubleshootingHref}>{t("查看错误排查与错误码")}</Link>}
         </div>
       )}
     </Surface>

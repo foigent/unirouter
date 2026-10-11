@@ -1,5 +1,6 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { setLocale } from '../../i18n';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StrictMode } from 'react';
 import ProjectManagementPage from '../ProjectManagementPage';
 import { useAuthStore } from '../../store/auth';
@@ -23,6 +24,27 @@ vi.mock('../../api/client', async () => {
 });
 
 describe('ProjectManagementPage', () => {
+  it('keeps the project, customer names and unsaved edits when the locale changes', async () => {
+    render(<ProjectManagementPage />);
+    const input = await screen.findByRole('textbox', { name: '项目名称' });
+    await waitFor(() => expect(input).toHaveValue('核心项目'));
+    await act(async () => { fireEvent.change(input, { target: { value: '核心项目 · draft' } }); });
+    expect(input).toHaveValue('核心项目 · draft');
+    const reads = mocks.getProjects.mock.calls.length;
+    const memberReads = mocks.getProjectMembers.mock.calls.length;
+    await act(async () => setLocale('en-US'));
+    expect(screen.getByRole('textbox', { name: 'Project name' })).toHaveValue('核心项目 · draft');
+    expect(screen.getByLabelText('Project inspector')).toBeTruthy();
+    expect(new URLSearchParams(window.location.search).get('project_id')).toBe('31');
+    expect(mocks.getProjects).toHaveBeenCalledTimes(reads);
+    expect(mocks.getProjectMembers).toHaveBeenCalledTimes(memberReads);
+    expect(mocks.updateProject).not.toHaveBeenCalled();
+    expect(mocks.upsertProjectMember).not.toHaveBeenCalled();
+    await act(async () => setLocale('zh-CN'));
+    expect(screen.getByRole('textbox', { name: '项目名称' })).toHaveValue('核心项目 · draft');
+  });
+
+  afterEach(async () => { await act(async () => setLocale('zh-CN')); });
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();

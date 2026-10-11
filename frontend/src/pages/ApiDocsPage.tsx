@@ -1,3 +1,5 @@
+import '../i18n/developer';
+import { translate as t, useI18n, translateLabel, labelFor } from '../i18n';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Banner, Input, Typography, Table, Tag, Select } from '@douyinfe/semi-ui';
@@ -14,6 +16,7 @@ import {
 import { useAuthStore } from '../store/auth';
 import { loadAllPages } from '../utils/loadAllPages';
 import { projectDisplayName } from '../utils/projectDisplay';
+import { roleLabel } from '../utils/displayLabels';
 import ProjectApiQuickstart from '../features/apiDocs/ProjectApiQuickstart';
 import {
   type EndpointGroup,
@@ -31,6 +34,9 @@ const apiAreaLabels: Record<string, string> = {
   'Async Media': '异步媒体',
   'Private Integration': '私有集成',
   'Access Provisioning': '访问开通',
+  '项目工作台': '项目工作台',
+  '产品与运行状态': '产品与运行状态',
+  '成本优化': '成本优化',
   Admin: '平台管理',
   'Model Governance': '模型治理',
   Notifications: '通知',
@@ -38,11 +44,11 @@ const apiAreaLabels: Record<string, string> = {
 };
 
 function contractStateLabel(value?: string) {
-  if (value === 'runtime_supported') return '运行时支持';
-  if (value === 'protocol_compatible') return '协议兼容';
-  if (value === 'contract_only') return '仅合同声明';
-  if (value === 'verified') return '已独立验证';
-  if (value === 'unsupported') return '未支持';
+  if (value === 'runtime_supported') return t("运行时支持");
+  if (value === 'protocol_compatible') return t("协议兼容");
+  if (value === 'contract_only') return t("仅合同声明");
+  if (value === 'verified') return t("已独立验证");
+  if (value === 'unsupported') return t("未支持");
   return value || '-';
 }
 
@@ -456,11 +462,6 @@ const endpointGroups: EndpointGroup[] = [
   },
 ];
 
-const columns = [
-  { title: 'Method', dataIndex: 'method', width: 100, render: (v: string) => <Tag color={v === 'GET' ? 'blue' : v === 'POST' ? 'green' : 'orange'}>{v}</Tag> },
-  { title: 'Path', dataIndex: 'path', width: 280, render: (v: string) => <Text code>{v}</Text> },
-  { title: '说明', dataIndex: 'description' },
-];
 
 interface ProjectOption {
   id: number;
@@ -497,6 +498,8 @@ const commonDeveloperErrors = new Set([
 ]);
 
 export default function ApiDocsPage() {
+  const { locale } = useI18n();
+  const [endpointQuery, setEndpointQuery] = useState('');
   const location = useLocation();
   const user = useAuthStore((state) => state.user);
   const licenseAccess = user?.license_access;
@@ -525,10 +528,13 @@ export default function ApiDocsPage() {
   const canLoadErrorDocs = Boolean(authz.organizationRole);
   const visibleEndpointGroups = filterVisibleEndpointGroups(endpointGroups, authz, {
     agentCapabilities: agentCapabilitiesAvailable,
-  });
+  }).map(group => ({ ...group, endpoints: group.endpoints.filter(([method, path, description]) =>
+    [method, path, description, translateLabel(description), labelFor(apiAreaLabels, group.area)]
+      .some(value => value.toLowerCase().includes(endpointQuery.trim().toLowerCase())),
+  ) })).filter(group => group.endpoints.length > 0);
   const modelOptions = useMemo(() => Array.from(new Set(catalogModels
     .map(model => String(model.request_model || model.model_name || '').trim())
-    .filter(Boolean))), [catalogModels]);
+    .filter(Boolean))), [catalogModels, locale]);
   const targetErrorCode = useMemo(() => {
     if (!location.hash.startsWith('#error-')) return '';
     return decodeURIComponent(location.hash.slice('#error-'.length));
@@ -607,27 +613,31 @@ export default function ApiDocsPage() {
     if (target && 'scrollIntoView' in target) target.scrollIntoView({ block: 'center' });
   }, [isMemberQuickstart, memberErrorDocs, targetErrorCode]);
 
+  const columns = [
+    { title: 'Method / Path', key: 'endpoint', width: '42%', render: (_: unknown, row: { method: string; path: string }) => <div className="ur-api-identity"><Tag color={row.method === 'GET' ? 'blue' : row.method === 'POST' ? 'green' : 'orange'}>{row.method}</Tag><Text code>{row.path}</Text></div> },
+    { title: t('说明'), dataIndex: 'description' },
+  ];
   const errorColumns = [
     { title: 'Code', dataIndex: 'code', width: 250, render: (value: string) => <Text id={`error-${value}`} code>{value}</Text> },
     { title: 'HTTP', dataIndex: 'http_status', width: 90 },
-    { title: '说明', dataIndex: 'summary' },
-    { title: '处理建议', dataIndex: 'resolution' },
+    { title: t("说明"), dataIndex: 'summary' },
+    { title: t("处理建议"), dataIndex: 'resolution' },
   ];
   const compatibilityColumns = [
-    { title: '客户端', dataIndex: 'display_name', width: 260 },
-    { title: '协议路径', dataIndex: 'supported_endpoints', render: (value: string[]) => (value || []).map(path => <Tag key={path}>{path}</Tag>) },
-    { title: '运行时', dataIndex: 'runtime_state', width: 150, render: (value: string) => <Tag color={value === 'runtime_supported' ? 'green' : value === 'protocol_compatible' ? 'blue' : 'orange'}>{contractStateLabel(value)}</Tag> },
-    { title: '证据等级', dataIndex: 'evidence_level', width: 150, render: (value: string) => <Tag color={value === 'verified' ? 'green' : value === 'protocol_compatible' ? 'blue' : 'red'}>{contractStateLabel(value)}</Tag> },
-    { title: 'POC', dataIndex: 'recommended_for_poc', width: 80, render: (value: boolean) => value ? '推荐' : '不推荐' },
-    { title: '配置边界', dataIndex: 'configuration_note' },
+    { title: t("客户端"), dataIndex: 'display_name', width: 260 },
+    { title: t("协议路径"), dataIndex: 'supported_endpoints', render: (value: string[]) => (value || []).map(path => <Tag key={path}>{path}</Tag>) },
+    { title: t("运行时"), dataIndex: 'runtime_state', width: 150, render: (value: string) => <Tag color={value === 'runtime_supported' ? 'green' : value === 'protocol_compatible' ? 'blue' : 'orange'}>{contractStateLabel(value)}</Tag> },
+    { title: t("证据等级"), dataIndex: 'evidence_level', width: 150, render: (value: string) => <Tag color={value === 'verified' ? 'green' : value === 'protocol_compatible' ? 'blue' : 'red'}>{contractStateLabel(value)}</Tag> },
+    { title: 'POC', dataIndex: 'recommended_for_poc', width: 80, render: (value: boolean) => value ? t("推荐") : t("不推荐") },
+    { title: t("配置边界"), dataIndex: 'configuration_note' },
   ];
 
   const projectSelector = projects.length > 0 ? (
     <Select
-      aria-label="API 文档项目范围"
+      aria-label={t("API 文档项目范围")}
       value={selectedProjectID}
       optionList={projects.map(project => ({
-        label: `${projectDisplayName(project)} · ${canonicalProjectMembershipRole(project.current_user_membership_role) || '无显式项目角色'}`,
+        label: `${projectDisplayName(project)} · ${roleLabel(canonicalProjectMembershipRole(project.current_user_membership_role), t("无显式项目角色"))}`,
         value: project.id,
       }))}
       onChange={value => setSelectedProjectID(Number(value))}
@@ -639,32 +649,32 @@ export default function ApiDocsPage() {
     const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://your-unirouter.example';
     const gatewayRestriction = licenseAccess && !gatewayAvailable
       ? licenseRestrictionMessage(licenseAccess, 'gateway')
-      : '当前模型网关不可用。';
+      : t("当前模型网关不可用。");
     const modelWarning = licenseAccess && !modelGovernanceAvailable
-      ? `${licenseRestrictionMessage(licenseAccess, 'model_governance')} 请使用管理员提供的模型或别名。`
+      ? t("{v0} 请使用管理员提供的模型或别名。", { v0: String(licenseRestrictionMessage(licenseAccess, 'model_governance')) })
       : undefined;
 
     return (
-      <div className="ur-page">
+      <div className="ur-page ur-developer-workspace">
         <PageHeader
-          eyebrow="项目空间"
-          title="API 快速接入"
-          description="只展示当前项目调用所需的信息；供应商、部署、财务和组织管理接口不属于普通项目账号。"
+          eyebrow={t("项目空间")}
+          title={t("API 快速接入")}
+          description={t("只展示当前项目调用所需的信息；供应商、部署、财务和组织管理接口不属于普通项目账号。")}
           actions={projectSelector}
         />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {!selectedProject ? (
             <EmptyState
-              title="尚无可访问项目"
-              description="先提交访问申请或请项目管理员把你加入项目；获得项目成员关系后才能创建项目 API Key。"
-              actions={<Link to="/access">查看访问申请与授权</Link>}
+              title={t("尚无可访问项目")}
+              description={t("先提交访问申请或请项目管理员把你加入项目；获得项目成员关系后才能创建项目 API Key。")}
+              actions={<Link to="/access">{t("查看访问申请与授权")}</Link>}
               minHeight={280}
             />
           ) : (
             <>
               <Banner
                 type="info"
-                description={`当前项目：${projectDisplayName(selectedProject)}。项目 API Key 在“项目工作台”创建；完整密钥只显示一次。`}
+                description={t("当前项目：{v0}。项目 API Key 在“项目工作台”创建；完整密钥只显示一次。", { v0: String(projectDisplayName(selectedProject)) })}
                 closeIcon={null}
               />
               <ProjectApiQuickstart
@@ -676,26 +686,26 @@ export default function ApiDocsPage() {
                 modelWarning={modelWarning}
                 troubleshootingHref="#developer-errors"
               />
-              <Surface title="继续操作" description="接入、凭证、调试和用量都在同一个项目工作台完成。">
+              <Surface title={t("继续操作")} description={t("接入、凭证、调试和用量都在同一个项目工作台完成。")}>
                 <div className="ur-chip-row">
-                  <Link to="/developer#project-access">打开项目凭证</Link>
-                  {canInvokeProject(authz) && <Link to="/developer#project-debug">打开请求调试</Link>}
-                  <Link to="/developer#project-models">查看已启用模型</Link>
+                  <Link to="/developer#project-access">{t("打开项目凭证")}</Link>
+                  {canInvokeProject(authz) && <Link to="/developer#project-debug">{t("打开请求调试")}</Link>}
+                  <Link to="/developer#project-models">{t("查看已启用模型")}</Link>
                 </div>
               </Surface>
             </>
           )}
           {canLoadErrorDocs && (
             <Surface
-              title="常见错误与排查"
-              description="网关错误响应中的 doc_url 会打开这里；默认只列常见调用错误，可按错误码、HTTP 状态或说明搜索。"
+              title={t("常见错误与排查")}
+              description={t("网关错误响应中的 doc_url 会打开这里；默认只列常见调用错误，可按错误码、HTTP 状态或说明搜索。")}
             >
               <div id="developer-errors" className="ur-dev-docs">
                 <Input
-                  aria-label="搜索错误码"
+                  aria-label={t("搜索错误码")}
                   value={errorQuery}
                   onChange={setErrorQuery}
-                  placeholder="搜索错误码、HTTP 状态或处理建议"
+                  placeholder={t("搜索错误码、HTTP 状态或处理建议")}
                   showClear
                 />
                 <div className="ur-table-shell">
@@ -705,7 +715,7 @@ export default function ApiDocsPage() {
                     pagination={false}
                     rowKey="code"
                     size="small"
-                    empty={<EmptyState title="没有匹配的错误说明" description="请核对完整错误码后重试。" minHeight={140} />}
+                    empty={<EmptyState title={t("没有匹配的错误说明")} description={t("请核对完整错误码后重试。")} minHeight={140} />}
                   />
                 </div>
               </div>
@@ -717,52 +727,56 @@ export default function ApiDocsPage() {
   }
 
   return (
-    <div className="ur-page">
+    <div className="ur-page ur-developer-workspace">
       <PageHeader
-        eyebrow={isProjectAdminReference ? '项目管理' : '系统与集成'}
-        title={isProjectAdminReference ? '项目 API 参考' : 'API 与兼容性'}
+        eyebrow={isProjectAdminReference ? t("项目管理") : t("系统与集成")}
+        title={isProjectAdminReference ? t("项目 API 参考") : t("API 与兼容性")}
         description={isProjectAdminReference
-          ? '按当前项目管理员权限展示项目、访问、通知和模型调用合同；部署、供应商与财务接口不会在此展示。'
-          : '供管理人员查看其权限范围内的 API、客户端兼容性、证据等级与配置边界；协议兼容不等于已完成真实客户端认证。'}
+          ? t("按当前项目管理员权限展示项目、访问、通知和模型调用合同；部署、供应商与财务接口不会在此展示。")
+          : t("供管理人员查看其权限范围内的 API、客户端兼容性、证据等级与配置边界；协议兼容不等于已完成真实客户端认证。")}
         actions={projectSelector}
       />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {isOrgAdminRole(authz.organizationRole) && <Surface title="Agent 客户端兼容矩阵" description="等级从代码合同返回；只有通过独立客户端或端到端证据的能力才标记 verified。">
+        {isOrgAdminRole(authz.organizationRole) && <Surface title={t("Agent 客户端兼容矩阵")} description={t("等级从代码合同返回；只有通过独立客户端或端到端证据的能力才标记 verified。")}>
           <Banner
             type={gatewayEndpoints.some(endpoint => endpoint.status === 'active' && endpoint.observed_status === 'ready') ? 'success' : 'warning'}
             description={gatewayEndpoints.some(endpoint => endpoint.status === 'active' && endpoint.observed_status === 'ready')
-              ? '存在已登记、已启用且独立观测为 ready 的附加 Gateway Endpoint；真实客户端认证与模型调用仍需单独验证。'
-              : '尚未登记并独立验证附加 Gateway Endpoint；这不等同于当前 UniRouter 服务不可用。当前服务健康看“运行状态”，现场可用性以真实 API 调用为准。'}
+              ? t("存在已登记、已启用且独立观测为 ready 的附加 Gateway Endpoint；真实客户端认证与模型调用仍需单独验证。")
+              : t("尚未登记并独立验证附加 Gateway Endpoint；这不等同于当前 UniRouter 服务不可用。当前服务健康看“运行状态”，现场可用性以真实 API 调用为准。")}
             closeIcon={null}
             style={{ marginBottom: 12 }}
           />
           <div className="ur-table-shell">
             <Table columns={compatibilityColumns} dataSource={clientProfiles} rowKey="profile_id" pagination={false} scroll={{ x: 1100 }} />
           </div>
-          <Text type="tertiary">OpenAI Agents SDK 的默认 Responses 路径仍为 contract_only / unsupported；第二次联调必须显式使用 Chat Completions 适配路径。</Text>
+          <Text type="tertiary">{t("OpenAI Agents SDK 的默认 Responses 路径仍为 contract_only / unsupported；第二次联调必须显式使用 Chat Completions 适配路径。")}</Text>
         </Surface>}
-        <Surface title="请求身份与幂等" description="这些字段用途不同，不能互相替代。">
+        <Surface title={t("请求身份与幂等")} description={t("这些字段用途不同，不能互相替代。")}>
           <div style={{ display: 'grid', gap: 8 }}>
-            <Text><Text code>X-Request-ID</Text>：UniRouter 每次请求强制生成的操作 ID，用于串联网关、计费、审计和故障切换。</Text>
-            <Text><Text code>X-UniRouter-Client-Request-ID</Text>：调用方自己的关联值，只用于查找，不作为全局财务主键。</Text>
-            <Text><Text code>X-UniRouter-Limit-Policy-Version</Text>：本次网关准入实际使用的共享限额策略集合指纹，可与请求日志中的策略链一起排障。</Text>
-            <Text><Text code>Idempotency-Key</Text>：Chat / Embeddings 使用 24 小时元数据去重；图像任务使用项目、API Key 与请求内容绑定的持久身份。两者都不会在准入响应中重放模型输出。</Text>
+            <Text><Text code>X-Request-ID</Text>{t("：UniRouter 每次请求强制生成的操作 ID，用于串联网关、计费、审计和故障切换。")}</Text>
+            <Text><Text code>X-UniRouter-Client-Request-ID</Text>{t("：调用方自己的关联值，只用于查找，不作为全局财务主键。")}</Text>
+            <Text><Text code>X-UniRouter-Limit-Policy-Version</Text>{t("：本次网关准入实际使用的共享限额策略集合指纹，可与请求日志中的策略链一起排障。")}</Text>
+            <Text><Text code>Idempotency-Key</Text>{t("：Chat / Embeddings 使用 24 小时元数据去重；图像任务使用项目、API Key 与请求内容绑定的持久身份。两者都不会在准入响应中重放模型输出。")}</Text>
           </div>
         </Surface>
-        {agentCapabilitiesAvailable && (isOrgAdminRole(authz.organizationRole) || isProjectAdminReference) && <Surface title="Agent 能力边界" description="UniRouter 只授予模型网关调用权，不授予 Tool、IAM、数据库或导出权限。">
+        {agentCapabilitiesAvailable && (isOrgAdminRole(authz.organizationRole) || isProjectAdminReference) && <Surface title={t("Agent 能力边界")} description={t("UniRouter 只授予模型网关调用权，不授予 Tool、IAM、数据库或导出权限。")}>
           <div style={{ display: 'grid', gap: 8 }}>
-            <Text>Supervisor 使用根 API Key 显式登记工作流；每个子 Agent 必须由父 Agent 调用委派接口登记，系统不会从普通流量中猜测子 Agent。</Text>
-            <Text>能力令牌最长 <Text code>5 分钟</Text>，通常在第 3 分钟附近带抖动刷新；工作流时长、深度、扇出和预算独立计算。</Text>
-            <Text>委派合同中的模型、接口、成本、Token、RPM、RPS 与并发上限只能保持或缩小；共享预算的运行时扣减由后续分布式策略批次接入。根权限变化最多 15 秒被所有实例重新核对；Redis 状态不可用时能力请求拒绝准入。</Text>
+            <Text>{t("Supervisor 使用根 API Key 显式登记工作流；每个子 Agent 必须由父 Agent 调用委派接口登记，系统不会从普通流量中猜测子 Agent。")}</Text>
+            <Text>{t("能力令牌最长")} <Text code>{t("5 分钟")}</Text>{t("，通常在第 3 分钟附近带抖动刷新；工作流时长、深度、扇出和预算独立计算。")}</Text>
+            <Text>{t("委派合同中的模型、接口、成本、Token、RPM、RPS 与并发上限只能保持或缩小；共享预算的运行时扣减由后续分布式策略批次接入。根权限变化最多 15 秒被所有实例重新核对；Redis 状态不可用时能力请求拒绝准入。")}</Text>
           </div>
         </Surface>}
+        <Surface title={t('API 接口目录')} description={t('按路径、方法或用途搜索当前权限范围内的接口。')}>
+          <Input aria-label={t('搜索 API 接口')} placeholder={t('搜索 API 接口')} value={endpointQuery} onChange={setEndpointQuery} showClear />
+        </Surface>
+        {visibleEndpointGroups.length === 0 && <EmptyState title={t('没有匹配的接口')} description={t('尝试其他路径或关键词。')} minHeight={140} />}
         {visibleEndpointGroups.map(group => (
-          <details key={group.area} className="ur-surface" open={group.area === 'Gateway'}>
+          <details key={group.area} className="ur-surface" open={Boolean(endpointQuery.trim()) || group.area === 'Gateway'}>
             <summary style={{ cursor: 'pointer', fontWeight: 600, padding: '16px 20px' }}>
-              {apiAreaLabels[group.area] || group.area} · {group.endpoints.length} 个接口
+              {labelFor(apiAreaLabels, group.area)} · {group.endpoints.length}  {t("个接口")}
             </summary>
             <div className="ur-surface-body">
-              {group.area === 'Gateway' && <Text type="tertiary">模型网关使用项目 API Key 或 Agent 能力令牌鉴权；控制台登录态不适用于这些协议接口。</Text>}
+              {group.area === 'Gateway' && <Text type="tertiary">{t("模型网关使用项目 API Key 或 Agent 能力令牌鉴权；控制台登录态不适用于这些协议接口。")}</Text>}
             <div className="ur-table-shell">
               <Table
                 columns={columns}
@@ -770,7 +784,7 @@ export default function ApiDocsPage() {
                   key: `${method}:${path}`,
                   method,
                   path,
-                  description,
+                  description: translateLabel(description),
                 }))}
                 pagination={false}
                 rowKey="key"
@@ -780,7 +794,7 @@ export default function ApiDocsPage() {
             </div>
           </details>
         ))}
-        {canLoadErrorDocs && <Surface title="错误说明" description="模型网关错误响应中的 doc_url 会指向本表锚点。">
+        {canLoadErrorDocs && <Surface title={t("错误说明")} description={t("模型网关错误响应中的 doc_url 会指向本表锚点。")}>
           <div className="ur-table-shell">
             <Table
               columns={errorColumns}

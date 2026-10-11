@@ -53,6 +53,8 @@ async function responseJSON(response, expectedStatus) {
 
 try {
   await page.goto('/login');
+  assert.equal(await page.locator('html').getAttribute('lang'), 'en-US', 'fresh sign-in defaults to English');
+  await page.getByRole('button', { name: '中文', exact: true }).click();
   await page.getByLabel('用户名').fill(fixture.username);
   await page.locator('input[type="password"]').fill(fixture.password);
   const [loginResponse] = await Promise.all([
@@ -64,7 +66,7 @@ try {
 
   await page.goto('/channels');
   await page.getByRole('heading', { name: '模型接入', exact: true }).waitFor({ state: 'visible' });
-  await page.getByRole('button', { name: '接入模型', exact: true }).click();
+  await page.getByRole('button', { name: '接入模型', exact: true }).first().click();
   await page.getByRole('button', { name: '新建平台连接', exact: true }).click();
   const createSheet = page.locator('.semi-sidesheet:visible').filter({ hasText: '创建模型接入' }).last();
   await createSheet.waitFor({ state: 'visible' });
@@ -121,12 +123,12 @@ try {
   let endpointSheet = page.locator('.semi-sidesheet:visible').filter({ hasText: `Deployment #${deploymentID}` }).last();
   await endpointSheet.waitFor({ state: 'visible' });
   await endpointSheet.getByRole('button', { name: '用此绑定探测精确 Operation', exact: true }).click();
-  const probeModal = page.locator('.semi-modal:visible').filter({ hasText: `探测 Deployment #${deploymentID}？` }).last();
+  const probeModal = page.locator('.semi-modal:visible').filter({ hasText: `探测 Deployment #${deploymentID} · ${operationID}？` }).last();
   await probeModal.waitFor({ state: 'visible' });
   const probePath = `/api/v1/model-deployments/${deploymentID}/operations/${operationID}/probes`;
   const [probeResponse] = await Promise.all([
     apiResponse('POST', probePath),
-    probeModal.getByRole('button', { name: 'confirm', exact: true }).click(),
+    probeModal.getByRole('button', { name: '发起精确探测', exact: true }).click(),
   ]);
   const probed = await responseJSON(probeResponse, 200);
   assert.equal(probed.deployment_id, deploymentID);
@@ -179,7 +181,7 @@ try {
   const activatePath = `/api/v1/model-deployment-releases/${releaseRef}/activate-initial`;
   const [activateResponse] = await Promise.all([
     apiResponse('POST', activatePath),
-    activateModal.getByRole('button', { name: 'confirm', exact: true }).click(),
+    activateModal.getByRole('button', { name: '首次启用', exact: true }).click(),
   ]);
   const activated = await responseJSON(activateResponse, 200);
   assert.equal(activated.idempotency_replay, false);
