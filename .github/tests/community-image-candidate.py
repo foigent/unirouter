@@ -89,6 +89,36 @@ def diagnostic(site,error,stage=None):
     except Exception:
         pass  # Diagnostics must never replace the failure being reported.
 
+def apk_field_witness(role,image,inventory,row_index,field,value):
+    if role not in ('backend','frontend','postgres','redis','prometheus','grafana'): return
+    if re.fullmatch(r'sha256:[0-9a-f]{64}',image['id']) is None: return
+    if role in FIXED['images'] and image['id']!=FIXED['images'][role]['config_id']: return
+    databases=[row for row in inventory['databases'] if row['path']=='lib/apk/db/installed']
+    if len(databases)!=1 or re.fullmatch(r'[0-9a-f]{64}',databases[0]['sha256']) is None: return
+    if field not in ('name','version','declared_license','origin'): return
+    if value is None:
+        if field in ('declared_license','origin'): return
+        reason='missing_required'
+    elif type(value) is not str: reason='wrong_type'
+    elif not value: reason='empty'
+    elif len(value)>256: reason='too_long'
+    elif re.fullmatch(r'[A-Za-z0-9_.+():/ -]+',value) is None: reason='invalid_characters'
+    else: return
+    kind={type(None):'null',str:'string',bool:'boolean',int:'integer',float:'number',
+          list:'array',dict:'object'}.get(type(value),'other')
+    raw=value.encode('utf-8') if type(value) is str else None
+    complete=value is None or (raw is not None and len(raw)<=4096)
+    event={'diagnostic':'apk_field_rejected','role':role,'image_id':image['id'],
+           'database_sha256':databases[0]['sha256'],'row_index':row_index,'field':field,
+           'code':'REPORT_VALUE_REJECTED','reason':reason,'value_type':kind,
+           'value_characters':len(value) if type(value) is str else None,
+           'value_utf8_bytes':len(raw) if raw is not None else None,
+           'value_sha256':hashlib.sha256(raw).hexdigest() if raw is not None else None,
+           'value_base64':base64.b64encode(raw).decode('ascii') if raw is not None and complete else None,
+           'value_complete':complete}
+    line=json.dumps(event,ensure_ascii=True,separators=(',',':'),allow_nan=False).replace('#',r'\u0023')
+    if len(line)+1<=8192: print(line,file=sys.stderr,flush=True)
+
 def hash_file(p):
     h=hashlib.sha256()
     with p.open('rb') as f:
@@ -632,9 +662,14 @@ def validate_facts(value):
             require(not PurePosixPath(row['path']).is_absolute() and '..' not in PurePosixPath(row['path']).parts,'REPORT_PATH_REJECTED')
             integer(row['size']);hex_digest(row['sha256'])
         for row in inv['databases']:require(row['path'] in ['lib/apk/db/installed','var/lib/dpkg/status'],'REPORT_PATH_REJECTED')
-        for row in inv['apk']:
+        for row_index,row in enumerate(inv['apk']):
             exact(row,['name','version','declared_license','origin'])
-            for k in row:text_field(row[k],r'[A-Za-z0-9_.+():/ -]+',256,k in ['declared_license','origin'])
+            for k in row:
+                try: text_field(row[k],r'[A-Za-z0-9_.+():/ -]+',256,k in ['declared_license','origin'])
+                except Stop:
+                    try: apk_field_witness(role,image,inv,row_index,k,row[k])
+                    except Exception: pass  # Preserve the original rejection if diagnostics fail.
+                    raise
     rows(value['go_modules'])
     for row in value['go_modules']:
         exact(row,['kind','path','version','sum']);require(row['kind'] in ['mod','dep','=>'],'REPORT_MODULE_REJECTED')
