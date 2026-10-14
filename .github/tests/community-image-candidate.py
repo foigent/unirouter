@@ -171,6 +171,18 @@ def run_command(label,args,consume=None,cleanup=False):
             row.update(ended_utc=utc(),log_bytes=log.stat().st_size,
                        log_sha256=hash_file(log) if capture is None or not capture.thread.is_alive() else None)
             snapshot()
+            try:
+                if (label in ('one release backend build', 'one production frontend build')
+                        and row['status'] != 'success' and capture is not None
+                        and row.get('log_receiver_complete')):
+                    print(json.dumps({
+                        'build_failure_phase': label, 'exit_code': row.get('exit_code'),
+                        'output_tail': capture.tail.decode('utf-8', errors='replace'),
+                        'truncated': capture.seen > len(capture.tail),
+                    }, ensure_ascii=True).replace('#', r'\u0023'), flush=True)
+            except Exception:
+                # Diagnostic output must not replace the primary command failure.
+                pass
     return log.read_text(errors='replace').strip() if consume is None else None
 
 def argv_run(label,args,cleanup=False):
