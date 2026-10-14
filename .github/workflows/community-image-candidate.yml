@@ -1,0 +1,80 @@
+name: Community Image Facts
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_workflow_commit:
+        description: Exact approved main commit containing this workflow/helper
+        required: true
+        type: string
+      upgrade_public_ring_b64:
+        description: Approved 83-byte UR public ring as unpadded base64url; never a private key
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: community-image-candidate-main
+  cancel-in-progress: false
+
+jobs:
+  linux-images:
+    name: Linux amd64 build facts (no image publication)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      EXPECTED_WORKFLOW_COMMIT: ${{ inputs.expected_workflow_commit }}
+      UR_UPGRADE_RING_B64: ${{ inputs.upgrade_public_ring_b64 }}
+    steps:
+      - name: Require one approved manual main run
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = foigent/unirouter
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_REF" = refs/heads/main
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          [[ "$EXPECTED_WORKFLOW_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          test "$GITHUB_SHA" = "$EXPECTED_WORKFLOW_COMMIT"
+          python3 -c 'import time; print("UR_IMAGE_JOB_MONOTONIC=" + str(time.monotonic()))' >> "$GITHUB_ENV"
+
+      - name: Check out approved producer code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Check out separate accepted product source
+        uses: actions/checkout@v7
+        with:
+          repository: foigent/unirouter
+          ref: 3818ba9627d1bc44eb836036b8ae8904a7175e65
+          path: .image-source-3818
+          persist-credentials: false
+
+      - name: Produce bounded images and static evidence once
+        shell: bash
+        run: python3 -I -B .github/tests/community-image-candidate.py
+
+      - name: Validate the single terminal facts report
+        id: facts
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -I -B .github/tests/community-image-candidate.py --validate-report \
+            "$RUNNER_TEMP/ur-image-candidate-$GITHUB_RUN_ID-attempt1/deliverable/facts-report.json"
+          echo "upload=true" >> "$GITHUB_OUTPUT"
+
+      - name: Retain only validated facts
+        if: ${{ always() && steps.facts.outcome == 'success' && steps.facts.outputs.upload == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ur-image-facts-${{ github.run_id }}-attempt1
+          path: ${{ runner.temp }}/ur-image-candidate-${{ github.run_id }}-attempt1/deliverable/facts-report.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
