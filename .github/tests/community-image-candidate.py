@@ -59,6 +59,36 @@ def digest(b):
 def require(ok, message):
     if not ok: raise Stop(message)
 
+def diagnostic(site,error,stage=None):
+    try:
+        if site not in ('main','cleanup','report','module','validate_report'): return
+        stage=receipt.get('stage') if stage is None else stage
+        if type(stage) is not str or stage not in STAGES: stage='unknown'
+        name=type(error).__name__
+        if name not in {'Stop','CommandTimeout','TimeoutExpired','OSError','ValueError',
+                        'KeyError','TypeError','JSONDecodeError','FileNotFoundError',
+                        'PermissionError','RuntimeError','BrokenPipeError','AttributeError',
+                        'AssertionError'}: name='OtherError'
+        arg=error.args[0] if type(error) is Stop and len(error.args)==1 else None
+        codes={'INVALID_ARGUMENTS','REPORT_COMMAND_REJECTED','REPORT_COMPLETION_REJECTED',
+               'REPORT_GAPS_REJECTED','REPORT_IMAGE_REJECTED','REPORT_INPUT_REJECTED',
+               'REPORT_MODULE_REJECTED','REPORT_PATH_REJECTED','REPORT_SCHEMA_REJECTED',
+               'REPORT_SIZE_REJECTED','REPORT_SOURCE_REJECTED','REPORT_TRUST_REJECTED',
+               'REPORT_VALUE_REJECTED'}
+        code=arg if type(arg) is str and len(arg)<=64 and arg in codes else 'unknown'
+        line=None; trace=error.__traceback__
+        while trace is not None:
+            frame=trace.tb_frame.f_code
+            if frame.co_filename==__file__ and frame.co_name not in {
+                    'require','exact','text_field','integer','flag','hex_digest','rows'}:
+                line=trace.tb_lineno
+            trace=trace.tb_next
+        print(json.dumps({'diagnostic':'image_facts_failure','site':site,'stage':stage,
+                          'class':name,'code':code,'line':line},
+                         ensure_ascii=True).replace('#',r'\u0023'),file=sys.stderr,flush=True)
+    except Exception:
+        pass  # Diagnostics must never replace the failure being reported.
+
 def hash_file(p):
     h=hashlib.sha256()
     with p.open('rb') as f:
@@ -351,6 +381,7 @@ def cleanup():
             docker('remove owned container and anonymous volumes','rm','-v',cid,cleanup=True)
             receipt['cleanup'].append({'id':cid,'removed_with_anonymous_volumes':True})
         except Exception as e:
+            diagnostic('cleanup',e,stage='cleanup')
             receipt['cleanup'].append({'id':cid,'removed_with_anonymous_volumes':False,'error_class':type(e).__name__})
     if not all(row['removed_with_anonymous_volumes'] for row in receipt['cleanup']):
         receipt['status']='stopped_partial_candidate'
@@ -395,6 +426,7 @@ def collect_images(source,back,front,encoded,go):
 
 def main():
     global work,delivered,pending,docker_root,child_env,deadline,cleanup_deadline,run_id
+    receipt['stage']='preflight'
     require(sys.version_info>=(3,10),'Python3.10+ required')
     require(os.environ.get('GITHUB_REPOSITORY')==FIXED['source']['repository'],'wrong workflow repository')
     require(os.environ.get('GITHUB_EVENT_NAME')=='workflow_dispatch' and os.environ.get('GITHUB_REF')=='refs/heads/main','manual approved main only')
@@ -463,15 +495,27 @@ def main():
         collect_images(source,back,front,encoded,go)
         receipt['status']='built_candidate_with_unresolved_obligations'
     except Exception as e:
+        diagnostic('main',e)
         receipt.update(status='stopped_partial_candidate',error_class=type(e).__name__)
     finally:
-        cleanup(); receipt['ended_utc']=utc()
-        if not all(c['removed_with_anonymous_volumes'] for c in receipt['cleanup']):
-            receipt.update(status='stopped_partial_candidate',error='Owned cleanup incomplete; runner lifecycle is the final resource boundary.')
-        receipt['elapsed_from_first_workflow_step_seconds']=round(time.monotonic()-job_start,3)
-        snapshot()
-        write_facts_report()
-        print(json.dumps({'report':FACTS_FILENAME,'status':project_facts()['status'],'run_id':run_id}),flush=True)
+        primary_failed=receipt['status']!='built_candidate_with_unresolved_obligations'
+        try:
+            cleanup()
+        except Exception as e:
+            diagnostic('cleanup',e,stage='cleanup')
+            receipt['status']='stopped_partial_candidate'
+            if not primary_failed: receipt.update(stage='cleanup',error_class=type(e).__name__)
+        try:
+            receipt['ended_utc']=utc()
+            if not all(c['removed_with_anonymous_volumes'] for c in receipt['cleanup']):
+                receipt.update(status='stopped_partial_candidate',error='Owned cleanup incomplete; runner lifecycle is the final resource boundary.')
+            receipt['elapsed_from_first_workflow_step_seconds']=round(time.monotonic()-job_start,3)
+            snapshot()
+            write_facts_report()
+            print(json.dumps({'report':FACTS_FILENAME,'status':project_facts()['status'],'run_id':run_id}),flush=True)
+        except Exception as e:
+            diagnostic('report',e)
+            raise
     return 0 if receipt['status']=='built_candidate_with_unresolved_obligations' and all(c['removed_with_anonymous_volumes'] for c in receipt['cleanup']) else 1
 
 
@@ -658,5 +702,7 @@ if __name__=='__main__':
         require(len(sys.argv)==1,'INVALID_ARGUMENTS')
         sys.exit(main())
     except Exception as e:
-        print('UR_IMAGE_FACTS_REFUSED',file=sys.stderr,flush=True)
+        diagnostic('validate_report' if len(sys.argv)==3 and sys.argv[1]=='--validate-report' else 'module',e)
+        try: print('UR_IMAGE_FACTS_REFUSED',file=sys.stderr,flush=True)
+        except Exception: pass
         sys.exit(1)
