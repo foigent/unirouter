@@ -665,6 +665,8 @@ def validate_facts(value):
         for row_index,row in enumerate(inv['apk']):
             exact(row,['name','version','declared_license','origin'])
             for k in row:
+                # Preserve an observed empty declaration; missing remains None.
+                if k=='declared_license' and type(row[k]) is str and row[k]=='': continue
                 try: text_field(row[k],r'[A-Za-z0-9_.+():/ -]+',256,k in ['declared_license','origin'])
                 except Stop:
                     try: apk_field_witness(role,image,inv,row_index,k,row[k])
