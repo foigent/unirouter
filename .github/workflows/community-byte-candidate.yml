@@ -1,0 +1,58 @@
+name: Community unsigned byte candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_workflow_commit:
+        description: Exact reviewed producer/default-main SHA; product source is separately fixed
+        required: true
+        type: string
+      admission_sha256:
+        description: SHA256 of coordinator's fresh authorization, shared budget and queue admission record
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: community-byte-candidate
+  cancel-in-progress: false
+
+jobs:
+  retain-unsigned-candidate:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && github.actor_id == '252312344'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    env:
+      EXPECTED_WORKFLOW_COMMIT: ${{ inputs.expected_workflow_commit }}
+      ADMISSION_SHA256: ${{ inputs.admission_sha256 }}
+    steps:
+      - name: Start job clock
+        shell: bash
+        run: python3 -I -B -c 'import os,time; open(os.environ["GITHUB_ENV"],"a").write("UR_BYTE_JOB_MONOTONIC="+str(time.monotonic())+"\n")'
+      - name: Checkout exact producer
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          path: producer
+      - name: Checkout fixed product source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 3818ba9627d1bc44eb836036b8ae8904a7175e65
+          persist-credentials: false
+          path: producer/.byte-source-3818
+      - name: Validate producer offline guards
+        working-directory: producer
+        run: python3 -I -B .github/tests/test-community-byte-candidate.py
+      - name: Build once and retain only in verified draft
+        working-directory: producer
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 -I -B .github/tests/community-byte-candidate.py
+      - name: Safe terminal summary
+        if: always()
+        working-directory: producer
+        run: python3 -I -B .github/tests/community-byte-candidate.py --summary
