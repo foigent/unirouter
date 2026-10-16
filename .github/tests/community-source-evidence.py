@@ -689,6 +689,7 @@ def observe(guard,result):
                 outside_volume(guard,role,path)
                 maximum=min(384*MIB,512*MIB-binary_total); need(maximum>0,'LIMIT')
                 copy_exact(guard,containers[role],path,binary,maximum); binary_total+=binary.stat().st_size
+                binary.chmod(0o644)
                 binary_sha=guard.hash_file(binary)
                 old_limit=guard.MAX_LOG_BYTES; guard.MAX_LOG_BYTES=256*1024
                 try:guard.tool('source-buildinfo-'+role,ids['backend-builder'],
