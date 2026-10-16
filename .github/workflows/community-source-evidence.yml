@@ -1,0 +1,91 @@
+name: Community Source Evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_workflow_commit:
+        description: Exact reviewed main commit; this manual run needs separate approval
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: community-image-candidate-main
+  cancel-in-progress: false
+
+jobs:
+  source-evidence:
+    name: Fixed source and frontend observations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      EXPECTED_WORKFLOW_COMMIT: ${{ inputs.expected_workflow_commit }}
+    steps:
+      - name: Require one approved manual main attempt
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = foigent/unirouter
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_REF" = refs/heads/main
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          [[ "$EXPECTED_WORKFLOW_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          test "$GITHUB_SHA" = "$EXPECTED_WORKFLOW_COMMIT"
+          python3 -c 'import time; print("UR_SOURCE_JOB_MONOTONIC=" + str(time.monotonic()))' >> "$GITHUB_ENV"
+
+      - name: Check out reviewed producer
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Check out separate fixed product source
+        uses: actions/checkout@v7
+        with:
+          repository: foigent/unirouter
+          ref: 3818ba9627d1bc44eb836036b8ae8904a7175e65
+          path: .image-source-3818
+          persist-credentials: false
+
+      - name: Collect one new evidence candidate
+        shell: bash
+        run: python3 -I -B .github/tests/community-source-evidence.py
+
+      - name: Validate exact terminal and optional evidence archive
+        id: delivery
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          outcome="$(python3 -I -B .github/tests/community-source-evidence.py --validate-delivery \
+            "$RUNNER_TEMP/ur-source-evidence-$GITHUB_RUN_ID-attempt1/deliverable")"
+          case "$outcome" in
+            UR_SOURCE_BUNDLE_VALID) echo "terminal=true" >> "$GITHUB_OUTPUT"; echo "bundle=true" >> "$GITHUB_OUTPUT" ;;
+            UR_SOURCE_TERMINAL_VALID) echo "terminal=true" >> "$GITHUB_OUTPUT"; echo "bundle=false" >> "$GITHUB_OUTPUT" ;;
+            *) exit 1 ;;
+          esac
+
+      - name: Retain validated evidence and terminal
+        if: ${{ always() && steps.delivery.outcome == 'success' && steps.delivery.outputs.bundle == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ur-source-evidence-${{ github.run_id }}-attempt1
+          path: |
+            ${{ runner.temp }}/ur-source-evidence-${{ github.run_id }}-attempt1/deliverable/terminal-source-evidence.json
+            ${{ runner.temp }}/ur-source-evidence-${{ github.run_id }}-attempt1/deliverable/source-evidence.tar.gz
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
+
+      - name: Retain only a validated safe failure terminal
+        if: ${{ always() && steps.delivery.outcome == 'success' && steps.delivery.outputs.terminal == 'true' && steps.delivery.outputs.bundle != 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ur-source-evidence-${{ github.run_id }}-attempt1
+          path: ${{ runner.temp }}/ur-source-evidence-${{ github.run_id }}-attempt1/deliverable/terminal-source-evidence.json
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
