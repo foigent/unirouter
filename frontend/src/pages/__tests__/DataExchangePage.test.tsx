@@ -289,9 +289,9 @@ describe('DataExchangePage', () => {
       last_authenticated_pull_at: '2026-07-25T08:10:00Z', pending_item_count: 0,
     });
     const { container } = render(<DataExchangePage />);
-    await waitFor(() => expect(container.textContent).toContain('Connector 配对状态'));
+    await waitFor(() => expect(container.textContent).toContain('读取已启用'));
     expect(container.textContent).toContain('Feed 实际状态');
-    expect(container.textContent).toContain('读取已启用');
+    expect(container.textContent).toContain('Connector 配对状态');
     expect(container.textContent).toContain('手工 Feed 的真实连接和凭据状态');
   });
 
