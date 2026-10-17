@@ -801,6 +801,19 @@ def metadata_archive(data, output, guard=lambda: None):
     return file_fact(output)
 
 
+def collect_frontend_membership(guard, helper, cid, data):
+    # Inventory owns data/frontend. Keep observer bytes separate while preserving
+    # the accepted validator's logical frontend/ namespace and closed file set.
+    destination = data/'frontend-membership'; destination.mkdir(mode=0o700)
+    guard.stream_command('actual final frontend membership', ['docker', '--config', str(guard.work/'docker-config'),
+        '--host', 'unix:///var/run/docker.sock', 'cp', cid+':/usr/share/licenses/unirouter/output', '-'],
+        lambda stream: helper.receive_frontend(stream, destination, guard.time_guard))
+    files = {'frontend/'+p.relative_to(destination).as_posix(): regular(p, 16*MIB)
+             for p in destination.rglob('*') if p.is_file()}
+    helper.validate_evidence(files)
+    return load(files['frontend/frontend-membership.json'])
+
+
 def build(guard, helper, ring, index, assets, data, retain):
     source = guard.source_export()
     need(guard.FIXED['source']['commit'] == PRODUCT and guard.FIXED['source']['tree'] == TREE, 'product_identity')
@@ -861,14 +874,7 @@ def build(guard, helper, ring, index, assets, data, retain):
             write_new(data/'backend-buildinfo.txt', buildinfo.encode())
             write_new(data/'backend-binary.json', encoded(file_fact(binary)))
         else:
-            destination = data/'frontend'; destination.mkdir(mode=0o700)
-            guard.stream_command('actual final frontend membership', ['docker', '--config', str(guard.work/'docker-config'),
-                '--host', 'unix:///var/run/docker.sock', 'cp', cid+':/usr/share/licenses/unirouter/output', '-'],
-                lambda stream: helper.receive_frontend(stream, destination, guard.time_guard))
-            files = {'frontend/'+p.relative_to(destination).as_posix(): regular(p, 16*MIB)
-                     for p in destination.rglob('*') if p.is_file()}
-            helper.validate_evidence(files)
-            membership = load(files['frontend/frontend-membership.json'])
+            membership = collect_frontend_membership(guard, helper, cid, data)
             dist = {r['path'].removeprefix('usr/share/nginx/html/'): r for r in report['entries']
                     if r['type'] == 'regular' and r['path'].startswith('usr/share/nginx/html/')}
             for row in membership['output_files']:
