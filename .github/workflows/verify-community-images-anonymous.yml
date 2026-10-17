@@ -1,0 +1,141 @@
+name: Verify public community images anonymously
+run-name: Anonymous UR 1.12.0 digest verification, source run 39004772237
+on:
+  workflow_dispatch:
+    inputs:
+      backend_digest:
+        description: Exact real backend manifest digest from the accepted private publication receipt
+        type: string
+        required: true
+      frontend_digest:
+        description: Exact real frontend manifest digest from the accepted private publication receipt
+        type: string
+        required: true
+permissions: {}
+concurrency:
+  group: ur-anonymous-image-verification-39004772237
+  cancel-in-progress: false
+jobs:
+  verify-anonymous:
+    if: github.repository == 'foigent/unirouter' && github.ref == 'refs/heads/main' && github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Pull only the two fixed real digest references without credentials
+        shell: bash
+        env:
+          UR_BACKEND_DIGEST: ${{ inputs.backend_digest }}
+          UR_FRONTEND_DIGEST: ${{ inputs.frontend_digest }}
+        run: |
+          python3 -I -B - --execute-approved-dispatch-digests <<'PY'
+          """Review-only helper for future approved anonymous pulls; never starts images."""
+          import argparse, json, os, re, subprocess, tempfile
+          from pathlib import Path
+          
+          IMAGES = [{'role': 'backend',
+            'package_name': 'unirouter-backend',
+            'repository': 'ghcr.io/foigent/unirouter-backend',
+            'asset_id': 649597493,
+            'archive_name': 'backend-image.tar.gz',
+            'archive_bytes': 21216698,
+            'archive_sha256': 'ebadb70885a0870d410409317a693f7792ef40994491e033625dc051d4be114a',
+            'config_id': 'sha256:acb6e39f0ed3eeed037c0fa942bfc4f9c16232e9efe741ff870f42f7e713d424',
+            'diff_ids': ['sha256:e63b02c2b5c761df2cb95e657d744f27d95da4e051235a13c80b88cd68eab188',
+                         'sha256:e047eb923fae3e52c4d541773a0c7dec4c0a0f88aa6dcadf486fa9e1bdd2c907',
+                         'sha256:9adeb06b9b2b5b053a756720154ed3974b58f15c212cd6be7716e2a41eb48524',
+                         'sha256:7ffea4be8b2df7f8f59986c358837c0def72fe0543f7fb276a8ff53df98ebfb4',
+                         'sha256:926c800042ad339b4939c360159b9a56c5f7be9092c71b16525d6df99f4267ca',
+                         'sha256:3ee6ada45cc9fc72b1f807b55f235133b6f6818c551131fc60ad72810a80ec83']},
+           {'role': 'frontend',
+            'package_name': 'unirouter-frontend',
+            'repository': 'ghcr.io/foigent/unirouter-frontend',
+            'asset_id': 649599400,
+            'archive_name': 'frontend-image.tar.gz',
+            'archive_bytes': 26969319,
+            'archive_sha256': '8750b6bc17d66005ee7f172488787e4213cd004d6d8ecb02c8a1df5f6cbf447a',
+            'config_id': 'sha256:2c9d62ab098d88853a50ccc09228310a72dfc7258e6924f69c4e62b5d95416db',
+            'diff_ids': ['sha256:31ad4a471c6852bfec14d757cc75a566c82a9769f12c3918cf6bf52cc0eeb3d0',
+                         'sha256:513bb45c86b3ab007a1f05b558211f5b69ae412d6834f4f890988a2f765fc399',
+                         'sha256:e0292b802b8d62769f1e2f7ea969575894d0f7d8fb6244c824c95997591ebb5e',
+                         'sha256:ccc7cae931833ad18af797b54e21afa361279bc2161e86ffe7eb89041cd6b962',
+                         'sha256:c66f3fc2d00b6f8f7c46c9d94a23d9b51e66883151fc5edaccdf781e90df929f',
+                         'sha256:0a7d4fc0fa12bb5b447649d680fc84a35167dde454e242fc843dbc670b208864',
+                         'sha256:9c436f5312f14af26c4dd62076f77841be450178171276e676ed18744ab020bc',
+                         'sha256:61d47f9d34fb476a81f30e840d869f301c2bde5b2b6878dd6577cbaf0b69842e',
+                         'sha256:57ccbbeb186823d64851fb5e17a19eb079197a6d638dcb8af682823db86c2961',
+                         'sha256:0c9f5ae4bfc3e51b3a2bede86bbafe6e2c745389f8def3758cf2254de077fb95',
+                         'sha256:a07eb7381c7581fac8318e8010f8c1fe5929106cbb03475753472ec71a651166',
+                         'sha256:c751f279604090c283987a72caa70509e6bd7056c6c8f0f76ec0af0e65680410']}]
+          
+          def require(ok, message):
+              if not ok: raise RuntimeError(message)
+          
+          def main():
+              p = argparse.ArgumentParser()
+              p.add_argument('--receipt', type=Path)
+              group = p.add_mutually_exclusive_group(required=True)
+              group.add_argument('--describe', action='store_true')
+              group.add_argument('--execute-approved-anonymous-pulls', action='store_true')
+              group.add_argument('--execute-approved-dispatch-digests', action='store_true')
+              args = p.parse_args()
+              if args.describe:
+                  print(json.dumps({'mode':'offline_review_only','images':IMAGES,
+                                    'real_digest_receipt_required_before_pull':True,
+                                    'no_credentials_or_subprocess_or_write_in_describe':True},indent=2)); return
+              require(os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('GITHUB_REPOSITORY') == 'foigent/unirouter',
+                      'Requires an approved disposable repository Linux job, not a local/production Docker host.')
+              if args.execute_approved_dispatch_digests:
+                  require(args.receipt is None, 'Dispatch inputs and receipt cannot be mixed.')
+                  require(os.environ.get('GITHUB_REF') == 'refs/heads/main' and
+                          os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch' and
+                          os.environ.get('GITHUB_WORKFLOW_REF') == 'foigent/unirouter/.github/workflows/verify-community-images-anonymous.yml@refs/heads/main',
+                          'Wrong anonymous workflow/ref/event identity.')
+                  require(re.fullmatch(r'[0-9a-f]{40}',os.environ.get('GITHUB_SHA','')) is not None,
+                          'Missing anonymous workflow commit.')
+                  rows=[]
+                  for expected in IMAGES:
+                      value=os.environ.get('UR_'+expected['role'].upper()+'_DIGEST','')
+                      require(re.fullmatch(r'sha256:[0-9a-f]{64}',value) is not None, 'Real digest input is required for each fixed image.')
+                      rows.append({'role':expected['role'],'registry_digest_reference':expected['repository']+'@'+value,
+                                   'config_id':expected['config_id'],'diff_ids':expected['diff_ids']})
+                  input_binding='explicit manual dispatch digest inputs; actual content identity verified only after anonymous pull'
+              else:
+                  require(args.receipt is not None and args.receipt.is_file(), 'Exact successful private-image receipt required.')
+                  require(args.receipt.stat().st_size < 65536, 'Unexpected receipt size.')
+                  receipt = json.loads(args.receipt.read_text())
+                  require(receipt['status'] == 'private_images_authenticated_identity_verified_only' and
+                          receipt['candidate_run'] == 39004772237 and
+                          receipt['product_source'] == '3818ba9627d1bc44eb836036b8ae8904a7175e65', 'Wrong receipt identity.')
+                  rows = receipt['images']; require(len(rows) == len(IMAGES) == 2, 'Wrong image closed set.')
+                  input_binding='actual successful private-stage receipt with pinned native image identity'
+              validated = []
+              for expected in IMAGES:
+                  found = [r for r in rows if r.get('role') == expected['role']]
+                  require(len(found) == 1, 'Ambiguous receipt role.')
+                  row = found[0]; ref = row['registry_digest_reference']
+                  require(re.fullmatch(re.escape(expected['repository']) + r'@sha256:[0-9a-f]{64}', ref) is not None, 'Wrong repository/digest reference.')
+                  require(row['config_id'] == expected['config_id'] and row['diff_ids'] == expected['diff_ids'], 'Receipt image differs from accepted bytes.')
+                  validated.append((expected, ref))
+              env = {name: os.environ[name] for name in ['PATH','HOME','LANG','LC_ALL','TZ','SSL_CERT_FILE','SSL_CERT_DIR'] if name in os.environ}
+              parent = Path(os.environ.get('RUNNER_TEMP',''))
+              require(parent.is_absolute() and parent.is_dir() and not parent.is_symlink(), 'Invalid runner temporary directory.')
+              directory = Path(tempfile.mkdtemp(prefix='ur-anonymous-image-pulls-',dir=parent)); directory.chmod(0o700)
+              config = directory/'config.json'
+              with config.open('x') as f: json.dump({'auths':{'ghcr.io':{}}},f)
+              config.chmod(0o600); env['DOCKER_CONFIG'] = str(directory)
+              result=[]
+              for expected, ref in validated:
+                  r=subprocess.run(['docker','pull',ref],stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=env,check=False)
+                  require(r.returncode==0,'Anonymous exact digest pull failed; no login/visibility change attempted.')
+                  r=subprocess.run(['docker','image','inspect',ref],stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=env,check=False)
+                  require(r.returncode==0,'Anonymous pulled-image identity unavailable.')
+                  images=json.loads(r.stdout);require(len(images)==1,'Ambiguous Docker image identity.')
+                  image=images[0]
+                  require(image['Id']==expected['config_id'] and image['RootFS']['Layers']==expected['diff_ids'] and
+                          image['Os']=='linux' and image['Architecture']=='amd64','Anonymous bytes differ from accepted native image.')
+                  result.append({'role':expected['role'],'reference':ref,'config_id':image['Id'],'anonymous_pull_and_content_identity':True})
+              print(json.dumps({'status':'two_anonymous_digest_pulls_and_image_identities_verified','images':result,'input_binding':input_binding,
+                                'container_execution_signing_installation_or_publication':False},indent=2))
+          
+          if __name__=='__main__': main()
+          PY
