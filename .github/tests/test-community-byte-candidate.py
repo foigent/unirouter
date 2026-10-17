@@ -275,6 +275,107 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual(len(self.posts()), 2)
 
 
+class FrontendEvidenceBoundaryTests(unittest.TestCase):
+    """Synthetic filesystem/stream fixtures; real inventory, receiver and validator."""
+    def setUp(self):
+        self.reference = H.module('boundary_image_reference', HERE/'community-image-candidate.py')
+        self.helper = H.module('boundary_source_observer', HERE/'community-source-evidence.py')
+
+    @staticmethod
+    def archive(files):
+        out = io.BytesIO()
+        with tarfile.open(fileobj=out, mode='w') as tf:
+            for name, body in files.items():
+                row = tarfile.TarInfo(name); row.size = len(body)
+                tf.addfile(row, io.BytesIO(body))
+        return out.getvalue()
+
+    def membership_files(self):
+        body = b'Synthetic boundary-test notice.\n'
+        value = {
+            'status': 'actual_build_graph_and_output_observations_not_license_clearance',
+            'source_commit': H.PRODUCT, 'actual_vite_version': '6.4.3', 'actual_rollup_version': '4.62.0',
+            'original_source_lock_sha256': self.helper.ORIGINAL_LOCK_SHA,
+            'original_package_json_sha256': self.helper.ORIGINAL_PACKAGE_SHA,
+            'post_install_package_lock_sha256': 'a'*64,
+            'post_install_package_json_sha256': 'b'*64, 'installed_hidden_lock_sha256': 'c'*64,
+            'plugin_order': [], 'graph': [], 'watch_inputs': [], 'emitted': [],
+            'output_files': [], 'public_copies': [], 'unexplained_output_files': [],
+            'packages': [{'location': 'node_modules/boundary-fixture', 'name': 'boundary-fixture',
+                'version': '1.0.0', 'declared_license': 'MIT', 'license_metadata_kind': 'string',
+                'unsupported_license_sha256': None, 'source_lock_version': '1.0.0',
+                'installed_lock_version': '1.0.0', 'exact_lock_version_match': True,
+                'reasons': ['build_tool_notice_candidate'], 'notices': [{
+                    'file': 'npm-notices/0001-LICENSE', 'source': 'node_modules/boundary-fixture/LICENSE',
+                    'bytes': len(body), 'sha256': H.sha(body)}]}],
+            'limits': self.helper.OBSERVER_LIMITS, 'limits_of_claim': self.helper.CLAIM_LIMITS,
+        }
+        return {'output/frontend-membership.json': H.encoded(value),
+                'output/npm-notices/0001-LICENSE': body}
+
+    def inventory_first(self, root, outputs):
+        data = root/'data'; data.mkdir()
+        inventory = self.archive({
+            'lib/apk/db/installed': b'P:boundary-fixture\nV:1\nL:\n\n',
+            'usr/share/licenses/NOTICE': b'Synthetic image notice.\n',
+        })
+        output = self.archive(outputs)
+        calls = []
+        def stream(label, args, consume):
+            calls.append(label)
+            if label == 'frontend stopped byte inventory': body = inventory
+            elif label == 'actual final frontend membership': body = output
+            else: raise AssertionError('unexpected command phase')
+            return consume(io.BytesIO(body))
+        guard = types.SimpleNamespace(work=root, create=lambda *args: 'stopped-frontend',
+            time_guard=lambda: None, apk_packages=self.reference.apk_packages, stream_command=stream)
+        cid, binary, report = H.inventory(guard, self.helper, 'frontend', 'sha256:'+'1'*64, data)
+        self.assertIsNone(binary)
+        return guard, cid, data, report, calls
+
+    def test_frontend_inventory_then_membership_keeps_both_closed_sets(self):
+        outputs = self.membership_files()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            guard, cid, data, report, calls = self.inventory_first(root, outputs)
+            inventory_files = {p.relative_to(data).as_posix(): H.file_fact(p)
+                               for p in data.rglob('*') if p.is_file()}
+            self.assertTrue((data/'frontend/databases/lib/apk/db/installed').is_file())
+            self.assertEqual(report['apk'][0]['license'], '')
+            self.assertTrue((data/report['notice_filename_candidates'][0]['retained_text']).is_file())
+            member = H.collect_frontend_membership(guard, self.helper, cid, data)
+            self.assertEqual(member, H.load(outputs['output/frontend-membership.json']))
+            for name, fact in inventory_files.items(): self.assertEqual(H.file_fact(data/name), fact)
+            copied = {p.relative_to(data/'frontend-membership').as_posix(): p.read_bytes()
+                      for p in (data/'frontend-membership').rglob('*') if p.is_file()}
+            self.assertEqual(copied, {name.removeprefix('output/'): body for name, body in outputs.items()})
+            self.assertEqual(calls, ['frontend stopped byte inventory', 'actual final frontend membership'])
+
+    def test_frontend_membership_still_rejects_missing_or_changed_notice(self):
+        for change in ('missing', 'changed'):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as tmp:
+                outputs = self.membership_files()
+                if change == 'missing': del outputs['output/npm-notices/0001-LICENSE']
+                else: outputs['output/npm-notices/0001-LICENSE'] += b'tampered'
+                guard, cid, data, _, _ = self.inventory_first(Path(tmp), outputs)
+                with self.assertRaises(self.helper.Rejected):
+                    H.collect_frontend_membership(guard, self.helper, cid, data)
+
+    def test_frontend_membership_rejects_foreign_output_and_existing_destination(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            outputs = self.membership_files(); outputs['output/lib/apk/db/installed'] = b'foreign inventory'
+            guard, cid, data, _, _ = self.inventory_first(Path(tmp), outputs)
+            with self.assertRaises(self.helper.Rejected):
+                H.collect_frontend_membership(guard, self.helper, cid, data)
+        with tempfile.TemporaryDirectory() as tmp:
+            guard, cid, data, _, calls = self.inventory_first(Path(tmp), self.membership_files())
+            H.write_new(data/'frontend-membership/existing', b'preserve')
+            with self.assertRaises(FileExistsError):
+                H.collect_frontend_membership(guard, self.helper, cid, data)
+            self.assertEqual((data/'frontend-membership/existing').read_bytes(), b'preserve')
+            self.assertEqual(calls, ['frontend stopped byte inventory'])
+
+
 class LocalInputTests(unittest.TestCase):
     def test_reused_guard_failure_reaches_partial_archive_and_saved_public_summary(self):
         reference = H.module('accepted_diagnostic_reference', HERE/'community-image-candidate.py')
