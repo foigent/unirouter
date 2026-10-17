@@ -94,9 +94,15 @@ changes increment `MAJOR.MINOR.PATCH` and add a dated entry to `CHANGELOG.md`:
 `scripts/check-release-metadata.sh` implements conservative path classification,
 not semantic approval of a change. Known Go `*_test.go`, verified frontend
 `frontend/src/*.test.ts` / `*.test.tsx` paths (including subdirectories), architecture
-Markdown and `docs/CODEBASE-MAP.md`, and the exact internal release checker and
-its regression test do not mechanically require a product version bump.
-Other scripts, fixtures, frontend build/config/dependency inputs, migrations,
+Markdown and `docs/CODEBASE-MAP.md` do not mechanically require a product version
+bump. The exact known internal verification-tool exceptions are:
+
+- `scripts/check-release-metadata.sh` and `scripts/test-release-metadata.py`;
+- `scripts/test-backend-integration.sh`, `scripts/test-backend-integration-runner.py`
+  and `scripts/summarize-go-test.py`, which orchestrate and record test execution.
+
+These exceptions do not include customer installation, signed-package verification
+or recovery tools. Other scripts, fixtures, frontend build/config/dependency inputs, migrations,
 OpenAPI and non-Markdown architecture inputs retain their existing treatment.
 If a nominal test or document changes a shipped runtime, public API, installation,
 upgrade, verification or recovery contract, it is not a pure test/document edit
