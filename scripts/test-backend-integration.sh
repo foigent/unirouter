@@ -30,7 +30,7 @@ if [[ -n $log_dir ]]; then
 fi
 if [[ $check_only == true ]]; then
   go version
-  echo 'configuration_preflight=PASS groups=consolidated,source-media,agentcap,limitpolicy,workloadadmission'
+  echo 'configuration_preflight=PASS groups=source-http,consolidated,source-media,agentcap,limitpolicy,workloadadmission'
   echo 'Database/Redis reachability, schema state and environment authorization still require the batch preflight.'
   exit 0
 fi
@@ -109,13 +109,21 @@ test_pattern+='|TestExistingFamilyDataProbeDispatchAndPersistenceIntegration|Tes
 test_pattern+='|TestP6F(06|07|08|09|10|11|20|21|40|41).*)$'
 readonly test_pattern
 
+# These HTTP semantics suites exercise the production 250ms capture deadlines.
+# Run them before migration/lifecycle packages and one package at a time, so
+# unrelated database pressure does not replace the expected client responses.
+# Keep their selectors, race checks and timeout budgets unchanged.
+run_group source-http go test -tags=integration -race -p 1 \
+  ./cmd/uniroute ./internal/gateway \
+  -run "$test_pattern" -count=1 -timeout=20m
+
 run_group consolidated go test -tags=integration -race \
   ./internal/xinsightconnector ./internal/migrate \
-  ./internal/resetexec ./cmd/uniroute \
+  ./internal/resetexec \
   ./internal/orgdirectory ./internal/enterprisefinance ./internal/runtimechange ./internal/runtimegeneration \
   ./internal/customercontext ./internal/modelrouteauthority \
   ./internal/billing ./internal/modelexecution ./internal/modelrouting ./internal/middleware ./internal/completedfeed \
-  ./internal/gateway ./internal/admin ./internal/outbox ./internal/terminalhook \
+  ./internal/admin ./internal/outbox ./internal/terminalhook \
   ./internal/modelcapabilitypublication \
   -run "$test_pattern" -count=1 -timeout=20m
 

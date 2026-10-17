@@ -7,7 +7,7 @@ from pathlib import Path
 import subprocess
 
 RUNNER_GROUPS = {
-    "scripts/test-backend-integration.sh": {"consolidated", "source-media", "agentcap", "limitpolicy", "workloadadmission"},
+    "scripts/test-backend-integration.sh": {"source-http", "consolidated", "source-media", "agentcap", "limitpolicy", "workloadadmission"},
     "scripts/test-fresh-install.sh": {"fresh-install"},
 }
 

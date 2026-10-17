@@ -24,7 +24,7 @@ elif args == ["version"]:
 elif args[0] == "test":
     with open(os.environ["FAKE_CALLS"], "a") as out:
         out.write(json.dumps(args) + "\\n")
-    package = next(a for a in args if a.startswith("./internal/"))
+    package = next(a for a in args if a.startswith("./"))
     failed = package == os.environ.get("FAKE_FAIL_PACKAGE")
     action = "fail" if failed else os.environ.get("FAKE_ACTION", "pass")
     print(json.dumps({"Action":"start", "Package":package}))
@@ -56,7 +56,7 @@ class RunnerTests(unittest.TestCase):
     def read_calls(self):
         return [json.loads(line) for line in self.calls.read_text().splitlines()] if self.calls.exists() else []
 
-    def test_ci_and_logged_runs_use_same_five_sequential_groups(self):
+    def test_ci_and_logged_runs_use_same_six_sequential_groups(self):
         workflow = (REPO / ".github/workflows/ci.yml").read_text()
         self.assertEqual(workflow.count("run: bash scripts/test-backend-integration.sh"), 1)
         fixture_dsns = []
@@ -71,13 +71,28 @@ class RunnerTests(unittest.TestCase):
         result = self.run_runner()
         self.assertEqual(result.returncode, 0, result.stderr)
         before = self.read_calls()
-        self.assertEqual(len(before), 5)
-        self.assertEqual([sum(arg.startswith("./") for arg in call) for call in before], [20, 3, 1, 1, 1])
-        self.assertIn("./internal/runtimegeneration", before[0])
-        self.assertIn("./cmd/uniroute", before[0])
-        self.assertEqual([arg for arg in before[1] if arg.startswith("./")],
+        self.assertEqual(len(before), 6)
+        self.assertEqual([sum(arg.startswith("./") for arg in call) for call in before], [2, 18, 3, 1, 1, 1])
+        self.assertEqual([arg for arg in before[0] if arg.startswith("./")],
+                         ["./cmd/uniroute", "./internal/gateway"])
+        self.assertEqual(before[0][before[0].index("-p") + 1], "1")
+        self.assertNotIn("-p", before[1])
+        original_consolidated = [arg for call in before[:2] for arg in call if arg.startswith("./")]
+        self.assertEqual(len(original_consolidated), len(set(original_consolidated)))
+        self.assertEqual(set(original_consolidated), {
+            "./internal/xinsightconnector", "./internal/migrate", "./internal/resetexec", "./cmd/uniroute",
+            "./internal/orgdirectory", "./internal/enterprisefinance", "./internal/runtimechange",
+            "./internal/runtimegeneration", "./internal/customercontext", "./internal/modelrouteauthority",
+            "./internal/billing", "./internal/modelexecution", "./internal/modelrouting", "./internal/middleware",
+            "./internal/completedfeed", "./internal/gateway", "./internal/admin", "./internal/outbox",
+            "./internal/terminalhook", "./internal/modelcapabilitypublication"})
+        for call in before:
+            for argument in ("-tags=integration", "-race", "-count=1", "-timeout=20m"):
+                self.assertIn(argument, call)
+        self.assertEqual([arg for arg in before[2] if arg.startswith("./")],
                          ["./internal/sourcefacts", "./internal/mediajob", "./internal/contentcapture"])
         pattern = before[0][before[0].index("-run") + 1]
+        self.assertEqual(before[1][before[1].index("-run") + 1], pattern)
         self.assertIn("TestContentControl.*Integration", pattern)
         self.assertIn("TestContentPolicy.*Integration", pattern)
         self.assertIn("TestContentCaptureMigration.*", pattern)
@@ -112,7 +127,7 @@ class RunnerTests(unittest.TestCase):
         ):
             with self.subTest(name=name):
                 self.assertIsNotNone(re.fullmatch(pattern, name))
-        self.assertEqual([call[call.index("-run") + 1] for call in before[2:]], [
+        self.assertEqual([call[call.index("-run") + 1] for call in before[3:]], [
             "^TestAgentCapabilityPostgresAuthorityAndRevocationIntegration$",
             "^TestP6F07PostgresRedisMultiInstanceIntegration$",
             "^TestP6F21RedisMultiInstanceLeaseAndFaultIntegration$"])
@@ -120,7 +135,7 @@ class RunnerTests(unittest.TestCase):
         result = self.run_runner("--log-dir", str(self.root / "logs"))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual([[arg for arg in call if arg != "-json"] for call in self.read_calls()], before)
-        self.assertEqual(len(list((self.root / "logs").glob("*.summary.json"))), 5)
+        self.assertEqual(len(list((self.root / "logs").glob("*.summary.json"))), 6)
 
     def test_readonly_preflight_does_not_run_tests_or_create_logs(self):
         logs = self.root / "logs"
@@ -170,9 +185,21 @@ class RunnerTests(unittest.TestCase):
         logs = self.root / "logs"
         result = self.run_runner("--log-dir", str(logs))
         self.assertEqual(result.returncode, 9, result.stderr)
-        self.assertEqual(len(self.read_calls()), 2)
+        self.assertEqual(len(self.read_calls()), 3)
         self.assertFalse((logs / "agentcap.jsonl").exists())
         summary = json.loads((logs / "source-media.summary.json").read_text())
+        self.assertEqual(summary["status"], "FAIL")
+        self.assertEqual(summary["exit_code"], 9)
+
+    def test_source_http_failure_stops_before_other_database_suites(self):
+        self.env["FAKE_FAIL_PACKAGE"] = "./cmd/uniroute"
+        logs = self.root / "logs"
+        result = self.run_runner("--log-dir", str(logs))
+        self.assertEqual(result.returncode, 9, result.stderr)
+        self.assertEqual(len(self.read_calls()), 1)
+        self.assertFalse((logs / "consolidated.jsonl").exists())
+        self.assertFalse((logs / "source-media.jsonl").exists())
+        summary = json.loads((logs / "source-http.summary.json").read_text())
         self.assertEqual(summary["status"], "FAIL")
         self.assertEqual(summary["exit_code"], 9)
 

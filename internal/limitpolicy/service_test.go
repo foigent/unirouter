@@ -1039,11 +1039,14 @@ func TestSharedConcurrencyIsReplicaInvariant(t *testing.T) {
 	}
 	second.snapshot.Store(&policySnapshot{policies: []Policy{policy}})
 	// This test exercises atomic shared concurrency across clients, not Redis
-	// script bootstrap. Preload once so concurrent first use cannot turn a
-	// transient NOSCRIPT/EVAL bootstrap error into an unrelated reservation
-	// result under race instrumentation.
-	if err := reserveScript.Load(context.Background(), first.rdb).Err(); err != nil {
-		t.Fatalf("preload shared concurrency script: %v", err)
+	// script bootstrap. Exercise and release the full admission chain once so
+	// nested workload and rollback scripts are also ready before concurrent use.
+	warmup, err := first.Reserve(context.Background(), admission("shared-concurrency-warmup", 1))
+	if err != nil {
+		t.Fatalf("warm up shared concurrency admission: %v", err)
+	}
+	if err := first.CancelBeforeDispatch(context.Background(), warmup); err != nil {
+		t.Fatalf("release shared concurrency warmup: %v", err)
 	}
 
 	var admitted atomic.Int64

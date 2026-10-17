@@ -160,7 +160,7 @@ change_flags="$(
           # Go excludes _test.go from normal builds. Frontend test entrypoints
           # were checked separately; type-check, Vitest and Docker CI still run.
           ;;
-        (scripts/check-release-metadata.sh|scripts/test-release-metadata.py)
+        (scripts/check-release-metadata.sh|scripts/test-release-metadata.py|scripts/test-backend-integration.sh|scripts/test-backend-integration-runner.py|scripts/summarize-go-test.py)
           # Exact internal verification tools, not all scripts/check-* or test-*.
           ;;
         (*.go|go.mod|go.sum|migrations/*|cmd/*|internal/*|frontend/*|scripts/*|deploy/*|Dockerfile|docker-compose*.yml|docs/tech-ref/05-openapi-spec.yaml|docs/architecture/*)

@@ -116,6 +116,8 @@ class ReleasePolicyTests(unittest.TestCase):
             'frontend/src/utils/example.test.ts',
             'docs/architecture/example.md', 'docs/CODEBASE-MAP.md',
             'scripts/check-release-metadata.sh', 'scripts/test-release-metadata.py',
+            'scripts/test-backend-integration.sh', 'scripts/test-backend-integration-runner.py',
+            'scripts/summarize-go-test.py',
             'docs/agent-workflows/AGENT-PROTOCOL.md',
             'capability-bundles/model.json',
         ):
@@ -131,6 +133,9 @@ class ReleasePolicyTests(unittest.TestCase):
             'frontend/vite.config.ts', 'frontend/src/fixtures/product.json',
             'scripts/internal-target-rollout.py', 'scripts/check-customer-contract.sh',
             'scripts/test-named-runtime-helper.sh', 'deploy/customer/preflight.sh',
+            'scripts/test-backend-integration-runtime.sh',
+            'scripts/test-backend-integration-runner-extra.py', 'scripts/summarize-go-test-runtime.py',
+            'deploy/community/bootstrap.py',
             'Dockerfile', 'docker-compose.test.yml',
             'docs/tech-ref/05-openapi-spec.yaml', 'docs/architecture/schema.json',
             'internal/space and\nnewline.go',
@@ -187,8 +192,33 @@ class ReleasePolicyTests(unittest.TestCase):
 
     def test_mixed_change_still_needs_bump(self):
         self.write('internal/runtime_test.go', 'package runtime\n')
+        for path in ('scripts/test-backend-integration.sh',
+                     'scripts/test-backend-integration-runner.py', 'scripts/summarize-go-test.py'):
+            self.write(path, 'internal verification fixture\n')
         self.write('internal/runtime.go', 'package changed\n')
         self.check(head=self.commit(), failed=True, error='must update VERSION')
+
+    def test_internal_verification_deletion_and_unknown_renames(self):
+        paths = (
+            ('scripts/test-backend-integration.sh', 'scripts/test-backend-integration-runtime.sh'),
+            ('scripts/test-backend-integration-runner.py', 'scripts/test-backend-integration-runner-extra.py'),
+            ('scripts/summarize-go-test.py', 'scripts/summarize-go-test-runtime.py'),
+        )
+        for known, unknown in paths:
+            with self.subTest(known=known):
+                self.write(known, 'internal verification fixture\n')
+                base = self.commit()
+                (self.repo / known).unlink()
+                self.check(base=base, head=self.commit(), mode='non-release-bearing')
+                self.write(known, 'internal verification fixture\n')
+                base = self.commit()
+                (self.repo / known).rename(self.repo / unknown)
+                renamed = self.commit()
+                self.check(base=base, head=renamed, failed=True, error='must update VERSION')
+                # The deleted unknown side must remain visible even when the
+                # destination is an exact known verification-tool path.
+                (self.repo / unknown).rename(self.repo / known)
+                self.check(base=renamed, head=self.commit(), failed=True, error='must update VERSION')
 
     def test_runtime_deletion_and_rename_do_not_hide_change(self):
         for destination in (None, 'docs/architecture/retired.md', 'internal/runtime_test.go'):
