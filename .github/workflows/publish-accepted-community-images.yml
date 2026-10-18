@@ -10,6 +10,10 @@ concurrency:
   cancel-in-progress: false
 jobs:
   publish-private:
+    # GitHub draft releases require push access, including for reads.
+    permissions:
+      contents: write
+      packages: write
     if: github.repository == 'foigent/unirouter' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
