@@ -46,8 +46,10 @@ jobs:
           path: producer/.byte-source-9e0240c6
       - name: Validate producer offline guards
         working-directory: producer
-        run: python3 -I -B .github/tests/test-community-byte-candidate.py
-      - name: Build once and retain only in verified draft
+        run: |
+          python3 -I -B .github/tests/test-community-byte-candidate.py
+          python3 -I -B .github/tests/test-community-backend-reuse.py
+      - name: Import accepted backend, build frontend and verifier, retain verified draft
         working-directory: producer
         env:
           GITHUB_TOKEN: ${{ github.token }}
