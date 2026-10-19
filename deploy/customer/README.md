@@ -293,8 +293,8 @@ artifact with its size and SHA-256 in the signed upgrade manifest, alongside thi
 restoration instruction. This source template does not itself sign or release it.
 
 - Repository/package path: `scripts/source-budget-restore-rebase.sql`
-- SHA-256: `cee69a55f1784290bf70b2dec77901252e4a01dbfaca5c8a26b52d7b8aa2bd6f`
-- Bytes: `11610`
+- SHA-256: `deb0f30c040dd7faa28e177209b2ea7e718bd9eb0ee0686d373b1b39bcec262c`
+- Bytes: `12818`
 
 After every supported SQL restore, while all database readers/writers are still
 stopped, run this helper with `psql -v ON_ERROR_STOP=1 -f` before restart. It retains
