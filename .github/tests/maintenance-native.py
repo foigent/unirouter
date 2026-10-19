@@ -229,13 +229,14 @@ class Acceptance:
                 args += ["--build-arg", key + "=" + value]
             self.run("build exact " + name + " release backend", args + [identity["directory"]])
             self.images[name] = tag
-        identity = self.sources["successor"]
-        self.images["frontend"] = "unirouter-maintenance/frontend:new"
-        self.run("build exact release frontend", ["docker", "build", "-t", self.images["frontend"],
-                 "--label", "org.opencontainers.image.revision=" + identity["commit"],
-                 "--label", "org.opencontainers.image.version=" + identity["version"],
-                 "--label", "io.unirouter.component=frontend", "--build-arg", "VITE_DEPLOY_ENV=production",
-                 "--build-arg", "VITE_APP_VERSION=" + identity["version"], Path(identity["directory"]) / "frontend"])
+        for source_name, image_name in (("new", "frontend"), ("successor", "successor_frontend")):
+            identity = self.sources[source_name]
+            self.images[image_name] = "unirouter-maintenance/frontend:" + source_name
+            self.run("build exact " + source_name + " release frontend", ["docker", "build", "-t", self.images[image_name],
+                     "--label", "org.opencontainers.image.revision=" + identity["commit"],
+                     "--label", "org.opencontainers.image.version=" + identity["version"],
+                     "--label", "io.unirouter.component=frontend", "--build-arg", "VITE_DEPLOY_ENV=production",
+                     "--build-arg", "VITE_APP_VERSION=" + identity["version"], Path(identity["directory"]) / "frontend"])
         for name, tag in (("postgres", "postgres:16-alpine"), ("redis", "redis:7-alpine"), ("nginx", "nginx:1.30.3-alpine")):
             self.run("pull fixture " + name, ["docker", "pull", tag])
             self.images[name] = tag
@@ -436,7 +437,9 @@ class Acceptance:
                 "evidence_directory": str(self.evidence), "runtime_owner": "artifact_cli"}
         private_write(self.input, json.dumps(spec))
         with self.rollout.operation_locks(spec["target"]):
-            pass
+            component_owner = object.__new__(self.rollout.Rollout)
+            component_owner.source, component_owner.spec = spec["source"], spec
+            component_owner.images()
         before = self.facts(heartbeat=True)
         code, output = self.backend("new", [], label="refuse ordinary automatic " + self.new_head + " migration", overrides={"SKIP_MIGRATION": "false"}, ok=False)
         ordinary_denial = ("M126 requires explicit maintenance migration" if self.new_head == RETIREMENT_HEAD
@@ -515,7 +518,8 @@ class Acceptance:
         code, output = self.backend("old", [], label="refuse old Artifact on " + self.new_head, ok=False)
         require(code != 0 and "Schema authority startup gate failed:" in output and self.facts() == migrated, "old Artifact schema refusal is not proved")
         self.passed(self.new_head + " preserves history and financial certificate; old Artifact refuses admission")
-        self.run("start new exact " + self.new_head + " receivers", self.compose("new") + ["up", "-d", "--no-deps", "--pull", "never", "--no-build", "backend", "backend-canary"], env=self.compose_env("new"))
+        self.run("start new exact " + self.new_head + " receivers and frontend", self.compose("new") + ["up", "-d", "--no-deps", "--pull", "never", "--no-build", "backend", "backend-canary", "frontend"], env=self.compose_env("new"))
+        require(self.inspect("uniroute-frontend")["Image"] == self.image_ids["frontend"], "serving frontend differs from exact target image")
         self.wait_ready()
         self.join("maintenance-native-" + self.stage + "-new-both")
         login_count = int(self.sql("SELECT count(*) FROM audit_logs WHERE action='login'"))
@@ -603,6 +607,8 @@ class Acceptance:
         self.sources["old"], self.sources["new"] = self.sources["new"], self.sources["successor"]
         self.images["old"], self.images["new"] = self.images["new"], self.images["successor"]
         self.image_ids["old"], self.image_ids["new"] = self.image_ids["new"], self.image_ids["successor"]
+        self.images["frontend"] = self.images["successor_frontend"]
+        self.image_ids["frontend"] = self.image_ids["successor_frontend"]
         self.old_overlay, self.new_overlay = self.new_overlay, self.successor_overlay
         self.repo = Path(self.sources["new"]["directory"])
         self.control = module("successor_maintenance_owner", self.repo / "scripts/runtime-generation-retire.py")

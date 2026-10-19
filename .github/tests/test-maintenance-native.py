@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Offline checks for exact two-stage fixture selection; never invokes Docker."""
 import importlib.util
+import hashlib
+import json
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -52,8 +54,8 @@ class TransitionSelection(unittest.TestCase):
         migration_dir = root / 'new' / 'migrations'; migration_dir.mkdir(parents=True)
         for head in (native.OLD_HEAD, native.RETIREMENT_HEAD):
             (migration_dir / (head + '.up.sql')).write_text('-- fixture\n')
-        fixture.images = {name: name + '-tag' for name in fixture.sources}
-        fixture.image_ids = {name: name + '-image' for name in fixture.sources}
+        fixture.images = {name: name + '-tag' for name in [*fixture.sources, 'frontend', 'successor_frontend']}
+        fixture.image_ids = {name: name + '-image' for name in [*fixture.sources, 'frontend', 'successor_frontend']}
         fixture.old_overlay, fixture.new_overlay, fixture.successor_overlay = ('old.yml', 'new.yml', 'successor.yml')
         fixture.restore_backend = 'ur-maintenance-restore-backend'
         running = [True]; calls = []
@@ -79,6 +81,8 @@ class TransitionSelection(unittest.TestCase):
             self.assertIn(('restore', 'ur-maintenance-restore-postgres-m126', 'ur-maintenance-restore-backend-m126'), calls)
             self.assertEqual(fixture.images['old'], 'new-tag')
             self.assertEqual(fixture.images['new'], 'successor-tag')
+            self.assertEqual(fixture.images['frontend'], 'successor_frontend-tag')
+            self.assertEqual(fixture.image_ids['frontend'], 'successor_frontend-image')
             self.assertEqual(fixture.old_overlay, 'new.yml')
             self.assertEqual(fixture.new_overlay, 'successor.yml')
             self.assertEqual(fixture.evidence.name, 'communication-maintenance-evidence')
@@ -91,6 +95,56 @@ class TransitionSelection(unittest.TestCase):
             with self.assertRaisesRegex(native.Refused, 'identity changed'):
                 fixture.successor_transition()
             self.assertEqual(calls, [])
+
+    def test_actual_build_commands_satisfy_real_image_owner_for_each_stage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture = object.__new__(native.Acceptance)
+            fixture.root = root
+            fixture.sources = {name: {'directory': str(root / name), 'commit': str(i) * 40,
+                                      'tree': str(i) * 40, 'version': version}
+                for i, (name, version) in enumerate((('old', '1.9.8'), ('new', '1.12.0'), ('successor', '1.13.0')), 1)}
+            fixture.images, fixture.image_ids, fixture.result = {}, {}, {}
+            rows = {}
+            def run(label, command, **kwargs):
+                command = [str(x) for x in command]
+                if label == 'verify initially empty disposable build cache':
+                    return '0'
+                if label.startswith('create synthetic '):
+                    Path(command[command.index('--public-out') + 1]).write_text('{}')
+                if command[:2] == ['docker', 'build']:
+                    tag = command[command.index('-t') + 1]
+                    labels = dict(command[i + 1].split('=', 1) for i, value in enumerate(command) if value == '--label')
+                    source_name = next(name for name, source in fixture.sources.items()
+                                       if source['commit'] == labels['org.opencontainers.image.revision'])
+                    self.assertEqual(labels['org.opencontainers.image.version'], fixture.sources[source_name]['version'])
+                    expected_path = Path(fixture.sources[source_name]['directory'])
+                    if labels['io.unirouter.component'] == 'frontend':
+                        expected_path /= 'frontend'
+                    self.assertEqual(command[-1], str(expected_path))
+                    rows[tag] = {'Id': 'sha256:' + hashlib.sha256(tag.encode()).hexdigest(),
+                                 'Os': 'linux', 'Architecture': 'amd64', 'Config': {'Labels': labels}}
+                if command[:2] == ['docker', 'pull']:
+                    tag = command[-1]
+                    rows[tag] = {'Id': 'sha256:' + hashlib.sha256(tag.encode()).hexdigest(),
+                                 'Os': 'linux', 'Architecture': 'amd64'}
+                if command[:3] == ['docker', 'image', 'inspect']:
+                    return json.dumps([rows[command[-1]]])
+                return ''
+            fixture.run, fixture.inspect, fixture.passed = run, lambda tag: rows[tag], lambda _: None
+            fixture.build()
+            owner = native.module('offline_exact_image_owner', Path(__file__).resolve().parents[2] / 'scripts/internal-target-rollout.py')
+            operation = object.__new__(owner.Rollout)
+            for source, backend, frontend in [('new', 'new', 'frontend'), ('successor', 'successor', 'successor_frontend')]:
+                operation.source = fixture.sources[source]
+                operation.spec = {'images': {kind: {'tag': fixture.images[name], 'digest': fixture.image_ids[name]}
+                                   for kind, name in [('backend', backend), ('frontend', frontend)]}}
+                with patch.object(owner, 'run', side_effect=lambda command: run('inspect', command).encode()):
+                    self.assertEqual(set(operation.images()), {'backend', 'frontend'})
+                    other = 'successor_frontend' if frontend == 'frontend' else 'frontend'
+                    operation.spec['images']['frontend'] = {'tag': fixture.images[other], 'digest': fixture.image_ids[other]}
+                    with self.assertRaisesRegex(RuntimeError, 'immutable local component image changed or absent'):
+                        operation.images()
 
     def test_driver_never_admits_host_execution_outside_disposable_runner(self):
         with patch.object(native.sys, 'argv', ['maintenance-native.py', '--expected-commit', 'a' * 40,

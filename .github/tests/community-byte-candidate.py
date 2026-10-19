@@ -31,18 +31,18 @@ METADATA_LIMIT = 32 * MIB
 REPO = 'foigent/unirouter'
 REPO_ID = 1281228065
 ACTOR_ID = 252312344
-PRODUCT = '3815a584e78161b475a22d5f477a66d6869984c3'
-TREE = '345ee7691a208c32254438404f9c0baabe27aa07'
+PRODUCT = '9e0240c68a20deebf9bcd0e2cc7b58034d09b696'
+TREE = '8bd942636ca17e48de95d0e531108d303066d923'
 WORKFLOW = '.github/workflows/community-byte-candidate.yml'
 API = 'https://api.github.com'
 PREFIX = '/repos/' + REPO
 ROOT = Path(__file__).resolve().parents[2]
 INPUTS = ROOT / '.github/release-inputs'
 BOUND = {
-    'community-image-candidate.py': 'a482bae4e50a8c28999462191a22f8a13332e5da847859190ee6d736047036f8',
-    'community-source-evidence.py': '863c99f311c7d185fdef5d94f3110572aee68992f92b8fd1e6d8f39d1c5130d2',
+    'community-image-candidate.py': 'd98b401204a82bedeb866ff4ca7e104cb8cac4f56872665cc8a293e838c252f2',
+    'community-source-evidence.py': 'ce2cc04b391a17e40a33b0aa2139a9b6ef72fefd321f2780e5aa66435eceeefa',
     'frontend-membership-observer.mjs': 'bc34e95b3a76c8a8f9a5c66f59845d63f53d237938e96ded84ab30039ee2d130',
-    'component-notices.tar.gz': '72beb73601b0f8d070b92428059518f8e1902880a6f14d9a615cde6ff0a43e46',
+    'component-notices.tar.gz': 'f0f166f98c90e164574d151999b71f0bac8f7ac9fe9ab89c93bd01cbdf269764',
     'community-public-keys.json': '96c91635460ddfb2a14aa1ea97d8445951730e9eb04a33cbdf4320141e61d63d',
 }
 ASSETS = ('backend-image.tar.gz', 'frontend-image.tar.gz',
@@ -570,7 +570,7 @@ def initialize_guard(guard, work, env):
     need(Path(env['GITHUB_WORKSPACE']).resolve()/'producer' == ROOT, 'workspace')
     need(guard.argv_run('producer checkout identity', ['git', '-C', str(ROOT), 'rev-parse', 'HEAD'])
          == env['EXPECTED_WORKFLOW_COMMIT'], 'producer_checkout')
-    guard.SOURCE_CHECKOUT = ROOT/'.byte-source-3815a584'
+    guard.SOURCE_CHECKOUT = ROOT/'.byte-source-9e0240c6'
     info = load(guard.docker('local Docker environment', 'info', '--format',
         '{"OSType":{{json .OSType}},"Architecture":{{json .Architecture}},'
         '"SecurityOptions":{{json .SecurityOptions}},"DockerRootDir":{{json .DockerRootDir}}}'))
