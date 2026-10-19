@@ -11,6 +11,7 @@ func TestCommercialRetirementRequiresExactPredecessorAndOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	artifact = artifact[:len(artifact)-1] // This test remains bound to the historical M126 artifact.
 	prior := artifact[:len(artifact)-1]
 	for _, owner := range [][2]bool{{true, false}, {false, true}} {
 		if err := validateCommercialRetirement(prior, artifact, owner[0], owner[1]); err != nil {

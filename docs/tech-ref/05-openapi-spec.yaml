@@ -3438,6 +3438,32 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
 
+  /api/v1/data-exchange/xinsight/connections/{project_id}/communication:
+    get:
+      summary: Read local outbound communication policy and effective state
+      description: Local projection only. Peer observations are historical, never confirmation of bilateral silence.
+      responses:
+        '200':
+          description: Policy, cadence, revision, in-flight status and last manual receipt
+        '404':
+          description: No supported connection
+    put:
+      summary: Change local automatic communication and cadence using expected revision
+      description: Requires current local administration authority. Pausing preserves in-flight receipts, credentials, grants and cursors. Cadence is 250 through 3600000 milliseconds. New connections default manual.
+      responses:
+        '200':
+          description: Desired and actual effective local state
+        '409':
+          description: Stale revision or connection binding
+  /api/v1/data-exchange/xinsight/connections/{project_id}/communication/sync-once:
+    post:
+      summary: Run one explicit bounded connection communication burst
+      description: Exact installation, expected revision and idempotency key required. At most 30 seconds of network admission, 8 units and 24 HTTP dispatches. No automatic resume. Returned receipt does not prove XI data catch-up.
+      responses:
+        '200':
+          description: Durable running, completed, empty, partial, failed or interrupted receipt
+        '409':
+          description: Another operation is in flight or revision changed
   /api/v1/data-exchange/xinsight/connections/{project_id}/pause:
     x-unirouter-rbac:
       post: [platform_admin]

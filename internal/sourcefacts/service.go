@@ -71,14 +71,14 @@ func (s *Service) CheckReady(ctx context.Context) error {
 	if e := s.db.QueryRow(ctx, `SELECT COALESCE(MAX(version),'') FROM schema_migrations`).Scan(&head); e != nil {
 		return e
 	}
-	if head != schemaauthority.SourceFactsExpandHead && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead && head != schemaauthority.ScopedContentExpandHead && head != schemaauthority.XInsightPolicyExpandHead && (head != schemaauthority.XInsightAdoptionExpandHead && head != schemaauthority.XInsightCredentialExpandHead && head != schemaauthority.CommercialLicenseRetirementHead) {
-		return errors.New("source facts capture requires M116 through M126")
+	if head != schemaauthority.SourceFactsExpandHead && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead && head != schemaauthority.ScopedContentExpandHead && head != schemaauthority.XInsightPolicyExpandHead && (head != schemaauthority.XInsightAdoptionExpandHead && head != schemaauthority.XInsightCredentialExpandHead && head != schemaauthority.CommercialLicenseRetirementHead && head != schemaauthority.XInsightCommunicationHead) {
+		return errors.New("source facts capture requires M116 through M127")
 	}
-	if s.ObservationsEnabled() && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead && head != schemaauthority.ScopedContentExpandHead && head != schemaauthority.XInsightPolicyExpandHead && (head != schemaauthority.XInsightAdoptionExpandHead && head != schemaauthority.XInsightCredentialExpandHead && head != schemaauthority.CommercialLicenseRetirementHead) {
-		return errors.New("source observations require M117 through M126")
+	if s.ObservationsEnabled() && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead && head != schemaauthority.ScopedContentExpandHead && head != schemaauthority.XInsightPolicyExpandHead && (head != schemaauthority.XInsightAdoptionExpandHead && head != schemaauthority.XInsightCredentialExpandHead && head != schemaauthority.CommercialLicenseRetirementHead && head != schemaauthority.XInsightCommunicationHead) {
+		return errors.New("source observations require M117 through M127")
 	}
-	if s.ContentEnabled() && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead && head != schemaauthority.ScopedContentExpandHead && head != schemaauthority.XInsightPolicyExpandHead && (head != schemaauthority.XInsightAdoptionExpandHead && head != schemaauthority.XInsightCredentialExpandHead && head != schemaauthority.CommercialLicenseRetirementHead) {
-		return errors.New("content capture requires M119 through M126")
+	if s.ContentEnabled() && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead && head != schemaauthority.ScopedContentExpandHead && head != schemaauthority.XInsightPolicyExpandHead && (head != schemaauthority.XInsightAdoptionExpandHead && head != schemaauthority.XInsightCredentialExpandHead && head != schemaauthority.CommercialLicenseRetirementHead && head != schemaauthority.XInsightCommunicationHead) {
+		return errors.New("content capture requires M119 through M127")
 	}
 	if s.BudgetsEnabled() {
 		if err := budgetassets.Verify(); err != nil {

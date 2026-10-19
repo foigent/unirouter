@@ -29,7 +29,7 @@ IMAGE_KEYS = {"backend": "UNIROUTER_BACKEND_IMAGE", "frontend": "UNIROUTER_FRONT
               "postgres": "POSTGRES_IMAGE", "redis": "REDIS_IMAGE",
               "prometheus": "PROMETHEUS_IMAGE", "grafana": "GRAFANA_IMAGE"}
 VOLUMES = ("postgres_data", "redis_data", "prometheus_data", "grafana_data")
-SCHEMA = "000126_commercial_license_retirement"
+SCHEMA = "000127_xinsight_communication_policy"
 LABEL = "io.unirouter.installation"
 DESCRIPTOR = "payload/install.json"
 PREFIX = "payload/deploy/"
@@ -145,13 +145,13 @@ class Release:
                     and 0 < first.size <= MAX_METADATA, "Missing bounded release manifest")
             manifest_raw = archive.extractfile(first).read()
             self.manifest = strict_json(manifest_raw)
-        require(self.manifest.get("target_schema") == SCHEMA, "This installer requires the M126 release schema")
+        require(self.manifest.get("target_schema") == SCHEMA, "This installer requires the M127 release schema")
         verified = fields(run([verifier, "verify", "--public-keys", public_keys,
                                "--package", package, "--target-os", "linux", "--target-arch", arch,
                                "--current-sequence", "0", "--current-schema", SCHEMA],
                               label="signed release verification"))
         # Verification is for the initial release registration after the formal
-        # fresh owner reaches M126, not a claim that an empty DB already has M126.
+        # fresh owner reaches M127, not a claim that an empty DB already has M127.
         self.sha = digest(package)
         require(verified.get("verified") == "true" and verified.get("package_sha256") == self.sha,
                 "Release verifier did not confirm the selected package")

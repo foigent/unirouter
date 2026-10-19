@@ -14,6 +14,8 @@ import { useAuthStore } from '../store/auth';
 import { customerOrganizationDisplayName } from '../utils/customerContext';
 import { projectDisplayName } from '../utils/projectDisplay';
 import XInsightSetup from './XInsightSetup';
+import XInsightCommunicationControls from './XInsightCommunicationControls';
+import { xInsightCommunicationApi } from '../api/xInsightCommunication';
 import XInsightSourceConnection from './XInsightSourceConnection';
 import XInsightContentManagement from './XInsightContentManagement';
 import XInsightMachineDelegationManagement from './XInsightMachineDelegationManagement';
@@ -277,6 +279,7 @@ export default function XInsightLiveConnection({
   const projectCacheKey = `xinsight.setup-project:${user?.id}:${user?.org_id}`;
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectID, setProjectID] = useState<number>();
+  const [communicationRevision, setCommunicationRevision] = useState(0);
   const [status, setStatus] = useState<FeedConnectionStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [allowedIP, setAllowedIP] = useState('');
@@ -376,6 +379,14 @@ export default function XInsightLiveConnection({
         window.location.hash,
       );
       await api.installXInsightConnector(projectID, { invitation, ...(status?.connection_status === 'active' ? { receiver_mode: 'adopt_existing' as const } : {}) });
+      try {
+        const communication = await xInsightCommunicationApi.get(projectID);
+        if (!communication.automatic_enabled) {
+          const initialization = await xInsightCommunicationApi.once(projectID, communication, `install:${invitation.invitation_id}`);
+          if (!['completed', 'empty'].includes(initialization.state)) Toast.warning(t('连接已保存；初始化通讯尚未完成，请在通讯设置中执行一次。'));
+        }
+      } catch { Toast.warning(t('连接已保存；初始化通讯尚未完成，请在通讯设置中执行一次。')); }
+      setCommunicationRevision(value=>value+1);
       setInvitationJSON('');
       if (window.location.hash) {
         window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
@@ -428,8 +439,9 @@ export default function XInsightLiveConnection({
 
   if (normalOnly) return <div className="ur-integration-workspace" style={{display:'grid',gap:18}}>
     <Select aria-label={t("实时连接项目")} value={projectID} optionList={projectOptions} onChange={value=>setProjectID(Number(value))} style={{width:320}} />
+    {projectID && <XInsightCommunicationControls key={`communication-${projectID}-${communicationRevision}`} projectId={projectID} expansionEnabled={expansionEnabled} />}
     {expansionRestriction && <Banner type="warning" description={expansionRestriction} />}
-    {projectID && selectedProject?.org_id && user && <XInsightSetup key={`setup-${user.id}-${selectedProject.org_id}-${projectID}`} actorId={user.id} actorOrgId={user.org_id} orgId={selectedProject.org_id} projectId={projectID} projectName={selectedProject.name} projects={projects} invitationFragment={linkedInvitationFragment} enabled={expansionEnabled} onSaved={()=>{}} />}
+    {projectID && selectedProject?.org_id && user && <XInsightSetup key={`setup-${user.id}-${selectedProject.org_id}-${projectID}`} actorId={user.id} actorOrgId={user.org_id} orgId={selectedProject.org_id} projectId={projectID} projectName={selectedProject.name} projects={projects} invitationFragment={linkedInvitationFragment} enabled={expansionEnabled} onSaved={()=>setCommunicationRevision(value=>value+1)} />}
   </div>;
 
   return (
@@ -446,6 +458,7 @@ export default function XInsightLiveConnection({
         <Button icon={<IconRefresh />} onClick={loadStatus} loading={loading}>{t("刷新状态")}</Button>
       </div>
 
+      {projectID && <XInsightCommunicationControls key={`communication-${projectID}-${communicationRevision}`} projectId={projectID} expansionEnabled={expansionEnabled} />}
       {statusLoadError && <Banner
         type="warning"
         description={t("当前项目尚不能读取 X-Insight 连接状态：{v0}。这只影响 X-Insight 连接管理，不影响模型网关、其他集成或本页目录。请确认该 Connector 已配置且 License 包含 Data Exchange 后再重试。", { v0: translateLabel(statusLoadError) })}

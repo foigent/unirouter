@@ -141,6 +141,7 @@ func (counterpart *HTTPControlCounterpart) Poll(
 		if err != nil || operation.InstallationID != counterpart.installation.InstallationID || operation.ProjectID != counterpart.installation.ControlProjectID {
 			return nil, false, ErrConflict
 		}
+		allowCommunicationContinuation(ctx, http.MethodPost, connectorOperationsPath+"/"+url.PathEscape(operation.OperationID))
 		return canonical, true, nil
 	}
 	if version != ControlOperationV2Schema {
@@ -159,6 +160,7 @@ func (counterpart *HTTPControlCounterpart) Poll(
 	// X writes HTTP JSON with json.Encoder, so transport framing and struct
 	// field order are not product authority. The Agent consumes only the exact
 	// canonical v2 projection derived from the strictly decoded operation.
+	allowCommunicationContinuation(ctx, http.MethodPost, connectorOperationsPath+"/"+url.PathEscape(operation.OperationID))
 	return canonical, true, nil
 }
 
@@ -254,6 +256,30 @@ func (counterpart *HTTPControlCounterpart) request(
 	body []byte,
 	bearer string,
 ) (*http.Response, error) {
+	if err := CheckCommunicationRequest(ctx, method, path); err != nil {
+		return nil, err
+	}
+	if permit, ok := ctx.Value(communicationPermitKey{}).(*CommunicationPermit); ok {
+		bounded, cancel := context.WithDeadline(ctx, permit.deadline)
+		response, err := counterpart.dispatch(bounded, method, path, body, bearer)
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+		response.Body = &communicationResponseBody{ReadCloser: response.Body, cancel: cancel}
+		return response, nil
+	}
+	return counterpart.dispatch(ctx, method, path, body, bearer)
+}
+
+type communicationResponseBody struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (b *communicationResponseBody) Close() error { defer b.cancel(); return b.ReadCloser.Close() }
+
+func (counterpart *HTTPControlCounterpart) dispatch(ctx context.Context, method, path string, body []byte, bearer string) (*http.Response, error) {
 	request, err := http.NewRequestWithContext(
 		ctx, method, counterpart.origin+path, bytes.NewReader(body),
 	)

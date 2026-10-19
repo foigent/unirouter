@@ -1,5 +1,8 @@
 # Customer Runtime Template
 
+Current 1.13.0 delivery requires the M127 maintenance/fresh-install contract. See
+[connection communication controls](../../docs/ops/XINSIGHT-COMMUNICATION.md) for manual defaults, migration and recovery. Earlier M126 candidate notes below remain historical.
+
 This directory is an input to the signed customer release, not a source-build
 deployment. The shipped copy must be declared by path, size and SHA-256 in the
 signed upgrade manifest together with prebuilt application and dependency

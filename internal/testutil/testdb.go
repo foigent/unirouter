@@ -110,13 +110,17 @@ func SetupMigratedThroughTestDB(t *testing.T, ceiling string) *pgxpool.Pool {
 // PreRetirementMigrationsDir freezes the historical artifact at M125 for
 // tests of earlier rollback/compatible-expand contracts. M126 deliberately
 // cannot be undone; current-runtime tests must continue using MigrationsDir.
-func PreRetirementMigrationsDir(t *testing.T) string {
+func PreRetirementMigrationsDir(t *testing.T) string { return historicalMigrationsDir(t, "000126_") }
+
+// PreCommunicationMigrationsDir preserves the exact historical M126 artifact.
+func PreCommunicationMigrationsDir(t *testing.T) string { return historicalMigrationsDir(t, "000127_") }
+func historicalMigrationsDir(t *testing.T, ceiling string) string {
 	t.Helper()
 	source, target := MigrationsDir(t), t.TempDir()
 	entries, err := os.ReadDir(source)
 	require.NoError(t, err)
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") || entry.Name() >= "000126_" {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") || entry.Name() >= ceiling {
 			continue
 		}
 		body, err := os.ReadFile(filepath.Join(source, entry.Name()))
@@ -143,6 +147,9 @@ func PreRetirementLedger(t *testing.T) ([]string, error) {
 	ledger, err := schemaauthority.ExpectedLedger(MigrationsDir(t))
 	if err != nil {
 		return nil, err
+	}
+	if len(ledger) > 0 && ledger[len(ledger)-1] == schemaauthority.XInsightCommunicationHead {
+		ledger = ledger[:len(ledger)-1]
 	}
 	if len(ledger) < 2 || ledger[len(ledger)-2] != schemaauthority.XInsightCredentialExpandHead {
 		return nil, fmt.Errorf("historical fixture requires exact M125/M126 boundary")
@@ -431,6 +438,11 @@ func runStrictTestArtifactInstallThrough(ctx context.Context, pool *pgxpool.Pool
 			},
 		})
 		if err != nil {
+			return err
+		}
+	}
+	if ceiling == schemaauthority.CommercialLicenseRetirementHead {
+		if err := migrate.RunExistingThrough(ctx, pool, migrationsDir, ceiling); err != nil {
 			return err
 		}
 	}

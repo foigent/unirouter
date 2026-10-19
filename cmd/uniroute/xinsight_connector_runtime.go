@@ -216,6 +216,10 @@ func newProductionXInsightConnectorRuntimeSupervisor(
 // staged invitations, then executes at most one Poll/ack per pre-existing
 // active installation. A fresh redeem cannot cross into Poll in the same cycle.
 type xInsightConnectorRuntimeSupervisor struct {
+	communication      *xinsightconnector.CommunicationStore
+	observePeer        func(context.Context, string, string) error
+	advanceOne         func(context.Context, string) error
+	setupPending       func(context.Context, string) (bool, error)
 	enabled            bool
 	setupAdvance       func(context.Context, int) error
 	setupAllowed       func(context.Context, string) error
@@ -296,6 +300,9 @@ func (supervisor *xInsightConnectorRuntimeSupervisor) run(ctx context.Context) {
 func (supervisor *xInsightConnectorRuntimeSupervisor) runCycle(ctx context.Context) error {
 	if supervisor == nil || !supervisor.enabled {
 		return nil
+	}
+	if supervisor.communication != nil {
+		return supervisor.runCommunicationCycle(ctx)
 	}
 	// Snapshot runnable first, then pending. A binding finalized by this cycle
 	// (or concurrently between the two reads) cannot enter this frozen runnable

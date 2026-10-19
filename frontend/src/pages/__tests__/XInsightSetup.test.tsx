@@ -4,7 +4,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import XInsightSetup from '../XInsightSetup';
 import { xInsightSetupApi, type SetupPreview, type SetupStatus } from '../../api/xInsightSetup';
 import { ApiError } from '../../api/transport';
+import { xInsightCommunicationApi } from '../../api/xInsightCommunication';
 
+vi.mock('../../api/xInsightCommunication', () => ({ xInsightCommunicationApi: { get: vi.fn().mockResolvedValue({automatic_enabled:false,revision:1,installation_id:'xci_AAAAAAAAAAAAAAAAAAAAAA'}), once: vi.fn().mockResolvedValue({state:'empty'}) } }));
 vi.mock('../../api/xInsightSetup', () => ({ xInsightSetupApi: { peer: vi.fn(), preview: vi.fn(), create: vi.fn(), status: vi.fn(), members: vi.fn() } }));
 const invitation = { schema_version: 'xinsight.connector-installation-invitation.v1' as const, invitation_id: 'xii_AAAAAAAAAAAAAAAAAAAAAA', installation_id: 'xci_AAAAAAAAAAAAAAAAAAAAAA', deployment_id: 'xid_AAAAAAAAAAAAAAAAAAAAAA', audience: 'unirouter' as const, xinsight_origin: 'https://xi.example', requested_event_scope: ['model.request.completed'] as ['model.request.completed'], expires_at: '2026-10-03T13:00:00Z', install_url: 'https://ur.example/connectors/x-insight/install#invitation=opaque' };
 const token = 'xiiv1_' + 'A'.repeat(43);
@@ -23,6 +25,8 @@ const preview: SetupPreview = {
 const status: SetupStatus = { schema_version: 'unirouter.xinsight.setup-status.v1', installation_id: invitation.installation_id, consent_revision: 1, state: 'waiting_data', configuration_ready: true, purpose_status: { policy_manage: 'granted', source_enroll: 'granted' }, ur_policy_status: { state: 'effective', policy_ref: 'p', policy_version: '1', version_vector: 'v' }, xi: null, issues: [] };
 const props = { orgId: 2, projectId: 11, projectName: '项目 A', projects: [{ id: 11, org_id: 2, name: '项目 A' }, { id: 12, org_id: 2, name: '项目 B' }], enabled: true, onSaved: vi.fn() };
 function prepare() {
+ vi.mocked(xInsightCommunicationApi.get).mockResolvedValue({project_id:11,automatic_enabled:false,cadence_ms:60000,revision:1,installation_id:invitation.installation_id,effective:'paused',peer_state:'unknown',last_code:''});
+ vi.mocked(xInsightCommunicationApi.once).mockResolvedValue({idempotency_key:'initialize',installation_id:invitation.installation_id,revision:1,state:'empty',units:1,requests:1,started_at:'2026-10-19T00:00:00Z'});
   vi.mocked(xInsightSetupApi.peer).mockResolvedValue({ schema_version: 'unirouter.xinsight.setup-peer.v1', org_id: '2', anchor_project_id: '11', source_instance: 's', xi_origin: 'https://xi.example', xi_deployment_id: invitation.deployment_id, xi_setup_url: 'https://xi.example/connectors/unirouter/setup', trust_ready: true });
   vi.mocked(xInsightSetupApi.preview).mockResolvedValue(preview); vi.mocked(xInsightSetupApi.create).mockResolvedValue(status); vi.mocked(xInsightSetupApi.status).mockResolvedValue(status);
 }
@@ -81,11 +85,26 @@ describe('normal X-Insight setup', () => {
     await user.click(screen.getByRole('button', { name: '确认并连接' }));
     await waitFor(() => expect(xInsightSetupApi.create).toHaveBeenCalledOnce());
     const put = vi.mocked(xInsightSetupApi.create).mock.calls[0][1];
+    await waitFor(() => expect(xInsightCommunicationApi.once).toHaveBeenCalledOnce());
+    expect(vi.mocked(xInsightCommunicationApi.once).mock.calls[0][2]).toBe(`${put.request_id}:initialize`);
+
     expect(put.profiles).toEqual(preview.default_profiles); expect(put.coverage).toBe('all_current_future');
     expect(put.policy_access).toEqual([{ target_kind: 'enterprise_default', coverage: 'exact', read: true, write: true }, { target_kind: 'project_policy', coverage: 'all_current_future', read: true, write: true }]);
     expect(put.ur_policy?.scope).toBe('enterprise'); expect(put.ur_policy?.put.expected_vector).toBe('{"enterprise":0}'); expect(put.ur_policy?.put.desired.retention_seconds).toBe(2592000);
     expect(put.ur_policy?.put.desired.quota_bytes).toBe(5368709120); expect(put.ur_policy?.put.desired.max_saved_bytes).toBe(33554432);
     expect(await screen.findByText(/等待首次真实数据/)).toBeInTheDocument();
+  });
+  it('keeps an empty first control poll recoverably incomplete without enabling automatic communication', async () => {
+    prepare();
+    vi.mocked(xInsightCommunicationApi.once).mockResolvedValue({idempotency_key:'initialize',installation_id:invitation.installation_id,revision:1,state:'partial',units:2,requests:2,started_at:'2026-10-19T00:00:00Z'});
+    vi.mocked(xInsightSetupApi.status).mockResolvedValue({...status,state:'provisioning',configuration_ready:false});
+    render(<XInsightSetup {...props} invitationFragment={invitationFragment} />);
+    const user=userEvent.setup();await screen.findByText('最终确认');
+    await user.click(screen.getByLabelText('我确认上述两端设置、供数范围及实际策略管理权限。'));
+    await user.click(screen.getByRole('button',{name:'确认并连接'}));
+    await screen.findByText('连接已保存；初始化通讯尚未完成，请在通讯设置中执行一次。');
+    await waitFor(()=>expect(xInsightCommunicationApi.once).toHaveBeenCalledOnce());
+    expect(vi.mocked(xInsightCommunicationApi.once).mock.calls[0][1].automatic_enabled).toBe(false);
   });
   it('keeps source exclusions distinct and lets pure supply omit enterprise management', async () => {
     prepare(); render(<XInsightSetup {...props} invitationFragment={invitationFragment} />); const user = userEvent.setup(); await screen.findByText('最终确认');

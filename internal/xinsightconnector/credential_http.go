@@ -88,6 +88,7 @@ func (counterpart *HTTPControlCounterpart) completeCredential(ctx context.Contex
 	if receipt.State == "committed" {
 		return counterpart.journal.PromoteCredential(ctx, id, op.request.OperationID)
 	}
+	allowCommunicationContinuation(ctx, http.MethodPost, queryPath+"/confirm")
 	confirm := CredentialConfirm{SchemaVersion: CredentialRequestSchema, OperationID: op.request.OperationID, RequestSHA256: op.requestSHA256}
 	body, err := confirm.CanonicalJSON()
 	if err != nil {

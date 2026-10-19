@@ -1,5 +1,8 @@
 # Fresh single-instance installer
 
+Current 1.13.0 delivery requires the M127 maintenance/fresh-install contract. See
+[connection communication controls](XINSIGHT-COMMUNICATION.md) for manual defaults, migration and recovery. Earlier M126 candidate notes below remain historical.
+
 For the 1.10.0 candidate, the final owner step is M126 commercial License
 retirement. No commercial License import or public key is required; exact
 Artifact identity, publications, coverage and atomic completion remain required.

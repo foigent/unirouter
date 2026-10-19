@@ -17,7 +17,7 @@ import (
 func TestCommercialRetirementMaintenanceIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedThroughTestDB(t, schemaauthority.XInsightCredentialExpandHead)
 	ctx := context.Background()
-	dir := testutil.MigrationsDir(t)
+	dir := testutil.PreCommunicationMigrationsDir(t)
 	before, err := runtimegeneration.ReadBudgetCoverage(ctx, pool)
 	require.NoError(t, err)
 	var triggerCount int
@@ -52,6 +52,7 @@ func TestCommercialRetirementReceivingFleetMustWithdrawAndRetire(t *testing.T) {
 	ctx := t.Context()
 	artifact, err := schemaauthority.ExpectedLedger(testutil.MigrationsDir(t))
 	require.NoError(t, err)
+	artifact = artifact[:len(artifact)-1] // Exact M126 historical artifact.
 	oldLedger := artifact[:len(artifact)-1]
 	manifest := runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads())
 	old := runtimegeneration.Identity{Instance: "uri_" + strings.Repeat("a", 32), Artifact: "sha256:" + strings.Repeat("a", 64)}
@@ -65,7 +66,7 @@ func TestCommercialRetirementReceivingFleetMustWithdrawAndRetire(t *testing.T) {
 	require.NoError(t, err)
 	_, err = runtimegeneration.CompleteIngress(ctx, pool, initial.ChangeID, initial.DesiredConfigDigest, true, json.RawMessage(`{"synthetic_proxy_observation":true}`))
 	require.NoError(t, err)
-	require.ErrorContains(t, migrate.RunExisting(ctx, pool, testutil.MigrationsDir(t)), "stopped, retired writers")
+	require.ErrorContains(t, migrate.RunExisting(ctx, pool, testutil.PreCommunicationMigrationsDir(t)), "stopped, retired writers")
 	emptyBytes := []byte("synthetic explicit empty membership")
 	withdrawal := runtimegeneration.IngressPlan{ChangeID: "m126-fixture-withdraw", PredecessorID: initial.ChangeID, ExpectedConfigDigest: initial.DesiredConfigDigest, DesiredConfigDigest: hash(emptyBytes), DesiredConfigBytes: emptyBytes, Before: []runtimegeneration.Identity{old}, After: []runtimegeneration.Identity{}}
 	omitted := withdrawal
@@ -81,11 +82,11 @@ func TestCommercialRetirementReceivingFleetMustWithdrawAndRetire(t *testing.T) {
 	status, err = runtimegeneration.CompleteIngress(ctx, pool, withdrawal.ChangeID, withdrawal.DesiredConfigDigest, false, json.RawMessage(`{"synthetic_old_worker_still_alive":true}`))
 	require.NoError(t, err)
 	require.Equal(t, "ambiguous", status)
-	require.Error(t, migrate.RunExisting(ctx, pool, testutil.MigrationsDir(t)))
+	require.Error(t, migrate.RunExisting(ctx, pool, testutil.PreCommunicationMigrationsDir(t)))
 	status, err = runtimegeneration.CompleteIngress(ctx, pool, withdrawal.ChangeID, withdrawal.DesiredConfigDigest, true, json.RawMessage(`{"synthetic_old_workers_exited":true}`))
 	require.NoError(t, err)
 	require.Equal(t, "applied", status)
-	require.Error(t, migrate.RunExisting(ctx, pool, testutil.MigrationsDir(t)), "withdrawal alone is not process retirement")
+	require.Error(t, migrate.RunExisting(ctx, pool, testutil.PreCommunicationMigrationsDir(t)), "withdrawal alone is not process retirement")
 
 	// Database-owner fixture only: the separate host controller must prove real
 	// process/container exit. This synthetic expiry is not Target exit evidence.
@@ -105,7 +106,7 @@ func TestCommercialRetirementReceivingFleetMustWithdrawAndRetire(t *testing.T) {
 	require.Equal(t, revision, checkedRevision, "check performs no mutation")
 	_, err = runtimegeneration.ApplyRetirement(ctx, pool, input)
 	require.NoError(t, err)
-	require.NoError(t, migrate.RunExisting(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunExisting(ctx, pool, testutil.PreCommunicationMigrationsDir(t)))
 	require.Error(t, schemaauthority.VerifyRuntimeLedger(artifact, oldLedger))
 	current := runtimegeneration.Identity{Instance: "uri_" + strings.Repeat("b", 32), Artifact: "sha256:" + strings.Repeat("b", 64)}
 	_, head, err = runtimegeneration.Renew(ctx, pool, current, manifest, artifact, false)
@@ -141,7 +142,7 @@ func TestCommercialRetirementKeepsHistoryAndRemovesResourceLimits(t *testing.T) 
 				require.NoError(t, insert("before-first"))
 			}
 			require.ErrorContains(t, insert("before-blocked"), "commercial License")
-			require.NoError(t, migrate.RunExisting(ctx, pool, testutil.MigrationsDir(t)))
+			require.NoError(t, migrate.RunExisting(ctx, pool, testutil.PreCommunicationMigrationsDir(t)))
 			require.NoError(t, insert("after-first"))
 			require.NoError(t, insert("after-second"))
 			_, err = pool.Exec(ctx, `INSERT INTO provider_connections(name,provider,base_url,config_revision) VALUES('invalid','custom','https://synthetic.invalid',0)`)
