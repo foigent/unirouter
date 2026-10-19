@@ -1,5 +1,8 @@
 # Linux community installer candidate
 
+Current 1.13.0 delivery requires the M127 maintenance/fresh-install contract. See
+[connection communication controls](XINSIGHT-COMMUNICATION.md) for manual defaults, migration and recovery. Earlier M126 candidate notes below remain historical.
+
 Status: the accepted 1.10.0 source candidate `71b5a4ee72d649d08e1137e68edb8b4d866f0987`
 passed disposable Linux amd64 installation and was merged. See the
 [final native result](#accepted-native-result) and

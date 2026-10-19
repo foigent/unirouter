@@ -1,5 +1,8 @@
 # Customer Runtime Template
 
+Current 1.13.0 delivery requires the M127 maintenance/fresh-install contract. See
+[connection communication controls](../../docs/ops/XINSIGHT-COMMUNICATION.md) for manual defaults, migration and recovery. Earlier M126 candidate notes below remain historical.
+
 This directory is an input to the signed customer release, not a source-build
 deployment. The shipped copy must be declared by path, size and SHA-256 in the
 signed upgrade manifest together with prebuilt application and dependency
@@ -290,8 +293,8 @@ artifact with its size and SHA-256 in the signed upgrade manifest, alongside thi
 restoration instruction. This source template does not itself sign or release it.
 
 - Repository/package path: `scripts/source-budget-restore-rebase.sql`
-- SHA-256: `cee69a55f1784290bf70b2dec77901252e4a01dbfaca5c8a26b52d7b8aa2bd6f`
-- Bytes: `11610`
+- SHA-256: `deb0f30c040dd7faa28e177209b2ea7e718bd9eb0ee0686d373b1b39bcec262c`
+- Bytes: `12818`
 
 After every supported SQL restore, while all database readers/writers are still
 stopped, run this helper with `psql -v ON_ERROR_STOP=1 -f` before restart. It retains

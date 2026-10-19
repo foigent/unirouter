@@ -137,8 +137,16 @@ def retirement_document(operation, role):
 
 
 
+def maintenance_schema_predecessor(artifact, actual):
+    allowed = (("000125_xinsight_control_credential_lifecycle", "000126_commercial_license_retirement"),
+               ("000126_commercial_license_retirement", "000127_xinsight_communication_policy"))
+    rollout.require(tuple(artifact[-2:]) in allowed,
+                    "maintenance requires an exact supported M125/M126 or M126/M127 artifact")
+    rollout.require(actual == artifact[:-1], "maintenance requires the complete exact predecessor ledger")
+
+
 class MaintenanceRetirement(rollout.Rollout):
-    """M125 full withdrawal, using the bounded M126 Artifact CLI carrier.
+    """Exact M125/M126 predecessor withdrawal using its bounded successor CLI.
 
     This owner does not apply schema or start replacement serving processes.
     Each mutation is explicit and retains evidence for unknown-result recovery.
@@ -172,11 +180,8 @@ class MaintenanceRetirement(rollout.Rollout):
         self.sources()
         self.images()
         artifact = sorted(p.name[:-7] for p in (self.new_source / "migrations").glob("*.up.sql"))
-        rollout.require(artifact[-2:] == ["000125_xinsight_control_credential_lifecycle",
-                                        "000126_commercial_license_retirement"],
-                        "maintenance requires the M126 artifact")
         actual = rollout.load(self.sql("SELECT jsonb_agg(version ORDER BY version) FROM schema_migrations"))
-        rollout.require(actual == artifact[:-1], "maintenance requires the complete exact M125 ledger")
+        maintenance_schema_predecessor(artifact, actual)
         before = self.ingress.snapshot(self.ingress_args("both"))
         rollout.require(before["before_state"] == "both", "maintenance starts from both healthy receivers")
         current = self.ingress.owner_command(self.owner(), "inspect")
@@ -379,7 +384,7 @@ class MaintenanceRetirement(rollout.Rollout):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("plan", "prepare", "withdraw", "stop", "remove", "check", "apply"))
-    parser.add_argument("--maintenance", action="store_true", help="M125 full withdrawal via the M126 Artifact CLI")
+    parser.add_argument("--maintenance", action="store_true", help="Exact predecessor full withdrawal via the M126 or M127 Artifact CLI")
     parser.add_argument("--rollout-input", required=True, type=Path)
     parser.add_argument("--role", choices=("stable", "canary"))
     args = parser.parse_args()

@@ -256,6 +256,9 @@ func TestFreshInstallProcessRecoveryIntegration(t *testing.T) {
 		require.Equal(t, "active", s.Record.State, "pre-retirement installation remains incomplete")
 	}
 	run("expand_committed:"+schemaauthority.CommercialLicenseRetirementHead, false)
+	s = assertHead(schemaauthority.CommercialLicenseRetirementHead)
+	require.Equal(t, "active", s.Record.State, "M126 cannot complete the M127 installation")
+	run("expand_committed:"+schemaauthority.XInsightCommunicationHead, false)
 	s, err = installstate.RequireOrdinary(ctx, pool)
 	require.NoError(t, err)
 	require.Equal(t, "completed", s.Record.State)

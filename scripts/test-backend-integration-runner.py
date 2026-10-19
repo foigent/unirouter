@@ -99,6 +99,13 @@ class RunnerTests(unittest.TestCase):
         self.assertIn("TestHistoricalM115RetirementPermitsOnlyProvedSuffix", pattern)
         self.assertIn("TestRetirementRacesFastAndSlowRenewWithoutReusingStoppedIdentity", pattern)
         for name in (
+            "TestCommunicationManualDefaultConcurrentAdmissionPauseAndBoundsIntegration",
+            "TestCommunicationPauseAfterPollPreservesTerminalAndACKIntegration",
+            "TestCommunicationPauseAfterCredentialEffectPersistsAndConfirmsIntegration",
+            "TestCommunicationMigrationPreservesLegacyAndFencesOldWritersIntegration",
+            "TestCommunicationKnownProcessExitRecoveryAndUnitBudgetIntegration",
+            "TestXInsightCommunicationAuthorizationLocalStatusAndIdempotencyIntegration",
+            "TestXInsightCommunicationFiniteInitializationAndCadenceIntegration",
             "TestAsyncMediaImageMigrationContractAndRollbackGuard",
             "TestCommercialRetirementCLIWithdrawalIntegration",
             "TestCommercialRetirementMaintenanceIntegration",

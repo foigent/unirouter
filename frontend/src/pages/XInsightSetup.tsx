@@ -1,3 +1,4 @@
+import { xInsightCommunicationApi } from '../api/xInsightCommunication';
 import '../i18n/integrations';
 import { translate as t, useI18n, labelFor, translateLabel } from '../i18n';
 import { useEffect, useState } from 'react';
@@ -166,6 +167,17 @@ export default function XInsightSetup({ actorId, actorOrgId, orgId, projectId, p
       // may establish whether this confirmation actually committed.
       if (recoveryKey) sessionStorage.setItem(recoveryKey, put.invitation.installation_id);
       const next = await xInsightSetupApi.create(orgId, put); receiveStatus(next);
+      // The explicit Save admits one finite initialization burst, not an auto loop.
+      // Keep the committed setup even if this separate control request is unconfirmed.
+      try {
+        const communication = await xInsightCommunicationApi.get(projectId);
+        if (!communication.automatic_enabled) {
+          const initialization = await xInsightCommunicationApi.once(projectId, communication, `${put.request_id}:initialize`);
+          if (!['completed', 'empty'].includes(initialization.state)) setError("连接已保存；初始化通讯尚未完成，请在通讯设置中执行一次。");
+        }
+        receiveStatus(await xInsightSetupApi.status(orgId, next.installation_id));
+      } catch { setError("连接已保存；初始化通讯尚未完成，请在通讯设置中执行一次。"); }
+
       window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`); onSaved();
     } catch (e) { if(e instanceof ApiError&&[400,403,409].includes(e.status)){if(recoveryKey)sessionStorage.removeItem(recoveryKey);setSubmitted(undefined);setConfirmed(false);setRequestId(crypto.randomUUID());}setError(e instanceof Error ? e.message : "确认结果未明，请重读状态后再用同一请求重试。"); }
     finally { setBusy(false); }
@@ -230,6 +242,7 @@ export default function XInsightSetup({ actorId, actorOrgId, orgId, projectId, p
     </fieldset>}
     {submitted && !status && <div><p>{t("此请求已保留。先读回；重试使用完全相同的确认，不重复扩大授权。")}</p><button onClick={()=>{void xInsightSetupApi.status(orgId,submitted.invitation.installation_id).then(receiveStatus).catch(()=>setError('此请求状态尚未确认，可使用同一确认重试。'));}}>{t("读取确认结果")}</button><button disabled={busy} onClick={()=>{void save();}}>{t("重试同一确认")}</button></div>}
     {status && <>
+      {status.xi_peer_state === 'last_observed' && <p>{t('对端信息仅为上次观测：')}{status.xi_observed_at || t('未知')}{t('；重新读取本页不会探测对端，需执行一次或启用自动通讯以更新。')}</p>}
       {status.consent_revision > 0 && <p>{t("本次确认已登记。重新读取只核对状态，不会重复授权。")}</p>}
       <p role="status">{labelFor(stateNames, status.state)}{t("。配置")}{status.configuration_ready ? t("已就绪") : t("尚未就绪")}。</p>
       {status.credential && <p>{t("控制凭据：")}{{healthy:t("当前有效"),rotation_due:t("即将自动轮换"),rotation_pending:t("轮换待确认"),committed_unpromoted:t("对端已确认，本端待接续"),expired_recovery_required:t("已过期，需管理员恢复"),revoked:t("连接已撤销"),credential_unavailable:t("不可用")}[status.credential.state]}{t("。数据新鲜度与正文读取另按实际接收核对。")}</p>}

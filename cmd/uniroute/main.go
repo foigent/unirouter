@@ -586,6 +586,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize X-Insight Connector runtime: %v", err)
 	}
+	xInsightCommunication := xinsightconnector.NewCommunicationStore(postgres.Pool, cfg.XInsightConnectorPollMilliseconds, httpRuntime.instance, httpRuntime.artifact)
+	xInsightCommunication.SetRuntimeEnabled(cfg.XInsightConnectorAgentEnabled)
+	xInsightConnectorRuntime.communication = xInsightCommunication
+	xInsightConnectorRuntime.observePeer = adminHandler.ObserveXInsightSetupPeer
+	xInsightConnectorRuntime.advanceOne = adminHandler.AdvanceXInsightSetup
+	xInsightConnectorRuntime.setupPending = adminHandler.XInsightSetupInitializationPending
+	adminHandler.SetXInsightCommunication(xInsightCommunication, xInsightConnectorRuntime.syncCommunicationOnce)
 	adminHandler.SetRoutingController(router)
 	adminHandler.SetRuntimeChangeManager(runtimeChangeManager)
 	adminHandler.SetModelAuthorizationEvaluator(modelAuthorizationEvaluator)

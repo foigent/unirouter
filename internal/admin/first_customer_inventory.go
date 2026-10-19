@@ -22,7 +22,7 @@ func firstCustomerContentTables() []string {
 		"execution_source_content_bindings",
 		"execution_source_content_operations",
 		"execution_source_content_scopes",
-		"xinsight_connector_credential_operations",
+		"xinsight_connector_credential_operations", "xinsight_communication_policies", "xinsight_communication_runs",
 		"xinsight_receiver_adoptions",
 		"xinsight_machine_credentials",
 		"xinsight_policy_delegations",

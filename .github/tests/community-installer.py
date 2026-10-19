@@ -25,7 +25,7 @@ import urllib.error
 import urllib.request
 import uuid
 
-SCHEMA = "000126_commercial_license_retirement"
+SCHEMA = "000127_xinsight_communication_policy"
 DEPENDENCIES = {"postgres": "postgres:16-alpine", "redis": "redis:7-alpine",
                 "prometheus": "prom/prometheus:v2.51.0", "grafana": "grafana/grafana:11.0.0"}
 
@@ -51,6 +51,14 @@ def private_write(path, data):
     with path.open("xb") as stream:
         os.chmod(path, 0o600)
         stream.write(data)
+
+
+def prepare_bootstrap_fixture(module, raw, expected_sha, directory, fetch):
+    try:
+        anchor = module.Bootstrap(raw, expected_sha)
+        module.prepare(anchor, directory, fetch=fetch)
+    except module.BootstrapError as exc:
+        raise Failed("community bootstrap preparation failed") from exc
 
 
 class Acceptance:
@@ -218,14 +226,10 @@ class Acceptance:
         spec = importlib.util.spec_from_file_location("community_bootstrap", self.repo / "deploy/community/bootstrap.py")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        anchor = module.Bootstrap(self.bootstrap_file.read_bytes(), self.bootstrap_sha)
         def fixture_fetch(asset, target):
             private_write(target, sources[asset["url"].rsplit("/", 1)[-1]].read_bytes())
         prepared = self.root / "prepared-release"
-        try:
-            module.prepare(anchor, prepared, fetch=fixture_fetch)
-        except module.BootstrapError as exc:
-            raise Failed("community bootstrap preparation failed") from exc
+        prepare_bootstrap_fixture(module, self.bootstrap_file.read_bytes(), self.bootstrap_sha, prepared, fixture_fetch)
         self.release = prepared
         self.result["bootstrap_sha256"] = self.bootstrap_sha
         self.result["bootstrap_transport"] = "local fixture; no public-download claim"
@@ -293,7 +297,7 @@ class Acceptance:
         require(state["image_ids"] == self.image_ids, "installed images differ from producer inspection")
         actual = self.target(directory, project)
         require(all(plan["target"][k] == v for k, v in actual.items()), "database identity differs from original plan")
-        require(self.sql(directory, project, "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1") == SCHEMA, "schema is not M126")
+        require(self.sql(directory, project, "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1") == SCHEMA, "schema is not M127")
         comment = self.sql(directory, project, "SELECT obj_description('public.schema_migrations'::regclass)")
         record = json.loads(comment.split("\n", 1)[1])
         require(record["state"] == "completed" and record["plan"] == plan, "fresh owner is not completed for the original plan")
@@ -398,7 +402,7 @@ os.kill(parent, signal.SIGKILL)
         require(code != 0, "wrong project resume accepted")
         code, _ = self.run("reject wrong daemon on resume", self.command("resume", directory, project) + ["--docker-socket", "/tmp/not-the-fixture-docker.sock"], ok=False)
         require(code != 0 and inventory == self.inventory(), "identity refusal changed resources")
-        self.passed("M126, image, DB, release and one-rotation identities survive repeat resume")
+        self.passed("M127, image, DB, release and one-rotation identities survive repeat resume")
         self.phase = "private console and authentication"
         self.request("http://127.0.0.1:13000/health/ready")
         page = self.request("http://127.0.0.1:13000/")

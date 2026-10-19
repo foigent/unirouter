@@ -29,6 +29,15 @@ func registerXInsightFeedControlRoutes(
 	handler xInsightFeedControlHandler,
 	guards xInsightFeedControlRouteGuards,
 ) {
+	if controls, ok := handler.(interface {
+		GetXInsightCommunication(http.ResponseWriter, *http.Request)
+		UpdateXInsightCommunication(http.ResponseWriter, *http.Request)
+		SyncXInsightCommunicationOnce(http.ResponseWriter, *http.Request)
+	}); ok {
+		mux.Handle("GET /api/v1/data-exchange/xinsight/connections/{project_id}/communication", guards.safety(controls.GetXInsightCommunication))
+		mux.Handle("PUT /api/v1/data-exchange/xinsight/connections/{project_id}/communication", guards.safety(controls.UpdateXInsightCommunication))
+		mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/communication/sync-once", guards.expansion(controls.SyncXInsightCommunicationOnce))
+	}
 	mux.Handle("GET /api/v1/data-exchange/xinsight/connections/{project_id}", guards.safety(handler.GetXInsightFeedConnection))
 	mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/install", guards.expansion(handler.InstallXInsightConnector))
 	mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/pause", guards.safety(handler.PauseXInsightFeedConnection))

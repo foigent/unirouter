@@ -31,18 +31,18 @@ METADATA_LIMIT = 32 * MIB
 REPO = 'foigent/unirouter'
 REPO_ID = 1281228065
 ACTOR_ID = 252312344
-PRODUCT = '3818ba9627d1bc44eb836036b8ae8904a7175e65'
-TREE = '14832e89a5a4cece7ed2efd51b98ce984dabba39'
+PRODUCT = '9e0240c68a20deebf9bcd0e2cc7b58034d09b696'
+TREE = '8bd942636ca17e48de95d0e531108d303066d923'
 WORKFLOW = '.github/workflows/community-byte-candidate.yml'
 API = 'https://api.github.com'
 PREFIX = '/repos/' + REPO
 ROOT = Path(__file__).resolve().parents[2]
 INPUTS = ROOT / '.github/release-inputs'
 BOUND = {
-    'community-image-candidate.py': 'b379b8c3fc767f4837d18fffe098e9432f4ddf5767152c80f77c8e6fb73c99c3',
-    'community-source-evidence.py': 'f5cb3ea9875e37306aab73553f7f03ad408e01b418814c89a20589410d7a00ed',
+    'community-image-candidate.py': 'd98b401204a82bedeb866ff4ca7e104cb8cac4f56872665cc8a293e838c252f2',
+    'community-source-evidence.py': 'ce2cc04b391a17e40a33b0aa2139a9b6ef72fefd321f2780e5aa66435eceeefa',
     'frontend-membership-observer.mjs': 'bc34e95b3a76c8a8f9a5c66f59845d63f53d237938e96ded84ab30039ee2d130',
-    'component-notices.tar.gz': '1c82db604fe54e6a076723374e80cbf066b55d46b6880b6b630237324fb3913a',
+    'component-notices.tar.gz': 'f0f166f98c90e164574d151999b71f0bac8f7ac9fe9ab89c93bd01cbdf269764',
     'community-public-keys.json': '96c91635460ddfb2a14aa1ea97d8445951730e9eb04a33cbdf4320141e61d63d',
 }
 ASSETS = ('backend-image.tar.gz', 'frontend-image.tar.gz',
@@ -570,7 +570,7 @@ def initialize_guard(guard, work, env):
     need(Path(env['GITHUB_WORKSPACE']).resolve()/'producer' == ROOT, 'workspace')
     need(guard.argv_run('producer checkout identity', ['git', '-C', str(ROOT), 'rev-parse', 'HEAD'])
          == env['EXPECTED_WORKFLOW_COMMIT'], 'producer_checkout')
-    guard.SOURCE_CHECKOUT = ROOT/'.byte-source-3818'
+    guard.SOURCE_CHECKOUT = ROOT/'.byte-source-9e0240c6'
     info = load(guard.docker('local Docker environment', 'info', '--format',
         '{"OSType":{{json .OSType}},"Architecture":{{json .Architecture}},'
         '"SecurityOptions":{{json .SecurityOptions}},"DockerRootDir":{{json .DockerRootDir}}}'))
@@ -618,7 +618,7 @@ def derive_recipes(guard, source):
     # Native recipes() owns these exact new temporary files; not repository files.
     back.write_text(btext); front.write_text(ftext)
     return back, front, {'backend': file_fact(back), 'frontend': file_fact(front),
-        'changes': ['existing fixed FROM substitutions', 'accepted frontend observer and same production/1.12.0 arguments',
+        'changes': ['existing fixed FROM substitutions', 'accepted frontend observer and same production/1.13.0 arguments',
                     'retained notices/LICENSE/NOTICE in non-served runtime directory',
                     'actual frontend observer output retained in same final image'],
         'not_claimed_byte_equal_to_old_ephemeral_images': True}
@@ -845,10 +845,10 @@ def build(guard, helper, ring, index, assets, data, retain):
         iidfile = guard.work/(role+'.id')
         command = ['build', '--platform', 'linux/amd64', '--file', str(recipe),
                    '--tag', 'ur-byte-'+role+':'+guard.run_id, '--iidfile', str(iidfile)]
-        args = (['RUNTIME_VERSION=1.12.0', 'RUNTIME_COMMIT='+PRODUCT, 'RUNTIME_TREE='+TREE,
+        args = (['RUNTIME_VERSION=1.13.0', 'RUNTIME_COMMIT='+PRODUCT, 'RUNTIME_TREE='+TREE,
                  'UNIROUTER_RELEASE_TRUST_MODE=release', 'UNIROUTER_UPGRADE_TRUST_BUNDLE_B64='+ring,
                  'GOPROXY=https://proxy.golang.org,direct'] if role == 'backend' else
-                ['VITE_DEPLOY_ENV=production', 'VITE_APP_VERSION=1.12.0'])
+                ['VITE_DEPLOY_ENV=production', 'VITE_APP_VERSION=1.13.0'])
         for argument in args: command += ['--build-arg', argument]
         guard.docker('one retained '+role+' build', *command, str(context))
         image = regular(iidfile, 128).decode().strip()
@@ -867,7 +867,7 @@ def build(guard, helper, ring, index, assets, data, retain):
             buildinfo = guard.tool('actual-backend-buildinfo', go,
                 'mkdir -p /tmp/telemetry; printf "off\\n" > /tmp/telemetry/mode; go version -m /inspect/uniroute', binary)
             for value in ('go1.25.12', 'CGO_ENABLED=0', 'GOOS=linux', 'GOARCH=amd64',
-                          'main.buildVersion=1.12.0', 'main.buildCommit='+PRODUCT, 'main.buildTree='+TREE,
+                          'main.buildVersion=1.13.0', 'main.buildCommit='+PRODUCT, 'main.buildTree='+TREE,
                           'github.com/uniroute/unirouter/internal/releasetrust.buildMode=release',
                           'github.com/uniroute/unirouter/internal/releasetrust.embeddedUpgradeKeyRingBase64='+ring):
                 need(value in buildinfo, 'backend_release_buildinfo')

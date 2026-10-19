@@ -33,10 +33,10 @@ func TestCommercialRetirementFixtureTemplatesIntegration(t *testing.T) {
 	}
 	historical := testutil.SetupPreRetirementTestDB(t)
 	check(historical, schemaauthority.XInsightCredentialExpandHead, 5)
-	check(testutil.SetupMigratedTestDB(t), schemaauthority.CommercialLicenseRetirementHead, 0)
+	check(testutil.SetupMigratedTestDB(t), schemaauthority.LatestSupportedMigration, 0)
 	// Mutate one clone's schema as a migration/backfill test would do.
 	_, err := historical.Exec(ctx, `DELETE FROM schema_migrations WHERE version = $1`, schemaauthority.XInsightCredentialExpandHead)
 	require.NoError(t, err)
 	check(testutil.SetupPreRetirementTestDB(t), schemaauthority.XInsightCredentialExpandHead, 5)
-	check(testutil.SetupMigratedTestDB(t), schemaauthority.CommercialLicenseRetirementHead, 0)
+	check(testutil.SetupMigratedTestDB(t), schemaauthority.LatestSupportedMigration, 0)
 }

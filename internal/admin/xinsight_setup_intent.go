@@ -322,11 +322,19 @@ func (h *Handler) writeSetupStatus(w http.ResponseWriter, r *http.Request, org i
 		return
 	}
 	out := setupStatusProjection(id, saved, progress, state)
-	if h.xInsightSetup != nil && h.xInsightSetup.status != nil {
-		raw, err := h.xInsightSetup.status(r.Context(), id, saved.XIConsent.DeploymentID)
+	out.XIPeerState = "unknown"
+	if h.xInsightCommunication != nil {
+		if comm, err := h.xInsightCommunication.Read(r.Context(), org, project); err == nil {
+			out.XIObservedAt = comm.PeerObservedAt
+		}
+	}
+
+	if h.xInsightCommunication != nil {
+		raw, err := h.xInsightCommunication.PeerObservation(r.Context(), id)
 		var xi xInsightSetupXIStatus
 		if err == nil && decodeXInsightSetupWire(raw, &xi) == nil && xi.SchemaVersion == "xinsight.connector-setup-status.v1" && xi.InstallationID == id && xi.DeploymentID == saved.XIConsent.DeploymentID && xi.ConsentRevision == saved.XIConsent.ConsentRevision {
 			out.XI = &xi
+			out.XIPeerState = "last_observed"
 			// Initial custody admission remains XI's CAS-controlled step. Once the
 			// original local steps are complete, later human policy operations project
 			// their current loaded effective revision rather than the initial snapshot.

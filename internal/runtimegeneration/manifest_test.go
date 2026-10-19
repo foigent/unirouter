@@ -209,6 +209,6 @@ func TestCommercialRetirementPreservesInheritedLeaseRequirements(t *testing.T) {
 		require.ErrorIs(t, requireLeaseManifest(changed, schemaauthority.CommercialLicenseRetirementHead), ErrIncompatible, required.ID)
 	}
 	missing := m
-	missing.SchemaHeads = append([]string(nil), m.SchemaHeads[:len(m.SchemaHeads)-1]...)
+	missing.SchemaHeads = slices.DeleteFunc(slices.Clone(m.SchemaHeads), func(head string) bool { return head == schemaauthority.CommercialLicenseRetirementHead })
 	require.ErrorIs(t, requireLeaseManifest(missing, schemaauthority.CommercialLicenseRetirementHead), ErrIncompatible)
 }

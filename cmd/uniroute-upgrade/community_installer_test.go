@@ -15,8 +15,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/uniroute/unirouter/internal/schemaauthority"
 	"github.com/uniroute/unirouter/internal/signing"
 )
+
+// These fixtures contain today's shipped installer payload, so their signed
+// schema window follows its migration inventory. Historical bundle-only
+// protocol fixtures remain independent of the current installer.
+func currentCommunitySchema(t *testing.T, root string) string {
+	t.Helper()
+	ledger, err := schemaauthority.ExpectedLedger(filepath.Join(root, "migrations"))
+	if err != nil || len(ledger) == 0 {
+		t.Fatalf("current installer migration inventory: %v", err)
+	}
+	return ledger[len(ledger)-1]
+}
 
 // Reexecute this test binary as the real verifier. No Docker, service, model,
 // production key, downloaded tool or published release participates in this test.
@@ -84,7 +97,7 @@ func TestCommunityInstallerSignedRelease(t *testing.T) {
 		}
 		payload["payload/deploy/"+name] = data
 	}
-	const schema = "000126_commercial_license_retirement"
+	schema := currentCommunitySchema(t, root)
 	packagePath := filepath.Join(dir, "release.tar.gz")
 	now := time.Now().UTC()
 	args := []string{"pack", "--key-id", "installer-test", "--private-key", privatePath,
@@ -123,7 +136,7 @@ directory = pathlib.Path(directory)
 module.Release(directory, directory / "release.tar.gz", pathlib.Path(verifier), pathlib.Path(keys), arch)
 print("signed_install_release=PASS")
 `
-	check := func(wantOK bool) {
+	check := func(t *testing.T, wantOK bool) {
 		t.Helper()
 		cmd := exec.Command(python, "-B", "-c", script, root, dir, helper, ringPath, runtime.GOARCH)
 		output, err := cmd.CombinedOutput()
@@ -131,11 +144,11 @@ print("signed_install_release=PASS")
 			t.Fatalf("verified release success=%v, want %v: %v\n%s", err == nil, wantOK, err, output)
 		}
 	}
-	t.Run("valid signed package and prepared payload", func(t *testing.T) { check(true) })
+	t.Run("valid signed package and prepared payload", func(t *testing.T) { check(t, true) })
 	t.Run("modified prepared payload", func(t *testing.T) {
 		name := "payload/install.json"
 		write(name, []byte("{}"))
-		check(false)
+		check(t, false)
 		write(name, payload[name])
 	})
 	t.Run("untrusted signing key", func(t *testing.T) {
@@ -146,7 +159,7 @@ print("signed_install_release=PASS")
 		text, _ := signing.EncodePublicKey(other)
 		wrongRing, _ := json.Marshal(map[string]string{"installer-test": text})
 		write("public-keys.json", wrongRing)
-		check(false)
+		check(t, false)
 		write("public-keys.json", ring)
 	})
 	t.Run("tampered package", func(t *testing.T) {
@@ -156,6 +169,6 @@ print("signed_install_release=PASS")
 		}
 		data[len(data)/2] ^= 0xff
 		write("release.tar.gz", data)
-		check(false)
+		check(t, false)
 	})
 }

@@ -76,12 +76,18 @@ func TestFirstCustomerBootstrapRejectsCredentialJournalStateIntegration(t *testi
 	var projectID int64
 	require.NoError(t, pool.QueryRow(t.Context(), `SELECT id FROM projects WHERE org_id=$1 AND slug='default'`, adminOrgID).Scan(&projectID))
 	const installationID = "xci_first_customer_credential"
+	// Isolate retained credential history on a disconnected installation. A live
+	// connection creates a manual communication policy whose earlier empty-state
+	// check would mask the journal refusal this fixture exercises.
 	_, err := pool.Exec(t.Context(), `INSERT INTO xinsight_connector_installations
 		(installation_id,org_id,project_id,x_deployment_id,invitation_sha256,event_scope,source_instance,source_binding_sha256,
 		desired_state,observed_state,consented_by)
-		VALUES($1,$2,$3,'xdep_first_customer',$4,'model.request.completed','first-customer-source',$5,'active','connected',$6)`,
+		VALUES($1,$2,$3,'xdep_first_customer',$4,'model.request.completed','first-customer-source',$5,'active','disconnected',$6)`,
 		installationID, adminOrgID, projectID, "sha256:"+strings.Repeat("a", 64), "sha256:"+strings.Repeat("b", 64), adminID)
 	require.NoError(t, err)
+	var policyCount int64
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT COUNT(*) FROM xinsight_communication_policies WHERE org_id=$1 AND project_id=$2`, adminOrgID, projectID).Scan(&policyCount))
+	require.Zero(t, policyCount, "credential-journal fixture must not be masked by a live communication policy")
 	_, err = pool.Exec(t.Context(), `INSERT INTO xinsight_connector_credential_operations
 		(operation_id,installation_id,org_id,project_id,kind,previous_token_sha256,replacement_token_enc,
 		replacement_token_sha256,request_enc,request_sha256)

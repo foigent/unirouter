@@ -1,5 +1,8 @@
 # Community release bootstrap
 
+Current 1.13.0 delivery requires the M127 maintenance/fresh-install contract. See
+[connection communication controls](../../docs/ops/XINSIGHT-COMMUNICATION.md) for manual defaults, migration and recovery. Earlier M126 candidate notes below remain historical.
+
 **Unreleased 1.11.0 candidate.** No official bootstrap JSON, public package,
 verifier hash or image set is published yet. Do not substitute the test fixtures
 for an official release. See [installation guidance](../../docs/community/install-linux.md)

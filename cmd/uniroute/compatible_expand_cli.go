@@ -68,8 +68,8 @@ func runCompatibleExpandCLI(ctx context.Context, args []string, cfg *config.Conf
 	if input.TargetVersion == "" {
 		input.TargetVersion = schemaauthority.CapabilityExpandHead
 	}
-	if input.TargetVersion == schemaauthority.CommercialLicenseRetirementHead {
-		return fmt.Errorf("M126 is maintenance-only: stop and retire old writers, then use migrate up")
+	if input.TargetVersion == schemaauthority.CommercialLicenseRetirementHead || input.TargetVersion == schemaauthority.XInsightCommunicationHead {
+		return fmt.Errorf("M126/M127 are maintenance-only: stop and retire old writers, then use migrate up")
 	}
 	heads := schemaauthority.SupportedSchemaHeads()
 	targetIndex := slices.Index(heads, input.TargetVersion)

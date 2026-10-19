@@ -327,6 +327,7 @@ func TestSchema64ResetContractFailsClosedOnAccessTriggerOrFKDriftIntegration(t *
 }
 
 var resetContentTables = []string{
+	"xinsight_communication_policies", "xinsight_communication_runs",
 	"execution_content_streams", "execution_source_content_scopes",
 	"execution_source_content_bindings", "execution_source_content_operations",
 	"execution_content_policies", "execution_content_manifests",
@@ -373,6 +374,8 @@ func TestApplyRefusesCurrentContentAndPreservesPostgresAndRedis(t *testing.T) {
 				require.NoError(t, err)
 				_, err = pool.Exec(ctx, `INSERT INTO execution_content_health(org_id,project_id,reason,detail) VALUES($1,$2,'storage_unavailable',convert_to('{"retained":true}','UTF8'))`, org, project)
 				require.NoError(t, err)
+				_, err = pool.Exec(ctx, `INSERT INTO xinsight_communication_policies(org_id,project_id,automatic_enabled,cadence_ms,last_code) VALUES($1,$2,FALSE,60000,'retained_manual')`, org, project)
+				require.NoError(t, err)
 			}
 			server := miniredis.RunT(t)
 			client := redis.NewClient(&redis.Options{Addr: server.Addr()})
@@ -394,7 +397,7 @@ func TestApplyRefusesCurrentContentAndPreservesPostgresAndRedis(t *testing.T) {
 			contentBefore := digests()
 			target := resetplan.TargetIdentity{RuntimeVersion: "1.4.1", RuntimeCommit: strings.Repeat("a", 40), SourceTree: strings.Repeat("b", 40)}
 			ledger := resetArtifactSchemaLedger(t)
-			require.Equal(t, schemaauthority.CommercialLicenseRetirementHead, before.MigrationVersions[len(before.MigrationVersions)-1])
+			require.Equal(t, schemaauthority.LatestSupportedMigration, before.MigrationVersions[len(before.MigrationVersions)-1])
 			plan, err := Preview(ctx, pool, client, ledger, target, "source-old", "source-new", time.Unix(1, 0))
 			require.NoError(t, err)
 			require.False(t, plan.ScopeComplete)

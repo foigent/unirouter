@@ -18,6 +18,7 @@ This section mixes governing documents and dated evidence references. Each file 
 
 | File | Role |
 |------|------|
+| `docs/ops/XINSIGHT-COMMUNICATION.md` | 1.13.0/M127 connection communication controls, bounded initialization, maintenance and recovery; Local contract, no Target claim |
 | `docs/PRD-Phase8.md` | Active forward product boundary: UniRouter/X-Insight/Tool Gateway/MCP Gateway/shared-protocol ownership, UI exposure and non-goals |
 | `docs/ops/PRD8-BOUNDARY-MATRIX.md` | Authoritative P7-F01–F19 forward disposition; explicitly not implementation-migration evidence |
 | `docs/planning/PRD8-IMPLEMENTATION-PLAN.md` | Current dependency plan and exact stop gate; Local batches through ORG-2/FIN-3 plus bounded runtime release/authorization are complete, ORG-3/FIN-4 require real customer targets |

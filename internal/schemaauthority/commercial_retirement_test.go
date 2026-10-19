@@ -10,6 +10,7 @@ func TestCommercialRetirementIsNotARollingBridge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	artifact = artifact[:len(artifact)-1] // This test remains bound to the historical M126 artifact.
 	prior := artifact[:len(artifact)-1]
 	if prior[len(prior)-1] != XInsightCredentialExpandHead {
 		t.Fatal("unexpected predecessor")

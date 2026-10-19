@@ -32,11 +32,11 @@ import (
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
-// The current binary must serve on the exact M126 ledger while the predecessor
+// The current binary must serve on the exact current M127 ledger (the original gate name is retained) while the predecessor
 // A/B/C producer and existing C binding remain active. A test-owned ready row
 // joins a real file-store write to the authenticated HTTP body-read path.
 func TestActiveSourceM126MainStartupIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedThroughTestDB(t, schemaauthority.CommercialLicenseRetirementHead)
+	pool := testutil.SetupMigratedThroughTestDB(t, schemaauthority.XInsightCommunicationHead)
 	ctx := t.Context()
 	var org, project, key int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs(name,status,org_type) VALUES('M121 bridge','active','standard') RETURNING id`).Scan(&org))
@@ -197,7 +197,7 @@ VALUES($1,$2,$3,$4,1,$5,$6,1,1,$7,'ready',$8,$8,$9,$10,'m121-fixture',clock_time
 	require.Equal(t, body, readBody)
 	var head string
 	require.NoError(t, pool.QueryRow(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&head))
-	require.Equal(t, schemaauthority.CommercialLicenseRetirementHead, head, "startup must not expand the schema")
+	require.Equal(t, schemaauthority.XInsightCommunicationHead, head, "startup must not expand the schema")
 	var activeBinding bool
 	require.NoError(t, pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM execution_source_content_bindings WHERE api_key_id=$1 AND org_id=$2 AND project_id=$3)`, key, org, project).Scan(&activeBinding))
 	require.True(t, activeBinding)

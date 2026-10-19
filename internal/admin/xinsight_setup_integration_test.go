@@ -286,7 +286,15 @@ func TestXInsightNormalSetupCurrentRevisionReadOnlyStatusIntegration(t *testing.
 	xi.Custody.Settings = &xInsightSetupCustody{Mode: "disabled", RetentionSeconds: 86400, ProjectQuotaBytes: 1024, MaxItemBytes: 64}
 	xi.Receiving.ProfilesReceived = []string{}
 	f.handler.xInsightSetup.status = func(context.Context, string, string) ([]byte, error) { return json.Marshal(xi) }
+	store := xinsightconnector.NewCommunicationStore(f.pool, 1000, "", "")
+	f.handler.SetXInsightCommunication(store, nil)
+	probes := 0
+	f.handler.xInsightSetup.status = func(context.Context, string, string) ([]byte, error) { probes++; return json.Marshal(xi) }
 	read := func() xInsightSetupStatus {
+		observation, err := json.Marshal(xi)
+		require.NoError(t, err)
+		require.NoError(t, store.SavePeerObservation(t.Context(), cp2bInstallationID, observation))
+		t.Cleanup(func() { require.Zero(t, probes, "status GET never invokes the peer") })
 		w := f.human(t, "status", nil, f.handler.GetXInsightSetupStatus)
 		require.Equal(t, 200, w.Code, w.Body.String())
 		var value xInsightSetupStatus

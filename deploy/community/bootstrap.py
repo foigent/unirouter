@@ -19,7 +19,7 @@ import tarfile
 import urllib.parse
 import urllib.request
 
-SCHEMA = "000126_commercial_license_retirement"
+SCHEMA = "000127_xinsight_communication_policy"
 MAX_BOOTSTRAP = 32 * 1024
 MAX_MANIFEST = 128 * 1024
 MAX_SIGNATURE = 16 * 1024
@@ -153,7 +153,7 @@ class Bootstrap:
                 "Invalid release sequence.")
         require(isinstance(release["key_id"], str) and re.fullmatch(r"[A-Za-z0-9._-]{1,64}", release["key_id"]),
                 "Invalid signing key identifier.")
-        require(release["target_schema"] == SCHEMA, "This entry requires the M126 fresh-install contract.")
+        require(release["target_schema"] == SCHEMA, "This entry requires the M127 fresh-install contract.")
         exact_keys(value["assets"], ASSETS)
         for name, (_, maximum) in ASSETS.items():
             asset = value["assets"][name]

@@ -81,7 +81,7 @@ func runRuntimeGenerationCLI(ctx context.Context, args []string, cfg *config.Con
 	if schemaErr := schemaauthority.VerifyRuntimeLedger(ledger, actual); schemaErr != nil {
 		// The M126 artifact can withdraw and retire an exact M125 fleet. This
 		// exception never admits an ordinary runtime or a joining generation.
-		if !commercialRetirementControlAllowed(ledger, actual, cfg.RuntimeEnvironment, "inspect", nil) {
+		if !maintenancePredecessorControlAllowed(ledger, actual, cfg.RuntimeEnvironment, "inspect", nil) {
 			return schemaErr
 		}
 		after := plan.After
@@ -92,12 +92,12 @@ func runRuntimeGenerationCLI(ctx context.Context, args []string, cfg *config.Con
 			}
 			after = retained.After
 		}
-		if !commercialRetirementControlAllowed(ledger, actual, cfg.RuntimeEnvironment, args[0], after) {
+		if !maintenancePredecessorControlAllowed(ledger, actual, cfg.RuntimeEnvironment, args[0], after) {
 			return schemaErr
 		}
 	}
 	head := actual[len(actual)-1]
-	if head != schemaauthority.CapabilityExpandHead && head != schemaauthority.StreamCounterExpandHead && head != schemaauthority.SourceFactsExpandHead && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead && head != schemaauthority.ScopedContentExpandHead && head != schemaauthority.XInsightPolicyExpandHead && (head != schemaauthority.XInsightAdoptionExpandHead && head != schemaauthority.XInsightCredentialExpandHead && head != schemaauthority.CommercialLicenseRetirementHead) {
+	if head != schemaauthority.CapabilityExpandHead && head != schemaauthority.StreamCounterExpandHead && head != schemaauthority.SourceFactsExpandHead && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead && head != schemaauthority.ScopedContentExpandHead && head != schemaauthority.XInsightPolicyExpandHead && (head != schemaauthority.XInsightAdoptionExpandHead && head != schemaauthority.XInsightCredentialExpandHead && head != schemaauthority.CommercialLicenseRetirementHead && head != schemaauthority.XInsightCommunicationHead) {
 		return fmt.Errorf("runtime generation owner requires the exact expanded schema")
 	}
 	var result any
@@ -146,12 +146,15 @@ func readBoundedCLIJSON(r io.Reader, maximum int64, target any) error {
 	return d.Decode(target)
 }
 
-func commercialRetirementControlAllowed(artifact, actual []string, environment, command string, after []runtimegeneration.Identity) bool {
+func maintenancePredecessorControlAllowed(artifact, actual []string, environment, command string, after []runtimegeneration.Identity) bool {
 	if environment != "development" && environment != "test" {
 		return false
 	}
-	if len(artifact) < 2 || artifact[len(artifact)-1] != schemaauthority.CommercialLicenseRetirementHead ||
-		artifact[len(artifact)-2] != schemaauthority.XInsightCredentialExpandHead {
+	if len(artifact) < 2 {
+		return false
+	}
+	last, prior := artifact[len(artifact)-1], artifact[len(artifact)-2]
+	if !((last == schemaauthority.CommercialLicenseRetirementHead && prior == schemaauthority.XInsightCredentialExpandHead) || (last == schemaauthority.XInsightCommunicationHead && prior == schemaauthority.CommercialLicenseRetirementHead)) {
 		return false
 	}
 	if _, err := schemaauthority.RuntimeLedgers(artifact); err != nil {

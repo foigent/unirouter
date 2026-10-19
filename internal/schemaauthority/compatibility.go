@@ -12,6 +12,13 @@ func RuntimeLedgers(artifact []string) ([][]string, error) {
 		return nil, err
 	}
 	end := len(artifact)
+	if end >= 15 && artifact[end-1] == XInsightCommunicationHead && artifact[end-2] == CommercialLicenseRetirementHead {
+		if _, err := RuntimeLedgers(artifact[:end-1]); err != nil {
+			return nil, err
+		}
+		// M127 is a maintenance boundary: an old writer cannot honor manual intent.
+		return [][]string{slices.Clone(artifact)}, nil
+	}
 	if end >= 14 && artifact[end-1] == CommercialLicenseRetirementHead && artifact[end-2] == XInsightCredentialExpandHead {
 		if _, err := RuntimeLedgers(artifact[:end-1]); err != nil {
 			return nil, err

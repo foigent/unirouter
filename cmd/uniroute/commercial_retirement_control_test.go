@@ -10,19 +10,36 @@ import (
 func TestCommercialRetirementControlRejectsExpansionAndOtherSchemas(t *testing.T) {
 	artifact, err := schemaauthority.ExpectedLedger("../../migrations")
 	require.NoError(t, err)
+	artifact = artifact[:len(artifact)-1] // Exact historical M126 artifact, not the current head.
 	predecessor := artifact[:len(artifact)-1]
 	empty := []runtimegeneration.Identity{}
 	for _, command := range []string{"inspect", "read", "prepare", "complete", "stop-check", "stop-apply"} {
-		require.True(t, commercialRetirementControlAllowed(artifact, predecessor, "test", command, empty), command)
-		require.False(t, commercialRetirementControlAllowed(artifact, predecessor, "production", command, empty), command)
-		require.False(t, commercialRetirementControlAllowed(artifact, predecessor[1:], "test", command, empty), command)
-		require.False(t, commercialRetirementControlAllowed(artifact, artifact, "test", command, empty), command)
+		require.True(t, maintenancePredecessorControlAllowed(artifact, predecessor, "test", command, empty), command)
+		require.False(t, maintenancePredecessorControlAllowed(artifact, predecessor, "production", command, empty), command)
+		require.False(t, maintenancePredecessorControlAllowed(artifact, predecessor[1:], "test", command, empty), command)
+		require.False(t, maintenancePredecessorControlAllowed(artifact, artifact, "test", command, empty), command)
 	}
 	for _, command := range []string{"prepare", "complete"} {
-		require.False(t, commercialRetirementControlAllowed(artifact, predecessor, "test", command, nil), command)
-		require.False(t, commercialRetirementControlAllowed(artifact, predecessor, "test", command, []runtimegeneration.Identity{{Instance: "any"}}), command)
+		require.False(t, maintenancePredecessorControlAllowed(artifact, predecessor, "test", command, nil), command)
+		require.False(t, maintenancePredecessorControlAllowed(artifact, predecessor, "test", command, []runtimegeneration.Identity{{Instance: "any"}}), command)
 	}
 	for _, command := range []string{"serve", "register", "expand", "unknown"} {
-		require.False(t, commercialRetirementControlAllowed(artifact, predecessor, "test", command, empty), command)
+		require.False(t, maintenancePredecessorControlAllowed(artifact, predecessor, "test", command, empty), command)
 	}
+}
+
+func TestCommunicationMaintenanceCarrierRejectsExpansionAndOtherSchemas(t *testing.T) {
+	artifact, err := schemaauthority.ExpectedLedger("../../migrations")
+	require.NoError(t, err)
+	prior := artifact[:len(artifact)-1]
+	require.Equal(t, schemaauthority.CommercialLicenseRetirementHead, prior[len(prior)-1])
+	for _, command := range []string{"inspect", "read", "stop-check", "stop-apply", "prepare", "complete"} {
+		require.True(t, maintenancePredecessorControlAllowed(artifact, prior, "test", command, []runtimegeneration.Identity{}))
+		require.False(t, maintenancePredecessorControlAllowed(artifact, prior, "production", command, []runtimegeneration.Identity{}))
+		require.False(t, maintenancePredecessorControlAllowed(artifact, prior[1:], "test", command, []runtimegeneration.Identity{}))
+	}
+	for _, command := range []string{"register", "expand", "serve", "unknown"} {
+		require.False(t, maintenancePredecessorControlAllowed(artifact, prior, "test", command, nil))
+	}
+	require.False(t, maintenancePredecessorControlAllowed(artifact, prior, "test", "prepare", []runtimegeneration.Identity{{Instance: "any"}}))
 }

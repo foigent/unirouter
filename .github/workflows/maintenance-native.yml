@@ -1,4 +1,4 @@
-name: Commercial License Maintenance Acceptance
+name: Maintenance and Restore Acceptance
 
 on:
   pull_request:
@@ -6,6 +6,7 @@ on:
     paths:
       - .github/workflows/maintenance-native.yml
       - .github/tests/maintenance-native.py
+      - .github/tests/test-maintenance-native.py
       - scripts/runtime-generation-retire.py
       - scripts/runtime-ingress.py
       - scripts/internal-target-rollout.py
@@ -15,6 +16,7 @@ on:
       - internal/schemaauthority/**
       - cmd/uniroute/runtime_generation_cli.go
       - migrations/000126_commercial_license_retirement.up.sql
+      - migrations/000127_xinsight_communication_policy.up.sql
       - Dockerfile
       - frontend/Dockerfile
       - docker-compose.yml
@@ -32,7 +34,7 @@ concurrency:
 
 jobs:
   linux-maintenance:
-    name: M125 to M126 Maintenance (synthetic)
+    name: M125 to M126 to M127 Maintenance (synthetic)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -54,6 +56,9 @@ jobs:
         with:
           python-version: '3.10'
 
+      - name: Check maintenance transition selection offline
+        run: python3 -I -B .github/tests/test-maintenance-native.py
+
       - name: Test actual maintenance and separate backup restore
         env:
           EXPECTED_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -63,14 +68,28 @@ jobs:
           test "$RUNNER_ENVIRONMENT" = github-hosted
           test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
           git cat-file -e 59c47b852b7372951c5c49b0e6b23df8c83817b9^{commit}
+          git cat-file -e 55983609c9a4f37072c4eeb2427364841bc1228b^{commit}
           sudo env PATH="$PATH" GITHUB_ACTIONS=true \
             RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" RUNNER_TEMP="$RUNNER_TEMP" \
             python3 -B .github/tests/maintenance-native.py \
             --expected-commit "$EXPECTED_COMMIT" \
             --report "$RUNNER_TEMP/ur-maintenance-native-report.json"
 
-      - name: Retain only allowlisted acceptance facts
+      - name: Check acceptance report size
+        id: report_size
         if: always()
+        shell: bash
+        run: |
+          python3 -I -B - <<'PYBOUND'
+          import os
+          from pathlib import Path
+          path = Path(os.environ['RUNNER_TEMP']) / 'ur-maintenance-native-report.json'
+          if path.is_symlink() or (path.exists() and (not path.is_file() or path.stat().st_size > 1024 * 1024)):
+              raise SystemExit('Retain the complete allowlisted report, at most 1 MiB; never truncate it.')
+          PYBOUND
+
+      - name: Retain only allowlisted acceptance facts
+        if: ${{ always() && steps.report_size.outcome == 'success' }}
         uses: actions/upload-artifact@v7
         with:
           name: maintenance-native-${{ github.event.pull_request.head.sha || github.sha }}

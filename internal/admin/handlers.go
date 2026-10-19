@@ -97,6 +97,8 @@ type Handler struct {
 	xInsightCredentialJournalMu  sync.RWMutex
 	xInsightCredentialJournal    *xinsightconnector.PostgresPhaseJournal
 	xInsightSetup                *xInsightSetupRuntime
+	xInsightCommunication        *xinsightconnector.CommunicationStore
+	xInsightCommunicationOnce    xInsightCommunicationOnce
 	modelAuthorizationEvaluator  *modelauthz.Evaluator
 	runtimeChangeManager         *runtimechange.Manager
 	deploymentLifecycleManager   deploymentLifecycleApplication

@@ -52,6 +52,7 @@ export interface SetupStatus {
   state: SetupState; configuration_ready: boolean;
   purpose_status: { policy_manage: string; source_enroll: string };
   ur_policy_status: { state: 'pending' | 'effective' | 'blocked'; policy_ref: string; policy_version: string; version_vector: string };
+  xi_peer_state?: 'unknown' | 'last_observed'; xi_observed_at?: string;
   xi: SetupXIStatus | null; issues: SetupIssue[];
   credential?: CredentialLocalStatus;
 }

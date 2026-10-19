@@ -134,7 +134,7 @@ func RunThrough(ctx context.Context, pool *pgxpool.Pool, dir, ceiling string) er
 // RunExistingThrough is the formal historical restore continuation. It cannot
 // bootstrap an empty DB or enter another active fresh installation.
 func RunExistingThrough(ctx context.Context, pool *pgxpool.Pool, dir, ceiling string) error {
-	return run(ctx, pool, dir, runOptions{ceiling: ceiling, requireExactPrefix: true})
+	return run(ctx, pool, dir, runOptions{ceiling: ceiling, requireExactPrefix: true, maintenance: true})
 }
 
 // RunPublication applies the exact pending prefix authorized by one validated
@@ -303,7 +303,13 @@ func runOnConnection(ctx context.Context, conn *pgxpool.Conn, dir string, option
 		artifactVersions = append(artifactVersions, strings.TrimSuffix(file, ".up.sql"))
 	}
 	if applied[schemaauthority.CommercialLicenseRetirementHead] {
-		if err := schemaauthority.VerifyRuntimeLedger(artifactVersions, appliedVersions); err != nil {
+		var err error
+		if options.maintenance || options.fresh != nil {
+			err = validateExactLedgerPrefix(appliedVersions, artifactVersions, appliedVersions[len(appliedVersions)-1])
+		} else {
+			err = schemaauthority.VerifyRuntimeLedger(artifactVersions, appliedVersions)
+		}
+		if err != nil {
 			return fmt.Errorf("retired-license schema must have its complete artifact ledger: %w", err)
 		}
 	}
@@ -331,8 +337,8 @@ func runOnConnection(ctx context.Context, conn *pgxpool.Conn, dir string, option
 	}
 	if options.runtimeBridge {
 		for _, version := range pending {
-			if version == schemaauthority.CommercialLicenseRetirementHead {
-				return fmt.Errorf("M126 requires explicit maintenance migration; ordinary startup does not apply it")
+			if version == schemaauthority.CommercialLicenseRetirementHead || version == schemaauthority.XInsightCommunicationHead {
+				return fmt.Errorf("M126/M127 require explicit maintenance migration; ordinary startup does not apply them")
 			}
 		}
 		options.scopeSet = true
@@ -365,15 +371,22 @@ func runOnConnection(ctx context.Context, conn *pgxpool.Conn, dir string, option
 	if err != nil {
 		return err
 	}
+	plannedVersions := append([]string(nil), appliedVersions...)
 	for _, version := range allowed {
+		if version == schemaauthority.XInsightCommunicationHead {
+			if (!options.maintenance && !(options.fresh != nil && options.freshExpand == version)) || len(plannedVersions) == 0 || plannedVersions[len(plannedVersions)-1] != schemaauthority.CommercialLicenseRetirementHead {
+				return fmt.Errorf("M127 requires exact M126 and an explicit maintenance/fresh owner")
+			}
+		}
 		if version == schemaauthority.CommercialLicenseRetirementHead {
-			if err := validateCommercialRetirement(appliedVersions, artifactVersions, options.maintenance, options.fresh != nil && options.freshExpand == version); err != nil {
+			if err := validateCommercialRetirement(plannedVersions, artifactVersions, options.maintenance, options.fresh != nil && options.freshExpand == version); err != nil {
 				return err
 			}
 		}
 		if expandFiles[version] && (options.expand == nil || version != options.expand.Version) && (options.fresh == nil || version != options.freshExpand) {
 			return fmt.Errorf("pending compatible expansion %s requires explicit fleet preflight", version)
 		}
+		plannedVersions = append(plannedVersions, version)
 	}
 	if options.expand != nil {
 		if len(allowed) != 1 || allowed[0] != options.expand.Version || !expandFiles[allowed[0]] {
@@ -685,6 +698,9 @@ func migrationTransactionBody(sqlContent string) string {
 }
 
 func validateCommercialRetirement(applied, artifact []string, maintenance, fresh bool) error {
+	if len(artifact) > 0 && artifact[len(artifact)-1] == schemaauthority.XInsightCommunicationHead {
+		artifact = artifact[:len(artifact)-1]
+	}
 	n := len(artifact)
 	if n < 2 || artifact[n-1] != schemaauthority.CommercialLicenseRetirementHead || artifact[n-2] != schemaauthority.XInsightCredentialExpandHead {
 		return fmt.Errorf("M126 requires an exact M125 predecessor artifact")

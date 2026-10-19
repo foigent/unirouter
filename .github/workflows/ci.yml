@@ -345,11 +345,21 @@ jobs:
         # admin and other untagged feature tests.
         run: bash scripts/test-backend-integration.sh
       
+      - name: Check complete coverage artifact size
+        run: |
+          python3 -I -B - <<'PYBOUND'
+          from pathlib import Path
+          path = Path('coverage.out')
+          if path.is_symlink() or not path.is_file() or path.stat().st_size > 64 * 1024 * 1024:
+              raise SystemExit('Complete coverage artifact must be a regular file at most 64 MiB; never truncate it.')
+          PYBOUND
+
       - name: Upload coverage
         uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage.out
+          retention-days: 90
 
       - name: Save shared Go cache from trusted main dispatch
         if: >-
