@@ -413,6 +413,9 @@ class LocalInputTests(unittest.TestCase):
             def fail(*args): reference.require(False, 'DO_NOT_RETAIN /private/path https://signed.example/?secret=x')
             with patch.dict(os.environ, env, clear=True), patch.object(sys, 'argv', [H.__file__]), \
                  patch.object(H, 'initialize_guard', side_effect=initialize), \
+                 patch.object(H, 'frontend_input_preflight', return_value=None), \
+                 patch.object(H, 'prepare_source_inputs', return_value=None), \
+                 patch.object(H, 'prepare_backend_origin', return_value=None), \
                  patch.object(H, 'module', side_effect=lambda name, path: guard if name == 'accepted_byte_guards' else None), \
                  patch.object(H, 'GitHub', side_effect=lambda token, guard: client(token, transport)), \
                  patch.object(H, 'build', side_effect=fail):
@@ -601,6 +604,110 @@ class LocalInputTests(unittest.TestCase):
         self.assertNotIn('PATCH', literals); self.assertNotIn('DELETE', literals)
         self.assertNotIn('PUT', literals)
         self.assertNotIn('publish', literals)
+
+
+class ActualFrontendBindingTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.originals = {}
+        fixed = H.ROOT/('.byte-source-'+H.PRODUCT[:8])
+        for name in ('package.json', 'package-lock.json'):
+            if fixed.is_dir():
+                body = H.regular(fixed/'frontend'/name, H.MIB)
+            else:
+                # Native producer has the exact fixed checkout; ordinary CI has
+                # full history. Neither path downloads or invents source inputs.
+                env = dict(os.environ, GIT_NO_LAZY_FETCH='1', GIT_TERMINAL_PROMPT='0')
+                result = subprocess.run(['git', '-C', str(H.ROOT), 'show',
+                                         H.PRODUCT+':frontend/'+name], env=env,
+                                        capture_output=True, check=True)
+                body = result.stdout
+            cls.originals[name] = body
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='ur-real-observer-binding-')
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.source = self.root/'fixed-source'
+        for name, body in self.originals.items():
+            H.write_new(self.source/'frontend'/name, body)
+        for name in ('frontend-membership-observer.mjs', 'community-source-evidence.py'):
+            H.write_new(self.root/'.github/tests'/name, (HERE/name).read_bytes())
+
+    def check(self):
+        return H.frontend_input_preflight(self.root, self.source)
+
+    def test_actual_fixed_source_and_real_cross_file_bindings_pass(self):
+        value = self.check()
+        self.assertEqual(value['source_commit'], H.PRODUCT)
+        self.assertEqual(value['original_file_sha256'],
+                         {name: H.sha(body) for name, body in self.originals.items()})
+
+    def test_native_fixed_checkout_path_uses_actual_originals(self):
+        for name, body in self.originals.items():
+            H.write_new(self.root/('.byte-source-'+H.PRODUCT[:8])/'frontend'/name, body)
+        self.assertEqual(H.frontend_input_preflight(self.root), self.check())
+
+    def test_each_real_original_tamper_rejected(self):
+        for name, body in self.originals.items():
+            with self.subTest(name=name):
+                path = self.source/'frontend'/name
+                path.write_bytes(body+b' ')
+                with self.assertRaisesRegex(H.Stop, 'frontend_original_input_identity'): self.check()
+                path.write_bytes(body)
+
+    def test_symlink_original_rejected(self):
+        path = self.source/'frontend/package.json'
+        copy = self.root/'original.json'; H.write_new(copy, path.read_bytes())
+        path.unlink(); path.symlink_to(copy)
+        with self.assertRaisesRegex(H.Stop, 'regular_file_limit'): self.check()
+
+    def test_rehashed_observer_with_stale_source_is_still_rejected(self):
+        path = self.root/'.github/tests/frontend-membership-observer.mjs'
+        path.write_text(path.read_text().replace("const sourceCommit = '"+H.PRODUCT,
+                                               "const sourceCommit = '"+'b'*40))
+        with patch.dict(H.BOUND, {'frontend-membership-observer.mjs': H.sha(path.read_bytes())}):
+            with self.assertRaisesRegex(H.Stop, 'frontend_observer_source'): self.check()
+
+    def test_rehashed_observer_with_wrong_original_pin_is_still_rejected(self):
+        path = self.root/'.github/tests/frontend-membership-observer.mjs'
+        current = H.sha(self.originals['package.json'])
+        self.assertEqual(path.read_text().count(current), 1)
+        path.write_text(path.read_text().replace(current, '0'*64))
+        with patch.dict(H.BOUND, {'frontend-membership-observer.mjs': H.sha(path.read_bytes())}):
+            with self.assertRaisesRegex(H.Stop, 'frontend_original_input_identity'): self.check()
+
+    def test_rehashed_helper_with_conflicting_source_is_still_rejected(self):
+        path = self.root/'.github/tests/community-source-evidence.py'
+        self.assertIn(H.PRODUCT, path.read_text())
+        path.write_text(path.read_text().replace(H.PRODUCT, 'b'*40))
+        with patch.dict(H.BOUND, {'community-source-evidence.py': H.sha(path.read_bytes())}):
+            with self.assertRaisesRegex(H.Stop, 'frontend_helper_binding'): self.check()
+
+    def test_rehashed_duplicate_observer_source_binding_rejected(self):
+        path = self.root/'.github/tests/frontend-membership-observer.mjs'
+        path.write_text(path.read_text()+"\nconst sourceCommit = '"+H.PRODUCT+"';\n")
+        with patch.dict(H.BOUND, {'frontend-membership-observer.mjs': H.sha(path.read_bytes())}):
+            with self.assertRaisesRegex(H.Stop, 'frontend_observer_binding'): self.check()
+
+    def test_failed_preflight_precedes_work_tools_and_remote_writes(self):
+        event = self.root/'event.json'; H.write_new(event, b'{}')
+        env = {'RUNNER_TEMP': str(self.root), 'GITHUB_RUN_ID': '77',
+               'GITHUB_EVENT_PATH': str(event), 'GITHUB_TOKEN': 'SYNTHETIC_UNUSED'}
+        (self.source/'frontend/package.json').write_bytes(self.originals['package.json']+b' ')
+        actual_preflight = H.frontend_input_preflight
+        with patch.dict(os.environ, env, clear=True), patch.object(sys, 'argv', [H.__file__]), \
+             patch.object(H, 'runtime_identity', return_value=PRODUCER), \
+             patch.object(H, 'bound_inputs', return_value=('ring', {})), \
+             patch.object(H, 'frontend_input_preflight', side_effect=lambda: actual_preflight(self.root, self.source)), \
+             patch.object(H, 'module', side_effect=AssertionError('tool loading forbidden')), \
+             patch.object(H, 'initialize_guard', side_effect=AssertionError('Docker forbidden')), \
+             patch.object(H, 'GitHub', side_effect=AssertionError('remote API forbidden')):
+            self.assertEqual(H.main(), 1)
+        self.assertFalse((self.root/'ur-byte-candidate-77-attempt1').exists())
+        terminal = H.load(H.regular(H.terminal_path(env), 64*1024))
+        self.assertEqual(terminal['error'], 'frontend_original_input_identity')
+        self.assertIsNone(terminal['draft_id']); self.assertEqual(terminal['assets'], [])
 
 
 if __name__ == '__main__':

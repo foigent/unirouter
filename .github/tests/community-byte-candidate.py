@@ -5,6 +5,7 @@ This is an internal validation producer, not an installer or release publisher.
 Existing image/source observers and their validators are imported byte-for-byte.
 No retry, resume, replacement, publication, registry push or signing operation.
 """
+import ast
 import base64
 import contextlib
 import gzip
@@ -39,9 +40,10 @@ PREFIX = '/repos/' + REPO
 ROOT = Path(__file__).resolve().parents[2]
 INPUTS = ROOT / '.github/release-inputs'
 BOUND = {
+    'community-backend-reuse.py': '0a834c5ab5907b6a3266848a96f21eacd95a9d4da9de9d83e3ffcc7b445006f1',
     'community-image-candidate.py': 'd98b401204a82bedeb866ff4ca7e104cb8cac4f56872665cc8a293e838c252f2',
     'community-source-evidence.py': 'ce2cc04b391a17e40a33b0aa2139a9b6ef72fefd321f2780e5aa66435eceeefa',
-    'frontend-membership-observer.mjs': 'bc34e95b3a76c8a8f9a5c66f59845d63f53d237938e96ded84ab30039ee2d130',
+    'frontend-membership-observer.mjs': '58c94624f1617f6bbe9e19f12cde518c512c5fd9c89d1d0581a822c1fe041cb8',
     'component-notices.tar.gz': 'f0f166f98c90e164574d151999b71f0bac8f7ac9fe9ab89c93bd01cbdf269764',
     'community-public-keys.json': '96c91635460ddfb2a14aa1ea97d8445951730e9eb04a33cbdf4320141e61d63d',
 }
@@ -54,10 +56,12 @@ EXCEPTIONS = frozenset(('Stop', 'ValueError', 'KeyError', 'TypeError', 'FileNotF
     'TimeoutExpired', 'BrokenPipeError', 'JSONDecodeError', 'UnicodeDecodeError', 'SSLError', 'OtherException'))
 MODULE_ROLES = {'community-byte-candidate.py': 'byte_producer',
     'community-image-candidate.py': 'accepted_image_guard',
-    'community-source-evidence.py': 'accepted_source_observer'}
+    'community-source-evidence.py': 'accepted_source_observer',
+    'community-backend-reuse.py': 'accepted_backend_origin'}
 COMMAND_PHASES = frozenset((
     'producer checkout identity', 'local Docker environment', 'source commit', 'source tree',
     'export tracked source', 'one retained backend build', 'one retained frontend build',
+    'accepted backend archive load',
     'actual final frontend membership', 'source evidence exact stopped copy',
     'one offline Linux verifier build', 'backend stopped byte inventory', 'frontend stopped byte inventory',
     'backend native image save', 'frontend native image save', 'cleanup ownership',
@@ -221,6 +225,54 @@ def bound_inputs(root=ROOT):
             need((len(body), sha(body)) == (material['bytes'], material['sha256']),
                  'notice_body_binding')
     return base64.urlsafe_b64encode(ring).decode().rstrip('='), index
+
+
+def frontend_input_preflight(root=ROOT, source=None):
+    """Read actual fixed originals and shared observer identities before any side effect."""
+    source = source if source is not None else root/('.byte-source-'+PRODUCT[:8])
+    tests = root/'.github/tests'
+    observer = regular(tests/'frontend-membership-observer.mjs', 128*1024)
+    helper = regular(tests/'community-source-evidence.py', 128*1024)
+    need(sha(observer) == BOUND['frontend-membership-observer.mjs']
+         and sha(helper) == BOUND['community-source-evidence.py'], 'frontend_observer_identity')
+    fields = {}
+    for node in ast.parse(helper).body:
+        if not (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)):
+            continue
+        name = node.targets[0].id
+        if name not in ('SOURCE', 'ORIGINAL_PACKAGE_SHA', 'ORIGINAL_LOCK_SHA'):
+            continue
+        need(name not in fields, 'frontend_helper_binding')
+        if name == 'SOURCE':
+            value = node.value
+            need(isinstance(value, ast.Call) and isinstance(value.func, ast.Attribute)
+                 and isinstance(value.func.value, ast.Name) and value.func.value.id == 'json'
+                 and value.func.attr == 'loads' and len(value.args) == 1
+                 and not value.keywords, 'frontend_helper_binding')
+            fields[name] = load(ast.literal_eval(value.args[0]).encode())
+        else:
+            fields[name] = ast.literal_eval(node.value)
+    need(set(fields) == {'SOURCE', 'ORIGINAL_PACKAGE_SHA', 'ORIGINAL_LOCK_SHA'}
+         and fields['SOURCE']['commit'] == PRODUCT and fields['SOURCE']['tree'] == TREE,
+         'frontend_helper_binding')
+    text = observer.decode()
+    def binding(pattern):
+        matches = re.findall(pattern, text, flags=re.M)
+        need(len(matches) == 1, 'frontend_observer_binding')
+        return matches[0]
+    need(binding(r"^const sourceCommit = '([0-9a-f]{40})';$") == PRODUCT,
+         'frontend_observer_source')
+    hashes = {}
+    for filename, variable, field in (('package.json', 'originalPackageBody', 'ORIGINAL_PACKAGE_SHA'),
+                                      ('package-lock.json', 'lockBody', 'ORIGINAL_LOCK_SHA')):
+        body = regular(source/'frontend'/filename, MIB)
+        observed = binding(r"sha\("+variable+r"\) === '([0-9a-f]{64})'")
+        need(sha(body) == observed == fields[field], 'frontend_original_input_identity')
+        need(load(body)['version'] == fields['SOURCE']['version'], 'frontend_original_version')
+        hashes[filename] = sha(body)
+    return {'source_commit': PRODUCT, 'source_tree': TREE,
+            'observer_sha256': sha(observer), 'original_file_sha256': hashes}
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -814,10 +866,35 @@ def collect_frontend_membership(guard, helper, cid, data):
     return load(files['frontend/frontend-membership.json'])
 
 
-def build(guard, helper, ring, index, assets, data, retain):
+def prepare_source_inputs(guard):
     source = guard.source_export()
     need(guard.FIXED['source']['commit'] == PRODUCT and guard.FIXED['source']['tree'] == TREE, 'product_identity')
     back, front, derivation = derive_recipes(guard, source)
+    return source, back, front, derivation
+
+
+def prepare_backend_origin(guard, helper, api, assets, data, context, producer):
+    origin = module('accepted_backend_origin', Path(__file__).with_name('community-backend-reuse.py'))
+    try:
+        reuse = origin.prepare(api, guard, assets, data, guard.receipt['source_export'], regular(context[1], 65536))
+        cid, binary, report = inventory(guard, helper, 'backend', reuse['record']['config_id'], data)
+        origin.compare_inventory(report, reuse['report'])
+        need(file_fact(binary) == load(reuse['files']['backend-binary.json']), 'origin_backend_binary')
+        origin.fresh(api)  # Complete origin binding/audience recheck before any new draft write.
+    except origin.Stop as error:
+        raise Stop(str(error)) from None  # Origin reasons are closed constant codes only.
+    reuse.update(cid=cid, binary=binary, inventory=report)
+    write_new(data/'backend-origin.json', encoded({
+        'status': 'exact_backend_bytes_reused_from_accepted_failed_partial_origin',
+        'original_backend_build': reuse['record'], 'assembly_producer': producer,
+        'assembly_run': guard.run_id, 'original_failure_unchanged': True,
+        'backend_rebuilt_saved_or_recompressed': False,
+        'actual_load_inspection_stopped_inventory_and_anonymous_denial_verified': True}))
+    return reuse
+
+
+def build(guard, helper, ring, index, assets, data, retain, context, reuse):
+    source, back, front, derivation = context
     write_new(data/'recipe-derivation.json', encoded(derivation))
     for role, path in (('backend', back), ('frontend', front)):
         write_new(data/(role+'.Dockerfile'), regular(path, 65536))
@@ -831,7 +908,7 @@ def build(guard, helper, ring, index, assets, data, retain):
         'observer_bindings': BOUND, 'admission_sha256': os.environ['ADMISSION_SHA256'],
         'upstream_companions': 'references only; not pulled/rebuilt/rehosted by this workflow'}))
     bases = {role: guard.pull(role) for role in
-             ('backend-builder', 'frontend-builder', 'backend-runtime', 'frontend-runtime')}
+             ('backend-builder', 'frontend-builder', 'frontend-runtime')}
     go = bases['backend-builder']
     go_version = guard.tool('byte-go-version', go,
         'mkdir -p /tmp/telemetry; printf "off\\n" > /tmp/telemetry/mode; go version')
@@ -840,23 +917,26 @@ def build(guard, helper, ring, index, assets, data, retain):
     need(go_version == 'go version go1.25.12 linux/amd64'
          and node_version == ['v24.19.0', '11.17.0'], 'actual_build_tools')
     images = {}; inventories = {}; membership = None; buildinfo = None
-    # Exactly one backend and one complete production frontend build.
+    # Accepted backend bytes are imported unchanged; only the frontend is built.
     for role, recipe, context in (('backend', back, source), ('frontend', front, source/'frontend')):
-        iidfile = guard.work/(role+'.id')
-        command = ['build', '--platform', 'linux/amd64', '--file', str(recipe),
-                   '--tag', 'ur-byte-'+role+':'+guard.run_id, '--iidfile', str(iidfile)]
-        args = (['RUNTIME_VERSION=1.13.0', 'RUNTIME_COMMIT='+PRODUCT, 'RUNTIME_TREE='+TREE,
-                 'UNIROUTER_RELEASE_TRUST_MODE=release', 'UNIROUTER_UPGRADE_TRUST_BUNDLE_B64='+ring,
-                 'GOPROXY=https://proxy.golang.org,direct'] if role == 'backend' else
-                ['VITE_DEPLOY_ENV=production', 'VITE_APP_VERSION=1.13.0'])
-        for argument in args: command += ['--build-arg', argument]
-        guard.docker('one retained '+role+' build', *command, str(context))
-        image = regular(iidfile, 128).decode().strip()
+        if role == 'backend':
+            image = reuse['record']['config_id']
+        else:
+            iidfile = guard.work/(role+'.id')
+            command = ['build', '--platform', 'linux/amd64', '--file', str(recipe),
+                       '--tag', 'ur-byte-'+role+':'+guard.run_id, '--iidfile', str(iidfile)]
+            for argument in ['VITE_DEPLOY_ENV=production', 'VITE_APP_VERSION=1.13.0']:
+                command += ['--build-arg', argument]
+            guard.docker('one retained frontend build', *command, str(context))
+            image = regular(iidfile, 128).decode().strip()
         need(re.fullmatch('sha256:[0-9a-f]{64}', image), 'app_image_id')
         guard.inspect_image(role, image)
         layers = guard.FIXED['images'][role+'-runtime']['rootfs_diff_ids']
         need(guard.receipt['images'][role]['rootfs_diff_ids'][:len(layers)] == layers, 'app_base_layers')
-        cid, binary, report = inventory(guard, helper, role, image, data)
+        if role == 'backend':
+            cid, binary, report = reuse['cid'], reuse['binary'], reuse['inventory']
+        else:
+            cid, binary, report = inventory(guard, helper, role, image, data)
         inventories[role] = report
         # Check the notice archive actually included in each final image, not just build input.
         actual = guard.work/(role+'-included-notices.tar.gz')
@@ -883,7 +963,10 @@ def build(guard, helper, ring, index, assets, data, retain):
                      == (row['bytes'], row['sha256']), 'final_dist_membership')
             # Extra nginx stock files are recorded; they are not attributed to npm output.
         remaining = ASSET_LIMIT - sum(p.stat().st_size for p in assets.iterdir()) - 32*MIB
-        images[role] = saved_image(guard, role, image, assets, remaining)
+        if role == 'backend':
+            need(file_fact(assets/'backend-image.tar.gz') == reuse['saved_backend']['compressed'],
+                 'origin_backend_archive_changed')
+        images[role] = reuse['saved_backend'] if role == 'backend' else saved_image(guard, role, image, assets, remaining)
         write_new(data/(role+'-native-save.json'), encoded(images[role]))
         retain(assets/(role+'-image.tar.gz'))
     verifier(guard, helper, source, go, assets, data)
@@ -969,6 +1052,7 @@ def main():
         producer = runtime_identity(env, load(regular(Path(env['GITHUB_EVENT_PATH']), 2*MIB)))
         result['producer'] = producer
         ring, index = bound_inputs()
+        frontend_input_preflight()
         base = Path(env['RUNNER_TEMP']).resolve(); need(base.is_dir(), 'runner_temp')
         work = base/('ur-byte-candidate-'+env['GITHUB_RUN_ID']+'-attempt1'); work.mkdir(mode=0o700)
         assets = work/'assets'; assets.mkdir(mode=0o700)
@@ -981,18 +1065,24 @@ def main():
         initialize_guard(guard, work, env)
         api = GitHub(token, guard=guard.time_guard); token = None
         draft = Draft(api, work, producer, env['GITHUB_RUN_ID'])
+        draft.repository()
+        with contextlib.redirect_stdout(io.StringIO()):
+            context = prepare_source_inputs(guard)
+            reuse = prepare_backend_origin(guard, helper, api, assets, data, context, producer)
         draft.create()
         result['draft_id'] = draft.release['id']
         marker = work/MARKER; write_new(marker, b'UniRouter draft audience check; contains no build or credential data.\n')
         draft.upload(marker)
         # Prove the retention channel before spending the app build time.
         with contextlib.redirect_stdout(io.StringIO()):
-            build(guard, helper, ring, index, assets, data, draft.upload)
+            build(guard, helper, ring, index, assets, data, draft.upload, context, reuse)
         guard.receipt['status'] = 'built_candidate_with_unresolved_obligations'
         cleanup_attempted = True
         with contextlib.redirect_stdout(io.StringIO()): guard.cleanup()
         result['owned_cleanup_complete'] = all(r['removed_with_anonymous_volumes'] for r in guard.receipt['cleanup'])
         need(result['owned_cleanup_complete'], 'owned_cleanup_incomplete')
+        need(file_fact(assets/'backend-image.tar.gz') == reuse['saved_backend']['compressed'],
+             'origin_backend_archive_changed')
         write_new(data/'owned-cleanup.json', encoded(guard.receipt['cleanup']))
         write_new(data/'draft-pre-upload-observations.json', encoded({'effects': draft.effects,
             'api_observations': api.observations, 'tag': draft.tag,
@@ -1012,6 +1102,12 @@ def main():
         result['error'] = str(error) if isinstance(error, Stop) else type(error).__name__
         result['diagnostic'] = (draft.last_diagnostic if draft is not None and draft.last_diagnostic
                                 else failure_diagnostic(error, guard))
+        if guard is not None and work is not None:
+            try:
+                origin = module('accepted_backend_origin_diagnostic', Path(__file__).with_name('community-backend-reuse.py'))
+                result['controlled_build_diagnostic'] = origin.capture_build_diagnostic(guard, work/'data')
+            except Exception:
+                result['controlled_build_diagnostic'] = {'capture': 'capture_unavailable', 'original_failure_preserved': True}
     finally:
         if guard is not None and work is not None and guard.work is not None:
             try:
@@ -1032,6 +1128,7 @@ def main():
                     write_new(work/'data/partial-terminal.json', encoded({
                         'status': result['status'], 'error': result['error'],
                         'diagnostic': result.get('diagnostic'),
+                        'controlled_build_diagnostic': result.get('controlled_build_diagnostic'),
                         'cleanup_complete': result['owned_cleanup_complete'],
                         'remote_effects': draft.effects,
                         'command_outcomes': [{k: row.get(k) for k in
