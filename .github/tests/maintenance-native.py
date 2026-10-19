@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real M125/M126 maintenance acceptance on a disposable GitHub runner only.
+"""Real M125→M126→M127 maintenance acceptance on one disposable GitHub runner.
 
 Existing Artifact, migration, ingress and restore owners perform all mutations.
 Only authored assertions and immutable identities leave the synthetic fixture.
@@ -28,7 +28,9 @@ import urllib.request
 sys.dont_write_bytecode = True
 OLD_COMMIT = "59c47b852b7372951c5c49b0e6b23df8c83817b9"
 OLD_HEAD = "000125_xinsight_control_credential_lifecycle"
-NEW_HEAD = "000126_commercial_license_retirement"
+RETIREMENT_COMMIT = "55983609c9a4f37072c4eeb2427364841bc1228b"
+RETIREMENT_HEAD = "000126_commercial_license_retirement"
+NEW_HEAD = "000127_xinsight_communication_policy"
 TRIGGERS = {name + "_commercial_limit" for name in
             ("api_keys", "users", "projects", "access_credentials", "provider_connections")}
 
@@ -75,7 +77,8 @@ class Acceptance:
         require(self.run("read exact checkout", git + ["rev-parse", "HEAD"]).strip() == expected_commit,
                 "checkout differs from expected commit")
         self.sources = {}
-        for name, commit in (("old", OLD_COMMIT), ("new", expected_commit)):
+        for name, commit in (("old", OLD_COMMIT), ("new", RETIREMENT_COMMIT),
+                             ("successor", expected_commit)):
             source = root / (name + "-source")
             self.run("clone exact " + name + " source", git + ["clone", "--shared", "--no-checkout", checkout, source])
             self.run("checkout exact " + name + " source", ["git", "-C", source, "checkout", "--detach", commit])
@@ -99,6 +102,12 @@ class Acceptance:
         self.fresh.mkdir(mode=0o700)
         self.evidence = root / "maintenance-evidence"
         self.input = root / "maintenance.json"
+        self.old_head, self.new_head = OLD_HEAD, RETIREMENT_HEAD
+        self.stage = "m125-to-m126"
+        self.restore_database = "ur-maintenance-restore-postgres"
+        self.restore_backend = "ur-maintenance-restore-backend"
+        self.successor_overlay = root / "successor-runtime.yml"
+        self.result["transitions"] = []
 
     def run(self, label, command, *, data=None, env=None, ok=True, timeout=1800):
         self.phase = label
@@ -184,7 +193,8 @@ class Acceptance:
         require(code == 0, "formal storage preflight before builds failed")
         require(self.run("refuse existing fixture project", ["docker", "ps", "-aq", "--filter",
                     "label=com.docker.compose.project=" + self.project]).strip() == "", "fixture project exists")
-        for name in ("uniroute-api", "uniroute-api-canary", "uniroute-frontend", "uniroute-nginx", "uniroute-postgres", "uniroute-redis", "ur-maintenance-restore-postgres", "ur-maintenance-restore-backend"):
+        for name in ("uniroute-api", "uniroute-api-canary", "uniroute-frontend", "uniroute-nginx", "uniroute-postgres", "uniroute-redis", "ur-maintenance-restore-postgres", "ur-maintenance-restore-backend",
+                     "ur-maintenance-restore-postgres-m126", "ur-maintenance-restore-backend-m126"):
             require(self.rollout.inspect(name, missing_ok=True) is None, "fixture container name exists")
         for port in (8080, 8081, 13443):
             with socket.socket() as probe:
@@ -205,7 +215,7 @@ class Acceptance:
                      "--private-out", private, "--public-out", public])
             rings[name] = base64.urlsafe_b64encode(public.read_bytes()).decode().rstrip("=")
         self.keygen = keygen
-        for name in ("old", "new"):
+        for name in ("old", "new", "successor"):
             identity = self.sources[name]
             tag = "unirouter-maintenance/backend:" + name
             args = ["docker", "build", "-t", tag, "--label", "org.opencontainers.image.revision=" + identity["commit"],
@@ -219,13 +229,13 @@ class Acceptance:
                 args += ["--build-arg", key + "=" + value]
             self.run("build exact " + name + " release backend", args + [identity["directory"]])
             self.images[name] = tag
-        identity = self.sources["new"]
+        identity = self.sources["successor"]
         self.images["frontend"] = "unirouter-maintenance/frontend:new"
         self.run("build exact release frontend", ["docker", "build", "-t", self.images["frontend"],
                  "--label", "org.opencontainers.image.revision=" + identity["commit"],
                  "--label", "org.opencontainers.image.version=" + identity["version"],
                  "--label", "io.unirouter.component=frontend", "--build-arg", "VITE_DEPLOY_ENV=production",
-                 "--build-arg", "VITE_APP_VERSION=" + identity["version"], self.repo / "frontend"])
+                 "--build-arg", "VITE_APP_VERSION=" + identity["version"], Path(identity["directory"]) / "frontend"])
         for name, tag in (("postgres", "postgres:16-alpine"), ("redis", "redis:7-alpine"), ("nginx", "nginx:1.30.3-alpine")):
             self.run("pull fixture " + name, ["docker", "pull", tag])
             self.images[name] = tag
@@ -264,7 +274,8 @@ class Acceptance:
                   str(self.cert) + ":/etc/nginx/ssl/fullchain.pem:ro",
                   str(self.root / "loopback.key") + ":/etc/nginx/ssl/privkey.pem:ro"]
         private_write(self.tls_overlay, "services:\n  nginx:\n    ports: !override ['127.0.0.1:13443:443']\n    volumes: !override " + json.dumps(mounts) + "\n")
-        for name, overlay in (("old", self.old_overlay), ("new", self.new_overlay)):
+        for name, overlay in (("old", self.old_overlay), ("new", self.new_overlay),
+                              ("successor", self.successor_overlay)):
             identity = self.sources[name]
             common = {"DB_DSN": "postgres://uniroute:" + self.password + "@postgres:5432/uniroute?sslmode=disable",
                       "SKIP_MIGRATION": "true", "RUNTIME_ENVIRONMENT": "test", "RUNTIME_VERSION": identity["version"],
@@ -299,7 +310,7 @@ class Acceptance:
         return self.run(label, command + ["backend", "./uniroute", *args], env=self.compose_env(name), data=data, ok=ok)
 
     def sql(self, query, *, restored=False):
-        name = "ur-maintenance-restore-postgres" if restored else "uniroute-postgres"
+        name = self.restore_database if restored else "uniroute-postgres"
         return self.run("read fixture database facts", ["docker", "exec", name, "psql", "-X", "-At", "-U", "uniroute", "-d", "uniroute",
                         "-v", "ON_ERROR_STOP=1", "-c", query]).strip()
 
@@ -328,7 +339,7 @@ class Acceptance:
             return json.loads(response.read())
 
     def wait_ready(self, *, restored=False):
-        names = ("ur-maintenance-restore-backend",) if restored else ("uniroute-api", "uniroute-api-canary")
+        names = (self.restore_backend,) if restored else ("uniroute-api", "uniroute-api-canary")
         for name in names:
             deadline = time.monotonic() + 120
             while True:
@@ -416,7 +427,7 @@ class Acceptance:
         return json.loads(result) if ok else result
 
     def retire_and_migrate(self):
-        spec = {"format": "unirouter.internal-target-rollout.v1", "operation_id": "maintenance-native-retirement",
+        spec = {"format": "unirouter.internal-target-rollout.v1", "operation_id": "maintenance-native-" + self.stage,
                 "target": {"hostname": socket.gethostname(), "database_system_id": self.sql("SELECT system_identifier FROM pg_control_system()"),
                            "environment": "test", "project": self.project, "env_file": str(self.env_file), "overlay": str(self.old_overlay),
                            "tls_overlay": str(self.tls_overlay), "ingress_directory": str(self.membership), "nginx_container_id": self.nginx_id, "public_url": self.origin},
@@ -427,10 +438,14 @@ class Acceptance:
         with self.rollout.operation_locks(spec["target"]):
             pass
         before = self.facts(heartbeat=True)
-        code, output = self.backend("new", [], label="refuse ordinary automatic M126 migration", overrides={"SKIP_MIGRATION": "false"}, ok=False)
-        require(code != 0 and "M126 requires explicit maintenance migration" in output and self.facts(heartbeat=True) == before, "ordinary migration refusal is not proved")
+        code, output = self.backend("new", [], label="refuse ordinary automatic " + self.new_head + " migration", overrides={"SKIP_MIGRATION": "false"}, ok=False)
+        ordinary_denial = ("M126 requires explicit maintenance migration" if self.new_head == RETIREMENT_HEAD
+                           else "retired-license schema must have its complete artifact ledger")
+        require(code != 0 and ordinary_denial in output and self.facts(heartbeat=True) == before, "ordinary migration refusal is not proved")
         code, output = self.backend("new", ["migrate", "up"], label="refuse maintenance while old writers remain", ok=False)
-        require(code != 0 and "M126 requires stopped, retired writers and resolved ingress changes" in output and self.facts(heartbeat=True) == before,
+        unsafe_denial = ("M126 requires stopped, retired writers and resolved ingress changes"
+                         if self.new_head == RETIREMENT_HEAD else "M127 requires stopped retired writers")
+        require(code != 0 and unsafe_denial in output and self.facts(heartbeat=True) == before,
                 "unsafe-writer migration refusal is not proved")
         before_files = self.file_hashes(self.membership)
         resources = self.resource_ids()
@@ -485,29 +500,41 @@ class Acceptance:
                     "stale revision alone did not refuse without mutation")
             self.maintenance("apply", role)
         stopped = self.facts()
-        require(len(stopped["runtime_generations"]) == 2 and all(x["state"] == "stopped" and x["ingress_state"] == "absent" for x in stopped["runtime_generations"]), "old generation retirement differs")
+        expected_generations = 2 if self.new_head == RETIREMENT_HEAD else 4
+        require(len(self.backup_facts["runtime_generations"]) == expected_generations, "unexpected predecessor generation count")
+        require(len(stopped["runtime_generations"]) == expected_generations and all(x["state"] == "stopped" and x["ingress_state"] == "absent" for x in stopped["runtime_generations"]), "old generation retirement differs")
         self.passed("real NGINX withdrawal, clean process exit, exact removal and read-only retirement checks")
-        self.backend("new", ["migrate", "up"], label="apply explicit M126 maintenance migration")
+        self.backend("new", ["migrate", "up"], label="apply explicit " + self.new_head + " maintenance migration")
         migrated = self.facts()
-        self.m126coverage = migrated["execution_source_budget_coverage"]
-        require([x["version"] for x in sorted(migrated["schema_migrations"], key=lambda x: x["version"])] == self.old_ledger + [NEW_HEAD], "complete M126 ledger differs")
+        self.migrated_coverage = migrated["execution_source_budget_coverage"]
+        require([x["version"] for x in sorted(migrated["schema_migrations"], key=lambda x: x["version"])] == self.old_ledger + [self.new_head], "complete target ledger differs")
         require(not self.trigger_names(), "commercial triggers remain")
         for name in stopped:
             if name != "schema_migrations":
                 require(migrated[name] == stopped[name], "migration changed preserved " + name)
-        code, output = self.backend("old", [], label="refuse old Artifact on M126", ok=False)
+        code, output = self.backend("old", [], label="refuse old Artifact on " + self.new_head, ok=False)
         require(code != 0 and "Schema authority startup gate failed:" in output and self.facts() == migrated, "old Artifact schema refusal is not proved")
-        self.passed("M126 preserves history and financial certificate; old Artifact refuses admission")
-        self.run("start new exact M126 receivers", self.compose("new") + ["up", "-d", "--no-deps", "--pull", "never", "--no-build", "backend", "backend-canary"], env=self.compose_env("new"))
+        self.passed(self.new_head + " preserves history and financial certificate; old Artifact refuses admission")
+        self.run("start new exact " + self.new_head + " receivers", self.compose("new") + ["up", "-d", "--no-deps", "--pull", "never", "--no-build", "backend", "backend-canary"], env=self.compose_env("new"))
         self.wait_ready()
-        self.join("maintenance-native-new-both")
+        self.join("maintenance-native-" + self.stage + "-new-both")
+        login_count = int(self.sql("SELECT count(*) FROM audit_logs WHERE action='login'"))
         token = self.request("/api/v1/auth/login", data={"username": "admin", "password": self.admin_password})["token"]
         require(self.request("/api/v1/license", token=token).get("status") == "not_required", "new runtime still requires commercial License")
-        self.passed("new M126 fleet rejoins actual NGINX and permits administrator login without License")
+        deadline = time.monotonic() + 60
+        while self.sql("SELECT (SELECT count(*) FROM audit_logs WHERE action='login')=" + str(login_count + 1)
+                      + " AND NOT EXISTS(SELECT 1 FROM internal_outbox_events WHERE payload->>'action'='login')") != "t":
+            require(time.monotonic() < deadline, "new login audit materialization deadline")
+            time.sleep(1)
+        if self.new_head == NEW_HEAD:
+            require(self.sql("SELECT count(*) FROM xinsight_communication_policies") == "0"
+                    and self.sql("SELECT count(*) FROM xinsight_communication_runs") == "0",
+                    "empty connection fixture acquired communication intent or receipts")
+        self.passed("new " + self.new_head + " fleet rejoins actual NGINX and permits administrator login without License")
 
     def restore(self):
-        name = "ur-maintenance-restore-postgres"
-        pg_env = self.root / "restore-postgres.env"
+        name = self.restore_database
+        pg_env = self.root / ("restore-postgres-" + self.stage + ".env")
         private_write(pg_env, "POSTGRES_USER=uniroute\nPOSTGRES_DB=uniroute\nPOSTGRES_PASSWORD=" + self.password + "\n")
         network = self.inspect("uniroute-postgres")["NetworkSettings"]["Networks"]
         require(len(network) == 1, "fixture network is ambiguous")
@@ -530,9 +557,9 @@ class Acceptance:
                 != self.sql("SELECT system_identifier FROM pg_control_system()"),
                 "restore target shares the source database system")
         self.result["restore_target"] = "distinct_empty_database_after_tcp_readiness"
-        self.run("restore actual pre-M126 backup", ["docker", "exec", "-i", name, "pg_restore", "--exit-on-error", "-U", "uniroute", "-d", "uniroute"], data=(self.evidence / "before.dump").read_bytes())
+        self.run("restore actual pre-" + self.new_head + " backup", ["docker", "exec", "-i", name, "pg_restore", "--exit-on-error", "-U", "uniroute", "-d", "uniroute"], data=(self.evidence / "before.dump").read_bytes())
         restored = self.facts(restored=True, heartbeat=True)
-        require(restored == self.backup_facts, "restored M125 authoritative facts differ from backup")
+        require(restored == self.backup_facts, "restored predecessor authoritative facts differ from backup")
         source = Path(self.sources["old"]["directory"])
         old_coverage = restored["execution_source_budget_coverage"]
         old_streams = self.table("execution_content_streams", restored=True)
@@ -551,16 +578,49 @@ class Acceptance:
         env = config["services"]["backend"]["environment"]
         env["DB_DSN"] = "postgres://uniroute:" + self.password + "@" + name + ":5432/uniroute?sslmode=disable"
         env["RUNTIME_DEPLOYMENT_ROLE"] = "stable"
-        env_file = self.root / "restore-backend.env"
+        env_file = self.root / ("restore-backend-" + self.stage + ".env")
         require(all("\n" not in str(x) for x in env.values()), "restore environment contains newlines")
         private_write(env_file, "".join(k + "=" + str(v) + "\n" for k, v in env.items()))
-        self.run("start original Artifact only on restored database", ["docker", "run", "-d", "--name", "ur-maintenance-restore-backend",
+        self.run("start original Artifact only on restored database", ["docker", "run", "-d", "--name", self.restore_backend,
                  "--network", network, "--restart", "no", "--stop-timeout", "2100", "--env-file", env_file,
                  "--label", "io.unirouter.fixture=" + self.project, self.image_ids["old"]])
         self.wait_ready(restored=True)
-        require(self.sql("SELECT max(version) FROM schema_migrations", restored=True) == OLD_HEAD, "restored original Artifact changed schema")
-        require(self.table("execution_source_budget_coverage") == self.m126coverage, "restore fixture affected the migrated financial certificate")
+        require(self.sql("SELECT max(version) FROM schema_migrations", restored=True) == self.old_head, "restored original Artifact changed schema")
+        require(self.table("execution_source_budget_coverage") == self.migrated_coverage, "restore fixture affected the migrated financial certificate")
         self.passed("real backup restores separately through original rebase owner and admits the original Artifact")
+        self.result["transitions"].append({"original_schema": self.old_head, "migrated_schema": self.new_head,
+            "backup_sha256": self.result["backup_sha256"], "restore_database": self.restore_database,
+            "sources": {k: {f: self.sources[k][f] for f in ("commit", "tree", "version")} for k in ("old", "new")},
+            "status": "passed"})
+
+    def successor_transition(self):
+        # The first transition and independent M125 restore remain complete facts.
+        # Stop only that synthetic restored backend before the same host's next
+        # process-inventory proof; retain both databases and all evidence.
+        require(self.inspect(self.restore_backend)["Image"] == self.image_ids["old"], "restored backend identity changed")
+        self.run("stop this fixture's validated restored predecessor", ["docker", "stop", self.restore_backend])
+        require(not self.inspect(self.restore_backend)["State"]["Running"], "restored backend still running")
+        self.sources["old"], self.sources["new"] = self.sources["new"], self.sources["successor"]
+        self.images["old"], self.images["new"] = self.images["new"], self.images["successor"]
+        self.image_ids["old"], self.image_ids["new"] = self.image_ids["new"], self.image_ids["successor"]
+        self.old_overlay, self.new_overlay = self.new_overlay, self.successor_overlay
+        self.repo = Path(self.sources["new"]["directory"])
+        self.control = module("successor_maintenance_owner", self.repo / "scripts/runtime-generation-retire.py")
+        self.rollout = self.control.rollout
+        self.ingress = module("successor_fixture_ingress", self.repo / "scripts/runtime-ingress.py")
+        self.old_head, self.new_head = RETIREMENT_HEAD, NEW_HEAD
+        self.stage = "m126-to-m127"
+        self.evidence = self.root / "communication-maintenance-evidence"
+        self.input = self.root / "communication-maintenance.json"
+        self.restore_database = "ur-maintenance-restore-postgres-m126"
+        self.restore_backend = "ur-maintenance-restore-backend-m126"
+        self.old_ledger = sorted(p.name[:-7] for p in (Path(self.sources["old"]["directory"]) / "migrations").glob("*.up.sql"))
+        require(self.old_ledger[-1] == RETIREMENT_HEAD and not self.trigger_names(), "second transition lacks exact retired-license predecessor")
+        require(self.sql("SELECT max(version) FROM schema_migrations") == RETIREMENT_HEAD, "second transition database differs")
+        for name in ("old", "new"):
+            self.backend(name, ["runtime-generation", "support"], label="validate second transition " + name + " artifact")
+        self.retire_and_migrate()
+        self.restore()
 
     def file_hashes(self, root):
         return {str(p.relative_to(root)): digest(p.read_bytes()) for p in root.rglob("*") if p.is_file()}
@@ -576,6 +636,7 @@ class Acceptance:
         self.establish_m125()
         self.retire_and_migrate()
         self.restore()
+        self.successor_transition()
         self.result.update(status="passed", original_schema=OLD_HEAD, migrated_schema=NEW_HEAD)
 
 

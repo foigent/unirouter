@@ -17,9 +17,11 @@ import (
 )
 
 func TestCommercialRetirementCLIWithdrawalIntegration(t *testing.T) {
-	pool := testutil.SetupPreRetirementTestDB(t)
+	// Retain the named gate and all refusal/withdrawal assertions for the current adjacent maintenance pair.
+	pool := testutil.SetupMigratedThroughTestDB(t, schemaauthority.CommercialLicenseRetirementHead)
 	ctx := t.Context()
-	oldArtifact, err := testutil.PreRetirementLedger(t)
+	artifact, err := schemaauthority.ExpectedLedger(testutil.MigrationsDir(t))
+	oldArtifact := artifact[:len(artifact)-1]
 	require.NoError(t, err)
 	old := runtimegeneration.Identity{Instance: "uri_" + strings.Repeat("a", 32), Artifact: "sha256:" + strings.Repeat("b", 64)}
 	_, _, err = runtimegeneration.Renew(ctx, pool, old, runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads()), oldArtifact, false)
@@ -65,5 +67,5 @@ func TestCommercialRetirementCLIWithdrawalIntegration(t *testing.T) {
 	require.NoError(t, pool.QueryRow(ctx, `SELECT ingress_state FROM runtime_generations WHERE instance_id=$1`, old.Instance).Scan(&state))
 	require.Equal(t, "absent", state)
 	require.NoError(t, pool.QueryRow(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&head))
-	require.Equal(t, schemaauthority.XInsightCredentialExpandHead, head, "maintenance controller never applies migration")
+	require.Equal(t, schemaauthority.CommercialLicenseRetirementHead, head, "maintenance controller never applies migration")
 }

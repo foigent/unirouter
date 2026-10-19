@@ -98,7 +98,7 @@ jobs:
           def describe():
               return {'mode': 'offline_review_only', 'repository': REPOSITORY, 'source': SOURCE,
                       'candidate_run': 39004772237, 'draft_id': DRAFT, 'images': IMAGES,
-                      'permissions': {'contents': 'read', 'packages': 'write'},
+                      'permissions': {'contents': 'write', 'packages': 'write'},
                       'only_private_upload_and_authenticated_identity_verification': True,
                       'no_build_public_visibility_release_signing_install_or_container_run': True,
                       'no_credential_access_subprocess_or_filesystem_write_in_describe': True}

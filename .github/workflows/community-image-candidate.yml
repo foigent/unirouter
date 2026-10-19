@@ -51,8 +51,8 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: foigent/unirouter
-          ref: 3818ba9627d1bc44eb836036b8ae8904a7175e65
-          path: .image-source-3818
+          ref: 3815a584e78161b475a22d5f477a66d6869984c3
+          path: .image-source-3815a584
           persist-credentials: false
 
       - name: Produce bounded images and static evidence once

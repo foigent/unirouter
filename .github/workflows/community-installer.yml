@@ -65,8 +65,21 @@ jobs:
             --expected-commit "$EXPECTED_COMMIT" \
             --report "$RUNNER_TEMP/ur-community-native-report.json"
 
-      - name: Retain only allowlisted acceptance facts
+      - name: Check acceptance report size
+        id: report_size
         if: always()
+        shell: bash
+        run: |
+          python3 -I -B - <<'PYBOUND'
+          import os
+          from pathlib import Path
+          path = Path(os.environ['RUNNER_TEMP']) / 'ur-community-native-report.json'
+          if path.is_symlink() or (path.exists() and (not path.is_file() or path.stat().st_size > 1024 * 1024)):
+              raise SystemExit('Retain the complete allowlisted report, at most 1 MiB; never truncate it.')
+          PYBOUND
+
+      - name: Retain only allowlisted acceptance facts
+        if: ${{ always() && steps.report_size.outcome == 'success' }}
         uses: actions/upload-artifact@v7
         with:
           name: community-installer-${{ github.event.pull_request.head.sha || github.sha }}

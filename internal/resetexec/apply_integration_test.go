@@ -394,7 +394,7 @@ func TestApplyRefusesCurrentContentAndPreservesPostgresAndRedis(t *testing.T) {
 			contentBefore := digests()
 			target := resetplan.TargetIdentity{RuntimeVersion: "1.4.1", RuntimeCommit: strings.Repeat("a", 40), SourceTree: strings.Repeat("b", 40)}
 			ledger := resetArtifactSchemaLedger(t)
-			require.Equal(t, schemaauthority.CommercialLicenseRetirementHead, before.MigrationVersions[len(before.MigrationVersions)-1])
+			require.Equal(t, schemaauthority.LatestSupportedMigration, before.MigrationVersions[len(before.MigrationVersions)-1])
 			plan, err := Preview(ctx, pool, client, ledger, target, "source-old", "source-new", time.Unix(1, 0))
 			require.NoError(t, err)
 			require.False(t, plan.ScopeComplete)

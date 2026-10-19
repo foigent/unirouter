@@ -377,6 +377,20 @@ class FrontendEvidenceBoundaryTests(unittest.TestCase):
 
 
 class LocalInputTests(unittest.TestCase):
+    def test_notice_reuse_keeps_historical_observation_separate_from_current_product(self):
+        _, index = H.bound_inputs()
+        self.assertEqual(index['product_source']['commit'], H.PRODUCT)
+        self.assertNotEqual(index['observed_evidence_source']['commit'], H.PRODUCT)
+        reuse = index['dependency_material_reuse']
+        self.assertFalse(reuse['new_product_image_emission_observed'])
+        self.assertTrue(reuse['fresh_native_image_and_frontend_membership_required'])
+        self.assertEqual(reuse['baseline_notice_archive_sha256'], '1c82db604fe54e6a076723374e80cbf066b55d46b6880b6b630237324fb3913a')
+        for name in ('go.mod', 'go.sum'):
+            self.assertEqual(reuse['dependency_files'][name]['historical_sha256'], reuse['dependency_files'][name]['current_sha256'])
+        for name in ('frontend/package.json', 'frontend/package-lock.json'):
+            self.assertEqual(reuse['dependency_files'][name]['metadata_difference'], 'project version only')
+        self.assertFalse(index['complete_license_clearance'])
+
     def test_reused_guard_failure_reaches_partial_archive_and_saved_public_summary(self):
         reference = H.module('accepted_diagnostic_reference', HERE/'community-image-candidate.py')
         with tempfile.TemporaryDirectory() as tmp:
