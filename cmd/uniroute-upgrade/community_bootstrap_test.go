@@ -81,6 +81,7 @@ func TestCommunityBootstrapSignedPreparation(t *testing.T) {
 	} {
 		sources = append(sources, upgradebundle.Source{BundlePath: name, FilePath: write(name, raw)})
 	}
+	schema := currentCommunitySchema(t, root)
 	now := time.Now().UTC()
 	for _, expired := range []bool{false, true} {
 		name, created, expires := "release.tar.gz", now.Add(-time.Minute), now.Add(time.Hour)
@@ -90,8 +91,8 @@ func TestCommunityBootstrapSignedPreparation(t *testing.T) {
 		manifest, err := upgradebundle.CreateManifest(upgradebundle.ManifestOptions{
 			KeyID: "bootstrap-test", Version: "1.11.0", Commit: strings.Repeat("a", 40), ReleaseSequence: 1,
 			CreatedAt: created, ExpiresAt: expires, TargetOS: "linux", TargetArch: "amd64",
-			MinCurrentSequence: 0, MaxCurrentSequence: 0, MinCurrentSchema: "000126_commercial_license_retirement",
-			TargetSchema: "000126_commercial_license_retirement",
+			MinCurrentSequence: 0, MaxCurrentSequence: 0, MinCurrentSchema: schema,
+			TargetSchema: schema,
 		}, sources)
 		if err != nil {
 			t.Fatal(err)
