@@ -130,6 +130,19 @@ class RetirementHostProofTests(unittest.TestCase):
 
 
 class MaintenanceRetirementTests(unittest.TestCase):
+    def test_only_exact_adjacent_maintenance_ledgers_are_allowed(self):
+        m125 = "000125_xinsight_control_credential_lifecycle"
+        m126 = "000126_commercial_license_retirement"
+        m127 = "000127_xinsight_communication_policy"
+        for artifact in (["earlier", m125, m126], ["earlier", m125, m126, m127]):
+            retire.maintenance_schema_predecessor(artifact, artifact[:-1])
+            for actual in (artifact, artifact[:-2], artifact[:-2] + ["unknown"], artifact[1:-1]):
+                with self.assertRaises(RuntimeError):
+                    retire.maintenance_schema_predecessor(artifact, actual)
+        for artifact in ([], [m126], [m125, m127], [m126, "future"], [m127, "future"]):
+            with self.assertRaises(RuntimeError):
+                retire.maintenance_schema_predecessor(artifact, artifact[:-1])
+
     def fixture(self):
         op = object.__new__(retire.MaintenanceRetirement)
         op.target = {"environment": "test", "database_system_id": "123"}

@@ -37,8 +37,11 @@ silently regranting access.
 
 ## Upgrade and recovery
 
-M127 is a maintenance boundary. Use the existing **predecessor artifact's** runtime
-and ingress owners to withdraw and retire M126 writers, keep a restorable backup,
+M127 is a maintenance boundary. In development/test, the existing
+`runtime-generation-retire.py --maintenance` carrier accepts the exact M126→M127
+predecessor using the same withdrawal, stopped-process and ingress proofs.
+M125→M126 remains supported by its exact M126 artifact. Use the existing
+**predecessor artifact's** runtime and ingress owners to withdraw and retire M126 writers, keep a restorable backup,
 then use the new artifact's explicit migration owner. Ordinary runtime startup does
 not apply M127. Its complete ledger and runtime support requirements reject an old
 binary; do not bypass schema authority to roll back. The down migration deliberately
