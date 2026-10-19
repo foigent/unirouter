@@ -10,6 +10,8 @@ those build identities do not replace the product version.
 - Connection-scoped automatic communication controls, persisted cadence and bounded manual Sync once for the X-Insight connector. New connections start in manual mode; existing connections retain their configured cadence.
 - Truthful in-flight and peer-unknown status, durable one-shot receipts and M127 maintenance migration. Automatic pause preserves credentials, grants, cursors, local expiry and completed operation journals.
 
+- Preserve communication intent and run receipts during reset preview; reset apply remains refused even when these tables are empty.
+
 ### Upgrade
 - M127 requires the existing maintenance owner with stopped, retired writers. Old binaries cannot run on M127. Preserve the pre-M127 backup for rollback; do not discard manual settings or one-shot receipts. Fresh installers require the M127 release schema.
 

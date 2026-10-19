@@ -439,6 +439,44 @@ func TestXInsightCredentialJournalPreservesHistoryAndRefusesReset(t *testing.T) 
 	}
 }
 
+func TestXInsightCommunicationStatePreservesIntentAndRefusesReset(t *testing.T) {
+	for _, name := range []string{"xinsight_communication_policies", "xinsight_communication_runs"} {
+		for _, rows := range []int64{0, 1} {
+			t.Run(fmt.Sprintf("%s_rows_%d", name, rows), func(t *testing.T) {
+				if scope, action, reason := ClassifyTable(name); scope != ScopeReviewRequired || action != ActionPreserveAll || reason == "" {
+					t.Fatalf("communication state classification: %s %s %s", scope, action, reason)
+				}
+				snapshot := syntheticClassifiedSnapshot()
+				snapshot.Tables = append(snapshot.Tables, TableInventory{Name: name, RowCount: rows})
+				plan, err := Build(snapshot, testTarget(), "source-a", "source-b", time.Unix(0, 0))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if plan.ScopeComplete || plan.Summary.ReviewRequiredCount != 1 || plan.ActionAuthorized || plan.MutationPerformed || Validate(plan) == nil {
+					t.Fatalf("communication state entered reset authority: %+v", plan.Summary)
+				}
+				found := false
+				for _, table := range plan.Tables {
+					if table.Name == name {
+						found = true
+						if table.Action != ActionPreserveAll || table.ExpectedDeletedRows != 0 || table.ExpectedRetainedRows != rows {
+							t.Fatalf("communication state rows not retained: %+v", table)
+						}
+					}
+				}
+				if !found {
+					t.Fatal("communication state missing from reset preview")
+				}
+				for _, step := range plan.DeleteOrder {
+					if step.Table == name {
+						t.Fatalf("communication state entered deletion order: %s", step.Table)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestSourceFactsDataCannotEnterTheExistingResetErasureScope(t *testing.T) {
 	for _, name := range []string{"execution_source_acknowledgements", "execution_source_connections", "execution_source_credentials", "execution_source_facts", "execution_source_streams", "execution_source_budget_scopes", "execution_source_budget_definitions", "execution_source_budget_bindings", "execution_source_budget_binding_history", "execution_source_budget_coverage", "usage_finalization_journal"} {
 		t.Run(name, func(t *testing.T) {
