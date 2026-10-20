@@ -4,6 +4,12 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.14.0] - 2026-10-20
+
+### Added
+
+- Explicit non-expiring upgrade packages: `uniroute-upgrade pack --no-expiry` signs a v2 manifest with `expires_at: "never"`. Existing finite v1 packages retain their original expiry rules and canonical encoding. Old verifiers reject v2 packages; both the standalone verifier and backend must be upgraded for v2 installation and release recording. Database schema remains M127.
+
 ## [1.13.0] - 2026-10-19
 
 ### Added

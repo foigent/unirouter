@@ -62,6 +62,7 @@ Existing ADR register (preserve each file's own Accepted/Proposed status):
 - `docs/governance/adr/ADR-0001-prd4-plungein-ports.md`
 - `docs/governance/adr/ADR-0002-prd4-api-key-owner-usage.md`
 - `docs/governance/adr/ADR-0003-prd4-status-center-observability.md`
+- `docs/governance/adr/ADR-0004-explicit-nonexpiring-upgrade-packages.md` (Proposed; local candidate)
 
 ## API Compatibility And Versioning
 

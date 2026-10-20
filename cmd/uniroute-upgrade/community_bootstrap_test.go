@@ -83,14 +83,17 @@ func TestCommunityBootstrapSignedPreparation(t *testing.T) {
 	}
 	schema := currentCommunitySchema(t, root)
 	now := time.Now().UTC()
-	for _, expired := range []bool{false, true} {
+	for _, mode := range []string{"finite", "never", "expired"} {
 		name, created, expires := "release.tar.gz", now.Add(-time.Minute), now.Add(time.Hour)
-		if expired {
+		if mode == "expired" {
 			name, created, expires = "expired.tar.gz", now.Add(-2*time.Hour), now.Add(-time.Hour)
+		}
+		if mode == "never" {
+			name, expires = "never.tar.gz", time.Time{}
 		}
 		manifest, err := upgradebundle.CreateManifest(upgradebundle.ManifestOptions{
 			KeyID: "bootstrap-test", Version: "1.11.0", Commit: strings.Repeat("a", 40), ReleaseSequence: 1,
-			CreatedAt: created, ExpiresAt: expires, TargetOS: "linux", TargetArch: "amd64",
+			CreatedAt: created, ExpiresAt: expires, NoExpiry: mode == "never", TargetOS: "linux", TargetArch: "amd64",
 			MinCurrentSequence: 0, MaxCurrentSequence: 0, MinCurrentSchema: schema,
 			TargetSchema: schema,
 		}, sources)
@@ -116,6 +119,7 @@ def load(name,path):
 b=load('bootstrap',root/'deploy/community/bootstrap.py')
 installer=load('installer',root/'deploy/customer/install.py')
 for name, package, ring, key, want in [('valid','release.tar.gz','public-keys.json','bootstrap-test',True),
+    ('never','never.tar.gz','public-keys.json','bootstrap-test',True),
     ('expired','expired.tar.gz','public-keys.json','bootstrap-test',False),
     ('wrong-key','release.tar.gz','wrong-keys.json','bootstrap-test',False),
     ('wrong-id','release.tar.gz','public-keys.json','other-trusted-name',False)]:
@@ -137,7 +141,7 @@ for name, package, ring, key, want in [('valid','release.tar.gz','public-keys.js
             b.check_prepared(anchor,out)
             installer.Release(out,out/'release.tar.gz',out/'uniroute-upgrade',out/'public-keys.json','amd64')
             assert before=={str(p.relative_to(out)):p.read_bytes() for p in out.rglob('*') if p.is_file()}
-print('real_verifier_bootstrap=PASS; valid/expired/wrong-key/wrong-id; installer contract matched; no services')
+print('real_verifier_bootstrap=PASS; finite/never/expired/wrong-key/wrong-id; installer contract matched; no services')
 `
 	command := exec.Command(python, "-I", "-B", "-c", script, root, dir)
 	if output, err := command.CombinedOutput(); err != nil {

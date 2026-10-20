@@ -1,0 +1,47 @@
+name: Formal Community Release Acceptance
+run-name: UR 1.14.0 real public release consumer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ur-formal-community-release-consumer
+  cancel-in-progress: false
+
+jobs:
+  public-release-consumer:
+    if: github.repository == 'foigent/unirouter' && github.ref == 'refs/heads/main' && github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact reviewed workflow commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up supported Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+
+      - name: Refuse incomplete real release inputs before any consumer effect
+        run: python3 -I -B .github/tests/community-release-acceptance.py validate
+
+      - name: Consume exact real signed public release on this disposable runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          sudo env PATH="$PATH" GITHUB_ACTIONS=true \
+            RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            GITHUB_REF="$GITHUB_REF" GITHUB_SHA="$GITHUB_SHA" GITHUB_EVENT_NAME="$GITHUB_EVENT_NAME" \
+            GITHUB_WORKFLOW_REF="$GITHUB_WORKFLOW_REF" GITHUB_WORKSPACE="$GITHUB_WORKSPACE" \
+            GITHUB_RUN_ID="$GITHUB_RUN_ID" GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            python3 -I -B .github/tests/community-release-acceptance.py execute
+
+      # The complete allowlisted report is in the native job log. No new
+      # artifact/cache, real key, image build, registry login, publish or Target.

@@ -1,0 +1,203 @@
+{
+  "schema_version": "unirouter.formal-consumer-input.v1",
+  "state": "incomplete",
+  "immutable": {
+    "product": {
+      "commit": null,
+      "tree": null,
+      "version": "1.14.0",
+      "schema": "000127_xinsight_communication_policy"
+    },
+    "key_id": "ur-community-upgrade-20261011-a",
+    "public_ring": {
+      "size": 83,
+      "sha256": "96c91635460ddfb2a14aa1ea97d8445951730e9eb04a33cbdf4320141e61d63d"
+    },
+    "raw_public_fingerprint": "765f38f8a4a4f38bf7e94aa3236c28f74dccac56431ab3a1d035a880f6086116",
+    "bootstrap_script": {
+      "url": null,
+      "size": 23287,
+      "sha256": "054c51a671a9255fd3a587fc7897d51fff0525e2e4ae54bb3926ac2e44785e3f"
+    },
+    "verifier": {
+      "size": null,
+      "sha256": null
+    },
+    "native_acceptance_helper_sha256": "3ab6bb46a115fda87ddecc7e5ff2d546e1b3770638638d3da529ab1084d369be",
+    "images": {
+      "backend": null,
+      "frontend": null,
+      "postgres": "docker.io/library/postgres@sha256:1a66d744c1b459e13b05a8fca341da84cb63383e99ce262210efee5a319d4551",
+      "redis": "docker.io/library/redis@sha256:ca0acbb137c1dc3339c8b147a58fd6f42775d4599327b50e7b116c23de501af2",
+      "prometheus": "docker.io/prom/prometheus@sha256:3305cd2e483c13364c94ae4905368eb425c9fa804f8e523ee47d8bf4de9d87a2",
+      "grafana": "docker.io/grafana/grafana@sha256:a80bc3848cf5d4b2958ea25dbeb36fa9442ef4be8c73fe4bff11340307c32919"
+    },
+    "app_image_identities": [
+      {
+        "role": "backend",
+        "repository": "ghcr.io/foigent/unirouter-backend",
+        "tag": null,
+        "registry_digest_reference": null,
+        "config_id": null,
+        "diff_ids": null,
+        "native_archive_sha256": null,
+        "asset_id": null,
+        "operation": null
+      },
+      {
+        "role": "frontend",
+        "repository": "ghcr.io/foigent/unirouter-frontend",
+        "tag": null,
+        "registry_digest_reference": null,
+        "config_id": null,
+        "diff_ids": null,
+        "native_archive_sha256": null,
+        "asset_id": null,
+        "operation": null
+      }
+    ],
+    "artifacts": [
+      {
+        "path": "payload/deploy/.env.example",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/deploy/config/grafana/dashboards/unirouter-overview.json",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/deploy/config/grafana/provisioning/dashboards/dashboards.yml",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/deploy/config/grafana/provisioning/datasources/datasource.yml",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/deploy/config/prometheus.yml",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/deploy/docker-compose.yml",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/deploy/install.py",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/deploy/preflight.sh",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/docs/RECOVERY.md",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/docs/UPSTREAM-SOURCES.md",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/docs/install-linux.md",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/docs/install-linux.zh-CN.md",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/install.json",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/licenses/LICENSE",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/licenses/NOTICE",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/licenses/THIRD-PARTY-NOTICES.txt",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/licenses/component-notices.tar.gz",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/licenses/frontend-disposition.json",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/licenses/source-disposition.json",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/licenses/sources/gcc-15.2.0.tar.xz",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/licenses/system-component-materials.tar.gz",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/licenses/system-component-notices-supplement.tar.gz",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/provenance/build-provenance.json",
+        "size": null,
+        "sha256": null
+      },
+      {
+        "path": "payload/scripts/source-budget-restore-rebase.sql",
+        "size": null,
+        "sha256": null
+      }
+    ],
+    "provenance_sha256": null,
+    "accepted_assembly_run": null,
+    "accepted_draft_id": null,
+    "actual_private_publisher_run": null,
+    "min_current_sequence": 0,
+    "max_current_sequence": 0,
+    "min_current_schema": "000127_xinsight_communication_policy",
+    "historical_sequence_reserved_through": 11,
+    "manifest_schema_version": "unirouter.upgrade-manifest.v2",
+    "expires_at": "never"
+  },
+  "release": {
+    "release_sequence": null,
+    "created_at": null,
+    "expires_at": "never",
+    "tag": null,
+    "bootstrap_url": null,
+    "bootstrap_size": null,
+    "bootstrap_sha256": null,
+    "package_size": null,
+    "package_sha256": null
+  }
+}

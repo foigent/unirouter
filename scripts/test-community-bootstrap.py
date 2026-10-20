@@ -59,7 +59,7 @@ class BootstrapTests(unittest.TestCase):
         self.payload = {b.INSTALLER: b"# synthetic installer; never executed\n", "payload/example.txt": b"hello\n"}
         self.release = {"version": "1.11.0", "commit": "a" * 40, "release_sequence": 1,
                         "key_id": "bootstrap-test", "target_schema": b.SCHEMA}
-        self.manifest = {**self.release, "target_os": "linux", "target_arch": "amd64",
+        self.manifest = {"schema_version": "unirouter.upgrade-manifest.v2", "expires_at": "never", **self.release, "target_os": "linux", "target_arch": "amd64",
                          "artifacts": [{"path": name, "size": len(data), "sha256": sha(data)}
                                        for name, data in sorted(self.payload.items())]}
         self.assets = {"verifier": b"synthetic verifier fixture", "public_keys": b'{"bootstrap-test":"synthetic"}',

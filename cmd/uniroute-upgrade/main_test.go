@@ -1,10 +1,13 @@
 package main
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -16,6 +19,12 @@ import (
 )
 
 func TestPackAndVerifyCLI(t *testing.T) {
+	for _, noExpiry := range []bool{false, true} {
+		t.Run(fmt.Sprintf("noExpiry=%v", noExpiry), func(t *testing.T) { testPackAndVerifyCLI(t, noExpiry) })
+	}
+}
+
+func testPackAndVerifyCLI(t *testing.T, noExpiry bool) {
 	dir := t.TempDir()
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -48,7 +57,7 @@ func TestPackAndVerifyCLI(t *testing.T) {
 	}
 	now := time.Date(2026, 7, 14, 10, 0, 0, 0, time.UTC)
 	var packOutput bytes.Buffer
-	err = run([]string{
+	args := []string{
 		"pack",
 		"--key-id", "upgrade-test",
 		"--private-key", privatePath,
@@ -65,7 +74,16 @@ func TestPackAndVerifyCLI(t *testing.T) {
 		"--target-schema", "000037_v1_commercial_release_control",
 		"--artifact", "payload/uniroute=" + payloadPath,
 		"--out", packagePath,
-	}, &packOutput)
+	}
+	if noExpiry {
+		for i, v := range args {
+			if v == "--expires-at" {
+				args = append(append(args[:i:i], "--no-expiry"), args[i+2:]...)
+				break
+			}
+		}
+	}
+	err = run(args, &packOutput)
 	if err != nil {
 		t.Fatalf("pack error = %v", err)
 	}
@@ -76,6 +94,34 @@ func TestPackAndVerifyCLI(t *testing.T) {
 		t.Fatalf("package stat = %v, info = %#v", err, info)
 	}
 
+	file, err := os.Open(packagePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	gz, err := gzip.NewReader(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gz.Close()
+	tr := tar.NewReader(gz)
+	if _, err := tr.Next(); err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		SchemaVersion string `json:"schema_version"`
+		ExpiresAt     string `json:"expires_at"`
+	}
+	if err := json.NewDecoder(tr).Decode(&manifest); err != nil {
+		t.Fatal(err)
+	}
+	if noExpiry {
+		if manifest.SchemaVersion != "unirouter.upgrade-manifest.v2" || manifest.ExpiresAt != "never" {
+			t.Fatalf("non-expiring wire: %#v", manifest)
+		}
+	} else if manifest.SchemaVersion != "unirouter.upgrade-manifest.v1" {
+		t.Fatal("finite wire changed")
+	}
 	var verifyOutput bytes.Buffer
 	err = run([]string{
 		"verify",
@@ -158,5 +204,38 @@ func TestVerifyCLIRejectsTamperedPackage(t *testing.T) {
 	}, &bytes.Buffer{})
 	if err == nil {
 		t.Fatal("tampered package unexpectedly verified")
+	}
+}
+
+func TestPackLifetimeSelectionBeforePrivateKeyOrOutput(t *testing.T) {
+	dir := t.TempDir()
+	base := []string{"pack", "--key-id", "synthetic", "--private-key", filepath.Join(dir, "MUST-NOT-READ"),
+		"--release-sequence", "1", "--version", "1.14.0", "--commit", strings.Repeat("a", 40),
+		"--created-at", "2026-10-20T00:00:00Z", "--target-os", "linux", "--target-arch", "amd64",
+		"--min-current-sequence", "0", "--max-current-sequence", "0", "--min-current-schema", "000127", "--target-schema", "000127",
+		"--artifact", "payload/example=" + filepath.Join(dir, "MUST-NOT-HASH"), "--out", filepath.Join(dir, "MUST-NOT-CREATE")}
+	for _, tc := range []struct {
+		name  string
+		flags []string
+		want  string
+	}{
+		{"absent", nil, "explicit --no-expiry"},
+		{"false", []string{"--no-expiry=false"}, "explicit --no-expiry"},
+		{"conflict", []string{"--no-expiry", "--expires-at", "2026-10-21T00:00:00Z"}, "conflicts"},
+		{"empty conflict", []string{"--no-expiry", "--expires-at="}, "conflicts"},
+		{"empty finite", []string{"--expires-at="}, "explicit --no-expiry"},
+		{"bad finite", []string{"--expires-at=never"}, "must be RFC3339"},
+		{"bad creation", []string{"--no-expiry", "--created-at=never"}, "--created-at must be RFC3339"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := run(append(append([]string{}, base...), tc.flags...), &bytes.Buffer{})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("%v, want %s", err, tc.want)
+			}
+			entries, _ := os.ReadDir(dir)
+			if len(entries) != 0 {
+				t.Fatal("invalid lifetime created output")
+			}
+		})
 	}
 }

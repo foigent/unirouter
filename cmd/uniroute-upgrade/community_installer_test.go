@@ -46,6 +46,12 @@ func TestCommunityInstallerVerifierProcess(t *testing.T) {
 }
 
 func TestCommunityInstallerSignedRelease(t *testing.T) {
+	for _, noExpiry := range []bool{false, true} {
+		t.Run(fmt.Sprintf("noExpiry=%v", noExpiry), func(t *testing.T) { testCommunityInstallerSignedRelease(t, noExpiry) })
+	}
+}
+
+func testCommunityInstallerSignedRelease(t *testing.T, noExpiry bool) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Linux installer verification uses Unix file semantics")
 	}
@@ -113,6 +119,14 @@ func TestCommunityInstallerSignedRelease(t *testing.T) {
 	sort.Strings(names)
 	for _, name := range names {
 		args = append(args, "--artifact", name+"="+write(name, payload[name]))
+	}
+	if noExpiry {
+		for i, v := range args {
+			if v == "--expires-at" {
+				args = append(append(args[:i:i], "--no-expiry"), args[i+2:]...)
+				break
+			}
+		}
 	}
 	if err := run(args, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)

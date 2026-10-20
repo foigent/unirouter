@@ -33,7 +33,7 @@ class Fixture:
         }
         for name in ("install.py", "docker-compose.yml", ".env.example", "preflight.sh"):
             payloads[M.PREFIX + name] = (ROOT / "deploy/customer" / name).read_bytes()
-        self.manifest = {"version": "1.10.0", "commit": "a" * 40, "target_schema": M.SCHEMA,
+        self.manifest = {"schema_version": "unirouter.upgrade-manifest.v2", "expires_at": "never", "version": "1.10.0", "commit": "a" * 40, "target_schema": M.SCHEMA,
                          "release_sequence": 1, "artifacts": []}
         for name, data in payloads.items():
             target = self.release / name
