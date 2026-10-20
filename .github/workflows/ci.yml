@@ -127,6 +127,7 @@ jobs:
           python3 -I -B .github/tests/test-community-byte-candidate.py
           python3 -I -B .github/tests/test-community-backend-reuse.py
           python3 -I -B .github/tests/test-private-image-publisher.py
+          python3 -I -B .github/tests/test-community-release-acceptance.py
           python3 -B scripts/internal-target-rollout.py environment-check
 
   backend:

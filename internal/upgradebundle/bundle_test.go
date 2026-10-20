@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -53,7 +54,21 @@ func TestPackVerifyAndDeterminism(t *testing.T) {
 }
 
 func TestVerifyRejectsTamperingAndUntrustedMetadata(t *testing.T) {
+	for _, noExpiry := range []bool{false, true} {
+		t.Run(fmt.Sprintf("noExpiry=%v", noExpiry), func(t *testing.T) { VerifyRejectsTamperingAndUntrustedMetadata(t, noExpiry) })
+	}
+}
+
+func VerifyRejectsTamperingAndUntrustedMetadata(t *testing.T, noExpiry bool) {
 	fixture := newBundleFixture(t)
+	if noExpiry {
+		fixture.manifest.SchemaVersion, fixture.manifest.ExpiresAt = NonExpiringManifestSchemaVersion, NeverExpires
+		var packed bytes.Buffer
+		if err := Pack(&packed, fixture.manifest, fixture.privateKey, fixture.sources); err != nil {
+			t.Fatal(err)
+		}
+		fixture.bundle = packed.Bytes()
+	}
 
 	_, wrongPrivate, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -115,6 +130,9 @@ func TestVerifyRejectsTamperingAndUntrustedMetadata(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		if noExpiry && test.name == "expired metadata" {
+			continue
+		}
 		t.Run(test.name, func(t *testing.T) {
 			_, err := Verify(bytes.NewReader(test.bundle), test.options)
 			if err == nil || !strings.Contains(err.Error(), test.want) {
@@ -125,7 +143,21 @@ func TestVerifyRejectsTamperingAndUntrustedMetadata(t *testing.T) {
 }
 
 func TestVerifyRejectsUnsafeArchiveShape(t *testing.T) {
+	for _, noExpiry := range []bool{false, true} {
+		t.Run(fmt.Sprintf("noExpiry=%v", noExpiry), func(t *testing.T) { VerifyRejectsUnsafeArchiveShape(t, noExpiry) })
+	}
+}
+
+func VerifyRejectsUnsafeArchiveShape(t *testing.T, noExpiry bool) {
 	fixture := newBundleFixture(t)
+	if noExpiry {
+		fixture.manifest.SchemaVersion, fixture.manifest.ExpiresAt = NonExpiringManifestSchemaVersion, NeverExpires
+		var packed bytes.Buffer
+		if err := Pack(&packed, fixture.manifest, fixture.privateKey, fixture.sources); err != nil {
+			t.Fatal(err)
+		}
+		fixture.bundle = packed.Bytes()
+	}
 	tests := []struct {
 		name   string
 		mutate func([]testEntry) []testEntry
@@ -348,4 +380,125 @@ func rewriteBundle(t *testing.T, original []byte, mutate func([]testEntry) []tes
 		t.Fatal(err)
 	}
 	return output.Bytes()
+}
+
+func TestExplicitLifetimeModes(t *testing.T) {
+	f := newBundleFixture(t)
+	for _, tc := range []struct {
+		schema, expiry string
+		valid          bool
+	}{
+		{ManifestSchemaVersion, f.manifest.ExpiresAt, true},
+		{NonExpiringManifestSchemaVersion, NeverExpires, true},
+		{ManifestSchemaVersion, NeverExpires, false},
+		{NonExpiringManifestSchemaVersion, f.manifest.ExpiresAt, false},
+		{NonExpiringManifestSchemaVersion, "", false},
+		{NonExpiringManifestSchemaVersion, "Never", false},
+		{NonExpiringManifestSchemaVersion, " never", false},
+		{NonExpiringManifestSchemaVersion, "never ", false},
+		{"unirouter.upgrade-manifest.v3", NeverExpires, false},
+	} {
+		t.Run(tc.schema+"/"+tc.expiry, func(t *testing.T) {
+			m := f.manifest
+			m.SchemaVersion, m.ExpiresAt = tc.schema, tc.expiry
+			if err := ValidateManifest(m); (err == nil) != tc.valid {
+				t.Fatalf("valid=%v: %v", tc.valid, err)
+			}
+		})
+	}
+	options := ManifestOptions{KeyID: f.manifest.KeyID, ReleaseSequence: 7, Version: "1.0.0", Commit: f.manifest.Commit,
+		CreatedAt: f.now.Add(-time.Hour), TargetOS: "linux", TargetArch: "amd64", MinCurrentSequence: 5,
+		MaxCurrentSequence: 6, MinCurrentSchema: "000034", TargetSchema: "000037", ProvenanceSHA256: f.manifest.ProvenanceSHA256}
+	if _, err := CreateManifest(options, f.sources); err == nil {
+		t.Fatal("implicit lifetime accepted")
+	}
+	options.NoExpiry = true
+	m, err := CreateManifest(options, f.sources)
+	if err != nil || m.SchemaVersion != NonExpiringManifestSchemaVersion || m.ExpiresAt != NeverExpires {
+		t.Fatalf("explicit no expiry: %#v %v", m, err)
+	}
+	options.ExpiresAt = f.now.Add(time.Hour)
+	if _, err := CreateManifest(options, f.sources); err == nil {
+		t.Fatal("conflicting lifetime accepted")
+	}
+	options.NoExpiry = false
+	m, err = CreateManifest(options, f.sources)
+	if err != nil || m.SchemaVersion != ManifestSchemaVersion {
+		t.Fatalf("finite default changed: %v", err)
+	}
+}
+
+func TestNonExpiringVerificationPreservesOtherGuards(t *testing.T) {
+	f := newBundleFixture(t)
+	f.manifest.SchemaVersion, f.manifest.ExpiresAt = NonExpiringManifestSchemaVersion, NeverExpires
+	var b bytes.Buffer
+	if err := Pack(&b, f.manifest, f.privateKey, f.sources); err != nil {
+		t.Fatal(err)
+	}
+	v, err := Verify(bytes.NewReader(b.Bytes()), withNow(f.verifyOptions(), time.Date(2126, 7, 14, 0, 0, 0, 0, time.UTC)))
+	if err != nil || v.Manifest.ExpiresAt != NeverExpires {
+		t.Fatalf("never expired: %v", err)
+	}
+	for _, tc := range []struct {
+		name string
+		opt  VerifyOptions
+		want string
+	}{
+		{"future", withNow(f.verifyOptions(), f.now.Add(-66*time.Minute)), "creation time"},
+		{"five minute tolerance", withNow(f.verifyOptions(), f.now.Add(-65*time.Minute)), ""},
+		{"sequence", withSequence(f.verifyOptions(), 7), "outside signed window"},
+		{"schema", withSchema(f.verifyOptions(), "000033"), "incompatible"},
+		{"platform", withOS(f.verifyOptions(), "darwin"), "current platform"},
+		{"size", withMaxPayloadBytes(f.verifyOptions(), 1), "size bound"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Verify(bytes.NewReader(b.Bytes()), tc.opt)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("%v, want %s", err, tc.want)
+			}
+		})
+	}
+	changed := rewriteBundle(t, b.Bytes(), func(entries []testEntry) []testEntry {
+		entries[0].data = bytes.Replace(entries[0].data, []byte(`"expires_at":"never"`), []byte(`"expires_at":"Never"`), 1)
+		return entries
+	})
+	if _, err := Verify(bytes.NewReader(changed), f.verifyOptions()); err == nil || !strings.Contains(err.Error(), "signature verification failed") {
+		t.Fatalf("policy trusted before signature: %v", err)
+	}
+	for _, raw := range [][]byte{
+		bytes.Replace(mustManifestJSON(t, f.manifest), []byte(`,"expires_at":"never"`), nil, 1),
+		bytes.Replace(mustManifestJSON(t, f.manifest), []byte(`"expires_at":"never"`), []byte(`"expires_at":null`), 1),
+	} {
+		if _, err := decodeManifest(raw); err == nil {
+			t.Fatal("missing/null policy accepted")
+		}
+	}
+}
+
+func mustManifestJSON(t *testing.T, m Manifest) []byte {
+	t.Helper()
+	b, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func TestFiniteExpiryBoundaryUnchanged(t *testing.T) {
+	f := newBundleFixture(t)
+	expiry, _ := time.Parse(time.RFC3339, f.manifest.ExpiresAt)
+	if _, err := Verify(bytes.NewReader(f.bundle), withNow(f.verifyOptions(), expiry.Add(-time.Nanosecond))); err != nil {
+		t.Fatal(err)
+	}
+	for _, at := range []time.Time{expiry, expiry.Add(time.Nanosecond)} {
+		if _, err := Verify(bytes.NewReader(f.bundle), withNow(f.verifyOptions(), at)); err == nil || !strings.Contains(err.Error(), "has expired") {
+			t.Fatalf("finite expiry boundary: %v", err)
+		}
+	}
 }

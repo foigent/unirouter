@@ -54,6 +54,7 @@ func runPack(args []string, stdout io.Writer) error {
 	commit := fs.String("commit", "", "exact source commit")
 	createdAtText := fs.String("created-at", "", "RFC3339 manifest creation time")
 	expiresAtText := fs.String("expires-at", "", "RFC3339 metadata expiry time")
+	noExpiry := fs.Bool("no-expiry", false, "explicitly create a v2 manifest with no expiry")
 	targetOS := fs.String("target-os", "", "target operating system")
 	targetArch := fs.String("target-arch", "", "target architecture")
 	minCurrentSequence := fs.Int64("min-current-sequence", 0, "minimum accepted installed release sequence")
@@ -67,16 +68,31 @@ func runPack(args []string, stdout io.Writer) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if !signing.ValidKeyID(*keyID) || *privateKeyPath == "" || *version == "" || *commit == "" || *createdAtText == "" || *expiresAtText == "" || *targetOS == "" || *targetArch == "" || *minCurrentSchema == "" || *targetSchema == "" || *outPath == "" || len(artifacts) == 0 {
+	if !signing.ValidKeyID(*keyID) || *privateKeyPath == "" || *version == "" || *commit == "" || *createdAtText == "" || *targetOS == "" || *targetArch == "" || *minCurrentSchema == "" || *targetSchema == "" || *outPath == "" || len(artifacts) == 0 {
 		return fmt.Errorf("all signing, release, platform, schema, output and at least one --artifact option are required")
 	}
 	createdAt, err := time.Parse(time.RFC3339, *createdAtText)
 	if err != nil {
 		return fmt.Errorf("--created-at must be RFC3339: %w", err)
 	}
-	expiresAt, err := time.Parse(time.RFC3339, *expiresAtText)
-	if err != nil {
-		return fmt.Errorf("--expires-at must be RFC3339: %w", err)
+	expirySupplied := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "expires-at" {
+			expirySupplied = true
+		}
+	})
+	if *noExpiry && expirySupplied {
+		return fmt.Errorf("--no-expiry conflicts with --expires-at")
+	}
+	var expiresAt time.Time
+	if !*noExpiry {
+		if !expirySupplied || *expiresAtText == "" {
+			return fmt.Errorf("--expires-at or explicit --no-expiry is required")
+		}
+		expiresAt, err = time.Parse(time.RFC3339, *expiresAtText)
+		if err != nil {
+			return fmt.Errorf("--expires-at must be RFC3339: %w", err)
+		}
 	}
 	sources, err := parseArtifacts(artifacts)
 	if err != nil {
@@ -89,6 +105,7 @@ func runPack(args []string, stdout io.Writer) error {
 		Commit:             *commit,
 		CreatedAt:          createdAt,
 		ExpiresAt:          expiresAt,
+		NoExpiry:           *noExpiry,
 		TargetOS:           *targetOS,
 		TargetArch:         *targetArch,
 		MinCurrentSequence: *minCurrentSequence,

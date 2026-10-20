@@ -345,21 +345,21 @@ wrapper adds preparation and delegates installation/check/resume to it; official
 bootstrap publication, fresh native acceptance and real public-download evidence
 remain pending. There is still no advertised one-command public install.
 
-No final tag, release sequence, expiry, package hash or image digest is assigned
+No final tag, release sequence, creation time, package hash or image digest is assigned
 by this proposal. Allocate those only after the current delivery history and
 exact candidate are checked, with no overwrite. The historical sequence-11
 draft must be accounted for; a fresh-install example's sequence 1 is not an
 authorized production allocation. The supported existing-database upgrade
 window also cannot be inferred from fresh-install sequence-zero acceptance.
 
-Select an explicit installation/recovery validity window before signing. Every
-`check`, `install` and `resume` currently verifies the original package against
-the current time; resume also binds its original SHA-256. If that package has
-expired, a newly signed package cannot resume the same installation. Preserve
-the original package, plans and data and stop for the supported recovery
-procedure; do not change the clock, use `--at`, bypass expiry or blindly restart
-an installation. A short historical example expiry is not a public-release
-default. This proposal introduces no new expired-package recovery mechanism.
+Explicitly non-expiring packages use signed `unirouter.upgrade-manifest.v2` with `expires_at: "never"` (UniRouter 1.14.0+). The standalone verifier and backend must both support v2, including `upgrade record-applied`. Existing finite v1 packages retain their original deadline; replacing or re-signing them cannot resume a plan bound to a different package hash. Every check/install/resume still verifies the original signature, hashes, creation time (with the existing five-minute future tolerance), platform, schema and release sequence. Non-expiring does not authorize rollback, skip trust checks or extend the owner's finite signing-authority window. This source change is not a published package or a verified deployment.
+
+The current preparation selects v2/never explicitly; actual source, images,
+sequence, creation time and download identities must be rebound after the new
+build. Preserve the frozen 1.13.0 candidate. For a historical expired v1
+package, preserve its package, plan and data, then use the supported recovery
+procedure; do not change the clock, use `--at` or bypass verification. No new
+expired-v1 recovery mechanism is introduced.
 
 ### Third-party findings and commercial scope
 

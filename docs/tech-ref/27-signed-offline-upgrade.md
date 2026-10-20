@@ -1,6 +1,6 @@
 # Signed Offline Upgrade Bundle
 
-> Version: v1.1
+> Version: v1.2
 > Scope: Post-PRD6 V1 customer-local, operator-approved release verification.
 
 ## Security Boundary
@@ -38,7 +38,7 @@ payload/<declared regular files>
 ```
 
 The signed manifest fixes product/schema, key ID, algorithm, version, exact
-source commit, OS/architecture, creation/expiry time, monotonic release
+source commit, OS/architecture, creation time and explicit lifetime policy, monotonic release
 sequence and accepted current-sequence window, current/target database schema,
 optional provenance SHA-256, and every artifact path/size/SHA-256. When
 `provenance_sha256` is present it must equal the declared digest of
@@ -47,17 +47,40 @@ is rejected.
 
 Verification is streaming and bounded (8 GiB payload by default, at most 64
 payload files). It rejects untrusted keys/signatures, tampering, wrong product
-or platform, expired/future metadata, rollback/replay, incompatible schema,
+or platform, expired finite-v1 metadata/future creation times, rollback/replay, incompatible schema,
 duplicate/undeclared/missing entries, path traversal, absolute paths,
 backslashes, symlinks/devices/non-regular files, hash/size mismatch, and
 trailing data or another gzip stream. Verification does not extract files.
+
+## Explicit package lifetime (1.14.0+)
+
+`pack --no-expiry` signs schema `unirouter.upgrade-manifest.v2` with exactly
+`expires_at: "never"`. It conflicts with any supplied `--expires-at`, including
+an empty value. Omitted lifetime, null, empty, case/space variants and v2 dates
+are rejected. Finite `--expires-at RFC3339` continues to create unchanged v1
+canonical bytes. V1 expiry is enforced at `now >= expires_at`; it is never
+converted into non-expiring metadata.
+
+The signature envelope stays v1/Ed25519 and signs the complete canonical
+manifest. A valid v2 package skips only the expiry comparison. Creation more
+than five minutes ahead, trust, platform, schema, sequence, provenance and the
+closed artifact set remain enforced. Old readers reject unsupported v2; update
+both standalone verifier and backend (`upgrade verify`/`record-applied`). M127
+and the generic manifest JSONB storage need no migration. Bootstrap and the
+installer continue to call the pinned native verifier at the real current time;
+they do not implement a second lifetime parser or use `--at` in production.
+
+New source support is not a published 1.14.0 artifact. Keep old v1 packages and
+their evidence intact; an original installation plan still binds its exact
+package hash. Package lifetime is separate from the owner's finite authority
+to sign. No online renewal/revocation service is introduced.
 
 ## Vendor Pack And Independent Verify
 
 The commands below illustrate the historical offline bundle format and use old
 version/schema/time examples. They are not current public installer commands
 or a release-sequence allocation. Use the [community installer runbook](../ops/COMMUNITY-INSTALLER.md)
-for M126 fresh installation, current preparation and distribution boundaries.
+for M127 fresh installation, current preparation and distribution boundaries.
 
 Use a release key pair separate from the License key pair. The existing keygen
 creates generic Ed25519 material; using a distinct path and key ID preserves

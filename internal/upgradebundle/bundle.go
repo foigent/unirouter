@@ -20,11 +20,13 @@ import (
 )
 
 const (
-	ManifestSchemaVersion  = "unirouter.upgrade-manifest.v1"
-	SignatureSchemaVersion = "unirouter.detached-signature.v1"
-	Product                = "unirouter"
-	SignatureAlgorithm     = "ed25519"
-	ProvenanceArtifactPath = "payload/provenance/build-provenance.json"
+	ManifestSchemaVersion            = "unirouter.upgrade-manifest.v1"
+	NonExpiringManifestSchemaVersion = "unirouter.upgrade-manifest.v2"
+	NeverExpires                     = "never"
+	SignatureSchemaVersion           = "unirouter.detached-signature.v1"
+	Product                          = "unirouter"
+	SignatureAlgorithm               = "ed25519"
+	ProvenanceArtifactPath           = "payload/provenance/build-provenance.json"
 
 	manifestPath  = "manifest.json"
 	signaturePath = "manifest.sig"
@@ -82,6 +84,7 @@ type ManifestOptions struct {
 	Commit             string
 	CreatedAt          time.Time
 	ExpiresAt          time.Time
+	NoExpiry           bool
 	TargetOS           string
 	TargetArch         string
 	MinCurrentSequence int64
@@ -108,6 +111,17 @@ type Verification struct {
 }
 
 func CreateManifest(options ManifestOptions, sources []Source) (Manifest, error) {
+	if options.NoExpiry && !options.ExpiresAt.IsZero() {
+		return Manifest{}, fmt.Errorf("no-expiry conflicts with expires_at")
+	}
+	if !options.NoExpiry && options.ExpiresAt.IsZero() {
+		return Manifest{}, fmt.Errorf("expires_at or explicit no-expiry is required")
+	}
+	schemaVersion := ManifestSchemaVersion
+	expiresAt := options.ExpiresAt.UTC().Format(time.RFC3339)
+	if options.NoExpiry {
+		schemaVersion, expiresAt = NonExpiringManifestSchemaVersion, NeverExpires
+	}
 	artifacts := make([]Artifact, 0, len(sources))
 	seen := make(map[string]bool, len(sources))
 	for _, source := range sources {
@@ -134,7 +148,7 @@ func CreateManifest(options ManifestOptions, sources []Source) (Manifest, error)
 	}
 	sort.Slice(artifacts, func(i, j int) bool { return artifacts[i].Path < artifacts[j].Path })
 	manifest := Manifest{
-		SchemaVersion:      ManifestSchemaVersion,
+		SchemaVersion:      schemaVersion,
 		Product:            Product,
 		KeyID:              strings.TrimSpace(options.KeyID),
 		SignatureAlgorithm: SignatureAlgorithm,
@@ -142,7 +156,7 @@ func CreateManifest(options ManifestOptions, sources []Source) (Manifest, error)
 		Version:            strings.TrimSpace(options.Version),
 		Commit:             strings.TrimSpace(options.Commit),
 		CreatedAt:          options.CreatedAt.UTC().Format(time.RFC3339),
-		ExpiresAt:          options.ExpiresAt.UTC().Format(time.RFC3339),
+		ExpiresAt:          expiresAt,
 		TargetOS:           strings.TrimSpace(options.TargetOS),
 		TargetArch:         strings.TrimSpace(options.TargetArch),
 		MinCurrentSequence: options.MinCurrentSequence,
@@ -381,7 +395,7 @@ func Verify(r io.Reader, options VerifyOptions) (Verification, error) {
 }
 
 func ValidateManifest(manifest Manifest) error {
-	if manifest.SchemaVersion != ManifestSchemaVersion || manifest.Product != Product {
+	if (manifest.SchemaVersion != ManifestSchemaVersion && manifest.SchemaVersion != NonExpiringManifestSchemaVersion) || manifest.Product != Product {
 		return fmt.Errorf("unsupported upgrade manifest schema or product")
 	}
 	if !validKeyID(manifest.KeyID) || manifest.SignatureAlgorithm != SignatureAlgorithm {
@@ -399,9 +413,15 @@ func ValidateManifest(manifest Manifest) error {
 	if err != nil {
 		return fmt.Errorf("upgrade created_at must be RFC3339")
 	}
-	expiresAt, err := time.Parse(time.RFC3339, manifest.ExpiresAt)
-	if err != nil || !expiresAt.After(createdAt) {
-		return fmt.Errorf("upgrade expires_at must be RFC3339 and after created_at")
+	if manifest.SchemaVersion == NonExpiringManifestSchemaVersion {
+		if manifest.ExpiresAt != NeverExpires {
+			return fmt.Errorf("upgrade v2 expires_at must be exactly never")
+		}
+	} else {
+		expiresAt, err := time.Parse(time.RFC3339, manifest.ExpiresAt)
+		if err != nil || !expiresAt.After(createdAt) {
+			return fmt.Errorf("upgrade expires_at must be RFC3339 and after created_at")
+		}
 	}
 	if !validSchemaVersion(manifest.MinCurrentSchema) || !validSchemaVersion(manifest.TargetSchema) || manifest.TargetSchema < manifest.MinCurrentSchema {
 		return fmt.Errorf("invalid upgrade schema window")
@@ -450,12 +470,14 @@ func validatePreflight(manifest Manifest, options VerifyOptions) error {
 	}
 	now := options.Now.UTC()
 	createdAt, _ := time.Parse(time.RFC3339, manifest.CreatedAt)
-	expiresAt, _ := time.Parse(time.RFC3339, manifest.ExpiresAt)
 	if createdAt.After(now.Add(5 * time.Minute)) {
 		return fmt.Errorf("upgrade manifest creation time is in the future")
 	}
-	if !expiresAt.After(now) {
-		return fmt.Errorf("upgrade manifest metadata has expired")
+	if manifest.SchemaVersion == ManifestSchemaVersion {
+		expiresAt, _ := time.Parse(time.RFC3339, manifest.ExpiresAt)
+		if !expiresAt.After(now) {
+			return fmt.Errorf("upgrade manifest metadata has expired")
+		}
 	}
 	if options.TargetOS != manifest.TargetOS || options.TargetArch != manifest.TargetArch {
 		return fmt.Errorf("upgrade targets %s/%s, current platform is %s/%s", manifest.TargetOS, manifest.TargetArch, options.TargetOS, options.TargetArch)

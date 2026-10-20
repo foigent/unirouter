@@ -8,6 +8,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -22,6 +23,12 @@ import (
 )
 
 func TestUpgradeRecordAppliedPinsRuntimeDigestSequenceAndSchema(t *testing.T) {
+	for _, noExpiry := range []bool{false, true} {
+		t.Run(fmt.Sprintf("noExpiry=%v", noExpiry), func(t *testing.T) { testUpgradeRecordApplied(t, noExpiry) })
+	}
+}
+
+func testUpgradeRecordApplied(t *testing.T, noExpiry bool) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -52,9 +59,13 @@ func TestUpgradeRecordAppliedPinsRuntimeDigestSequenceAndSchema(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	version := "1.0.0-integration"
 	commit := strings.Repeat("c", 40)
+	expires := now.Add(time.Hour)
+	if noExpiry {
+		expires = time.Time{}
+	}
 	manifest, err := upgradebundle.CreateManifest(upgradebundle.ManifestOptions{
 		KeyID: "upgrade-integration", ReleaseSequence: 1, Version: version, Commit: commit,
-		CreatedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
+		CreatedAt: now.Add(-time.Minute), ExpiresAt: expires, NoExpiry: noExpiry,
 		TargetOS: runtime.GOOS, TargetArch: runtime.GOARCH,
 		MinCurrentSequence: 0, MaxCurrentSequence: 0,
 		MinCurrentSchema: schema, TargetSchema: schema,
@@ -68,6 +79,60 @@ func TestUpgradeRecordAppliedPinsRuntimeDigestSequenceAndSchema(t *testing.T) {
 	}
 	if err := os.WriteFile(packagePath, bundle.Bytes(), 0o600); err != nil {
 		t.Fatal(err)
+	}
+
+	validCfg := &config.Config{RuntimeVersion: version, RuntimeCommit: commit, UpgradePublicKeys: string(ringJSON)}
+	if err := runInstalledUpgradeVerify(ctx, []string{"--package", packagePath}, validCfg, pool); err != nil {
+		t.Fatal(err)
+	}
+	// Each signed failure must leave both committed release tables unchanged.
+	for _, kind := range []string{"expired-v1", "future", "schema", "key", "payload"} {
+		m := manifest
+		switch kind {
+		case "expired-v1":
+			m.SchemaVersion = upgradebundle.ManifestSchemaVersion
+			m.CreatedAt = now.Add(-2 * time.Hour).Format(time.RFC3339)
+			m.ExpiresAt = now.Add(-time.Hour).Format(time.RFC3339)
+		case "future":
+			m.CreatedAt = now.Add(6 * time.Minute).Format(time.RFC3339)
+		case "schema":
+			m.MinCurrentSchema = "999999"
+			m.TargetSchema = "999999"
+		}
+		var candidate bytes.Buffer
+		key := privateKey
+		if kind == "key" {
+			_, key, err = ed25519.GenerateKey(rand.Reader)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := upgradebundle.Pack(&candidate, m, key, sources); err != nil {
+			t.Fatal(err)
+		}
+		candidatePath := filepath.Join(dir, kind+".tar.gz")
+		if kind == "payload" {
+			// A compressed-byte flip exercises corrupt-package refusal without a state write.
+			raw := candidate.Bytes()
+			raw[len(raw)/2] ^= 1
+		}
+		if err := os.WriteFile(candidatePath, candidate.Bytes(), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := runInstalledUpgradeVerify(ctx, []string{"--package", candidatePath}, validCfg, pool); err == nil {
+			t.Fatalf("installed verify accepted %s", kind)
+		}
+		if err := runUpgradeRecordApplied(ctx, []string{"--package", candidatePath, "--recorded-by", "integration-test"}, validCfg, pool); err == nil {
+			t.Fatalf("record accepted %s", kind)
+		}
+		state, err := readInstalledReleaseState(ctx, pool, false)
+		if err != nil || state.ReleaseSequence != 0 {
+			t.Fatalf("failed %s changed state: %#v %v", kind, state, err)
+		}
+		var count int
+		if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM release_history`).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("failed %s changed history: %d %v", kind, count, err)
+		}
 	}
 
 	wrongRuntime := &config.Config{RuntimeVersion: "wrong", RuntimeCommit: commit, UpgradePublicKeys: string(ringJSON)}
@@ -102,10 +167,22 @@ func TestUpgradeRecordAppliedPinsRuntimeDigestSequenceAndSchema(t *testing.T) {
 		t.Fatalf("history count = %d, want 1", historyCount)
 	}
 
+	var recorded upgradebundle.Manifest
+	var recordedRaw []byte
+	if err := pool.QueryRow(ctx, `SELECT manifest FROM release_history WHERE release_sequence = 1`).Scan(&recordedRaw); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(recordedRaw, &recorded); err != nil || recorded.SchemaVersion != manifest.SchemaVersion || recorded.ExpiresAt != manifest.ExpiresAt {
+		t.Fatalf("stored policy: %#v %v", recorded, err)
+	}
 	err = runUpgradeRecordApplied(ctx, []string{"--package", packagePath, "--recorded-by", "integration-test"}, cfg, pool)
 	if err == nil || !strings.Contains(err.Error(), "outside signed window") {
 		t.Fatalf("replay error = %v, want rollback/window rejection", err)
 	}
+	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM release_history`).Scan(&historyCount); err != nil || historyCount != 1 {
+		t.Fatalf("replay changed single history row: %d %v", historyCount, err)
+	}
+
 }
 
 func TestUpgradeLegacyRollbackPreflightRequiresFeedCredentialDisablement(t *testing.T) {
