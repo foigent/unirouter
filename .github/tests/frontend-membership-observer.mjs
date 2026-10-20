@@ -6,7 +6,7 @@ import {
 } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 
-const sourceCommit = '9e0240c68a20deebf9bcd0e2cc7b58034d09b696';
+const sourceCommit = 'c89e7c60ac63204e990f52ec128cd493f185112b';
 const sha = (body) => createHash('sha256').update(body).digest('hex');
 const requireFact = (value, reason) => { if (!value) throw new Error(reason); };
 const maximum = { modules: 50000, watchFiles: 50000, packages: 2048,
@@ -59,8 +59,8 @@ export function membershipObserver() {
         };
         const originalPackageBody = bounded(join(root, '.ur-source-evidence/original-package.json'), 1024**2);
         const lockBody = bounded(join(root, '.ur-source-evidence/original-package-lock.json'), 1024**2);
-        requireFact(sha(lockBody) === '0bb1d4d9a9fd6d76bd2d90a0cdd2ae74c7486e61c45453c2bea967d7862a3efa'
-          && sha(originalPackageBody) === '6f7e936114d219e60ef7a3e8fcb975cf3b8d2137989ab9695e12e7fcc9e0523f',
+        requireFact(sha(lockBody) === '4698d614339c6567286c08736c514e2ee8d7235c12a8de325015a2c53996195a'
+          && sha(originalPackageBody) === 'd6f695ce22cf022387d71a716d2b7bce912cddda9000f8f8d68ddc8c3b8faa7a',
           'original source input identity mismatch');
         const postInstallLockBody = bounded(join(root, 'package-lock.json'), 1024**2);
         const postInstallPackageBody = bounded(join(root, 'package.json'), 1024**2);
