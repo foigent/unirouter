@@ -1,12 +1,12 @@
 name: Publish accepted community images (private stage)
-run-name: Accepted UR 1.13.0 image upload, source run 39358975752
+run-name: Accepted UR 1.14.0 image upload, source run 39471146040
 on:
   workflow_dispatch:
 permissions:
   contents: read
   packages: write
 concurrency:
-  group: ur-private-image-publication-39358975752
+  group: ur-private-image-publication-39471146040
   cancel-in-progress: false
 jobs:
   publish-private:
@@ -42,34 +42,34 @@ jobs:
           import tempfile
 
           REPOSITORY = 'foigent/unirouter'
-          SOURCE = '9e0240c68a20deebf9bcd0e2cc7b58034d09b696'
-          DRAFT = 417939132
-          TAG = 'source-' + SOURCE + '-run-39358975752-linux-amd64'
+          SOURCE = 'c89e7c60ac63204e990f52ec128cd493f185112b'
+          DRAFT = 418705589
+          TAG = 'source-' + SOURCE + '-run-39471146040-linux-amd64'
           WORKFLOW_REF = REPOSITORY + '/.github/workflows/publish-accepted-community-images.yml@refs/heads/main'
           # The actual retained image identities are filled from the accepted native record
           # by the local preparation script, never by workflow_dispatch inputs.
           IMAGES = [{'role': 'backend',
             'package_name': 'unirouter-backend',
             'repository': 'ghcr.io/foigent/unirouter-backend',
-            'asset_id': 658046340,
+            'asset_id': 660070793,
             'archive_name': 'backend-image.tar.gz',
-            'archive_bytes': 21246192,
-            'archive_sha256': '8bfd27a5f9449679cf828e4f9ced287c0d3d9d36985b68463d618587a71a2552',
-            'config_id': 'sha256:777ef815e25c2a0b3e7faa8f6c2efa59c4d74e6d671b5de3f081e4bc9e71c1a0',
+            'archive_bytes': 21243660,
+            'archive_sha256': 'f8b5d92256c3b133dd370d98ede2241bcc351bbe18de0c597f6f3d21c87fde3c',
+            'config_id': 'sha256:f7ec064a306d8a496c92865c880791e4223a9f2642507bcdb211288707910007',
             'diff_ids': ['sha256:e63b02c2b5c761df2cb95e657d744f27d95da4e051235a13c80b88cd68eab188',
-                         'sha256:fb94ad58758479786d4adfeffe4dce090906e02eebd033e139adedee0d741dda',
-                         'sha256:dce330452f6caa35c4118aa08a0279278ad948ba3e46c1aef5ebd933f55f9421',
-                         'sha256:2be94e8af9e12bb6afd69c5805a0f6aa2a9bb90cbefac896571d0ad38a0d3643',
-                         'sha256:6cbc141a905a0618fb6e525e5099b3bf8d941429cc4a7f9bc6f289646375206d',
-                         'sha256:2ff3b63321dfeaf9547b00d7a3a2b2ef5413493d56a6b2fca9f1222a728f5f88']},
+                         'sha256:fb19a7663388a9e658ea7f9b7b423637f221e486cbae1f9f5cfe65193d29fe34',
+                         'sha256:d0129a6127e931a83c49865062b3bb594d87a416fc6c4966ecd05421e21e7dd3',
+                         'sha256:22b8a3f951b848780e68ad968c1ee6aeb33d56dd6dfe64672b1b235fc75ebf30',
+                         'sha256:5aef3d6da028fe65a16ff81ee77aabe1e34236a642cb641efa0ffee00bfacb5e',
+                         'sha256:e1c031d2670af09da92484d8667622dd0cda74e1b7ba8d78de6655197ee6da21']},
            {'role': 'frontend',
             'package_name': 'unirouter-frontend',
             'repository': 'ghcr.io/foigent/unirouter-frontend',
-            'asset_id': 658048187,
+            'asset_id': 660073231,
             'archive_name': 'frontend-image.tar.gz',
-            'archive_bytes': 26972960,
-            'archive_sha256': '99b70a672f6e6bbad5aadd0c3d216cad8d07192afb03068a70fc41007780bbd1',
-            'config_id': 'sha256:c12d9a68450638333d925003b2b5d38e6d740bc1add1382e54ce50f45c0827cd',
+            'archive_bytes': 26972054,
+            'archive_sha256': '4094265b115b5e3e1cfba7eeb467348d57b8e622f023a165ead2b1a2cfa99944',
+            'config_id': 'sha256:c0ae5c3a402d8aa7663704de9479bd9b22d89b2c24a4a86a376755ad4ae22ff5',
             'diff_ids': ['sha256:31ad4a471c6852bfec14d757cc75a566c82a9769f12c3918cf6bf52cc0eeb3d0',
                          'sha256:513bb45c86b3ab007a1f05b558211f5b69ae412d6834f4f890988a2f765fc399',
                          'sha256:e0292b802b8d62769f1e2f7ea969575894d0f7d8fb6244c824c95997591ebb5e',
@@ -78,10 +78,10 @@ jobs:
                          'sha256:0a7d4fc0fa12bb5b447649d680fc84a35167dde454e242fc843dbc670b208864',
                          'sha256:9c436f5312f14af26c4dd62076f77841be450178171276e676ed18744ab020bc',
                          'sha256:61d47f9d34fb476a81f30e840d869f301c2bde5b2b6878dd6577cbaf0b69842e',
-                         'sha256:36101f19a102f52ca7f72e33e15e04ae5ff42641fb0157accdbf946c94af029f',
-                         'sha256:b1dea1e5dabb05e250d0ea45e949785234704a92dda257b5a031f0dcae421c93',
-                         'sha256:41d22b9dc87b291adfa25c3ce504b9501f85a0e0f276fb85a81433b177926855',
-                         'sha256:1e5f21a43a8aff2e9fc4f91d82b7d9ac6a5ff652c3b69e3de3210e1d630b0481']}]
+                         'sha256:644d23b63b862f6405475da2402f17a4ac91c25e674e94a5be2d67c3c29e1322',
+                         'sha256:1bb236e09e594bb7690718326cda1c5b7f274ad4f3d102ada02a3784b9b97fc0',
+                         'sha256:444d07d85e23995ba35468d3487f0f03296d91299096954a6bc54b808a608a9e',
+                         'sha256:a7d415824a977f70578af6fe9fbb26048ea2864262a592ab1921fa069998d396']}]
 
           def require(ok, message):
               if not ok:
@@ -97,7 +97,7 @@ jobs:
 
           def describe():
               return {'mode': 'offline_review_only', 'repository': REPOSITORY, 'source': SOURCE,
-                      'candidate_run': 39358975752, 'draft_id': DRAFT, 'images': IMAGES,
+                      'candidate_run': 39471146040, 'draft_id': DRAFT, 'images': IMAGES,
                       'permissions': {'contents': 'write', 'packages': 'write'},
                       'only_private_upload_and_authenticated_identity_verification': True,
                       'no_build_public_visibility_release_signing_install_or_container_run': True,
@@ -261,7 +261,7 @@ jobs:
                                   'diff_ids': image['diff_ids'], 'native_archive_sha256': image['archive_sha256'],
                                   'asset_id': image['asset_id'], 'operation': operation})
               result = {'status': 'private_images_authenticated_identity_verified_only', 'images': results,
-                        'product_source': SOURCE, 'candidate_run': 39358975752, 'draft_id': DRAFT,
+                        'product_source': SOURCE, 'candidate_run': 39471146040, 'draft_id': DRAFT,
                         'publisher_workflow_commit': env['GITHUB_SHA'],
                         'public_visibility_or_anonymous_pull_acceptance': False,
                         'install_descriptor_or_signed_package_created': False}
