@@ -85,14 +85,14 @@ class OriginIdentityTests(unittest.TestCase):
             a['browser_url_sha256']=H.sha(url.encode())
         binding=patch.dict(H.ORIGIN,{'assets':assets});binding.start();self.addCleanup(binding.stop)
 
-    def test_main_origin_refusal_cannot_create_new_draft_or_upload(self):
+    def test_main_source_refusal_cannot_create_new_draft_or_upload(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp); event=root/'event.json'; H.write_new(event,b'{}')
             env={'RUNNER_TEMP':tmp,'GITHUB_RUN_ID':'77','GITHUB_EVENT_PATH':str(event)}
             calls=[]
             def request(method,path,**kwargs):
                 calls.append((method,path))
-                assert method=='GET', 'New draft write forbidden after origin refusal'
+                assert method=='GET', 'New draft write forbidden after source refusal'
                 return (200,{'id':C.REPO_ID,'full_name':C.REPO,'private':False,'default_branch':'main'}) if path==C.PREFIX else (200,{'object':{'type':'commit','sha':'a'*40}})
             api=types.SimpleNamespace(request=request)
             guard=types.SimpleNamespace(work=None,owned=[],receipt={'commands':[],'cleanup':[]},
@@ -103,11 +103,10 @@ class OriginIdentityTests(unittest.TestCase):
                  patch.object(C,'frontend_input_preflight',return_value=None), \
                  patch.object(C,'module',side_effect=lambda name,path:guard if name=='accepted_byte_guards' else None), \
                  patch.object(C,'initialize_guard',side_effect=initialize),patch.object(C,'GitHub',return_value=api), \
-                 patch.object(C,'prepare_source_inputs',return_value=None), \
-                 patch.object(C,'prepare_backend_origin',side_effect=C.Stop('origin_wrong_source')):
+                 patch.object(C,'prepare_source_inputs',side_effect=C.Stop('source_input_identity')):
                 self.assertEqual(C.main(),1)
             terminal=C.load(C.regular(C.terminal_path(env),65536))
-            self.assertEqual(terminal['error'],'origin_wrong_source');self.assertIsNone(terminal['draft_id'])
+            self.assertEqual(terminal['error'],'source_input_identity');self.assertIsNone(terminal['draft_id'])
             self.assertTrue(all(method=='GET' for method,_ in calls))
 
     def test_all_three_assets_and_anonymous_checks_before_any_import(self):
@@ -287,54 +286,6 @@ class ActualRetainedOriginTests(unittest.TestCase):
                 self.guard.inspect_image=bad
                 with self.assertRaisesRegex(H.Stop,'origin_loaded_image'):self.prepare()
 
-    def test_real_backend_archive_survives_build_orchestration_without_build_save_or_recompression(self):
-        reuse=self.prepare();source=self.root/'source';source.mkdir();(source/'frontend').mkdir()
-        for name in ['LICENSE','NOTICE']:
-            H.write_new(source/name,self.files['product-'+name+'.txt'])
-        back=self.root/'backend.Dockerfile';front=self.root/'frontend.Dockerfile'
-        H.write_new(back,self.files['backend.Dockerfile']);H.write_new(front,self.files['frontend.Dockerfile'])
-        self.guard.run_id='77';self.guard.receipt['source_export']=self.source['source_export']
-        def docker(label,*args):
-            self.calls.append((label,args))
-            self.assertEqual(args[0],'build');self.assertEqual(label,'one retained frontend build')
-            H.write_new(Path(args[args.index('--iidfile')+1]),('sha256:'+'1'*64+'\n').encode())
-        def inspect(role,ref):
-            layers=O['diff_ids'] if role=='backend' else self.guard.FIXED['images']['frontend-runtime']['rootfs_diff_ids']
-            self.guard.receipt['images'][role]={'id':ref,'platform':{'os':'linux','arch':'amd64'},'rootfs_diff_ids':layers}
-        def tool(label,*args):
-            if label=='byte-go-version':return 'go version go1.25.12 linux/amd64'
-            if label=='byte-node-version':return 'v24.19.0\n11.17.0'
-            self.assertEqual(label,'actual-backend-buildinfo');return self.files['backend-buildinfo.txt'].decode()
-        pulls=[]
-        def pull(role):pulls.append(role);return role
-        self.guard.docker=docker;self.guard.inspect_image=inspect;self.guard.pull=pull;self.guard.tool=tool
-        binary=self.root/'binary-placeholder';H.write_new(binary,b'unit-orchestration-placeholder')
-        reuse.update(cid='loaded-backend',binary=binary,inventory=json.loads(self.files['backend-rootfs.json']))
-        def inventory(guard,helper,role,image,data):
-            self.assertEqual(role,'frontend','Backend stopped inventory already performed before draft')
-            return 'frontend',None,{'entries':[],'apk':[]}
-        def copy_exact(guard,cid,path,target,cap):
-            H.write_new(target,(C.INPUTS/'component-notices.tar.gz').read_bytes())
-        def save(guard,role,image,assets,remaining):
-            self.assertEqual(role,'frontend','Backend must never be saved or recompressed')
-            H.write_new(assets/'frontend-image.tar.gz',b'synthetic-front-orchestration-only')
-            return {'image_id':image,'compressed':C.file_fact(assets/'frontend-image.tar.gz')}
-        def verifier(guard,helper,source,go,assets,data):
-            H.write_new(assets/'uniroute-upgrade-linux-amd64',b'synthetic-verifier-orchestration-only')
-        _,index=C.bound_inputs()
-        import base64
-        ring=base64.urlsafe_b64encode(self.files['public-keys.json']).decode().rstrip('=')
-        retained=[]
-        with patch.dict(os.environ,{'EXPECTED_WORKFLOW_COMMIT':'a'*40,'ADMISSION_SHA256':'b'*64},clear=True), \
-             patch.object(C,'inventory',side_effect=inventory), \
-             patch.object(C,'collect_frontend_membership',return_value={'packages':[],'output_files':[]}), \
-             patch.object(C,'saved_image',side_effect=save),patch.object(C,'verifier',side_effect=verifier):
-            C.build(self.guard,types.SimpleNamespace(copy_exact=copy_exact),ring,index,self.assets,self.data,
-                    lambda path:retained.append(path.name),(source,back,front,{}),reuse)
-        self.assertEqual(retained,['backend-image.tar.gz','frontend-image.tar.gz','uniroute-upgrade-linux-amd64'])
-        self.assertEqual(H.sha((self.assets/'backend-image.tar.gz').read_bytes()),O['assets']['backend-image.tar.gz']['sha256'])
-        self.assertEqual([label for label,args in self.calls if args and args[0]=='build'],['one retained frontend build'])
-        self.assertEqual(pulls,['backend-builder','frontend-builder','frontend-runtime'])
 
 
 if __name__=='__main__':

@@ -415,7 +415,6 @@ class LocalInputTests(unittest.TestCase):
                  patch.object(H, 'initialize_guard', side_effect=initialize), \
                  patch.object(H, 'frontend_input_preflight', return_value=None), \
                  patch.object(H, 'prepare_source_inputs', return_value=None), \
-                 patch.object(H, 'prepare_backend_origin', return_value=None), \
                  patch.object(H, 'module', side_effect=lambda name, path: guard if name == 'accepted_byte_guards' else None), \
                  patch.object(H, 'GitHub', side_effect=lambda token, guard: client(token, transport)), \
                  patch.object(H, 'build', side_effect=fail):
@@ -708,6 +707,122 @@ class ActualFrontendBindingTests(unittest.TestCase):
         terminal = H.load(H.regular(H.terminal_path(env), 64*1024))
         self.assertEqual(terminal['error'], 'frontend_original_input_identity')
         self.assertIsNone(terminal['draft_id']); self.assertEqual(terminal['assets'], [])
+
+
+class FullBackendBuildTests(unittest.TestCase):
+    """Command-order and trust failures; all Docker/native operations are mocked."""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='ur-full-build-guard-')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.source = self.root/'source'
+        (self.source/'frontend').mkdir(parents=True)
+        self.assets = self.root/'assets'; self.assets.mkdir()
+        self.data = self.root/'data'; self.data.mkdir()
+        for name in ('LICENSE', 'NOTICE'):
+            H.write_new(self.source/name, b'synthetic notice')
+        self.back, self.front = self.root/'backend.Dockerfile', self.root/'frontend.Dockerfile'
+        H.write_new(self.back, b'FROM fixed-backend'); H.write_new(self.front, b'FROM fixed-frontend')
+        self.binary = self.root/'synthetic-backend'; H.write_new(self.binary, b'synthetic-backend')
+        self.ring = 'synthetic-public-ring-only'
+        self.calls = []; self.retained = []; self.saved = []; self.pulls = []
+        self.bad_buildinfo = False; self.bad_notice = False; self.bad_front = False
+        self.old_backend = False; self.non_release_trust = False
+        self.layers = ['sha256:'+'2'*64]
+        self.guard = types.SimpleNamespace(work=self.root, run_id='77',
+            FIXED={'images': {role+'-runtime': {'rootfs_diff_ids': self.layers} for role in ('backend','frontend')}},
+            receipt={'images': {}, 'source_export': {'commit': H.PRODUCT}, 'commands': []},
+            docker=self.docker, pull=self.pull, tool=self.tool, inspect_image=self.inspect)
+
+    def pull(self, role):
+        self.pulls.append(role); return role
+
+    def docker(self, label, *args):
+        self.assertEqual(args[0], 'build', 'No backend origin load/reuse is permitted')
+        self.calls.append((label, list(args)))
+        H.write_new(Path(args[args.index('--iidfile')+1]), ('sha256:'+'1'*64+'\n').encode())
+
+    def inspect(self, role, ref):
+        self.guard.receipt['images'][role] = {'id': ref, 'rootfs_diff_ids': self.layers}
+
+    def tool(self, label, *args):
+        if label == 'byte-go-version': return 'go version go1.25.12 linux/amd64'
+        if label == 'byte-node-version': return 'v24.19.0\n11.17.0'
+        self.assertEqual(label, 'actual-backend-buildinfo')
+        version = '1.13.0' if self.old_backend else '1.14.0'
+        commit = ('9e0240c68a20deebf9bcd0e2cc7b58034d09b696' if self.old_backend else
+                  '0'*40 if self.bad_buildinfo else H.PRODUCT)
+        return ('go1.25.12 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 '
+            'main.buildVersion='+version+' main.buildCommit='+commit+
+            ' main.buildTree='+H.TREE+
+            ' github.com/uniroute/unirouter/internal/releasetrust.buildMode='+('development' if self.non_release_trust else 'release')+
+            ' github.com/uniroute/unirouter/internal/releasetrust.embeddedUpgradeKeyRingBase64='+self.ring)
+
+    def inventory(self, guard, helper, role, image, data):
+        return role, self.binary if role == 'backend' else None, {'entries': [], 'apk': []}
+
+    def copy_notice(self, guard, cid, path, target, cap):
+        H.write_new(target, b'wrong-notice' if self.bad_notice else (H.INPUTS/'component-notices.tar.gz').read_bytes())
+
+    def save(self, guard, role, image, assets, remaining):
+        self.saved.append(role)
+        H.write_new(assets/(role+'-image.tar.gz'), ('synthetic-'+role).encode())
+        return {'image_id': image, 'compressed': H.file_fact(assets/(role+'-image.tar.gz'))}
+
+    def verifier(self, guard, helper, source, go, assets, data):
+        H.write_new(assets/'uniroute-upgrade-linux-amd64', b'synthetic-verifier')
+
+    def build(self):
+        membership = {'packages': [], 'output_files': []}
+        if self.bad_front: membership['output_files'] = [{'file':'missing.js','bytes':1,'sha256':'a'*64}]
+        with patch.dict(os.environ, {'EXPECTED_WORKFLOW_COMMIT':PRODUCER, 'ADMISSION_SHA256':'b'*64}, clear=True), \
+             patch.object(H, 'inventory', side_effect=self.inventory), \
+             patch.object(H, 'collect_frontend_membership', return_value=membership), \
+             patch.object(H, 'saved_image', side_effect=self.save), \
+             patch.object(H, 'verifier', side_effect=self.verifier), \
+             patch.object(H, 'component_binding', return_value={'synthetic_test_only': True}):
+            H.build(self.guard, types.SimpleNamespace(copy_exact=self.copy_notice), self.ring, {},
+                self.assets, self.data, lambda p:self.retained.append(p.name),
+                (self.source, self.back, self.front, {}))
+
+    def test_each_role_builds_and_retains_once_with_exact_release_arguments(self):
+        self.build()
+        self.assertEqual([name for name,args in self.calls], ['one retained backend build','one retained frontend build'])
+        self.assertEqual(self.saved, ['backend','frontend'])
+        self.assertEqual(self.retained, ['backend-image.tar.gz','frontend-image.tar.gz','uniroute-upgrade-linux-amd64'])
+        self.assertEqual(self.pulls, ['backend-builder','frontend-builder','backend-runtime','frontend-runtime'])
+        backend = self.calls[0][1]
+        for value in ['RUNTIME_VERSION=1.14.0','RUNTIME_COMMIT='+H.PRODUCT,'RUNTIME_TREE='+H.TREE,
+                      'UNIROUTER_RELEASE_TRUST_MODE=release','UNIROUTER_UPGRADE_TRUST_BUNDLE_B64='+self.ring]:
+            self.assertIn(value, backend)
+        self.assertIn('VITE_APP_VERSION=1.14.0', self.calls[1][1])
+        self.assertTrue((self.data/'actual-component-bindings.json').exists())
+
+    def test_wrong_backend_source_buildinfo_refuses_before_retention(self):
+        self.bad_buildinfo = True
+        with self.assertRaisesRegex(H.Stop, 'backend_release_buildinfo'): self.build()
+        self.assertEqual(self.saved, []); self.assertEqual(self.retained, [])
+
+    def test_old_1_13_backend_refuses_before_retention(self):
+        self.old_backend = True
+        with self.assertRaisesRegex(H.Stop, 'backend_release_buildinfo'): self.build()
+        self.assertEqual(self.saved, []); self.assertEqual(self.retained, [])
+
+    def test_non_release_backend_trust_refuses_before_retention(self):
+        self.non_release_trust = True
+        with self.assertRaisesRegex(H.Stop, 'backend_release_buildinfo'): self.build()
+        self.assertEqual(self.saved, []); self.assertEqual(self.retained, [])
+
+    def test_changed_image_notice_refuses_before_retention(self):
+        self.bad_notice = True
+        with self.assertRaisesRegex(H.Stop, 'image_notice_binding'): self.build()
+        self.assertEqual(self.saved, []); self.assertEqual(self.retained, [])
+
+    def test_frontend_output_mismatch_preserves_only_new_backend_partial(self):
+        self.bad_front = True
+        with self.assertRaisesRegex(H.Stop, 'final_dist_membership'): self.build()
+        self.assertEqual(self.saved, ['backend']); self.assertEqual(self.retained, ['backend-image.tar.gz'])
+        self.assertEqual((self.assets/'backend-image.tar.gz').read_bytes(), b'synthetic-backend')
 
 
 if __name__ == '__main__':

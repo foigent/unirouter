@@ -32,8 +32,8 @@ METADATA_LIMIT = 32 * MIB
 REPO = 'foigent/unirouter'
 REPO_ID = 1281228065
 ACTOR_ID = 252312344
-PRODUCT = '9e0240c68a20deebf9bcd0e2cc7b58034d09b696'
-TREE = '8bd942636ca17e48de95d0e531108d303066d923'
+PRODUCT = 'c89e7c60ac63204e990f52ec128cd493f185112b'
+TREE = '5cbb0dbccad53fb1aa38f004e13065741ad7d35b'
 WORKFLOW = '.github/workflows/community-byte-candidate.yml'
 API = 'https://api.github.com'
 PREFIX = '/repos/' + REPO
@@ -41,10 +41,10 @@ ROOT = Path(__file__).resolve().parents[2]
 INPUTS = ROOT / '.github/release-inputs'
 BOUND = {
     'community-backend-reuse.py': '0a834c5ab5907b6a3266848a96f21eacd95a9d4da9de9d83e3ffcc7b445006f1',
-    'community-image-candidate.py': 'd98b401204a82bedeb866ff4ca7e104cb8cac4f56872665cc8a293e838c252f2',
-    'community-source-evidence.py': 'ce2cc04b391a17e40a33b0aa2139a9b6ef72fefd321f2780e5aa66435eceeefa',
-    'frontend-membership-observer.mjs': '58c94624f1617f6bbe9e19f12cde518c512c5fd9c89d1d0581a822c1fe041cb8',
-    'component-notices.tar.gz': 'f0f166f98c90e164574d151999b71f0bac8f7ac9fe9ab89c93bd01cbdf269764',
+    'community-image-candidate.py': '5b0ff2fb52a041390f13beb73db3eb4ac0b140da592d054e8361cd0402d11fa6',
+    'community-source-evidence.py': '34903714ea20cadbc23fededdcbc39e9f7ee66bf79278e1c9304ac30c222e6e0',
+    'frontend-membership-observer.mjs': '30ab150e3f30d7076e6df508b1c9a37aef801dc3e34b4f12a35a53a7f0a86086',
+    'component-notices.tar.gz': 'e51a2b8f4eff0c2a9200e172d3350816b5d724597ea3ff2187fd18c98722263d',
     'community-public-keys.json': '96c91635460ddfb2a14aa1ea97d8445951730e9eb04a33cbdf4320141e61d63d',
 }
 ASSETS = ('backend-image.tar.gz', 'frontend-image.tar.gz',
@@ -622,7 +622,7 @@ def initialize_guard(guard, work, env):
     need(Path(env['GITHUB_WORKSPACE']).resolve()/'producer' == ROOT, 'workspace')
     need(guard.argv_run('producer checkout identity', ['git', '-C', str(ROOT), 'rev-parse', 'HEAD'])
          == env['EXPECTED_WORKFLOW_COMMIT'], 'producer_checkout')
-    guard.SOURCE_CHECKOUT = ROOT/'.byte-source-9e0240c6'
+    guard.SOURCE_CHECKOUT = ROOT/'.byte-source-c89e7c60'
     info = load(guard.docker('local Docker environment', 'info', '--format',
         '{"OSType":{{json .OSType}},"Architecture":{{json .Architecture}},'
         '"SecurityOptions":{{json .SecurityOptions}},"DockerRootDir":{{json .DockerRootDir}}}'))
@@ -670,7 +670,7 @@ def derive_recipes(guard, source):
     # Native recipes() owns these exact new temporary files; not repository files.
     back.write_text(btext); front.write_text(ftext)
     return back, front, {'backend': file_fact(back), 'frontend': file_fact(front),
-        'changes': ['existing fixed FROM substitutions', 'accepted frontend observer and same production/1.13.0 arguments',
+        'changes': ['existing fixed FROM substitutions', 'accepted frontend observer and same production/1.14.0 arguments',
                     'retained notices/LICENSE/NOTICE in non-served runtime directory',
                     'actual frontend observer output retained in same final image'],
         'not_claimed_byte_equal_to_old_ephemeral_images': True}
@@ -873,27 +873,7 @@ def prepare_source_inputs(guard):
     return source, back, front, derivation
 
 
-def prepare_backend_origin(guard, helper, api, assets, data, context, producer):
-    origin = module('accepted_backend_origin', Path(__file__).with_name('community-backend-reuse.py'))
-    try:
-        reuse = origin.prepare(api, guard, assets, data, guard.receipt['source_export'], regular(context[1], 65536))
-        cid, binary, report = inventory(guard, helper, 'backend', reuse['record']['config_id'], data)
-        origin.compare_inventory(report, reuse['report'])
-        need(file_fact(binary) == load(reuse['files']['backend-binary.json']), 'origin_backend_binary')
-        origin.fresh(api)  # Complete origin binding/audience recheck before any new draft write.
-    except origin.Stop as error:
-        raise Stop(str(error)) from None  # Origin reasons are closed constant codes only.
-    reuse.update(cid=cid, binary=binary, inventory=report)
-    write_new(data/'backend-origin.json', encoded({
-        'status': 'exact_backend_bytes_reused_from_accepted_failed_partial_origin',
-        'original_backend_build': reuse['record'], 'assembly_producer': producer,
-        'assembly_run': guard.run_id, 'original_failure_unchanged': True,
-        'backend_rebuilt_saved_or_recompressed': False,
-        'actual_load_inspection_stopped_inventory_and_anonymous_denial_verified': True}))
-    return reuse
-
-
-def build(guard, helper, ring, index, assets, data, retain, context, reuse):
+def build(guard, helper, ring, index, assets, data, retain, context):
     source, back, front, derivation = context
     write_new(data/'recipe-derivation.json', encoded(derivation))
     for role, path in (('backend', back), ('frontend', front)):
@@ -908,7 +888,7 @@ def build(guard, helper, ring, index, assets, data, retain, context, reuse):
         'observer_bindings': BOUND, 'admission_sha256': os.environ['ADMISSION_SHA256'],
         'upstream_companions': 'references only; not pulled/rebuilt/rehosted by this workflow'}))
     bases = {role: guard.pull(role) for role in
-             ('backend-builder', 'frontend-builder', 'frontend-runtime')}
+             ('backend-builder', 'frontend-builder', 'backend-runtime', 'frontend-runtime')}
     go = bases['backend-builder']
     go_version = guard.tool('byte-go-version', go,
         'mkdir -p /tmp/telemetry; printf "off\\n" > /tmp/telemetry/mode; go version')
@@ -917,26 +897,23 @@ def build(guard, helper, ring, index, assets, data, retain, context, reuse):
     need(go_version == 'go version go1.25.12 linux/amd64'
          and node_version == ['v24.19.0', '11.17.0'], 'actual_build_tools')
     images = {}; inventories = {}; membership = None; buildinfo = None
-    # Accepted backend bytes are imported unchanged; only the frontend is built.
+    # Exactly one backend and one complete production frontend build.
     for role, recipe, context in (('backend', back, source), ('frontend', front, source/'frontend')):
-        if role == 'backend':
-            image = reuse['record']['config_id']
-        else:
-            iidfile = guard.work/(role+'.id')
-            command = ['build', '--platform', 'linux/amd64', '--file', str(recipe),
-                       '--tag', 'ur-byte-'+role+':'+guard.run_id, '--iidfile', str(iidfile)]
-            for argument in ['VITE_DEPLOY_ENV=production', 'VITE_APP_VERSION=1.13.0']:
-                command += ['--build-arg', argument]
-            guard.docker('one retained frontend build', *command, str(context))
-            image = regular(iidfile, 128).decode().strip()
+        iidfile = guard.work/(role+'.id')
+        command = ['build', '--platform', 'linux/amd64', '--file', str(recipe),
+                   '--tag', 'ur-byte-'+role+':'+guard.run_id, '--iidfile', str(iidfile)]
+        args = (['RUNTIME_VERSION=1.14.0', 'RUNTIME_COMMIT='+PRODUCT, 'RUNTIME_TREE='+TREE,
+                 'UNIROUTER_RELEASE_TRUST_MODE=release', 'UNIROUTER_UPGRADE_TRUST_BUNDLE_B64='+ring,
+                 'GOPROXY=https://proxy.golang.org,direct'] if role == 'backend' else
+                ['VITE_DEPLOY_ENV=production', 'VITE_APP_VERSION=1.14.0'])
+        for argument in args: command += ['--build-arg', argument]
+        guard.docker('one retained '+role+' build', *command, str(context))
+        image = regular(iidfile, 128).decode().strip()
         need(re.fullmatch('sha256:[0-9a-f]{64}', image), 'app_image_id')
         guard.inspect_image(role, image)
         layers = guard.FIXED['images'][role+'-runtime']['rootfs_diff_ids']
         need(guard.receipt['images'][role]['rootfs_diff_ids'][:len(layers)] == layers, 'app_base_layers')
-        if role == 'backend':
-            cid, binary, report = reuse['cid'], reuse['binary'], reuse['inventory']
-        else:
-            cid, binary, report = inventory(guard, helper, role, image, data)
+        cid, binary, report = inventory(guard, helper, role, image, data)
         inventories[role] = report
         # Check the notice archive actually included in each final image, not just build input.
         actual = guard.work/(role+'-included-notices.tar.gz')
@@ -947,7 +924,7 @@ def build(guard, helper, ring, index, assets, data, retain, context, reuse):
             buildinfo = guard.tool('actual-backend-buildinfo', go,
                 'mkdir -p /tmp/telemetry; printf "off\\n" > /tmp/telemetry/mode; go version -m /inspect/uniroute', binary)
             for value in ('go1.25.12', 'CGO_ENABLED=0', 'GOOS=linux', 'GOARCH=amd64',
-                          'main.buildVersion=1.13.0', 'main.buildCommit='+PRODUCT, 'main.buildTree='+TREE,
+                          'main.buildVersion=1.14.0', 'main.buildCommit='+PRODUCT, 'main.buildTree='+TREE,
                           'github.com/uniroute/unirouter/internal/releasetrust.buildMode=release',
                           'github.com/uniroute/unirouter/internal/releasetrust.embeddedUpgradeKeyRingBase64='+ring):
                 need(value in buildinfo, 'backend_release_buildinfo')
@@ -963,10 +940,7 @@ def build(guard, helper, ring, index, assets, data, retain, context, reuse):
                      == (row['bytes'], row['sha256']), 'final_dist_membership')
             # Extra nginx stock files are recorded; they are not attributed to npm output.
         remaining = ASSET_LIMIT - sum(p.stat().st_size for p in assets.iterdir()) - 32*MIB
-        if role == 'backend':
-            need(file_fact(assets/'backend-image.tar.gz') == reuse['saved_backend']['compressed'],
-                 'origin_backend_archive_changed')
-        images[role] = reuse['saved_backend'] if role == 'backend' else saved_image(guard, role, image, assets, remaining)
+        images[role] = saved_image(guard, role, image, assets, remaining)
         write_new(data/(role+'-native-save.json'), encoded(images[role]))
         retain(assets/(role+'-image.tar.gz'))
     verifier(guard, helper, source, go, assets, data)
@@ -1068,21 +1042,18 @@ def main():
         draft.repository()
         with contextlib.redirect_stdout(io.StringIO()):
             context = prepare_source_inputs(guard)
-            reuse = prepare_backend_origin(guard, helper, api, assets, data, context, producer)
         draft.create()
         result['draft_id'] = draft.release['id']
         marker = work/MARKER; write_new(marker, b'UniRouter draft audience check; contains no build or credential data.\n')
         draft.upload(marker)
         # Prove the retention channel before spending the app build time.
         with contextlib.redirect_stdout(io.StringIO()):
-            build(guard, helper, ring, index, assets, data, draft.upload, context, reuse)
+            build(guard, helper, ring, index, assets, data, draft.upload, context)
         guard.receipt['status'] = 'built_candidate_with_unresolved_obligations'
         cleanup_attempted = True
         with contextlib.redirect_stdout(io.StringIO()): guard.cleanup()
         result['owned_cleanup_complete'] = all(r['removed_with_anonymous_volumes'] for r in guard.receipt['cleanup'])
         need(result['owned_cleanup_complete'], 'owned_cleanup_incomplete')
-        need(file_fact(assets/'backend-image.tar.gz') == reuse['saved_backend']['compressed'],
-             'origin_backend_archive_changed')
         write_new(data/'owned-cleanup.json', encoded(guard.receipt['cleanup']))
         write_new(data/'draft-pre-upload-observations.json', encoded({'effects': draft.effects,
             'api_observations': api.observations, 'tag': draft.tag,
@@ -1104,8 +1075,8 @@ def main():
                                 else failure_diagnostic(error, guard))
         if guard is not None and work is not None:
             try:
-                origin = module('accepted_backend_origin_diagnostic', Path(__file__).with_name('community-backend-reuse.py'))
-                result['controlled_build_diagnostic'] = origin.capture_build_diagnostic(guard, work/'data')
+                diagnostic = module('retained_safe_build_diagnostic', Path(__file__).with_name('community-backend-reuse.py'))
+                result['controlled_build_diagnostic'] = diagnostic.capture_build_diagnostic(guard, work/'data')
             except Exception:
                 result['controlled_build_diagnostic'] = {'capture': 'capture_unavailable', 'original_failure_preserved': True}
     finally:

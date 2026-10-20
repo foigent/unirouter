@@ -41,15 +41,15 @@ jobs:
       - name: Checkout fixed product source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: 9e0240c68a20deebf9bcd0e2cc7b58034d09b696
+          ref: c89e7c60ac63204e990f52ec128cd493f185112b
           persist-credentials: false
-          path: producer/.byte-source-9e0240c6
+          path: producer/.byte-source-c89e7c60
       - name: Validate producer offline guards
         working-directory: producer
         run: |
           python3 -I -B .github/tests/test-community-byte-candidate.py
           python3 -I -B .github/tests/test-community-backend-reuse.py
-      - name: Import accepted backend, build frontend and verifier, retain verified draft
+      - name: Build exact backend, frontend and verifier, retain verified draft
         working-directory: producer
         env:
           GITHUB_TOKEN: ${{ github.token }}
