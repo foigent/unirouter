@@ -12,11 +12,12 @@ administration console. It brings model access policies, routing, budgets,
 usage, billing and execution receipts together, so operators can inspect how a
 request was handled and what its charges are based on.
 
-> **Public source, installer preview:** the Apache-2.0 source is available.
-> Fresh Linux amd64 installation and maintenance removal of the commercial
-> License passed in disposable GitHub environments. Official signed downloads
-> remain pending. See [release readiness](docs/community/release-readiness.md)
-> for evidence, contributor CI status and the remaining distribution work.
+> **Public source, Linux installer preview:** the Apache-2.0 source is available.
+> The [1.14.0 Linux amd64 guide](docs/community/install-linux.md) provides the
+> fixed signed-package and download identities. Check
+> [release readiness](docs/community/release-readiness.md) for the separate
+> signature, public-download and installation evidence. Historical synthetic
+> tests do not establish a current public install or an existing-server upgrade.
 
 English is the primary language for public documentation and project updates;
 [Simplified Chinese](README.zh-CN.md) is the secondary language. Contributions

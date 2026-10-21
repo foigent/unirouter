@@ -23,7 +23,7 @@ import tarfile
 import tempfile
 import uuid
 
-IMMUTABLE_SHA256 = "f6ef7d3bcfa234d3c76cd41f2b2f3cf7d4e76a68b720dd3d7d0621032eac427a"
+IMMUTABLE_SHA256 = "b573a9cbb761d0b9312081fad216d955deb42fcfac6a87f2feb6e494b064daa3"
 SCHEMA = "000127_xinsight_communication_policy"
 WORKFLOW = "foigent/unirouter/.github/workflows/community-release-acceptance.yml@refs/heads/main"
 RELEASE_KEYS = {"release_sequence", "created_at", "expires_at", "tag", "bootstrap_url",
