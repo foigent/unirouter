@@ -4,13 +4,19 @@ Explicitly non-expiring packages use signed `unirouter.upgrade-manifest.v2` with
 
 [简体中文](install-linux.zh-CN.md) · [First model request](getting-started.md)
 
-**Linux amd64 preview: v1.14.0-preview.12, source
-`c89e7c60ac63204e990f52ec128cd493f185112b`, M127, release sequence 12.**
-Use these fixed downloads only after the [release readiness](release-readiness.md)
-publication and anonymous-installation checks pass. The actual package's signature
-and all 24 payloads have been verified locally; public availability and installation
-are separate gates. The [formal acceptance workflow](https://github.com/foigent/unirouter/actions/workflows/community-release-acceptance.yml)
-records the real public-package result. Earlier
+**Linux amd64 preview: v1.14.0-preview.13, source
+`c89e7c60ac63204e990f52ec128cd493f185112b`, M127, release sequence 13.**
+The signed package and all 24 payloads have been verified locally. This preview
+corrects four dependency image names to Docker's reported spelling; all image
+digests, product source and installer checks remain unchanged. The release and
+UR image packages are public; complete public-package installation acceptance
+remains pending in the [formal acceptance workflow](https://github.com/foigent/unirouter/actions/workflows/community-release-acceptance.yml).
+See [release readiness](release-readiness.md) for the distinct evidence.
+The [Preview 12 consumer](https://github.com/foigent/unirouter/actions/runs/39631286350)
+verified the signed public package and both UR images, then stopped at PostgreSQL
+image-name validation before installation. Keep any old attempt and use unused
+paths and a new project for this package; resume cannot switch package hashes.
+Earlier
 [synthetic native results](../ops/COMMUNITY-INSTALLER.md#accepted-native-bootstrap-result--2026-10-11)
 retain their recorded scope. This entry installs a new instance; it does not upgrade
 an existing server. Cloning the repository does not supply signed release assets.
@@ -46,7 +52,7 @@ PostgreSQL and Redis have no published host ports.
 ## Download and install this preview
 
 Obtain this guide through the authenticated official repository and review the
-[preview release](https://github.com/foigent/unirouter/releases/tag/v1.14.0-preview.12)
+[preview release](https://github.com/foigent/unirouter/releases/tag/v1.14.0-preview.13)
 before executing downloaded code. The script is pinned to the product source;
 the JSON pins the verifier, public ring and signed package. A checksum beside
 an untrusted download does not independently establish trust. This entry does
@@ -55,10 +61,10 @@ not replace an existing public ring or require a private signing key.
 | Download | Bytes | SHA-256 |
 | --- | ---: | --- |
 | `bootstrap.py` at source c89e7c60 | 23,287 | `054c51a671a9255fd3a587fc7897d51fff0525e2e4ae54bb3926ac2e44785e3f` |
-| `community-bootstrap.json` | 1,121 | `23985fa7f2728f7ee3e0a55d41030edc6c607c467b921f85de5f69a8f046ddb8` |
+| `community-bootstrap.json` | 1,121 | `e67ddc9604019eee994793613f5eeac12d3f8587f921c4c39132436672636d1e` |
 | `uniroute-upgrade-linux-amd64` | 4,099,528 | `60acbb428d746bccaea3e3bc0113e2d0f900b15057bda39455805f0e9a1bbd23` |
 | `public-keys.json` | 83 | `96c91635460ddfb2a14aa1ea97d8445951730e9eb04a33cbdf4320141e61d63d` |
-| `unirouter-1.14.0-linux-amd64.tar.gz` | 130,031,729 | `c2e98cdc5b13d8bff745eaa7f576fb4bc2b7dda92a831a0ef1e01b148ee3f6e0` |
+| `unirouter-1.14.0-linux-amd64.tar.gz` | 130,032,242 | `94d85ac174bc9ebdbefeab13a2827c7f2acaa146c75d3bb1f22338c5db605834` |
 
 After the public release gates pass, open a root shell with `sudo -i`, then run
 the block below. It requires unused download, preparation and runtime paths;
@@ -75,14 +81,14 @@ curl --fail --location --proto '=https' --proto-redir '=https' \
   https://raw.githubusercontent.com/foigent/unirouter/c89e7c60ac63204e990f52ec128cd493f185112b/deploy/community/bootstrap.py
 curl --fail --location --proto '=https' --proto-redir '=https' \
   --output community-bootstrap.json \
-  https://github.com/foigent/unirouter/releases/download/v1.14.0-preview.12/community-bootstrap.json
+  https://github.com/foigent/unirouter/releases/download/v1.14.0-preview.13/community-bootstrap.json
 printf '%s  %s\n' \
   054c51a671a9255fd3a587fc7897d51fff0525e2e4ae54bb3926ac2e44785e3f bootstrap.py \
-  23985fa7f2728f7ee3e0a55d41030edc6c607c467b921f85de5f69a8f046ddb8 community-bootstrap.json \
+  e67ddc9604019eee994793613f5eeac12d3f8587f921c4c39132436672636d1e community-bootstrap.json \
   | sha256sum --check --status
 python3 -I -B bootstrap.py install \
   --bootstrap community-bootstrap.json \
-  --bootstrap-sha256 23985fa7f2728f7ee3e0a55d41030edc6c607c467b921f85de5f69a8f046ddb8 \
+  --bootstrap-sha256 e67ddc9604019eee994793613f5eeac12d3f8587f921c4c39132436672636d1e \
   --directory /opt/unirouter-release
 ```
 
@@ -101,7 +107,7 @@ uses the original database plan and does not redownload or regenerate secrets.
 See [interrupted installation](#if-installation-stops) below.
 
 The release also includes
-[`unirouter-retained-images-source-notices.tar.gz`](https://github.com/foigent/unirouter/releases/download/v1.14.0-preview.12/unirouter-retained-images-source-notices.tar.gz)
+[`unirouter-retained-images-source-notices.tar.gz`](https://github.com/foigent/unirouter/releases/download/v1.14.0-preview.13/unirouter-retained-images-source-notices.tar.gz)
 and `SHA256SUMS`. The companion maps all six retained backend/frontend versions
 (1.12, 1.13 and 1.14) to version-specific source and notices; the signed current
 package contains the shared source materials. Third-party terms remain applicable.

@@ -39,7 +39,7 @@ class ConsumerTests(unittest.TestCase):
         c['immutable'] = fill(c['immutable'])
         now = dt.datetime.now(dt.timezone.utc)
         c['state'] = 'ready'
-        c['release'].update(release_sequence=12, tag='v1.14.0-preview.12',
+        c['release'].update(release_sequence=13, tag='v1.14.0-preview.13',
             created_at=(now - dt.timedelta(minutes=1)).strftime('%Y-%m-%dT%H:%M:%SZ'),
             expires_at='never', bootstrap_size=2048, bootstrap_sha256='c'*64,
             package_size=1000, package_sha256='d'*64)
@@ -57,7 +57,7 @@ class ConsumerTests(unittest.TestCase):
         self.assertEqual(self.config['state'], 'ready')
         self.assertEqual(self.config['immutable']['product']['commit'],
                          'c89e7c60ac63204e990f52ec128cd493f185112b')
-        self.assertEqual(self.config['release']['release_sequence'], 12)
+        self.assertEqual(self.config['release']['release_sequence'], 13)
         self.assertEqual(self.config['release']['expires_at'], 'never')
         with mock.patch.object(m.subprocess, 'run') as run, mock.patch.object(m.tempfile, 'mkdtemp') as mkdir:
             for action in ('describe', 'validate'):
@@ -113,7 +113,7 @@ class ConsumerTests(unittest.TestCase):
 
     def test_identity_and_sequence_still_bound(self):
         with self.synthetic() as c:
-            for number in (True,0,11,2**63):
+            for number in (True,0,11,12,2**63):
                 q=copy.deepcopy(c); q['release']['release_sequence']=number; self.refuses_without_effects(q)
             for key in ('product','public_ring','images','app_image_identities','artifacts','provenance_sha256'):
                 q=copy.deepcopy(c); q['immutable'][key]=None; self.refuses_without_effects(q)

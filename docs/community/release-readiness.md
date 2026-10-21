@@ -1,34 +1,44 @@
 # Open-source release readiness
 
-Status on **2026-10-21: the actual 1.14.0 signed preview is verified locally;
-public release, anonymous pulls and real public-package installation remain
-separate pending gates**. English is the primary community language, with Chinese
-entry points and contributions welcome. `state: ready` in the consumer input
-means the fixed inputs are complete; it does not mean these public gates passed.
+Status on **2026-10-22: Preview 13 is signed, verified and published; complete
+public-package installation acceptance remains pending**. English is the primary
+community language, with Chinese entry points and contributions welcome.
+`state: ready` means exact inputs are complete; it does not mean installation passed.
 
 ## Current fixed preview — 1.14.0 / M127
 
 The [English Linux guide](install-linux.md) and
-[Chinese companion](install-linux.zh-CN.md) contain the exact proposed
-`v1.14.0-preview.12` downloads and independently pinned hashes. The actual signed
-package is 130,031,729 bytes, SHA-256
-`c2e98cdc5b13d8bff745eaa7f576fb4bc2b7dda92a831a0ef1e01b148ee3f6e0`.
-It binds product source `c89e7c60ac63204e990f52ec128cd493f185112b`, sequence12,
-M127, 24 payloads and manifest v2 with `expires_at: never`. Native verification
-and exact payload readback passed. Existing signing trust is adopted; no new
-key or another signature is needed for the unsigned bootstrap descriptor.
+[Chinese companion](install-linux.zh-CN.md) bind
+[`v1.14.0-preview.13`](https://github.com/foigent/unirouter/releases/tag/v1.14.0-preview.13).
+The actual signed package is 130,032,242 bytes, SHA-256
+`94d85ac174bc9ebdbefeab13a2827c7f2acaa146c75d3bb1f22338c5db605834`. It binds product source
+`c89e7c60ac63204e990f52ec128cd493f185112b`, sequence13, M127, 24 payloads and
+manifest v2 with `expires_at: never`. Native signature verification and the exact
+24-file readback passed. The new owner signature preserves the existing key;
+bootstrap metadata is unsigned and independently pinned by its hash.
 
-The public preview has six planned attachments: the signed package, Linux
-verifier, public ring, bootstrap JSON, retained-six-version source/NOTICE
-companion and checksums. Package visibility affects every version in both GHCR
-packages, including 1.12/1.13; it must follow complete source/material access
-checks. The four upstream service images remain references to their publishers.
-Track actual public installation in
+Only `payload/install.json` and its reassembly provenance changed from Preview 12;
+the other 22 payloads remain byte-identical. Four Docker Hub names now use the
+repository spelling returned by Docker `RepoDigests`, retaining the same exact
+repository and digest identities. Product images, source, installer bytes and all
+signature/platform/config/layer checks remain unchanged. A separate provenance
+record describes this data correction without relabeling the historical build.
+
+The public release has six attachments: the signed package, Linux verifier,
+public ring, bootstrap JSON, retained-six-version source/NOTICE companion and
+checksums. Both GHCR packages and their six retained 1.12/1.13/1.14 versions are
+public; this repair does not rebuild, republish or retag any image. The four
+upstream service images remain references to their publishers.
+
+The [Preview 12 consumer, run 39631286350 attempt1](https://github.com/foigent/unirouter/actions/runs/39631286350),
+verified the full signed public archive and both UR images/configs/ordered layers,
+then failed at PostgreSQL image-name inspection before installation. That failure
+and the original release are retained. It does not establish installation success.
+Track the new exact-main, temporary-Linux installation result in
 [Formal Community Release Acceptance](https://github.com/foigent/unirouter/actions/workflows/community-release-acceptance.yml).
-No such result is claimed here. The earlier tests below retain their exact
-version/synthetic scope; neither they nor local signing prove an existing ECS
-upgrade or a new provider request. This preview is for fresh Linux amd64 instances.
-
+No Preview 13 installation result is claimed here. Earlier tests retain their
+recorded synthetic/version scope; they do not establish an existing ECS upgrade
+or a new provider request. This preview installs fresh Linux amd64 instances.
 
 The accepted direction is to open-source the complete UniRouter (UR) and
 X-Insight (XI) products under Apache-2.0, without a community/commercial edition split.

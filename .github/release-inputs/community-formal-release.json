@@ -27,10 +27,10 @@
     "images": {
       "backend": "ghcr.io/foigent/unirouter-backend@sha256:402809581ba3b826f0cc7bf2fb98c3f45547ba72e579f106ae4a2b2e92b40f70",
       "frontend": "ghcr.io/foigent/unirouter-frontend@sha256:b6ff4bba4e1f90a3832a66c343199c5c557aea74d982a6ad216b27aec244ca30",
-      "postgres": "docker.io/library/postgres@sha256:1a66d744c1b459e13b05a8fca341da84cb63383e99ce262210efee5a319d4551",
-      "redis": "docker.io/library/redis@sha256:ca0acbb137c1dc3339c8b147a58fd6f42775d4599327b50e7b116c23de501af2",
-      "prometheus": "docker.io/prom/prometheus@sha256:3305cd2e483c13364c94ae4905368eb425c9fa804f8e523ee47d8bf4de9d87a2",
-      "grafana": "docker.io/grafana/grafana@sha256:a80bc3848cf5d4b2958ea25dbeb36fa9442ef4be8c73fe4bff11340307c32919"
+      "grafana": "grafana/grafana@sha256:a80bc3848cf5d4b2958ea25dbeb36fa9442ef4be8c73fe4bff11340307c32919",
+      "postgres": "postgres@sha256:1a66d744c1b459e13b05a8fca341da84cb63383e99ce262210efee5a319d4551",
+      "prometheus": "prom/prometheus@sha256:3305cd2e483c13364c94ae4905368eb425c9fa804f8e523ee47d8bf4de9d87a2",
+      "redis": "redis@sha256:ca0acbb137c1dc3339c8b147a58fd6f42775d4599327b50e7b116c23de501af2"
     },
     "app_image_identities": [
       {
@@ -139,8 +139,8 @@
       },
       {
         "path": "payload/install.json",
-        "size": 780,
-        "sha256": "ad3014bf67ff96efb828d268676cbb01a769005d07c3fd72b8b800518c868f32"
+        "size": 676,
+        "sha256": "34e082eff89f7158edf2a607c729d82c16ae3871289f561d5c177377f80f0c04"
       },
       {
         "path": "payload/licenses/LICENSE",
@@ -189,8 +189,8 @@
       },
       {
         "path": "payload/provenance/build-provenance.json",
-        "size": 21019,
-        "sha256": "903925b4ed1bbefd6cc1644eb616817355f3d4c49e1be4f07cde039ba95cde0a"
+        "size": 23536,
+        "sha256": "75cabad5d9cfaece4f32588d0578d3c75b25c97f493d064e3a2452177d38ea5e"
       },
       {
         "path": "payload/scripts/source-budget-restore-rebase.sql",
@@ -198,26 +198,26 @@
         "sha256": "deb0f30c040dd7faa28e177209b2ea7e718bd9eb0ee0686d373b1b39bcec262c"
       }
     ],
-    "provenance_sha256": "903925b4ed1bbefd6cc1644eb616817355f3d4c49e1be4f07cde039ba95cde0a",
+    "provenance_sha256": "75cabad5d9cfaece4f32588d0578d3c75b25c97f493d064e3a2452177d38ea5e",
     "accepted_assembly_run": 39471146040,
     "accepted_draft_id": 418705589,
     "actual_private_publisher_run": 39483717066,
     "min_current_sequence": 0,
     "max_current_sequence": 0,
     "min_current_schema": "000127_xinsight_communication_policy",
-    "historical_sequence_reserved_through": 11,
+    "historical_sequence_reserved_through": 12,
     "manifest_schema_version": "unirouter.upgrade-manifest.v2",
     "expires_at": "never"
   },
   "release": {
-    "release_sequence": 12,
-    "created_at": "2026-10-21T04:19:16Z",
+    "release_sequence": 13,
+    "created_at": "2026-10-21T16:54:18Z",
     "expires_at": "never",
-    "tag": "v1.14.0-preview.12",
-    "bootstrap_url": "https://github.com/foigent/unirouter/releases/download/v1.14.0-preview.12/community-bootstrap.json",
+    "tag": "v1.14.0-preview.13",
+    "bootstrap_url": "https://github.com/foigent/unirouter/releases/download/v1.14.0-preview.13/community-bootstrap.json",
     "bootstrap_size": 1121,
-    "bootstrap_sha256": "23985fa7f2728f7ee3e0a55d41030edc6c607c467b921f85de5f69a8f046ddb8",
-    "package_size": 130031729,
-    "package_sha256": "c2e98cdc5b13d8bff745eaa7f576fb4bc2b7dda92a831a0ef1e01b148ee3f6e0"
+    "bootstrap_sha256": "e67ddc9604019eee994793613f5eeac12d3f8587f921c4c39132436672636d1e",
+    "package_size": 130032242,
+    "package_sha256": "94d85ac174bc9ebdbefeab13a2827c7f2acaa146c75d3bb1f22338c5db605834"
   }
 }
