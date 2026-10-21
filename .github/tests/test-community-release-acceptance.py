@@ -53,17 +53,40 @@ class ConsumerTests(unittest.TestCase):
                 m.execute(c, ROOT)
             run.assert_not_called(); mkdir.assert_not_called()
 
-    def test_prepared_config_is_incomplete_and_describe_is_pure(self):
-        self.assertIsNone(self.config['immutable']['product']['commit'])
-        self.assertIsNone(self.config['immutable']['images']['backend'])
-        self.assertIsNone(self.config['immutable']['verifier']['sha256'])
+    def test_prepared_config_is_ready_and_describe_validate_are_pure(self):
+        self.assertEqual(self.config['state'], 'ready')
+        self.assertEqual(self.config['immutable']['product']['commit'],
+                         'c89e7c60ac63204e990f52ec128cd493f185112b')
+        self.assertEqual(self.config['release']['release_sequence'], 12)
         self.assertEqual(self.config['release']['expires_at'], 'never')
         with mock.patch.object(m.subprocess, 'run') as run, mock.patch.object(m.tempfile, 'mkdtemp') as mkdir:
-            output=io.StringIO()
-            with contextlib.redirect_stdout(output): self.assertEqual(m.main(['describe']),0)
-            self.assertFalse(json.loads(output.getvalue())['ready'])
+            for action in ('describe', 'validate'):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output): self.assertEqual(m.main([action]), 0)
+                if action == 'describe':
+                    self.assertTrue(json.loads(output.getvalue())['ready'])
+                else:
+                    self.assertIn('Actual public input shape accepted', output.getvalue())
             run.assert_not_called(); mkdir.assert_not_called()
+        # Complete public input still cannot execute outside its native context.
         self.refuses_without_effects(self.config)
+
+    def test_incomplete_fixture_still_refuses_without_effects(self):
+        value = copy.deepcopy(self.config)
+        value['state'] = 'incomplete'
+        for key in ('release_sequence', 'created_at', 'tag', 'bootstrap_url',
+                    'bootstrap_size', 'bootstrap_sha256', 'package_size', 'package_sha256'):
+            value['release'][key] = None
+        for path in (('product', 'commit'), ('images', 'backend'), ('verifier', 'sha256')):
+            value['immutable'][path[0]][path[1]] = None
+        with mock.patch.object(m, 'IMMUTABLE_SHA256', m.immutable_digest(value['immutable'])):
+            with mock.patch.object(m, 'load_config', return_value=value), \
+                 mock.patch.object(m.subprocess, 'run') as run, mock.patch.object(m.tempfile, 'mkdtemp') as mkdir:
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output): self.assertEqual(m.main(['describe']), 0)
+                self.assertFalse(json.loads(output.getvalue())['ready'])
+                run.assert_not_called(); mkdir.assert_not_called()
+            self.refuses_without_effects(value)
 
     def test_nonexpiring_does_not_default_missing_or_finite_policy(self):
         with self.synthetic() as c:

@@ -1,8 +1,34 @@
 # Open-source release readiness
 
-Status on **2026-10-11: source published; official signed installer distribution
-is not available yet**. English is the primary community language, with Chinese
-entry points and contributions welcome.
+Status on **2026-10-21: the actual 1.14.0 signed preview is verified locally;
+public release, anonymous pulls and real public-package installation remain
+separate pending gates**. English is the primary community language, with Chinese
+entry points and contributions welcome. `state: ready` in the consumer input
+means the fixed inputs are complete; it does not mean these public gates passed.
+
+## Current fixed preview — 1.14.0 / M127
+
+The [English Linux guide](install-linux.md) and
+[Chinese companion](install-linux.zh-CN.md) contain the exact proposed
+`v1.14.0-preview.12` downloads and independently pinned hashes. The actual signed
+package is 130,031,729 bytes, SHA-256
+`c2e98cdc5b13d8bff745eaa7f576fb4bc2b7dda92a831a0ef1e01b148ee3f6e0`.
+It binds product source `c89e7c60ac63204e990f52ec128cd493f185112b`, sequence12,
+M127, 24 payloads and manifest v2 with `expires_at: never`. Native verification
+and exact payload readback passed. Existing signing trust is adopted; no new
+key or another signature is needed for the unsigned bootstrap descriptor.
+
+The public preview has six planned attachments: the signed package, Linux
+verifier, public ring, bootstrap JSON, retained-six-version source/NOTICE
+companion and checksums. Package visibility affects every version in both GHCR
+packages, including 1.12/1.13; it must follow complete source/material access
+checks. The four upstream service images remain references to their publishers.
+Track actual public installation in
+[Formal Community Release Acceptance](https://github.com/foigent/unirouter/actions/workflows/community-release-acceptance.yml).
+No such result is claimed here. The earlier tests below retain their exact
+version/synthetic scope; neither they nor local signing prove an existing ECS
+upgrade or a new provider request. This preview is for fresh Linux amd64 instances.
+
 
 The accepted direction is to open-source the complete UniRouter (UR) and
 X-Insight (XI) products under Apache-2.0, without a community/commercial edition split.
@@ -17,8 +43,7 @@ see [licensing and product scope](commercial-boundaries.md).
   [event-connector-spec](https://github.com/foigent/event-connector-spec) are public
   under Apache-2.0 for project-owned material. Third-party terms remain applicable.
 - Event Connector Spec and Integration Control are shared protocol/verification
-  components, not additional end-user products. X-Insight source is preparing
-  for publication; the [Foigent overview](https://github.com/foigent) links the
+  components, not additional end-user products. [X-Insight source](https://github.com/foigent/x-insight) is public; the [Foigent overview](https://github.com/foigent) links the
   available product entry points without requiring private-repository access.
 - The owner approved publication of the existing Git history and retained records
   after the bounded disclosure review below. No history was rewritten or deleted.
@@ -51,8 +76,8 @@ The tested implementation is unchanged between these source and documentation me
 
 The [accepted native result](../ops/COMMUNITY-INSTALLER.md#accepted-native-bootstrap-result--2026-10-11)
 binds the report and fixture identities. English installation guidance is primary,
-with a Chinese companion. Official trust adoption, signed assets and actual
-public downloads remain pending. This result used local fixture transport,
+with a Chinese companion. At that historical 1.11.0 checkpoint, official trust
+adoption, signed assets and public downloads were pending. This result used local fixture transport,
 temporary signing trust and zero provider calls.
 
 ## Previously accepted implementation and installation — 1.10.0
@@ -97,29 +122,25 @@ The [existing integration entry](getting-started.md#optional-x-insight-integrati
 links UniRouter's setup API, credential lifecycle and recorded combinations.
 The earlier Target observations retain their specific versions and scope;
 UniRouter 1.11.0 installation/protocol CI does not establish a new joint result.
-X-Insight source publication, public installation/invitation/reader guidance
-and an exact synthetic execution-to-review acceptance remain necessary for a
+Public installation/invitation/reader guidance and an exact synthetic
+execution-to-review acceptance remain necessary for a
 newcomer to reproduce the complete path using public sources.
 
-## Remaining signed-distribution work
+## Remaining public-distribution work
 
-Source publication is complete independently of an official installable release.
-Before advertising a one-command public install, prepare the exact supported
-package and image digests, complete third-party notices/source delivery for their
-actual contents, publish the separately trusted verifier and public verification
-ring, and test the resulting public downloads. The installer remains a preview;
-there is no published npm installer or supported production release from this batch.
-The [distribution preparation](../ops/COMMUNITY-INSTALLER.md#public-installer-distribution-preparation--2026-10-11)
-records the proposed download/trust path, checked local materials, expiry/resume
-limit and outstanding official-key decision. The merged 1.11.0 bootstrap
-implements pinned download, verification and preparation before delegating
-to the existing installer. Its synthetic native acceptance passed; actual
-public-download acceptance and official artifact publication remain pending.
-No official signing is implied.
+Publish the six exact preview assets and qualify anonymous source/material
+downloads, then make the two fully mapped image packages public and verify all
+six retained versions. Complete the final consumer/documentation binding PR and
+required protected checks, then execute the existing bounded real public-package
+consumer once. Until those actual results exist, do not advertise a completed
+one-command public installation or a supported production release.
 
-The accepted architecture, X-Insight boundary, source-notice findings and bounded
-history review are retained below. X-Insight publication, ECS/Production changes,
-provider calls and new official signing credentials are separate actions.
+The product has no npm installer; its Linux bootstrap uses Python and an
+already-installed Docker Engine/Compose. The adopted public ring, real signature
+and fixed source/NOTICE materials need no recreation. Existing ECS changes,
+provider calls and the full two-product newcomer walkthrough retain their own
+target and evidence boundaries. Older distribution notes below are historical,
+not an instruction to repeat the settled key decision or old signing operation.
 
 <details>
 <summary>Historical preparation record (superseded by the current status above)</summary>
