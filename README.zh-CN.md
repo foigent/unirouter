@@ -11,7 +11,8 @@ UniRouter（UR）为应用和 Agent 提供统一模型入口及管理控制台�
 如何执行，以及费用依据如何形成。
 
 > **源码已公开，Linux 安装器为预览版：** 项目源码采用 Apache-2.0。
-> [1.14.0 Linux amd64 安装说明](docs/community/install-linux.zh-CN.md)提供固定签名包与下载身份。
+> [1.14.0 Linux amd64 安装说明](docs/community/install-linux.zh-CN.md)提供 Preview 13 的固定签名包与下载身份。
+> 本次修正依赖镜像名称写法，镜像摘要保持不变。
 > 签名、公开下载和真实安装的分别验证结果见[发布准备状态](docs/community/release-readiness.md)。
 > 历史合成测试不能代替当前公开安装或现有服务器升级验收。
 

@@ -4,12 +4,15 @@
 
 [English](install-linux.md) · [配置模型与第一次请求（英文）](getting-started.md)
 
-**Linux amd64 预览版：v1.14.0-preview.12，源码
-`c89e7c60ac63204e990f52ec128cd493f185112b`，M127，发布序号12。**
-请在[发布准备状态](release-readiness.md)中的公开发布与匿名安装检查通过后再使用这些固定下载。
-实际安装包的签名和24项内容已在本地核验；公开可用和真实安装是分别验收的步骤。
-[正式安装验收工作流](https://github.com/foigent/unirouter/actions/workflows/community-release-acceptance.yml)
-记录真实公开包的运行结果；此前[合成测试](../ops/COMMUNITY-INSTALLER.md#accepted-native-bootstrap-result--2026-10-11)
+**Linux amd64 预览版：v1.14.0-preview.13，源码
+`c89e7c60ac63204e990f52ec128cd493f185112b`，M127，发布序号13。**
+实际安装包的签名和24项内容已在本地核验。本次把四个依赖镜像名称改为 Docker 返回的写法，
+全部镜像摘要、产品源码和安装器检查保持不变。发布附件与 UR 镜像库已公开；完整公开包安装验收
+仍待[正式安装验收工作流](https://github.com/foigent/unirouter/actions/workflows/community-release-acceptance.yml)执行，
+各层证据见[发布准备状态](release-readiness.md)。
+[Preview 12 验收](https://github.com/foigent/unirouter/actions/runs/39631286350)已验证公开签名包和两个 UR 镜像，
+随后在 PostgreSQL 镜像名称检查处停止，尚未开始安装。请保留旧尝试，为新包选择未使用的路径和项目；
+恢复操作不能更换绑定的包哈希。此前[合成测试](../ops/COMMUNITY-INSTALLER.md#accepted-native-bootstrap-result--2026-10-11)
 保留其原有范围。本入口用于新实例，不用于升级现有服务器。只克隆仓库还不会获得签名发布附件。
 
 安装器会准备 PostgreSQL、Redis、UR 和监控服务，生成必要的本地密码与配置，
@@ -35,17 +38,17 @@ Docker 的准备方法见[官方 Linux 安装说明](https://docs.docker.com/com
 ## 下载并安装本预览版
 
 先通过已认证的官方仓库获取本说明，阅读
-[预览版发布页面](https://github.com/foigent/unirouter/releases/tag/v1.14.0-preview.12)，再运行下载的代码。
+[预览版发布页面](https://github.com/foigent/unirouter/releases/tag/v1.14.0-preview.13)，再运行下载的代码。
 脚本固定到产品源码提交，JSON 固定校验程序、公钥和签名包。与下载放在一起的摘要不能
 单独建立信任；本入口不更换已有公钥，也不需要把签名私钥放到服务器。
 
 | 下载文件 | 字节 | SHA-256 |
 | --- | ---: | --- |
 | 源码 c89e7c60 中的 `bootstrap.py` | 23,287 | `054c51a671a9255fd3a587fc7897d51fff0525e2e4ae54bb3926ac2e44785e3f` |
-| `community-bootstrap.json` | 1,121 | `23985fa7f2728f7ee3e0a55d41030edc6c607c467b921f85de5f69a8f046ddb8` |
+| `community-bootstrap.json` | 1,121 | `e67ddc9604019eee994793613f5eeac12d3f8587f921c4c39132436672636d1e` |
 | `uniroute-upgrade-linux-amd64` | 4,099,528 | `60acbb428d746bccaea3e3bc0113e2d0f900b15057bda39455805f0e9a1bbd23` |
 | `public-keys.json` | 83 | `96c91635460ddfb2a14aa1ea97d8445951730e9eb04a33cbdf4320141e61d63d` |
-| `unirouter-1.14.0-linux-amd64.tar.gz` | 130,031,729 | `c2e98cdc5b13d8bff745eaa7f576fb4bc2b7dda92a831a0ef1e01b148ee3f6e0` |
+| `unirouter-1.14.0-linux-amd64.tar.gz` | 130,032,242 | `94d85ac174bc9ebdbefeab13a2827c7f2acaa146c75d3bb1f22338c5db605834` |
 
 公开发布检查通过后，先用 `sudo -i` 进入 root shell，再执行下方代码块。
 下载目录、准备目录和运行目录必须尚未使用；保留它们用于恢复。下载或摘要校验失败时，
@@ -61,14 +64,14 @@ curl --fail --location --proto '=https' --proto-redir '=https' \
   https://raw.githubusercontent.com/foigent/unirouter/c89e7c60ac63204e990f52ec128cd493f185112b/deploy/community/bootstrap.py
 curl --fail --location --proto '=https' --proto-redir '=https' \
   --output community-bootstrap.json \
-  https://github.com/foigent/unirouter/releases/download/v1.14.0-preview.12/community-bootstrap.json
+  https://github.com/foigent/unirouter/releases/download/v1.14.0-preview.13/community-bootstrap.json
 printf '%s  %s\n' \
   054c51a671a9255fd3a587fc7897d51fff0525e2e4ae54bb3926ac2e44785e3f bootstrap.py \
-  23985fa7f2728f7ee3e0a55d41030edc6c607c467b921f85de5f69a8f046ddb8 community-bootstrap.json \
+  e67ddc9604019eee994793613f5eeac12d3f8587f921c4c39132436672636d1e community-bootstrap.json \
   | sha256sum --check --status
 python3 -I -B bootstrap.py install \
   --bootstrap community-bootstrap.json \
-  --bootstrap-sha256 23985fa7f2728f7ee3e0a55d41030edc6c607c467b921f85de5f69a8f046ddb8 \
+  --bootstrap-sha256 e67ddc9604019eee994793613f5eeac12d3f8587f921c4c39132436672636d1e \
   --directory /opt/unirouter-release
 ```
 
@@ -83,7 +86,7 @@ Compose 项目为 `unirouter`，管理端口为本机3000。如希望先检查�
 详见[安装中断怎么办](#安装中断怎么办)。
 
 发布附件还包含
-[`unirouter-retained-images-source-notices.tar.gz`](https://github.com/foigent/unirouter/releases/download/v1.14.0-preview.12/unirouter-retained-images-source-notices.tar.gz)
+[`unirouter-retained-images-source-notices.tar.gz`](https://github.com/foigent/unirouter/releases/download/v1.14.0-preview.13/unirouter-retained-images-source-notices.tar.gz)
 及 `SHA256SUMS`。说明包把1.12、1.13、1.14的全部六个后端／前端保留版本映射到各自源码和
 许可说明；当前签名包提供共享源码材料。第三方许可仍分别适用。
 

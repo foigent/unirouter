@@ -14,7 +14,8 @@ request was handled and what its charges are based on.
 
 > **Public source, Linux installer preview:** the Apache-2.0 source is available.
 > The [1.14.0 Linux amd64 guide](docs/community/install-linux.md) provides the
-> fixed signed-package and download identities. Check
+> fixed signed-package and download identities for Preview 13, which corrects
+> dependency image names while preserving their digests. Check
 > [release readiness](docs/community/release-readiness.md) for the separate
 > signature, public-download and installation evidence. Historical synthetic
 > tests do not establish a current public install or an existing-server upgrade.
