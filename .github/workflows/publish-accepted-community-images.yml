@@ -1,15 +1,15 @@
-name: Publish accepted community images (private stage)
-run-name: Accepted UR 1.14.0 image upload, source run 39471146040
+name: Publish accepted community images (existing public packages)
+run-name: Accepted UR 1.14.1 image upload, source run 39942310354
 on:
   workflow_dispatch:
 permissions:
   contents: read
   packages: write
 concurrency:
-  group: ur-private-image-publication-39471146040
+  group: ur-public-image-publication-39942310354
   cancel-in-progress: false
 jobs:
-  publish-private:
+  publish-public:
     # GitHub draft releases require push access, including for reads.
     permissions:
       contents: write
@@ -18,17 +18,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Upload only exact accepted image bytes, keep private
+      - name: Upload exact accepted image bytes to existing public packages
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 -I -B - --execute-approved-private-stage <<'PY'
-          """Review candidate: manual private GHCR upload of two already accepted images.
+          python3 -I -B - --execute-approved-public-stage <<'PY'
+          """Review candidate: manual existing-public GHCR upload of two already accepted images.
 
           Never run this during local preparation. --describe is strictly offline.
           Actual execution requires a separately authorized GitHub workflow dispatch.
-          No image build, public transition, signing, release or container execution.
+          No image build, visibility transition, signing, release or container execution.
           """
           import argparse
           import hashlib
@@ -42,34 +42,34 @@ jobs:
           import tempfile
 
           REPOSITORY = 'foigent/unirouter'
-          SOURCE = 'c89e7c60ac63204e990f52ec128cd493f185112b'
-          DRAFT = 418705589
-          TAG = 'source-' + SOURCE + '-run-39471146040-linux-amd64'
+          SOURCE = 'a6b03cc8bc2494b735ea1da4018beb7b4af44d3f'
+          DRAFT = 421733762
+          TAG = 'source-' + SOURCE + '-run-39942310354-linux-amd64'
           WORKFLOW_REF = REPOSITORY + '/.github/workflows/publish-accepted-community-images.yml@refs/heads/main'
           # The actual retained image identities are filled from the accepted native record
           # by the local preparation script, never by workflow_dispatch inputs.
           IMAGES = [{'role': 'backend',
             'package_name': 'unirouter-backend',
             'repository': 'ghcr.io/foigent/unirouter-backend',
-            'asset_id': 660070793,
+            'asset_id': 668838312,
             'archive_name': 'backend-image.tar.gz',
-            'archive_bytes': 21243660,
-            'archive_sha256': 'f8b5d92256c3b133dd370d98ede2241bcc351bbe18de0c597f6f3d21c87fde3c',
-            'config_id': 'sha256:f7ec064a306d8a496c92865c880791e4223a9f2642507bcdb211288707910007',
+            'archive_bytes': 21245345,
+            'archive_sha256': '94ddcc01a415e22461890ccc7aead41993460c0a5ae4ba352b5f753c3da40af7',
+            'config_id': 'sha256:cc97e54fdc34d93d50187cb4b1d793fbe57f09732d5f9fd9d1788dd3c9070b8d',
             'diff_ids': ['sha256:e63b02c2b5c761df2cb95e657d744f27d95da4e051235a13c80b88cd68eab188',
-                         'sha256:fb19a7663388a9e658ea7f9b7b423637f221e486cbae1f9f5cfe65193d29fe34',
-                         'sha256:d0129a6127e931a83c49865062b3bb594d87a416fc6c4966ecd05421e21e7dd3',
-                         'sha256:22b8a3f951b848780e68ad968c1ee6aeb33d56dd6dfe64672b1b235fc75ebf30',
-                         'sha256:5aef3d6da028fe65a16ff81ee77aabe1e34236a642cb641efa0ffee00bfacb5e',
-                         'sha256:e1c031d2670af09da92484d8667622dd0cda74e1b7ba8d78de6655197ee6da21']},
+                         'sha256:ed9e4d19d127128e56430420992e124d46b5731b17969311a8a02390e512c524',
+                         'sha256:a8213cc181536b29150245c4e68130aacaaec9ad7c1a6eab9dd50f268462d329',
+                         'sha256:10b1dfb2698ed11122aa3e1ec8434cd3b5afa3be880d7cd2462a599f4d80b087',
+                         'sha256:48ff30be30723e2803b18b5fd63cd32c1bcb6f6cc72baac2a5df9d99911c9869',
+                         'sha256:e3b8344d5426bc6635af530104943eb2d4de99f9e4718b23eb2a1626258c0dc5']},
            {'role': 'frontend',
             'package_name': 'unirouter-frontend',
             'repository': 'ghcr.io/foigent/unirouter-frontend',
-            'asset_id': 660073231,
+            'asset_id': 668840708,
             'archive_name': 'frontend-image.tar.gz',
-            'archive_bytes': 26972054,
-            'archive_sha256': '4094265b115b5e3e1cfba7eeb467348d57b8e622f023a165ead2b1a2cfa99944',
-            'config_id': 'sha256:c0ae5c3a402d8aa7663704de9479bd9b22d89b2c24a4a86a376755ad4ae22ff5',
+            'archive_bytes': 26973542,
+            'archive_sha256': 'd411bdd144508862b963649c2665ccdb7cf8152fe09d7f074a1e0cdfe00b0de9',
+            'config_id': 'sha256:59a5f9f0c2b18af2de41296f2296a71f0443afe9224cf9110381cc42bb824a02',
             'diff_ids': ['sha256:31ad4a471c6852bfec14d757cc75a566c82a9769f12c3918cf6bf52cc0eeb3d0',
                          'sha256:513bb45c86b3ab007a1f05b558211f5b69ae412d6834f4f890988a2f765fc399',
                          'sha256:e0292b802b8d62769f1e2f7ea969575894d0f7d8fb6244c824c95997591ebb5e',
@@ -78,10 +78,10 @@ jobs:
                          'sha256:0a7d4fc0fa12bb5b447649d680fc84a35167dde454e242fc843dbc670b208864',
                          'sha256:9c436f5312f14af26c4dd62076f77841be450178171276e676ed18744ab020bc',
                          'sha256:61d47f9d34fb476a81f30e840d869f301c2bde5b2b6878dd6577cbaf0b69842e',
-                         'sha256:644d23b63b862f6405475da2402f17a4ac91c25e674e94a5be2d67c3c29e1322',
-                         'sha256:1bb236e09e594bb7690718326cda1c5b7f274ad4f3d102ada02a3784b9b97fc0',
-                         'sha256:444d07d85e23995ba35468d3487f0f03296d91299096954a6bc54b808a608a9e',
-                         'sha256:a7d415824a977f70578af6fe9fbb26048ea2864262a592ab1921fa069998d396']}]
+                         'sha256:d632e8cb281aef18ad05060e4055af6709e55a34c3a3a8757844546f070dcf6e',
+                         'sha256:59541f3ea5bfdce9d9735fb79faf2abbd64fe0d075f3c22d26741ccb7be4ebd7',
+                         'sha256:4e141f17c8be25bb65d635a5afae6d251bba70b8be104885f09dcf5552bc4083',
+                         'sha256:0e2bad52a42778232520e0abba52d29a0e23ff923c7d58198099b5f2602fe1fe']}]
 
           def require(ok, message):
               if not ok:
@@ -97,10 +97,10 @@ jobs:
 
           def describe():
               return {'mode': 'offline_review_only', 'repository': REPOSITORY, 'source': SOURCE,
-                      'candidate_run': 39471146040, 'draft_id': DRAFT, 'images': IMAGES,
+                      'candidate_run': 39942310354, 'draft_id': DRAFT, 'images': IMAGES,
                       'permissions': {'contents': 'write', 'packages': 'write'},
-                      'only_private_upload_and_authenticated_identity_verification': True,
-                      'no_build_public_visibility_release_signing_install_or_container_run': True,
+                      'only_existing_public_upload_and_authenticated_identity_verification': True,
+                      'no_build_visibility_change_release_signing_install_or_container_run': True,
                       'no_credential_access_subprocess_or_filesystem_write_in_describe': True}
 
           def command(args, env, inp=None, output=None):
@@ -130,9 +130,8 @@ jobs:
           def package_tag(env, image):
               path = 'orgs/foigent/packages/container/' + image['package_name']
               pkg = gh(env, path, allow404=True)
-              if pkg is None:
-                  return (False, None)
-              require(pkg['visibility'] == 'private', 'Private-stage publisher refuses an already public package.')
+              require(pkg is not None, 'Both existing public packages are required.')
+              require(pkg['visibility'] == 'public', 'Public-stage publisher requires already public packages.')
               require((pkg.get('repository') or {}).get('full_name') == REPOSITORY, 'Existing package is not linked to this repository.')
               # A successful, complete native API listing proves tag absence.
               # A failed pull, failed API read or incomplete page never does.
@@ -199,7 +198,7 @@ jobs:
                   require(asset.get('digest') == 'sha256:' + image['archive_sha256'], 'Native asset server digest differs.')
               parent = Path(env.get('RUNNER_TEMP', ''))
               require(parent.is_absolute() and parent.is_dir() and not parent.is_symlink(), 'Invalid runner temporary directory.')
-              directory = Path(tempfile.mkdtemp(prefix='ur-private-image-publish-', dir=parent))
+              directory = Path(tempfile.mkdtemp(prefix='ur-public-image-publish-', dir=parent))
               directory.chmod(0o700)
               config = directory / 'docker-config'; config.mkdir(mode=0o700)
               # Explicit empty per-registry entry prevents use of a shared credential
@@ -223,7 +222,7 @@ jobs:
                       command(['docker', 'pull', reference], env)
                       require(image_pin(inspected(env, reference), image) == image['repository'] + '@' + digest,
                               'Existing tag digest changed during pull.')
-                      operation = 'reused_existing_exact_private_image_no_push'
+                      operation = 'reused_existing_exact_public_image_no_push'
                   else:
                       path = directory / image['archive_name']
                       with path.open('xb') as f:
@@ -239,7 +238,7 @@ jobs:
                       command(['docker', 'load', '--input', str(path)], env)
                       check_image(inspected(env, image['config_id']), image)
                       command(['docker', 'image', 'tag', image['config_id'], reference], env)
-                      operation = 'new_private_push_of_exact_accepted_image'
+                      operation = 'new_public_push_of_exact_accepted_image'
                   prepared.append((image, reference, operation))
               # Validate both actual image contents and fresh target states before
               # either registry write; a conflict in the second image stops both.
@@ -252,23 +251,23 @@ jobs:
                       command(['docker', 'push', reference], env)
                       command(['docker', 'pull', reference], env)
                   pin = image_pin(inspected(env, reference), image)
-                  # First push must remain private and associated with the authorized repo.
+                  # Each push must preserve public visibility and the authorized repository association.
                   pkg = gh(env, 'orgs/foigent/packages/container/' + image['package_name'])
-                  require(pkg['visibility'] == 'private' and (pkg.get('repository') or {}).get('full_name') == REPOSITORY,
+                  require(pkg['visibility'] == 'public' and (pkg.get('repository') or {}).get('full_name') == REPOSITORY,
                           'Post-upload package identity/visibility differs; do not change policy automatically.')
                   results.append({'role': image['role'], 'repository': image['repository'], 'tag': TAG,
                                   'registry_digest_reference': pin, 'config_id': image['config_id'],
                                   'diff_ids': image['diff_ids'], 'native_archive_sha256': image['archive_sha256'],
                                   'asset_id': image['asset_id'], 'operation': operation})
-              result = {'status': 'private_images_authenticated_identity_verified_only', 'images': results,
-                        'product_source': SOURCE, 'candidate_run': 39471146040, 'draft_id': DRAFT,
+              result = {'status': 'public_images_authenticated_identity_verified_only', 'images': results,
+                        'product_source': SOURCE, 'candidate_run': 39942310354, 'draft_id': DRAFT,
                         'publisher_workflow_commit': env['GITHUB_SHA'],
-                        'public_visibility_or_anonymous_pull_acceptance': False,
+                        'existing_public_package_metadata_verified': True, 'anonymous_pull_acceptance': False,
                         'install_descriptor_or_signed_package_created': False}
               summary = env.get('GITHUB_STEP_SUMMARY')
               require(bool(summary), 'Missing job summary channel.')
               with open(summary, 'a', encoding='utf-8') as f:
-                  f.write('### Exact private image receipt\n\n```json\n' + json.dumps(result, indent=2) + '\n```\n')
+                  f.write('### Exact public image receipt\n\n```json\n' + json.dumps(result, indent=2) + '\n```\n')
               print(json.dumps(result, indent=2))
               # Temporary token/config are confined to this disposable runner. No cleanup
               # of user data, shared Docker configuration or existing images is performed.
@@ -277,7 +276,7 @@ jobs:
               p = argparse.ArgumentParser()
               group = p.add_mutually_exclusive_group(required=True)
               group.add_argument('--describe', action='store_true')
-              group.add_argument('--execute-approved-private-stage', action='store_true')
+              group.add_argument('--execute-approved-public-stage', action='store_true')
               args = p.parse_args()
               if args.describe:
                   print(json.dumps(describe(), indent=2)); return
