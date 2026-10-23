@@ -11,11 +11,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/config"
@@ -40,6 +42,108 @@ type sourceHTTPCaptureBegin struct {
 	beginErr         error
 	callerErr        error
 	elapsed          time.Duration
+}
+
+// Keep the original fixture's clone, limits and deadlines. The existing bounded
+// tracer records client-side phases only; it does not prove a server lock wait.
+func sourceHTTPContentDiagnosticPool(t *testing.T, preparation *pgxpool.Pool) *pgxpool.Pool {
+	t.Helper()
+	cfg := preparation.Config()
+	require.Nil(t, cfg.ConnConfig.Tracer, "do not replace an existing tracer")
+	preparation.Close()
+	diagnostics := newContentPerformancePG()
+	cfg.ConnConfig.Tracer = diagnostics
+	pool, err := pgxpool.NewWithConfig(t.Context(), cfg)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+		wire, err := json.Marshal(map[string]any{
+			"pool_max_conns": cfg.MaxConns,
+			"pool_min_conns": cfg.MinConns,
+			"pg":             sourceHTTPContentPGSummary(diagnostics),
+		})
+		require.NoError(t, err)
+		if len(wire) > 32<<10 {
+			t.Log("content fixture PG diagnostic: summary_oversize=true byte_limit=32768")
+			return
+		}
+		t.Logf("content fixture PG diagnostic=%s", wire)
+	})
+	return pool
+}
+
+func sourceHTTPContentPGSummary(diagnostics *contentPerformancePG) map[string]any {
+	const limit = 8
+	snapshot := diagnostics.snapshot()
+	events := snapshot["events"].([]contentPerformancePGEvent)
+	pending := snapshot["pending_at_snapshot"].([]contentPerformancePGEvent)
+	open := snapshot["open_transactions_at_snapshot"].([]contentPerformancePGEvent)
+	counts, maximum := map[string]int{}, map[string]int64{}
+	var slow, failures []contentPerformancePGEvent
+	intervals, errors := 0, 0
+	for _, event := range events {
+		key := event.Kind + "/" + event.Class
+		counts[key]++
+		if event.Kind != "release" {
+			intervals++
+			maximum[key] = max(maximum[key], event.EndNS-event.StartNS)
+			slow = append(slow, event)
+			sort.SliceStable(slow, func(i, j int) bool {
+				return slow[i].EndNS-slow[i].StartNS > slow[j].EndNS-slow[j].StartNS
+			})
+			slow = slow[:min(limit, len(slow))]
+		}
+		if event.Error != "" && event.Error != "none" {
+			errors++
+			if len(failures) < limit {
+				failures = append(failures, event)
+			}
+		}
+	}
+	return map[string]any{
+		"boundary": "client-observed intervals; query classes and observed transaction suffixes do not prove server lock waits",
+		"clock":    snapshot["clock"], "sample_limit": limit,
+		"collector_event_limit": snapshot["event_limit"], "collector_truncated": snapshot["truncated"], "collector_dropped_events": snapshot["dropped_events"],
+		"event_count": len(events), "counts_by_kind_class": counts, "max_elapsed_ns_by_kind_class": maximum,
+		"slowest": slow, "slowest_omitted": max(0, intervals-limit),
+		"errors": failures, "errors_omitted": max(0, errors-limit),
+		"pending_count": len(pending), "pending": pending[:min(limit, len(pending))], "pending_truncated": len(pending) > limit,
+		"open_transaction_count": len(open), "open_transactions": open[:min(limit, len(open))], "open_transactions_truncated": len(open) > limit,
+	}
+}
+
+// Reducer/privacy coverage only; no PostgreSQL, Redis or HTTP calls.
+func TestContentHTTPDiagnosticSummaryPG(t *testing.T) {
+	diagnostics := newContentPerformancePG()
+	for range 32 {
+		ctx := diagnostics.TraceQueryStart(t.Context(), nil, pgx.TraceQueryStartData{SQL: "select 'secret-sql'", Args: []any{"secret-argument"}})
+		diagnostics.TraceQueryEnd(ctx, nil, pgx.TraceQueryEndData{Err: errors.New("secret-error")})
+		_ = diagnostics.TraceAcquireStart(t.Context(), nil, pgxpool.TraceAcquireStartData{})
+	}
+	for i := range 9 {
+		diagnostics.conns[&pgx.Conn{}] = &contentPerformancePGConn{id: uint64(i + 1), tx: uint64(i + 1)}
+	}
+	diagnostics.dropped = 1
+	summary := sourceHTTPContentPGSummary(diagnostics)
+	require.True(t, summary["collector_truncated"].(bool))
+	require.EqualValues(t, 1, summary["collector_dropped_events"])
+	require.Equal(t, 32, summary["event_count"])
+	require.Len(t, summary["slowest"], 8)
+	require.Len(t, summary["errors"], 8)
+	require.Equal(t, 24, summary["errors_omitted"])
+	require.Equal(t, 32, summary["pending_count"])
+	require.Len(t, summary["pending"], 8)
+	require.True(t, summary["pending_truncated"].(bool))
+	require.Equal(t, 9, summary["open_transaction_count"])
+	require.Len(t, summary["open_transactions"], 8)
+	require.True(t, summary["open_transactions_truncated"].(bool))
+	wire, err := json.Marshal(summary)
+	require.NoError(t, err)
+	require.NotContains(t, string(wire), "secret")
+	require.Less(t, len(wire), 32<<10)
 }
 
 func sourceHTTPCaptureErrorClass(err error) string {
