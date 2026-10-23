@@ -262,7 +262,9 @@ func (h *Handler) verifyFirstCustomerBootstrapCheckpoint(r *http.Request, tx pgx
 
 // verifyFirstCustomerFreshMigrationCheckpoint accepts only the exact seed
 // state produced by the current migration chain after the default admin has
-// been rotated and logged in once. This is deliberately separate from the
+// been rotated and authenticated. Same-admin login, logout and password-reset
+// history is retained; the committing actor's live session is checked separately.
+// This is deliberately separate from the
 // second-integration reset checkpoint. The exact seed wallet/project are
 // normalized only after every invariant has matched, in the same SERIALIZABLE
 // transaction that creates the first customer.
@@ -304,11 +306,13 @@ func (h *Handler) verifyFirstCustomerFreshMigrationCheckpoint(r *http.Request, t
 			   OR member.user_id<>$2 OR member.role<>'project_admin'`, args: []any{adminOrgID, adminUserID}, want: 0},
 		{name: "fresh default membership multiplicity", query: `SELECT GREATEST(COUNT(*)-1,0) FROM project_members`, want: 0},
 		{name: "fresh session contamination", query: `SELECT COUNT(*) FROM admin_sessions
-			WHERE user_id<>$1 OR revoked_at IS NOT NULL OR expires_at<=NOW()`, args: []any{adminUserID}, want: 0},
-		{name: "one fresh session", query: `SELECT COUNT(*) FROM admin_sessions
-			WHERE user_id=$1 AND revoked_at IS NULL AND expires_at>NOW()`, args: []any{adminUserID}, want: 1},
+			WHERE user_id IS DISTINCT FROM $1`, args: []any{adminUserID}, want: 0},
+		{name: "fresh active session", query: `SELECT CASE WHEN EXISTS (
+			SELECT 1 FROM admin_sessions WHERE user_id=$1 AND revoked_at IS NULL
+			 AND issued_at<=NOW() AND expires_at>NOW()) THEN 1 ELSE 0 END`, args: []any{adminUserID}, want: 1},
 		{name: "fresh audit contamination", query: `SELECT COUNT(*) FROM audit_logs
-			WHERE user_id<>$1 OR org_id<>$2 OR action NOT IN ('login','user.password_reset')
+			WHERE user_id IS DISTINCT FROM $1 OR org_id IS DISTINCT FROM $2
+			   OR project_id IS NOT NULL OR action NOT IN ('login','logout','user.password_reset')
 			   OR (action='user.password_reset' AND (
 			       source IS DISTINCT FROM 'system'
 			       OR resource IS DISTINCT FROM 'user'
@@ -325,15 +329,25 @@ func (h *Handler) verifyFirstCustomerFreshMigrationCheckpoint(r *http.Request, t
 			           'compatibility_role','admin')
 			       OR before_state IS DISTINCT FROM '{}'::jsonb
 			       OR after_state IS DISTINCT FROM '{}'::jsonb
+			   )) OR (action='logout' AND (
+			       source IS DISTINCT FROM 'admin_console'
+			       OR resource IS DISTINCT FROM 'admin_session'
+			       OR NOT EXISTS (SELECT 1 FROM admin_sessions session
+			           WHERE session.user_id=$1 AND session.id::text=audit_logs.resource_id
+			             AND session.revoked_at IS NOT NULL)
+			       OR detail IS DISTINCT FROM '{"scope":"current_session"}'::jsonb
+			       OR before_state IS DISTINCT FROM '{}'::jsonb
+			       OR after_state IS DISTINCT FROM '{"scope":"current_session"}'::jsonb
 			   ))`, args: []any{adminUserID, adminOrgID}, want: 0},
-		{name: "fresh login audit multiplicity", query: `SELECT GREATEST(COUNT(*)-1,0) FROM audit_logs
-			WHERE user_id=$1 AND org_id=$2 AND action='login'`, args: []any{adminUserID, adminOrgID}, want: 0},
-		{name: "one fresh password rotation", query: `SELECT COUNT(*) FROM audit_logs
-			WHERE user_id=$1 AND org_id=$2 AND action='user.password_reset'`, args: []any{adminUserID, adminOrgID}, want: 1},
+		{name: "fresh password rotation", query: `SELECT CASE WHEN EXISTS (
+			SELECT 1 FROM audit_logs WHERE user_id=$1 AND org_id=$2
+			 AND action='user.password_reset') THEN 1 ELSE 0 END`, args: []any{adminUserID, adminOrgID}, want: 1},
 		{name: "fresh login outbox contamination", query: `SELECT COUNT(*) FROM internal_outbox_events
 			WHERE event_type<>'evidence.audit.v1' OR org_id<>$1
 			   OR (payload->>'action') IS DISTINCT FROM 'login'
 			   OR (payload->>'user_id') IS DISTINCT FROM ($2::bigint)::text
+			   OR (payload->>'org_id') IS DISTINCT FROM ($1::bigint)::text
+			   OR COALESCE(payload->'project_id','null'::jsonb)<>'null'::jsonb
 			   OR (payload->>'resource') IS DISTINCT FROM 'user'
 			   OR (payload->>'resource_id') IS DISTINCT FROM ($2::bigint)::text
 			   OR (payload->>'source') IS DISTINCT FROM 'admin_console'
@@ -343,8 +357,7 @@ func (h *Handler) verifyFirstCustomerFreshMigrationCheckpoint(r *http.Request, t
 			   OR (payload->'before_state') IS DISTINCT FROM '{}'::jsonb
 			   OR (payload->'after_state') IS DISTINCT FROM '{}'::jsonb
 			   OR dead_lettered_at IS NOT NULL`, args: []any{adminOrgID, adminUserID}, want: 0},
-		{name: "fresh login outbox multiplicity", query: `SELECT GREATEST(COUNT(*)-1,0) FROM internal_outbox_events`, want: 0},
-		{name: "one logical fresh login", query: `SELECT
+		{name: "fresh login evidence", query: `SELECT CASE WHEN (
 			(SELECT COUNT(*) FROM audit_logs WHERE user_id=$1 AND org_id=$2 AND action='login')
 			+ (SELECT COUNT(*) FROM internal_outbox_events
 			    WHERE event_type='evidence.audit.v1' AND org_id=$2
@@ -353,7 +366,7 @@ func (h *Handler) verifyFirstCustomerFreshMigrationCheckpoint(r *http.Request, t
 			- (SELECT COUNT(*) FROM audit_logs audit
 			   JOIN internal_outbox_events event ON event.event_key=audit.outbox_event_key
 			   WHERE audit.user_id=$1 AND audit.org_id=$2 AND audit.action='login'
-			     AND event.event_type='evidence.audit.v1')`, args: []any{adminUserID, adminOrgID}, want: 1},
+			     AND event.event_type='evidence.audit.v1')) >= 1 THEN 1 ELSE 0 END`, args: []any{adminUserID, adminOrgID}, want: 1},
 		{name: "fresh setting count", query: "SELECT COUNT(*) FROM settings", want: 15},
 		{name: "fresh setting drift", query: `SELECT COUNT(*) FROM settings WHERE NOT (
 			(key='webhook.feishu' AND value='""'::jsonb) OR
@@ -486,7 +499,8 @@ func (h *Handler) verifyFirstCustomerFreshReleaseEvidence(r *http.Request, tx pg
 			   AND state.target_schema=$1
 			   AND jsonb_typeof(state.manifest)='object'
 			   AND (SELECT COUNT(*) FROM release_state)=1
-			   AND (SELECT COUNT(*) FROM release_history)=1`, schemaauthority.LatestSupportedMigration).Scan(&count)
+			   AND NOT EXISTS (SELECT 1 FROM release_history later
+			       WHERE later.release_sequence>state.release_sequence)`, schemaauthority.LatestSupportedMigration).Scan(&count)
 		if err != nil || count != 1 {
 			return fmt.Errorf("check recorded fresh release evidence")
 		}

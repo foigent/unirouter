@@ -92,6 +92,18 @@ def check_target(args):
     actual_image = remote(args, ["docker", "inspect", "--format", "{{.Image}}", args.owner_container]).decode().strip()
     if actual_host != args.expected_hostname or actual_image != args.expected_owner_image:
         raise ValueError("Target hostname or executing Artifact changed")
+    if args.owner_container == "unirouter-community-backend-1":
+        labels = remote(args, ["docker", "inspect", "--format",
+                               '{{ index .Config.Labels "com.docker.compose.project" }}|{{ index .Config.Labels "com.docker.compose.service" }}',
+                               args.owner_container]).decode().strip()
+        if labels != "unirouter-community|backend":
+            raise ValueError("community owner Compose project/service changed")
+
+
+def validate_target_pair(args):
+    community = args.owner_container == "unirouter-community-backend-1"
+    if community != (args.expected_environment == "production"):
+        raise ValueError("production requires the exact community backend owner and vice versa")
 
 
 def owner(args, action, envelope):
@@ -112,13 +124,14 @@ def main():
     parser.add_argument("--target", required=True)
     parser.add_argument("--expected-hostname", required=True)
     parser.add_argument("--expected-system-identifier", required=True)
-    parser.add_argument("--expected-environment", required=True, choices=("development", "test", "integration"))
-    parser.add_argument("--owner-container", required=True, choices=("uniroute-api", "uniroute-api-canary"))
+    parser.add_argument("--expected-environment", required=True, choices=("development", "test", "integration", "production"))
+    parser.add_argument("--owner-container", required=True, choices=("uniroute-api", "uniroute-api-canary", "unirouter-community-backend-1"))
     parser.add_argument("--expected-owner-image", required=True)
     parser.add_argument("--plan", required=True, type=Path)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--compensates", default="")
     args = parser.parse_args()
+    validate_target_pair(args)
     if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*", args.target) or not re.fullmatch(r"sha256:[a-f0-9]{64}", args.expected_owner_image):
         raise ValueError("exact configured SSH target and image digest are required")
     wire, carrier, archive_digest = verify_source(args.run, args.artifact, args.commit, args.path, args.digest)
