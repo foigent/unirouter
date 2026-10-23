@@ -98,6 +98,9 @@ func sourceChatAndEmbeddingsAuthHistoryAndReplay(t *testing.T, observations bool
 					interop = newP3SourceFixture(t)
 				}
 				pool := testutil.SetupMigratedTestDB(t)
+				if content && interop == nil {
+					pool = sourceHTTPContentDiagnosticPool(t, pool)
+				}
 				sourceHTTPIsolateRedisIdentities(t, pool)
 				role := "developer"
 				if operation == "chat_cache" {

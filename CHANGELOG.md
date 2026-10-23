@@ -4,6 +4,15 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.14.1] - 2026-10-23
+
+### Fixed
+
+- Revalidate the console HTML entry after deployments while retaining immutable caching for content-hashed assets. Lazy resource failures now explain the loading problem in English or Chinese and offer an explicit page reload; generic rendering errors retain their existing fallback. No automatic reload, retry, form replay, or session change is introduced.
+- Allow first-customer initialization after repeated same-admin password changes, logins and logouts, and after a normal signed patch upgrade. Authentication and release history remain intact; the current session, exact latest release binding and empty-business-state checks remain required.
+- Support the exact production-security community backend in the existing verified capability-data publisher, with hostname, image and Compose project/service checks. Publication and model qualification remain separate from route activation.
+- Local candidate only. This entry does not assert CI, publication, signed-artifact, Target, or Production acceptance.
+
 ## [1.14.0] - 2026-10-20
 
 ### Added

@@ -86,6 +86,31 @@ successful Agent answer are different evidence.
 
 ## Qualification and activation
 
+### Signed community installations
+
+The operator helper also supports the exact community owner
+`unirouter-community-backend-1` with application security environment
+`production`. These two values must be supplied together. Legacy stable/canary
+owners retain their existing development/test/integration scope. A physical test
+server does not justify relabeling its application environment.
+
+Use the same verified carrier workflow and native publication owner described
+above. In addition to the exact hostname and image, the community path verifies
+Compose project `unirouter-community` and service `backend`. It reads only those
+labels; it does not export container environment variables or credentials.
+The read-only native Plan must still match the actual DB system identifier and
+environment. `--apply` consumes that exact saved Plan and independently verified
+source/archive; support for this target is not authorization to publish to it.
+
+For a fresh installation, initialize the customer and its project through the
+normal UI before creating any model deployment, provider binding or Probe.
+Then import the actual legacy projection and publish each required Definition
+predecessor/successor in order, using a fresh native Plan for each transition.
+Static publication history is retained; it does not activate a model or route.
+Do not clear a ledger, authentication history or old signed-release records to
+manufacture a fresh baseline. Normal signed patch upgrades retain the previous
+release record while the current state must match the latest retained record.
+
 From1.2.65, onboarding may select the published-contract source and an exact
 Definition to create a previously absent PublicModel. No compiled Catalog entry
 is needed when all referenced implementations are installed. Detailed or batch

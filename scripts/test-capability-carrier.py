@@ -220,5 +220,147 @@ class CarrierTrustTests(unittest.TestCase):
             self.assertEqual("test", json.loads(execute.call_args.kwargs["input"])["environment"])
 
 
+
+
+class CommunityPublisherTargetTests(unittest.TestCase):
+    def setUp(self):
+        no_io = patch.object(publisher, "execute",
+                             side_effect=AssertionError("offline test attempted external I/O"))
+        no_io.start()
+        self.addCleanup(no_io.stop)
+
+    def args(self, owner="unirouter-community-backend-1", environment="production"):
+        return SimpleNamespace(owner_container=owner, expected_environment=environment,
+                               expected_hostname="isolated-fixture",
+                               expected_owner_image="sha256:" + "c" * 64)
+
+    def argv(self, plan, owner, environment):
+        return ["publish-capability-bundle.py", "--run", "12", "--artifact", "34",
+                "--commit", "a" * 40, "--path", "capability-bundles/fixture.json",
+                "--digest", "b" * 64, "--publication", "community-fixture",
+                "--target", "isolated-fixture", "--expected-hostname", "isolated-fixture",
+                "--expected-system-identifier", "123", "--expected-environment", environment,
+                "--owner-container", owner, "--expected-owner-image", "sha256:" + "c" * 64,
+                "--plan", str(plan)]
+
+    def test_existing_pairs_and_exact_community_pair(self):
+        for owner in ("uniroute-api", "uniroute-api-canary"):
+            for environment in ("development", "test", "integration"):
+                publisher.validate_target_pair(self.args(owner, environment))
+        publisher.validate_target_pair(self.args())
+
+    def test_cross_pairs_fail_before_any_api_or_ssh(self):
+        pairs = [("uniroute-api", "production"), ("uniroute-api-canary", "production")]
+        pairs += [("unirouter-community-backend-1", value)
+                  for value in ("development", "test", "integration")]
+        with tempfile.TemporaryDirectory() as directory:
+            for owner, environment in pairs:
+                with self.subTest(owner=owner, environment=environment):
+                    with patch.object(sys, "argv", self.argv(Path(directory) / "plan", owner, environment)), \
+                            patch.object(publisher, "verify_source") as verify, \
+                            patch.object(publisher, "remote") as remote:
+                        with self.assertRaisesRegex(ValueError, "production"):
+                            publisher.main()
+                        verify.assert_not_called()
+                        remote.assert_not_called()
+
+    def test_community_requires_exact_host_image_and_compose_labels(self):
+        valid = [b"isolated-fixture\n", ("sha256:" + "c" * 64 + "\n").encode(),
+                 b"unirouter-community|backend\n"]
+        with patch.object(publisher, "remote", side_effect=valid) as remote:
+            publisher.check_target(self.args())
+            commands = [call.args[1] for call in remote.call_args_list]
+            self.assertEqual(commands[0], ["hostname"])
+            self.assertEqual(commands[1][0:3], ["docker", "inspect", "--format"])
+            self.assertIn("com.docker.compose.project", commands[2][3])
+            self.assertIn("com.docker.compose.service", commands[2][3])
+            self.assertNotIn(".Config.Env", commands[2][3])
+        for position, value in [(0, b"other-host"), (1, b"sha256:" + b"d" * 64),
+                                (2, b""), (2, b"other-project|backend"),
+                                (2, b"unirouter-community|frontend")]:
+            with self.subTest(position=position, value=value):
+                wrong = list(valid)
+                wrong[position] = value
+                with patch.object(publisher, "remote", side_effect=wrong):
+                    with self.assertRaises(ValueError):
+                        publisher.check_target(self.args())
+
+    def test_legacy_owner_keeps_original_two_read_checks(self):
+        with patch.object(publisher, "remote",
+                          side_effect=[b"isolated-fixture", ("sha256:" + "c" * 64).encode()]) as remote:
+            publisher.check_target(self.args("uniroute-api", "test"))
+            self.assertEqual(remote.call_count, 2)
+
+    def test_default_plan_and_saved_apply_keep_exact_source_and_native_plan(self):
+        wire = b'{"local":"fixture"}'
+        carrier = {"repository": publisher.REPOSITORY, "commit": "a" * 40,
+                   "tree": "d" * 40, "path": "capability-bundles/fixture.json",
+                   "workflow_run_id": 12, "artifact_id": 34}
+        archive = "sha256:" + "e" * 64
+        plan_wire = json.dumps({"target_identity": {"system_identifier": "123",
+                                                   "environment": "production"}},
+                               sort_keys=True, separators=(",", ":")).encode()
+        result = {"plan_bytes": base64.b64encode(plan_wire).decode(),
+                  "plan_digest": hashlib.sha256(plan_wire).hexdigest()}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "plan.json"
+            argv = self.argv(path, "unirouter-community-backend-1", "production")
+            with patch.object(sys, "argv", argv), \
+                    patch.object(publisher, "verify_source", return_value=(wire, carrier, archive)), \
+                    patch.object(publisher, "owner", return_value=result) as owner, \
+                    patch("sys.stdout", new=io.StringIO()):
+                publisher.main()
+                self.assertEqual(owner.call_args.args[1], "plan-v2")
+                self.assertIsNone(owner.call_args.args[2]["plan_bytes"])
+            saved = json.loads(path.read_bytes())
+            self.assertEqual(saved["plan"], result)
+            self.assertEqual(saved["source"]["carrier"], carrier)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            with patch.object(sys, "argv", argv + ["--apply"]), \
+                    patch.object(publisher, "verify_source", return_value=(wire, carrier, archive)), \
+                    patch.object(publisher, "owner", return_value={"status": "committed"}) as owner, \
+                    patch("sys.stdout", new=io.StringIO()):
+                publisher.main()
+                self.assertEqual(owner.call_args.args[1], "apply-v2")
+                self.assertEqual(owner.call_args.args[2]["plan_digest"], result["plan_digest"])
+            with patch.object(sys, "argv", argv + ["--apply"]), \
+                    patch.object(publisher, "verify_source", return_value=(wire, carrier, "sha256:" + "f" * 64)), \
+                    patch.object(publisher, "owner") as owner:
+                with self.assertRaisesRegex(ValueError, "different verified CI bytes"):
+                    publisher.main()
+                owner.assert_not_called()
+
+    def test_wrong_native_target_or_plan_digest_cannot_create_plan_file(self):
+        for system, environment, bad_digest in [("999", "production", False),
+                                                 ("123", "test", False),
+                                                 ("123", "production", True)]:
+            with self.subTest(system=system, environment=environment, bad_digest=bad_digest):
+                wire = json.dumps({"target_identity": {"system_identifier": system,
+                                                      "environment": environment}}).encode()
+                result = {"plan_bytes": base64.b64encode(wire).decode(),
+                          "plan_digest": "0" * 64 if bad_digest else hashlib.sha256(wire).hexdigest()}
+                with tempfile.TemporaryDirectory() as directory:
+                    path = Path(directory) / "plan.json"
+                    argv = self.argv(path, "unirouter-community-backend-1", "production")
+                    with patch.object(sys, "argv", argv), \
+                            patch.object(publisher, "verify_source", return_value=(b"{}", {}, "sha256:" + "e" * 64)), \
+                            patch.object(publisher, "owner", return_value=result) as owner:
+                        with self.assertRaises(ValueError):
+                            publisher.main()
+                        self.assertEqual(owner.call_args.args[1], "plan-v2")
+                        self.assertFalse(path.exists())
+
+    def test_help_has_no_api_or_ssh(self):
+        with patch.object(sys, "argv", ["publish-capability-bundle.py", "--help"]), \
+                patch.object(publisher, "verify_source") as verify, \
+                patch.object(publisher, "remote") as remote, \
+                patch("sys.stdout", new=io.StringIO()):
+            with self.assertRaises(SystemExit) as result:
+                publisher.main()
+            self.assertEqual(result.exception.code, 0)
+            verify.assert_not_called()
+            remote.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
