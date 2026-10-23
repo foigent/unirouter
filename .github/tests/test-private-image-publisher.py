@@ -31,7 +31,7 @@ class World:
         self.states = {}; self.exists = {}; self.reads = {}
         self.conflict = None; self.bad_layers = None; self.pull_failure = None
         self.version_failure = None; self.tamper = None; self.appear = None
-        self.visibility = 'private'; self.link = H.REPOSITORY
+        self.visibility = 'public'; self.link = H.REPOSITORY
         self.push_lost_response = None; self.manifest_mismatch = None; self.appear_read = 2
         for n, role in enumerate(('backend', 'frontend'), 1):
             data = (role + '-accepted-bytes').encode()
@@ -141,10 +141,10 @@ class PublisherTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.world = World(self.temp.name)
 
-    def test_existing_private_packages_accept_new_exact_tags(self):
+    def test_existing_public_packages_accept_new_exact_tags(self):
         result = self.world.execute()
         self.assertEqual(len(self.world.pushes()), 2)
-        self.assertTrue(all(x['operation'] == 'new_private_push_of_exact_accepted_image' for x in result['images']))
+        self.assertTrue(all(x['operation'] == 'new_public_push_of_exact_accepted_image' for x in result['images']))
         first_push = next(i for i, c in enumerate(self.world.calls) if c[:2] == ('docker', 'push'))
         self.assertEqual(sum(c[:2] == ('docker', 'load') for c in self.world.calls[:first_push]), 2)
 
@@ -153,7 +153,7 @@ class PublisherTests(unittest.TestCase):
             self.world.states[role] = self.world.digest(role)
         result = self.world.execute()
         self.assertFalse(self.world.pushes())
-        self.assertTrue(all(x['operation'] == 'reused_existing_exact_private_image_no_push' for x in result['images']))
+        self.assertTrue(all(x['operation'] == 'reused_existing_exact_public_image_no_push' for x in result['images']))
 
     def test_partial_previous_upload_reuses_backend_and_pushes_only_frontend(self):
         self.world.states['backend'] = self.world.digest('backend')
@@ -207,23 +207,28 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual(self.world.pushes(), [('docker', 'push', self.world.images[1]['repository'] + ':' + H.TAG)])
 
     def test_existing_package_visibility_or_association_refused(self):
-        for field, value in [('visibility', 'public'), ('link', 'unrelated/repository')]:
+        for field, value in [('visibility', 'private'), ('visibility', 'internal'), ('link', 'unrelated/repository')]:
             with self.subTest(field=field):
                 old = getattr(self.world, field); setattr(self.world, field, value)
                 with self.assertRaises(RuntimeError): self.world.execute()
                 self.assertFalse(self.world.pushes()); setattr(self.world, field, old)
 
-    def test_first_upload_to_absent_packages_keeps_prior_behavior(self):
-        self.world.exists = {'backend': False, 'frontend': False}
-        self.world.execute()
-        self.assertEqual(len(self.world.pushes()), 2)
+    def test_either_missing_package_refuses_before_docker_or_push(self):
+        for role in ('backend', 'frontend'):
+            with self.subTest(role=role):
+                self.world.calls.clear()
+                self.world.exists = {'backend': role != 'backend', 'frontend': role != 'frontend'}
+                with self.assertRaisesRegex(RuntimeError, 'existing public packages'):
+                    self.world.execute()
+                self.assertFalse(any(c[0] == 'docker' for c in self.world.calls))
+                self.assertFalse(self.world.pushes())
 
     def test_full_pagination_finds_tag_on_later_page(self):
         first = [{'id': i + 1, 'name': 'sha256:' + '1' * 64,
                   'metadata': {'package_type': 'container', 'container': {'tags': []}}} for i in range(100)]
         last = {'id': 101, 'name': 'sha256:' + '2' * 64,
                 'metadata': {'package_type': 'container', 'container': {'tags': [H.TAG]}}}
-        with patch.object(H, 'gh', side_effect=[{'visibility': 'private', 'repository': {'full_name': H.REPOSITORY}}, first, [last]]) as get:
+        with patch.object(H, 'gh', side_effect=[{'visibility': 'public', 'repository': {'full_name': H.REPOSITORY}}, first, [last]]) as get:
             self.assertEqual(H.package_tag({}, self.world.images[0]), (True, last['name']))
         self.assertTrue(get.call_args_list[-1].args[1].endswith('page=2'))
 
@@ -234,7 +239,7 @@ class PublisherTests(unittest.TestCase):
                    [{**row, 'name': 'invalid'}], [{**row, 'metadata': {'package_type': 'npm'}}]]
         for rows in invalid:
             with self.subTest(rows=rows), patch.object(H, 'gh', side_effect=[
-                    {'visibility': 'private', 'repository': {'full_name': H.REPOSITORY}}, rows]):
+                    {'visibility': 'public', 'repository': {'full_name': H.REPOSITORY}}, rows]):
                 with self.assertRaises((RuntimeError, KeyError)): H.package_tag({}, self.world.images[0])
 
     def test_wire_errors_are_not_missing_tags(self):
