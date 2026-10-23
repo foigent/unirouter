@@ -749,7 +749,7 @@ class FullBackendBuildTests(unittest.TestCase):
         if label == 'byte-go-version': return 'go version go1.25.12 linux/amd64'
         if label == 'byte-node-version': return 'v24.19.0\n11.17.0'
         self.assertEqual(label, 'actual-backend-buildinfo')
-        version = '1.13.0' if self.old_backend else '1.14.0'
+        version = '1.13.0' if self.old_backend else '1.14.1'
         commit = ('9e0240c68a20deebf9bcd0e2cc7b58034d09b696' if self.old_backend else
                   '0'*40 if self.bad_buildinfo else H.PRODUCT)
         return ('go1.25.12 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 '
@@ -792,10 +792,10 @@ class FullBackendBuildTests(unittest.TestCase):
         self.assertEqual(self.retained, ['backend-image.tar.gz','frontend-image.tar.gz','uniroute-upgrade-linux-amd64'])
         self.assertEqual(self.pulls, ['backend-builder','frontend-builder','backend-runtime','frontend-runtime'])
         backend = self.calls[0][1]
-        for value in ['RUNTIME_VERSION=1.14.0','RUNTIME_COMMIT='+H.PRODUCT,'RUNTIME_TREE='+H.TREE,
+        for value in ['RUNTIME_VERSION=1.14.1','RUNTIME_COMMIT='+H.PRODUCT,'RUNTIME_TREE='+H.TREE,
                       'UNIROUTER_RELEASE_TRUST_MODE=release','UNIROUTER_UPGRADE_TRUST_BUNDLE_B64='+self.ring]:
             self.assertIn(value, backend)
-        self.assertIn('VITE_APP_VERSION=1.14.0', self.calls[1][1])
+        self.assertIn('VITE_APP_VERSION=1.14.1', self.calls[1][1])
         self.assertTrue((self.data/'actual-component-bindings.json').exists())
 
     def test_wrong_backend_source_buildinfo_refuses_before_retention(self):
