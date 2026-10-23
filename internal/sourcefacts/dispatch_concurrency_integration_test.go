@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/migrate"
@@ -136,12 +137,68 @@ func TestSourceDispatchRCConcurrentPublishAndRRSnapshotVisibility(t *testing.T) 
 	_, before, found, err := s.measurementAttemptSnapshot(ctx, tx, org, project, request, attempt, registered, true)
 	require.NoError(t, err)
 	require.True(t, found)
-	results := make(chan error, len(events))
+	type dispatchResult struct {
+		event outbox.Event
+		err   error
+	}
+	expectedAll := map[string][]byte{}
+	baselineByEvent := map[int64]map[string][]byte{}
+	requests := make([]string, 0, len(events))
 	for _, e := range events {
-		go func(e outbox.Event) { results <- s.ProcessDispatchEvent(ctx, e) }(e)
+		requests = append(requests, e.RequestID)
+		baselineByEvent[e.ID] = dispatchScopeFactBytes(t, pool, s.SourceInstance(), org, project, []string{e.RequestID})
+		for id, wire := range frozenDispatchFactBytes(t, s, e) {
+			require.NotContains(t, baselineByEvent[e.ID], id, "the frozen dispatch starts unpublished")
+			require.NotContains(t, expectedAll, id)
+			expectedAll[id] = wire
+		}
+	}
+	require.Len(t, expectedAll, 12)
+	// The original snapshot fixture may already publish admission facts. Keep
+	// those exact bytes while checking every fact in each complete request scope.
+	baselineAll := dispatchScopeFactBytes(t, pool, s.SourceInstance(), org, project, requests)
+	for id, wire := range baselineAll {
+		require.NotContains(t, expectedAll, id)
+		expectedAll[id] = wire
+	}
+	t.Logf("dispatch fixture baseline_facts=%d expected_new_facts=12", len(baselineAll))
+	results := make(chan dispatchResult, len(events))
+	for _, e := range events {
+		go func(e outbox.Event) { results <- dispatchResult{e, s.ProcessDispatchEvent(ctx, e)} }(e)
 	}
 	for range events {
-		require.NoError(t, <-results, "same-project publication uses RC; no RR serialization retry is needed")
+		result := <-results
+		published := result.err == nil
+		if !published {
+			// A bounded stream-lock conflict is recovered by the durable worker.
+			// RR serialization, statement timeout and unrelated failures still fail.
+			var conflict *pgconn.PgError
+			require.ErrorAs(t, result.err, &conflict)
+			require.Equal(t, "55P03", conflict.Code)
+			require.Contains(t, []string{"stream_insert", "stream_lock"}, CaptureErrorStage(result.err))
+		}
+		var payload []byte
+		require.NoError(t, pool.QueryRow(ctx, `SELECT payload FROM internal_outbox_events WHERE id=$1`, result.event.ID).Scan(&payload))
+		live := result.event
+		live.Payload = payload
+		marker, _, decodeErr := s.decodeDispatch(live)
+		require.NoError(t, decodeErr)
+		require.Equal(t, published, marker.Materialized)
+		expected := frozenDispatchFactBytes(t, s, result.event)
+		require.Equal(t, expected, frozenDispatchFactBytes(t, s, live), "frozen source bytes never change")
+		if !published {
+			require.Equal(t, []byte(result.event.Payload), payload, "failed transaction retains the exact original frozen marker")
+		}
+		wantScope := map[string][]byte{}
+		for id, wire := range baselineByEvent[result.event.ID] {
+			wantScope[id] = wire
+		}
+		if published {
+			for id, wire := range expected {
+				wantScope[id] = wire
+			}
+		}
+		require.Equal(t, wantScope, dispatchScopeFactBytes(t, pool, s.SourceInstance(), org, project, []string{result.event.RequestID}), "whole request scope has exactly the original baseline plus the complete committed batch, or no batch at all")
 	}
 	// Use the original worker to acknowledge the marked event, not a direct delete.
 	_, err = pool.Exec(ctx, `UPDATE internal_outbox_events SET claimed_until=clock_timestamp()-interval '1 second' WHERE event_type=$1`, outbox.EventSourceDispatch)
@@ -151,6 +208,7 @@ func TestSourceDispatchRCConcurrentPublishAndRRSnapshotVisibility(t *testing.T) 
 	require.NoError(t, worker.RegisterHandler(outbox.EventSourceDispatch, s.ProcessDispatchEvent))
 	_, err = worker.DrainOnce(ctx)
 	require.NoError(t, err)
+	require.Equal(t, expectedAll, dispatchScopeFactBytes(t, pool, s.SourceInstance(), org, project, requests), "all twelve exact frozen facts and original baseline remain; no additional event can be filtered out")
 	_, after, found, err := s.measurementAttemptSnapshot(ctx, tx, org, project, request, attempt, registered, true)
 	require.NoError(t, err)
 	require.True(t, found, "an old RR snapshot still sees frozen input after publication and ack")
@@ -169,4 +227,100 @@ func TestSourceDispatchRCConcurrentPublishAndRRSnapshotVisibility(t *testing.T) 
 	require.Zero(t, pending, "original worker acknowledged all four events")
 	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM execution_source_streams s WHERE s.high_sequence<>(SELECT count(*) FROM execution_source_facts f WHERE f.source_instance=s.source_instance AND f.org_id=s.org_id AND f.project_id=s.project_id AND f.profile=s.profile) OR s.high_sequence<>COALESCE((SELECT max(sequence) FROM execution_source_facts f WHERE f.source_instance=s.source_instance AND f.org_id=s.org_id AND f.project_id=s.project_id AND f.profile=s.profile),0)`).Scan(&bad))
 	require.Zero(t, bad, "all stream sequences commit atomically without gaps")
+}
+
+func frozenDispatchFactBytes(t *testing.T, s *Service, event outbox.Event) map[string][]byte {
+	t.Helper()
+	_, records, err := s.decodeDispatch(event)
+	require.NoError(t, err)
+	require.Len(t, records, 3)
+	expected := map[string][]byte{}
+	for _, record := range records {
+		require.NotContains(t, expected, record.EventID)
+		expected[record.EventID] = record.Wire
+	}
+	return expected
+}
+
+func dispatchScopeFactBytes(t *testing.T, pool *pgxpool.Pool, source string, org, project int64, requests []string) map[string][]byte {
+	t.Helper()
+	rows, err := pool.Query(t.Context(), `SELECT event_id,document FROM execution_source_facts WHERE source_instance=$1 AND org_id=$2 AND project_id=$3 AND request_id=ANY($4::text[])`, source, org, project, requests)
+	require.NoError(t, err)
+	defer rows.Close()
+	actual := map[string][]byte{}
+	for rows.Next() {
+		var id string
+		var wire []byte
+		require.NoError(t, rows.Scan(&id, &wire))
+		require.NotContains(t, actual, id)
+		actual[id] = wire
+	}
+	require.NoError(t, rows.Err())
+	return actual
+}
+
+func TestSourceDispatchBoundedStreamConflictRollsBackAndNativeWorkerRecovers(t *testing.T) {
+	pool, s, org, project := setupSourceDB(t)
+	ctx := t.Context()
+	docs := frozenDispatchFixture(t, s, org, project, "bounded-stream-conflict", time.Now().UTC().Truncate(time.Microsecond))
+	event := insertFrozenDispatch(t, pool, s, docs)
+	expected := frozenDispatchFactBytes(t, s, event)
+	_, records, err := s.decodeDispatch(event)
+	require.NoError(t, err)
+	firstProfile := records[0].Profile
+	for _, record := range records {
+		_, err = pool.Exec(ctx, `INSERT INTO execution_source_streams(source_instance,org_id,project_id,profile) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`, s.SourceInstance(), org, project, record.Profile)
+		require.NoError(t, err)
+		if record.Profile < firstProfile {
+			firstProfile = record.Profile
+		}
+	}
+	blocker, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	defer blocker.Rollback(context.Background())
+	var sequence int64
+	require.NoError(t, blocker.QueryRow(ctx, `SELECT high_sequence FROM execution_source_streams WHERE source_instance=$1 AND org_id=$2 AND project_id=$3 AND profile=$4 FOR UPDATE`, s.SourceInstance(), org, project, firstProfile).Scan(&sequence))
+	require.Zero(t, sequence)
+	worker, err := outbox.New(pool, outbox.DefaultOptions())
+	require.NoError(t, err)
+	require.NoError(t, worker.RegisterHandler(outbox.EventSourceDispatch, s.ProcessDispatchEvent))
+	processed, err := worker.DrainOnce(ctx)
+	require.Equal(t, 1, processed)
+	var conflict *pgconn.PgError
+	require.ErrorAs(t, err, &conflict)
+	require.Equal(t, "55P03", conflict.Code)
+	require.Equal(t, "stream_lock", CaptureErrorStage(err), "the real held first-profile lock must cause this rejection")
+	var attempts int
+	var claimant string
+	var leaseReleased, notDeadLettered bool
+	var persistedBackoffMS int64
+	var payload []byte
+	require.NoError(t, pool.QueryRow(ctx, `SELECT attempts,claimed_by,claimed_until IS NULL,dead_lettered_at IS NULL,(extract(epoch FROM available_at-updated_at)*1000)::bigint,payload FROM internal_outbox_events WHERE id=$1`, event.ID).Scan(&attempts, &claimant, &leaseReleased, &notDeadLettered, &persistedBackoffMS, &payload))
+	require.Equal(t, 1, attempts)
+	require.Empty(t, claimant)
+	require.True(t, leaseReleased)
+	require.True(t, notDeadLettered)
+	require.EqualValues(t, 200, persistedBackoffMS, "the first native failure persists its exact backoff")
+	require.Equal(t, []byte(event.Payload), payload)
+	require.Empty(t, dispatchScopeFactBytes(t, pool, s.SourceInstance(), org, project, []string{event.RequestID}), "the whole failed request scope has no source facts")
+	var facts, changedStreams int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM execution_source_facts`).Scan(&facts))
+	require.Zero(t, facts)
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM execution_source_streams WHERE high_sequence<>0`).Scan(&changedStreams))
+	require.Zero(t, changedStreams, "all counters roll back with the failed batch")
+	require.NoError(t, blocker.Rollback(ctx))
+	// Advance only the due time of this known synthetic failure, after proving
+	// the real persisted delay. The original worker owns recovery and ACK.
+	due, err := pool.Exec(ctx, `UPDATE internal_outbox_events SET available_at=clock_timestamp()-interval '1 second' WHERE id=$1 AND attempts=1 AND claimed_by='' AND claimed_until IS NULL AND dead_lettered_at IS NULL`, event.ID)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, due.RowsAffected())
+	processed, err = worker.DrainOnce(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	require.Equal(t, expected, dispatchScopeFactBytes(t, pool, s.SourceInstance(), org, project, []string{event.RequestID}), "the whole recovered request scope has exactly its three original canonical facts")
+	var remaining, bad int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM internal_outbox_events WHERE id=$1`, event.ID).Scan(&remaining))
+	require.Zero(t, remaining, "the same original worker ACKs the recovered event")
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM execution_source_streams s WHERE s.high_sequence<>1 OR s.high_sequence<>(SELECT count(*) FROM execution_source_facts f WHERE f.source_instance=s.source_instance AND f.org_id=s.org_id AND f.project_id=s.project_id AND f.profile=s.profile) OR s.high_sequence<>COALESCE((SELECT max(sequence) FROM execution_source_facts f WHERE f.source_instance=s.source_instance AND f.org_id=s.org_id AND f.project_id=s.project_id AND f.profile=s.profile),0)`).Scan(&bad))
+	require.Zero(t, bad, "the recovered exact three facts have no duplicates or sequence gaps")
 }
