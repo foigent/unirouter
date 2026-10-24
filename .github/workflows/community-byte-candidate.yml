@@ -33,13 +33,13 @@ jobs:
         shell: bash
         run: python3 -I -B -c 'import os,time; open(os.environ["GITHUB_ENV"],"a").write("UR_BYTE_JOB_MONOTONIC="+str(time.monotonic())+"\n")'
       - name: Checkout exact producer
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
           path: producer
       - name: Checkout fixed product source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: a6b03cc8bc2494b735ea1da4018beb7b4af44d3f
           persist-credentials: false
