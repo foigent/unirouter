@@ -7,6 +7,9 @@ on:
       - .github/workflows/community-installer.yml
       - .github/tests/community-installer.py
       - .github/tests/test-community-installer.py
+      - .github/tests/community-install-descriptor.py
+      - .github/tests/test-community-install-descriptor.py
+      - .github/tests/community-release-acceptance.py
       - deploy/customer/**
       - deploy/community/**
       - scripts/test-community-bootstrap.py
@@ -53,7 +56,9 @@ jobs:
           python-version: '3.10'
 
       - name: Check native fixture against shipped bootstrap offline
-        run: python3 -I -B .github/tests/test-community-installer.py
+        run: |
+          python3 -I -B .github/tests/test-community-install-descriptor.py
+          python3 -I -B .github/tests/test-community-installer.py
 
       - name: Test real signed installation and recovery
         env:

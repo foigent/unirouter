@@ -20,6 +20,16 @@ fixture = load('installer_fixture', ROOT / '.github/tests/community-installer.py
 bootstrap = load('actual_bootstrap', ROOT / 'deploy/community/bootstrap.py')
 
 class InstallerFixtureContract(unittest.TestCase):
+    def test_workflow_covers_selector_and_shared_first_use_inputs(self):
+        # A change to an imported selector/assertion must exercise the real
+        # native fixture, even when its main driver is otherwise unchanged.
+        text = (ROOT / '.github/workflows/community-installer.yml').read_text()
+        paths = text.split('    paths:\n', 1)[1].split('  workflow_dispatch:', 1)[0]
+        for path in ('.github/tests/community-install-descriptor.py',
+                     '.github/tests/test-community-install-descriptor.py',
+                     '.github/tests/community-release-acceptance.py'):
+            self.assertIn('      - ' + path + '\n', paths)
+
     def raw(self, schema):
         return json.dumps({'schema_version': 'unirouter.community-bootstrap.v1',
             'platform': {'os': 'linux', 'arch': 'amd64'},

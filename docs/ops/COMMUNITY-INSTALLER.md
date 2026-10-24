@@ -41,7 +41,9 @@ Resume retains the same package, config, Docker daemon, project, database and
 plans. The DB's existing owner is the installation authority. Release recording
 is reconciled through `upgrade status`; only an exact match is accepted.
 Password rotation is not blindly retried: the existing CLI appends an audit
-on each call, while first-customer bootstrap requires exactly one rotation.
+on each call. The installer rotates exactly once; a later, explicit user-selected
+password is a separate native operation. First-customer preview qualifies the
+actual seed and protected history before initialization.
 An uncertain result stops before HTTP and requires operator investigation.
 No audit deletion, new password-authority table or relaxed checkpoint is added.
 
@@ -79,10 +81,29 @@ and undeclared environment substitutions are not installation input.
 Choose references available for the signed target architecture. No example
 digest in this repository denotes an approved public release.
 
-The bundle must admit current sequence zero and post-fresh M126, with target
-schema `000126_commercial_license_retirement`. This is verification for initial
+Before freezing owner inputs, use
+`.github/tests/community-install-descriptor.py` with the SHA-pinned last
+accepted installation descriptor, the accepted app publisher receipt and six
+sanitized native Docker image observations. The selector retains the accepted
+upstream references, selects the new app references and requires each exact
+reference to occur once in the corresponding Linux amd64 `RepoDigests`.
+It does not pull images, sign, change Docker or operate services.
+
+Do not copy upstream `pull_reference` values from build provenance or an older
+source template into installation input. Docker may report `postgres@sha256:…`
+for a build pull spelled `docker.io/library/postgres@sha256:…`; the installer
+deliberately keeps its exact native-reference check. The selector rejects such
+an obsolete template instead of rewriting or relaxing the installer assertion.
+`--check-descriptor` is read-only; `--out` requires a new file and never overwrites.
+Run `.github/tests/test-community-install-descriptor.py` and qualify the existing
+temporary Linux native fixture before allocating the next signed identity.
+The fixture uses separate temporary trust and loopback test apps; its result
+does not replace the later real signed-package consumer or Target upgrade.
+
+The current bundle must admit current sequence zero and post-fresh M127, with target
+schema `000127_xinsight_communication_policy`. This is verification for initial
 release registration after the formal fresh owner completes, not an assertion
-that the empty database already contains M126. The embedded backend trust
+that the empty database already contains M127. The embedded backend trust
 root must accept the actual package and its version/commit/platform/schema.
 The independent verifier now returns `manifest_sha256`, computed from the
 exact canonical manifest accepted by the signature verifier. The installer

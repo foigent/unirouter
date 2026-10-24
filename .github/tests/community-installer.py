@@ -26,8 +26,13 @@ import urllib.request
 import uuid
 
 SCHEMA = "000127_xinsight_communication_policy"
-DEPENDENCIES = {"postgres": "postgres:16-alpine", "redis": "redis:7-alpine",
-                "prometheus": "prom/prometheus:v2.51.0", "grafana": "grafana/grafana:11.0.0"}
+# Match the accepted installation descriptor, not build-stage pull labels or floating tags.
+DEPENDENCIES = {
+    "postgres": "postgres@sha256:1a66d744c1b459e13b05a8fca341da84cb63383e99ce262210efee5a319d4551",
+    "redis": "redis@sha256:ca0acbb137c1dc3339c8b147a58fd6f42775d4599327b50e7b116c23de501af2",
+    "prometheus": "prom/prometheus@sha256:3305cd2e483c13364c94ae4905368eb425c9fa804f8e523ee47d8bf4de9d87a2",
+    "grafana": "grafana/grafana@sha256:a80bc3848cf5d4b2958ea25dbeb36fa9442ef4be8c73fe4bff11340307c32919",
+}
 
 
 class Failed(Exception):
@@ -173,6 +178,7 @@ class Acceptance:
                  "UNIROUTER_UPGRADE_TRUST_BUNDLE_B64=" + public, "-t", backend, "."])
         self.run("build exact frontend", [self.docker, "build", "--build-arg", "VITE_DEPLOY_ENV=production",
                  "--build-arg", "VITE_APP_VERSION=" + self.version, "-t", frontend, "frontend"])
+        native_observations = []
         for service, reference in {"backend": backend, "frontend": frontend, **DEPENDENCIES}.items():
             if service in ("backend", "frontend"):
                 require(reference.startswith("localhost:15000/"), "external registry push refused")
@@ -180,11 +186,13 @@ class Acceptance:
             self.run("pull " + service, [self.docker, "pull", reference])
             image = json.loads(self.run("inspect " + service, [self.docker, "image", "inspect", reference]))[0]
             require(image["Os"] == "linux" and image["Architecture"] == "amd64", "image platform mismatch")
-            expected_repo = reference.rsplit(":", 1)[0]
+            expected_repo = reference.split("@", 1)[0] if "@" in reference else reference.rsplit(":", 1)[0]
             digests = [v for v in image.get("RepoDigests", []) if v.split("@", 1)[0] == expected_repo]
             require(len(digests) == 1, "ambiguous image digest for " + service)
             self.images[service] = digests[0]
             self.image_ids[service] = image["Id"]
+            native_observations.append(dict(role=service, **{k:image[k] for k in
+                ("Id", "Os", "Architecture", "RepoDigests")}))
         deploy = self.release / "payload/deploy"
         deploy.mkdir(parents=True)
         for name in ("install.py", "docker-compose.yml", ".env.example", "preflight.sh"):
@@ -192,7 +200,19 @@ class Acceptance:
         (deploy / "config").mkdir()
         shutil.copyfile(self.repo / "infra/prometheus/prometheus.yml", deploy / "config/prometheus.yml")
         shutil.copytree(self.repo / "infra/grafana", deploy / "config/grafana")
-        (self.release / "payload/install.json").write_text(json.dumps({"schema_version": "unirouter.install.v1", "images": self.images}))
+        # Exercise the same finite selector used before owner freeze. Upstream
+        # expectations retain the accepted native names; test apps use only the
+        # existing loopback registry and its ephemeral embedded public trust.
+        spec = importlib.util.spec_from_file_location("native_install_descriptor",
+            self.repo / ".github/tests/community-install-descriptor.py")
+        selector = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(selector)
+        prior = {"schema_version": "unirouter.install.v1", "images": dict(self.images, **DEPENDENCIES)}
+        selected = selector.select_descriptor(prior, {k:self.images[k] for k in ("backend", "frontend")},
+            {"images":native_observations})
+        require(selected["images"] == self.images, "native selected descriptor differs from inspected images")
+        (self.release / "payload/install.json").write_bytes(selector.wire(selected))
+        self.result["descriptor_selection"] = "pinned upstream names and native exact RepoDigests"
         now = datetime.now(timezone.utc)
         stamp = lambda value: value.isoformat(timespec="seconds").replace("+00:00", "Z")
         args = [self.verifier, "pack", "--key-id", "installer-native-test", "--private-key", private,
@@ -467,6 +487,60 @@ os.kill(parent, signal.SIGKILL)
         finally:
             self.phase = previous_phase
 
+    def native_first_use_checks(self, directory, project):
+        # These pure assertions are shared with the later real-public-package
+        # consumer. This synthetic fixture never consumes its pending config.
+        spec = importlib.util.spec_from_file_location("first_use_assertions",
+            self.repo / ".github/tests/community-release-acceptance.py")
+        first = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(first)
+        try:
+            snapshot = lambda: first.strict_json(self.sql(directory, project, first.FIRST_CUSTOMER_STATE_SQL))
+            retained = lambda: (sha(directory / "admin-password"), sha(directory / "install-state.json"),
+                sha(directory / "evidence/install.json"), files(directory / "runtime"))
+            self.phase = "native caller-selected synthetic password"
+            before, original_files = snapshot(), retained()
+            generated = (directory / "admin-password").read_text().strip()
+            self.run("choose public synthetic password through native stdin", self.compose(directory, project) +
+                ["exec", "-T", "backend", "./uniroute", "admin", "set-password", "--username", "admin",
+                 "--org-id", "1", "--password-stdin"], data=(first.FIRST_USE_TEST_INPUT + "\n").encode())
+            first.password_choice_delta(before, snapshot())
+            require(retained() == original_files, "password choice changed original installer files")
+            first.fixture_admin_login(generated, expected_status=401)
+            login = first.fixture_admin_login(first.FIRST_USE_TEST_INPUT)
+            self.result["caller_selected_password"] = {"initial_installer_rotations":1, "final_rotations":2,
+                "auth_epoch_advanced_once":True, "generated_old_input_refused":True,
+                "original_installer_files_unchanged":True}
+            self.passed("native password choice and first login preserve original installer state")
+            token, intent = login["token"], uuid.uuid4().hex
+            before = snapshot()
+            self.phase = "native authenticated first-customer read-only preview"
+            preview = first.first_customer_request(token, intent, dry_run=True, expected_status=200)
+            first.first_customer_preview(preview, before, expected_rotations=2)
+            require(first.immutable_digest(before) == first.immutable_digest(snapshot()), "first-customer preview changed state")
+            self.phase = "native first-customer commit and known-success replay"
+            created = first.first_customer_request(token, intent, dry_run=False, expected_status=201)
+            customer_id = first.first_customer_result(created, idempotent=False)
+            after = snapshot()
+            first.first_customer_transition(before, after, customer_id, intent)
+            replay = first.first_customer_request(token, intent, dry_run=False, expected_status=200)
+            first.first_customer_result(replay, idempotent=True, customer_id=customer_id)
+            require(first.immutable_digest(after) == first.immutable_digest(snapshot()), "known-success replay duplicated state")
+            self.run("stop only the native synthetic backend", self.compose(directory, project) + ["stop","-t","30","backend"])
+            self.run("restart synthetic backend with bounded native health wait", self.compose(directory, project) +
+                ["up","-d","--no-deps","--wait","--wait-timeout","120","--pull","never","--no-build","backend"])
+            self.request("http://127.0.0.1:13000/health/ready")
+            first.fixture_admin_login(first.FIRST_USE_TEST_INPUT)
+            restarted = snapshot()
+            first.first_customer_transition(before, restarted, customer_id, intent, restarted=True)
+            self.result["first_customer"] = {"organization_id":customer_id,
+                "platform_org_id":before["admin"]["org_id"], "default_project_id":restarted["projects"][0]["id"],
+                "preview_read_only":True, "same_intent_replay":True, "chosen_admin_password_usable":True,
+                "protected_release_and_rotation_preserved":True, "provider_calls":0}
+            self.passed("native first-customer preview, commit, same-intent replay and restart preserve protected state")
+        except first.Stop as exc:
+            raise Failed(str(exc)) from None
+
     def execute(self):
         self.preflight()
         self.prepare()
@@ -476,6 +550,7 @@ os.kill(parent, signal.SIGKILL)
         self.negative_checks(directory, project)
         self.interrupt_after_plan(directory, project)
         self.installed_checks(directory, project)
+        self.native_first_use_checks(directory, project)
         self.result["status"] = "passed"
         self.result.pop("installer_stop", None)
         # All resources belong to this disposable runner; no broad prune/cleanup.
