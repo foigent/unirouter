@@ -263,7 +263,8 @@ func (h *Handler) verifyFirstCustomerBootstrapCheckpoint(r *http.Request, tx pgx
 // verifyFirstCustomerFreshMigrationCheckpoint accepts only the exact seed
 // state produced by the current migration chain after the default admin has
 // been rotated and authenticated. Same-admin login, logout and password-reset
-// history is retained; the committing actor's live session is checked separately.
+// history is retained. Canonical logout audits may outlive cleaned-up expired
+// sessions; the committing actor's live session is checked separately.
 // This is deliberately separate from the
 // second-integration reset checkpoint. The exact seed wallet/project are
 // normalized only after every invariant has matched, in the same SERIALIZABLE
@@ -332,9 +333,14 @@ func (h *Handler) verifyFirstCustomerFreshMigrationCheckpoint(r *http.Request, t
 			   )) OR (action='logout' AND (
 			       source IS DISTINCT FROM 'admin_console'
 			       OR resource IS DISTINCT FROM 'admin_session'
-			       OR NOT EXISTS (SELECT 1 FROM admin_sessions session
-			           WHERE session.user_id=$1 AND session.id::text=audit_logs.resource_id
-			             AND session.revoked_at IS NOT NULL)
+			       OR NOT CASE WHEN resource_id ~ '^[1-9][0-9]{0,18}$'
+			           THEN resource_id::numeric<=9223372036854775807 ELSE FALSE END
+			       OR EXISTS (SELECT 1 FROM admin_sessions session
+			           WHERE session.id::text=audit_logs.resource_id
+			             AND (session.user_id IS DISTINCT FROM $1 OR session.revoked_at IS NULL))
+			       OR (NOT EXISTS (SELECT 1 FROM admin_sessions session
+			               WHERE session.id::text=audit_logs.resource_id)
+			           AND COALESCE(request_id,'') !~ '[^[:space:]]')
 			       OR detail IS DISTINCT FROM '{"scope":"current_session"}'::jsonb
 			       OR before_state IS DISTINCT FROM '{}'::jsonb
 			       OR after_state IS DISTINCT FROM '{"scope":"current_session"}'::jsonb

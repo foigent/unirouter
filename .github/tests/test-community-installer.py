@@ -27,7 +27,12 @@ class InstallerFixtureContract(unittest.TestCase):
         paths = text.split('    paths:\n', 1)[1].split('  workflow_dispatch:', 1)[0]
         for path in ('.github/tests/community-install-descriptor.py',
                      '.github/tests/test-community-install-descriptor.py',
-                     '.github/tests/community-release-acceptance.py'):
+                     '.github/tests/community-release-acceptance.py',
+                     'cmd/uniroute/cli.go',
+                     'cmd/uniroute/first_customer_upgrade_history_integration_test.go',
+                     'internal/admin/first_customer_bootstrap_handlers.go',
+                     'internal/admin/auth_handlers.go',
+                     'internal/admin/audit_handlers.go'):
             self.assertIn('      - ' + path + '\n', paths)
 
     def raw(self, schema):

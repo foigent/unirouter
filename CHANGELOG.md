@@ -4,6 +4,14 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.14.2] - 2026-10-25
+
+### Fixed
+
+- Allow first-customer initialization after normal cleanup removes an expired administrator session while retaining its canonical logout audit. Retained session witnesses must still belong to the selected administrator and be revoked; absent witnesses require a canonical positive session ID and a nonblank operation identity. Current-session authorization, exact audit fields, empty business state and release bindings remain required. Authentication and release history are preserved.
+- Exercise the native logout, expired-session cleanup and signed-upgrade history in the existing first-customer CI selector, including read-only previews, commit/replay and rejected malformed or contradictory history.
+- Local candidate only. This entry does not assert CI, publication, signed-artifact, Target, or Production acceptance.
+
 ## [1.14.1] - 2026-10-23
 
 ### Fixed

@@ -14,10 +14,15 @@ on:
       - deploy/community/**
       - scripts/test-community-bootstrap.py
       - cmd/uniroute/fresh_install_cli.go
+      - cmd/uniroute/cli.go
+      - cmd/uniroute/first_customer_upgrade_history_integration_test.go
       - cmd/uniroute/upgrade_cli.go
       - cmd/uniroute-upgrade/**
       - internal/installstate/**
       - internal/migrate/fresh_install.go
+      - internal/admin/first_customer_bootstrap_handlers.go
+      - internal/admin/auth_handlers.go
+      - internal/admin/audit_handlers.go
       - Dockerfile
       - frontend/Dockerfile
       - frontend/nginx.conf
