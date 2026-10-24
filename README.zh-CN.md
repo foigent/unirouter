@@ -10,11 +10,10 @@ UniRouter（UR）为应用和 Agent 提供统一模型入口及管理控制台�
 路由、预算、用量、计费和执行回执放在同一条可检查的链路中。你可以追溯请求
 如何执行，以及费用依据如何形成。
 
-> **源码已公开，Linux 安装器为预览版：** 项目源码采用 Apache-2.0。
-> [1.14.0 Linux amd64 安装说明](docs/community/install-linux.zh-CN.md)提供 Preview 13 的固定签名包与下载身份。
-> 本次修正依赖镜像名称写法，镜像摘要保持不变。
-> 签名、公开下载和真实安装的分别验证结果见[发布准备状态](docs/community/release-readiness.md)。
-> 历史合成测试不能代替当前公开安装或现有服务器升级验收。
+> **在 Linux 服务器／ECS 上开始：** 按[Linux amd64 安装说明](docs/community/install-linux.zh-CN.md)安装，
+> 再[登录、初始化客户并发出第一次请求](docs/community/getting-started.md)。
+> 预览版使用签名包与固定镜像摘要；[发布状态](docs/community/release-readiness.md)
+> 分别记录具体包、安装和现有服务器升级的实际验证结果。
 
 项目以英文作为对外文档与项目更新的第一语言，简体中文作为第二语言。
 中英文提问和贡献均欢迎；文档存在差异时，以英文版本为准，并欢迎提交翻译修正。
@@ -35,12 +34,12 @@ UniRouter（UR）为应用和 Agent 提供统一模型入口及管理控制台�
 
 | 你的目标 | 阅读入口 |
 | --- | --- |
+| 在 Linux／ECS 上安装 | [Linux 安装说明](docs/community/install-linux.zh-CN.md) |
+| 登录、初始化客户并发出第一次请求 | [开始使用（英文）](docs/community/getting-started.md) |
+| 连接 X-Insight | [接入入口与当前限制（英文）](docs/community/getting-started.md#optional-x-insight-integration) |
 | 理解为什么做 UR 及设计取舍 | [设计理念](docs/community/why-unirouter.zh-CN.md) |
 | 深入了解网关实现差异 | [源码比较说明（英文）](docs/community/gateway-design-comparison.md) |
 | 理解产品与职责边界 | [架构与 X-Insight](docs/community/architecture.md) |
-| 安装并发出第一次请求 | [开始使用](docs/community/getting-started.md) |
-| 了解 Linux／ECS 简易安装预览版 | [Linux 安装说明](docs/community/install-linux.zh-CN.md) |
-| 将执行事实与 X-Insight 组合使用 | [接入入口与当前限制（英文）](docs/community/getting-started.md#optional-x-insight-integration) |
 | 了解数据保存和外发 | [数据处理说明](docs/community/data-handling.md) |
 | 构建、测试或贡献 | [贡献指南](CONTRIBUTING.md)、[贡献地图](docs/community/contribution-map.md) |
 | 深入源码和历史验证 | [文档索引](docs/README.zh-CN.md) |
@@ -56,9 +55,10 @@ UniRouter 负责模型执行、路由、策略、用量与经济事实，包括�
 审阅。需要把 UniRouter 执行与其他获授权来源一起调查时，可以组合使用两者；
 X-Insight 异步接收事实，不进入模型调用的同步关键路径。
 
-[Foigent 首页](https://github.com/foigent) 是产品选择入口。X-Insight 源码正在准备公开，
-此页只链接可公开访问的资料。已有合同、验证过的组合及公开上手路径的剩余工作见
-[接入入口（英文）](docs/community/getting-started.md#optional-x-insight-integration)。
+[Foigent 首页](https://github.com/foigent) 是产品选择入口。
+[X-Insight 源码](https://github.com/foigent/x-insight)和[预览版发布](https://github.com/foigent/x-insight/releases)已公开。
+先按其指南安装，再按 [UR 连接说明（英文）](docs/community/getting-started.md#optional-x-insight-integration)接入。
+两个产品的独立安装和组合首次使用分别记录实际验证结果。
 共享协议与 Integration Control 为产品及验证提供基础组件，不是需要用户另行选择或
 自行拼装的其他产品。
 
@@ -84,8 +84,9 @@ Foigent 目前没有商业产品规划。各项目的源码公开与制品发布
 
 UniRouter 已接受的源码已退役运行时商业激活要求，并通过临时环境中的全新安装和
 维护升级测试。产品鉴权、租户隔离、预算、财务与审计完整性、发布校验及数据保护
-继续保留。现有部署仍需执行各自受支持的升级；正式签名下载包尚未发布。
-具体证据见[发布准备状态](docs/community/release-readiness.md)。
+继续保留。现有部署仍需执行各自受支持的升级；
+[签名预览版下载](https://github.com/foigent/unirouter/releases)与[发布状态](docs/community/release-readiness.md)
+记录具体包及其安装／升级验证结果。
 
 第三方组件保留原许可证及声明，Foigent 署名继续保留。贡献许可和第三方可以进行
 商业使用的条件见[开源许可与产品范围（英文）](docs/community/commercial-boundaries.md)。

@@ -3,57 +3,36 @@
 [Foigent](https://github.com/foigent) · [Project overview](../../README.md) ·
 [简体中文项目入口](../../README.zh-CN.md)
 
-**Unreleased candidate:** fresh installation without a commercial License,
-interrupted-plan recovery and console login passed on a disposable Linux amd64
-runner. Public release packages are still pending. See
-[release readiness](release-readiness.md) for the exact tested commit and scope.
-Installation does not configure or qualify a model for you; the remaining
-steps below prepare model access and verify your first request.
+Start with the [Linux amd64 installer guide](install-linux.md) on your server or
+ECS. [Preview downloads](https://github.com/foigent/unirouter/releases) are public;
+use the exact package and checksums named by the guide. The
+[release status](release-readiness.md) distinguishes published artifacts,
+installation checks and upgrades on existing servers.
 
-## Choose a path
+After installation: choose your administrator password, sign in, initialize
+your customer, configure a model and check your first request. Installation
+does not import a provider key, qualify a model or make a paid model request.
 
-- Linux server / ECS: see the [simplified installer preview](install-linux.md).
-  Exact native acceptance is recorded separately from the still-pending
-  public package; the guide links to both scope and results.
-- Read/contribute: follow [development prerequisites](../../CONTRIBUTING.md).
-  No provider credential or paid request is needed for isolated unit tests.
-- Empty database: use the exact artifact's
-  [fresh-install owner](../ops/FRESH-INSTALL.md), then
-  [first-customer bootstrap](../ops/deployment-runbook.md#102-启动首装登记与读回).
-- Existing installation: follow its release-matched upgrade/recovery contract.
-  Preserve the database; do not reset it to bypass an installation error.
-- Signed release: use [the customer template](../../deploy/customer/README.md)
-  with an actual verified artifact. This candidate is not a published release.
+## Install, sign in and initialize
 
-Clone the public source:
+1. Install into a new directory and Compose project using the
+   [Linux / ECS guide](install-linux.md). Keep its printed paths and project name.
+2. The installer generates an initial private administrator password. To choose
+   your own before your onboarding login, use the existing
+   [native password command](install-linux.md#choose-your-administrator-password).
+   The installer itself does not yet prompt for a password of your choice.
+3. Open the console through the SSH tunnel described in that guide and sign in
+   as `admin`. Keep your password and browser token private.
+4. Open **System & integrations → Deployment & network** and complete
+   **First customer initialization**. Its read-only preflight names the exact
+   empty-seed objects before you confirm. It creates the customer
+   organization separately from the platform administration organization;
+   a model and provider credentials are configured in the next step.
 
-```sh
-git clone https://github.com/foigent/unirouter.git
-cd unirouter
-```
-
-Read [data handling](data-handling.md) before configuring services. Keep secrets
-in the supported local environment channel and out of issues/logs.
-
-## Install and initialize
-
-The binary, migration ledger, embedded version/commit/tree and inspected image
-digest must agree. A default `local`/`unknown` build is not a substitute.
-
-The formal owner separates `fresh-install plan`, `check`, `apply` and
-`resume`. Its [runbook](../ops/FRESH-INSTALL.md) defines evidence storage,
-database roles and recovery. Ordinary startup cannot bypass an empty database
-or an active installation.
-
-Complete administrator password rotation/login and the first-customer
-bootstrap using the supported control surface. Any legacy bootstrap state
-specified by the runbook remains isolated from client traffic.
-
-Accepted UniRouter source since 1.10.0 requires no commercial License import;
-the 1.11.0 bootstrap retains M126. Follow the
-[M126 contract](../ops/COMMERCIAL-LICENSE-RETIREMENT.md) when upgrading M125;
-older License instructions apply only to the older Artifact. Full installation
-acceptance is tracked in [release readiness](release-readiness.md).
+Read [data handling](data-handling.md) before enabling capture or outbound
+connections. No commercial License import is required in current UniRouter.
+For an existing installation, preserve its database and follow its
+release-matched upgrade/recovery instructions.
 
 ## Prepare model access
 
@@ -110,11 +89,12 @@ associate its execution, usage and economic facts with other authorized sources
 for analysis and review. Facts are transferred asynchronously; X-Insight is not
 part of the synchronous model request path.
 
-X-Insight's source is **preparing for publication**. The
-[Foigent overview](https://github.com/foigent) will link available product entry
-points. A newcomer cannot yet reproduce the complete two-product walkthrough
-from public source alone. UniRouter's completed installation checks and shared
-protocol checks do not establish that joint result.
+[X-Insight's source](https://github.com/foigent/x-insight) and
+[Linux preview release](https://github.com/foigent/x-insight/releases/tag/v0.2.0-dev.fpv20)
+are public. Start with its [installation and first-use instructions](https://github.com/foigent/x-insight#readme),
+then create a new authorized connection from the corresponding product setup
+screens. Source publication and each product's independent installation do not
+by themselves establish a verified two-product first-use result.
 
 Use the existing sources for the relevant step:
 
@@ -131,9 +111,9 @@ Use the existing sources for the relevant step:
 - [Architecture and recorded combinations](architecture.md#integration-entry-and-verified-scope):
   pinned shared interfaces, dated Target observations and unperformed joint work.
 
-The public walkthrough still needs X-Insight's installation/invitation and
-reader-access documentation, an exact supported version/configuration pair,
-and a synthetic execution whose original source/request and usage/billing
+For the combined walkthrough, follow X-Insight's invitation and reader-access
+instructions and the exact version/configuration pair recorded for that result.
+Verify a synthetic execution whose original source/request and usage/billing
 facts can be found by an ordinary authorized reader. Record the denied-access
 case as well. Preserve original identifiers, amounts, units and provenance;
 report unexecuted steps and gaps explicitly. These are the acceptance goals,
@@ -145,3 +125,20 @@ Include sanitized versions, source/request or operation identifiers and the
 exact failing step in [Issues](https://github.com/foigent/unirouter/issues);
 follow [Security](../../SECURITY.md) for sensitive reports and
 [Contributing](../../CONTRIBUTING.md) for patches and DCO.
+
+## Development and recovery references
+
+To build or contribute, start with [development prerequisites](../../CONTRIBUTING.md):
+
+```sh
+git clone https://github.com/foigent/unirouter.git
+cd unirouter
+```
+
+The [fresh-install owner](../ops/FRESH-INSTALL.md) documents native
+plan/check/apply/resume boundaries for maintainers. It is not an instruction to
+reset an existing database. Existing M125 installations need the
+[M126 maintenance contract](../ops/COMMERCIAL-LICENSE-RETIREMENT.md); its
+historical License steps do not apply to new current-version installations.
+The [customer template](../../deploy/customer/README.md) provides the lower-level
+verified-package procedure.

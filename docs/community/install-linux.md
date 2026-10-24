@@ -4,22 +4,21 @@ Explicitly non-expiring packages use signed `unirouter.upgrade-manifest.v2` with
 
 [简体中文](install-linux.zh-CN.md) · [First model request](getting-started.md)
 
-**Linux amd64 preview: v1.14.0-preview.13, source
-`c89e7c60ac63204e990f52ec128cd493f185112b`, M127, release sequence 13.**
-The signed package and all 24 payloads have been verified locally. This preview
-corrects four dependency image names to Docker's reported spelling; all image
-digests, product source and installer checks remain unchanged. The release and
-UR image packages are public; complete public-package installation acceptance
-remains pending in the [formal acceptance workflow](https://github.com/foigent/unirouter/actions/workflows/community-release-acceptance.yml).
-See [release readiness](release-readiness.md) for the distinct evidence.
-The [Preview 12 consumer](https://github.com/foigent/unirouter/actions/runs/39631286350)
-verified the signed public package and both UR images, then stopped at PostgreSQL
-image-name validation before installation. Keep any old attempt and use unused
-paths and a new project for this package; resume cannot switch package hashes.
-Earlier
-[synthetic native results](../ops/COMMUNITY-INSTALLER.md#accepted-native-bootstrap-result--2026-10-11)
-retain their recorded scope. This entry installs a new instance; it does not upgrade
-an existing server. Cloning the repository does not supply signed release assets.
+**Linux amd64 preview: v1.14.1-preview.15, source
+`a6b03cc8bc2494b735ea1da4018beb7b4af44d3f`, M127, release sequence 15.**
+The signature and all 24 payloads have been verified locally. This version fixes
+first-customer initialization; the existing native command lets you choose an
+administrator password. The release attachments and both UR images are public.
+Complete public-package installation remains pending in the
+[formal acceptance workflow](https://github.com/foigent/unirouter/actions/workflows/community-release-acceptance.yml).
+The [native disposable test](https://github.com/foigent/unirouter/actions/runs/40054934027)
+used synthetic data and temporary trust; it does not establish installation of
+this real signed package or an existing-server upgrade. See
+[release status](release-readiness.md) for those separate results.
+This entry installs a new instance. Retain old attempts and use unused paths and
+a new project; resume cannot switch package hashes. Historical sequence14 has a
+valid signature but rejected installation inputs: it is not published or
+installable. Cloning the repository does not supply signed release assets.
 
 The installer prepares PostgreSQL, Redis, UniRouter and its monitoring services,
 generates the required local secrets, initializes the database and opens a
@@ -52,7 +51,7 @@ PostgreSQL and Redis have no published host ports.
 ## Download and install this preview
 
 Obtain this guide through the authenticated official repository and review the
-[preview release](https://github.com/foigent/unirouter/releases/tag/v1.14.0-preview.13)
+[preview release](https://github.com/foigent/unirouter/releases/tag/v1.14.1-preview.15)
 before executing downloaded code. The script is pinned to the product source;
 the JSON pins the verifier, public ring and signed package. A checksum beside
 an untrusted download does not independently establish trust. This entry does
@@ -60,11 +59,11 @@ not replace an existing public ring or require a private signing key.
 
 | Download | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `bootstrap.py` at source c89e7c60 | 23,287 | `054c51a671a9255fd3a587fc7897d51fff0525e2e4ae54bb3926ac2e44785e3f` |
-| `community-bootstrap.json` | 1,121 | `e67ddc9604019eee994793613f5eeac12d3f8587f921c4c39132436672636d1e` |
+| `bootstrap.py` at source a6b03cc8 | 23,287 | `054c51a671a9255fd3a587fc7897d51fff0525e2e4ae54bb3926ac2e44785e3f` |
+| `community-bootstrap.json` | 1,121 | `ff34de8c73b870aa48fc1e9a40d584c431267b5425334ba5dc95d56a12a8fcc0` |
 | `uniroute-upgrade-linux-amd64` | 4,099,528 | `60acbb428d746bccaea3e3bc0113e2d0f900b15057bda39455805f0e9a1bbd23` |
 | `public-keys.json` | 83 | `96c91635460ddfb2a14aa1ea97d8445951730e9eb04a33cbdf4320141e61d63d` |
-| `unirouter-1.14.0-linux-amd64.tar.gz` | 130,032,242 | `94d85ac174bc9ebdbefeab13a2827c7f2acaa146c75d3bb1f22338c5db605834` |
+| `unirouter-1.14.1-linux-amd64.tar.gz` | 130,031,113 | `d52e8b9de6f54b74052982cd4969a4915d1a04c74b1766cb31605990e7f2c51a` |
 
 After the public release gates pass, open a root shell with `sudo -i`, then run
 the block below. It requires unused download, preparation and runtime paths;
@@ -74,21 +73,21 @@ the installer executes.
 ```sh
 set -eu
 umask 077
-mkdir -m 700 /opt/unirouter-downloads-1.14.0
-cd /opt/unirouter-downloads-1.14.0
+mkdir -m 700 /opt/unirouter-downloads-1.14.1
+cd /opt/unirouter-downloads-1.14.1
 curl --fail --location --proto '=https' --proto-redir '=https' \
   --output bootstrap.py \
-  https://raw.githubusercontent.com/foigent/unirouter/c89e7c60ac63204e990f52ec128cd493f185112b/deploy/community/bootstrap.py
+  https://raw.githubusercontent.com/foigent/unirouter/a6b03cc8bc2494b735ea1da4018beb7b4af44d3f/deploy/community/bootstrap.py
 curl --fail --location --proto '=https' --proto-redir '=https' \
   --output community-bootstrap.json \
-  https://github.com/foigent/unirouter/releases/download/v1.14.0-preview.13/community-bootstrap.json
+  https://github.com/foigent/unirouter/releases/download/v1.14.1-preview.15/community-bootstrap.json
 printf '%s  %s\n' \
   054c51a671a9255fd3a587fc7897d51fff0525e2e4ae54bb3926ac2e44785e3f bootstrap.py \
-  e67ddc9604019eee994793613f5eeac12d3f8587f921c4c39132436672636d1e community-bootstrap.json \
+  ff34de8c73b870aa48fc1e9a40d584c431267b5425334ba5dc95d56a12a8fcc0 community-bootstrap.json \
   | sha256sum --check --status
 python3 -I -B bootstrap.py install \
   --bootstrap community-bootstrap.json \
-  --bootstrap-sha256 e67ddc9604019eee994793613f5eeac12d3f8587f921c4c39132436672636d1e \
+  --bootstrap-sha256 ff34de8c73b870aa48fc1e9a40d584c431267b5425334ba5dc95d56a12a8fcc0 \
   --directory /opt/unirouter-release
 ```
 
@@ -107,10 +106,12 @@ uses the original database plan and does not redownload or regenerate secrets.
 See [interrupted installation](#if-installation-stops) below.
 
 The release also includes
-[`unirouter-retained-images-source-notices.tar.gz`](https://github.com/foigent/unirouter/releases/download/v1.14.0-preview.13/unirouter-retained-images-source-notices.tar.gz)
-and `SHA256SUMS`. The companion maps all six retained backend/frontend versions
-(1.12, 1.13 and 1.14) to version-specific source and notices; the signed current
-package contains the shared source materials. Third-party terms remain applicable.
+[`unirouter-retained-images-source-notices.tar.gz`](https://github.com/foigent/unirouter/releases/download/v1.14.1-preview.15/unirouter-retained-images-source-notices.tar.gz)
+and `SHA256SUMS`. The unchanged historical companion retains the 1.12/1.13
+image mappings and shared-material references. Retained 1.14.0 materials remain
+in [Preview 13](https://github.com/foigent/unirouter/releases/tag/v1.14.0-preview.13).
+The current signed package contains 1.14.1 source-disposition, component notices
+and required source materials. Third-party terms remain applicable.
 
 ## Check, then install a directly prepared package
 
@@ -142,6 +143,29 @@ Installation refuses existing projects; this is not an upgrade command.
 Run only one installer for a project at a time, even if using different
 directories. Concurrent installation into the same project is unsupported.
 
+## Choose your administrator password
+
+Installation generates an initial private password; it does not prompt for a
+password of your choice. After installation succeeds, you can choose one
+through the shipped native command on the server. For the default installation:
+
+```sh
+sudo docker compose --project-name unirouter \
+  --project-directory /opt/unirouter/runtime \
+  --env-file /opt/unirouter/runtime/.env \
+  -f /opt/unirouter/runtime/docker-compose.yml \
+  -f /opt/unirouter/runtime/installation.json \
+  -f /opt/unirouter/runtime/runtime-image.json \
+  exec backend ./uniroute admin set-password --username admin --org-id 1
+```
+
+Use your actual project name and installation directory if customized. Run in
+an interactive terminal: the command prompts twice without echo. Password
+values belong in that private prompt, not command arguments or shared logs.
+A successful change invalidates existing administrator sessions. The original
+`admin-password` file still contains the generated old value; use the password
+you just chose for subsequent logins and store it in your password manager.
+
 ## Open the console
 
 The completion message gives the URL and password-file location. On your own
@@ -151,9 +175,10 @@ computer, keep an SSH tunnel to the server open:
 ssh -N -L 3000:127.0.0.1:3000 your-user@your-server
 ```
 
-Open `http://127.0.0.1:3000` on that computer. On the server, privately read the
-generated password with `sudo cat /opt/unirouter/admin-password` and sign in as
-`admin`. Do not paste this file into an issue or shared log. Complete the
+Open `http://127.0.0.1:3000` on that computer and sign in as `admin` with the
+password you chose above. If you kept the generated initial password, privately
+read it on the server with `sudo cat /opt/unirouter/admin-password`. Do not paste
+a password or this file into an issue or shared log. Complete the
 first-customer setup through the console, then follow
 [model configuration and the first request](getting-started.md#prepare-model-access).
 
