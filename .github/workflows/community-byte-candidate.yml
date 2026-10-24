@@ -41,9 +41,9 @@ jobs:
       - name: Checkout fixed product source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: a6b03cc8bc2494b735ea1da4018beb7b4af44d3f
+          ref: 21572d9e73ca901583a8b526c9af7cd0319d59f1
           persist-credentials: false
-          path: producer/.byte-source-a6b03cc8
+          path: producer/.byte-source-21572d9e
       - name: Validate producer offline guards
         working-directory: producer
         run: |
