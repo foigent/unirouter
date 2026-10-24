@@ -39,7 +39,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Check out exact candidate
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
