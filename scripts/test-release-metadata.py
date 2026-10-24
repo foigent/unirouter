@@ -133,6 +133,9 @@ class ReleasePolicyTests(unittest.TestCase):
             'frontend/vite.config.ts', 'frontend/src/fixtures/product.json',
             'scripts/internal-target-rollout.py', 'scripts/check-customer-contract.sh',
             'scripts/test-named-runtime-helper.sh', 'deploy/customer/preflight.sh',
+            'deploy/customer/install.sh', 'deploy/customer/docker-compose.yml',
+            'deploy/customer/README.zh-CN.md', 'deploy/customer/README-extra.md',
+            'deploy/other/README.md',
             'scripts/test-backend-integration-runtime.sh',
             'scripts/test-backend-integration-runner-extra.py', 'scripts/summarize-go-test-runtime.py',
             'deploy/community/bootstrap.py',
@@ -190,7 +193,57 @@ class ReleasePolicyTests(unittest.TestCase):
         self.write('scripts/source-budget-restore-rebase.sql', '-- changed helper\n')
         self.check(base='', failed=True, error='declared restore helper identity differs')
 
+    def test_customer_readme_prose_preserves_required_restore_identity(self):
+        path = 'deploy/customer/README.md'
+        original = (self.repo / path).read_text()
+        self.write(path, original + '\nUpdated customer onboarding instructions.\n')
+        self.check(head=self.commit(), mode='non-release-bearing')
+        self.check(base='', mode='current')
+        self.write(path, original.replace('SHA-256: `', 'SHA-256: `0', 1))
+        self.check(base='', failed=True, error='expected exactly one restore helper SHA-256')
+
+    def test_missing_customer_readme_cannot_bypass_identity_validation(self):
+        for destination in (None, 'deploy/customer/README-retired.md'):
+            with self.subTest(destination=destination):
+                self.git('reset', '--hard', self.base)
+                source = self.repo / 'deploy/customer/README.md'
+                if destination:
+                    source.rename(self.repo / destination)
+                else:
+                    source.unlink()
+                head = self.commit()
+                self.check(head=head, failed=True, error='deploy/customer/README.md: cannot read')
+                self.check(base='', failed=True, error='deploy/customer/README.md: cannot read')
+
+    def test_restore_contract_change_with_updated_identity_still_needs_bump(self):
+        restore = b'-- changed shipped restore contract\n'
+        self.write('scripts/source-budget-restore-rebase.sql', restore.decode())
+        self.write('deploy/customer/README.md',
+                   '- SHA-256: `' + hashlib.sha256(restore).hexdigest() + '`\n'
+                   '- Bytes: `' + str(len(restore)) + '`\n')
+        self.check(head=self.commit(), failed=True, error='must update VERSION')
+
+    def test_customer_runtime_deletion_or_rename_still_needs_bump(self):
+        for path in ('deploy/customer/install.sh', 'deploy/customer/preflight.sh',
+                     'deploy/customer/docker-compose.yml', 'deploy/community/bootstrap.py'):
+            self.git('reset', '--hard', self.base)
+            self.write(path, 'shipped installation contract\n')
+            base = self.commit()
+            for destination in (None, 'docs/retired-installer.md'):
+                with self.subTest(path=path, destination=destination):
+                    self.git('reset', '--hard', base)
+                    source = self.repo / path
+                    if destination:
+                        target = self.repo / destination
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        source.rename(target)
+                    else:
+                        source.unlink()
+                    self.check(base=base, head=self.commit(), failed=True, error='must update VERSION')
+
     def test_mixed_change_still_needs_bump(self):
+        readme = 'deploy/customer/README.md'
+        self.write(readme, (self.repo / readme).read_text() + '\nCustomer prose change.\n')
         self.write('internal/runtime_test.go', 'package runtime\n')
         for path in ('scripts/test-backend-integration.sh',
                      'scripts/test-backend-integration-runner.py', 'scripts/summarize-go-test.py'):
