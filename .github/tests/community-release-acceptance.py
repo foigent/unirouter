@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Consume the fixed real public UR release on one disposable hosted runner.
 
-The checked-in candidate config is deliberately incomplete. Describe/validate
-perform no network, Docker, key or output operations. Execution never builds
+Describe/validate perform no network, Docker, key or output operations. Execution never builds
 images, creates signing keys, publishes packages or claims persistent Target.
 """
 import argparse
@@ -22,8 +21,10 @@ import sys
 import tarfile
 import tempfile
 import uuid
+import urllib.error
+import urllib.request
 
-IMMUTABLE_SHA256 = "f2b5060f23d585eeb2dad21ec66c1088e8520a1134b3bcf0ae88cbfc47867002"
+IMMUTABLE_SHA256 = "e51ef9de0e36b85529bc2f4d6515384032379a8e2f1b0ee53a30fadd83278c87"
 SCHEMA = "000127_xinsight_communication_policy"
 WORKFLOW = "foigent/unirouter/.github/workflows/community-release-acceptance.yml@refs/heads/main"
 RELEASE_KEYS = {"release_sequence", "created_at", "expires_at", "tag", "bootstrap_url",
@@ -37,6 +38,186 @@ class Stop(Exception):
 def require(ok, message):
     if not ok:
         raise Stop(message)
+
+
+FIRST_CUSTOMER_NAME = "Foigent Community Acceptance"
+FIRST_CUSTOMER_LIMIT = 16 * 1024
+FIRST_CUSTOMER_STATE_SQL = """SELECT jsonb_build_object(
+ 'admin',(SELECT jsonb_build_object('id',id,'org_id',org_id,'username',username,
+   'role',role,'organization_role',organization_role,'status',status,
+   'auth_epoch',auth_epoch,'auth_provider',auth_provider) FROM users WHERE username='admin'),
+ 'users',(SELECT count(*) FROM users),
+ 'members',(SELECT count(*) FROM project_members),
+ 'orgs',(SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'name',name,
+   'status',status,'org_type',org_type,'parent_id',parent_id) ORDER BY id),'[]') FROM orgs),
+ 'wallets',(SELECT coalesce(jsonb_agg(jsonb_build_object('org_id',org_id,'currency',currency,
+   'balance_micros',balance_micros,'granted_balance_micros',granted_balance_micros,
+   'frozen_micros',frozen_micros,'total_spent_micros',total_spent_micros,
+   'auto_freeze',auto_freeze,'low_balance_threshold_cents',low_balance_threshold_cents)
+   ORDER BY org_id),'[]') FROM wallets),
+ 'projects',(SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'org_id',org_id,
+   'slug',slug,'status',status) ORDER BY id),'[]') FROM projects),
+ 'rotations',(SELECT count(*) FROM audit_logs WHERE action='user.password_reset'
+   AND (user_id,org_id)=(SELECT id,org_id FROM users WHERE username='admin')),
+ 'bootstrap_audits',(SELECT coalesce(jsonb_agg(jsonb_build_object('org_id',org_id,
+   'user_id',user_id,'resource',resource,'resource_id',resource_id,
+   'client_request_id',client_request_id) ORDER BY id),'[]')
+   FROM audit_logs WHERE action='bootstrap.first_customer'),
+ 'release_state',(SELECT coalesce(jsonb_agg(jsonb_build_array(release_sequence,version,commit,
+   package_sha256,trusted_key_id,target_schema,md5(manifest::text)) ORDER BY release_sequence),'[]') FROM release_state),
+ 'release_history',(SELECT coalesce(jsonb_agg(jsonb_build_array(release_sequence,version,commit,
+   package_sha256,trusted_key_id,target_schema,md5(manifest::text)) ORDER BY release_sequence),'[]') FROM release_history)
+)::text"""
+
+
+
+# This is deliberately public synthetic test data from the repository's native
+# CLI integration test, never an existing installation/provider credential.
+FIRST_USE_TEST_INPUT = "replacement-password-456"
+CLIENT_REQUEST_ID_HEADER = "X-UniRouter-Client-Request-ID"
+
+
+def verified_app_image_id(reference, expected, image):
+    role = expected.get("role")
+    require(role in ("backend", "frontend") and
+            re.fullmatch(r"ghcr\.io/foigent/unirouter-" + role + r"@sha256:[0-9a-f]{64}", reference) is not None,
+            "App repository or manifest reference differs.")
+    manifest_id = reference.split("@", 1)[1]
+    require(re.fullmatch(r"sha256:[0-9a-f]{64}", expected.get("config_id", "")) is not None and
+            isinstance(expected.get("diff_ids"), list) and expected["diff_ids"] and
+            all(re.fullmatch(r"sha256:[0-9a-f]{64}", v) is not None for v in expected["diff_ids"]),
+            "Pinned app config or ordered layers are invalid.")
+    require(image.get("Os") == "linux" and image.get("Architecture") == "amd64" and
+            reference in (image.get("RepoDigests") or []) and
+            image.get("Id") in (expected["config_id"], manifest_id) and
+            (image.get("RootFS") or {}).get("Layers") == expected["diff_ids"],
+            "Anonymous app identity or ordered layers differ from the one pinned image.")
+    return image["Id"]
+
+
+def password_choice_delta(before, after):
+    keys = {"admin", "users", "members", "orgs", "wallets", "projects", "rotations",
+            "bootstrap_audits", "release_state", "release_history"}
+    require(set(before) == set(after) == keys and type(before["rotations"]) is int and before["rotations"] == 1 and after["rotations"] == 2 and
+            type(before["admin"].get("auth_epoch")) is int, "Unexpected password-choice baseline or reset count.")
+    wanted = dict(before, rotations=2, admin=dict(before["admin"], auth_epoch=before["admin"]["auth_epoch"] + 1))
+    require(immutable_digest(after) == immutable_digest(wanted),
+            "Password choice changed protected identities, release state or seed inventory.")
+
+
+def fixture_admin_login(password, *, expected_status=200):
+    require(isinstance(password, str) and password and len(password.encode()) <= 72 and
+            "\r" not in password and "\n" not in password and
+            type(expected_status) is int and expected_status in (200, 401),
+            "Invalid synthetic administrator login input.")
+    request = urllib.request.Request("http://127.0.0.1:13000/api/v1/auth/login",
+        data=json.dumps({"username": "admin", "password": password}).encode(),
+        headers={"Content-Type": "application/json"}, method="POST")
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoFirstCustomerRedirect())
+    try:
+        with opener.open(request, timeout=20) as response:
+            require(expected_status == response.status == 200, "Unexpected fixture login status.")
+            raw = response.read(FIRST_CUSTOMER_LIMIT + 1)
+            require(len(raw) <= FIRST_CUSTOMER_LIMIT, "Fixture login response exceeded its bound.")
+            value = strict_json(raw)
+            require(value.get("organization_role") == "platform_admin" and
+                    isinstance(value.get("token"), str) and value["token"], "Chosen fixture input did not authenticate.")
+            return value
+    except urllib.error.HTTPError as error:
+        code = error.code
+        error.close()
+        require(expected_status == code == 401, "Fixture administrator login failed.")
+        return None
+    except Stop:
+        raise
+    except Exception:
+        raise Stop("Fixture administrator login failed.") from None
+
+
+class NoFirstCustomerRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def first_customer_request(token, request_id, *, dry_run, expected_status):
+    """One normal synthetic fixture POST; no credentials or response bodies in errors."""
+    require(isinstance(token, str) and token and '\r' not in token and '\n' not in token
+            and isinstance(request_id, str) and re.fullmatch(r'[a-z0-9]{32}', request_id) is not None
+            and type(dry_run) is bool and expected_status in (200, 201),
+            "Invalid first-customer fixture request.")
+    body = json.dumps({'organization_name': FIRST_CUSTOMER_NAME, 'dry_run': dry_run}).encode()
+    request = urllib.request.Request('http://127.0.0.1:13000/api/v1/bootstrap/first-customer',
+        data=body, headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token,
+                            CLIENT_REQUEST_ID_HEADER: request_id}, method='POST')
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoFirstCustomerRedirect())
+    try:
+        with opener.open(request, timeout=20) as response:
+            require(response.status == expected_status, "Unexpected first-customer HTTP status.")
+            raw = response.read(FIRST_CUSTOMER_LIMIT + 1)
+            require(len(raw) <= FIRST_CUSTOMER_LIMIT, "First-customer response exceeded its bound.")
+            return strict_json(raw)
+    except Stop:
+        raise
+    except Exception:
+        raise Stop("First-customer fixture HTTP request failed.") from None
+
+
+def first_customer_preview(value, before, *, expected_rotations=1):
+    require(type(expected_rotations) is int and expected_rotations in (1, 2), "Invalid explicit rotation baseline.")
+    admin = before['admin']
+    require(before['users'] == 1 and before['members'] == 0 and before['rotations'] == expected_rotations
+            and not before['bootstrap_audits'] and len(before['orgs']) == 1
+            and before['orgs'][0]['id'] == admin['org_id']
+            and len(before['projects']) == len(before['wallets']) == 1
+            and before['projects'][0]['org_id'] == before['wallets'][0]['org_id'] == admin['org_id']
+            and before['projects'][0]['slug'] == 'default', "Unexpected first-customer seed inventory.")
+    require(isinstance(value, dict) and value.get('contract_version') == 'unirouter.first-customer-bootstrap-preview.v1'
+            and value.get('dry_run') is True and value.get('ready') is True
+            and value.get('checkpoint') == 'fresh_seed' and value.get('organization_name') == FIRST_CUSTOMER_NAME
+            and type(value.get('platform_org_id')) is int and value['platform_org_id'] == admin['org_id']
+            and isinstance(value.get('would_remove'), dict)
+            and all(type(v) is int for v in value['would_remove'].values())
+            and value.get('would_remove') == {'project_id': before['projects'][0]['id'],
+                                            'zero_wallet_org_id': admin['org_id']},
+            "First-customer preview differs from the exact seed inventory.")
+
+
+def first_customer_result(value, *, idempotent, customer_id=None):
+    require(isinstance(value, dict) and set(value) == {'organization_id','organization_name','wallet_balance_micros','idempotent'}
+            and type(value.get('organization_id')) is int and value['organization_id'] > 0
+            and value.get('organization_name') == FIRST_CUSTOMER_NAME
+            and type(value.get('wallet_balance_micros')) is int and value['wallet_balance_micros'] == 0
+            and value.get('idempotent') is idempotent
+            and (customer_id is None or value['organization_id'] == customer_id),
+            "First-customer create or replay result differs.")
+    return value['organization_id']
+
+
+def first_customer_transition(before, after, customer_id, request_id, *, restarted=False):
+    require(customer_id != before['admin']['org_id'], "Customer reused the platform organization.")
+    for key in ('admin','users','members','rotations','release_state','release_history'):
+        require(immutable_digest(after[key]) == immutable_digest(before[key]),
+                "First-customer changed protected administrator or release metadata.")
+    platform = before['orgs'][0]
+    customer = {'id':customer_id,'name':FIRST_CUSTOMER_NAME,'status':'active','org_type':'customer','parent_id':None}
+    require(immutable_digest(after['orgs']) == immutable_digest(sorted([platform, customer], key=lambda r:r['id'])),
+            "First-customer organization inventory differs.")
+    wallet = dict(before['wallets'][0], org_id=customer_id)
+    require(wallet['currency'] == 'CNY' and wallet['auto_freeze'] is False
+            and all(type(wallet[k]) is int and wallet[k] == 0 for k in
+                    ('balance_micros','granted_balance_micros','frozen_micros','total_spent_micros','low_balance_threshold_cents'))
+            and immutable_digest(after['wallets']) == immutable_digest([wallet]), "First-customer wallet is not exactly zero CNY.")
+    require(immutable_digest(after['bootstrap_audits']) == immutable_digest([{'org_id':before['admin']['org_id'],
+            'user_id':before['admin']['id'],'resource':'organization','resource_id':str(customer_id),
+            'client_request_id':request_id}]), "First-customer bootstrap audit identity differs.")
+    projects = after['projects']
+    if restarted:
+        require(len(projects) == 1 and type(projects[0]['id']) is int and projects[0]['id'] > 0
+                and projects[0]['id'] != before['projects'][0]['id']
+                and type(projects[0]['org_id']) is int and projects[0]['org_id'] == customer_id and projects[0]['slug'] == 'default'
+                and projects[0]['status'] == 'active', "Restart did not select the canonical customer project.")
+    else:
+        require(projects == [], "Platform seed project remained after first-customer bootstrap.")
 
 
 def strict_json(raw):
@@ -92,7 +273,7 @@ def validate(config, *, ready=False):
         n = release["release_sequence"]
         require(type(n) is int and fixed["historical_sequence_reserved_through"] < n < 2 ** 63,
                 "Invalid admitted release sequence.")
-        require(release["tag"] == "v1.14.0-preview." + str(n), "Release tag differs from the admitted preview identity.")
+        require(release["tag"] == "v" + fixed["product"]["version"] + "-preview." + str(n), "Release tag differs from the admitted preview identity.")
         parse = lambda v: dt.datetime.fromisoformat(v.replace("Z", "+00:00"))
         created = parse(release["created_at"])
         require(created.tzinfo is not None and created.utcoffset() == dt.timedelta(0) and
@@ -116,7 +297,7 @@ def bootstrap_binding(config, value):
             "Public bootstrap release binding differs.")
     expected = {"verifier": ("uniroute-upgrade-linux-amd64", f["verifier"]),
                 "public_keys": ("public-keys.json", f["public_ring"]),
-                "package": ("unirouter-1.14.0-linux-amd64.tar.gz",
+                "package": ("unirouter-" + f["product"]["version"] + "-linux-amd64.tar.gz",
                             {"size": r["package_size"], "sha256": r["package_sha256"]})}
     require(set(value["assets"]) == set(expected), "Bootstrap asset closed set differs.")
     for role, (name, identity) in expected.items():
@@ -130,8 +311,8 @@ def manifest_binding(config, manifest):
                 "key_id": f["key_id"], "signature_algorithm": "ed25519",
                 "release_sequence": r["release_sequence"], "version": f["product"]["version"],
                 "commit": f["product"]["commit"], "created_at": r["created_at"], "expires_at": r["expires_at"],
-                "target_os": "linux", "target_arch": "amd64", "min_current_sequence": 0,
-                "max_current_sequence": 0, "min_current_schema": SCHEMA, "target_schema": SCHEMA,
+                "target_os": "linux", "target_arch": "amd64", "min_current_sequence": f["min_current_sequence"],
+                "max_current_sequence": f["max_current_sequence"], "min_current_schema": SCHEMA, "target_schema": SCHEMA,
                 "provenance_sha256": f["provenance_sha256"], "artifacts": f["artifacts"]}
     require(manifest == expected, "Verified real manifest differs from the reviewed24-input contract.")
 
@@ -257,9 +438,7 @@ def make_acceptance(repo, root, config, context):
                 require(image["Os"] == "linux" and image["Architecture"] == "amd64" and
                         ref in image.get("RepoDigests", []), "Anonymous image digest/platform differs.")
                 if service in expected:
-                    require(image["Id"] == expected[service]["config_id"] and
-                            image["RootFS"]["Layers"] == expected[service]["diff_ids"],
-                            "Anonymous app config or ordered layer identities differ.")
+                    verified_app_image_id(ref, expected[service], image)
                 self.image_ids[service] = image["Id"]
             self.passed("six anonymous digest pulls and both app configs/ordered18layers verified")
 
@@ -322,6 +501,71 @@ def make_acceptance(repo, root, config, context):
                     "record": record, "release": release, "rotation": rotation,
                     "files": state["files"], "installation_id": state["installation_id"], "images": state["image_ids"]}
 
+        def first_customer_state(self, directory, project):
+            # sql() retains its stdout: this query selects only allowlisted safe
+            # identity/counter fields, never password hashes, sessions or audit bodies.
+            return strict_json(self.sql(directory, project, FIRST_CUSTOMER_STATE_SQL))
+
+        def chosen_password_checks(self, directory, project):
+            self.phase = "native caller-selected fixture password"
+            before = self.first_customer_state(directory, project)
+            retained = lambda: (sha(directory / "admin-password"), sha(directory / "install-state.json"),
+                                sha(directory / "evidence/install.json"), base.files(directory / "runtime"))
+            original_files = retained()
+            generated = (directory / "admin-password").read_text().strip()
+            self.run("choose synthetic password through native private stdin", self.compose(directory, project) +
+                ["exec", "-T", "backend", "./uniroute", "admin", "set-password", "--username", "admin",
+                 "--org-id", "1", "--password-stdin"], data=(FIRST_USE_TEST_INPUT + "\n").encode())
+            after = self.first_customer_state(directory, project)
+            password_choice_delta(before, after)
+            require(retained() == original_files, "Native password choice changed original installer files.")
+            fixture_admin_login(generated, expected_status=401)
+            fixture_admin_login(FIRST_USE_TEST_INPUT)
+            self.chosen_fixture_input = FIRST_USE_TEST_INPUT
+            self.result["caller_selected_password"] = {"initial_installer_rotations": 1, "final_rotations": 2,
+                "auth_epoch_advanced_once": True, "generated_old_input_refused": True,
+                "original_installer_files_unchanged": True}
+            self.passed("native chosen password advances exactly one epoch/audit and preserves original installation")
+
+        def first_customer_checks(self, directory, project):
+            self.phase = "first-customer normal authenticated preview"
+            password = self.chosen_fixture_input
+            def login():
+                value = strict_json(self.request('http://127.0.0.1:13000/api/v1/auth/login',
+                    data=json.dumps({'username':'admin','password':password}).encode()))
+                require(value.get('organization_role') == 'platform_admin' and value.get('token'),
+                        "Original fixture administrator cannot log in.")
+                return value['token']
+            token, intent = login(), uuid.uuid4().hex
+            before = self.first_customer_state(directory, project)
+            preview = first_customer_request(token, intent, dry_run=True, expected_status=200)
+            first_customer_preview(preview, before, expected_rotations=2)
+            require(immutable_digest(before) == immutable_digest(self.first_customer_state(directory, project)),
+                    "First-customer preview changed seed or protected metadata.")
+            self.passed("real first-customer preview is read-only and names exact empty-seed IDs")
+            self.phase = "first-customer exact commit and known-success replay"
+            created = first_customer_request(token, intent, dry_run=False, expected_status=201)
+            customer_id = first_customer_result(created, idempotent=False)
+            after = self.first_customer_state(directory, project)
+            first_customer_transition(before, after, customer_id, intent)
+            replay = first_customer_request(token, intent, dry_run=False, expected_status=200)
+            first_customer_result(replay, idempotent=True, customer_id=customer_id)
+            require(immutable_digest(after) == immutable_digest(self.first_customer_state(directory, project)),
+                    "Known-success first-customer replay created duplicate state.")
+            self.passed("real first-customer commit and same-intent replay create one zero-wallet customer and one audit")
+            self.run("stop only the synthetic fixture backend", self.compose(directory, project) + ['stop','-t','30','backend'])
+            self.run("restart fixture backend with native bounded health wait", self.compose(directory, project) +
+                     ['up','-d','--no-deps','--wait','--wait-timeout','120','--pull','never','--no-build','backend'])
+            self.request('http://127.0.0.1:13000/health/ready')
+            login()  # The same original password must still work after bootstrap/restart.
+            restarted = self.first_customer_state(directory, project)
+            first_customer_transition(before, restarted, customer_id, intent, restarted=True)
+            self.result['first_customer'] = {'organization_id':customer_id,
+                'platform_org_id':before['admin']['org_id'], 'default_project_id':restarted['projects'][0]['id'],
+                'preview_read_only':True,'same_intent_replay':True,'chosen_admin_password_usable':True,
+                'protected_release_and_rotation_preserved':True,'provider_calls':0}
+            self.passed("native restart selects the customer default project and preserves original admin and release history")
+
         def execute(self):
             self.preflight()
             self.prepare()
@@ -330,6 +574,8 @@ def make_acceptance(repo, root, config, context):
             self.negative_checks(self.directory, self.project)
             self.interrupt_after_plan(self.directory, self.project)
             self.installed_checks(self.directory, self.project)
+            self.chosen_password_checks(self.directory, self.project)
+            self.first_customer_checks(self.directory, self.project)
             self.result["status"] = "passed"
             self.result.pop("installer_stop", None)
 
