@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline checks for the unbound v2/never consumer. No network or Docker."""
+"""Offline checks for fixed and incomplete v2/never inputs. No network or Docker."""
 import contextlib
 import copy
 import datetime as dt
@@ -55,20 +55,41 @@ class ConsumerTests(unittest.TestCase):
                 m.execute(c, ROOT)
             run.assert_not_called(); mkdir.assert_not_called()
 
-    def test_pending_candidate_is_incomplete_and_cannot_execute_before_signature_pins(self):
-        self.assertEqual(self.config['state'], 'incomplete')
-        self.assertEqual(self.config['immutable']['product']['commit'],
+    def test_incomplete_release_decision_cannot_execute_before_signature_pins(self):
+        value = copy.deepcopy(self.config)
+        value['state'] = 'incomplete'
+        for key in m.RELEASE_KEYS - {'expires_at'}:
+            value['release'][key] = None
+        self.assertEqual(value['immutable']['product']['commit'],
                          'a6b03cc8bc2494b735ea1da4018beb7b4af44d3f')
-        self.assertIsNone(self.config['release']['release_sequence'])
-        self.assertEqual(self.config['release']['expires_at'], 'never')
-        with mock.patch.object(m.subprocess, 'run') as run, mock.patch.object(m.tempfile, 'mkdtemp') as mkdir:
+        self.assertIsNone(value['release']['release_sequence'])
+        self.assertEqual(value['release']['expires_at'], 'never')
+        with mock.patch.object(m, 'load_config', return_value=value), \
+                mock.patch.object(m.subprocess, 'run') as run, mock.patch.object(m.tempfile, 'mkdtemp') as mkdir:
             output, error = io.StringIO(), io.StringIO()
             with contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
                 self.assertEqual(m.main(['describe']), 0)
                 self.assertFalse(json.loads(output.getvalue())['ready'])
                 self.assertEqual(m.main(['validate']), 1)
             run.assert_not_called(); mkdir.assert_not_called()
-        self.refuses_without_effects(self.config)
+        self.refuses_without_effects(value)
+
+    def test_actual_signed_release_bindings_validate_without_effects(self):
+        self.assertEqual(self.config['state'], 'ready')
+        self.assertEqual(self.config['release']['release_sequence'], 15)
+        self.assertEqual(self.config['release']['tag'], 'v1.14.1-preview.15')
+        self.assertEqual(self.config['release']['created_at'], '2026-10-24T03:31:31Z')
+        self.assertEqual(self.config['release']['package_size'], 130031113)
+        self.assertEqual(self.config['release']['package_sha256'],
+                         'd52e8b9de6f54b74052982cd4969a4915d1a04c74b1766cb31605990e7f2c51a')
+        m.reference_sources(ROOT, self.config)
+        with mock.patch.object(m.subprocess, 'run') as run, mock.patch.object(m.tempfile, 'mkdtemp') as mkdir:
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(m.main(['describe']), 0)
+                self.assertTrue(json.loads(output.getvalue())['ready'])
+                self.assertEqual(m.main(['validate']), 0)
+            run.assert_not_called(); mkdir.assert_not_called()
 
     def test_incomplete_fixture_still_refuses_without_effects(self):
         value = copy.deepcopy(self.config)

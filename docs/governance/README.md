@@ -102,6 +102,13 @@ bump. The exact known internal verification-tool exceptions are:
 - `scripts/test-backend-integration.sh`, `scripts/test-backend-integration-runner.py`
   and `scripts/summarize-go-test.py`, which orchestrate and record test execution.
 
+The exact prose path `deploy/customer/README.md` also does not mechanically
+require a version bump. Its declared restore-helper SHA-256 and byte count remain
+mandatory and are validated before both current-mode and diff-mode early returns.
+This exception does not extend to other deployment Markdown paths. A change to a
+shipped runtime, API, installation, upgrade, verification or recovery contract
+still requires the applicable product version and review.
+
 These exceptions do not include customer installation, signed-package verification
 or recovery tools. Other scripts, fixtures, frontend build/config/dependency inputs, migrations,
 OpenAPI and non-Markdown architecture inputs retain their existing treatment.

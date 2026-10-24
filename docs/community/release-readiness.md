@@ -1,44 +1,49 @@
 # Open-source release readiness
 
-Status on **2026-10-22: Preview 13 is signed, verified and published; complete
-public-package installation acceptance remains pending**. English is the primary
-community language, with Chinese entry points and contributions welcome.
-`state: ready` means exact inputs are complete; it does not mean installation passed.
+Status on **2026-10-24: Preview 15 is signed, verified and published; formal
+public-package installation and the existing-server upgrade are separate,
+pending results**. English is the primary community language, with Chinese
+entry points and contributions welcome. `state: ready` means exact consumer
+inputs are complete; it does not mean installation passed.
 
-## Current fixed preview — 1.14.0 / M127
+## Current fixed preview — 1.14.1 / M127
 
-The [English Linux guide](install-linux.md) and
-[Chinese companion](install-linux.zh-CN.md) bind
-[`v1.14.0-preview.13`](https://github.com/foigent/unirouter/releases/tag/v1.14.0-preview.13).
-The actual signed package is 130,032,242 bytes, SHA-256
-`94d85ac174bc9ebdbefeab13a2827c7f2acaa146c75d3bb1f22338c5db605834`. It binds product source
-`c89e7c60ac63204e990f52ec128cd493f185112b`, sequence13, M127, 24 payloads and
-manifest v2 with `expires_at: never`. Native signature verification and the exact
-24-file readback passed. The new owner signature preserves the existing key;
-bootstrap metadata is unsigned and independently pinned by its hash.
+The [English Linux guide](install-linux.md) and [Chinese companion](install-linux.zh-CN.md)
+bind [`v1.14.1-preview.15`](https://github.com/foigent/unirouter/releases/tag/v1.14.1-preview.15).
+The actual signed package is 130,031,113 bytes, SHA-256
+`d52e8b9de6f54b74052982cd4969a4915d1a04c74b1766cb31605990e7f2c51a`.
+It binds product source `a6b03cc8bc2494b735ea1da4018beb7b4af44d3f`, sequence15,
+M127, 24 payloads and manifest v2 with `expires_at: never`. Signature verification,
+the closed 26-member archive and all 24 payload hashes passed. The existing
+public key is unchanged. Bootstrap metadata remains unsigned and independently
+pinned by its hash.
 
-Only `payload/install.json` and its reassembly provenance changed from Preview 12;
-the other 22 payloads remain byte-identical. Four Docker Hub names now use the
-repository spelling returned by Docker `RepoDigests`, retaining the same exact
-repository and digest identities. Product images, source, installer bytes and all
-signature/platform/config/layer checks remain unchanged. A separate provenance
-record describes this data correction without relabeling the historical build.
+The product fixes first-customer initialization and retains the native hidden
+administrator-password command. Four upstream image names match native Docker
+`RepoDigests` spelling at unchanged digests. Both 1.14.1 application images
+reuse the accepted build; this publication does not rebuild or retag them.
+The six attachments are the signed package, Linux verifier, public ring,
+bootstrap JSON, historical retained-image source/NOTICE companion and checksums.
+The current signed package supplies its own 1.14.1 component notices and required
+source materials; the companion does not represent a new blanket license clearance.
 
-The public release has six attachments: the signed package, Linux verifier,
-public ring, bootstrap JSON, retained-six-version source/NOTICE companion and
-checksums. Both GHCR packages and their six retained 1.12/1.13/1.14 versions are
-public; this repair does not rebuild, republish or retag any image. The four
-upstream service images remain references to their publishers.
-
-The [Preview 12 consumer, run 39631286350 attempt1](https://github.com/foigent/unirouter/actions/runs/39631286350),
-verified the full signed public archive and both UR images/configs/ordered layers,
-then failed at PostgreSQL image-name inspection before installation. That failure
-and the original release are retained. It does not establish installation success.
-Track the new exact-main, temporary-Linux installation result in
+[PR 476](https://github.com/foigent/unirouter/pull/476) passed
+[required CI](https://github.com/foigent/unirouter/actions/runs/40054934021) and
+[native Linux fixture acceptance](https://github.com/foigent/unirouter/actions/runs/40054934027).
+The latter verified all six native image references, login, hidden password
+selection and first-customer preview/commit/replay/restart using synthetic
+data and temporary signing trust. It does not replace the real signed-package
 [Formal Community Release Acceptance](https://github.com/foigent/unirouter/actions/workflows/community-release-acceptance.yml).
-No Preview 13 installation result is claimed here. Earlier tests retain their
-recorded synthetic/version scope; they do not establish an existing ECS upgrade
-or a new provider request. This preview installs fresh Linux amd64 instances.
+No completed Preview15 formal installation, original-host upgrade, provider
+request or new two-product first-use result is claimed here.
+
+Historical sequence14 was signed successfully but its installation descriptor
+was rejected. Its original package and receipts remain preserved; it is not
+published, installed or reused. Earlier releases and their recorded results
+remain historical. In particular, the [Preview12 consumer](https://github.com/foigent/unirouter/actions/runs/39631286350)
+verified the signed package and application images, then failed the PostgreSQL
+image-name guard before installation. [Preview13](https://github.com/foigent/unirouter/releases/tag/v1.14.0-preview.13)
+retains the 1.14.0 package and corresponding source materials.
 
 The accepted direction is to open-source the complete UniRouter (UR) and
 X-Insight (XI) products under Apache-2.0, without a community/commercial edition split.

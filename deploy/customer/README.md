@@ -1,8 +1,8 @@
 # Customer Runtime Template
 
-Explicitly non-expiring packages use signed `unirouter.upgrade-manifest.v2` with `expires_at: "never"` (UniRouter 1.14.0+). The standalone verifier and backend must both support v2, including `upgrade record-applied`. Existing finite v1 packages retain their original deadline; replacing or re-signing them cannot resume a plan bound to a different package hash. Every check/install/resume still verifies the original signature, hashes, creation time (with the existing five-minute future tolerance), platform, schema and release sequence. Non-expiring does not authorize rollback, skip trust checks or extend the owner's finite signing-authority window. This source change is not a published package or a verified deployment.
+Explicitly non-expiring packages use signed `unirouter.upgrade-manifest.v2` with `expires_at: "never"` (UniRouter 1.14.0+). The standalone verifier and backend must both support v2, including `upgrade record-applied`. Existing finite v1 packages retain their original deadline; replacing or re-signing them cannot resume a plan bound to a different package hash. Every check/install/resume still verifies the original signature, hashes, creation time (with the existing five-minute future tolerance), platform, schema and release sequence. Non-expiring does not authorize rollback, skip trust checks or extend the owner's finite signing-authority window. Source code alone does not establish a published package or a verified deployment.
 
-Current 1.13.0 delivery requires the M127 maintenance/fresh-install contract. See
+UniRouter 1.14.1 uses the M127 maintenance/fresh-install contract. See
 [connection communication controls](../../docs/ops/XINSIGHT-COMMUNICATION.md) for manual defaults, migration and recovery. Earlier M126 candidate notes below remain historical.
 
 This directory is an input to the signed customer release, not a source-build
@@ -18,15 +18,14 @@ signed release manifest proves that those digests are vendor-approved.
 The Compose file contains no `build:` entry, source mount, builder cache or
 host migration mount. The backend image owns its exact migrations, immutable
 build version/commit and the embedded upgrade public trust root. Runtime
-environment variables cannot replace that root. Commercial licenses and
-LICENSE_* settings are not required by the 1.10.0 candidate.
+environment variables cannot replace that root. The current runtime requires no commercial License import or LICENSE_* settings.
 
-For the 1.10.0 source candidate, schema installation uses the same backend
-image's explicit `fresh-install` owner through M126 before the runtime starts.
-The [Linux installer preview](../../docs/community/install-linux.md) automates
-the private installation steps below. Local database fresh/resume/restore
-checks passed; actual Docker installation and the public release remain pending.
-This template is not evidence of a signed release or successful target run.
+A new installation uses the exact released backend image's explicit
+`fresh-install` owner through M127 before the runtime starts. The
+[Linux / ECS guide](../../docs/community/install-linux.md) describes the supported
+installer entry. Signed-artifact verification, installation on a new instance
+and a data-preserving upgrade of an existing instance are separate acceptance
+scopes. This template alone does not establish any of those results.
 
 `MODEL_ROUTE_AUTHORITY` is a process-level cutover gate. The binary and the
 Compose fallback default to `canonical`, with

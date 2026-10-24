@@ -154,7 +154,7 @@ change_flags="$(
       case "${path}" in
         (VERSION) version_changed=true ;;
         (CHANGELOG.md) changelog_changed=true ;;
-        (docs/agent-workflows/EXECUTION-RECORD.md|docs/ops/evidence/*)
+        (docs/agent-workflows/EXECUTION-RECORD.md|docs/ops/evidence/*|deploy/customer/README.md)
           ;;
         (*_test.go|frontend/src/*.test.ts|frontend/src/*.test.tsx|docs/architecture/*.md|docs/CODEBASE-MAP.md)
           # Go excludes _test.go from normal builds. Frontend test entrypoints

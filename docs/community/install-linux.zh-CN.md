@@ -4,16 +4,14 @@
 
 [English](install-linux.md) · [配置模型与第一次请求（英文）](getting-started.md)
 
-**Linux amd64 预览版：v1.14.0-preview.13，源码
-`c89e7c60ac63204e990f52ec128cd493f185112b`，M127，发布序号13。**
-实际安装包的签名和24项内容已在本地核验。本次把四个依赖镜像名称改为 Docker 返回的写法，
-全部镜像摘要、产品源码和安装器检查保持不变。发布附件与 UR 镜像库已公开；完整公开包安装验收
-仍待[正式安装验收工作流](https://github.com/foigent/unirouter/actions/workflows/community-release-acceptance.yml)执行，
-各层证据见[发布准备状态](release-readiness.md)。
-[Preview 12 验收](https://github.com/foigent/unirouter/actions/runs/39631286350)已验证公开签名包和两个 UR 镜像，
-随后在 PostgreSQL 镜像名称检查处停止，尚未开始安装。请保留旧尝试，为新包选择未使用的路径和项目；
-恢复操作不能更换绑定的包哈希。此前[合成测试](../ops/COMMUNITY-INSTALLER.md#accepted-native-bootstrap-result--2026-10-11)
-保留其原有范围。本入口用于新实例，不用于升级现有服务器。只克隆仓库还不会获得签名发布附件。
+**Linux amd64 预览版：v1.14.1-preview.15，源码
+`a6b03cc8bc2494b735ea1da4018beb7b4af44d3f`，M127，发布序号15。**
+签名和24项材料已在本地核验。此版修复首次客户初始化；可通过已有原生命令自选管理员密码。
+发布附件和两个 UR 镜像已公开。完整公开包安装仍待[正式验收](https://github.com/foigent/unirouter/actions/workflows/community-release-acceptance.yml)；
+此前[临时 Linux 测试](https://github.com/foigent/unirouter/actions/runs/40054934027)使用合成数据与临时信任，
+不能替代真实签名包安装或现有服务器升级。各层证据见[发布状态](release-readiness.md)。
+本入口用于新实例。保留旧尝试，为本包使用未占用的路径与项目；恢复不能更换绑定的包摘要。
+历史序号14签名有效，但安装输入被拒绝，不发布、不安装。只克隆仓库不会获得签名附件。
 
 安装器会准备 PostgreSQL、Redis、UR 和监控服务，生成必要的本地密码与配置，
 初始化数据库，并启动私有管理页面。使用者无需安装 Go、Node.js 或 npm 来编译 UR。
@@ -38,17 +36,17 @@ Docker 的准备方法见[官方 Linux 安装说明](https://docs.docker.com/com
 ## 下载并安装本预览版
 
 先通过已认证的官方仓库获取本说明，阅读
-[预览版发布页面](https://github.com/foigent/unirouter/releases/tag/v1.14.0-preview.13)，再运行下载的代码。
+[预览版发布页面](https://github.com/foigent/unirouter/releases/tag/v1.14.1-preview.15)，再运行下载的代码。
 脚本固定到产品源码提交，JSON 固定校验程序、公钥和签名包。与下载放在一起的摘要不能
 单独建立信任；本入口不更换已有公钥，也不需要把签名私钥放到服务器。
 
 | 下载文件 | 字节 | SHA-256 |
 | --- | ---: | --- |
-| 源码 c89e7c60 中的 `bootstrap.py` | 23,287 | `054c51a671a9255fd3a587fc7897d51fff0525e2e4ae54bb3926ac2e44785e3f` |
-| `community-bootstrap.json` | 1,121 | `e67ddc9604019eee994793613f5eeac12d3f8587f921c4c39132436672636d1e` |
+| 源码 a6b03cc8 中的 `bootstrap.py` | 23,287 | `054c51a671a9255fd3a587fc7897d51fff0525e2e4ae54bb3926ac2e44785e3f` |
+| `community-bootstrap.json` | 1,121 | `ff34de8c73b870aa48fc1e9a40d584c431267b5425334ba5dc95d56a12a8fcc0` |
 | `uniroute-upgrade-linux-amd64` | 4,099,528 | `60acbb428d746bccaea3e3bc0113e2d0f900b15057bda39455805f0e9a1bbd23` |
 | `public-keys.json` | 83 | `96c91635460ddfb2a14aa1ea97d8445951730e9eb04a33cbdf4320141e61d63d` |
-| `unirouter-1.14.0-linux-amd64.tar.gz` | 130,032,242 | `94d85ac174bc9ebdbefeab13a2827c7f2acaa146c75d3bb1f22338c5db605834` |
+| `unirouter-1.14.1-linux-amd64.tar.gz` | 130,031,113 | `d52e8b9de6f54b74052982cd4969a4915d1a04c74b1766cb31605990e7f2c51a` |
 
 公开发布检查通过后，先用 `sudo -i` 进入 root shell，再执行下方代码块。
 下载目录、准备目录和运行目录必须尚未使用；保留它们用于恢复。下载或摘要校验失败时，
@@ -57,21 +55,21 @@ Docker 的准备方法见[官方 Linux 安装说明](https://docs.docker.com/com
 ```sh
 set -eu
 umask 077
-mkdir -m 700 /opt/unirouter-downloads-1.14.0
-cd /opt/unirouter-downloads-1.14.0
+mkdir -m 700 /opt/unirouter-downloads-1.14.1
+cd /opt/unirouter-downloads-1.14.1
 curl --fail --location --proto '=https' --proto-redir '=https' \
   --output bootstrap.py \
-  https://raw.githubusercontent.com/foigent/unirouter/c89e7c60ac63204e990f52ec128cd493f185112b/deploy/community/bootstrap.py
+  https://raw.githubusercontent.com/foigent/unirouter/a6b03cc8bc2494b735ea1da4018beb7b4af44d3f/deploy/community/bootstrap.py
 curl --fail --location --proto '=https' --proto-redir '=https' \
   --output community-bootstrap.json \
-  https://github.com/foigent/unirouter/releases/download/v1.14.0-preview.13/community-bootstrap.json
+  https://github.com/foigent/unirouter/releases/download/v1.14.1-preview.15/community-bootstrap.json
 printf '%s  %s\n' \
   054c51a671a9255fd3a587fc7897d51fff0525e2e4ae54bb3926ac2e44785e3f bootstrap.py \
-  e67ddc9604019eee994793613f5eeac12d3f8587f921c4c39132436672636d1e community-bootstrap.json \
+  ff34de8c73b870aa48fc1e9a40d584c431267b5425334ba5dc95d56a12a8fcc0 community-bootstrap.json \
   | sha256sum --check --status
 python3 -I -B bootstrap.py install \
   --bootstrap community-bootstrap.json \
-  --bootstrap-sha256 e67ddc9604019eee994793613f5eeac12d3f8587f921c4c39132436672636d1e \
+  --bootstrap-sha256 ff34de8c73b870aa48fc1e9a40d584c431267b5425334ba5dc95d56a12a8fcc0 \
   --directory /opt/unirouter-release
 ```
 
@@ -86,9 +84,10 @@ Compose 项目为 `unirouter`，管理端口为本机3000。如希望先检查�
 详见[安装中断怎么办](#安装中断怎么办)。
 
 发布附件还包含
-[`unirouter-retained-images-source-notices.tar.gz`](https://github.com/foigent/unirouter/releases/download/v1.14.0-preview.13/unirouter-retained-images-source-notices.tar.gz)
-及 `SHA256SUMS`。说明包把1.12、1.13、1.14的全部六个后端／前端保留版本映射到各自源码和
-许可说明；当前签名包提供共享源码材料。第三方许可仍分别适用。
+[`unirouter-retained-images-source-notices.tar.gz`](https://github.com/foigent/unirouter/releases/download/v1.14.1-preview.15/unirouter-retained-images-source-notices.tar.gz)
+及 `SHA256SUMS`。该未改动的历史说明包保留1.12／1.13镜像与共享材料的对应关系；
+1.14.0材料保留在[Preview 13](https://github.com/foigent/unirouter/releases/tag/v1.14.0-preview.13)。
+本次签名包包含1.14.1的源码处置说明、组件声明和所需源码材料。第三方许可仍分别适用。
 
 ## 直接使用已准备发布目录时的检查与安装
 
@@ -114,6 +113,25 @@ sudo python3 payload/deploy/install.py install \
 这些参数。这是新安装命令，不用于升级现有实例。
 同一个项目一次只运行一个安装程序，即使使用不同目录也不要并行安装。
 
+## 自选管理员密码
+
+安装器会生成初始随机密码，目前不会在安装时询问你希望使用的密码。
+安装成功后，可以在服务器上通过产品已有的原生命令自选密码。默认安装对应：
+
+```sh
+sudo docker compose --project-name unirouter \
+  --project-directory /opt/unirouter/runtime \
+  --env-file /opt/unirouter/runtime/.env \
+  -f /opt/unirouter/runtime/docker-compose.yml \
+  -f /opt/unirouter/runtime/installation.json \
+  -f /opt/unirouter/runtime/runtime-image.json \
+  exec backend ./uniroute admin set-password --username admin --org-id 1
+```
+
+如自定义了项目名或安装目录，请替换对应参数。在交互终端执行后输入两次新密码，
+输入过程不回显；不要将密码写入命令参数或共享日志。成功修改会使原管理员会话失效。
+原 `admin-password` 文件仍是生成的旧值，之后应使用你刚选择的密码，并妥善保存在密码管理器中。
+
 ## 打开管理页面
 
 安装成功后会显示访问地址和密码文件的位置。在你自己的电脑上建立 SSH 隧道，并保持连接：
@@ -123,8 +141,9 @@ ssh -N -L 3000:127.0.0.1:3000 your-user@your-server
 ```
 
 将用户名和服务器地址替换为你的实际信息，然后在电脑浏览器中打开
-`http://127.0.0.1:3000`。在服务器上私下执行 `sudo cat /opt/unirouter/admin-password`
-读取随机密码，使用 `admin` 登录；不要把密码粘贴到 Issue 或共享日志中。
+`http://127.0.0.1:3000`，使用 `admin` 和你刚自选的密码登录。
+如保留了初始随机密码，可在服务器上私下执行 `sudo cat /opt/unirouter/admin-password` 读取。
+不要把密码或密码文件粘贴到 Issue 或共享日志中。
 按页面完成首次客户设置，再按[模型配置指南](getting-started.md#prepare-model-access)继续。
 
 安装器不会自动登录、导入模型密钥、执行资格探测或发起付费模型请求。管理页面可用，

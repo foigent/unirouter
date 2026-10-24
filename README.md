@@ -12,13 +12,12 @@ administration console. It brings model access policies, routing, budgets,
 usage, billing and execution receipts together, so operators can inspect how a
 request was handled and what its charges are based on.
 
-> **Public source, Linux installer preview:** the Apache-2.0 source is available.
-> The [1.14.0 Linux amd64 guide](docs/community/install-linux.md) provides the
-> fixed signed-package and download identities for Preview 13, which corrects
-> dependency image names while preserving their digests. Check
-> [release readiness](docs/community/release-readiness.md) for the separate
-> signature, public-download and installation evidence. Historical synthetic
-> tests do not establish a current public install or an existing-server upgrade.
+> **Start on a Linux server / ECS:** follow the
+> [Linux amd64 installation guide](docs/community/install-linux.md), then
+> [sign in, initialize your customer and make a first request](docs/community/getting-started.md).
+> Preview downloads use a signed package and fixed image digests. The
+> [release status](docs/community/release-readiness.md) records which package,
+> installation and existing-server upgrade have actually been verified.
 
 English is the primary language for public documentation and project updates;
 [Simplified Chinese](README.zh-CN.md) is the secondary language. Contributions
@@ -49,12 +48,12 @@ Choose the path that matches your task:
 
 | Goal | Start with |
 | --- | --- |
+| Install on Linux / ECS | [Linux installer](docs/community/install-linux.md) |
+| Sign in, initialize and make a first request | [Getting started](docs/community/getting-started.md) |
+| Connect X-Insight | [Integration entry and current limits](docs/community/getting-started.md#optional-x-insight-integration) |
 | Understand the motivation and design choices | [Why UniRouter](docs/community/why-unirouter.md) |
 | Examine selected gateway implementations | [Source-based design comparison](docs/community/gateway-design-comparison.md) |
 | Understand the product and its boundaries | [Architecture and X-Insight](docs/community/architecture.md) |
-| Install and make a first request | [Getting started](docs/community/getting-started.md) |
-| Preview simplified Linux/ECS installation | [Linux installer](docs/community/install-linux.md) |
-| Combine execution facts with X-Insight | [Integration entry and current limits](docs/community/getting-started.md#optional-x-insight-integration) |
 | Understand data capture and outbound connections | [Data handling](docs/community/data-handling.md) |
 | Build, test or contribute | [Contributing](CONTRIBUTING.md) and [contribution map](docs/community/contribution-map.md) |
 | Inspect implementation and historical evidence | [Documentation index](docs/README.md) |
@@ -83,9 +82,11 @@ UniRouter execution alongside other authorized sources. X-Insight receives
 facts asynchronously and does not sit in the synchronous model request path.
 
 The [Foigent overview](https://github.com/foigent) is the product selection entry.
-X-Insight's source is preparing for publication; this page links only to public
-materials. Follow the [existing integration entry](docs/community/getting-started.md#optional-x-insight-integration)
-for contracts, recorded combinations and remaining public-onboarding work.
+[X-Insight's source](https://github.com/foigent/x-insight) and
+[preview releases](https://github.com/foigent/x-insight/releases) are public.
+Follow its installation guide, then the [UniRouter connection guide](docs/community/getting-started.md#optional-x-insight-integration).
+Each product's installation and the combined first-use path have separate
+verification results.
 Shared protocol and Integration Control repositories provide infrastructure
 for the products and their verification; they are not additional end-user
 products to choose or assemble.
@@ -119,8 +120,9 @@ Runtime commercial activation has been retired in the accepted UniRouter
 source and verified in disposable fresh-install and maintenance-upgrade tests.
 Product authentication, tenant isolation, budgets, financial and audit integrity,
 release verification and data protection remain. Existing deployments need
-their own supported upgrade; official signed downloads are still pending.
-See [release readiness](docs/community/release-readiness.md) for the evidence.
+their own supported upgrade. [Signed preview downloads](https://github.com/foigent/unirouter/releases)
+and [release readiness](docs/community/release-readiness.md) identify the exact
+package and its installation/upgrade evidence.
 
 Third-party components retain their own licenses and notices; Foigent attribution
 is preserved. See [licensing and product scope](docs/community/commercial-boundaries.md)
