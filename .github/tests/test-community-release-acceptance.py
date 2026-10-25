@@ -61,7 +61,7 @@ class ConsumerTests(unittest.TestCase):
         for key in m.RELEASE_KEYS - {'expires_at'}:
             value['release'][key] = None
         self.assertEqual(value['immutable']['product']['commit'],
-                         'a6b03cc8bc2494b735ea1da4018beb7b4af44d3f')
+                         '21572d9e73ca901583a8b526c9af7cd0319d59f1')
         self.assertIsNone(value['release']['release_sequence'])
         self.assertEqual(value['release']['expires_at'], 'never')
         with mock.patch.object(m, 'load_config', return_value=value), \
@@ -76,12 +76,12 @@ class ConsumerTests(unittest.TestCase):
 
     def test_actual_signed_release_bindings_validate_without_effects(self):
         self.assertEqual(self.config['state'], 'ready')
-        self.assertEqual(self.config['release']['release_sequence'], 15)
-        self.assertEqual(self.config['release']['tag'], 'v1.14.1-preview.15')
-        self.assertEqual(self.config['release']['created_at'], '2026-10-24T03:31:31Z')
-        self.assertEqual(self.config['release']['package_size'], 130031113)
+        self.assertEqual(self.config['release']['release_sequence'], 16)
+        self.assertEqual(self.config['release']['tag'], 'v1.14.2-preview.16')
+        self.assertEqual(self.config['release']['created_at'], '2026-10-25T00:59:50Z')
+        self.assertEqual(self.config['release']['package_size'], 130032075)
         self.assertEqual(self.config['release']['package_sha256'],
-                         'd52e8b9de6f54b74052982cd4969a4915d1a04c74b1766cb31605990e7f2c51a')
+                         '2a7177d08ed74f8cccdaaeca04a69cd1f2706727e8b282614651b7056d8309e7')
         m.reference_sources(ROOT, self.config)
         with mock.patch.object(m.subprocess, 'run') as run, mock.patch.object(m.tempfile, 'mkdtemp') as mkdir:
             output = io.StringIO()
