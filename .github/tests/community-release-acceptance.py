@@ -24,7 +24,7 @@ import uuid
 import urllib.error
 import urllib.request
 
-IMMUTABLE_SHA256 = "e51ef9de0e36b85529bc2f4d6515384032379a8e2f1b0ee53a30fadd83278c87"
+IMMUTABLE_SHA256 = "2f3a78dbea7f9d3d21c29a2dfdee51d3adbca4fef2eb3c3f75f7ad8fc5e4d12e"
 SCHEMA = "000127_xinsight_communication_policy"
 WORKFLOW = "foigent/unirouter/.github/workflows/community-release-acceptance.yml@refs/heads/main"
 RELEASE_KEYS = {"release_sequence", "created_at", "expires_at", "tag", "bootstrap_url",

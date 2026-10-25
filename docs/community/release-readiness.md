@@ -1,49 +1,58 @@
 # Open-source release readiness
 
-Status on **2026-10-24: Preview 15 is signed, verified and published; formal
-public-package installation and the existing-server upgrade are separate,
-pending results**. English is the primary community language, with Chinese
-entry points and contributions welcome. `state: ready` means exact consumer
-inputs are complete; it does not mean installation passed.
+Status on **2026-10-25: Preview16 is signed, verified and published; formal
+installation of its public package and the existing-server upgrade are separate,
+pending results**. English is the primary community language; Chinese entry
+points and contributions are welcome. `state: ready` means the exact consumer
+inputs are complete, not that installation passed.
 
-## Current fixed preview — 1.14.1 / M127
+## Current fixed preview — 1.14.2 / M127
 
 The [English Linux guide](install-linux.md) and [Chinese companion](install-linux.zh-CN.md)
-bind [`v1.14.1-preview.15`](https://github.com/foigent/unirouter/releases/tag/v1.14.1-preview.15).
-The actual signed package is 130,031,113 bytes, SHA-256
-`d52e8b9de6f54b74052982cd4969a4915d1a04c74b1766cb31605990e7f2c51a`.
-It binds product source `a6b03cc8bc2494b735ea1da4018beb7b4af44d3f`, sequence15,
-M127, 24 payloads and manifest v2 with `expires_at: never`. Signature verification,
-the closed 26-member archive and all 24 payload hashes passed. The existing
-public key is unchanged. Bootstrap metadata remains unsigned and independently
-pinned by its hash.
+bind [`v1.14.2-preview.16`](https://github.com/foigent/unirouter/releases/tag/v1.14.2-preview.16).
+The actual signed package is 130,032,075 bytes, SHA-256
+`2a7177d08ed74f8cccdaaeca04a69cd1f2706727e8b282614651b7056d8309e7`.
+It binds product source `21572d9e73ca901583a8b526c9af7cd0319d59f1`, sequence 16,
+M127, 24 payloads and manifest v2 with `expires_at: never`. Its predecessor
+range 0–15 includes the actual 1.14.1 / sequence 15 installation. Native public
+verification at 0 and 15, out-of-range/schema rejection, the closed 26-member
+archive and all 24 payload hashes passed. The public trust root is unchanged.
+Bootstrap metadata is unsigned and independently pinned by its hash.
 
-The product fixes first-customer initialization and retains the native hidden
-administrator-password command. Four upstream image names match native Docker
-`RepoDigests` spelling at unchanged digests. Both 1.14.1 application images
-reuse the accepted build; this publication does not rebuild or retag them.
+This version fixes first-customer initialization after ordinary logout when
+native retention cleanup has removed the expired administrator session. Current
+authentication, exact audit shapes, zero-business-data requirements and release
+guards remain enforced. It does not recreate historical sessions or delete audit
+records. The existing native hidden administrator-password command is retained.
+
+[Source PR478](https://github.com/foigent/unirouter/pull/478) passed
+[required CI](https://github.com/foigent/unirouter/actions/runs/40133199823) and
+[candidate Linux installation](https://github.com/foigent/unirouter/actions/runs/40133199834).
+The latter used synthetic data and temporary signing trust. The accepted
+[producer 40141868711](https://github.com/foigent/unirouter/actions/runs/40141868711)
+and [publisher 40146914453](https://github.com/foigent/unirouter/actions/runs/40146914453)
+bind both current application images. Their manifest/config/layer metadata was
+read back anonymously. No rebuild or additional image push occurs here.
+
 The six attachments are the signed package, Linux verifier, public ring,
 bootstrap JSON, historical retained-image source/NOTICE companion and checksums.
-The current signed package supplies its own 1.14.1 component notices and required
-source materials; the companion does not represent a new blanket license clearance.
+The current package supplies its 1.14.2 component notices and required source
+materials; the unchanged companion retains 1.12/1.13 mappings and shared-material
+references. Third-party terms and incomplete attribution limits remain separately
+applicable; this publication is not blanket license clearance.
 
-[PR 476](https://github.com/foigent/unirouter/pull/476) passed
-[required CI](https://github.com/foigent/unirouter/actions/runs/40054934021) and
-[native Linux fixture acceptance](https://github.com/foigent/unirouter/actions/runs/40054934027).
-The latter verified all six native image references, login, hidden password
-selection and first-customer preview/commit/replay/restart using synthetic
-data and temporary signing trust. It does not replace the real signed-package
-[Formal Community Release Acceptance](https://github.com/foigent/unirouter/actions/workflows/community-release-acceptance.yml).
-No completed Preview15 formal installation, original-host upgrade, provider
-request or new two-product first-use result is claimed here.
+The one real signed-package [formal acceptance](https://github.com/foigent/unirouter/actions/workflows/community-release-acceptance.yml),
+the original-host data-preserving upgrade, provider requests and the new ordinary
+UR→XI pairing remain pending. Source CI, candidate installation and publication
+do not establish those results.
 
-Historical sequence14 was signed successfully but its installation descriptor
-was rejected. Its original package and receipts remain preserved; it is not
-published, installed or reused. Earlier releases and their recorded results
-remain historical. In particular, the [Preview12 consumer](https://github.com/foigent/unirouter/actions/runs/39631286350)
-verified the signed package and application images, then failed the PostgreSQL
-image-name guard before installation. [Preview13](https://github.com/foigent/unirouter/releases/tag/v1.14.0-preview.13)
-retains the 1.14.0 package and corresponding source materials.
+Historical [Preview15](https://github.com/foigent/unirouter/releases/tag/v1.14.1-preview.15)
+and [Preview13](https://github.com/foigent/unirouter/releases/tag/v1.14.0-preview.13)
+retain their original packages and evidence. Sequence14 remains a valid historical
+signature with rejected installation inputs; it is not published, installable or
+reused. The [Preview12 consumer](https://github.com/foigent/unirouter/actions/runs/39631286350)
+verified its package/application images, then rejected a PostgreSQL image-name
+guard before installation. No historical result is replaced by this release.
 
 The accepted direction is to open-source the complete UniRouter (UR) and
 X-Insight (XI) products under Apache-2.0, without a community/commercial edition split.
