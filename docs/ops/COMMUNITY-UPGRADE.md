@@ -1,9 +1,6 @@
 # Community upgrade: retained M127 to M128
 
-Status: local 1.15.0 candidate. Offline host-boundary tests and isolated
-PostgreSQL evidence cover their respective layers. A real Linux/Docker signed
-package installation, public distribution and Target deployment remain separate
-acceptance steps. These instructions do not identify a new released artifact.
+Status on 2026-10-29: [1.15.0 / sequence 17](https://github.com/foigent/unirouter/releases/tag/v1.15.0-preview.17) is signed and public. Its [formal Linux consumer](https://github.com/foigent/unirouter/actions/runs/40739178872) passed exact signed-package download, anonymous image pulls, fresh M128 installation and recovery. Source PR #482 separately passed real disposable Linux M127 → M128 upgrade cases. Each existing server still requires the original-host checks and retained evidence below before maintenance; these results do not establish its deployment.
 
 The entry upgrades one existing Linux amd64 community installation while
 preserving its database, content, settings, credentials and release history.

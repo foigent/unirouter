@@ -1,12 +1,30 @@
 # Open-source release readiness
 
+Status on **2026-10-29: Preview17 is signed and published, and its exact public package passed formal Linux installation acceptance**. English is the primary community language; Chinese entry points and contributions are welcome.
+
+## Current public preview — 1.15.0 / M128
+
+The [English Linux guide](install-linux.md) and [Chinese companion](install-linux.zh-CN.md) bind [v1.15.0-preview.17](https://github.com/foigent/unirouter/releases/tag/v1.15.0-preview.17). Product source is `4eb32b5514d47aa91610fc66ef561368d6a18900`, release sequence 17, with 26 signed payloads and `expires_at: never`. The package is 130,045,928 bytes, SHA-256 `87f9fbd62b95a8293613f4fe726a2eca0ce723f31d4349a94b3e04a0844e23bf`. The signed predecessor window is 0–16 with minimum schema M127. Existing M127 servers use the [finite upgrade runbook](../ops/COMMUNITY-UPGRADE.md).
+
+The actual holder signature, complete 28-member archive, all 26 payload hashes, native predecessor 0/16/M127 verification and out-of-range/schema rejection passed. The trust root is unchanged. Bootstrap JSON is unsigned and independently pinned by its hash.
+
+[Formal consumer 40739178872](https://github.com/foigent/unirouter/actions/runs/40739178872) passed on a disposable Ubuntu 24.04 runner using these exact public assets: full signed package download/verification; six anonymous digest pulls; exact application configs and ordered layers; M128 initialization; check purity and trust/collision rejection; same-identity interruption/resume; real console/login and `license: not_required`; native password choice; first-customer zero-wallet creation/replay; and retained identities after restart. No model calls, signatures or image builds occurred in that run.
+
+[Source PR #482](https://github.com/foigent/unirouter/pull/482) and [exact-main protocol validation](https://github.com/foigent/unirouter/actions/runs/40699016448) passed. The separate candidate Linux cases covered fresh installation and data-preserving M127→M128 maintenance with paired backup/independent restore. The accepted [producer 40703175851](https://github.com/foigent/unirouter/actions/runs/40703175851) and [publisher 40717610221](https://github.com/foigent/unirouter/actions/runs/40717610221) bind the two existing public image versions. Their actual publication chain is included in signed provenance; no rebuild or repeated image push was needed. Four dependency image references retain the exact signed 1.14.2 strings and digests.
+
+The six attachments are the signed package, Linux verifier, public ring, bootstrap JSON, historical retained-image source/NOTICE companion and checksums. Current dispositions, notices and required source materials are inside the signed package. Original third-party terms and scoped attribution limits remain applicable; this is not blanket license clearance.
+
+Existing-server maintenance, real Provider requests and ordinary UR→XI acceptance have their own environment-specific evidence. Public-package installation alone does not establish those results. Historical previews and failed sequence 14 remain preserved with their original outcomes.
+
+## Historical publication snapshot — 2026-10-25
+
 Status on **2026-10-25: Preview16 is signed, verified and published; formal
 installation of its public package and the existing-server upgrade are separate,
 pending results**. English is the primary community language; Chinese entry
 points and contributions are welcome. `state: ready` means the exact consumer
 inputs are complete, not that installation passed.
 
-## Current fixed preview — 1.14.2 / M127
+### Preview16 — 1.14.2 / M127 at publication
 
 The [English Linux guide](install-linux.md) and [Chinese companion](install-linux.zh-CN.md)
 bind [`v1.14.2-preview.16`](https://github.com/foigent/unirouter/releases/tag/v1.14.2-preview.16).
