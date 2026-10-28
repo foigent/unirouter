@@ -13,6 +13,7 @@ import {
 } from '@douyinfe/semi-icons';
 import { useAuthStore } from './store/auth';
 import { newUIInstanceID } from './utils/intentRequestId';
+import ContentScrollRestoration from './routing/ContentScrollRestoration';
 import {
   authzContextForUser,
   canOpenUnscopedNotifications,
@@ -251,7 +252,9 @@ export default function App() {
           </div>
         ) : (
           <Suspense fallback={<div className="ur-route-loading" role="status" aria-label={t("正在加载页面")}><Spin size="large" /><span>{t("正在加载页面…")}</span></div>}>
-            <Outlet context={{ overviewSession }} />
+            <ContentScrollRestoration session={overviewSession}>
+              <Outlet context={{ overviewSession }} />
+            </ContentScrollRestoration>
           </Suspense>
         )}
       </Content>

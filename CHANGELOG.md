@@ -15,6 +15,8 @@ those build identities do not replace the product version.
 - Show API alias, upstream declaration, UR contract and Probe applicability separately in English and Chinese. M128 requires exact M127 and stopped, retired writers; ordinary startup and rolling expand cannot apply it.
 
 ### Fixed
+- Reset console scroll for new views and restore history positions after lazy content loads within the current session. Keep mobile model drawer controls and long audit identifiers within their containers, with keyboard focus and Escape support.
+- Improve English and Chinese status labels, compatibility notes and communication outcomes; compact empty dashboards and prioritize available integrations. Keep settlement definitions, reporting-only budgets and independent model readiness facts visible.
 - Add a versioned meaningful-task successor for the current DeepSeek streamed-tools capability Probe. Request construction and strict answer validation share one private immutable task/tool/oracle description; legacy Probe bytes, bindings and evidence retain their original semantics.
 - Give native capability Probes their declared 30-second HTTP budget while retaining 15-second operation/discovery checks, parent cancellation, bounded headers and redirect refusal.
 - Provide a selector-only capability Bundle for the retained DeepSeek Definition. Publication, native qualification, approval and Gateway activation remain separate owner actions; the Probe declaration remains separate from the M128 schema change.

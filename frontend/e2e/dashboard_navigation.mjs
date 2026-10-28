@@ -91,7 +91,7 @@ try {
   await follow(page, '查看用量分析', '/usage-analytics', '用量分析', '/api/v1/usage/analytics', (url, query, data) => {
     assert.equal(query.searchParams.get('org_id'), String(fixture.org_id)); assert.ok(data.summary);
   });
-  await follow(page, '查看结算账户', '/wallet', '预算与成本中心', '/api/v1/wallet', (url, query, data) => {
+  await follow(page, '查看结算账户', '/wallet', '结算与预算', '/api/v1/wallet', (url, query, data) => {
     assert.equal(query.searchParams.get('org_id'), String(fixture.org_id)); assert.equal(data.org_id, fixture.org_id);
   });
   await follow(page, '处理通知', '/notifications', '通知中心', '/api/v1/notification-events', (url, query, data) => {
@@ -164,7 +164,7 @@ try {
   // Real sidebar navigation. Main read + rendered page, no placeholder outlets.
   const nav = [
     ['模型与端点','模型接入','/channels','模型接入','/api/v1/model-deployments'],
-    ['模型治理','模型接入','/channels?view=catalog','公共模型目录','/api/v1/model-registry'],
+    ['模型治理','模型接入','/channels?view=catalog','模型目录','/api/v1/model-registry'],
     ['调用条件诊断','模型接入','/channels?view=diagnostics','执行诊断','/api/v1/model-deployments'],
     ['访问审核','访问与安全','/access-review','访问审核','/api/v1/projects'],
     ['应用与 Agent','访问与安全','/applications','应用与 Agent','/api/v1/projects'],
@@ -178,7 +178,7 @@ try {
     ['用量分析','监控与用量','/usage-analytics','用量分析','/api/v1/usage/analytics'],
     ['通知中心','监控与用量','/notifications','通知中心','/api/v1/notification-events'],
     ['运行状态','监控与用量','/status','运行状态','/api/v1/runtime/status'],
-    ['预算与成本中心','成本与财务','/wallet','预算与成本中心','/api/v1/wallet'],
+    ['结算与预算','成本与财务','/wallet','结算与预算','/api/v1/wallet'],
     ['费率与计价','成本与财务','/model-prices','费率与计价','/api/v1/enterprise-finance/rate-cards'],
     ['成本优化','成本与财务','/cost-optimization','成本优化','/api/v1/cost-optimization/summary'],
     ['分摊与对账','成本与财务','/reconciliation','分摊与对账','/api/v1/reconciliation'],
@@ -193,7 +193,7 @@ try {
     if (!await link.isVisible()) await sidebar.getByText(group, { exact: true }).click();
     if (modelSubview) { await link.click(); await bodyReady(page, '模型接入'); }
     const read = endpoint ? response(page, endpoint, r => r.status() === 200) : null;
-    if (modelSubview) await page.getByRole('button', { name: name === '模型治理' ? '公共模型目录' : '执行诊断', exact: true }).click();
+    if (modelSubview) await page.getByRole('button', { name: name === '模型治理' ? '模型目录' : '执行诊断', exact: true }).click();
     else await link.click();
     await page.waitForURL(u => u.pathname + u.search === expected); await bodyReady(page, heading);
     if (read) { const observed = await read; if (['访问审核','应用与 Agent','异步模型任务'].includes(name)) { const body = await observed.json(); assert.equal(body.data.length,0); } }
@@ -285,7 +285,7 @@ try {
   await page.getByRole('button', { name: '重置筛选', exact: true }).click(); auditData = await (await auditRead).json(); assert.ok(auditData.data.length > 0);
   record({ kind: 'audit', assertions: ['actual-row-inspector-ID','explicit-apply-filter','real-empty-result','reset-restores-data'] });
   // Public model registry search uses the real backend query and restores it.
-  await page.goto('/channels?view=catalog'); await bodyReady(page, '公共模型目录');
+  await page.goto('/channels?view=catalog'); await bodyReady(page, '模型目录');
   let registryRead = response(page, '/api/v1/model-registry', (r,u) => r.status() === 200 && u.searchParams.get('q') === 'ui-no-such-model');
   await page.getByRole('textbox', { name: '搜索模型目录', exact: true }).fill('ui-no-such-model');
   assert.equal((await (await registryRead).json()).data.length, 0);
@@ -293,7 +293,7 @@ try {
   await page.getByRole('textbox', { name: '搜索模型目录', exact: true }).fill(''); await registryRead;
   record({ kind: 'model-registry', assertions: ['real-query-search-empty','clear-restores-scope'] });
   // Financial read tabs and server-filtered reconciliation, no economic writes.
-  await page.goto('/wallet'); await bodyReady(page, '预算与成本中心');
+  await page.goto('/wallet'); await bodyReady(page, '结算与预算');
   let walletRead = response(page, '/api/v1/wallet/transactions', r => r.status() === 200);
   await page.getByRole('tab', { name: '结算流水', exact: true }).click(); assert.ok(Array.isArray((await (await walletRead).json()).data));
   walletRead = response(page, '/api/v1/grants', r => r.status() === 200);

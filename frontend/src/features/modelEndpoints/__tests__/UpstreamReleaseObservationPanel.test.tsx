@@ -11,7 +11,7 @@ const state: UpstreamReleaseState = { revision: 1, observation: { schema_version
 const selected = { deployment: { id: 3, config_revision: 7, upstream_model: 'floating-alias', admin_state: 'enabled', upstream_release_observation: state }, connection: { id: 4, config_revision: 6, provider: 'generic', base_url: 'https://api.example.test' }, public_model: { execution_profile_id: 'fixture.profile', execution_profile_version: '1.0.0' } } as CanonicalModelApplication;
 const operation = { operation_id: 'openai.chat_completions.v1', profile_definition_digest: 'definition-digest', protocol_profile_id: 'fixture.protocol', protocol_profile_version: '2.0.0', latest_probe: { upstream_scope: { state: 'stale' } } } as CanonicalOperation;
 beforeEach(() => { vi.clearAllMocks(); setLocale('en-US'); useAuthStore.setState({ isAuthenticated: true, user: { id: 1, username: "fixture-admin", org_id: 2, organization_role: 'org_admin' } }); });
-afterEach(() => { setLocale('zh-CN'); });
+afterEach(() => { act(() => setLocale('zh-CN')); });
 describe('Upstream release observation', () => {
  it.each([
   ['en-US','current','Matches recorded declaration'],['en-US','stale','Declaration scope needs revalidation'],['en-US','unknown','Declaration scope unknown'],

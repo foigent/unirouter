@@ -1,3 +1,4 @@
+import { modelAxisLabel } from '../features/modelEndpoints/axisLabels';
 import '../i18n/models';
 import { translate as t, useI18n } from '../i18n';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -152,7 +153,7 @@ export default function ModelEndpointsPage() {
 
   const viewNavigation = <Space wrap>
     <Button type={!auxiliaryView ? 'primary' : 'tertiary'} onClick={() => selectView()}>{t("模型执行目标")}</Button>
-    <Button type={selectedView === 'catalog' ? 'primary' : 'tertiary'} onClick={() => selectView('catalog')}>{t("公共模型目录")}</Button>
+    <Button type={selectedView === 'catalog' ? 'primary' : 'tertiary'} onClick={() => selectView('catalog')}>{t("模型目录")}</Button>
     <Button type={selectedView === 'diagnostics' ? 'primary' : 'tertiary'} onClick={() => selectView('diagnostics')}>{t("执行诊断")}</Button>
   </Space>;
 
@@ -328,12 +329,12 @@ export default function ModelEndpointsPage() {
     {
       title: t("独立状态轴"), key: 'axes',
       render: (_: unknown, row: ApplicationOperationRow) => <div className="ur-model-endpoint-targets">
-        <StatusTag status={axisTone(row.application.connection.admin_state)}>{t("连接")} {row.application.connection.admin_state}</StatusTag>
-        <StatusTag status={axisTone(row.application.deployment.admin_state)}>Deployment {row.application.deployment.admin_state}</StatusTag>
-        <StatusTag status={axisTone(row.application.credential.state)}>{t("凭证")} {row.application.credential.state}</StatusTag>
-        <StatusTag status={axisTone(row.operation.probe_state)}>{t("探测")} {row.operation.probe_state}</StatusTag>
-        <StatusTag status={axisTone(row.operation.runtime.state)}>{t("运行时")} {row.operation.runtime.state}</StatusTag>
-        <StatusTag status={axisTone(row.application.callability.state)}>{t("调用")} {row.application.callability.state}</StatusTag>
+        <StatusTag title={row.application.connection.admin_state} status={axisTone(row.application.connection.admin_state)}>{t("连接")} {modelAxisLabel('admin', row.application.connection.admin_state)}</StatusTag>
+        <StatusTag title={row.application.deployment.admin_state} status={axisTone(row.application.deployment.admin_state)}>Deployment {modelAxisLabel('admin', row.application.deployment.admin_state)}</StatusTag>
+        <StatusTag title={row.application.credential.state} status={axisTone(row.application.credential.state)}>{t("凭证")} {modelAxisLabel('credential', row.application.credential.state)}</StatusTag>
+        <StatusTag title={row.operation.probe_state} status={axisTone(row.operation.probe_state)}>{t("探测")} {modelAxisLabel('probe', row.operation.probe_state)}</StatusTag>
+        <StatusTag title={row.operation.runtime.state} status={axisTone(row.operation.runtime.state)}>{t("运行时")} {modelAxisLabel('runtime', row.operation.runtime.state)}</StatusTag>
+        <StatusTag title={row.application.callability.state} status={axisTone(row.application.callability.state)}>{t("调用")} {modelAxisLabel('caller', row.application.callability.state)}</StatusTag>
       </div>,
     },
     {
@@ -360,7 +361,7 @@ export default function ModelEndpointsPage() {
     return <div className="ur-page ur-page-wide">
       <PageHeader
         eyebrow={t("模型接入")}
-        title={t("公共模型目录")}
+        title={t("模型目录")}
         description={t("维护经过验证的模型执行边界、企业别名和项目可见范围；不会修改 canonical runtime。")}
       />
       <nav className="ur-workspace-tabs">{viewNavigation}</nav>

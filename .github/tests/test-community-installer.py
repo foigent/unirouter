@@ -3,6 +3,7 @@
 import ast
 import hashlib
 import importlib.util
+import ipaddress
 import json
 from pathlib import Path
 import shutil
@@ -10,7 +11,7 @@ import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -24,6 +25,107 @@ fixture = load('installer_fixture', ROOT / '.github/tests/community-installer.py
 bootstrap = load('actual_bootstrap', ROOT / 'deploy/community/bootstrap.py')
 
 class InstallerFixtureContract(unittest.TestCase):
+    def test_actual_retained_installer_rejects_completed_case_network_until_released(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp).resolve();path=root/'retained-install.py'
+            path.write_bytes(subprocess.check_output(['git','-C',str(ROOT),'show',fixture.RETAINED_COMMIT+':deploy/customer/install.py']))
+            owner=load('retained_network_guard',path)
+            sample=subprocess.check_output(['git','-C',str(ROOT),'show',fixture.RETAINED_COMMIT+':deploy/customer/.env.example']).decode()
+            subnet=next(line.split('=',1)[1] for line in sample.splitlines() if line.startswith('UNIROUTER_INTERNAL_NETWORK_CIDR='))
+            release=SimpleNamespace(directory=root/'release',package=root/'release.tar.gz',subnet=ipaddress.ip_network(subnet))
+            previous_network=True;calls=[]
+            def run(args,**kwargs):
+                calls.append(args)
+                if args[-2:]==['compose','version']:return 'Docker Compose native-boundary fixture'
+                if args[-3:]==['info','--format','{{json .}}']:return '{"OSType":"linux","ID":"original-synthetic-daemon","SecurityOptions":[]}'
+                if '--filter' in args or args[-1] in ('{{.Names}}','{{.Name}}'):return ''
+                if args[-4:]==['network','ls','-q','--no-trunc']:return 'earlier-case-network\n' if previous_network else ''
+                if args[-3:]==['network','inspect','earlier-case-network']:
+                    return json.dumps([{'IPAM':{'Config':[{'Subnet':subnet}]}}])
+                self.fail('unexpected native read boundary')
+            operation=owner.Installer(release,root/'next-case','next-case',13000,Path('/var/run/docker.sock'),run)
+            with patch.object(owner.platform,'system',return_value='Linux'),patch.object(owner.os,'geteuid',return_value=0), \
+                 patch.object(owner.socket,'socket',return_value=MagicMock()):
+                with self.assertRaisesRegex(owner.InstallError,'signed release subnet overlaps'):
+                    operation.check()
+                previous_network=False
+                self.assertEqual(operation.check()['ID'],'original-synthetic-daemon')
+            self.assertTrue(all(not any(command in args for command in ('up','stop','down','rm')) for args in calls))
+
+    def test_completed_case_cleanup_uses_exact_original_chains_and_preserves_volumes(self):
+        for layout in ('fresh','single','edge'):
+            with self.subTest(layout=layout):
+                work=object.__new__(fixture.Acceptance);work.docker='/fixture/docker';calls=[]
+                work.run=lambda label,args:calls.append((label,[str(arg) for arg in args]))
+                directory=Path('/fixture/'+layout);project='ur-'+layout
+                edge=directory/'edge' if layout=='edge' else None
+                base=[str(arg) for arg in work.compose(directory,project)]
+                work.release_completed_case(directory,project,edge,upgraded=layout!='fresh')
+                expected=[]
+                if edge:
+                    expected.append([work.docker,'compose','--project-name',project+'-edge','--project-directory',str(edge),
+                        '--env-file','/dev/null','-f',str(edge/'compose.edge.json'),'down'])
+                    base+=['-f',str(edge/'runtime-overrides.json')]
+                if layout!='fresh':base+=['-f',str(directory/'runtime/upgrade-image.json')]
+                expected.append(base+['down'])
+                self.assertEqual([args for _,args in calls],expected)
+                for _,args in calls:
+                    self.assertTrue(set(args).isdisjoint({'-v','--volumes','--rmi','--remove-orphans'}))
+
+    def test_execute_releases_only_verified_cases_in_fresh_single_edge_order(self):
+        for failure in (None,'fresh','single'):
+            with self.subTest(failure=failure):
+                work=object.__new__(fixture.Acceptance);work.docker='/fixture/docker'
+                work.instances=Path('/fixture/instances');work.suffix='synthetic';work.schema=fixture.CURRENT_SCHEMA;work.result={}
+                events=[];downs=[]
+                def verify(label):
+                    events.append(label)
+                    if failure==label:raise fixture.Failed('preserve failed case')
+                for name in ('preflight','prepare','negative_checks','interrupt_after_plan','installed_checks'):
+                    setattr(work,name,lambda *args:None)
+                work.native_first_use_checks=lambda *args:verify('fresh')
+                def run(label,args):
+                    args=[str(arg) for arg in args];downs.append(args);events.append('down:'+args[args.index('--project-name')+1])
+                work.run=run
+                def retained():
+                    events.append('prepare:retained')
+                    self.assertEqual(len(downs),1,'fresh network released before retained installation')
+                    return SimpleNamespace()
+                work.retained_release=retained
+                def qualify(old,layout):
+                    verify(layout)
+                    directory=Path('/fixture/retained')/layout
+                    work.release_completed_case(directory,'ur-'+layout,directory/'edge' if layout=='edge' else None,upgraded=True)
+                work.qualify_upgrade=qualify
+                if failure:
+                    with self.assertRaisesRegex(fixture.Failed,'preserve failed case'):work.execute()
+                    self.assertEqual(len(downs),0 if failure=='fresh' else 1)
+                else:
+                    work.execute()
+                    self.assertEqual(events,['fresh','down:ur-native-synthetic','prepare:retained','single','down:ur-single',
+                        'edge','down:ur-edge-edge','down:ur-edge'])
+                    self.assertEqual(work.result['status'],'passed')
+                    self.assertIn('/fixture/retained/single/runtime/upgrade-image.json',downs[1])
+                    self.assertIn('/fixture/retained/edge/edge/runtime-overrides.json',downs[3])
+                    self.assertIn('/fixture/retained/edge/runtime/upgrade-image.json',downs[3])
+
+    def test_retained_install_failure_reports_its_actual_owner_and_only_authored_error(self):
+        for authored in (None,'Installation stopped: The signed release subnet overlaps an existing Docker network'):
+            with self.subTest(authored=authored):
+                work=object.__new__(fixture.Acceptance);work.suffix='synthetic';work.result={'installer_stop':'stale earlier negative'}
+                old=SimpleNamespace(instances=Path('/fixture/retained'),result={},phase='before')
+                old.command=lambda *args:['not-executed']
+                def fail(label,args):
+                    old.phase=label
+                    if authored:old.result['installer_stop']=authored
+                    raise fixture.Failed(label+' failed')
+                old.run=fail
+                with self.assertRaisesRegex(fixture.Failed,'install exact retained M127 predecessor failed'):
+                    work.qualify_upgrade(old,'single')
+                self.assertEqual(work.phase,'install exact retained M127 predecessor')
+                self.assertEqual(work.project,'ur-upgrade-single-synthetic');self.assertEqual(work.directory,old.instances/'single')
+                self.assertEqual(work.result.get('installer_stop'),authored)
+
     def test_native_json_stdout_stays_separate_from_retained_startup_diagnostics(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);work=object.__new__(fixture.Acceptance)

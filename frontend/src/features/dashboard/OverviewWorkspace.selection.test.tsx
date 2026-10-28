@@ -54,3 +54,22 @@ describe('overview model selection across actual data updates', () => {
     expect(picker()).toHaveValue('');
   });
 });
+
+describe('overview empty-window presentation', () => {
+  it('keeps recent requests visible independently of a zero window and omits zero activity charts', () => {
+    const snapshot = { ...stats([]), daily_trend: [{ date: '2026-10-28T00:00:00Z', requests: 0, cost_micros: '0' }], recent_logs: [{ request_id: 'older-visible-request', model: 'older-model', status_code: 200, cost_micros: '100', latency_ms: 30, created_at: '2026-10-20T00:00:00Z' }] } as DashboardStats;
+    const view = render(<MemoryRouter><OverviewWorkspace stats={snapshot} attention={null} attentionState="idle" /></MemoryRouter>);
+    expect(screen.getByText('所选时段暂无请求与费用')).toBeInTheDocument();
+    expect(screen.getByText('older-visible-request')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '查看调用指南' })).toBeInTheDocument();
+    expect(screen.getByText('所选时段暂无趋势样本')).toBeInTheDocument();
+    expect(view.container.querySelector('.recharts-area-curve')).toBeNull();
+  });
+  it('does not call unavailable model or cost evidence a zero-activity window', () => {
+    const snapshot = { ...stats([]), model_distribution: undefined, today_cost_micros: undefined } as unknown as DashboardStats;
+    render(<MemoryRouter><OverviewWorkspace stats={snapshot} attention={null} attentionState="idle" /></MemoryRouter>);
+    expect(screen.queryByText('所选时段暂无请求与费用')).not.toBeInTheDocument();
+    expect(screen.getByText('模型构成暂不可用')).toBeInTheDocument();
+    expect(screen.getByText('费用构成暂不可用')).toBeInTheDocument();
+  });
+});

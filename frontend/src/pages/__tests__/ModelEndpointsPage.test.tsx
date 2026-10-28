@@ -661,7 +661,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     renderPage('/channels?tab=advanced&view=catalog');
 
     expect(await screen.findByText('模型目录嵌入视图 · embedded=true')).toBeTruthy();
-    expect(screen.getByRole('heading', { name: '公共模型目录' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '模型目录' })).toBeTruthy();
     expect(mocks.list).not.toHaveBeenCalled();
     expect(mocks.releaseList).not.toHaveBeenCalled();
   });
@@ -683,6 +683,18 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     expect(mocks.get).not.toHaveBeenCalled();
   });
 
+  it('focuses the model drawer, closes it with Escape and returns focus to its opener', async () => {
+    const user = userEvent.setup({ skipHover: true });
+    renderPage();
+    const opener = await screen.findByRole('button', { name: '查看详情' });
+    await user.click(opener);
+    const close = await screen.findByRole('button', { name: '关闭模型详情' });
+    await waitFor(() => expect(close).toHaveFocus());
+    fireEvent.keyDown(close, { key: 'Escape', code: 'Escape', keyCode: 27 });
+    await waitFor(() => expect(screen.queryByText('1 · 配置与管理状态')).toBeNull());
+    expect(opener).toHaveFocus();
+  });
+
   it('renders five independent axes and never turns probe, runtime or caller state into one ready flag', async () => {
     renderPage('/channels?deployment_id=41&operation_id=openai.responses.v1');
 
@@ -697,7 +709,9 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     expect(screen.getByText(/missing_approval/)).toBeTruthy();
     expect(screen.getByText(/未分配到任何 canonical runtime release/)).toBeTruthy();
     expect(screen.getByText(/未针对调用者评估/)).toBeTruthy();
-    expect(screen.getAllByText(/^ready$/i)).toHaveLength(1);
+    expect(screen.getByText('凭证可选', { selector: 'span[title="ready"]' })).toHaveAttribute('title', 'ready');
+    expect(screen.getByText('未分配发布')).toHaveAttribute('title', 'unassigned');
+    expect(screen.getByText('未评估调用者')).toHaveAttribute('title', 'not_evaluated');
   });
 
   it('renders the exact capability qualification workflow for the current DeepSeek Flash profile', async () => {
@@ -848,7 +862,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     fireEvent.click(button);
 
     await waitFor(() => expect(screen.queryByText('1 · 配置与管理状态')).toBeNull());
-    expect(screen.getByText('Canonical Release Workspace')).toBeTruthy();
+    expect(screen.getByText('模型发布工作台')).toBeTruthy();
   });
 
   it('keeps connection and deployment administration state distinct in the list configuration axis', async () => {
@@ -859,9 +873,9 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
 
     renderPage();
 
-    expect(await screen.findByText('连接 enabled')).toBeTruthy();
-    expect(screen.getByText('Deployment paused')).toBeTruthy();
-    expect(screen.queryByText('Deployment enabled')).toBeNull();
+    expect(await screen.findByText('连接 管理已启用')).toBeTruthy();
+    expect(screen.getByText('Deployment 管理已暂停')).toBeTruthy();
+    expect(screen.queryByText('Deployment 管理已启用')).toBeNull();
   });
 
   it('probes only the selected deployment operation and exact credential binding', async () => {
@@ -910,7 +924,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
   it('mounts the canonical release workspace and exposes no old inferred release action', async () => {
     renderPage('/channels?deployment_id=41&operation_id=openai.responses.v1');
 
-    expect(await screen.findByText('Canonical Release Workspace')).toBeTruthy();
+    expect(await screen.findByText('模型发布工作台')).toBeTruthy();
     expect(mocks.releaseList).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('button', { name: /首次启用|灰度|提升为稳定|回滚/ })).toBeNull();
   });
@@ -935,7 +949,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     await user.click(screen.getByRole('combobox', { name: '现有公共模型' }));
     const unavailable = await screen.findByRole('option', { name: /缺少 context\/output 执行边界/ });
     expect(unavailable).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.getByText(/请先在公共模型目录修复执行边界/)).toBeTruthy();
+    expect(screen.getByText(/请先在模型目录修复执行边界/)).toBeTruthy();
     await user.click(screen.getByRole('combobox', { name: '现有公共模型' }));
 
     await user.type(screen.getByLabelText('连接名称'), 'DeepSeek second deployment');
@@ -945,7 +959,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     await user.type(screen.getByLabelText('供应商 API Key'), 'sk-test-only');
     await user.click(screen.getByRole('button', { name: '创建模型接入' }));
 
-    await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.stringContaining('请先在公共模型目录修复后再复用')));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.stringContaining('请先在模型目录修复后再复用')));
     expect(mocks.create).not.toHaveBeenCalled();
   });
 

@@ -962,13 +962,35 @@ raise SystemExit("expected cold-pair interruption was not reached")
         private_write(path, owner.canonical(document))
         return path
 
+    def release_completed_case(self, directory, project, edge=None, *, upgraded=False):
+        # Call only after this disposable case's preservation/restore checks.
+        # Native down releases its network for the next signed-subnet case;
+        # named volumes, images and all host evidence remain retained.
+        if edge:
+            self.run("release exact completed edge fixture", [self.docker, "compose", "--project-name", project + "-edge",
+                "--project-directory", edge, "--env-file", "/dev/null", "-f", edge / "compose.edge.json", "down"])
+        compose = self.compose(directory, project)
+        if edge:
+            compose += ["-f", edge / "runtime-overrides.json"]
+        if upgraded:
+            compose += ["-f", directory / "runtime/upgrade-image.json"]
+        self.run("release exact completed case containers and network", compose + ["down"])
+
     def qualify_upgrade(self, old, layout):
         project = "ur-upgrade-" + layout + "-" + self.suffix
         directory = old.instances / layout
         old.project, old.directory = project, directory
-        old.run("install exact retained M127 predecessor", old.command("install", directory, project))
-        old.installed_checks(directory, project)
-        old.native_first_use_checks(directory, project, restart=False)
+        self.project, self.directory = project, directory
+        self.result.pop("installer_stop", None)
+        try:
+            old.run("install exact retained M127 predecessor", old.command("install", directory, project))
+            old.installed_checks(directory, project)
+            old.native_first_use_checks(directory, project, restart=False)
+        except Failed:
+            self.phase = old.phase
+            if "installer_stop" in old.result:
+                self.result["installer_stop"] = old.result["installer_stop"]
+            raise
         body, name, rendered = self.historical_data(old, directory, project)
         edge = self.named_edge(old, directory, project, rendered) if layout == "edge" else None
         history = self.historical_observations(old, directory, project, edge)
@@ -1042,14 +1064,7 @@ raise SystemExit("expected cold-pair interruption was not reached")
             "historical_kind": "native_replacement" if edge else "process_exit", "history_without_evidence_refused": True,
             "unknown_outcome_refused": bool(edge), "provider_calls": 0})
         self.passed("real " + layout + " M127 to M128 upgrade, paired restore and preserved first use")
-        # Serialize cases, releasing only this exact fixture's receivers/DBs.
-        if edge:
-            self.run("stop exact completed edge fixture", [self.docker, "compose", "--project-name", project + "-edge",
-                "--project-directory", edge, "--env-file", "/dev/null", "-f", edge / "compose.edge.json", "stop"])
-        compose = old.compose(directory, project)
-        if edge:
-            compose += ["-f", edge / "runtime-overrides.json"]
-        self.run("stop exact completed upgraded fixture", compose + ["-f", directory / "runtime/upgrade-image.json", "stop"])
+        self.release_completed_case(directory, project, edge, upgraded=True)
 
     def execute(self):
         self.preflight()
@@ -1061,7 +1076,7 @@ raise SystemExit("expected cold-pair interruption was not reached")
         self.interrupt_after_plan(directory, project)
         self.installed_checks(directory, project)
         self.native_first_use_checks(directory, project)
-        self.run("stop exact completed fresh fixture", self.compose(directory, project) + ["stop"])
+        self.release_completed_case(directory, project)
         require(self.schema == CURRENT_SCHEMA, "current Linux qualification requires the M128 candidate")
         old = self.retained_release()
         for layout in ("single", "edge"):

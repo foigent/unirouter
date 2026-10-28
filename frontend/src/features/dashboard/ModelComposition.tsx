@@ -15,7 +15,7 @@ export default function ModelComposition({ data, metric, selected, onSelect, fal
     {data.state === 'unavailable' ? <EmptyState title={t(metric === 'cost' ? '费用构成暂不可用' : '模型构成暂不可用')} description={t('总量来自窗口汇总；构成不可用。')} minHeight={170} />
       : data.state === 'signed' ? <EmptyState title={t('当前金额含负数，请查看明细。')} minHeight={170} />
       : <>
-        {data.state === 'empty' ? <EmptyState title={t(metric === 'cost' ? '暂无费用' : '暂无请求')} minHeight={130} />
+        {data.state === 'empty' ? <p className="ur-composition-empty">{t(metric === 'cost' ? '暂无费用' : '暂无请求')}</p>
           : <div className="ur-composition-body">
             <svg viewBox="0 0 120 120" className="ur-composition-ring" role="img" aria-label={title}>
               <title>{title}</title>
@@ -38,6 +38,6 @@ export default function ModelComposition({ data, metric, selected, onSelect, fal
             </li>)}</ul>
           </div>}
       </>}
-    {data.state !== 'unavailable' && <p className="ur-composition-note">{t(metric === 'cost' ? '逐模型聚合 · CNY' : '点击模型查看详情；趋势保持全部模型范围。')}</p>}
+    {data.state === 'ready' && <p className="ur-composition-note">{t(metric === 'cost' ? '逐模型聚合 · CNY' : '点击模型查看详情；趋势保持全部模型范围。')}</p>}
   </Surface>;
 }

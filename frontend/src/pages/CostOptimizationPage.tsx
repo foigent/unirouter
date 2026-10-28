@@ -354,23 +354,20 @@ export default function CostOptimizationPage() {
       />
 
       <Surface title={t("范围与归因")} description={t("默认查看最近 30 天。缺失供应商缓存分区或计价证据的成功请求计入覆盖缺口，不按零节省处理。")}>
-        <div className="ur-inline-controls">
+        <div className="ur-cost-filter-grid">
           {platform && <Text type="tertiary">{t("客户范围：")}{customerContext.orgName || t("组织 #{v0}", { v0: String(targetOrgID) })}</Text>}
-          <Select
+          <label><span id="cost-optimization-group-label">{t("拆解维度")}</span><Select
             aria-labelledby="cost-optimization-group-label"
-            insetLabel={t("拆解维度")}
-            insetLabelId="cost-optimization-group-label"
             value={groupBy}
             optionList={localizeOptions(groupOptions)}
             onChange={value => setGroupBy(String(value || 'model') as GroupKey)}
-            style={{ width: 190 }}
-          />
-          <Input aria-label={t("项目 ID 筛选")} prefix={<IconSearch />} value={projectID} onChange={setProjectID} placeholder={t("项目 ID")} showClear style={{ width: 140 }} />
-          <Input aria-label={t("模型筛选")} prefix={<IconSearch />} value={model} onChange={setModel} placeholder={t("模型")} showClear style={{ width: 180 }} />
-          <Input aria-label={t("供应商筛选")} prefix={<IconServer />} value={provider} onChange={setProvider} placeholder={t("供应商")} showClear style={{ width: 170 }} />
-          <Input aria-label={t("上游通道筛选")} prefix={<IconServer />} value={channel} onChange={setChannel} placeholder={t("上游通道")} showClear style={{ width: 170 }} />
-          <Input aria-label={t("开始时间")} value={startTime} onChange={setStartTime} type="datetime-local" style={{ width: 190 }} />
-          <Input aria-label={t("结束时间")} value={endTime} onChange={setEndTime} type="datetime-local" showClear style={{ width: 190 }} />
+          /></label>
+          <label><span>{t("项目 ID")}</span><Input aria-label={t("项目 ID 筛选")} prefix={<IconSearch />} value={projectID} onChange={setProjectID} placeholder={t("项目 ID")} showClear /></label>
+          <label><span>{t("模型")}</span><Input aria-label={t("模型筛选")} prefix={<IconSearch />} value={model} onChange={setModel} placeholder={t("模型")} showClear /></label>
+          <label><span>{t("供应商")}</span><Input aria-label={t("供应商筛选")} prefix={<IconServer />} value={provider} onChange={setProvider} placeholder={t("供应商")} showClear /></label>
+          <label><span>{t("上游通道")}</span><Input aria-label={t("上游通道筛选")} prefix={<IconServer />} value={channel} onChange={setChannel} placeholder={t("上游通道")} showClear /></label>
+          <label><span>{t("开始时间")}</span><Input aria-label={t("开始时间")} value={startTime} onChange={setStartTime} type="datetime-local" /></label>
+          <label><span>{t("结束时间")}</span><Input aria-label={t("结束时间")} value={endTime} onChange={setEndTime} type="datetime-local" showClear /></label>
           <Button type="primary" icon={<IconSearch />} onClick={load} loading={loading}>{t("应用筛选")}</Button>
         </div>
       </Surface>

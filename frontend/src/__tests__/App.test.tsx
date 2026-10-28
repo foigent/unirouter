@@ -241,7 +241,7 @@ describe('App shell', () => {
     expect(screen.getByText('模型与端点')).toBeTruthy();
     expect(screen.getByText('人员与权限')).toBeTruthy();
     expect(screen.getByText('执行请求')).toBeTruthy();
-    expect(screen.getByText('预算与成本中心')).toBeTruthy();
+    expect(screen.getByText('结算与预算')).toBeTruthy();
     expect(screen.getByText('部署与网络')).toBeTruthy();
     expect(screen.getByText('集成管理')).toBeTruthy();
     expect(screen.getByText('API 与兼容性')).toBeTruthy();

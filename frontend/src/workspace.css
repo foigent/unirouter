@@ -36,6 +36,8 @@
 .ur-event-copy { display: grid; gap: 6px; min-width: 0; justify-items: start; line-height: 1.55; overflow-wrap: anywhere; }
 .ur-event-copy strong { font-weight: 550; }
 .ur-event-copy small { color: var(--ur-text-muted); }
+.ur-event-copy > .semi-tag { max-width: 100%; min-width: 0; height: auto; }
+.ur-event-copy > .semi-tag .semi-tag-content { white-space: normal; overflow-wrap: anywhere; }
 .ur-notification-workspace .semi-table-cell { vertical-align: top; }
 .ur-notification-workspace .semi-table-cell .semi-button { height: auto; min-height: 28px; }
 .ur-notification-workspace .semi-table-cell .semi-button-content { white-space: normal; }
@@ -286,3 +288,16 @@ html[lang="en-US"] .ur-sider .semi-navigation-sub .semi-navigation-item { margin
 .ur-finance-workspace .ur-kpi-grid { margin-bottom: 18px; }
 .ur-integration-workspace .ur-integration-workspace > .ur-page-header .ur-page-eyebrow { display: none; }
 .ur-integration-workspace .ur-integration-workspace > .ur-page-header .ur-page-title { font-size: 20px; }
+
+.ur-route-content { min-width: 0; }
+.ur-composition-empty { margin: 0; color: var(--ur-text-muted); font-size: 13px; }
+.ur-overview-window-empty { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 16px 18px; border: 1px solid var(--ur-border); border-radius: var(--ur-radius); background: var(--ur-bg-subtle); }
+.ur-overview-window-empty > div { min-width: 0; }
+.ur-overview-window-empty p { margin: 6px 0 0; line-height: 1.6; color: var(--ur-text-muted); }
+.ur-overview-empty-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.ur-language-switch { flex: 0 0 auto; }
+.ur-language-switch button { flex: 0 0 auto; white-space: nowrap; }
+.ur-topbar-actions .ur-env-pill { max-width: 240px; min-width: 0; }
+.ur-topbar-actions .ur-env-pill .semi-tag-content { flex: 1 1 0; min-width: 0; justify-content: flex-start; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.ur-boundary-note { color: var(--ur-text-secondary); font-size: 13px; line-height: 1.6; margin: 0 0 12px; }

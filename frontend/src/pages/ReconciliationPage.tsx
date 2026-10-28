@@ -462,14 +462,13 @@ export default function ReconciliationPage() {
       <PageHeader
         eyebrow={t("成本与财务")}
         title={t("分摊与对账")}
-        description={t("核对客户结算账、UniRouter 成本估算与供应商成本证据；任何估算、聚合账单或离线预览都不会自动变成应收、应付或总账事实。")}
+        description={t("核对请求结算、成本差异与企业分摊；估算和预览不产生财务入账。")}
       />
-      <Banner
-        type="info"
-        description={t("当前已实现请求级对账、企业分摊运行、关账门禁、调整/冲销流水和离线供应商证据。ERP/总账导出仍未配置；跨期异常关联和深度调查继续由 X-Insight 承担。")}
-        closeIcon={null}
-        style={{ marginBottom: 16 }}
-      />
+      <details className="ur-technical-details">
+        <summary>{t('结算口径与功能边界')}</summary>
+        <p>{t("核对客户结算账、UniRouter 成本估算与供应商成本证据；任何估算、聚合账单或离线预览都不会自动变成应收、应付或总账事实。")}</p>
+        <p>{t("当前已实现请求级对账、企业分摊运行、关账门禁、调整/冲销流水和离线供应商证据。ERP/总账导出仍未配置；跨期异常关联和深度调查继续由 X-Insight 承担。")}</p>
+      </details>
       <Surface title={t("筛选条件")}>
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
           {platform && <Typography.Text type="tertiary">{t("客户范围：")}{customerContext.orgName || t("组织 #{v0}", { v0: String(targetOrgID) })}</Typography.Text>}

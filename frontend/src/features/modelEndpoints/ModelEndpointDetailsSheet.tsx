@@ -1,6 +1,8 @@
+import { modelAxisLabel } from './axisLabels';
 import '../../i18n/models';
 import { translate as t, useI18n } from '../../i18n';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { IconClose } from '@douyinfe/semi-icons';
 import { Banner, Button, Descriptions, SideSheet, Space, Typography } from '@douyinfe/semi-ui';
 import {
   canonicalOperationProbeAvailability,
@@ -55,6 +57,28 @@ export default function ModelEndpointDetailsSheet(props: Props) {
   const { selected, operation } = props;
   const [detailsOpen, setDetailsOpen] = useState(false);
   const visible = Boolean(selected && operation);
+  const sheet = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!visible) return;
+    const panel = sheet.current?.closest<HTMLElement>('.semi-sidesheet-inner');
+    if (!panel) return;
+    const previous = document.activeElement;
+    panel.querySelector<HTMLButtonElement>('.semi-sidesheet-close')?.focus({ preventScroll: true });
+    const keyboard = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if (event.key !== 'Tab') return;
+      const stops = [...panel.querySelectorAll<HTMLElement>('button, a[href], input, select, textarea, [tabindex]')]
+        .filter(el => el.tabIndex >= 0 && !el.matches(':disabled, [aria-disabled="true"]') && el.getClientRects().length > 0);
+      const first = stops[0], last = stops[stops.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    panel.addEventListener('keydown', keyboard);
+    return () => {
+      panel.removeEventListener('keydown', keyboard);
+      if (previous instanceof HTMLElement && previous.isConnected && !panel.contains(previous)) previous.focus({ preventScroll: true });
+    };
+  }, [visible]);
   const probeAvailability = operation ? canonicalOperationProbeAvailability(operation) : { available: false, reason: '', source: 'server' as const };
   const eligibleBindings = selected?.credential.bindings.filter(binding => binding.eligible) || [];
   const licensedActionTitle = props.gatewayLicensed ? undefined : props.gatewayRestriction;
@@ -65,11 +89,16 @@ export default function ModelEndpointDetailsSheet(props: Props) {
       : 'Canonical Deployment'}
     visible={visible}
     onCancel={props.onClose}
+    closeIcon={<span role="img" aria-label={t('关闭模型详情')}><IconClose /></span>}
+    closeOnEsc
+    aria-label={t('模型详情')}
     width="min(800px, 100vw)"
   >
-    {selected && operation && <div className="ur-model-endpoint-sheet">
+    {selected && operation && <div className="ur-model-endpoint-sheet" ref={sheet}>
       <UpstreamReleaseObservationPanel selected={selected} operation={operation} canManage={props.canManage} onChanged={props.onCanonicalStateChanged} />
-      <div className="ur-model-endpoint-sheet-summary">
+      <details className="ur-technical-details">
+        <summary>{t('技术标识与状态说明')}</summary>
+        <div className="ur-model-endpoint-sheet-summary">
         <div>
           <Text type="tertiary">{t("精确持久身份")}</Text>
           <Text code>deployment_id={selected.deployment.id}</Text>
@@ -91,13 +120,15 @@ export default function ModelEndpointDetailsSheet(props: Props) {
         description={t("以下五个状态轴彼此独立：凭证可用不代表探测通过，探测通过不代表已发布，已发布也不代表某个项目或调用者已获授权。")}
       />
 
+      </details>
+
       <Surface title={t("1 · 配置与管理状态")} description={t("连接与 deployment 是两个有独立 revision 的持久对象；这里不从凭证或探测结果反推启停状态。")}>
         <Descriptions row size="small" data={[
-          { key: t("公共模型"), value: `${selected.public_model.model_name} · catalog ${selected.public_model.lifecycle}` },
+          { key: t("公共模型"), value: <span title={selected.public_model.lifecycle}>{selected.public_model.model_name} · {modelAxisLabel('catalog', selected.public_model.lifecycle)}</span> },
           { key: 'Deployment', value: `#${selected.deployment.id} · ${selected.deployment.upstream_model}` },
-          { key: t("Deployment 管理状态"), value: <Space><StatusTag status={selected.deployment.admin_state}>{selected.deployment.admin_state}</StatusTag><Text type="tertiary">revision {selected.deployment.config_revision}</Text></Space> },
+          { key: t("Deployment 管理状态"), value: <Space><StatusTag title={selected.deployment.admin_state} status={selected.deployment.admin_state}>{modelAxisLabel('admin', selected.deployment.admin_state)}</StatusTag><Text type="tertiary">revision {selected.deployment.config_revision}</Text></Space> },
           { key: t("连接"), value: `#${selected.connection.id} · ${selected.connection.name} · ${selected.connection.provider}` },
-          { key: t("连接管理状态"), value: <Space><StatusTag status={selected.connection.admin_state}>{selected.connection.admin_state}</StatusTag><Text type="tertiary">revision {selected.connection.config_revision}</Text></Space> },
+          { key: t("连接管理状态"), value: <Space><StatusTag title={selected.connection.admin_state} status={selected.connection.admin_state}>{modelAxisLabel('admin', selected.connection.admin_state)}</StatusTag><Text type="tertiary">revision {selected.connection.config_revision}</Text></Space> },
           { key: t("协议与 Base URL"), value: `${selected.connection.adapter_type} · ${selected.connection.base_url}` },
           { key: t("Deployment 熔断"), value: `${selected.deployment.circuit_state} · revision ${selected.deployment.circuit_revision} · failures ${selected.deployment.fail_count}` },
         ]} />
@@ -106,7 +137,7 @@ export default function ModelEndpointDetailsSheet(props: Props) {
       <Surface title={t("2 · 凭证状态")} description={t("只表示此 deployment 当前是否绑定可选凭证；不会因此把 operation 标记为探测通过。")}>
         <Space vertical align="start" style={{ width: '100%' }}>
           <Space wrap>
-            <StatusTag status={selected.credential.state}>{selected.credential.state}</StatusTag>
+            <StatusTag title={selected.credential.state} status={selected.credential.state}>{modelAxisLabel('credential', selected.credential.state)}</StatusTag>
             <Text>{t('{eligible}/{bound} 个绑定当前 eligible', { eligible: selected.credential.eligible_count, bound: selected.credential.bound_count })}</Text>
             <Text type="tertiary">reason: {selected.credential.reason_code}</Text>
           </Space>
@@ -140,7 +171,7 @@ export default function ModelEndpointDetailsSheet(props: Props) {
           { key: t("支持声明"), value: <Space><StatusTag status={operation.support_state}>{operation.support_state}</StatusTag><Text type="tertiary">operation revision {operation.revision}</Text></Space> },
           { key: t("证据状态"), value: <Space><StatusTag status={operation.evidence_state}>{operation.evidence_state}</StatusTag><Text type="tertiary">{operation.evidence_ref || t("无 evidence_ref")}</Text></Space> },
           { key: t("绑定探测汇总"), value: t('{success} 当前成功 · {failed} 当前失败 · {stale} 已失效', { success: operation.current_success_count, failed: operation.current_failure_count, stale: operation.stale_probed_binding_count }) },
-          { key: t("探测结论"), value: <Space><StatusTag status={operation.probe_state}>{operation.probe_state}</StatusTag><Text type="tertiary">{operation.probe_reason_code}</Text></Space> },
+          { key: t("探测结论"), value: <Space><StatusTag title={operation.probe_state} status={operation.probe_state}>{modelAxisLabel('probe', operation.probe_state)}</StatusTag><Text type="tertiary">{operation.probe_reason_code}</Text></Space> },
           { key: t("Exact probe 合同"), value: <Space><StatusTag status={probeAvailability.available ? 'ready' : 'missing'}>{probeAvailability.available ? 'available' : 'unavailable'}</StatusTag><Text type="tertiary">{probeAvailability.reason}</Text></Space> },
           { key: t("执行支持绑定"), value: operation.execution_support
             ? <Space wrap><Text code>{operation.execution_support.public_path}</Text><Text type="tertiary">executor {operation.execution_support.executor_contract_version}</Text></Space>
@@ -185,7 +216,7 @@ export default function ModelEndpointDetailsSheet(props: Props) {
 
       <Surface title="4 · Canonical Runtime" description={t("只展示不可变发布/slot 的当前归属；探测通过不会自动产生 runtime membership。")}>
         <Space vertical align="start">
-          <Space wrap><StatusTag status={operation.runtime.state}>{operation.runtime.state}</StatusTag><Text>{runtimeMembershipSummary(operation)}</Text></Space>
+          <Space wrap><StatusTag title={operation.runtime.state} status={operation.runtime.state}>{modelAxisLabel('runtime', operation.runtime.state)}</StatusTag><Text>{runtimeMembershipSummary(operation)}</Text></Space>
           <Text type="tertiary">operation reason: {operation.runtime.reason_code} · application runtime: {selected.runtime.state} / {selected.runtime.reason_code}</Text>
           <Space wrap>
             {props.canManage && <Button onClick={props.onOpenReleaseWorkspace}>{t("前往发布工作台")}</Button>}
@@ -204,7 +235,7 @@ export default function ModelEndpointDetailsSheet(props: Props) {
 
       <Surface title={t("5 · 调用者可调用性")} description={t("当前 read contract 没有项目、应用、Grant 或 API Key 上下文，因此不能给出最终调用授权。")}>
         <Space wrap>
-          <StatusTag status={selected.callability.state}>{selected.callability.state}</StatusTag>
+          <StatusTag title={selected.callability.state} status={selected.callability.state}>{modelAxisLabel('caller', selected.callability.state)}</StatusTag>
           <Text>{selected.callability.evaluated ? t("已针对明确调用者评估") : t("未针对调用者评估")}</Text>
           <Text type="tertiary">reason: {selected.callability.reason_code}</Text>
         </Space>

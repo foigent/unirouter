@@ -10,6 +10,14 @@ import type { readinessMessages } from './readiness';
 import type { upstreamReleaseMessages } from './upstreamRelease';
 
 export const messages = {
+  "所选时段暂无请求与费用": "No requests or costs in this period",
+  "可调整时间范围查看历史；当前部署可用状态与近期请求仍独立展示。": "Adjust the period to explore history. Current deployment availability and recent requests are shown independently.",
+  "查看模型接入": "View model connections",
+  "查看调用指南": "View integration guide",
+  "所选时段暂无趋势样本": "No trend samples in this period",
+  "有请求或费用记录后，将按同一时间范围显示两条独立趋势。": "Requests and costs will appear as separate trends over the same period when records are available.",
+  "当前时段没有可选模型；调整时间范围后可查看模型明细。": "No models in this period. Adjust the period to inspect model details.",
+
   "开源许可": "Open-source license",
   "UniRouter 使用 Apache License 2.0，无需商业 License 即可使用核心功能。": "UniRouter uses the Apache License 2.0. Core features do not require a commercial license.",
   "历史商业授权入口已退役。账号权限、项目策略、预算和模型发布校验仍然生效。": "The legacy commercial-license entry is retired. Account permissions, project policies, budgets and model release checks still apply.",
@@ -208,7 +216,7 @@ export const messages = {
   "通知中心": "Notifications",
   "运行状态": "Runtime status",
   "成本与财务": "Costs & finance",
-  "预算与成本中心": "Budgets & cost centers",
+  "结算与预算": "Settlement & budgets",
   "费率与计价": "Rates & pricing",
   "成本优化": "Cost optimization",
   "分摊与对账": "Allocation & reconciliation",

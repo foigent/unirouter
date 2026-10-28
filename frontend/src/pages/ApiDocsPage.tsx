@@ -1,4 +1,5 @@
 import '../i18n/developer';
+import { compatibilityNoteLabel } from '../features/apiDocs/compatibilityNoteLabel';
 import '../i18n/upstreamRelease';
 import { translate as t, useI18n, translateLabel, labelFor } from '../i18n';
 import { useEffect, useMemo, useState } from 'react';
@@ -635,7 +636,7 @@ export default function ApiDocsPage() {
     { title: t("运行时"), dataIndex: 'runtime_state', width: 150, render: (value: string) => <Tag color={value === 'runtime_supported' ? 'green' : value === 'protocol_compatible' ? 'blue' : 'orange'}>{contractStateLabel(value)}</Tag> },
     { title: t("证据等级"), dataIndex: 'evidence_level', width: 150, render: (value: string) => <Tag color={value === 'verified' ? 'green' : value === 'protocol_compatible' ? 'blue' : 'red'}>{contractStateLabel(value)}</Tag> },
     { title: 'POC', dataIndex: 'recommended_for_poc', width: 80, render: (value: boolean) => value ? t("推荐") : t("不推荐") },
-    { title: t("配置边界"), dataIndex: 'configuration_note' },
+    { title: t("配置边界"), dataIndex: 'configuration_note', render: (value: string) => <span title={value}>{compatibilityNoteLabel(value)}</span> },
   ];
 
   const projectSelector = projects.length > 0 ? (

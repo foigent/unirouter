@@ -225,7 +225,7 @@ describe('DashboardPage', () => {
 
     expect(await screen.findByText('财务与用量总览')).toBeTruthy();
     expect(screen.queryByText('任务入口')).toBeNull();
-    expect(screen.queryByRole('button', { name: '预算与成本中心' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '结算与预算' })).toBeNull();
     expect(screen.queryByRole('button', { name: '分摊与对账' })).toBeNull();
     expect(screen.queryByRole('button', { name: '上游通道' })).toBeNull();
     expect(screen.queryByRole('button', { name: '用户管理' })).toBeNull();

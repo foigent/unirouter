@@ -92,6 +92,8 @@ export const monitoringMessages = {
   "告警范围": "Alert scope", "项目级": "Project", "使用项目预算与预算周期": "Uses project budget and period", "触发阈值": "Trigger threshold", "项目当期已结算用量达到预算": "Settled usage reaches the project’s period budget", "事件与投递": "Events & delivery", "租户隔离": "Tenant isolated",
   "通知中心记录并按 Webhook 路由投递": "Recorded in notifications and delivered through webhook routes", "旧全局配置": "Legacy global settings", "仍在生效": "Still active", "已停用": "Disabled", "仅项目级规则生效": "Only project rules apply",
   "受限拓扑": "Observed topology", "当前进程与逻辑依赖关系；地址、主机标识和网络暴露状态不在应用内推断。": "Current process and logical dependencies. Addresses, host identity and network exposure are not inferred.",
-  "可见性": "Visibility", "网络暴露": "Network exposure", "多实例": "Multiple instances", "逻辑节点": "Logical node", "角色": "Role", "依赖关系": "Relationship", "目标": "Target", "当前运行时未返回依赖边。": "The runtime returned no dependency edges."
+  "可见性": "Visibility", "网络暴露": "Network exposure", "多实例": "Multiple instances", "逻辑节点": "Logical node", "角色": "Role", "依赖关系": "Relationship", "目标": "Target", "当前运行时未返回依赖边。": "The runtime returned no dependency edges.",
+  '7 天': '7 days',
+  '保留期限由运行时合同决定': 'Retention follows the runtime contract.',
 } as const;
 registerMessages(monitoringMessages);

@@ -415,7 +415,7 @@ try {
     assert.equal((await section(empty.page, labels.request).locator('.ur-composition-total').innerText()).trim(), '0');
     assert.equal((await section(empty.page, labels.cost).locator('.ur-composition-total').innerText()).trim(), '¥0.00');
     await empty.page.getByText(locale === 'en-US' ? 'No requests in this period' : '暂无请求', { exact: true }).waitFor();
-    assert.equal(await empty.page.locator('.recharts-area-curve').count(), expectedWindow(emptyFixture, empty.initial.url).trend.size ? 2 : 0);
+    assert.equal(await empty.page.locator('.recharts-area-curve').count(), 0, 'an empty window should not draw fabricated zero activity trends');
     await empty.page.getByText(locale === 'en-US' ? 'No samples' : '暂无样本', { exact: true }).first().waitFor();
     const zeroGeometry = [];
     for (const panel of await section(empty.page, labels.trend).locator('.ur-overview-trend').all()) {

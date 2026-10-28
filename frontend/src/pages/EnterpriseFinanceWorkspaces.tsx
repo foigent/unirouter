@@ -1253,7 +1253,7 @@ export function EnterpriseAllocationWorkspace({ orgId, canManage = false }: { or
       />
       {error ? <Banner type="danger" description={error ? `${t(error.key)}${error.detail ? `: ${error.detail}` : ''}` : undefined} style={{ marginBottom: 16 }} /> : null}
       {!periodRef && !loading ? (
-        <EmptyState title={t("尚未建立财务期间")} description={t("先在“预算与成本中心 → 企业预算控制”建立企业财务期间。")} minHeight={220} />
+        <EmptyState title={t("尚未建立财务期间")} description={t("先在“结算与预算 → 企业预算控制”建立企业财务期间。")} minHeight={220} />
       ) : (
         <>
           <div className="ur-kpi-grid">

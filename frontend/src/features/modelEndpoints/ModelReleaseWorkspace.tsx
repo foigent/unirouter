@@ -1,3 +1,4 @@
+import { modelAxisLabel } from './axisLabels';
 import '../../i18n/models';
 import { translate as t, translateLabel, useI18n } from '../../i18n';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -117,7 +118,7 @@ function AuthoringReceiptPanel({ receipt }: { receipt: CanonicalDeploymentReleas
   >
     <Descriptions row size="small" data={[
       { key: 'Release', value: <Text code>{receipt.release.release_ref}</Text> },
-      { key: t("结果"), value: <Space><StatusTag status={receipt.release.stage}>{receipt.release.stage}</StatusTag><Text>version {receipt.release.version}</Text></Space> },
+      { key: t("结果"), value: <Space><StatusTag title={receipt.release.stage} status={receipt.release.stage}>{modelAxisLabel('release', receipt.release.stage)}</StatusTag><Text>version {receipt.release.version}</Text></Space> },
       { key: 'Baseline', value: <Text code>{receipt.baseline.kind} · slot {receipt.baseline.expected_slot_version}</Text> },
       { key: t("幂等结论"), value: receipt.idempotency_replay ? t("安全重放原收据") : t("首次完成") },
       { key: t("原始 HTTP / Location"), value: <Text code>{receipt.original_http_status} · {receipt.original_location}</Text> },
@@ -599,7 +600,7 @@ export default function ModelReleaseWorkspace({
     },
     {
       title: t("阶段"), dataIndex: 'stage', width: 130,
-      render: (stage: string) => <StatusTag status={stageTone(stage)}>{stage}</StatusTag>,
+      render: (stage: string) => <StatusTag title={stage} status={stageTone(stage)}>{modelAxisLabel('release', stage)}</StatusTag>,
     },
     { title: 'Version', dataIndex: 'version', width: 100 },
     { title: 'Routes', dataIndex: 'route_items_count', width: 90 },
@@ -631,8 +632,8 @@ export default function ModelReleaseWorkspace({
 
   return <div className="ur-runtime-release-workspace">
     <Surface
-      title="Canonical Release Workspace"
-      description={t("先以服务端 baseline 和 selection options 原子生成 sealed validated release，再由服务端 action descriptors 驱动独立 lifecycle；authoring 不会自动获得流量。")}
+      title={t("模型发布工作台")}
+      description={t("创建候选发布，复核后推进发布步骤；创建候选不会自动切换流量。")}
       actions={<Space>
         <Button icon={<IconRefresh />} loading={collectionLoading} onClick={() => void refreshFacts()}>{t("刷新发布事实")}</Button>
         {canManage && <Button
@@ -646,6 +647,10 @@ export default function ModelReleaseWorkspace({
         >{t("编排新 Release")}</Button>}
       </Space>}
     >
+      <details className="ur-technical-details">
+        <summary>{t('发布校验与技术边界')}</summary>
+        <p>{t("先以服务端 baseline 和 selection options 原子生成 sealed validated release，再由服务端 action descriptors 驱动独立 lifecycle；authoring 不会自动获得流量。")}</p>
+      </details>
       {!canManage && <Banner
         type="info"
         closeIcon={null}
@@ -687,7 +692,7 @@ export default function ModelReleaseWorkspace({
       description={t("按钮是否可用、需要哪些并发字段、是否要求 Gateway License 均来自本次服务端 descriptor。")}
     >
       <Descriptions row size="small" data={[
-        { key: 'Release', value: <Space><StatusTag status={stageTone(lifecycle.release.stage)}>{lifecycle.release.stage}</StatusTag><Text>version {lifecycle.release.version}</Text></Space> },
+        { key: 'Release', value: <Space><StatusTag title={lifecycle.release.stage} status={stageTone(lifecycle.release.stage)}>{modelAxisLabel('release', lifecycle.release.stage)}</StatusTag><Text>version {lifecycle.release.version}</Text></Space> },
         { key: 'Candidate', value: <Text code>{lifecycle.release.candidate_version} · {lifecycle.release.route_items_count} routes</Text> },
         { key: 'Execution contract', value: lifecycle.release.execution_profile_id
           ? <Text code>{lifecycle.release.execution_profile_id}@{lifecycle.release.execution_profile_version} · context={lifecycle.release.public_context_limit} · output={lifecycle.release.public_output_limit}</Text>
