@@ -24,6 +24,19 @@ fixture = load('installer_fixture', ROOT / '.github/tests/community-installer.py
 bootstrap = load('actual_bootstrap', ROOT / 'deploy/community/bootstrap.py')
 
 class InstallerFixtureContract(unittest.TestCase):
+    def test_native_json_stdout_stays_separate_from_retained_startup_diagnostics(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);work=object.__new__(fixture.Acceptance)
+            work.repo,work.logs,work.env=root,root/'logs',dict(fixture.os.environ);work.logs.mkdir()
+            command=[fixture.sys.executable,'-I','-B','-c',
+                'import sys; print(\'{"native":true}\'); print("native startup diagnostic",file=sys.stderr)']
+            self.assertEqual(json.loads(work.run('actual stdout/stderr separation',command)),{'native':True})
+            self.assertEqual((work.logs/'0.log.stderr').read_text(),'native startup diagnostic\n')
+            self.assertTrue(all(path.stat().st_mode&0o777==0o600 for path in work.logs.iterdir()))
+            command[-1]='import sys; print("public stdout"); print("authored failure",file=sys.stderr);sys.exit(7)'
+            code,output=work.run('retain both failed streams',command,ok=False)
+            self.assertEqual(code,7);self.assertIn('public stdout',output);self.assertIn('authored failure',output)
+
     def test_workflow_covers_selector_and_shared_first_use_inputs(self):
         # A change to an imported selector/assertion must exercise the real
         # native fixture, even when its main driver is otherwise unchanged.

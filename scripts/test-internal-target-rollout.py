@@ -1256,8 +1256,8 @@ class ArtifactOwnerReadFixtureTests(unittest.TestCase):
         bridge,current=self.load_carrier().carrier_read_ledgers(migrations)
         self.assertEqual(bridge[0],"maintenance_predecessor")
         self.assertEqual(current[0],"current")
-        self.assertEqual(bridge[1][-1],"000126_commercial_license_retirement")
-        self.assertEqual(current[1][-1],"000127_xinsight_communication_policy")
+        self.assertEqual(bridge[1][-1],"000127_xinsight_communication_policy")
+        self.assertEqual(current[1][-1],"000128_upstream_release_observation")
         self.assertEqual(current[1],sorted(p.name[:-7] for p in migrations.glob("*.up.sql")))
         self.assertEqual(bridge[1],current[1][:-1])
 

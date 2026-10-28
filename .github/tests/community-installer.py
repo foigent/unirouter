@@ -138,12 +138,15 @@ class Acceptance:
         self.phase = label
         print("Native installer: " + label, flush=True)
         name = str(len(list(self.logs.iterdir()))) + ".log"
-        with (self.logs / name).open("xb") as log:
+        error_path = self.logs / (name + ".stderr")
+        with (self.logs / name).open("xb") as log, error_path.open("xb") as errors:
             os.chmod(self.logs / name, 0o600)
+            os.chmod(error_path, 0o600)
             result = subprocess.run([str(a) for a in args], cwd=self.repo,
                                     env=env or self.env, input=data, stdout=log,
-                                    stderr=subprocess.STDOUT, timeout=timeout)
-        output = (self.logs / name).read_text(errors="replace")
+                                    stderr=errors, timeout=timeout)
+        stdout = (self.logs / name).read_text(errors="replace")
+        output = stdout + error_path.read_text(errors="replace")
         if result.returncode != 0 and hasattr(self, "release") and str(self.release / "payload/deploy/install.py") in [str(a) for a in args]:
             # install.py guarantees this line contains only its authored error
             # or a parser/system exception class, never secret-bearing child output.
@@ -152,7 +155,9 @@ class Acceptance:
                 self.result["installer_stop"] = stopped[-1]
         if ok:
             require(result.returncode == 0, label + " failed")
-        return output if ok else (result.returncode, output)
+        # Native CLI JSON belongs to stdout; startup diagnostics remain private
+        # on stderr. Failure classification still sees both original streams.
+        return stdout if ok else (result.returncode, output)
 
     def passed(self, label):
         self.result["checks"].append(label)
