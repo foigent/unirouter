@@ -52,6 +52,14 @@ class OfflineTar:
 
 
 class UpgradeBoundaryTests(unittest.TestCase):
+    @staticmethod
+    def mount_inventory():
+        return [{"Type": "bind", "Source": "/synthetic/content", "Destination": "/content",
+                 "Mode": "rw", "RW": True, "Propagation": "rprivate",
+                 "Unknown": {"options": ["first", "second"], "binding": {"a": 1, "b": 2}}},
+                {"Type": "volume", "Name": "synthetic-logs", "Source": "/synthetic/logs",
+                 "Destination": "/app/logs", "Driver": "local", "Mode": "z", "RW": True, "Propagation": ""}]
+
     def setUp(self):
         self.installer = I.InstallerTests(methodName="test_check_is_read_only")
         self.installer.setUp()
@@ -67,6 +75,29 @@ class UpgradeBoundaryTests(unittest.TestCase):
         self.assertEqual("not_started", result["state"])
         self.assertEqual(before, {str(p): p.read_bytes() for p in self.installer.directory.rglob("*") if p.is_file()})
         self.assertNotIn("source_state", result)
+
+    def test_mount_inventory_ignores_only_top_level_record_order(self):
+        original = self.mount_inventory()
+        reordered = copy.deepcopy(original[::-1])
+        before = M.canonical(original), M.canonical(reordered)
+        self.assertTrue(M.same_mounts(original, reordered))
+        self.assertEqual(before, (M.canonical(original), M.canonical(reordered)))
+        self.assertTrue(M.same_mounts(original + original[:1], original[:1] + reordered))
+        self.assertTrue(M.same_mounts([], []))
+        mutations = [(0, "Type", "volume"), (0, "Source", "/different/source"),
+                     (0, "Destination", "/different/destination"), (0, "Mode", "ro"),
+                     (0, "RW", False), (0, "RW", 1), (0, "Propagation", "rshared"),
+                     (1, "Name", "another-volume"), (1, "Driver", "another-driver"),
+                     (0, "Unknown", {"options": ["second", "first"], "binding": {"a": 1, "b": 2}}),
+                     (0, "Additional", "new-field")]
+        for index, key, value in mutations:
+            changed = copy.deepcopy(reordered)
+            changed[1 - index][key] = value
+            with self.subTest(field=key, value=value):
+                self.assertFalse(M.same_mounts(original, changed))
+        for changed in (original[:1], original + original[:1], [original[0], original[0]], None, (), "", [None]):
+            with self.subTest(inventory=changed):
+                self.assertFalse(M.same_mounts(original, changed))
 
     def test_claim_retains_original_bytes_and_revokes_old_package_binding(self):
         installation = M.Installation(self.installer.directory, self.installer.fake.run)
@@ -466,6 +497,19 @@ class WholeUpgradeTests(unittest.TestCase):
     setUp = UpgradeBoundaryTests.setUp
     running_fixture = UpgradeBoundaryTests.running_fixture
     fixture = staticmethod(UpgradeBoundaryTests.fixture)
+    mount_inventory = staticmethod(UpgradeBoundaryTests.mount_inventory)
+
+    def mounted_host(self, count):
+        operation, state, calls, bind = self.host(count)
+        inventory = self.mount_inventory()
+        for index, name in enumerate(("mounted-content", "mounted-logs")):
+            root = operation.directory / name
+            root.mkdir(mode=0o700)
+            (root / "synthetic.bin").write_bytes(b"retained mount content\n")
+            (root / "synthetic.bin").chmod(0o600)
+            inventory[index]["Source"] = str(root)
+        for row in state.resources.values(): row["Mounts"] = copy.deepcopy(inventory)
+        return operation, state, calls, bind
 
     def host(self, count):
         operation, state, calls = self.running_fixture(count)
@@ -683,6 +727,92 @@ class WholeUpgradeTests(unittest.TestCase):
                 self.assertLess(labels.index("restore cold dump into independent database"), labels.index("native upgrade owner: migrate up"))
                 self.assertEqual(1, state.native_calls.count(["migrate", "up"]))
                 self.assertEqual(1, sum(argv[:2] == ["upgrade", "record-applied"] for argv in state.native_calls))
+
+    def test_reordered_mounts_survive_whole_upgrade_interruption_and_resume_without_rewriting_witness(self):
+        for count in (1, 2):
+            for interrupted in (False, True):
+                with self.subTest(writers=count, interrupted=interrupted):
+                    operation, state, calls, bind = self.mounted_host(count)
+                    original_run = operation.run
+                    reads, reordered_reads, retained = {}, [], []
+                    def reorder(args, *, label, input=None):
+                        result = original_run(args, label=label, input=input)
+                        if label == "inspect owned upgrade resource":
+                            rows = M.install.strict_json(result)
+                            for row in rows:
+                                key = row["Id"]; reads[key] = reads.get(key, 0) + 1
+                                if reads[key] % 2 == 0:
+                                    row["Mounts"].reverse(); reordered_reads.append(key)
+                            return json.dumps(rows)
+                        return result
+                    def checkpoint(point):
+                        if point == "started:prepare-withdrawal":
+                            retained.append(M.canonical(operation.witness["source_containers"]))
+                        if interrupted and point == "effect:cold-pair": raise Interrupted()
+                    operation.run, operation.test_checkpoint = reorder, checkpoint
+                    with patch.object(M.shutil, "disk_usage", return_value=SimpleNamespace(free=32 << 30)):
+                        if interrupted:
+                            with self.assertRaises(Interrupted): operation.execute()
+                            resumed = M.Upgrade(operation.directory, operation.release.directory, operation.verifier,
+                                operation.public_keys, layout=operation.layout, edge_directory=operation.edge_directory, run=reorder)
+                            bind(resumed); resumed.run = reorder
+                            self.assertEqual("completed", resumed.execute(resume=True)["state"])
+                            operation = resumed
+                        else:
+                            self.assertEqual("completed", operation.execute()["state"])
+                        self.assertTrue(reordered_reads)
+                        self.assertEqual([M.canonical(operation.witness["source_containers"])], retained)
+                        completed = M.Upgrade(operation.directory, operation.release.directory, operation.verifier,
+                            operation.public_keys, layout=operation.layout, edge_directory=operation.edge_directory, run=reorder)
+                        bind(completed); completed.run = reorder
+                        self.assertEqual("completed", completed.execute(resume=True)["state"])
+                        self.assertEqual(retained[0], M.canonical(completed.witness["source_containers"]))
+
+    def test_all_six_mount_guards_reject_real_record_or_resource_identity_drift(self):
+        stages = [("acquisition", "native upgrade owner: runtime-generation support", "backend", 1),
+                  ("before-stop", "started:stop-backend", "backend", 1),
+                  ("after-stop", "gracefully stop exact source backend", "backend", 1),
+                  ("new-writer", "start exact candidate writers", "backend", 1),
+                  ("new-frontend", "start exact candidate frontend", "frontend", 1),
+                  ("edge", "start retained named edge", "edge", 2)]
+        for stage, trigger, role, count in stages:
+            for drift in ("source", "read-only", "propagation", "container", "image"):
+                with self.subTest(stage=stage, drift=drift):
+                    operation, state, calls, _ = self.mounted_host(count)
+                    original_run = operation.run
+                    armed, observed = [], []
+                    target = "uniroute-nginx" if role == "edge" else "fixture-ur-" + role + "-1"
+                    def inspect_drift(args, *, label, input=None):
+                        result = original_run(args, label=label, input=input)
+                        if label == trigger: armed.append(True)
+                        if armed and label == "inspect owned upgrade resource":
+                            rows = M.install.strict_json(result)
+                            if rows[0]["Id"] == state.resources[target]["Id"]:
+                                row = rows[0]; observed.append(True)
+                                if drift == "source": row["Mounts"][0]["Source"] = "/replacement/content"
+                                elif drift == "read-only": row["Mounts"][0]["RW"] = False
+                                elif drift == "propagation": row["Mounts"][0]["Propagation"] = "rshared"
+                                elif drift == "image": row["Image"] = "sha256:" + "f" * 64
+                                else: row["Id"] = operation.containers[role]["Id"] if stage in ("new-writer", "new-frontend") else "unexpected-container"
+                                return json.dumps(rows)
+                        return result
+                    def checkpoint(point):
+                        if point == trigger: armed.append(True)
+                    operation.run, operation.test_checkpoint = inspect_drift, checkpoint
+                    with patch.object(M.shutil, "disk_usage", return_value=SimpleNamespace(free=32 << 30)):
+                        with self.assertRaises(M.install.InstallError): operation.execute()
+                    self.assertTrue(armed); self.assertTrue(observed)
+                    self.assertNotEqual("completed", operation.witness["state"])
+                    if stage in ("acquisition", "before-stop", "after-stop"):
+                        self.assertFalse(any(argv[:2] == ["upgrade", "maintenance-retire"] for argv in state.native_calls))
+                    if stage == "acquisition":
+                        self.assertFalse(any(label.startswith("gracefully stop") for label, _ in calls))
+                    if stage == "before-stop":
+                        self.assertFalse(any(label == "gracefully stop exact source backend" for label, _ in calls))
+                    if stage == "new-writer":
+                        self.assertFalse(any(argv[:2] == ["upgrade", "record-applied"] for argv in state.native_calls))
+                    if stage in ("new-frontend", "edge"):
+                        self.assertNotIn("admit-receivers", operation.witness["done"])
 
     def test_historical_union_freezes_originals_and_resumes_both_termination_kinds(self):
         for count, kind in ((1, "process_exit"), (2, "native_replacement")):

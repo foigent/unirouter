@@ -45,6 +45,13 @@ def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
 
 
+def same_mounts(observed, expected):
+    """Docker's top-level mount inventory has no order; every record is exact."""
+    return (isinstance(observed, list) and isinstance(expected, list)
+            and all(isinstance(row, dict) for row in observed + expected)
+            and sorted(canonical(row) for row in observed) == sorted(canonical(row) for row in expected))
+
+
 def read_private(path, maximum=install.MAX_METADATA):
     mode = install.regular(path).stat()
     require(mode.st_uid == os.geteuid() and stat.S_IMODE(mode.st_mode) == 0o600,
@@ -652,7 +659,8 @@ class Upgrade(Installation):
                 "Effective source or ingress configuration changed during candidate acquisition")
         for role, expected in expected_containers.items():
             current = self.containers[role]
-            require(all(current.get(key, []) == expected.get(key, []) for key in ("Id", "Image", "Mounts")),
+            require(all(current.get(key, []) == expected.get(key, []) for key in ("Id", "Image"))
+                    and same_mounts(current.get("Mounts", []), expected.get("Mounts", [])),
                     "Exact source process/resource changed during candidate acquisition")
         head = self._head(self.metadata)
         actual_head = None if head is None else {key: head.get(key) for key in ("change_id", "status", "desired_config_digest", "membership_after")}
@@ -827,7 +835,7 @@ class Upgrade(Installation):
         after = self.inspect(intent["container_id"])
         state = after["State"]
         require(after["Id"] == intent["container_id"] and after["Image"] == intent["image"]
-                and after.get("Mounts", []) == intent["mounts"], "Original stopped resource identity changed")
+                and same_mounts(after.get("Mounts", []), intent["mounts"]), "Original stopped resource identity changed")
         if state["Running"]:
             return None
         require(state.get("Pid") == 0 and state.get("ExitCode") == 0 and not state.get("OOMKilled"),
@@ -840,7 +848,7 @@ class Upgrade(Installation):
         container = self.containers[role]
         observed = self.inspect(container["Id"])
         require(observed["Id"] == container["Id"] and observed["Image"] == container["Image"]
-                and observed["State"]["Running"] and observed.get("Mounts", []) == container.get("Mounts", []),
+                and observed["State"]["Running"] and same_mounts(observed.get("Mounts", []), container.get("Mounts", [])),
                 "Exact source resource changed before graceful stop")
         intent = {"container_id": container["Id"], "image": container["Image"],
                   "mounts": container.get("Mounts", []), "old_processes": self._process_proof(container["Id"])}
@@ -1235,7 +1243,7 @@ class Upgrade(Installation):
                 require(not row["State"]["Running"], "An original writer was restarted")
                 return _NOT_STARTED if not found else None
             require(row["Image"] == self.witness["candidate_image"]["id"]
-                    and row.get("Mounts", []) == self.containers[role].get("Mounts", []), "New writer image or mounts differ")
+                    and same_mounts(row.get("Mounts", []), self.containers[role].get("Mounts", [])), "New writer image or mounts differ")
             if not row["State"]["Running"] or row["State"].get("Health", {}).get("Status") != "healthy":
                 return None
             labels = row.get("Config", {}).get("Labels", {})
@@ -1319,13 +1327,13 @@ class Upgrade(Installation):
         if front["Id"] == self.containers["frontend"]["Id"]:
             require(not front["State"]["Running"], "An old frontend was restarted")
             return _NOT_STARTED
-        require(front["Image"] == self.witness["frontend_image"]["id"] and front.get("Mounts", []) == self.containers["frontend"].get("Mounts", []), "Candidate frontend image or mounts differ")
+        require(front["Image"] == self.witness["frontend_image"]["id"] and same_mounts(front.get("Mounts", []), self.containers["frontend"].get("Mounts", [])), "Candidate frontend image or mounts differ")
         if not front["State"]["Running"] or front["State"].get("Health", {}).get("Status") != "healthy":
             return None
         if self.edge_compose:
             edge = self.inspect("uniroute-nginx")
             require(edge["Id"] == self.containers["edge"]["Id"] and edge["Image"] == self.containers["edge"]["Image"]
-                    and edge.get("Mounts", []) == self.containers["edge"].get("Mounts", []), "Named edge ownership changed")
+                    and same_mounts(edge.get("Mounts", []), self.containers["edge"].get("Mounts", [])), "Named edge ownership changed")
             if not edge["State"]["Running"]:
                 return None
         require(self._ingress_config() == base64.b64decode(self.witness["ingress_config"]), "Resumed ingress configuration differs")
