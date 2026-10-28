@@ -5,6 +5,7 @@ import copy
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tarfile
@@ -377,6 +378,57 @@ class FrontendEvidenceBoundaryTests(unittest.TestCase):
 
 
 class LocalInputTests(unittest.TestCase):
+    def test_actual_stage_module_and_main_dispatch_reach_only_validated_boundary(self):
+        stages = H.module('real_stage_contract', HERE/'community-stage-record.py')
+        fixture = types.ModuleType('fixture_stage_data')
+        fixture.__file__ = str(HERE/'community-stage-fixtures.py')
+        exec(compile(Path(fixture.__file__).read_bytes(), fixture.__file__, 'exec'), fixture.__dict__)
+        class PublicEnvironment(dict):
+            def get(self, key, *default):
+                if key == 'GITHUB_TOKEN': raise AssertionError('token read before validation')
+                return super().get(key, *default)
+            def pop(self, key, *default):
+                if key == 'GITHUB_TOKEN': raise AssertionError('token exposed before validation')
+                return super().pop(key, *default)
+            def __getitem__(self, key):
+                if key == 'GITHUB_TOKEN': raise AssertionError('token copied before validation')
+                return super().__getitem__(key)
+        for invalid in (False, True):
+            with self.subTest(invalid=invalid), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp); event = root/'event.json'; record = fixture.producer()
+                inputs = dict(stages.encode(record), expected_workflow_commit=PRODUCER, admission_sha256='d'*64)
+                if invalid: inputs['stage_record_sha256'] = '0'*64
+                H.write_new(event, H.encoded({'repository': {'id': H.REPO_ID, 'full_name': H.REPO},
+                    'sender': {'id': H.ACTOR_ID}, 'inputs': inputs}))
+                env = PublicEnvironment({'RUNNER_TEMP': tmp, 'GITHUB_RUN_ID': '123', 'GITHUB_EVENT_PATH': str(event),
+                    'EXPECTED_WORKFLOW_COMMIT': PRODUCER, 'GITHUB_SHA': PRODUCER,
+                    'GITHUB_WORKFLOW_SHA': PRODUCER, 'GITHUB_REPOSITORY': H.REPO,
+                    'GITHUB_REPOSITORY_ID': str(H.REPO_ID), 'GITHUB_EVENT_NAME': 'workflow_dispatch',
+                    'GITHUB_REF': 'refs/heads/main', 'GITHUB_RUN_ATTEMPT': '1', 'GITHUB_ACTOR_ID': str(H.ACTOR_ID),
+                    'GITHUB_WORKFLOW_REF': H.REPO+'/'+H.WORKFLOW+'@refs/heads/main',
+                    'RUNNER_ENVIRONMENT': 'github-hosted', 'RUNNER_OS': 'Linux', 'RUNNER_ARCH': 'X64',
+                    'ADMISSION_SHA256': inputs['admission_sha256'], 'STAGE_RECORD_B64': inputs['stage_record_b64'],
+                    'STAGE_RECORD_SHA256': inputs['stage_record_sha256'], 'GITHUB_TOKEN': 'SYNTHETIC'})
+                with patch.object(os, 'environ', env), patch.object(sys, 'argv', [H.__file__]), \
+                     patch.object(H, 'bound_inputs', side_effect=H.Stop('validated_record_boundary')) as boundary, \
+                     patch.object(H, 'GitHub', side_effect=AssertionError('external client before validation')) as client, \
+                     patch.object(H, 'initialize_guard', side_effect=AssertionError('tool owner before validation')) as tools, \
+                     patch.object(subprocess, 'run', side_effect=AssertionError('subprocess before validation')), \
+                     patch.object(H.urllib.request, 'urlopen', side_effect=AssertionError('network before validation')):
+                    self.assertEqual(1, H.main())
+                self.assertEqual(0 if invalid else 1, boundary.call_count)
+                client.assert_not_called(); tools.assert_not_called()
+                self.assertFalse((root/'ur-byte-candidate-123-attempt1').exists())
+                terminal = H.load(H.regular(H.terminal_path(env), 64*1024))
+                self.assertEqual('Stop' if invalid else 'validated_record_boundary', terminal['error'])
+
+    def test_stage_program_digest_is_required_before_loading(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            changed = Path(tmp)/'community-stage-record.py'
+            changed.write_bytes((HERE/changed.name).read_bytes()+b'\n# unreviewed change\n')
+            with self.assertRaisesRegex(H.Stop, 'observer_identity'):
+                H.module('tampered_stage', changed)
+
     def test_notice_reuse_keeps_historical_observation_separate_from_current_product(self):
         _, index = H.bound_inputs()
         self.assertEqual(index['product_source']['commit'], H.PRODUCT)
@@ -409,13 +461,25 @@ class LocalInputTests(unittest.TestCase):
                 cleanup=lambda: None, receipt={'commands': [{'phase': 'one retained backend build',
                     'status': 'failed', 'exit_code': 2}], 'cleanup': []})
             transport = FakeHTTP(); client = H.GitHub
-            def initialize(g, work, env): g.work = work
+            def initialize(g, work, env, stage_record=None): g.work = work
+            stages = H.module('fixture_stage_contracts', HERE/'community-stage-record.py')
+            fixture = types.ModuleType('fixture_stage_data'); fixture.__file__=str(HERE/'community-stage-fixtures.py')
+            exec(compile(Path(fixture.__file__).read_bytes(),fixture.__file__,'exec'),fixture.__dict__)
+            record = fixture.producer()
+            def bind(subject,files,images): guard.FIXED={'source':subject,'source_files':files,'images':images}
+            guard.configure_stage_inputs=bind
+            def modules(name,path):
+                if name=='community_stage_contract': return types.SimpleNamespace(read_dispatch=lambda stage:(stages.canonical(record),record,{}))
+                if name=='accepted_byte_guards': return guard
+                if name=='accepted_source_observer': return types.SimpleNamespace(configure_stage_inputs=lambda fixed:None)
+                return None
             def fail(*args): reference.require(False, 'DO_NOT_RETAIN /private/path https://signed.example/?secret=x')
             with patch.dict(os.environ, env, clear=True), patch.object(sys, 'argv', [H.__file__]), \
                  patch.object(H, 'initialize_guard', side_effect=initialize), \
                  patch.object(H, 'frontend_input_preflight', return_value=None), \
+                 patch.object(H, 'bound_inputs', return_value=('synthetic-ring',{})), \
                  patch.object(H, 'prepare_source_inputs', return_value=None), \
-                 patch.object(H, 'module', side_effect=lambda name, path: guard if name == 'accepted_byte_guards' else None), \
+                 patch.object(H, 'module', side_effect=modules), \
                  patch.object(H, 'GitHub', side_effect=lambda token, guard: client(token, transport)), \
                  patch.object(H, 'build', side_effect=fail):
                 self.assertEqual(H.main(), 1)
@@ -608,105 +672,49 @@ class LocalInputTests(unittest.TestCase):
 class ActualFrontendBindingTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.originals = {}
-        fixed = H.ROOT/('.byte-source-'+H.PRODUCT[:8])
-        for name in ('package.json', 'package-lock.json'):
-            if fixed.is_dir():
-                body = H.regular(fixed/'frontend'/name, H.MIB)
-            else:
-                # Native producer has the exact fixed checkout; ordinary CI has
-                # full history. Neither path downloads or invents source inputs.
-                env = dict(os.environ, GIT_NO_LAZY_FETCH='1', GIT_TERMINAL_PROMPT='0')
-                result = subprocess.run(['git', '-C', str(H.ROOT), 'show',
-                                         H.PRODUCT+':frontend/'+name], env=env,
-                                        capture_output=True, check=True)
-                body = result.stdout
-            cls.originals[name] = body
+        # Current stage inputs come from the actual source tree. A new shallow
+        # checkout need not fetch a historical product commit to run these tests.
+        cls.originals={name:H.regular(H.ROOT/'frontend'/name,H.MIB) for name in ('package.json','package-lock.json')}
 
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='ur-real-observer-binding-')
-        self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
-        self.source = self.root/'fixed-source'
-        for name, body in self.originals.items():
-            H.write_new(self.source/'frontend'/name, body)
-        for name in ('frontend-membership-observer.mjs', 'community-source-evidence.py'):
-            H.write_new(self.root/'.github/tests'/name, (HERE/name).read_bytes())
+        self.temp=tempfile.TemporaryDirectory(prefix='ur-stage-frontend-binding-');self.addCleanup(self.temp.cleanup)
+        self.root=Path(self.temp.name);self.source=self.root/'source'
+        for name,raw in self.originals.items():H.write_new(self.source/'frontend'/name,raw)
+        for name in ('frontend-membership-observer.mjs','community-source-evidence.py'):
+            H.write_new(self.root/'.github/tests'/name,(HERE/name).read_bytes())
+        self.fixed={'source':{'commit':'a'*40,'tree':'b'*40,'version':json.loads(self.originals['package.json'])['version']},
+                    'source_files':{'frontend/'+name:{'sha256':H.sha(raw),'bytes':len(raw)} for name,raw in self.originals.items()}}
 
-    def check(self):
-        return H.frontend_input_preflight(self.root, self.source)
+    def check(self):return H.frontend_input_preflight(self.root,self.source,self.fixed)
 
-    def test_actual_fixed_source_and_real_cross_file_bindings_pass(self):
-        value = self.check()
-        self.assertEqual(value['source_commit'], H.PRODUCT)
-        self.assertEqual(value['original_file_sha256'],
-                         {name: H.sha(body) for name, body in self.originals.items()})
+    def test_actual_current_source_and_program_pins_pass(self):
+        result=self.check();self.assertEqual('a'*40,result['source_commit'])
+        self.assertEqual({name:H.sha(raw) for name,raw in self.originals.items()},result['original_file_sha256'])
 
-    def test_native_fixed_checkout_path_uses_actual_originals(self):
-        for name, body in self.originals.items():
-            H.write_new(self.root/('.byte-source-'+H.PRODUCT[:8])/'frontend'/name, body)
-        self.assertEqual(H.frontend_input_preflight(self.root), self.check())
-
-    def test_each_real_original_tamper_rejected(self):
-        for name, body in self.originals.items():
+    def test_each_current_original_tamper_rejected(self):
+        for name,raw in self.originals.items():
             with self.subTest(name=name):
-                path = self.source/'frontend'/name
-                path.write_bytes(body+b' ')
-                with self.assertRaisesRegex(H.Stop, 'frontend_original_input_identity'): self.check()
-                path.write_bytes(body)
+                path=self.source/'frontend'/name;path.write_bytes(raw+b' ')
+                with self.assertRaisesRegex(H.Stop,'frontend_original_input_identity'):self.check()
+                path.write_bytes(raw)
 
     def test_symlink_original_rejected(self):
-        path = self.source/'frontend/package.json'
-        copy = self.root/'original.json'; H.write_new(copy, path.read_bytes())
-        path.unlink(); path.symlink_to(copy)
-        with self.assertRaisesRegex(H.Stop, 'regular_file_limit'): self.check()
+        path=self.source/'frontend/package.json';copy_path=self.root/'copy.json';H.write_new(copy_path,path.read_bytes())
+        path.unlink();path.symlink_to(copy_path)
+        with self.assertRaisesRegex(H.Stop,'regular_file_limit'):self.check()
 
-    def test_rehashed_observer_with_stale_source_is_still_rejected(self):
-        path = self.root/'.github/tests/frontend-membership-observer.mjs'
-        path.write_text(path.read_text().replace("const sourceCommit = '"+H.PRODUCT,
-                                               "const sourceCommit = '"+'b'*40))
-        with patch.dict(H.BOUND, {'frontend-membership-observer.mjs': H.sha(path.read_bytes())}):
-            with self.assertRaisesRegex(H.Stop, 'frontend_observer_source'): self.check()
+    def test_current_requested_version_or_hash_drift_is_rejected(self):
+        for kind in ('version','package','lock'):
+            with self.subTest(kind=kind):
+                fixed=copy.deepcopy(self.fixed)
+                if kind=='version':fixed['source']['version']='0.0.0'
+                else:fixed['source_files']['frontend/'+('package.json' if kind=='package' else 'package-lock.json')]['sha256']='0'*64
+                with self.assertRaises(H.Stop):H.frontend_input_preflight(self.root,self.source,fixed)
 
-    def test_rehashed_observer_with_wrong_original_pin_is_still_rejected(self):
-        path = self.root/'.github/tests/frontend-membership-observer.mjs'
-        current = H.sha(self.originals['package.json'])
-        self.assertEqual(path.read_text().count(current), 1)
-        path.write_text(path.read_text().replace(current, '0'*64))
-        with patch.dict(H.BOUND, {'frontend-membership-observer.mjs': H.sha(path.read_bytes())}):
-            with self.assertRaisesRegex(H.Stop, 'frontend_original_input_identity'): self.check()
+    def test_program_bytes_are_pinned_separately_from_product_data(self):
+        path=self.root/'.github/tests/frontend-membership-observer.mjs';path.write_bytes(path.read_bytes()+b'\n// synthetic unreviewed program change\n')
+        with self.assertRaisesRegex(H.Stop,'frontend_observer_identity'):self.check()
 
-    def test_rehashed_helper_with_conflicting_source_is_still_rejected(self):
-        path = self.root/'.github/tests/community-source-evidence.py'
-        self.assertIn(H.PRODUCT, path.read_text())
-        path.write_text(path.read_text().replace(H.PRODUCT, 'b'*40))
-        with patch.dict(H.BOUND, {'community-source-evidence.py': H.sha(path.read_bytes())}):
-            with self.assertRaisesRegex(H.Stop, 'frontend_helper_binding'): self.check()
-
-    def test_rehashed_duplicate_observer_source_binding_rejected(self):
-        path = self.root/'.github/tests/frontend-membership-observer.mjs'
-        path.write_text(path.read_text()+"\nconst sourceCommit = '"+H.PRODUCT+"';\n")
-        with patch.dict(H.BOUND, {'frontend-membership-observer.mjs': H.sha(path.read_bytes())}):
-            with self.assertRaisesRegex(H.Stop, 'frontend_observer_binding'): self.check()
-
-    def test_failed_preflight_precedes_work_tools_and_remote_writes(self):
-        event = self.root/'event.json'; H.write_new(event, b'{}')
-        env = {'RUNNER_TEMP': str(self.root), 'GITHUB_RUN_ID': '77',
-               'GITHUB_EVENT_PATH': str(event), 'GITHUB_TOKEN': 'SYNTHETIC_UNUSED'}
-        (self.source/'frontend/package.json').write_bytes(self.originals['package.json']+b' ')
-        actual_preflight = H.frontend_input_preflight
-        with patch.dict(os.environ, env, clear=True), patch.object(sys, 'argv', [H.__file__]), \
-             patch.object(H, 'runtime_identity', return_value=PRODUCER), \
-             patch.object(H, 'bound_inputs', return_value=('ring', {})), \
-             patch.object(H, 'frontend_input_preflight', side_effect=lambda: actual_preflight(self.root, self.source)), \
-             patch.object(H, 'module', side_effect=AssertionError('tool loading forbidden')), \
-             patch.object(H, 'initialize_guard', side_effect=AssertionError('Docker forbidden')), \
-             patch.object(H, 'GitHub', side_effect=AssertionError('remote API forbidden')):
-            self.assertEqual(H.main(), 1)
-        self.assertFalse((self.root/'ur-byte-candidate-77-attempt1').exists())
-        terminal = H.load(H.regular(H.terminal_path(env), 64*1024))
-        self.assertEqual(terminal['error'], 'frontend_original_input_identity')
-        self.assertIsNone(terminal['draft_id']); self.assertEqual(terminal['assets'], [])
 
 
 class FullBackendBuildTests(unittest.TestCase):
@@ -725,14 +733,19 @@ class FullBackendBuildTests(unittest.TestCase):
         H.write_new(self.back, b'FROM fixed-backend'); H.write_new(self.front, b'FROM fixed-frontend')
         self.binary = self.root/'synthetic-backend'; H.write_new(self.binary, b'synthetic-backend')
         self.ring = 'synthetic-public-ring-only'
+        self.compiler,self.node,self.npm='1.25.12','24.19.0','11.17.0'
+        H.write_new(self.source/'go.mod',b'module synthetic\n\ntoolchain go1.25.12\n')
+        H.write_new(self.source/'frontend/package.json',H.encoded({'engines':{'node':self.node,'npm':self.npm},'packageManager':'npm@'+self.npm}))
         self.calls = []; self.retained = []; self.saved = []; self.pulls = []
         self.bad_buildinfo = False; self.bad_notice = False; self.bad_front = False
-        self.old_backend = False; self.non_release_trust = False
+        self.old_backend = False; self.non_release_trust = False; self.actual_compiler = None
         self.layers = ['sha256:'+'2'*64]
         self.guard = types.SimpleNamespace(work=self.root, run_id='77',
-            FIXED={'images': {role+'-runtime': {'rootfs_diff_ids': self.layers} for role in ('backend','frontend')}},
+            FIXED={'source': {'commit':H.PRODUCT,'tree':H.TREE,'version':'1.14.2'}, 'images': {role+'-runtime': {'rootfs_diff_ids': self.layers} for role in ('backend','frontend')}},
             receipt={'images': {}, 'source_export': {'commit': H.PRODUCT}, 'commands': []},
             docker=self.docker, pull=self.pull, tool=self.tool, inspect_image=self.inspect)
+        self.guard.FIXED['images'].update({'backend-builder':{'version_clues':{'GOLANG_VERSION':self.compiler}},
+            'frontend-builder':{'version_clues':{'NODE_VERSION':self.node}}})
 
     def pull(self, role):
         self.pulls.append(role); return role
@@ -746,15 +759,15 @@ class FullBackendBuildTests(unittest.TestCase):
         self.guard.receipt['images'][role] = {'id': ref, 'rootfs_diff_ids': self.layers}
 
     def tool(self, label, *args):
-        if label == 'byte-go-version': return 'go version go1.25.12 linux/amd64'
-        if label == 'byte-node-version': return 'v24.19.0\n11.17.0'
+        if label == 'byte-go-version': return 'go version go'+(self.actual_compiler or self.compiler)+' linux/amd64'
+        if label == 'byte-node-version': return 'v'+self.node+'\n'+self.npm
         self.assertEqual(label, 'actual-backend-buildinfo')
-        version = '1.13.0' if self.old_backend else '1.14.2'
+        version = '1.13.0' if self.old_backend else self.guard.FIXED['source']['version']
         commit = ('9e0240c68a20deebf9bcd0e2cc7b58034d09b696' if self.old_backend else
-                  '0'*40 if self.bad_buildinfo else H.PRODUCT)
-        return ('go1.25.12 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 '
+                  '0'*40 if self.bad_buildinfo else self.guard.FIXED['source']['commit'])
+        return ('go'+self.compiler+' CGO_ENABLED=0 GOOS=linux GOARCH=amd64 '
             'main.buildVersion='+version+' main.buildCommit='+commit+
-            ' main.buildTree='+H.TREE+
+            ' main.buildTree='+self.guard.FIXED['source']['tree']+
             ' github.com/uniroute/unirouter/internal/releasetrust.buildMode='+('development' if self.non_release_trust else 'release')+
             ' github.com/uniroute/unirouter/internal/releasetrust.embeddedUpgradeKeyRingBase64='+self.ring)
 
@@ -798,6 +811,34 @@ class FullBackendBuildTests(unittest.TestCase):
         self.assertIn('VITE_APP_VERSION=1.14.2', self.calls[1][1])
         self.assertTrue((self.data/'actual-component-bindings.json').exists())
 
+    def assert_current_build(self,version,commit,tree):
+        self.guard.FIXED['source']={'version':version,'commit':commit,'tree':tree}
+        self.build()
+        for value in ('RUNTIME_VERSION='+version,'RUNTIME_COMMIT='+commit,'RUNTIME_TREE='+tree):
+            self.assertIn(value,self.calls[0][1])
+        self.assertIn('VITE_APP_VERSION='+version,self.calls[1][1])
+
+    def test_actual_builder_consumes_current_source_1150(self):
+        self.assert_current_build('1.15.0','a'*40,'c'*40)
+
+    def test_actual_builder_consumes_second_source_without_program_edits(self):
+        self.compiler,self.node,self.npm='1.25.13','24.20.0','11.17.1'
+        (self.source/'go.mod').write_text('module synthetic\n\ntoolchain go'+self.compiler+'\n')
+        (self.source/'frontend/package.json').write_bytes(H.encoded({'engines':{'node':self.node,'npm':self.npm},'packageManager':'npm@'+self.npm}))
+        self.guard.FIXED['images']['backend-builder']['version_clues']['GOLANG_VERSION']=self.compiler
+        self.guard.FIXED['images']['frontend-builder']['version_clues']['NODE_VERSION']=self.node
+        self.assert_current_build('1.15.1','b'*40,'d'*40)
+
+    def test_actual_compiler_drift_refuses_before_app_build_or_retention(self):
+        self.actual_compiler='1.25.13'
+        with self.assertRaisesRegex(H.Stop,'actual_build_tools'):self.build()
+        self.assertFalse(self.calls);self.assertFalse(self.retained)
+
+    def test_source_and_builder_toolchains_must_match_before_pull_or_build(self):
+        self.guard.FIXED['images']['frontend-builder']['version_clues']['NODE_VERSION']='24.20.0'
+        with self.assertRaisesRegex(H.Stop,'source_builder_toolchain_binding'):self.build()
+        self.assertFalse(self.pulls);self.assertFalse(self.calls);self.assertFalse(self.retained)
+
     def test_wrong_backend_source_buildinfo_refuses_before_retention(self):
         self.bad_buildinfo = True
         with self.assertRaisesRegex(H.Stop, 'backend_release_buildinfo'): self.build()
@@ -824,6 +865,30 @@ class FullBackendBuildTests(unittest.TestCase):
         self.assertEqual(self.saved, ['backend']); self.assertEqual(self.retained, ['backend-image.tar.gz'])
         self.assertEqual((self.assets/'backend-image.tar.gz').read_bytes(), b'synthetic-backend')
 
+
+class VerifierSourceClosureTests(unittest.TestCase):
+    def test_actual_offline_recipe_contains_all_transitive_local_package_sources(self):
+        class RecipeReady(Exception): pass
+        with tempfile.TemporaryDirectory(prefix='ur-verifier-recipe-') as temporary:
+            class Guard:
+                work=Path(temporary)
+                FIXED={'images':{'backend-builder':{'pull_reference':'registry.example.invalid/go@sha256:'+'a'*64}}}
+                def docker(self,*args): raise RecipeReady()
+            with self.assertRaises(RecipeReady):
+                H.verifier(Guard(),None,Path(temporary),'synthetic-go',Path(temporary),Path(temporary))
+            recipe=(Path(temporary)/'verifier.Dockerfile').read_text()
+            pending=['cmd/uniroute-upgrade'];seen=set()
+            while pending:
+                package=pending.pop()
+                if package in seen: continue
+                seen.add(package)
+                for source in (HERE.parents[1]/package).glob('*.go'):
+                    if source.name.endswith('_test.go'): continue
+                    for imported in re.findall(r'"github\.com/uniroute/unirouter/([^"]+)"',source.read_text()):
+                        if imported not in seen: pending.append(imported)
+            self.assertIn('internal/strictjson',seen)
+            for package in seen:
+                self.assertIn('COPY '+package+'/ '+package+'/',recipe.splitlines())
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

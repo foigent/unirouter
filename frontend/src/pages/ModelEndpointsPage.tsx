@@ -6,6 +6,7 @@ import { IconPlus, IconRefresh, IconSearch } from '@douyinfe/semi-icons';
 import { useSearchParams } from 'react-router-dom';
 import {
   canonicalOperationPaths,
+  upstreamObservationConfirmation,
   modelDeploymentApi,
   type CanonicalCredentialBinding,
   type CanonicalModelApplication,
@@ -178,6 +179,12 @@ export default function ModelEndpointsPage() {
 
   const exactDetail = detail?.deployment.id === deploymentID ? detail : undefined;
   const selectedOperation = exactDetail?.operations.find(operation => operation.operation_id === operationID);
+  const probeTarget = JSON.stringify([exactDetail?.deployment.id,exactDetail?.deployment.config_revision,exactDetail?.deployment.upstream_release_observation?.observation?.identity,exactDetail?.connection.id,exactDetail?.connection.config_revision,selectedOperation?.operation_id,selectedOperation?.revision,user?.id,user?.org_id,user?.organization_role,user?.role,user?.customer_context]);
+  const probeTargetRef = useRef(probeTarget);probeTargetRef.current=probeTarget;
+  const probeConfirmation = useRef<{destroy?:()=>void}|null>(null);
+  useEffect(()=>{probeConfirmation.current?.destroy?.();probeConfirmation.current=null;},[probeTarget]);
+  useEffect(()=>()=>{probeConfirmation.current?.destroy?.();},[]);
+
 
   const selectExactIdentity = (selectedDeploymentID: number, selectedOperationID: CanonicalOperationID) => {
     const next = new URLSearchParams(search);
@@ -255,6 +262,7 @@ export default function ModelEndpointsPage() {
     try {
       const result = await modelDeploymentApi.probe(detail.deployment.id, selectedOperation.operation_id, {
         credential_binding_id: binding.id,
+        ...upstreamObservationConfirmation(detail.deployment),
       });
       if (result.success && result.current) {
         Toast.success(t('Deployment #{id} · {operation} 精确探测通过', { id: result.deployment_id, operation: result.operation_id }));
@@ -276,7 +284,8 @@ export default function ModelEndpointsPage() {
 
   const confirmProbe = (binding: CanonicalCredentialBinding) => {
     if (!detail || !selectedOperation || !canManage || !gatewayLicensed) return;
-    Modal.confirm({
+    const target = probeTarget;
+    probeConfirmation.current=Modal.confirm({
       cancelText: t("取消"),
       title: t('探测 Deployment #{id} · {operation}？', { id: detail.deployment.id, operation: selectedOperation.operation_id }),
       content: <div>
@@ -288,7 +297,8 @@ export default function ModelEndpointsPage() {
       </div>,
       okText: t("发起精确探测"),
       okButtonProps: { 'aria-label': t("发起精确探测") },
-      onOk: () => executeProbe(binding),
+      onOk: () => {probeConfirmation.current=null;if(probeTargetRef.current!==target)return;return executeProbe(binding);},
+      onCancel:()=>{probeConfirmation.current=null;},
     });
   };
 
@@ -462,6 +472,7 @@ export default function ModelEndpointsPage() {
     /></div>
 
     <ModelEndpointDetailsSheet
+      onCanonicalStateChanged={refreshCanonicalState}
       selected={entryOpen || createOpen || batchOpen ? undefined : exactDetail}
       operation={selectedOperation}
       canManage={canManage}

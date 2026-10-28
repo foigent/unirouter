@@ -30,6 +30,7 @@ OLD_COMMIT = "59c47b852b7372951c5c49b0e6b23df8c83817b9"
 OLD_HEAD = "000125_xinsight_control_credential_lifecycle"
 RETIREMENT_COMMIT = "55983609c9a4f37072c4eeb2427364841bc1228b"
 RETIREMENT_HEAD = "000126_commercial_license_retirement"
+SUCCESSOR_COMMIT = "d92abe0a5bd4b997893ba6043a213d1a98108883"
 NEW_HEAD = "000127_xinsight_communication_policy"
 TRIGGERS = {name + "_commercial_limit" for name in
             ("api_keys", "users", "projects", "access_credentials", "provider_connections")}
@@ -78,7 +79,7 @@ class Acceptance:
                 "checkout differs from expected commit")
         self.sources = {}
         for name, commit in (("old", OLD_COMMIT), ("new", RETIREMENT_COMMIT),
-                             ("successor", expected_commit)):
+                             ("successor", SUCCESSOR_COMMIT)):
             source = root / (name + "-source")
             self.run("clone exact " + name + " source", git + ["clone", "--shared", "--no-checkout", checkout, source])
             self.run("checkout exact " + name + " source", ["git", "-C", source, "checkout", "--detach", commit])

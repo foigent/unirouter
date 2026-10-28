@@ -5,6 +5,10 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -44,22 +48,23 @@ class InstallerFixtureContract(unittest.TestCase):
                             'sha256': 'b' * 64} for key in bootstrap.ASSETS}}).encode()
 
     def test_fixture_matches_actual_latest_migration_and_both_install_owners(self):
-        head = sorted((ROOT / 'migrations').glob('*.up.sql'))[-1].name.removesuffix('.up.sql')
-        self.assertEqual(fixture.SCHEMA, head)
-        self.assertEqual(fixture.SCHEMA, bootstrap.SCHEMA)
-        tree = ast.parse((ROOT / 'deploy/customer/install.py').read_text())
-        schema = next(ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign)
-                      and any(isinstance(target, ast.Name) and target.id == 'SCHEMA' for target in n.targets))
-        self.assertEqual(schema, fixture.SCHEMA)
+        contract = fixture.source_contract(ROOT)
+        self.assertEqual(contract.schema, bootstrap.SCHEMA)
+        self.assertEqual(contract.schema, fixture.CURRENT_SCHEMA)
+        self.assertGreater(len(contract.ledger), 120)
+        self.assertEqual(contract.ledger[-1], contract.schema)
+        self.assertIn(fixture.RETAINED_SCHEMA, contract.supported_heads)
+        with self.assertRaises(AttributeError): contract.schema = fixture.RETAINED_SCHEMA
 
     def test_current_fixture_is_parsed_by_real_bootstrap_before_prepare(self):
-        raw = self.raw(fixture.SCHEMA)
+        schema = fixture.source_contract(ROOT).schema
+        raw = self.raw(schema)
         fetch = object()
         with patch.object(bootstrap, 'prepare') as prepare:
             fixture.prepare_bootstrap_fixture(bootstrap, raw, hashlib.sha256(raw).hexdigest(), Path('unused'), fetch)
         anchor = prepare.call_args.args[0]
         self.assertIsInstance(anchor, bootstrap.Bootstrap)
-        self.assertEqual(anchor.release['target_schema'], fixture.SCHEMA)
+        self.assertEqual(anchor.release['target_schema'], schema)
         self.assertIs(prepare.call_args.kwargs['fetch'], fetch)
 
     def test_old_fixture_is_a_sanitized_failure_before_prepare(self):
@@ -70,10 +75,230 @@ class InstallerFixtureContract(unittest.TestCase):
         prepare.assert_not_called()
 
     def test_prepare_error_is_also_normalized_without_child_output(self):
-        raw = self.raw(fixture.SCHEMA)
+        raw = self.raw(fixture.source_contract(ROOT).schema)
         with patch.object(bootstrap, 'prepare', side_effect=bootstrap.BootstrapError('untrusted child output')):
             with self.assertRaisesRegex(fixture.Failed, '^community bootstrap preparation failed$'):
                 fixture.prepare_bootstrap_fixture(bootstrap, raw, hashlib.sha256(raw).hexdigest(), Path('unused'), object())
+
+    def retained_metadata(self, root):
+        git = ['git', '-C', str(ROOT)]
+        names = ['deploy/customer/install.py', 'deploy/community/bootstrap.py', 'internal/schemaauthority/version.go']
+        names += subprocess.check_output(git + ['ls-tree','-r','--name-only',fixture.RETAINED_COMMIT,'--','migrations']).decode().splitlines()
+        for name in names:
+            if name.startswith('migrations/') and not name.endswith('.up.sql'): continue
+            path = root / name; path.parent.mkdir(parents=True,exist_ok=True)
+            # The source-contract reader consumes the exact Git ledger names;
+            # actual native ledger/SQL validation belongs to the Linux binary.
+            path.write_bytes(b'' if name.startswith('migrations/') else
+                             subprocess.check_output(git + ['show',fixture.RETAINED_COMMIT + ':' + name]))
+
+    def test_retained_contract_reads_the_real_pinned_git_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); self.retained_metadata(root)
+            old = fixture.source_contract(root)
+            self.assertEqual(old.schema, fixture.RETAINED_SCHEMA)
+            self.assertEqual(old.ledger[-1], fixture.RETAINED_SCHEMA)
+            self.assertNotIn(fixture.CURRENT_SCHEMA, old.supported_heads)
+            self.assertEqual(fixture.source_contract(ROOT).ledger, old.ledger + (fixture.CURRENT_SCHEMA,))
+
+    def test_schema_drift_is_rejected_before_any_runtime_operation(self):
+        cases = ('bootstrap','native','ledger','unknown','nonliteral','duplicate')
+        for case in cases:
+            with self.subTest(case=case),tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp); self.retained_metadata(root)
+                if case == 'ledger':
+                    (root/'migrations'/ (fixture.CURRENT_SCHEMA+'.up.sql')).write_text('-- undeclared\n')
+                else:
+                    name = 'internal/schemaauthority/version.go' if case == 'native' else 'deploy/community/bootstrap.py'
+                    path=root/name; raw=path.read_text()
+                    if case == 'duplicate':raw+='\nSCHEMA = "'+fixture.RETAINED_SCHEMA+'"\n'
+                    elif case == 'nonliteral':raw=raw.replace('SCHEMA = "'+fixture.RETAINED_SCHEMA+'"','SCHEMA = str(127)')
+                    else:raw=raw.replace(fixture.RETAINED_SCHEMA, '000129_unapproved' if case == 'unknown' else fixture.CURRENT_SCHEMA)
+                    path.write_text(raw)
+                with patch.object(fixture.subprocess,'run',side_effect=AssertionError('must remain source-only')):
+                    with self.assertRaises(fixture.Failed): fixture.source_contract(root)
+
+    def exercise_release_preparation(self, repo, schema, version, commit):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp); work=object.__new__(fixture.Acceptance)
+            work.repo,work.root,work.release=repo,root,root/'release';work.release.mkdir()
+            work.commit,work.tree,work.version=commit,'b'*40,version
+            work.schema,work.release_sequence=schema,2 if schema==fixture.CURRENT_SCHEMA else 1
+            work.verifier,work.ring=root/'verifier',root/'ring.json'
+            work.verifier.write_bytes(b'synthetic verifier');work.ring.write_bytes(b'{}')
+            work.images,work.image_ids,work.result={},{},{'checks':[]}
+            commands=[]
+            def run(label,args,**kwargs):
+                args=[str(arg) for arg in args];commands.append((label,args))
+                if label.startswith('inspect '):
+                    reference=args[-1];image_repo=reference.split('@')[0] if '@' in reference else reference.rsplit(':',1)[0]
+                    return json.dumps([{'Os':'linux','Architecture':'amd64','Id':'sha256:'+'c'*64,
+                        'RepoDigests':[reference if '@' in reference else image_repo+'@sha256:'+'d'*64]}])
+                if label=='pack synthetic signed release':
+                    expected=json.loads(Path(args[args.index('--expected-artifacts')+1]).read_bytes())
+                    paths={row['path']:row for row in expected}
+                    for name in (('upgrade.py','recovery.py','install.py') if schema==fixture.CURRENT_SCHEMA else ('install.py',)):
+                        p='payload/deploy/'+name;self.assertIn(p,paths)
+                        self.assertEqual(paths[p]['sha256'],fixture.sha(repo/'deploy/customer'/name))
+                    if schema==fixture.CURRENT_SCHEMA:
+                        self.assertIn('payload/scripts/source-budget-restore-rebase.sql',paths)
+                    else:
+                        self.assertNotIn('payload/deploy/upgrade.py',paths)
+                        raw=(work.release/'payload/deploy/docker-compose.yml').read_text()
+                        self.assertEqual(raw.count(':/fixture-body'),1)
+                        sample=(work.release/'payload/deploy/.env.example').read_text()
+                        self.assertIn('SOURCE_CONTENT_STORAGE_ROOT=/fixture-body/objects\n',sample)
+                        self.assertIn('initialize retained synthetic content through native owner',[label for label,_ in commands])
+                    self.assertIn('--no-expiry',args);self.assertNotIn('--expires-at',args)
+                    for flag,value in (('--release-sequence',str(work.release_sequence)),('--min-current-sequence','0'),
+                        ('--max-current-sequence',str(work.release_sequence-1)),('--min-current-schema',fixture.RETAINED_SCHEMA),
+                        ('--target-schema',schema)):
+                        self.assertEqual(args[args.index(flag)+1],value)
+                    Path(args[args.index('--out')+1]).write_bytes(b'synthetic-not-a-signed-package')
+                return ''
+            def prepare(module,raw,digest,directory,fetch):
+                anchor=module.Bootstrap(raw,digest)
+                self.assertEqual(anchor.release['target_schema'],schema)
+                shutil.copytree(work.release,directory)
+            work.run=run;work.docker='/fixture/docker';work.passed=lambda label:None
+            with patch.object(fixture,'prepare_bootstrap_fixture',side_effect=prepare):
+                work.prepare_release(root/'public-synthetic-key-only')
+            builds=[args for label,args in commands if label.startswith('build exact')]
+            self.assertEqual(len(builds),2)
+            backend=next(args for args in builds if 'RUNTIME_COMMIT='+commit in args)
+            self.assertIn('UNIROUTER_RELEASE_TRUST_MODE=release',backend)
+            self.assertIn('UNIROUTER_UPGRADE_TRUST_BUNDLE_B64=e30',backend)
+
+    def test_actual_release_preparation_carries_full_payload_and_native_presign_inventory(self):
+        self.exercise_release_preparation(ROOT,fixture.CURRENT_SCHEMA,'1.15.0','a'*40)
+
+    def test_retained_package_uses_same_trust_and_body_configuration_before_first_start(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source=Path(tmp)/'source'
+            subprocess.run(['git','-C',str(ROOT),'clone','--shared','--no-checkout',str(ROOT),str(source)],
+                check=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+            subprocess.run(['git','-C',str(source),'checkout','--detach',fixture.RETAINED_COMMIT],
+                check=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+            self.exercise_release_preparation(source,fixture.RETAINED_SCHEMA,'1.14.2',fixture.RETAINED_COMMIT)
+
+    def test_native_upgrade_arguments_use_the_shipped_owner_and_retained_predecessor(self):
+        work=object.__new__(fixture.Acceptance);work.release=Path('/candidate');work.verifier=Path('/verifier');work.ring=Path('/ring')
+        args=work.upgrade_command('resume-upgrade',Path('/original'),Path('/original/edge'),history=Path('/original/history.json'))
+        self.assertEqual(args[3],Path('/candidate/payload/deploy/upgrade.py'))
+        self.assertEqual(args[args.index('--source-package')+1],Path('/original/release.tar.gz'))
+        self.assertEqual(args[args.index('--layout')+1],'ur_edge_pair')
+        self.assertEqual(args[args.index('--historical-exits')+1],Path('/original/history.json'))
+
+    def test_unknown_native_failure_never_waits_or_repeats_mutation(self):
+        work=object.__new__(fixture.Acceptance);work.upgrade_command=lambda *args,**kwargs:['fixture']
+        calls=[];work.run=lambda *args,**kw:(calls.append(args) or (1,'different native failure'))
+        work.wait_stopped_leases=lambda *args:self.fail('unknown failure must not be retried')
+        with self.assertRaisesRegex(fixture.Failed,'outside its known lease wait'):
+            work.run_native_upgrade(Path('/original'))
+        self.assertEqual(len(calls),1)
+
+    def test_real_history_driver_captures_both_kinds_for_the_actual_shipped_validator(self):
+        # Native effects are simulated only in this offline driver test. The
+        # existing Linux cases call the same helper with actual Docker facts.
+        for replacement in (False, True):
+            with self.subTest(replacement=replacement),tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp).resolve();directory=root/'installation';directory.mkdir();(directory/'evidence').mkdir()
+                release=root/'release';shutil.copytree(ROOT/'deploy/customer',release/'payload/deploy',ignore=shutil.ignore_patterns('__pycache__'))
+                owner=load('history_owner',release/'payload/deploy/upgrade.py')
+                project='history-fixture';installation={'installation_id':'synthetic-installation','project':project}
+                fixture.private_write(directory/'install-state.json',owner.canonical(installation))
+                original='uri_'+'a'*32;successor='uri_'+'b'*32;image='sha256:'+'c'*64
+                generation={'instance_id':original,'artifact_digest':image,'manifest_digest':'d'*64,
+                    'compatibility_epoch':1,'schema_head':fixture.RETAINED_SCHEMA,'revision':7,
+                    'state':'serving','ingress_state':'absent','lease_expires_at':'2000-01-01T00:00:00Z'}
+                source={'release_sequence':1,'package_sha256':'e'*64}
+                work=object.__new__(fixture.Acceptance);work.release=release;work.docker='/fixture/docker'
+                work.target=lambda *args:{'system_identifier':'1','database':'uniroute','database_oid':1}
+                def sql(_directory,_project,query):
+                    if 'to_jsonb(g)' in query:return json.dumps(generation)
+                    if 'greatest(0' in query:return '0'
+                    if 'to_jsonb(s)' in query:return json.dumps(source)
+                    self.fail('unexpected history query')
+                work.sql=sql;calls=[];changed=False
+                def run(label,args,**kwargs):
+                    nonlocal changed
+                    args=[str(arg) for arg in args];calls.append((label,args))
+                    if 'inspect' in args:
+                        cid='f'*64 if replacement and changed else 'a'*64
+                        return json.dumps({'Id':cid,'Image':image,'State':{'Running':not changed or replacement,
+                            'Pid':4321 if not changed or replacement else 0,'ExitCode':0,'OOMKilled':False}})
+                    if 'exec' in args:
+                        return json.dumps({'runtime':{'instance':successor if changed else original,'artifact_digest':image}})
+                    if 'top' in args:return 'PID\n98765\n'
+                    if 'stop' in args or 'up' in args:
+                        changed=True
+                        output='\n'.join(' Container '+project+'-backend-1 '+state for state in ('Recreated','Started','Healthy'))
+                        return (0,output) if kwargs.get('ok') is False else output
+                    self.fail('unexpected history command')
+                work.run=run;old=SimpleNamespace(compose=lambda *args:[work.docker,'compose','--project-name',project])
+                edge=root/'edge' if replacement else None
+                with patch.object(owner.Upgrade,'_process_start',side_effect=lambda _:None if changed else '100'), \
+                     patch.object(fixture.importlib.util,'spec_from_file_location',return_value=SimpleNamespace(loader=SimpleNamespace(exec_module=lambda _:None))), \
+                     patch.object(fixture.importlib.util,'module_from_spec',return_value=owner):
+                    path=work.historical_observations(old,directory,project,edge)
+                evidence=owner.HistoricalObservations(path.read_bytes())
+                actual=evidence.validate(installation,{'system_id':'1','database':'uniroute','database_oid':1,
+                    'generations':[generation]},source,lambda _:None,lambda _:None)
+                self.assertEqual(set(actual),{original})
+                record=evidence.document['records'][0]
+                self.assertEqual(record['kind'],'native_replacement' if replacement else 'process_exit')
+                self.assertNotIn('clean_exit',record)
+                self.assertEqual(len([args for label,args in calls if label=='perform exact native source history operation']),1)
+                self.assertEqual(len([args for label,args in calls if label.startswith('restart exact')]),0 if replacement else 1)
+
+    def test_session_logout_expiry_and_cleanup_use_exact_fixture_scope(self):
+        work=object.__new__(fixture.Acceptance);work.result={};work.passed=lambda _:None
+        calls=[]
+        def request(url,data=None,token=None):
+            calls.append((url,token))
+            if url.endswith('/auth/login'):return b'{"token":"public-synthetic-session"}'
+            if url.endswith('/auth/logout'):return b'{}'
+            raise fixture.urllib.error.HTTPError(url,401,'fixture refusal',{},None)
+        sql=[];work.request=request;work.sql=lambda *args:sql.append(args[-1])
+        work.session_refusals(Path('/fixture'),'fixture','public-synthetic-password')
+        self.assertEqual(len([url for url,_ in calls if url.endswith('/bootstrap/first-customer')]),3)
+        self.assertEqual(len(sql),2)
+        self.assertIn('expires_at<clock_timestamp()',sql[1])
+        self.assertNotIn('public-synthetic-session',''.join(sql))
+        self.assertTrue(work.result['session_refusals']['expired_fixture_session_removed'])
+
+    def test_protected_projection_hashes_complete_original_rows_and_bounds_history(self):
+        work=object.__new__(fixture.Acceptance); seen=[]
+        names=('users','orgs','projects','wallets','transactions','project_members','audit_logs','release_history',
+               'execution_content_objects','execution_content_streams')
+        def fingerprint(*args,**kwargs):
+            seen.append(kwargs['projections']);return {name:{'count':1,'sha256':name} for name in names}
+        work.upgrade_fingerprint=fingerprint
+        self.assertEqual(set(work.protected_upgrade_rows(Path('/fixture'),'fixture',1)),set(names))
+        self.assertNotIn('users',seen[0]) # Default full to_jsonb row includes password identity/epoch.
+        self.assertNotIn('wallets',seen[0]);self.assertNotIn('transactions',seen[0])
+        self.assertIn("'bootstrap.first_customer'",seen[0]['audit_logs'][1])
+        self.assertEqual(seen[0]['release_history'][1],' WHERE release_sequence<=1')
+
+    def test_protected_configuration_reuses_real_metadata_inventory_and_detects_permission_drift(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp).resolve();directory=root/'instance';directory.mkdir()
+            (directory/'runtime').mkdir();(directory/'evidence').mkdir();body=root/'body';body.mkdir()
+            for path in (directory/'runtime/.env',directory/'admin-password',directory/'release.tar.gz',directory/'evidence/install.json'):
+                fixture.private_write(path,b'public synthetic fixture bytes')
+            work=object.__new__(fixture.Acceptance)
+            work.recovery_module=lambda:load('inventory_owner',ROOT/'deploy/customer/recovery.py')
+            before=work.protected_upgrade_files(directory,body,None)
+            fixture.private_write(directory/'runtime/upgrade-image.json',b'public synthetic new image override')
+            self.assertEqual(before,work.protected_upgrade_files(directory,body,None))
+            (directory/'runtime/.env').chmod(0o644)
+            self.assertNotEqual(before,work.protected_upgrade_files(directory,body,None))
+
+    def test_driver_never_starts_outside_its_disposable_runner(self):
+        with patch.object(fixture.sys,'argv',['fixture','--expected-commit','a'*40,'--report','/not-created']), \
+             patch.dict(fixture.os.environ,{},clear=True),patch.object(fixture.subprocess,'run',side_effect=AssertionError('must not run')):
+            with self.assertRaisesRegex(fixture.Failed,'disposable GitHub-hosted'):
+                fixture.main()
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

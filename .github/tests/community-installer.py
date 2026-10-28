@@ -6,7 +6,10 @@ production keys, registry credentials or public image publication are involved.
 Only the allowlisted result JSON may leave the runner; raw logs stay private.
 """
 import argparse
+import ast
 import base64
+import copy
+from collections import namedtuple
 from datetime import datetime, timedelta, timezone
 import hashlib
 import importlib.util
@@ -17,6 +20,7 @@ import platform
 import re
 import shutil
 import signal
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -25,7 +29,10 @@ import urllib.error
 import urllib.request
 import uuid
 
-SCHEMA = "000127_xinsight_communication_policy"
+RETAINED_COMMIT = "d92abe0a5bd4b997893ba6043a213d1a98108883"
+RETAINED_SCHEMA = "000127_xinsight_communication_policy"
+CURRENT_SCHEMA = "000128_upstream_release_observation"
+SourceContract = namedtuple("SourceContract", "schema ledger supported_heads")
 # Match the accepted installation descriptor, not build-stage pull labels or floating tags.
 DEPENDENCIES = {
     "postgres": "postgres@sha256:1a66d744c1b459e13b05a8fca341da84cb63383e99ce262210efee5a319d4551",
@@ -66,6 +73,36 @@ def prepare_bootstrap_fixture(module, raw, expected_sha, directory, fetch):
         raise Failed("community bootstrap preparation failed") from exc
 
 
+def source_contract(repo):
+    """Read exact source owners; a filename maximum alone grants no authority."""
+    heads = []
+    for name in ("deploy/customer/install.py", "deploy/community/bootstrap.py"):
+        tree = ast.parse((repo / name).read_bytes())
+        assignments = [node.value for node in tree.body if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "SCHEMA" for target in node.targets)]
+        require(len(assignments) == 1, "ambiguous shipped schema metadata")
+        try:
+            heads.append(ast.literal_eval(assignments[0]))
+        except (ValueError, TypeError):
+            raise Failed("shipped schema metadata must be literal") from None
+    require(heads[0] == heads[1] and heads[0] in (RETAINED_SCHEMA, CURRENT_SCHEMA),
+            "shipped installer/bootstrap schema disagreement or unsupported fixture source")
+    text = (repo / "internal/schemaauthority/version.go").read_text()
+    constants = dict(re.findall(r'^const ([A-Za-z]+) = "([a-z0-9_]+)"$', text, re.M))
+    latest = re.findall(r'^const LatestSupportedMigration = ([A-Za-z]+)$', text, re.M)
+    supported = re.findall(r'return \[\]string\{([^}]+)\}', text)
+    require(len(latest) == len(supported) == 1 and constants.get(latest[0]) == heads[0],
+            "native source schema authority disagrees with shipped installers")
+    names = [name.strip() for name in supported[0].split(",") if name.strip()]
+    require(names and len(names) == len(set(names)) and all(name in constants for name in names),
+            "ambiguous native supported-schema declaration")
+    ledger = tuple(sorted(path.name.removesuffix(".up.sql") for path in (repo / "migrations").glob("*.up.sql")))
+    native = tuple(sorted(constants[name] for name in names))
+    require(ledger and ledger[-1] == heads[0] and set(native).issubset(ledger)
+            and heads[0] in native, "source migration ledger disagrees with native schema authority")
+    return SourceContract(heads[0], ledger, native)
+
+
 class Acceptance:
     def __init__(self, repo, root, expected_commit):
         self.repo, self.root = repo, root
@@ -85,6 +122,9 @@ class Acceptance:
         require(self.commit == expected_commit and re.fullmatch(r"[0-9a-f]{40}", self.commit), "checkout commit mismatch")
         self.version = (repo / "VERSION").read_text().strip()
         require(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", self.version), "invalid version")
+        self.source_contract = source_contract(repo)
+        self.schema = self.source_contract.schema
+        self.release_sequence = 2 if self.schema == CURRENT_SCHEMA else 1
         self.result.update(commit=self.commit, tree=self.tree, version=self.version)
         self.release = root / "release"
         self.release.mkdir(mode=0o700)
@@ -158,7 +198,6 @@ class Acceptance:
         self.other_ring = self.root / "other-public-ring.json"
         self.run("generate wrong-key fixture", [self.keygen, "keygen", "--key-id", "installer-native-test",
                  "--private-out", self.root / "other-test.private", "--public-out", self.other_ring])
-        public = base64.urlsafe_b64encode(self.ring.read_bytes()).decode().rstrip("=")
         self.registry = "ur-native-registry-" + self.suffix
         self.run("start loopback-only test registry", [self.docker, "run", "-d", "--name", self.registry,
                  "-p", "127.0.0.1:15000:5000", "registry:2"])
@@ -170,8 +209,13 @@ class Acceptance:
                 time.sleep(1)
         else:
             raise Failed("loopback registry unavailable")
-        backend = "localhost:15000/unirouter/backend:test"
-        frontend = "localhost:15000/unirouter/frontend:test"
+        self.prepare_release(private)
+
+    def prepare_release(self, private):
+        """One package/image path for the two exact source identities and trust."""
+        public = base64.urlsafe_b64encode(self.ring.read_bytes()).decode().rstrip("=")
+        backend = "localhost:15000/unirouter/backend:" + self.commit
+        frontend = "localhost:15000/unirouter/frontend:" + self.commit
         self.run("build exact release-mode backend", [self.docker, "build", "--build-arg", "RUNTIME_VERSION=" + self.version,
                  "--build-arg", "RUNTIME_COMMIT=" + self.commit, "--build-arg", "RUNTIME_TREE=" + self.tree,
                  "--build-arg", "UNIROUTER_RELEASE_TRUST_MODE=release", "--build-arg",
@@ -195,8 +239,40 @@ class Acceptance:
                 ("Id", "Os", "Architecture", "RepoDigests")}))
         deploy = self.release / "payload/deploy"
         deploy.mkdir(parents=True)
-        for name in ("install.py", "docker-compose.yml", ".env.example", "preflight.sh"):
+        names = ["install.py", "docker-compose.yml", ".env.example", "preflight.sh"]
+        if self.schema == CURRENT_SCHEMA:
+            names += ["upgrade.py", "recovery.py"]
+        for name in names:
             shutil.copyfile(self.repo / "deploy/customer" / name, deploy / name)
+        if self.schema == RETAINED_SCHEMA:
+            # A retained operator can have historical content. Configure that
+            # synthetic fixture before its first native start, so no stale
+            # writer is manufactured by changing mounts on a live container.
+            body = self.root / "historical-body"
+            body.mkdir(mode=0o700)
+            (body / "objects").mkdir(mode=0o700)
+            self.run("initialize retained synthetic content through native owner", [self.docker, "run", "--rm",
+                "--network", "none", "--pull", "never", "--volume", str(body) + ":/fixture-body",
+                self.images["backend"], "./uniroute", "content-store", "init", "--root", "/fixture-body/objects",
+                "--identity", "community-linux-history", "--token-file", "/fixture-body/binding.token"])
+            sample = (deploy / ".env.example").read_text()
+            for key, value in {"SOURCE_CONTENT_STORAGE_ROOT": "/fixture-body/objects",
+                "SOURCE_CONTENT_STORAGE_IDENTITY": "community-linux-history",
+                "SOURCE_CONTENT_STORAGE_TOKEN_FILE": "/fixture-body/binding.token"}.items():
+                sample, count = re.subn(r"^" + key + r"=.*$", key + "=" + value, sample, flags=re.M)
+                require(count == 1, "retained fixture content configuration field missing")
+            (deploy / ".env.example").write_text(sample)
+            compose = (deploy / "docker-compose.yml").read_text()
+            compose, count = re.subn(r"^  backend:\n", lambda match:
+                match.group() + "    volumes:\n      - " + json.dumps(str(body) + ":/fixture-body") + "\n", compose, flags=re.M)
+            require(count == 1, "retained fixture backend declaration differs")
+            (deploy / "docker-compose.yml").write_text(compose)
+            self.result["historical_fixture_config"] = "native body binding; signed synthetic operator configuration before first start"
+        if self.schema == CURRENT_SCHEMA:
+            scripts = self.release / "payload/scripts"
+            scripts.mkdir()
+            shutil.copyfile(self.repo / "scripts/source-budget-restore-rebase.sql",
+                            scripts / "source-budget-restore-rebase.sql")
         (deploy / "config").mkdir()
         shutil.copyfile(self.repo / "infra/prometheus/prometheus.yml", deploy / "config/prometheus.yml")
         shutil.copytree(self.repo / "infra/grafana", deploy / "config/grafana")
@@ -215,15 +291,20 @@ class Acceptance:
         self.result["descriptor_selection"] = "pinned upstream names and native exact RepoDigests"
         now = datetime.now(timezone.utc)
         stamp = lambda value: value.isoformat(timespec="seconds").replace("+00:00", "Z")
-        args = [self.verifier, "pack", "--key-id", "installer-native-test", "--private-key", private,
-                "--release-sequence", "1", "--version", self.version, "--commit", self.commit,
-                "--created-at", stamp(now - timedelta(minutes=1)), "--expires-at", stamp(now + timedelta(hours=2)),
+        payload = sorted(path for path in (self.release / "payload").rglob("*") if path.is_file())
+        expected = self.release / "expected-artifacts.json"
+        private_write(expected, json.dumps([{"path": str(path.relative_to(self.release)),
+            "size": path.stat().st_size, "sha256": sha(path)} for path in payload]).encode())
+        args = [self.verifier, "pack", "--expected-artifacts", expected,
+                "--key-id", "installer-native-test", "--private-key", private,
+                "--release-sequence", str(self.release_sequence), "--version", self.version, "--commit", self.commit,
+                "--created-at", stamp(now - timedelta(minutes=1)), "--no-expiry",
                 "--target-os", "linux", "--target-arch", "amd64", "--min-current-sequence", "0",
-                "--max-current-sequence", "0", "--min-current-schema", SCHEMA, "--target-schema", SCHEMA,
+                "--max-current-sequence", str(self.release_sequence - 1),
+                "--min-current-schema", RETAINED_SCHEMA, "--target-schema", self.schema,
                 "--out", self.release / "release.tar.gz"]
-        for path in sorted((self.release / "payload").rglob("*")):
-            if path.is_file():
-                args.extend(["--artifact", str(path.relative_to(self.release)) + "=" + str(path)])
+        for path in payload:
+            args.extend(["--artifact", str(path.relative_to(self.release)) + "=" + str(path)])
         self.run("pack synthetic signed release", args)
         self.result["images"] = self.images
         self.result["test_package_sha256"] = sha(self.release / "release.tar.gz")
@@ -236,7 +317,7 @@ class Acceptance:
             "schema_version": "unirouter.community-bootstrap.v1",
             "platform": {"os": "linux", "arch": "amd64"},
             "release": {"version": self.version, "commit": self.commit,
-                        "release_sequence": 1, "key_id": "installer-native-test", "target_schema": SCHEMA},
+                        "release_sequence": self.release_sequence, "key_id": "installer-native-test", "target_schema": self.schema},
             "assets": {key: {"url": "https://example.invalid/" + key,
                              "size": path.stat().st_size, "sha256": sha(path)}
                        for key, path in sources.items()}}
@@ -300,10 +381,10 @@ class Acceptance:
                 "--env-file", runtime / ".env", "-f", runtime / "docker-compose.yml",
                 "-f", runtime / "installation.json", "-f", runtime / "runtime-image.json"]
 
-    def sql(self, directory, project, query):
+    def sql(self, directory, project, query, database="uniroute"):
         return self.run("read synthetic database facts", self.compose(directory, project) +
-                        ["exec", "-T", "postgres", "psql", "-X", "-U", "uniroute", "-d", "uniroute",
-                         "-v", "ON_ERROR_STOP=1", "-Atc", query]).strip()
+                        ["exec", "-T", "postgres", "psql", "-X", "-qAt", "-U", "uniroute", "-d", database,
+                         "-v", "ON_ERROR_STOP=1"], data=query.encode()).strip()
 
     def target(self, directory, project):
         return json.loads(self.sql(directory, project, "SELECT jsonb_build_object('system_identifier',"
@@ -317,15 +398,20 @@ class Acceptance:
         require(state["image_ids"] == self.image_ids, "installed images differ from producer inspection")
         actual = self.target(directory, project)
         require(all(plan["target"][k] == v for k, v in actual.items()), "database identity differs from original plan")
-        require(self.sql(directory, project, "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1") == SCHEMA, "schema is not M127")
+        ledger = json.loads(self.sql(directory, project, "SELECT jsonb_agg(version ORDER BY version) FROM schema_migrations"))
+        require(tuple(ledger) == self.source_contract.ledger, "complete installed schema ledger differs from exact source")
+        support = json.loads(self.run("read actual installed native schema support", self.compose(directory, project) +
+            ["exec", "-T", "backend", "./uniroute", "runtime-generation", "support"]))
+        require(tuple(sorted(support.get("schema_heads", []))) == self.source_contract.supported_heads,
+                "actual native schema support differs from exact source")
         comment = self.sql(directory, project, "SELECT obj_description('public.schema_migrations'::regclass)")
         record = json.loads(comment.split("\n", 1)[1])
         require(record["state"] == "completed" and record["plan"] == plan, "fresh owner is not completed for the original plan")
         rotation = self.sql(directory, project, "SELECT count(*) FROM audit_logs WHERE action='user.password_reset' AND user_id=1 AND org_id=1")
         require(rotation == "1", "administrator password rotation count is not one")
         release = json.loads(self.sql(directory, project, "SELECT jsonb_build_object('sequence',release_sequence,'version',version,'commit',commit,'package',package_sha256,'schema',target_schema)::text FROM release_state"))
-        require(release == {"sequence": 1, "version": self.version, "commit": self.commit,
-                            "package": self.result["test_package_sha256"], "schema": SCHEMA}, "initial release registration mismatch")
+        require(release == {"sequence": self.release_sequence, "version": self.version, "commit": self.commit,
+                            "package": self.result["test_package_sha256"], "schema": self.schema}, "initial release registration mismatch")
         ids = self.run("read installed containers", self.compose(directory, project) + ["ps", "-aq"]).splitlines()
         containers = json.loads(self.run("inspect installed containers", [self.docker, "inspect", *ids]))
         require(len(containers) == 6, "six services were not installed")
@@ -422,7 +508,7 @@ os.kill(parent, signal.SIGKILL)
         require(code != 0, "wrong project resume accepted")
         code, _ = self.run("reject wrong daemon on resume", self.command("resume", directory, project) + ["--docker-socket", "/tmp/not-the-fixture-docker.sock"], ok=False)
         require(code != 0 and inventory == self.inventory(), "identity refusal changed resources")
-        self.passed("M127, image, DB, release and one-rotation identities survive repeat resume")
+        self.passed("exact schema, image, DB, release and one-rotation identities survive repeat resume")
         self.phase = "private console and authentication"
         self.request("http://127.0.0.1:13000/health/ready")
         page = self.request("http://127.0.0.1:13000/")
@@ -487,7 +573,7 @@ os.kill(parent, signal.SIGKILL)
         finally:
             self.phase = previous_phase
 
-    def native_first_use_checks(self, directory, project):
+    def native_first_use_checks(self, directory, project, *, restart=True):
         # These pure assertions are shared with the later real-public-package
         # consumer. This synthetic fixture never consumes its pending config.
         spec = importlib.util.spec_from_file_location("first_use_assertions",
@@ -507,6 +593,7 @@ os.kill(parent, signal.SIGKILL)
             first.password_choice_delta(before, snapshot())
             require(retained() == original_files, "password choice changed original installer files")
             first.fixture_admin_login(generated, expected_status=401)
+            self.session_refusals(directory, project, first.FIRST_USE_TEST_INPUT)
             login = first.fixture_admin_login(first.FIRST_USE_TEST_INPUT)
             self.result["caller_selected_password"] = {"initial_installer_rotations":1, "final_rotations":2,
                 "auth_epoch_advanced_once":True, "generated_old_input_refused":True,
@@ -526,20 +613,438 @@ os.kill(parent, signal.SIGKILL)
             replay = first.first_customer_request(token, intent, dry_run=False, expected_status=200)
             first.first_customer_result(replay, idempotent=True, customer_id=customer_id)
             require(first.immutable_digest(after) == first.immutable_digest(snapshot()), "known-success replay duplicated state")
-            self.run("stop only the native synthetic backend", self.compose(directory, project) + ["stop","-t","30","backend"])
-            self.run("restart synthetic backend with bounded native health wait", self.compose(directory, project) +
-                ["up","-d","--no-deps","--wait","--wait-timeout","120","--pull","never","--no-build","backend"])
-            self.request("http://127.0.0.1:13000/health/ready")
-            first.fixture_admin_login(first.FIRST_USE_TEST_INPUT)
+            if restart:
+                self.run("stop only the native synthetic backend", self.compose(directory, project) + ["stop","-t","30","backend"])
+                self.run("restart synthetic backend with bounded native health wait", self.compose(directory, project) +
+                    ["up","-d","--no-deps","--wait","--wait-timeout","120","--pull","never","--no-build","backend"])
+                self.request("http://127.0.0.1:13000/health/ready")
+                first.fixture_admin_login(first.FIRST_USE_TEST_INPUT)
             restarted = snapshot()
-            first.first_customer_transition(before, restarted, customer_id, intent, restarted=True)
+            first.first_customer_transition(before, restarted, customer_id, intent, restarted=restart)
             self.result["first_customer"] = {"organization_id":customer_id,
-                "platform_org_id":before["admin"]["org_id"], "default_project_id":restarted["projects"][0]["id"],
+                "platform_org_id":before["admin"]["org_id"], "default_project_id":restarted["projects"][0]["id"] if restart else None,
                 "preview_read_only":True, "same_intent_replay":True, "chosen_admin_password_usable":True,
                 "protected_release_and_rotation_preserved":True, "provider_calls":0}
-            self.passed("native first-customer preview, commit, same-intent replay and restart preserve protected state")
+            self.passed("native first-customer preview, commit and same-intent replay preserve protected state" +
+                        (" through restart" if restart else " before maintenance"))
         except first.Stop as exc:
             raise Failed(str(exc)) from None
+
+    def session_refusals(self, directory, project, password):
+        """Exercise normal logout and server-expired sessions before bootstrap."""
+        def login():
+            return json.loads(self.request("http://127.0.0.1:13000/api/v1/auth/login",
+                data=json.dumps({"username": "admin", "password": password}).encode()))["token"]
+        def refused(token):
+            try:
+                self.request("http://127.0.0.1:13000/api/v1/bootstrap/first-customer",
+                    data=b'{"organization_name":"Synthetic refused customer","dry_run":true}', token=token)
+            except urllib.error.HTTPError as error:
+                code = error.code
+                error.close()
+                require(code == 401, "invalid session did not return unauthorized")
+            else:
+                raise Failed("invalid session was accepted for first-customer preview")
+        token = login()
+        self.request("http://127.0.0.1:13000/api/v1/auth/logout", data=b"{}", token=token)
+        refused(token)
+        token = login()
+        # Only the latest synthetic administrator session, with a valid
+        # earlier issue/expiry pair. No real JWT/secret is placed in SQL/argv.
+        self.sql(directory, project, "UPDATE admin_sessions SET issued_at=clock_timestamp()-interval '2 hours',"
+            "expires_at=clock_timestamp()-interval '1 hour' WHERE id=(SELECT max(id) FROM admin_sessions "
+            "WHERE user_id=(SELECT id FROM users WHERE username='admin'))")
+        refused(token)
+        self.sql(directory, project, "DELETE FROM admin_sessions WHERE id=(SELECT max(id) FROM admin_sessions "
+            "WHERE user_id=(SELECT id FROM users WHERE username='admin')) AND expires_at<clock_timestamp()")
+        refused(token)
+        self.result["session_refusals"] = {"logged_out": True, "server_expired": True, "expired_fixture_session_removed": True}
+        self.passed("normal logged-out, server-expired and cleaned sessions cannot bootstrap a customer")
+
+    def retained_release(self):
+        """Build the retained predecessor once, using this fixture's same trust."""
+        source = self.root / "retained-source"
+        git = ["git", "-c", "safe.directory=" + str(self.repo)]
+        self.run("clone retained M127 source", git + ["clone", "--shared", "--no-checkout", self.repo, source])
+        self.run("select retained M127 source", ["git", "-C", source, "checkout", "--detach", RETAINED_COMMIT])
+        root = self.root / "retained-fixture"
+        root.mkdir(mode=0o700)
+        old = Acceptance(source, root, RETAINED_COMMIT)
+        require(old.version == "1.14.2" and old.schema == RETAINED_SCHEMA, "retained source identity changed")
+        old.verifier, old.keygen, old.ring, old.other_ring = self.verifier, self.keygen, self.ring, self.other_ring
+        require(shutil.disk_usage(root).free >= 8 << 30, "insufficient space before retained fixture builds")
+        old.prepare_release(self.root / "test.private")
+        self.result["retained_source"] = {"commit": old.commit, "tree": old.tree, "version": old.version,
+            "schema": old.schema, "package_sha256": old.result["test_package_sha256"]}
+        return old
+
+    def historical_data(self, old, directory, project):
+        """Nonempty synthetic money/history and native-bound body, never a model call."""
+        customer = old.result["first_customer"]
+        org = customer["organization_id"]
+        require(type(org) is int and org > 1,
+                "retained first-customer identity is missing")
+        project_id = int(old.sql(directory, project, "INSERT INTO projects(org_id,name,slug,status,budget_period) "
+            "VALUES(" + str(org) + ",'Synthetic retained default','default','active','none') RETURNING id"))
+        body = old.root / "historical-body"
+        token = (body / "binding.token").read_text().strip()
+        require(re.fullmatch(r"[a-f0-9]{64}", token) is not None, "native content binding missing")
+        raw = b"Synthetic retained customer body; no provider or customer data.\n"
+        name = hashlib.sha256(raw).hexdigest()
+        if not (body / "objects" / name).exists():
+            private_write(body / "objects" / name, raw)
+        require(sha(body / "objects" / name) == name, "retained synthetic body changed")
+        old.sql(directory, project, """BEGIN;
+UPDATE wallets SET balance_micros=1234567 WHERE org_id={org};
+INSERT INTO transactions(request_id,org_id,project_id,type,status,amount_micros,balance_after_micros,note)
+VALUES('synthetic-linux-history',{org},{project_id},'topup','completed',1234567,1234567,'Synthetic preservation fixture');
+INSERT INTO execution_content_streams(org_id,project_id,source_instance)
+VALUES({org},{project_id},'community-linux-history');
+INSERT INTO execution_content_objects(content_ref,org_id,project_id,source_fact_id,revision,storage_identity,
+storage_binding_token,policy_version,policy_config,policy_effective_at,recovery_epoch,relative_path,state,
+reserved_bytes,saved_bytes,digest,expires_at,lease_owner,lease_expires_at)
+VALUES('uc1_{name}',{org},{project_id},'synthetic-linux-history',1,'community-linux-history','{token}',1,
+convert_to('{{}}','UTF8'),clock_timestamp(),1,'{name}','ready',0,{size},'sha256:{name}',
+clock_timestamp()+interval '1 day','synthetic-linux-history',clock_timestamp()); COMMIT;""".format(
+            org=org, project_id=project_id, name=name, token=token, size=len(raw)))
+        # The retained deployment may have operator configuration. Freeze it
+        # before maintenance; the upgrader must preserve these exact settings.
+        rendered = json.loads(old.run("read retained runtime for body mount", old.compose(directory, project) +
+                                      ["config", "--format", "json"]))
+        return body, name, rendered
+
+    def named_edge(self, old, directory, project, rendered):
+        """The supported named adapter; reuse the existing TLS/NGINX inputs."""
+        edge = directory / "edge"
+        edge.mkdir(mode=0o700)
+        backend = copy.deepcopy(rendered["services"]["backend"])
+        backend.pop("container_name", None)
+        backend["environment"]["RUNTIME_DEPLOYMENT_ROLE"] = "canary"
+        backend["networks"] = {"default": {}}
+        overrides = {"services": {"backend": {}, "backend-canary": backend}}
+        private_write(edge / "runtime-overrides.json", json.dumps(overrides).encode())
+        self.run("create loopback-only edge TLS fixture", ["openssl", "req", "-x509", "-newkey", "rsa:2048",
+            "-nodes", "-keyout", edge / "loopback.key", "-out", edge / "loopback.crt", "-days", "1",
+            "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1"])
+        (edge / "loopback.key").chmod(0o600)
+        # Keep the product's actual location and proxy behavior. Only its
+        # frontend DNS and the surrounding standalone main config differ.
+        membership = (self.repo / "nginx/runtime-membership/upstreams.conf").read_text()
+        for source, destination in (("uniroute-api-canary", project + "-backend-canary-1"),
+                                    ("uniroute-api", project + "-backend-1"),
+                                    ("uniroute-frontend", project + "-frontend-1")):
+            membership = membership.replace(source + ":", destination + ":")
+        private_write(edge / "upstreams.conf", membership.encode())
+        raw = b"events {}\nhttp {\n" + (self.repo / "nginx/nginx.conf").read_bytes() + b"\n}\n"
+        private_write(edge / "nginx.conf", raw)
+        image = "nginx:1.30.3-alpine"
+        self.run("pull existing named edge fixture image", [self.docker, "pull", image])
+        mounts = [str(edge / name) + ":" + target + ":ro" for name, target in (
+            ("nginx.conf", "/etc/nginx/nginx.conf"), ("upstreams.conf", "/etc/nginx/runtime-membership/upstreams.conf"),
+            ("loopback.crt", "/etc/nginx/ssl/fullchain.pem"), ("loopback.key", "/etc/nginx/ssl/privkey.pem"))]
+        private_write(edge / "compose.edge.json", json.dumps({"services": {"nginx": {
+            "image": image, "container_name": "uniroute-nginx", "restart": "no", "volumes": mounts,
+            "ports": ["127.0.0.1:13443:443"], "networks": ["default"]}},
+            "networks": {"default": {"external": True, "name": rendered["networks"]["default"]["name"]}}}).encode())
+        stable = old.run("retain original stable process identity", [self.docker, "inspect", project + "-backend-1"])
+        stable = json.loads(stable)[0]
+        old.run("start retained stable and canary", old.compose(directory, project) +
+            ["-f", edge / "runtime-overrides.json", "up", "-d", "--wait", "--no-deps", "--pull", "never", "--no-build", "backend", "backend-canary"])
+        actual = json.loads(old.run("verify original stable process was not replaced", [self.docker, "inspect", project + "-backend-1"]))[0]
+        require(actual["Id"] == stable["Id"] and actual["State"]["Pid"] == stable["State"]["Pid"],
+                "named fixture unexpectedly replaced the original stable writer")
+        self.run("start retained named edge", [self.docker, "compose", "--project-name", project + "-edge",
+            "--project-directory", edge, "--env-file", "/dev/null", "-f", edge / "compose.edge.json", "up", "-d", "--wait", "--pull", "never", "--no-build"])
+        self.edge_ready(edge)
+        return edge
+
+    def edge_ready(self, edge):
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),
+            urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=str(edge / "loopback.crt"))))
+        with opener.open("https://127.0.0.1:13443/health/ready", timeout=20) as response:
+            require(response.status == 200 and json.loads(response.read(16384))["status"] == "ok",
+                    "retained TLS edge is not ready")
+
+    def upgrade_command(self, action, directory, edge=None, *, history=None):
+        command = [sys.executable, "-I", "-B", self.release / "payload/deploy/upgrade.py", action,
+            "--directory", directory, "--release", self.release, "--verifier", self.verifier,
+            "--public-keys", self.ring, "--source-package", directory / "release.tar.gz"]
+        if edge:
+            command += ["--layout", "ur_edge_pair", "--edge-directory", edge]
+        if history:
+            command += ["--historical-exits", history]
+        return command
+
+    def recovery_module(self):
+        spec = importlib.util.spec_from_file_location("linux_recovery", self.release / "payload/deploy/recovery.py")
+        recovery = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(recovery)
+        return recovery
+
+    def upgrade_fingerprint(self, directory, project, database="uniroute", *, running=False, projections=None):
+        recovery = self.recovery_module()
+        projections = dict(projections or {})
+        if running:
+            projections["runtime_generations"] = ("to_jsonb(t)-'lease_expires_at'-'revision'-'updated_at'", "")
+        return recovery.table_fingerprints(lambda db, query: self.sql(directory, project, query, db),
+                                           database, projections=projections)
+
+    def protected_upgrade_rows(self, directory, project, source_sequence):
+        # Reuse the existing full-row hash algorithm, independently of the
+        # upgrader's receipt. User/password/epoch bytes are hashed inside PG;
+        # no password hash or session token is returned or logged here.
+        projections = {"audit_logs": ("to_jsonb(t)", " WHERE action IN ('user.password_reset','bootstrap.first_customer')"),
+                       "release_history": ("to_jsonb(t)", " WHERE release_sequence<=" + str(source_sequence))}
+        rows = self.upgrade_fingerprint(directory, project, projections=projections)
+        return {table: rows[table] for table in ("users", "orgs", "projects", "wallets", "transactions",
+            "project_members", "audit_logs", "release_history", "execution_content_objects", "execution_content_streams")}
+
+    def protected_upgrade_files(self, directory, body, edge):
+        roots = [directory / "runtime", directory / "admin-password", directory / "release.tar.gz",
+                 directory / "evidence/install.json", body]
+        if edge:
+            roots.append(edge)
+        inventory = self.recovery_module().private_inventory(roots)
+        # The one native image override is deliberately new. Original bytes,
+        # ownership, permissions, directories and links must remain identical.
+        inventory.pop(str(directory / "runtime/upgrade-image.json").lstrip("/"), None)
+        return inventory
+
+    def wait_stopped_leases(self, directory):
+        """Resume only the native, no-pending-operation lease wait boundary."""
+        state = json.loads((directory / "install-state.json").read_bytes())
+        witness = state["upgrade"]
+        require(witness["pending"] is None and "retire-writers" not in witness["done"] and
+            all("stop-" + role in witness["done"] for role in witness["writer_instances"]),
+            "lease wait is not at the proved physical-stop boundary")
+        for role in witness["writer_instances"]:
+            proof = witness["receipts"]["stop-" + role]
+            row = json.loads(self.run("read exact stopped lease owner", [self.docker, "inspect", proof["container_id"]]))[0]
+            require(not row["State"]["Running"] and row["State"]["Pid"] == 0 and proof["old_processes_gone"],
+                    "lease wait has an unproved live source process")
+        delay = float(self.sql(directory, state["project"], "SELECT greatest(0,coalesce(max(extract(epoch FROM "
+            "lease_expires_at-clock_timestamp())),0)) FROM runtime_generations WHERE state<>'stopped'"))
+        require(0 <= delay <= 45, "unexpected native lease expiry; preserve fixture")
+        if delay:
+            time.sleep(delay + 0.05)
+
+    def run_native_upgrade(self, directory, edge=None, history=None):
+        code, output = self.run("run actual shipped upgrade", self.upgrade_command("upgrade", directory, edge, history=history), ok=False)
+        if code:
+            require("Upgrade stopped: A stopped writer's original native lease is still live; wait and read back before retiring" in output,
+                    "native upgrade failed outside its known lease wait")
+            self.wait_stopped_leases(directory)
+            self.run("resume after proved native lease expiry", self.upgrade_command("resume-upgrade", directory, edge, history=history))
+
+    def interrupt_upgrade(self, directory, edge, history):
+        # Use the shipped owner's existing test hook. No migration, process,
+        # reconciliation or SQL effect is replaced by a fake implementation.
+        hook = self.root / "cold-pair-checkpoint.py"
+        if not hook.exists():
+            private_write(hook, b'''import importlib.util,sys
+from pathlib import Path
+program,directory,release,verifier,ring,edge,history=map(Path,sys.argv[1:])
+spec=importlib.util.spec_from_file_location("shipped_upgrade",program)
+owner=importlib.util.module_from_spec(spec); spec.loader.exec_module(owner)
+operation=owner.Upgrade(directory,release,verifier,ring,directory/"release.tar.gz","ur_edge_pair",edge,historical_exits=history)
+class Interrupted(Exception): pass
+def checkpoint(point):
+    if point=="effect:cold-pair": raise Interrupted()
+operation.test_checkpoint=checkpoint
+try: operation.execute(resume="upgrade" in operation.state)
+except Interrupted: sys.exit(73)
+except owner.install.InstallError as error:
+    if str(error)=="A stopped writer's original native lease is still live; wait and read back before retiring": sys.exit(74)
+    raise
+raise SystemExit("expected cold-pair interruption was not reached")
+''')
+        code, _ = self.run("interrupt real upgrade after independently restored cold pair", [sys.executable, "-I", "-B",
+            hook, self.release / "payload/deploy/upgrade.py", directory, self.release, self.verifier, self.ring, edge, history], ok=False)
+        if code == 74:
+            self.wait_stopped_leases(directory)
+            code, _ = self.run("continue known lease boundary to real cold-pair interruption", [sys.executable, "-I", "-B",
+                hook, self.release / "payload/deploy/upgrade.py", directory, self.release, self.verifier, self.ring, edge, history], ok=False)
+        state = json.loads((directory / "install-state.json").read_bytes())
+        witness = state["upgrade"]
+        require(code == 73 and witness["pending"] == "cold-pair", "real cold-pair checkpoint was not reached")
+        evidence = directory / "upgrades" / witness["operation_id"] / "backup"
+        receipt = evidence / "receipt.json"
+        retained = evidence / "receipt.retained-for-unknown-test.json"
+        original = sha(receipt)
+        receipt.rename(retained)
+        before = files(directory), self.inventory(), self.upgrade_fingerprint(directory, state["project"])
+        code, output = self.run("refuse unknown cold-pair outcome without repeating it",
+            self.upgrade_command("resume-upgrade", directory, edge, history=history), ok=False)
+        require(code != 0 and "Upgrade result is unconfirmed at cold-pair" in output,
+                "unknown cold-pair outcome was not refused")
+        require(before == (files(directory), self.inventory(), self.upgrade_fingerprint(directory, state["project"])),
+                "unknown outcome refusal mutated source or retained evidence")
+        require(sha(retained) == original and not receipt.exists(), "unknown outcome evidence changed")
+        retained.rename(receipt)  # Recover the exact task-owned receipt, never fabricate or overwrite it.
+        self.run("resume real independently proved cold pair", self.upgrade_command("resume-upgrade", directory, edge, history=history))
+
+    def historical_observations(self, old, directory, project, edge):
+        """Real native stop/restart or replacement, before the upgrade claim."""
+        spec = importlib.util.spec_from_file_location("shipped_history_contract", self.release / "payload/deploy/upgrade.py")
+        owner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(owner)
+        folder = directory / "evidence/historical-observations"
+        folder.mkdir(mode=0o700)
+        def reference(name, value, pointer=""):
+            path = folder / name
+            private_write(path, value if isinstance(value, bytes) else owner.canonical(value))
+            return {"path": str(path), "sha256": sha(path), "pointer": pointer}
+        def inspect(identifier):
+            fmt = '{"Id":{{json .Id}},"Image":{{json .Image}},"State":{{json .State}}}'
+            return json.loads(self.run("read original history resource identity", [self.docker, "inspect", "--format", fmt, identifier]))
+        container = inspect(project + "-backend-1")
+        ready = json.loads(self.run("read original history runtime identity", [self.docker, "exec", container["Id"],
+            "wget", "-qO-", "http://127.0.0.1:8080/health/ready"]))["runtime"]
+        require(ready["artifact_digest"] == container["Image"] and re.fullmatch(r"uri_[a-f0-9]{32}", ready["instance"]),
+                "history runtime differs from the actual original resource")
+        installation = json.loads((directory / "install-state.json").read_bytes())
+        before = {"installation_id": installation["installation_id"], "instance_id": ready["instance"],
+                  "container_id": container["Id"], "image": container["Image"]}
+        before_ref = reference("before.json", before)
+        record = {"kind": "native_replacement" if edge else "process_exit", "service": "backend",
+            "before": {key: dict(before_ref, pointer="/" + key) for key in before}, "program": None}
+        compose = old.compose(directory, project)
+        if edge:
+            compose += ["-f", edge / "runtime-overrides.json"]
+        if edge:
+            command = compose + ["up", "-d", "--wait", "--force-recreate", "--no-deps", "--pull", "never", "--no-build", "backend"]
+        else:
+            pids = self.run("retain original native history process inventory", [self.docker, "top", container["Id"], "-eo", "pid"]).splitlines()[1:]
+            processes = {row.strip(): owner.Upgrade._process_start(int(row.strip())) for row in pids}
+            require(processes and all(value is not None for value in processes.values()), "original process observation missing")
+            record["processes"] = reference("processes.json", processes)
+            command = compose + ["stop", "backend"]
+        code, output = self.run("perform exact native source history operation", command, ok=False)
+        require(code == 0, "native source history operation failed")
+        record["command"] = reference("history.process.json", {"returncode": code, "argv": [str(value) for value in command]})
+        if edge:
+            record["output"] = reference("history.stderr", output.encode(), None)
+            successor = inspect(project + "-backend-1")
+            new_ready = json.loads(self.run("read actual replacement successor runtime", [self.docker, "exec", successor["Id"],
+                "wget", "-qO-", "http://127.0.0.1:8080/health/ready"]))["runtime"]
+            successor_ref = reference("successor.json", dict(before, instance_id=new_ready["instance"],
+                container_id=successor["Id"], image=successor["Image"]))
+            record["successor"] = {key: dict(successor_ref, pointer="/" + key) for key in before}
+            require(successor["Id"] != container["Id"] and new_ready["instance"] != ready["instance"],
+                    "native replacement did not create a distinct resource/runtime")
+        else:
+            after = inspect(container["Id"])
+            require(not after["State"]["Running"] and after["State"]["Pid"] == 0 and after["State"]["ExitCode"] == 0
+                and not after["State"]["OOMKilled"] and all(owner.Upgrade._process_start(int(pid)) != start for pid, start in processes.items()),
+                "actual native history clean stop is unproved")
+            record["after"] = reference("after.json", after)
+            self.run("restart exact retained source after proved process exit", compose +
+                ["up", "-d", "--wait", "--no-deps", "--pull", "never", "--no-build", "backend"])
+        original = json.loads(self.sql(directory, project, "SELECT to_jsonb(g)||jsonb_build_object('manifest_digest',m.manifest_digest) "
+            "FROM runtime_generations g JOIN runtime_support_manifests m USING(artifact_digest) WHERE instance_id='" + ready["instance"] + "'"))
+        delay = float(self.sql(directory, project, "SELECT greatest(0,extract(epoch FROM lease_expires_at-clock_timestamp())) "
+            "FROM runtime_generations WHERE instance_id='" + ready["instance"] + "'"))
+        require(0 <= delay <= 45, "unexpected original history lease bound")
+        if delay:
+            time.sleep(delay + 0.05)
+        record["generation"] = {key: original[key] for key in owner._GENERATION_FIELDS}
+        target = self.target(directory, project)
+        release = json.loads(self.sql(directory, project, "SELECT to_jsonb(s) FROM release_state s WHERE singleton"))
+        document = {"format": "unirouter.historical-exits.v1", "installation_id": installation["installation_id"], "project": project,
+            "database_system_id": target["system_identifier"], "database": target["database"], "database_oid": target["database_oid"],
+            "source_sequence": release["release_sequence"], "source_package_sha256": release["package_sha256"], "records": [record]}
+        path = folder / "historical-exits.json"
+        private_write(path, owner.canonical(document))
+        return path
+
+    def qualify_upgrade(self, old, layout):
+        project = "ur-upgrade-" + layout + "-" + self.suffix
+        directory = old.instances / layout
+        old.project, old.directory = project, directory
+        old.run("install exact retained M127 predecessor", old.command("install", directory, project))
+        old.installed_checks(directory, project)
+        old.native_first_use_checks(directory, project, restart=False)
+        body, name, rendered = self.historical_data(old, directory, project)
+        edge = self.named_edge(old, directory, project, rendered) if layout == "edge" else None
+        history = self.historical_observations(old, directory, project, edge)
+        # Let the native audit worker finish its bounded synthetic login work
+        # before a no-write comparison; heartbeat timing alone is projected out.
+        deadline = time.monotonic() + 60
+        while old.sql(directory, project, "SELECT count(*) FROM internal_outbox_events WHERE payload->>'action'='login'") != "0":
+            require(time.monotonic() < deadline, "retained login audit did not materialize")
+            time.sleep(1)
+        protected_rows = self.protected_upgrade_rows(directory, project, old.release_sequence)
+        protected_files = self.protected_upgrade_files(directory, body, edge)
+        require(all(protected_rows[table]["count"] > 0 for table in
+            ("users", "orgs", "projects", "wallets", "transactions", "audit_logs", "release_history", "execution_content_objects")),
+            "source preservation projection lacks nonempty account/business/financial/body facts")
+        before = files(directory), self.inventory(), self.upgrade_fingerprint(directory, project, running=True)
+        code, output = self.run("refuse original history without its observations", self.upgrade_command("check-upgrade", directory, edge), ok=False)
+        require(code != 0 and "unaccounted or missing writer" in output, "history without evidence was admitted")
+        checked = json.loads(self.run("check actual M127 to M128 without effects", self.upgrade_command("check-upgrade", directory, edge, history=history)))
+        status = json.loads(self.run("read actual not-started upgrade status", self.upgrade_command("upgrade-status", directory, edge, history=history)))
+        require(checked["writes"] == 0 and checked["writers"] == (2 if edge else 1) and status["state"] == "not_started",
+                "native finite upgrade preflight differs")
+        require(before == (files(directory), self.inventory(), self.upgrade_fingerprint(directory, project, running=True)),
+                "read-only upgrade check/status changed source state")
+        require(self.protected_upgrade_files(directory, body, edge) == protected_files,
+                "read-only upgrade check/status changed protected body or configuration")
+        if edge:
+            self.interrupt_upgrade(directory, edge, history)
+        else:
+            self.run_native_upgrade(directory, history=history)
+        self.run("read back completed native upgrade resume", self.upgrade_command("resume-upgrade", directory, edge, history=history))
+        state = json.loads((directory / "install-state.json").read_bytes())
+        witness = state["upgrade"]
+        require(witness["state"] == "completed" and witness["pending"] is None, "finite upgrade remains incomplete")
+        require(self.protected_upgrade_rows(directory, project, old.release_sequence) == protected_rows and
+            self.protected_upgrade_files(directory, body, edge) == protected_files,
+            "independent original account/financial/audit/configuration projection changed")
+        require(tuple(json.loads(self.sql(directory, project, "SELECT jsonb_agg(version ORDER BY version) FROM schema_migrations")))
+                == self.source_contract.ledger, "upgraded complete ledger differs from candidate")
+        backup = directory / "upgrades" / witness["operation_id"] / "backup"
+        pair = json.loads((backup / "receipt.json").read_bytes())
+        require(pair["verification_database"] != "uniroute"
+            and self.upgrade_fingerprint(directory, project, pair["verification_database"]) == pair["restored_tables"],
+            "physically separate restored database differs from original receipt")
+        require(all(pair["tables"][table]["count"] > 0 for table in
+            ("orgs", "projects", "users", "wallets", "transactions", "audit_logs", "release_history", "execution_content_objects")),
+            "preservation fixture lacks nonempty business/financial/account/body history")
+        require(sha(body / "objects" / name) == name and sha(backup / "restore-files" / str(body / "objects" / name).lstrip("/")) == name,
+                "restored nonempty body bytes differ")
+        roles = ("backend", "backend-canary") if edge else ("backend",)
+        require(all(witness["receipts"]["stop-" + role]["clean_exit"] and
+                    witness["receipts"]["stop-" + role]["old_processes_gone"] for role in (*roles, "frontend", *(("edge",) if edge else ()))),
+                "original writer/receiver process exits are unproved")
+        self.request("http://127.0.0.1:13000/health/ready")
+        login = json.loads(self.request("http://127.0.0.1:13000/api/v1/auth/login", data=json.dumps(
+            {"username": "admin", "password": "replacement-password-456"}).encode()))
+        require(login.get("organization_role") == "platform_admin", "retained chosen password does not work after upgrade")
+        require(self.sql(directory, project, "SELECT count(*) FROM transactions WHERE request_id='synthetic-linux-history'") == "1"
+            and self.sql(directory, project, "SELECT count(*) FROM audit_logs WHERE action='bootstrap.first_customer'") == "1"
+            and self.sql(directory, project, "SELECT count(*) FROM release_history") == "2", "retained business or release history differs")
+        require(self.protected_upgrade_rows(directory, project, old.release_sequence) == protected_rows and
+            self.protected_upgrade_files(directory, body, edge) == protected_files,
+            "post-upgrade login changed original protected facts")
+        if edge:
+            self.edge_ready(edge)
+        self.result.setdefault("finite_upgrades", []).append({"layout": "ur_edge_pair" if edge else "community_single",
+            "source_schema": old.schema, "target_schema": self.schema, "writers": len(roles),
+            "full_table_count": len(pair["tables"]), "nonempty_history_preserved": True,
+            "independent_original_row_and_configuration_equality": True,
+            "independent_database_and_body_restore": True, "read_only_no_effects": True,
+            "physical_exits_proved": True, "completed_resume": True, "known_checkpoint_resume": bool(edge),
+            "historical_kind": "native_replacement" if edge else "process_exit", "history_without_evidence_refused": True,
+            "unknown_outcome_refused": bool(edge), "provider_calls": 0})
+        self.passed("real " + layout + " M127 to M128 upgrade, paired restore and preserved first use")
+        # Serialize cases, releasing only this exact fixture's receivers/DBs.
+        if edge:
+            self.run("stop exact completed edge fixture", [self.docker, "compose", "--project-name", project + "-edge",
+                "--project-directory", edge, "--env-file", "/dev/null", "-f", edge / "compose.edge.json", "stop"])
+        compose = old.compose(directory, project)
+        if edge:
+            compose += ["-f", edge / "runtime-overrides.json"]
+        self.run("stop exact completed upgraded fixture", compose + ["-f", directory / "runtime/upgrade-image.json", "stop"])
 
     def execute(self):
         self.preflight()
@@ -551,6 +1056,11 @@ os.kill(parent, signal.SIGKILL)
         self.interrupt_after_plan(directory, project)
         self.installed_checks(directory, project)
         self.native_first_use_checks(directory, project)
+        self.run("stop exact completed fresh fixture", self.compose(directory, project) + ["stop"])
+        require(self.schema == CURRENT_SCHEMA, "current Linux qualification requires the M128 candidate")
+        old = self.retained_release()
+        for layout in ("single", "edge"):
+            self.qualify_upgrade(old, layout)
         self.result["status"] = "passed"
         self.result.pop("installer_stop", None)
         # All resources belong to this disposable runner; no broad prune/cleanup.

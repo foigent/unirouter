@@ -26,6 +26,7 @@ import (
 	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelqualification"
 	"github.com/uniroute/unirouter/internal/strictjson"
+	"github.com/uniroute/unirouter/internal/upstreamrelease"
 )
 
 const canonicalModelApplicationContractVersion = "unirouter.model-deployment.v1"
@@ -73,19 +74,20 @@ type canonicalPublicModel struct {
 }
 
 type canonicalDeployment struct {
-	ID                   int64      `json:"id"`
-	UpstreamModel        string     `json:"upstream_model"`
-	AdminState           string     `json:"admin_state"`
-	ConfigRevision       int64      `json:"config_revision"`
-	Priority             int        `json:"priority"`
-	RoutingWeight        int        `json:"routing_weight"`
-	MaxContext           int        `json:"max_context"`
-	DefaultMaxOutput     int        `json:"default_max_output"`
-	DegradationThreshold int        `json:"degradation_threshold"`
-	CircuitState         string     `json:"circuit_state"`
-	CircuitRevision      int64      `json:"circuit_revision"`
-	FailCount            int        `json:"fail_count"`
-	RetiredAt            *time.Time `json:"retired_at,omitempty"`
+	UpstreamReleaseObservation upstreamrelease.State `json:"upstream_release_observation"`
+	ID                         int64                 `json:"id"`
+	UpstreamModel              string                `json:"upstream_model"`
+	AdminState                 string                `json:"admin_state"`
+	ConfigRevision             int64                 `json:"config_revision"`
+	Priority                   int                   `json:"priority"`
+	RoutingWeight              int                   `json:"routing_weight"`
+	MaxContext                 int                   `json:"max_context"`
+	DefaultMaxOutput           int                   `json:"default_max_output"`
+	DegradationThreshold       int                   `json:"degradation_threshold"`
+	CircuitState               string                `json:"circuit_state"`
+	CircuitRevision            int64                 `json:"circuit_revision"`
+	FailCount                  int                   `json:"fail_count"`
+	RetiredAt                  *time.Time            `json:"retired_at,omitempty"`
 }
 
 type canonicalConnectionAxis struct {
@@ -163,18 +165,19 @@ type canonicalExecutionSupport struct {
 }
 
 type canonicalProductionQualification struct {
-	Required                   bool   `json:"required"`
-	Qualified                  bool   `json:"qualified"`
-	State                      string `json:"state"`
-	ApprovalID                 *int64 `json:"approval_id,omitempty"`
-	ProbeID                    *int64 `json:"probe_id,omitempty"`
-	HTTPSOrigin                string `json:"https_origin,omitempty"`
-	ApprovedConnectionRevision int64  `json:"approved_connection_revision,omitempty"`
-	ApprovedDeploymentRevision int64  `json:"approved_deployment_revision,omitempty"`
-	ApprovedOperationRevision  int64  `json:"approved_operation_revision,omitempty"`
-	CurrentConnectionRevision  int64  `json:"current_connection_revision,omitempty"`
-	CurrentDeploymentRevision  int64  `json:"current_deployment_revision,omitempty"`
-	CurrentOperationRevision   int64  `json:"current_operation_revision,omitempty"`
+	UpstreamScope              *upstreamrelease.Applicability `json:"upstream_scope,omitempty"`
+	Required                   bool                           `json:"required"`
+	Qualified                  bool                           `json:"qualified"`
+	State                      string                         `json:"state"`
+	ApprovalID                 *int64                         `json:"approval_id,omitempty"`
+	ProbeID                    *int64                         `json:"probe_id,omitempty"`
+	HTTPSOrigin                string                         `json:"https_origin,omitempty"`
+	ApprovedConnectionRevision int64                          `json:"approved_connection_revision,omitempty"`
+	ApprovedDeploymentRevision int64                          `json:"approved_deployment_revision,omitempty"`
+	ApprovedOperationRevision  int64                          `json:"approved_operation_revision,omitempty"`
+	CurrentConnectionRevision  int64                          `json:"current_connection_revision,omitempty"`
+	CurrentDeploymentRevision  int64                          `json:"current_deployment_revision,omitempty"`
+	CurrentOperationRevision   int64                          `json:"current_operation_revision,omitempty"`
 }
 
 type canonicalOperationRuntimeAxis struct {
@@ -204,26 +207,28 @@ type canonicalRuntimeMembership struct {
 }
 
 type canonicalOperationProbeView struct {
-	ProbeID                 int64     `json:"probe_id"`
-	Success                 bool      `json:"success"`
-	Current                 bool      `json:"current"`
-	StatusCode              int       `json:"status_code"`
-	LatencyMS               int64     `json:"latency_ms"`
-	ReportedModel           string    `json:"reported_model,omitempty"`
-	ErrorSummary            string    `json:"error_summary,omitempty"`
-	CredentialBindingID     *int64    `json:"credential_binding_id,omitempty"`
-	ConnectionRevision      int64     `json:"connection_revision"`
-	DeploymentRevision      int64     `json:"deployment_revision"`
-	CredentialStateRevision int64     `json:"credential_state_revision"`
-	ProbeProfileID          string    `json:"probe_profile_id"`
-	ProbeProfileVersion     string    `json:"probe_profile_version"`
-	OperationRevision       *int64    `json:"operation_revision,omitempty"`
-	PublicPath              string    `json:"public_path,omitempty"`
-	ExecutorContractVersion string    `json:"executor_contract_version,omitempty"`
-	HTTPSOrigin             string    `json:"https_origin,omitempty"`
-	SourceKind              string    `json:"source_kind"`
-	TestedAt                time.Time `json:"tested_at"`
-	TestedBy                *int64    `json:"tested_by,omitempty"`
+	UpstreamReleaseObservation *upstreamrelease.Observation  `json:"upstream_release_observation"`
+	UpstreamScope              upstreamrelease.Applicability `json:"upstream_scope"`
+	ProbeID                    int64                         `json:"probe_id"`
+	Success                    bool                          `json:"success"`
+	Current                    bool                          `json:"current"`
+	StatusCode                 int                           `json:"status_code"`
+	LatencyMS                  int64                         `json:"latency_ms"`
+	ReportedModel              string                        `json:"reported_model,omitempty"`
+	ErrorSummary               string                        `json:"error_summary,omitempty"`
+	CredentialBindingID        *int64                        `json:"credential_binding_id,omitempty"`
+	ConnectionRevision         int64                         `json:"connection_revision"`
+	DeploymentRevision         int64                         `json:"deployment_revision"`
+	CredentialStateRevision    int64                         `json:"credential_state_revision"`
+	ProbeProfileID             string                        `json:"probe_profile_id"`
+	ProbeProfileVersion        string                        `json:"probe_profile_version"`
+	OperationRevision          *int64                        `json:"operation_revision,omitempty"`
+	PublicPath                 string                        `json:"public_path,omitempty"`
+	ExecutorContractVersion    string                        `json:"executor_contract_version,omitempty"`
+	HTTPSOrigin                string                        `json:"https_origin,omitempty"`
+	SourceKind                 string                        `json:"source_kind"`
+	TestedAt                   time.Time                     `json:"tested_at"`
+	TestedBy                   *int64                        `json:"tested_by,omitempty"`
 }
 
 type canonicalRuntimeAxis struct {
@@ -1562,6 +1567,7 @@ SELECT mr.id,mr.model_name,mr.display_name,mr.provider_family,mr.lifecycle,
        md.id,md.upstream_model,md.admin_state,md.config_revision,md.priority,
        md.routing_weight,md.max_context,md.default_max_output,md.degradation_threshold,
        md.circuit_state,md.circuit_revision,md.fail_count,md.retired_at,
+ md.upstream_release_observation,md.upstream_observation_revision,
 	       pc.id,pc.name,pc.provider,pc.base_url,pc.adapter_type,
 	       COALESCE(pc.adapter_config,'{}'::jsonb),pc.admin_state,
        pc.config_revision,pc.retired_at,
@@ -1590,6 +1596,7 @@ SELECT mr.id,mr.model_name,mr.display_name,mr.provider_family,mr.lifecycle,
 		item := canonicalModelApplication{ContractVersion: canonicalModelApplicationContractVersion, Operations: make([]canonicalOperationAxis, 0), Actions: canonicalActionMeta()}
 		item.Callability = canonicalCallabilityAxis{Evaluated: false, State: "not_evaluated", ReasonCode: "caller_context_absent"}
 		var deploymentRetired, connectionRetired sql.NullTime
+		var upstreamRaw json.RawMessage
 		var slotVersion sql.NullInt64
 		var canaryBPS sql.NullInt64
 		var stableRef, stableStage, canaryRef, canaryStage sql.NullString
@@ -1604,6 +1611,7 @@ SELECT mr.id,mr.model_name,mr.display_name,mr.provider_family,mr.lifecycle,
 			&item.Deployment.MaxContext, &item.Deployment.DefaultMaxOutput,
 			&item.Deployment.DegradationThreshold, &item.Deployment.CircuitState,
 			&item.Deployment.CircuitRevision, &item.Deployment.FailCount, &deploymentRetired,
+			&upstreamRaw, &item.Deployment.UpstreamReleaseObservation.Revision,
 			&item.Connection.ID, &item.Connection.Name, &item.Connection.Provider,
 			&item.Connection.BaseURL, &item.Connection.AdapterType, &item.Connection.AdapterConfig,
 			&item.Connection.AdminState,
@@ -1612,6 +1620,10 @@ SELECT mr.id,mr.model_name,mr.display_name,mr.provider_family,mr.lifecycle,
 			&canaryRef, &canaryStage, &canaryVersion,
 		); err != nil {
 			return projection, fmt.Errorf("scan canonical model application: %w", err)
+		}
+		item.Deployment.UpstreamReleaseObservation.Observation, err = upstreamrelease.Decode(upstreamRaw)
+		if err != nil {
+			return projection, err
 		}
 		if deploymentRetired.Valid {
 			value := deploymentRetired.Time
@@ -1781,6 +1793,7 @@ SELECT md.id,operation.operation_id,operation.protocol_profile_id,
        qualification.approved_connection_revision,qualification.approved_deployment_revision,
        qualification.approved_operation_revision,qualification.current_connection_revision,
        qualification.current_deployment_revision,qualification.current_operation_revision,
+       (SELECT p.request_summary->'upstream_release_observation' FROM model_deployment_probes p WHERE p.probe_id=qualification.probe_id),
        COALESCE(probe_stats.probed_binding_count,0),
        COALESCE(probe_stats.current_success_count,0),COALESCE(probe_stats.current_failure_count,0),
        COALESCE(probe_stats.stale_probed_binding_count,0),
@@ -1789,7 +1802,7 @@ SELECT md.id,operation.operation_id,operation.protocol_profile_id,
        probe.deployment_revision,probe.credential_state_revision,probe.probe_profile_id,
        probe.probe_profile_version,probe.operation_revision,probe.public_path,
        probe.executor_contract_version,probe.https_origin,probe.source_kind,
-       probe.tested_at,probe.tested_by,
+       probe.tested_at,probe.tested_by,probe.request_summary->'upstream_release_observation',
        CASE WHEN probe.probe_id IS NULL THEN FALSE ELSE
          probe.connection_revision=pc.config_revision
          AND probe.deployment_revision=md.config_revision
@@ -1941,6 +1954,7 @@ SELECT md.id,operation.operation_id,operation.protocol_profile_id,
 		var currentQualificationConnectionRevision, currentQualificationDeploymentRevision, currentQualificationOperationRevision sql.NullInt64
 		var bindingID, testedBy sql.NullInt64
 		var testedAt sql.NullTime
+		var probeObservation, approvedObservation json.RawMessage
 		var current bool
 		var slotVersion sql.NullInt64
 		var stableMembershipJSON, canaryMembershipJSON sql.NullString
@@ -1953,13 +1967,13 @@ SELECT md.id,operation.operation_id,operation.protocol_profile_id,
 			&approvalID, &approvalProbeID, &qualificationHTTPSOrigin,
 			&approvedConnectionRevision, &approvedDeploymentRevision, &approvedOperationRevision,
 			&currentQualificationConnectionRevision, &currentQualificationDeploymentRevision,
-			&currentQualificationOperationRevision,
+			&currentQualificationOperationRevision, &approvedObservation,
 			&operation.ProbedBindingCount, &operation.CurrentSuccessCount,
 			&operation.CurrentFailureCount, &operation.StaleProbedBindingCount,
 			&probeID, &probeSuccess, &probeStatus, &probeLatency, &reported, &probeError,
 			&bindingID, &connectionRevision, &deploymentRevision, &credentialRevision,
 			&profileID, &profileVersion, &probeOperationRevision, &probePublicPath,
-			&probeExecutor, &probeHTTPSOrigin, &probeSourceKind, &testedAt, &testedBy, &current,
+			&probeExecutor, &probeHTTPSOrigin, &probeSourceKind, &testedAt, &testedBy, &probeObservation, &current,
 			&slotVersion, &stableMembershipJSON, &canaryMembershipJSON, &operation.ProfileDefinitionDigest,
 		); err != nil {
 			return fmt.Errorf("scan canonical deployment operation: %w", err)
@@ -2010,6 +2024,15 @@ SELECT md.id,operation.operation_id,operation.protocol_profile_id,
 		if !exists {
 			return fmt.Errorf("canonical operation owner missing")
 		}
+		if operation.ProductionQualification.Required {
+			captured, e := upstreamrelease.Decode(approvedObservation)
+			if e != nil {
+				return e
+			}
+			app := applications[position]
+			scope := upstreamrelease.AssessInScope(upstreamrelease.Scope{CustomerOrgID: orgID, DeploymentID: ownerID, ConnectionID: app.Connection.ID, Provider: app.Connection.Provider, BaseURL: app.Connection.BaseURL, APIModel: app.Deployment.UpstreamModel}, app.Deployment.UpstreamReleaseObservation.Observation, captured)
+			operation.ProductionQualification.UpstreamScope = &scope
+		}
 		publicModel := applications[position].PublicModel
 		capabilityProbeContracts, contractErr := canonicalCapabilityProbeContractsForExactOperation(
 			operation.OperationID,
@@ -2056,6 +2079,12 @@ SELECT md.id,operation.operation_id,operation.protocol_profile_id,
 				value := testedBy.Int64
 				probe.TestedBy = &value
 			}
+			probe.UpstreamReleaseObservation, err = upstreamrelease.Decode(probeObservation)
+			if err != nil {
+				return err
+			}
+			app := applications[position]
+			probe.UpstreamScope = upstreamrelease.AssessInScope(upstreamrelease.Scope{CustomerOrgID: orgID, DeploymentID: ownerID, ConnectionID: app.Connection.ID, Provider: app.Connection.Provider, BaseURL: app.Connection.BaseURL, APIModel: app.Deployment.UpstreamModel}, app.Deployment.UpstreamReleaseObservation.Observation, probe.UpstreamReleaseObservation)
 			operation.LatestProbe = &probe
 		}
 		switch {

@@ -1,0 +1,801 @@
+[
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "function_tools",
+      "ExecutionProfileID": "glm.5-turbo.api",
+      "ExecutionProfileVersion": "1.1.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5-turbo",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5-turbo\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "cfa2e05ff74fd8cac7f08116a62bf57cf2261d9007861233f24eb21ad2b703bd"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "function_tools",
+      "ExecutionProfileID": "glm.5.1.api",
+      "ExecutionProfileVersion": "1.1.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5.1",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5.1\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "a38ff9c63d9961e5d4dde19f0412527c0a56a51d5b78d3989f0872a694a84029"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "function_tools",
+      "ExecutionProfileID": "glm.5.2.api",
+      "ExecutionProfileVersion": "1.9.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5.2",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5.2\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "daa283fee465b40abe9a938023f75f4aa2dd978e83c8167e4b336d74e651364e"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "function_tools",
+      "ExecutionProfileID": "glm.5.3.api",
+      "ExecutionProfileVersion": "1.9.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5.3",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5.3\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "59744c8487d060f1be2fe6a95ad9a28d4d1b4d89a4dd7cb8d485b470554a04e0"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "function_tools",
+      "ExecutionProfileID": "glm.5.api",
+      "ExecutionProfileVersion": "1.1.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "32be16cc666ab363de8518ae3bb0e55585ed5978e91aa741b5afd23209e639ef"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "function_tools",
+      "ExecutionProfileID": "glm.5v-turbo.api",
+      "ExecutionProfileVersion": "1.12.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.glm5v.v6",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5v-turbo",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5v-turbo\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "368cf351389fc5c50634fce1ce9a978fa35bb4797b76daca11c91fad2e99d64c"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "function_tools",
+      "ExecutionProfileID": "minimax.m2.7.payg",
+      "ExecutionProfileVersion": "1.3.0",
+      "ProtocolProfileID": "protocol.minimax-m27-openai-chat.v1",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.minimax-m27-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "minimax",
+      "ExpectedUpstreamModel": "MiniMax-M2.7",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_completion_tokens\":1024,\"messages\":[{\"content\":\"Call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"MiniMax-M2.7\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "8bfb04980bcb75b1eba39835fb3db0100efd869d6f8ae794a833198877fa1a1e"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "reasoning",
+      "ExecutionProfileID": "glm.5-turbo.api",
+      "ExecutionProfileVersion": "1.1.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5-turbo",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5-turbo\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "cfa2e05ff74fd8cac7f08116a62bf57cf2261d9007861233f24eb21ad2b703bd"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "reasoning",
+      "ExecutionProfileID": "glm.5.1.api",
+      "ExecutionProfileVersion": "1.1.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5.1",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5.1\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "a38ff9c63d9961e5d4dde19f0412527c0a56a51d5b78d3989f0872a694a84029"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "reasoning",
+      "ExecutionProfileID": "glm.5.2.api",
+      "ExecutionProfileVersion": "1.9.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5.2",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5.2\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "daa283fee465b40abe9a938023f75f4aa2dd978e83c8167e4b336d74e651364e"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "reasoning",
+      "ExecutionProfileID": "glm.5.3.api",
+      "ExecutionProfileVersion": "1.9.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5.3",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5.3\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "59744c8487d060f1be2fe6a95ad9a28d4d1b4d89a4dd7cb8d485b470554a04e0"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "reasoning",
+      "ExecutionProfileID": "glm.5.api",
+      "ExecutionProfileVersion": "1.1.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "32be16cc666ab363de8518ae3bb0e55585ed5978e91aa741b5afd23209e639ef"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "reasoning",
+      "ExecutionProfileID": "glm.5v-turbo.api",
+      "ExecutionProfileVersion": "1.12.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.glm5v.v6",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5v-turbo",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5v-turbo\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "368cf351389fc5c50634fce1ce9a978fa35bb4797b76daca11c91fad2e99d64c"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "reasoning",
+      "ExecutionProfileID": "minimax.m2.7.payg",
+      "ExecutionProfileVersion": "1.3.0",
+      "ProtocolProfileID": "protocol.minimax-m27-openai-chat.v1",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.minimax-m27-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "minimax",
+      "ExpectedUpstreamModel": "MiniMax-M2.7",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_completion_tokens\":1024,\"messages\":[{\"content\":\"Call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"MiniMax-M2.7\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "8bfb04980bcb75b1eba39835fb3db0100efd869d6f8ae794a833198877fa1a1e"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "streaming",
+      "ExecutionProfileID": "glm.5-turbo.api",
+      "ExecutionProfileVersion": "1.1.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5-turbo",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5-turbo\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "cfa2e05ff74fd8cac7f08116a62bf57cf2261d9007861233f24eb21ad2b703bd"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "streaming",
+      "ExecutionProfileID": "glm.5.1.api",
+      "ExecutionProfileVersion": "1.1.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5.1",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5.1\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "a38ff9c63d9961e5d4dde19f0412527c0a56a51d5b78d3989f0872a694a84029"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "streaming",
+      "ExecutionProfileID": "glm.5.2.api",
+      "ExecutionProfileVersion": "1.9.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5.2",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5.2\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "daa283fee465b40abe9a938023f75f4aa2dd978e83c8167e4b336d74e651364e"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "streaming",
+      "ExecutionProfileID": "glm.5.3.api",
+      "ExecutionProfileVersion": "1.9.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5.3",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5.3\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "59744c8487d060f1be2fe6a95ad9a28d4d1b4d89a4dd7cb8d485b470554a04e0"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "streaming",
+      "ExecutionProfileID": "glm.5.api",
+      "ExecutionProfileVersion": "1.1.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "32be16cc666ab363de8518ae3bb0e55585ed5978e91aa741b5afd23209e639ef"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "streaming",
+      "ExecutionProfileID": "glm.5v-turbo.api",
+      "ExecutionProfileVersion": "1.12.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.glm5v.v6",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5v-turbo",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5v-turbo\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "368cf351389fc5c50634fce1ce9a978fa35bb4797b76daca11c91fad2e99d64c"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "streaming",
+      "ExecutionProfileID": "minimax.m2.7.payg",
+      "ExecutionProfileVersion": "1.3.0",
+      "ProtocolProfileID": "protocol.minimax-m27-openai-chat.v1",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.minimax-m27-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "minimax",
+      "ExpectedUpstreamModel": "MiniMax-M2.7",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_completion_tokens\":1024,\"messages\":[{\"content\":\"Call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"MiniMax-M2.7\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "8bfb04980bcb75b1eba39835fb3db0100efd869d6f8ae794a833198877fa1a1e"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "tool_choice_auto",
+      "ExecutionProfileID": "glm.5-turbo.api",
+      "ExecutionProfileVersion": "1.1.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5-turbo",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5-turbo\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "cfa2e05ff74fd8cac7f08116a62bf57cf2261d9007861233f24eb21ad2b703bd"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "tool_choice_auto",
+      "ExecutionProfileID": "glm.5.1.api",
+      "ExecutionProfileVersion": "1.1.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5.1",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5.1\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "a38ff9c63d9961e5d4dde19f0412527c0a56a51d5b78d3989f0872a694a84029"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "tool_choice_auto",
+      "ExecutionProfileID": "glm.5.2.api",
+      "ExecutionProfileVersion": "1.9.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5.2",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5.2\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "daa283fee465b40abe9a938023f75f4aa2dd978e83c8167e4b336d74e651364e"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "tool_choice_auto",
+      "ExecutionProfileID": "glm.5.3.api",
+      "ExecutionProfileVersion": "1.9.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5.3",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5.3\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "59744c8487d060f1be2fe6a95ad9a28d4d1b4d89a4dd7cb8d485b470554a04e0"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "tool_choice_auto",
+      "ExecutionProfileID": "glm.5.api",
+      "ExecutionProfileVersion": "1.1.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "32be16cc666ab363de8518ae3bb0e55585ed5978e91aa741b5afd23209e639ef"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "tool_choice_auto",
+      "ExecutionProfileID": "glm.5v-turbo.api",
+      "ExecutionProfileVersion": "1.12.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.glm5v.v6",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5v-turbo",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5v-turbo\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "368cf351389fc5c50634fce1ce9a978fa35bb4797b76daca11c91fad2e99d64c"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "tool_choice_auto",
+      "ExecutionProfileID": "minimax.m2.7.payg",
+      "ExecutionProfileVersion": "1.3.0",
+      "ProtocolProfileID": "protocol.minimax-m27-openai-chat.v1",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.minimax-m27-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "minimax",
+      "ExpectedUpstreamModel": "MiniMax-M2.7",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_completion_tokens\":1024,\"messages\":[{\"content\":\"Call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"MiniMax-M2.7\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "8bfb04980bcb75b1eba39835fb3db0100efd869d6f8ae794a833198877fa1a1e"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "tools",
+      "ExecutionProfileID": "glm.5-turbo.api",
+      "ExecutionProfileVersion": "1.1.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5-turbo",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5-turbo\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "cfa2e05ff74fd8cac7f08116a62bf57cf2261d9007861233f24eb21ad2b703bd"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "tools",
+      "ExecutionProfileID": "glm.5.1.api",
+      "ExecutionProfileVersion": "1.1.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5.1",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5.1\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "a38ff9c63d9961e5d4dde19f0412527c0a56a51d5b78d3989f0872a694a84029"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "tools",
+      "ExecutionProfileID": "glm.5.2.api",
+      "ExecutionProfileVersion": "1.9.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5.2",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5.2\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "daa283fee465b40abe9a938023f75f4aa2dd978e83c8167e4b336d74e651364e"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "tools",
+      "ExecutionProfileID": "glm.5.3.api",
+      "ExecutionProfileVersion": "1.9.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5.3",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5.3\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "59744c8487d060f1be2fe6a95ad9a28d4d1b4d89a4dd7cb8d485b470554a04e0"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "tools",
+      "ExecutionProfileID": "glm.5.api",
+      "ExecutionProfileVersion": "1.1.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "32be16cc666ab363de8518ae3bb0e55585ed5978e91aa741b5afd23209e639ef"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "tools",
+      "ExecutionProfileID": "glm.5v-turbo.api",
+      "ExecutionProfileVersion": "1.12.0",
+      "ProtocolProfileID": "protocol.glm-openai-chat.glm5v.v6",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.glm-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "glm",
+      "ExpectedUpstreamModel": "glm-5v-turbo",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_tokens\":1024,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"glm-5v-turbo\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking\":{\"type\":\"enabled\"},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "368cf351389fc5c50634fce1ce9a978fa35bb4797b76daca11c91fad2e99d64c"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "tools",
+      "ExecutionProfileID": "minimax.m2.7.payg",
+      "ExecutionProfileVersion": "1.3.0",
+      "ProtocolProfileID": "protocol.minimax-m27-openai-chat.v1",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.minimax-m27-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "minimax",
+      "ExpectedUpstreamModel": "MiniMax-M2.7",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"max_completion_tokens\":1024,\"messages\":[{\"content\":\"Call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"MiniMax-M2.7\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "8bfb04980bcb75b1eba39835fb3db0100efd869d6f8ae794a833198877fa1a1e"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "streaming",
+      "ExecutionProfileID": "qwen.3.7-flash.api",
+      "ExecutionProfileVersion": "1.8.0",
+      "ProtocolProfileID": "protocol.qwen-openai-chat.flash.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.qwen-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "dashscope",
+      "ExpectedUpstreamModel": "qwen3.7-flash",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"enable_thinking\":true,\"max_completion_tokens\":2048,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"qwen3.7-flash\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking_budget\":1024,\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "4a50d051d48a7cff2bf2311726b5ec7f248b627cc4455337467a1297c917e6e4"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "reasoning",
+      "ExecutionProfileID": "qwen.3.7-flash.api",
+      "ExecutionProfileVersion": "1.8.0",
+      "ProtocolProfileID": "protocol.qwen-openai-chat.flash.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.qwen-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "dashscope",
+      "ExpectedUpstreamModel": "qwen3.7-flash",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"enable_thinking\":true,\"max_completion_tokens\":2048,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"qwen3.7-flash\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking_budget\":1024,\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "4a50d051d48a7cff2bf2311726b5ec7f248b627cc4455337467a1297c917e6e4"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "reasoning_budget",
+      "ExecutionProfileID": "qwen.3.7-flash.api",
+      "ExecutionProfileVersion": "1.8.0",
+      "ProtocolProfileID": "protocol.qwen-openai-chat.flash.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.qwen-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "dashscope",
+      "ExpectedUpstreamModel": "qwen3.7-flash",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"enable_thinking\":true,\"max_completion_tokens\":2048,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"qwen3.7-flash\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking_budget\":1024,\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "4a50d051d48a7cff2bf2311726b5ec7f248b627cc4455337467a1297c917e6e4"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "tools",
+      "ExecutionProfileID": "qwen.3.7-flash.api",
+      "ExecutionProfileVersion": "1.8.0",
+      "ProtocolProfileID": "protocol.qwen-openai-chat.flash.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.qwen-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "dashscope",
+      "ExpectedUpstreamModel": "qwen3.7-flash",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"enable_thinking\":true,\"max_completion_tokens\":2048,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"qwen3.7-flash\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking_budget\":1024,\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "4a50d051d48a7cff2bf2311726b5ec7f248b627cc4455337467a1297c917e6e4"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "function_tools",
+      "ExecutionProfileID": "qwen.3.7-flash.api",
+      "ExecutionProfileVersion": "1.8.0",
+      "ProtocolProfileID": "protocol.qwen-openai-chat.flash.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.qwen-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "dashscope",
+      "ExpectedUpstreamModel": "qwen3.7-flash",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"enable_thinking\":true,\"max_completion_tokens\":2048,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"qwen3.7-flash\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking_budget\":1024,\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "4a50d051d48a7cff2bf2311726b5ec7f248b627cc4455337467a1297c917e6e4"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "tool_choice_auto",
+      "ExecutionProfileID": "qwen.3.7-flash.api",
+      "ExecutionProfileVersion": "1.8.0",
+      "ProtocolProfileID": "protocol.qwen-openai-chat.flash.v7",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.qwen-chat-stream-tools.v1",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "dashscope",
+      "ExpectedUpstreamModel": "qwen3.7-flash",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"enable_thinking\":true,\"max_completion_tokens\":2048,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"qwen3.7-flash\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking_budget\":1024,\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "4a50d051d48a7cff2bf2311726b5ec7f248b627cc4455337467a1297c917e6e4"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "streaming",
+      "ExecutionProfileID": "qwen.3.7-flash.api",
+      "ExecutionProfileVersion": "1.9.0",
+      "ProtocolProfileID": "protocol.qwen-openai-chat.flash.v8",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.qwen-chat-stream-tools.v2",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "dashscope",
+      "ExpectedUpstreamModel": "qwen3.7-flash",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"enable_thinking\":true,\"max_completion_tokens\":2038,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"qwen3.7-flash\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking_budget\":1024,\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "80c9cd315361b6ce20e15c88f369d5c69e06e81390876d05098ae4b097bf4993"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "reasoning",
+      "ExecutionProfileID": "qwen.3.7-flash.api",
+      "ExecutionProfileVersion": "1.9.0",
+      "ProtocolProfileID": "protocol.qwen-openai-chat.flash.v8",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.qwen-chat-stream-tools.v2",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "dashscope",
+      "ExpectedUpstreamModel": "qwen3.7-flash",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"enable_thinking\":true,\"max_completion_tokens\":2038,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"qwen3.7-flash\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking_budget\":1024,\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "80c9cd315361b6ce20e15c88f369d5c69e06e81390876d05098ae4b097bf4993"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "reasoning_budget",
+      "ExecutionProfileID": "qwen.3.7-flash.api",
+      "ExecutionProfileVersion": "1.9.0",
+      "ProtocolProfileID": "protocol.qwen-openai-chat.flash.v8",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.qwen-chat-stream-tools.v2",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "dashscope",
+      "ExpectedUpstreamModel": "qwen3.7-flash",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"enable_thinking\":true,\"max_completion_tokens\":2038,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"qwen3.7-flash\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking_budget\":1024,\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "80c9cd315361b6ce20e15c88f369d5c69e06e81390876d05098ae4b097bf4993"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "tools",
+      "ExecutionProfileID": "qwen.3.7-flash.api",
+      "ExecutionProfileVersion": "1.9.0",
+      "ProtocolProfileID": "protocol.qwen-openai-chat.flash.v8",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.qwen-chat-stream-tools.v2",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "dashscope",
+      "ExpectedUpstreamModel": "qwen3.7-flash",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"enable_thinking\":true,\"max_completion_tokens\":2038,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"qwen3.7-flash\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking_budget\":1024,\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "80c9cd315361b6ce20e15c88f369d5c69e06e81390876d05098ae4b097bf4993"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "function_tools",
+      "ExecutionProfileID": "qwen.3.7-flash.api",
+      "ExecutionProfileVersion": "1.9.0",
+      "ProtocolProfileID": "protocol.qwen-openai-chat.flash.v8",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.qwen-chat-stream-tools.v2",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "dashscope",
+      "ExpectedUpstreamModel": "qwen3.7-flash",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"enable_thinking\":true,\"max_completion_tokens\":2038,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"qwen3.7-flash\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking_budget\":1024,\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "80c9cd315361b6ce20e15c88f369d5c69e06e81390876d05098ae4b097bf4993"
+  },
+  {
+    "binding": {
+      "OperationID": "openai.chat_completions.v1",
+      "CapabilityID": "tool_choice_auto",
+      "ExecutionProfileID": "qwen.3.7-flash.api",
+      "ExecutionProfileVersion": "1.9.0",
+      "ProtocolProfileID": "protocol.qwen-openai-chat.flash.v8",
+      "ProtocolProfileVersion": "1.0.0",
+      "ProbeContractID": "unirouter.capability-probe.qwen-chat-stream-tools.v2",
+      "ProbeContractVersion": "1.0.0",
+      "ExpectedProvider": "dashscope",
+      "ExpectedUpstreamModel": "qwen3.7-flash",
+      "PublicPath": "/v1/chat/completions"
+    },
+    "body": "{\"enable_thinking\":true,\"max_completion_tokens\":2038,\"messages\":[{\"content\":\"Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly.\",\"role\":\"user\"}],\"model\":\"qwen3.7-flash\",\"stream\":true,\"stream_options\":{\"include_usage\":true},\"thinking_budget\":1024,\"tool_choice\":\"auto\",\"tools\":[{\"function\":{\"description\":\"Return the supplied probe value through a function call.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"],\"type\":\"object\"}},\"type\":\"function\"}]}",
+    "sha256": "80c9cd315361b6ce20e15c88f369d5c69e06e81390876d05098ae4b097bf4993"
+  }
+]

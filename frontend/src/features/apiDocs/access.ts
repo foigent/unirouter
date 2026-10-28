@@ -164,6 +164,7 @@ export function endpointVisibleForAuthz(
     const isCanonicalModelDeploymentRead = method === 'GET' && (
       path === '/api/v1/model-deployments' ||
       path === '/api/v1/model-deployments/{deploymentID}' ||
+      path === '/api/v1/model-deployments/{deploymentID}/upstream-release-observation' ||
       path === '/api/v1/model-deployment-releases' ||
       path === '/api/v1/model-deployment-releases/{releaseRef}'
     );
@@ -173,6 +174,7 @@ export function endpointVisibleForAuthz(
       );
     }
     if (isOrgAdminRole(organizationRole)) {
+      const isUpstreamDeclarationWrite = method === 'PUT' && path === '/api/v1/model-deployments/{deploymentID}/upstream-release-observation';
       const isCanonicalModelDiscovery = method === 'GET' && path === '/api/v1/model-deployments/{deploymentID}/model-discovery';
       const isCanonicalModelDeploymentCreate = method === 'POST' && path === '/api/v1/model-deployments';
       const isCanonicalModelDeploymentReleaseAuthor = method === 'POST' &&
@@ -182,7 +184,7 @@ export function endpointVisibleForAuthz(
       const isCanonicalModelDeploymentLifecycleWrite =
         organizationModelDeploymentLifecycleWrites.has(`${method} ${path}`);
       const isModelRouteSafetyWrite = organizationModelRouteSafetyWrites.has(`${method} ${path}`);
-      return isCanonicalModelDeploymentRead || isCanonicalModelDiscovery || isCanonicalModelDeploymentCreate ||
+      return isCanonicalModelDeploymentRead || isUpstreamDeclarationWrite || isCanonicalModelDiscovery || isCanonicalModelDeploymentCreate ||
         isCanonicalModelDeploymentReleaseAuthor || isCanonicalModelDeploymentProbe ||
         isCanonicalModelDeploymentLifecycleWrite || isModelRouteSafetyWrite || [
         '/dashboard/stats', '/keys', '/limit-policies', '/guardrail-policies',

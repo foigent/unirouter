@@ -22,7 +22,23 @@ export type CanonicalPublicModel = {
   execution_profile_version: string;
 };
 
+export type UpstreamReleaseObservation = {
+  schema_version: 'unirouter.upstream-release-observation.v1'; identity: string;
+  scope: { customer_org_id: number; deployment_id: number; connection_id: number; provider: string; base_url: string; api_model: string };
+  claim: { release_label: string; announced_on?: string };
+  provenance: { source_kind: 'official_announcement'; source_url: string; source_revision?: string; source_sha256?: string };
+  checked_at: string; recorded_by: number; declaration: 'declared'; remote_weights: 'unpinned';
+};
+export type UpstreamReleaseState = { observation: UpstreamReleaseObservation | null; revision: number };
+export type UpstreamScope = { state: 'unknown' | 'current' | 'stale'; reason_code: string; current_identity: string; evidence_identity: string };
+export type UpstreamReleaseInput = { expected_connection_revision: number; expected_deployment_revision: number; expected_revision: number; expected_identity: string; release_label: string; announced_on?: string; source_url: string; source_revision?: string; source_sha256?: string };
+export function upstreamObservationConfirmation(deployment: CanonicalDeployment): { expected_upstream_observation_identity?: string } {
+ const identity = deployment.upstream_release_observation?.observation?.identity;
+ return identity ? { expected_upstream_observation_identity: identity } : {};
+}
+
 export type CanonicalDeployment = {
+  upstream_release_observation?: UpstreamReleaseState;
   id: number;
   upstream_model: string;
   admin_state: string;
@@ -95,6 +111,7 @@ export type CanonicalExecutionSupport = {
 };
 
 export type CanonicalProductionQualification = {
+  upstream_scope?: UpstreamScope;
   required: boolean;
   qualified: boolean;
   state: string;
@@ -110,6 +127,8 @@ export type CanonicalProductionQualification = {
 };
 
 export type CanonicalOperationProbe = {
+  upstream_release_observation?: UpstreamReleaseObservation | null;
+  upstream_scope?: UpstreamScope;
   probe_id: number;
   success: boolean;
   current: boolean;
@@ -285,6 +304,7 @@ export type CanonicalModelApplicationCreateResult = {
 };
 
 export type CanonicalOperationProbeRequest = {
+  expected_upstream_observation_identity?: string;
   credential_binding_id: number;
   probe_text?: string;
 };
@@ -308,6 +328,8 @@ export type CanonicalOperationProbeResult = {
 };
 
 export type CanonicalCapabilityProbeView = {
+  upstream_release_observation?: UpstreamReleaseObservation | null;
+  upstream_scope?: UpstreamScope;
   capability_probe_id: number;
   // Missing on older backends; only explicit zero proves no Approval exists.
   approval_id?: number;
@@ -335,6 +357,8 @@ export type CanonicalCapabilityProbeView = {
 };
 
 export type CanonicalCapabilityQualification = {
+  upstream_release_observation?: UpstreamReleaseState;
+  upstream_scope?: UpstreamScope;
   contract_version: string;
   deployment_id: number;
   operation_id: CanonicalOperationID;
@@ -432,6 +456,8 @@ export type CapabilityProbeGroupReadback = {
 };
 
 export const modelDeploymentApi = {
+  getUpstreamRelease: (deploymentID: number) => request<UpstreamReleaseState>(`/model-deployments/${deploymentID}/upstream-release-observation`),
+  putUpstreamRelease: (deploymentID: number, input: UpstreamReleaseInput) => request<UpstreamReleaseState>(`/model-deployments/${deploymentID}/upstream-release-observation`, { method: 'PUT', body: JSON.stringify(input) }),
   discover: (deploymentID: number, params: { credential_binding_id: number; connection_revision: number;
     credential_revision: number; page: number; query?: string }) => request<ModelDiscoveryResult>(
     `/model-deployments/${deploymentID}/model-discovery?${new URLSearchParams(Object.entries(params).map(([key, value]) => [key, String(value)]))}`,
@@ -477,7 +503,7 @@ export const modelDeploymentApi = {
     deploymentID: number,
     operationID: CanonicalOperationID,
     capabilityID: string,
-    input: { credential_binding_id: number },
+    input: { credential_binding_id: number; expected_upstream_observation_identity?: string },
   ) => request<CanonicalCapabilityProbeResult>(
     `/model-deployments/${deploymentID}/operations/${encodeURIComponent(operationID)}/capabilities/${encodeURIComponent(capabilityID)}/probes`,
     { method: 'POST', body: JSON.stringify(input) },
@@ -486,7 +512,7 @@ export const modelDeploymentApi = {
     deploymentID: number,
     operationID: CanonicalOperationID,
     capabilityID: string,
-    input: { capability_probe_id: number; reason: string },
+    input: { capability_probe_id: number; reason: string; expected_upstream_observation_identity?: string },
   ) => request<CanonicalCapabilityApprovalResult>(
     `/model-deployments/${deploymentID}/operations/${encodeURIComponent(operationID)}/capabilities/${encodeURIComponent(capabilityID)}/routing-approvals`,
     { method: 'POST', body: JSON.stringify(input) },

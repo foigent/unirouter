@@ -1,5 +1,5 @@
 import { translate as t, translateLabel, useI18n, LanguageSwitcher } from './i18n';
-import { Suspense, useState, useCallback, useEffect } from 'react';
+import { Suspense, useState, useCallback, useEffect, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Nav, Button, Input, Tag, Typography, Avatar, Spin, Toast } from '@douyinfe/semi-ui';
 import {
@@ -12,6 +12,7 @@ import {
   IconUser,
 } from '@douyinfe/semi-icons';
 import { useAuthStore } from './store/auth';
+import { newUIInstanceID } from './utils/intentRequestId';
 import {
   authzContextForUser,
   canOpenUnscopedNotifications,
@@ -40,6 +41,7 @@ function navigationLabel(item: { text: string; licenseLocked?: boolean }) {
 }
 
 export default function App() {
+
   useI18n();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState('');
@@ -59,6 +61,13 @@ export default function App() {
   const location = useLocation();
   const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
+  const token = useAuthStore(state => state.token);
+  const actor = JSON.stringify([user?.id, user?.org_id, user?.organization_role || user?.role, user?.customer_context?.state, user?.customer_context?.org_id]);
+  const boundary = useRef<{ actor: string; token: string | null; id: string } | null>(null);
+  if (!boundary.current || boundary.current.actor !== actor || boundary.current.token !== token) {
+    boundary.current = { actor, token, id: newUIInstanceID() };
+  }
+  const overviewSession = boundary.current.id;
   const authz = authzContextForUser(user);
   const licenseAccess = user?.license_access;
   const routeWithSearch = `${location.pathname}${location.search}`;
@@ -195,7 +204,7 @@ export default function App() {
             />
           )}
           <div className="ur-topbar-actions"><LanguageSwitcher />
-            <Tag className="ur-env-pill" color={envBadge.color as never}>{envBadge.label}</Tag>
+            <Tag className="ur-env-pill" color={envBadge.color as never}><span title={t('构建时设置的环境标签，不表示当前服务的运行环境。')}>{t('构建环境：{environment}', { environment: envBadge.label })}</span></Tag>
             {canOpenNotifications && (
               <Button
                 icon={<IconBell />}
@@ -242,7 +251,7 @@ export default function App() {
           </div>
         ) : (
           <Suspense fallback={<div className="ur-route-loading" role="status" aria-label={t("正在加载页面")}><Spin size="large" /><span>{t("正在加载页面…")}</span></div>}>
-            <Outlet />
+            <Outlet context={{ overviewSession }} />
           </Suspense>
         )}
       </Content>

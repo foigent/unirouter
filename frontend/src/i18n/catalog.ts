@@ -7,6 +7,7 @@ import type { modelSetupMessages } from './modelSetup';
 import type { capabilityMessages } from './capabilities';
 import type { modelGovernanceMessages } from './modelGovernance';
 import type { readinessMessages } from './readiness';
+import type { upstreamReleaseMessages } from './upstreamRelease';
 
 export const messages = {
   "开源许可": "Open-source license",
@@ -102,6 +103,9 @@ export const messages = {
   "开发环境": "Development",
   "本地环境": "Local",
   "环境未配置": "Environment not configured",
+  "构建环境：{environment}": "Build environment: {environment}",
+  "构建时设置的环境标签，不表示当前服务的运行环境。": "This label is set at build time; it does not describe the running service environment.",
+  "所选模型 {model} 在当前窗口暂无数据，现显示请求最多的模型。": "Selected model {model} has no data in this period. Showing the model with the most requests.",
   "暂时无法验证登录状态。请重试核对；邀请仅保留在当前页面。": "Unable to verify your session. Retry; the invitation is retained only on this page.",
   "登录状态已失效，请重新登录；本次邀请仍保留在当前页面。": "Your session expired. Sign in again; the invitation remains on this page.",
   "登录失败": "Sign-in failed",
@@ -504,7 +508,7 @@ export type MessageKey = keyof typeof messages
   | keyof typeof modelSetupMessages
   | keyof typeof capabilityMessages
   | keyof typeof modelGovernanceMessages
-  | keyof typeof readinessMessages | keyof typeof securityMessages | keyof typeof financeMessages | keyof typeof integrationsMessages | keyof typeof developerMessages;
+  | keyof typeof upstreamReleaseMessages | keyof typeof readinessMessages | keyof typeof securityMessages | keyof typeof financeMessages | keyof typeof integrationsMessages | keyof typeof developerMessages;
 
 import type { securityMessages } from './security';
 

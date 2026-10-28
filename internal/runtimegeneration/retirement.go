@@ -41,6 +41,16 @@ var hexDigest = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var historicalSchemaHead = regexp.MustCompile(`^000[0-9]{3}_[a-z0-9_]+$`)
 
 func (r RetirementInput) validate() error {
+	if err := r.validateIdentity(); err != nil {
+		return err
+	}
+	if r.ExpectedEnvironment != "development" && r.ExpectedEnvironment != "test" {
+		return fmt.Errorf("exact historical retirement identity and host proof required")
+	}
+	return nil
+}
+
+func (r RetirementInput) validateIdentity() error {
 	identity := Identity{Instance: r.InstanceID, Artifact: r.ArtifactDigest}
 	if err := identity.Validate(); err != nil {
 		return err
@@ -49,7 +59,6 @@ func (r RetirementInput) validate() error {
 		r.CompatibilityEpoch != CompatibilityEpoch ||
 		!historicalSchemaHead.MatchString(r.ExpectedSchemaHead) ||
 		r.ExpectedRevision < 1 || r.ExpectedIngressHead == "" ||
-		(r.ExpectedEnvironment != "development" && r.ExpectedEnvironment != "test") ||
 		!decimalSystemID.MatchString(r.ExpectedDatabaseSystemID) ||
 		!artifactPattern.MatchString(r.HostProofSHA256) {
 		return fmt.Errorf("exact historical retirement identity and host proof required")
@@ -165,6 +174,17 @@ func ApplyRetirement(ctx context.Context, pool *pgxpool.Pool, r RetirementInput)
 	if err != nil {
 		return result, err
 	}
+	result, err = applyRetirementTx(ctx, tx, r, result)
+	if err != nil {
+		return result, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return result, fmt.Errorf("retirement commit unconfirmed: %w", err)
+	}
+	return result, nil
+}
+
+func applyRetirementTx(ctx context.Context, tx pgx.Tx, r RetirementInput, result RetirementResult) (RetirementResult, error) {
 	tag, err := tx.Exec(ctx, `UPDATE runtime_generations SET state='stopped',revision=revision+1,updated_at=clock_timestamp()
 	 WHERE instance_id=$1 AND artifact_digest=$2 AND revision=$3 AND state<>'stopped'
 	 AND ingress_state='absent' AND lease_expires_at<=clock_timestamp()`, r.InstanceID, r.ArtifactDigest, r.ExpectedRevision)
@@ -174,10 +194,31 @@ func ApplyRetirement(ctx context.Context, pool *pgxpool.Pool, r RetirementInput)
 	if tag.RowsAffected() != 1 {
 		return result, fmt.Errorf("historical generation changed before stop")
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return result, fmt.Errorf("retirement commit unconfirmed: %w", err)
-	}
 	result.Status = "stopped"
 	result.Revision++
 	return result, nil
+}
+
+// CheckM127MaintenanceRetirementTx and ApplyM127MaintenanceRetirementTx are
+// transaction participants of the signed community upgrade owner. That owner
+// verifies the installed package, configured trust ring and exact M127 -> M128
+// candidate under its release/migration locks before calling these functions.
+// They do not commit, grant serving authority or widen legacy stop commands.
+func CheckM127MaintenanceRetirementTx(ctx context.Context, tx pgx.Tx, r RetirementInput, forUpdate bool) (RetirementResult, error) {
+	if err := r.validateIdentity(); err != nil {
+		return RetirementResult{}, err
+	}
+	if r.ExpectedSchemaHead != schemaauthority.XInsightCommunicationHead ||
+		(r.ExpectedEnvironment != "production" && r.ExpectedEnvironment != "development" && r.ExpectedEnvironment != "test") {
+		return RetirementResult{}, fmt.Errorf("community retirement requires the exact M127 maintenance predecessor")
+	}
+	return readRetirement(ctx, tx, r, forUpdate)
+}
+
+func ApplyM127MaintenanceRetirementTx(ctx context.Context, tx pgx.Tx, r RetirementInput) (RetirementResult, error) {
+	result, err := CheckM127MaintenanceRetirementTx(ctx, tx, r, true)
+	if err != nil {
+		return result, err
+	}
+	return applyRetirementTx(ctx, tx, r, result)
 }

@@ -74,7 +74,7 @@ func TestDeepSeekProviderCompletionBundleBindingsAndStrictProbe(t *testing.T) {
 		}
 		for _, mutate := range []func(*Binding){
 			func(b *Binding) { b.ProbeContractID = DeepSeekStreamFunctionToolsProbeContractID },
-			func(b *Binding) { b.ProbeContractVersion = "2.0.0" },
+			func(b *Binding) { b.ProbeContractVersion = "99.0.0" },
 			func(b *Binding) { b.ExpectedUpstreamModel = "deepseek-v4-flash" },
 			func(b *Binding) { b.ProtocolProfileID = "protocol.deepseek-openai-chat.v5" },
 		} {

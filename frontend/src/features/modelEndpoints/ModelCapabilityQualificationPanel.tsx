@@ -1,3 +1,4 @@
+import '../../i18n/upstreamRelease';
 import '../../i18n/models';
 import { translate as t, translateLabel, useI18n } from '../../i18n';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -5,13 +6,15 @@ import { Banner, Button, Input, Modal, Space, Spin, Toast, Typography } from '@d
 import {
   modelDeploymentApi,
   type CanonicalCapabilityQualification,
+  upstreamObservationConfirmation,
   type CanonicalCredentialBinding,
   type CanonicalModelApplication,
   type CanonicalOperation,
 } from '../../api/modelDeployments';
+import { useAuthStore } from '../../store/auth';
 import { LatencyText, StatusTag, Surface } from '../../ui';
 import { formatDateTime } from '../../utils/formatDate';
-import { endpointError, endpointFailureText, type EndpointFailure } from './presentation';
+import { upstreamScopeLabel, endpointError, endpointFailureText, type EndpointFailure } from './presentation';
 
 const { Text } = Typography;
 
@@ -164,6 +167,8 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
   const [approving, setApproving] = useState(false);
   const [error, setError] = useState<EndpointFailure | null>(null);
   const [reason, setReason] = useState(() => translateLabel(presentation.defaultReason));
+  const user = useAuthStore(s => s.user);
+  const authenticated = useAuthStore(s => s.isAuthenticated);
   const deploymentID = selected.deployment.id;
   const operationID = operation.operation_id;
   const definitionDigest = operation.profile_definition_digest || '';
@@ -174,11 +179,13 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
   const identity = [
     `connection=${selected.connection.id}@${selected.connection.config_revision}`,
     `deployment=${deploymentID}@${selected.deployment.config_revision}`,
+    `upstream=${selected.deployment.upstream_release_observation?.observation?.identity || ""}`,
     `operation=${operationID}@${operation.revision}`,
     `execution=${executionProfile}`,
     `definition=${definitionDigest}`,
     `protocol=${operation.protocol_profile_id}@${operation.protocol_profile_version}`,
     `capability=${capabilityID}`,
+    `actor=${JSON.stringify([authenticated,user?.id,user?.org_id,user?.organization_role,user?.role,user?.customer_context])}`,
   ].join(':');
   const identityRef = useRef(identity);
   const loadGenerationRef = useRef(0);
@@ -255,7 +262,7 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
         target.deploymentID,
         target.operationID,
         target.capabilityID,
-        { credential_binding_id: binding.id },
+        { credential_binding_id: binding.id, ...upstreamObservationConfirmation(selected.deployment) },
       );
       if (identityRef.current !== target.identity) return;
       if (result.success && result.current) {
@@ -306,7 +313,8 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
         target.deploymentID,
         target.operationID,
         target.capabilityID,
-        { capability_probe_id: probeID, reason: approvalReason },
+        { capability_probe_id: probeID,
+        ...upstreamObservationConfirmation(selected.deployment), reason: approvalReason },
       );
       if (identityRef.current !== target.identity) return;
       Toast.success(t('已批准当前环境的精确{capability}进入路由池', { capability: translateLabel(presentation.shortName) }));
@@ -322,6 +330,7 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
   const confirmApproval = () => {
     const target = targetSummary;
     const probeID = qualification?.latest_probe?.capability_probe_id || 0;
+    if (qualification?.latest_probe?.upstream_scope?.state === "stale") return;
     const approvalReason = reason.trim();
     if (!probeID || !approvalReason) return;
     confirmationRef.current = Modal.confirm({
@@ -389,6 +398,7 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
           </Text>}
         </div> : <Text type="tertiary">{translateLabel(presentation.emptyEvidence)}</Text>}
 
+        {qualification.upstream_scope && <Banner type={qualification.upstream_scope.state === "current" ? "success" : "warning"} description={t("上游声明适用性：{state}；这与合同资格分别判断。", {state: upstreamScopeLabel(qualification.upstream_scope.state)})} />}
         {qualification.qualified && <Banner
           type="success"
           closeIcon={null}

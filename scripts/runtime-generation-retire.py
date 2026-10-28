@@ -139,9 +139,10 @@ def retirement_document(operation, role):
 
 def maintenance_schema_predecessor(artifact, actual):
     allowed = (("000125_xinsight_control_credential_lifecycle", "000126_commercial_license_retirement"),
-               ("000126_commercial_license_retirement", "000127_xinsight_communication_policy"))
+               ("000126_commercial_license_retirement", "000127_xinsight_communication_policy"),
+               ("000127_xinsight_communication_policy", "000128_upstream_release_observation"))
     rollout.require(tuple(artifact[-2:]) in allowed,
-                    "maintenance requires an exact supported M125/M126 or M126/M127 artifact")
+                    "maintenance requires an exact supported M125/M126, M126/M127 or M127/M128 artifact")
     rollout.require(actual == artifact[:-1], "maintenance requires the complete exact predecessor ledger")
 
 

@@ -15,6 +15,7 @@ export type CanonicalDeploymentReleaseBaseline = {
 };
 
 export type CanonicalDeploymentReleaseSelection = {
+  expected_upstream_observation_identity?: string;
   deployment_id: number;
   operation_id: string;
 };

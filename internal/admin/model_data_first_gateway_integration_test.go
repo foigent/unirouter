@@ -37,7 +37,7 @@ import (
 // is a fixture. No raw Slot/Release write or simulated settlement is used.
 func verifyFirstDataGateway(t *testing.T, h *Handler, actor func(string, string, string) *http.Request,
 	release runtimechange.DeploymentRelease, application canonicalModelApplication,
-	definition modelprofile.Definition, stream []byte) {
+	definition modelprofile.Definition, stream []byte, afterFirstDispatch ...func()) {
 	t.Helper()
 	ctx := t.Context()
 	pool, ok := h.db.(*pgxpool.Pool)
@@ -138,4 +138,19 @@ func verifyFirstDataGateway(t *testing.T, h *Handler, actor func(string, string,
 		require.NoError(t, pool.QueryRow(ctx, query, requestID).Scan(&count))
 		require.Equal(t, expected, count, query)
 	}
+	if len(afterFirstDispatch) > 0 {
+		afterFirstDispatch[0]()
+		again := invoke(relay.HandleChatCompletion, "data-first-after-declaration-change")
+		require.Equal(t, http.StatusOK, again.Code, again.Body.String())
+		require.Contains(t, again.Body.String(), "[DONE]")
+		require.Equal(t, 2, calls)
+		_, err = journal.DrainOnce(ctx)
+		require.NoError(t, err)
+		var repeatedRelease int64
+		var repeatedState string
+		require.NoError(t, pool.QueryRow(ctx, `SELECT route_runtime_release_id,state FROM billing_provider_attempts WHERE request_id=$1`, again.Header().Get("X-Request-ID")).Scan(&repeatedRelease, &repeatedState))
+		require.Equal(t, release.ID, repeatedRelease)
+		require.Equal(t, "settled", repeatedState)
+	}
+
 }

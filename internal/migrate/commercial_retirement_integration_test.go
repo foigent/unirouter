@@ -10,6 +10,7 @@ import (
 	"github.com/uniroute/unirouter/internal/runtimegeneration"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
 	"github.com/uniroute/unirouter/internal/testutil"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -52,7 +53,7 @@ func TestCommercialRetirementReceivingFleetMustWithdrawAndRetire(t *testing.T) {
 	ctx := t.Context()
 	artifact, err := schemaauthority.ExpectedLedger(testutil.MigrationsDir(t))
 	require.NoError(t, err)
-	artifact = artifact[:len(artifact)-1] // Exact M126 historical artifact.
+	artifact = artifact[:slices.Index(artifact, schemaauthority.CommercialLicenseRetirementHead)+1] // Exact historical M126 artifact.
 	oldLedger := artifact[:len(artifact)-1]
 	manifest := runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads())
 	old := runtimegeneration.Identity{Instance: "uri_" + strings.Repeat("a", 32), Artifact: "sha256:" + strings.Repeat("a", 64)}

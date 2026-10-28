@@ -134,7 +134,8 @@ class MaintenanceRetirementTests(unittest.TestCase):
         m125 = "000125_xinsight_control_credential_lifecycle"
         m126 = "000126_commercial_license_retirement"
         m127 = "000127_xinsight_communication_policy"
-        for artifact in (["earlier", m125, m126], ["earlier", m125, m126, m127]):
+        m128 = "000128_upstream_release_observation"
+        for artifact in (["earlier", m125, m126], ["earlier", m125, m126, m127], ["earlier", m125, m126, m127, m128]):
             retire.maintenance_schema_predecessor(artifact, artifact[:-1])
             for actual in (artifact, artifact[:-2], artifact[:-2] + ["unknown"], artifact[1:-1]):
                 with self.assertRaises(RuntimeError):

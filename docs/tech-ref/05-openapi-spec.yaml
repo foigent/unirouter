@@ -1777,6 +1777,48 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /api/v1/model-deployments/{deploymentID}/upstream-release-observation:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, org_viewer]
+      put: [platform_admin, org_admin]
+    get:
+      tags: [Admin]
+      summary: Read the maintainer-recorded upstream release declaration
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+      responses:
+        "200":
+          description: Safe declaration metadata; null observation means unknown. It never pins remote weights or performs a Provider request.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UpstreamReleaseState" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [Admin]
+      summary: Record a declaration against the reviewed endpoint and observation revisions
+      description: Active scoped administrators only. Locks and reauthorizes the exact actor and endpoint, compares observation identity/revision and native connection/deployment revisions, and appends the before/after audit atomically. Same scoped claim preserves its identity; a semantic change creates a new epoch. Known observations cannot be cleared. A lost response requires explicit readback rather than automatic retry. Existing active traffic and historical evidence remain unchanged.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpstreamReleaseInput" }
+      responses:
+        "200":
+          description: Saved declaration with server-owned identity, scope, actor and check time.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UpstreamReleaseState" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
   /api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes:
     x-unirouter-rbac:
       post: [platform_admin, org_admin]
@@ -1797,6 +1839,7 @@ paths:
               additionalProperties: false
               required: [credential_binding_id]
               properties:
+                expected_upstream_observation_identity: { type: string, pattern: '^uor_[0-9a-f]{32}$', description: Required when a declaration is recorded; confirms its exact evidence epoch. }
                 credential_binding_id: { type: integer, format: int64, minimum: 1 }
                 probe_text: { type: string, maxLength: 256, x-unirouter-max-utf8-bytes: 256, description: Optional bounded UTF-8 text used only for this live request and never persisted or returned. }
       responses:
@@ -1850,6 +1893,7 @@ paths:
               additionalProperties: false
               required: [probe_id, expected_connection_revision, expected_deployment_revision, expected_operation_revision, expected_executor_contract_version, reason]
               properties:
+                expected_upstream_observation_identity: { type: string, pattern: '^uor_[0-9a-f]{32}$', description: Required when a declaration is recorded; confirms its exact evidence epoch. }
                 probe_id: { type: integer, format: int64, minimum: 1 }
                 expected_connection_revision: { type: integer, format: int64, minimum: 1 }
                 expected_deployment_revision: { type: integer, format: int64, minimum: 1 }
@@ -2000,6 +2044,7 @@ paths:
               additionalProperties: false
               required: [credential_binding_id]
               properties:
+                expected_upstream_observation_identity: { type: string, pattern: '^uor_[0-9a-f]{32}$', description: Required when a declaration is recorded; confirms its exact evidence epoch. }
                 credential_binding_id: { type: integer, format: int64, minimum: 1 }
       responses:
         "200":
@@ -2034,6 +2079,7 @@ paths:
               additionalProperties: false
               required: [capability_probe_id, reason]
               properties:
+                expected_upstream_observation_identity: { type: string, pattern: '^uor_[0-9a-f]{32}$', description: Required when a declaration is recorded; confirms its exact evidence epoch. }
                 capability_probe_id: { type: integer, format: int64, minimum: 1 }
                 reason: { type: string, minLength: 1, maxLength: 512, description: Trimmed administrative reason; NUL and line breaks are rejected. }
       responses:
@@ -7186,6 +7232,7 @@ components:
       additionalProperties: false
       required: [deployment_id, operation_id]
       properties:
+        expected_upstream_observation_identity: { type: string, pattern: '^uor_[0-9a-f]{32}$' }
         deployment_id: { type: integer, format: int64, minimum: 1 }
         operation_id:
           type: string
@@ -7739,11 +7786,81 @@ components:
           items: { $ref: "#/components/schemas/ModelDeploymentLifecycleQualificationReceipt" }
         created_at: { type: string, format: date-time }
         completed_at: { type: string, format: date-time }
+    UpstreamScope:
+      type: object
+      additionalProperties: false
+      required: [state, reason_code, current_identity, evidence_identity]
+      properties:
+        state: { type: string, enum: [unknown, current, stale] }
+        reason_code: { type: string }
+        current_identity: { type: string }
+        evidence_identity: { type: string }
+    UpstreamReleaseInput:
+      type: object
+      additionalProperties: false
+      required: [expected_revision, expected_identity, expected_connection_revision, expected_deployment_revision, release_label, source_url]
+      properties:
+        expected_revision: { type: integer, format: int64, minimum: 0 }
+        expected_identity: { type: string, pattern: '^(uor_[0-9a-f]{32})?$' }
+        expected_connection_revision: { type: integer, format: int64, minimum: 1 }
+        expected_deployment_revision: { type: integer, format: int64, minimum: 1 }
+        release_label: { type: string, minLength: 1, maxLength: 160, x-unirouter-max-utf8-bytes: 160 }
+        announced_on: { type: string, format: date }
+        source_url: { type: string, format: uri, maxLength: 2048, description: "HTTPS official source without userinfo, query or fragment; recorded, never fetched." }
+        source_revision: { type: string, maxLength: 255 }
+        source_sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+    UpstreamReleaseState:
+      type: object
+      additionalProperties: false
+      required: [observation, revision]
+      properties:
+        observation: { $ref: "#/components/schemas/UpstreamReleaseObservation" }
+        revision: { type: integer, format: int64, minimum: 0 }
+    UpstreamReleaseObservation:
+      type: object
+      nullable: true
+      additionalProperties: false
+      required: [schema_version, identity, scope, claim, provenance, checked_at, recorded_by, declaration, remote_weights]
+      properties:
+        schema_version: { type: string, enum: [unirouter.upstream-release-observation.v1] }
+        identity: { type: string, pattern: '^uor_[a-f0-9]{32}$' }
+        declaration: { type: string, enum: [declared] }
+        remote_weights: { type: string, enum: [unpinned] }
+        checked_at: { type: string, format: date-time }
+        recorded_by: { type: integer, format: int64, minimum: 1 }
+        scope:
+          type: object
+          additionalProperties: false
+          required: [customer_org_id, deployment_id, connection_id, provider, base_url, api_model]
+          properties:
+            customer_org_id: { type: integer, format: int64, minimum: 1 }
+            deployment_id: { type: integer, format: int64, minimum: 1 }
+            connection_id: { type: integer, format: int64, minimum: 1 }
+            provider: { type: string }
+            base_url: { type: string }
+            api_model: { type: string }
+        claim:
+          type: object
+          additionalProperties: false
+          required: [release_label]
+          properties:
+            release_label: { type: string, minLength: 1, maxLength: 160 }
+            announced_on: { type: string, format: date }
+        provenance:
+          type: object
+          additionalProperties: false
+          required: [source_kind, source_url]
+          properties:
+            source_kind: { type: string, enum: [official_announcement] }
+            source_url: { type: string, format: uri }
+            source_revision: { type: string }
+            source_sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
     ModelOperationProductionApproval:
       type: object
       additionalProperties: false
       required: [approval_id, probe_id, customer_org_id, deployment_id, operation_id, public_path, protocol_profile_id, protocol_profile_version, executor_contract_version, https_origin, source_connection_revision, source_deployment_revision, probe_operation_revision, source_operation_revision, approved_operation_revision, approved_by, approved_at, reason, replayed, qualified, qualification_state, current_connection_revision, current_deployment_revision, current_operation_revision]
       properties:
+        upstream_scope: { $ref: "#/components/schemas/UpstreamScope" }
         approval_id: { type: integer, format: int64, minimum: 1 }
         probe_id: { type: integer, format: int64, minimum: 1 }
         customer_org_id: { type: integer, format: int64, minimum: 1 }
@@ -7773,6 +7890,8 @@ components:
       additionalProperties: false
       required: [capability_probe_id, approval_id, success, provider_success, current, status_code, latency_ms, cache_read_counter_observed, cached_tokens, tested_at]
       properties:
+        upstream_release_observation: { $ref: "#/components/schemas/UpstreamReleaseObservation" }
+        upstream_scope: { $ref: "#/components/schemas/UpstreamScope" }
         capability_probe_id: { type: integer, format: int64, minimum: 1 }
         approval_id: { type: integer, format: int64, minimum: 0, description: "Immutable Approval for this exact Probe; zero means no Approval exists. This is not the preferred/current qualification decision." }
         credential_binding_id: { type: integer, format: int64, minimum: 1 }
@@ -7801,6 +7920,8 @@ components:
       additionalProperties: false
       required: [contract_version, deployment_id, operation_id, capability_id, support_state, support_revision, execution_profile_id, execution_profile_version, protocol_profile_id, protocol_profile_version, probe_available, probe_availability_reason_code, state, qualified, qualification_state]
       properties:
+        upstream_release_observation: { $ref: "#/components/schemas/UpstreamReleaseState" }
+        upstream_scope: { $ref: "#/components/schemas/UpstreamScope" }
         contract_version: { type: string, enum: [unirouter.model-capability-qualification.v1] }
         deployment_id: { type: integer, format: int64, minimum: 1 }
         operation_id: { type: string, enum: [openai.chat_completions.v1] }
@@ -7902,6 +8023,7 @@ components:
       additionalProperties: false
       required: [approval_id, capability_probe_id, deployment_id, operation_id, capability_id, qualified, qualification_state, evidence_ref, approved_at, idempotency_replay]
       properties:
+        upstream_scope: { $ref: "#/components/schemas/UpstreamScope" }
         approval_id: { type: integer, format: int64, minimum: 1 }
         capability_probe_id: { type: integer, format: int64, minimum: 1 }
         deployment_id: { type: integer, format: int64, minimum: 1 }

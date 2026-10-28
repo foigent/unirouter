@@ -259,6 +259,9 @@ func TestFreshInstallProcessRecoveryIntegration(t *testing.T) {
 	s = assertHead(schemaauthority.CommercialLicenseRetirementHead)
 	require.Equal(t, "active", s.Record.State, "M126 cannot complete the M127 installation")
 	run("expand_committed:"+schemaauthority.XInsightCommunicationHead, false)
+	s = assertHead(schemaauthority.XInsightCommunicationHead)
+	require.Equal(t, "active", s.Record.State, "M127 cannot complete the M128 installation")
+	run("expand_committed:"+schemaauthority.UpstreamReleaseObservationHead, false)
 	s, err = installstate.RequireOrdinary(ctx, pool)
 	require.NoError(t, err)
 	require.Equal(t, "completed", s.Record.State)
@@ -279,7 +282,7 @@ func TestFreshInstallProcessRecoveryIntegration(t *testing.T) {
 	verifyFreshRestore(t, pool, p, root)
 }
 
-func verifyFreshRestore(t *testing.T, source *pgxpool.Pool, p installstate.Plan, root string) {
+func restoreFreshBackup(t *testing.T, source *pgxpool.Pool, root string) *pgxpool.Pool {
 	t.Helper()
 	for _, tool := range []string{"pg_dump", "psql"} {
 		_, err := exec.LookPath(tool)
@@ -314,7 +317,13 @@ func verifyFreshRestore(t *testing.T, source *pgxpool.Pool, p installstate.Plan,
 	rebase.Stdout = log
 	rebase.Stderr = log
 	require.NoError(t, rebase.Run(), "see restore.log")
-	_, err = verifyRuntimeAuthority(t.Context(), restored, p.Artifact.Ledger)
+	return restored
+}
+
+func verifyFreshRestore(t *testing.T, source *pgxpool.Pool, p installstate.Plan, root string) {
+	t.Helper()
+	restored := restoreFreshBackup(t, source, root)
+	_, err := verifyRuntimeAuthority(t.Context(), restored, p.Artifact.Ledger)
 	require.NoError(t, err, "historical origin must not pin restored DB OID or name")
 	s, err := checkFreshInstall(t.Context(), restored, p)
 	require.NoError(t, err)

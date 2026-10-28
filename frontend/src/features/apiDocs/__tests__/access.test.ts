@@ -185,6 +185,14 @@ describe('API reference audience projection', () => {
     )).toBe(false);
   });
 
+  it('shows declaration reads and writes only to the existing deployment roles', () => {
+    const path = '/api/v1/model-deployments/{deploymentID}/upstream-release-observation';
+    for (const role of ['platform_admin', 'org_admin', 'org_viewer', 'billing_admin', 'member'] as const) {
+      const context = authzContextForUser({organization_role: role});
+      expect(endpointVisibleForAuthz('Admin','GET',path,context,{agentCapabilities:false})).toBe(['platform_admin','org_admin','org_viewer'].includes(role));
+      expect(endpointVisibleForAuthz('Admin','PUT',path,context,{agentCapabilities:false})).toBe(['platform_admin','org_admin'].includes(role));
+    }
+  });
   it('keeps Responses and Messages production qualification approval platform-only', () => {
     const path = '/api/v1/model-deployments/{deploymentID}/operations/{operationID}/production-approvals';
     expect(endpointVisibleForAuthz(

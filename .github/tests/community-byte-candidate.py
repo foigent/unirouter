@@ -40,10 +40,11 @@ PREFIX = '/repos/' + REPO
 ROOT = Path(__file__).resolve().parents[2]
 INPUTS = ROOT / '.github/release-inputs'
 BOUND = {
+    'community-stage-record.py': 'c12627c3c535ddb6884eeeb0e56653863ff98eb839bf1ca78e51f2578ef27260',
     'community-backend-reuse.py': '0a834c5ab5907b6a3266848a96f21eacd95a9d4da9de9d83e3ffcc7b445006f1',
-    'community-image-candidate.py': 'b086a0ff343fff562145b9c8f2531d8f308e632281e27522d2873d8a1cc465db',
-    'community-source-evidence.py': '32c5a4a94e462d9bd34c0e798ea4f849d1bd4fab051488f8f30a24a3e2572031',
-    'frontend-membership-observer.mjs': '1421c6bc15eef0c0bc85bf2f3e9894e581d55b6879c66cba69d937f10989e81c',
+    'community-image-candidate.py': 'a7f8fe1fe1c3cdec41016b429049d5b069dbfcb7338d7f7afbfbc99bb93b4d24',
+    'community-source-evidence.py': '15efa4bc55b5a2c8f0947613dbe5f59d179250ba0d5446c2646d1d43816afa11',
+    'frontend-membership-observer.mjs': '103997c67a31c4f638765ee738fc53d513084193ee7cbdc21e09c1b2afe9130c',
     'component-notices.tar.gz': '4c213bc8dca8a4cf71943895726d0162a6ec13b39df41cf34216abaa686018f5',
     'community-public-keys.json': '96c91635460ddfb2a14aa1ea97d8445951730e9eb04a33cbdf4320141e61d63d',
 }
@@ -148,7 +149,7 @@ def safe_name(name):
 
 def module(name, path):
     raw = regular(path, 128 * 1024)
-    need(sha(raw) == BOUND[path.name], 'observer_identity')
+    need(path.name in BOUND and sha(raw) == BOUND[path.name], 'observer_identity')
     result = types.ModuleType(name)
     result.__file__ = str(path.resolve())
     exec(compile(raw, str(path), 'exec'), result.__dict__)
@@ -193,10 +194,13 @@ def validate_diagnostic(value):
     return value
 
 
-def bound_inputs(root=ROOT):
+def bound_inputs(root=ROOT, stage_record=None):
     tests = root / '.github/tests'
     inputs = root / '.github/release-inputs'
-    for name, digest in BOUND.items():
+    expected_inputs = dict(BOUND)
+    if stage_record is not None:
+        expected_inputs['component-notices.tar.gz'] = stage_record['inputs']['notices']['sha256']
+    for name, digest in expected_inputs.items():
         path = (inputs if name.endswith(('.gz', '.json')) else tests) / name
         need(sha(regular(path, 2 * MIB)) == digest, 'input_identity')
     ring = regular(inputs / 'community-public-keys.json', 1024)
@@ -206,6 +210,8 @@ def bound_inputs(root=ROOT):
     need(len(key) == 32 and sha(key) ==
          '765f38f8a4a4f38bf7e94aa3236c28f74dccac56431ab3a1d035a880f6086116', 'ring_key')
     raw = regular(inputs / 'component-notices.tar.gz', MIB)
+    if stage_record is not None:
+        need(len(raw) == stage_record['inputs']['notices']['bytes'], 'notice_size')
     files = {}; total = 0
     with tarfile.open(fileobj=io.BytesIO(raw), mode='r:gz') as archive:
         for member in archive:
@@ -217,8 +223,9 @@ def bound_inputs(root=ROOT):
             files[name] = archive.extractfile(member).read(member.size+1)
             need(len(files[name]) == member.size, 'notice_archive_truncated')
     index = load(files['index.json'])
-    need(index['product_source']['commit'] == PRODUCT
-         and index['product_source']['tree'] == TREE, 'notice_source')
+    notice_source = {'commit': PRODUCT, 'tree': TREE} if stage_record is None else stage_record['inputs']['notices']['source']
+    need(index['product_source']['commit'] == notice_source['commit']
+         and index['product_source']['tree'] == notice_source['tree'], 'notice_source')
     for row in index['components']:
         for material in row['materials']:
             body = files[material['file']]
@@ -227,51 +234,35 @@ def bound_inputs(root=ROOT):
     return base64.urlsafe_b64encode(ring).decode().rstrip('='), index
 
 
-def frontend_input_preflight(root=ROOT, source=None):
-    """Read actual fixed originals and shared observer identities before any side effect."""
+def frontend_input_preflight(root=ROOT, source=None, fixed=None):
+    """Verify immutable program bytes and current original input identities."""
     source = source if source is not None else root/('.byte-source-'+PRODUCT[:8])
     tests = root/'.github/tests'
     observer = regular(tests/'frontend-membership-observer.mjs', 128*1024)
     helper = regular(tests/'community-source-evidence.py', 128*1024)
     need(sha(observer) == BOUND['frontend-membership-observer.mjs']
          and sha(helper) == BOUND['community-source-evidence.py'], 'frontend_observer_identity')
-    fields = {}
-    for node in ast.parse(helper).body:
-        if not (isinstance(node, ast.Assign) and len(node.targets) == 1
-                and isinstance(node.targets[0], ast.Name)):
-            continue
-        name = node.targets[0].id
-        if name not in ('SOURCE', 'ORIGINAL_PACKAGE_SHA', 'ORIGINAL_LOCK_SHA'):
-            continue
-        need(name not in fields, 'frontend_helper_binding')
-        if name == 'SOURCE':
-            value = node.value
-            need(isinstance(value, ast.Call) and isinstance(value.func, ast.Attribute)
-                 and isinstance(value.func.value, ast.Name) and value.func.value.id == 'json'
-                 and value.func.attr == 'loads' and len(value.args) == 1
-                 and not value.keywords, 'frontend_helper_binding')
-            fields[name] = load(ast.literal_eval(value.args[0]).encode())
-        else:
-            fields[name] = ast.literal_eval(node.value)
-    need(set(fields) == {'SOURCE', 'ORIGINAL_PACKAGE_SHA', 'ORIGINAL_LOCK_SHA'}
-         and fields['SOURCE']['commit'] == PRODUCT and fields['SOURCE']['tree'] == TREE,
-         'frontend_helper_binding')
-    text = observer.decode()
-    def binding(pattern):
-        matches = re.findall(pattern, text, flags=re.M)
-        need(len(matches) == 1, 'frontend_observer_binding')
-        return matches[0]
-    need(binding(r"^const sourceCommit = '([0-9a-f]{40})';$") == PRODUCT,
-         'frontend_observer_source')
+    if fixed is None:
+        # Historical source-audit fixtures retain their exact original binding;
+        # the current producer always supplies its validated stage context.
+        fields = {}
+        for node in ast.parse(helper).body:
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                name = node.targets[0].id
+                if name == 'SOURCE': fields[name] = load(ast.literal_eval(node.value.args[0]).encode())
+                elif name in ('ORIGINAL_PACKAGE_SHA', 'ORIGINAL_LOCK_SHA'): fields[name] = ast.literal_eval(node.value)
+        expected_source = fields['SOURCE']
+        expected_hashes = {'package.json': fields['ORIGINAL_PACKAGE_SHA'], 'package-lock.json': fields['ORIGINAL_LOCK_SHA']}
+    else:
+        expected_source = fixed['source']
+        expected_hashes = {name: fixed['source_files']['frontend/'+name]['sha256'] for name in ('package.json', 'package-lock.json')}
     hashes = {}
-    for filename, variable, field in (('package.json', 'originalPackageBody', 'ORIGINAL_PACKAGE_SHA'),
-                                      ('package-lock.json', 'lockBody', 'ORIGINAL_LOCK_SHA')):
-        body = regular(source/'frontend'/filename, MIB)
-        observed = binding(r"sha\("+variable+r"\) === '([0-9a-f]{64})'")
-        need(sha(body) == observed == fields[field], 'frontend_original_input_identity')
-        need(load(body)['version'] == fields['SOURCE']['version'], 'frontend_original_version')
-        hashes[filename] = sha(body)
-    return {'source_commit': PRODUCT, 'source_tree': TREE,
+    for name, digest in expected_hashes.items():
+        body = regular(source/'frontend'/name, MIB)
+        need(sha(body) == digest, 'frontend_original_input_identity')
+        need(load(body)['version'] == expected_source['version'], 'frontend_original_version')
+        hashes[name] = sha(body)
+    return {'source_commit': expected_source['commit'], 'source_tree': expected_source['tree'],
             'observer_sha256': sha(observer), 'original_file_sha256': hashes}
 
 
@@ -606,7 +597,7 @@ def runtime_identity(env, event):
     return producer
 
 
-def initialize_guard(guard, work, env):
+def initialize_guard(guard, work, env, stage_record=None):
     need(platform.system() == 'Linux' and platform.machine() == 'x86_64', 'native_machine')
     guard.work = work; guard.run_id = env['GITHUB_RUN_ID']
     clock = env.get('UR_BYTE_JOB_MONOTONIC', '')
@@ -622,7 +613,7 @@ def initialize_guard(guard, work, env):
     need(Path(env['GITHUB_WORKSPACE']).resolve()/'producer' == ROOT, 'workspace')
     need(guard.argv_run('producer checkout identity', ['git', '-C', str(ROOT), 'rev-parse', 'HEAD'])
          == env['EXPECTED_WORKFLOW_COMMIT'], 'producer_checkout')
-    guard.SOURCE_CHECKOUT = ROOT/'.byte-source-21572d9e'
+    guard.SOURCE_CHECKOUT = ROOT/('.byte-product-source' if stage_record is not None else '.byte-source-21572d9e')
     info = load(guard.docker('local Docker environment', 'info', '--format',
         '{"OSType":{{json .OSType}},"Architecture":{{json .Architecture}},'
         '"SecurityOptions":{{json .SecurityOptions}},"DockerRootDir":{{json .DockerRootDir}}}'))
@@ -642,10 +633,16 @@ def derive_recipes(guard, source):
         'frontend-membership-observer.mjs'), 128*1024))
     write_new(instrument/'original-package.json', regular(root/'package.json', MIB))
     write_new(instrument/'original-package-lock.json', regular(root/'package-lock.json', MIB))
-    write_new(instrument/'vite.config.ts', b"import { mergeConfig } from 'vite';\n"
-        b"import original from '../vite.config';\n"
-        b"import { membershipObserver } from './membership-observer.mjs';\n"
-        b"export default mergeConfig(original, { plugins: [membershipObserver()] });\n")
+    subject = guard.FIXED['source'] if hasattr(guard, 'FIXED') else {'commit': PRODUCT}
+    if hasattr(guard, 'FIXED') and 'source_files' in guard.FIXED:
+        hashes = {name: guard.FIXED['source_files']['frontend/'+name]['sha256'] for name in ('package.json', 'package-lock.json')}
+    else:
+        hashes = {name: sha(regular(root/name, MIB)) for name in ('package.json', 'package-lock.json')}
+    binding = {'source_commit': subject['commit'], 'package_sha256': hashes['package.json'], 'lock_sha256': hashes['package-lock.json']}
+    write_new(instrument/'vite.config.ts', ("import { mergeConfig } from 'vite';\n"
+        "import original from '../vite.config';\n"
+        "import { membershipObserver } from './membership-observer.mjs';\n"
+        "export default mergeConfig(original, { plugins: [membershipObserver(" + json.dumps(binding, sort_keys=True) + ")] });\n").encode())
     for target in (source/'.ur-byte-inputs', root/'.ur-byte-inputs'):
         target.mkdir(mode=0o700)
         write_new(target/'component-notices.tar.gz', regular(INPUTS/'component-notices.tar.gz', MIB))
@@ -670,7 +667,7 @@ def derive_recipes(guard, source):
     # Native recipes() owns these exact new temporary files; not repository files.
     back.write_text(btext); front.write_text(ftext)
     return back, front, {'backend': file_fact(back), 'frontend': file_fact(front),
-        'changes': ['existing fixed FROM substitutions', 'accepted frontend observer and same production/1.14.2 arguments',
+        'changes': ['existing fixed FROM substitutions', 'accepted frontend observer and exact validated production product arguments',
                     'retained notices/LICENSE/NOTICE in non-served runtime directory',
                     'actual frontend observer output retained in same final image'],
         'not_claimed_byte_equal_to_old_ephemeral_images': True}
@@ -773,6 +770,7 @@ def verifier(guard, source_helper, source, go, assets, data):
         'COPY cmd/uniroute-upgrade/ cmd/uniroute-upgrade/\n'
         'COPY internal/signing/ internal/signing/\n'
         'COPY internal/upgradebundle/ internal/upgradebundle/\n'
+        'COPY internal/strictjson/ internal/strictjson/\n'
         'RUN GOTOOLCHAIN=local GOWORK=off GOPROXY=off GOSUMDB=off '
         'CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false '
         '-mod=readonly -o /out/uniroute-upgrade ./cmd/uniroute-upgrade\n').encode())
@@ -789,15 +787,17 @@ def verifier(guard, source_helper, source, go, assets, data):
     need(header[:6] == b'\x7fELF\x02\x01' and header[18:20] == b'\x3e\x00', 'verifier_ELF')
     info = guard.tool('verifier-buildinfo', go,
         'mkdir -p /tmp/telemetry; printf "off\\n" > /tmp/telemetry/mode; go version -m /inspect/uniroute', target)
-    for item in ('go1.25.12', 'CGO_ENABLED=0', 'GOOS=linux', 'GOARCH=amd64'):
+    compiler, _, _ = toolchain_inputs(guard.FIXED, source)
+    for item in ('go'+compiler, 'CGO_ENABLED=0', 'GOOS=linux', 'GOARCH=amd64'):
         need(item in info, 'verifier_buildinfo')
     write_new(data/'verifier-buildinfo.txt', info.encode())
     write_new(data/'verifier-recipe.Dockerfile', regular(recipe, 65536))
     return file_fact(target)
 
 
-def component_binding(notice_index, report, membership, buildinfo):
+def component_binding(notice_index, report, membership, buildinfo, subject=None, notice_sha=None):
     """Join actual outputs to retained materials without promoting old observations."""
+    subject = subject or {'commit': PRODUCT, 'tree': TREE}
     rows = notice_index['components']; go_rows = []; go_bindings = []
     for line in buildinfo.splitlines():
         columns = line.strip().split('\t')
@@ -817,11 +817,11 @@ def component_binding(notice_index, report, membership, buildinfo):
         npm.append({'location': package['location'], 'name': package['name'], 'version': package['version'],
             'observed_notices': package['notices'], 'retained_material_candidate_ids': matches,
             'not_a_license_clearance': True})
-    return {'source_commit': PRODUCT, 'source_tree': TREE, 'actual_go_module_rows': go_rows,
+    return {'source_commit': subject['commit'], 'source_tree': subject['tree'], 'actual_go_module_rows': go_rows,
         'actual_go_notice_bindings': go_bindings,
         'actual_frontend_packages': npm,
         'actual_final_APK': {role: value['apk'] for role, value in report.items()},
-        'notice_input_sha256': BOUND['component-notices.tar.gz'],
+        'notice_input_sha256': notice_sha or BOUND['component-notices.tar.gz'],
         'open_obligations': ['actual final OS component license/source disposition',
             'Go module replacements and corresponding source fulfillment review',
             'virtual/CSS frontend disposition remains subject to accepted observer findings',
@@ -868,13 +868,32 @@ def collect_frontend_membership(guard, helper, cid, data):
 
 def prepare_source_inputs(guard):
     source = guard.source_export()
-    need(guard.FIXED['source']['commit'] == PRODUCT and guard.FIXED['source']['tree'] == TREE, 'product_identity')
+    frontend_input_preflight(ROOT, source, guard.FIXED)
+    toolchain_inputs(guard.FIXED, source)
     back, front, derivation = derive_recipes(guard, source)
     return source, back, front, derivation
 
 
-def build(guard, helper, ring, index, assets, data, retain, context):
+def toolchain_inputs(fixed, source):
+    """Exact source declarations and actual builder facts share one expectation."""
+    go_mod = regular(source/'go.mod', MIB).decode('utf-8')
+    compilers = re.findall(r'^toolchain go([0-9]+\.[0-9]+\.[0-9]+)$', go_mod, re.MULTILINE)
+    package = load(regular(source/'frontend/package.json', MIB))
+    engines = package.get('engines', {})
+    node, npm = engines.get('node', ''), engines.get('npm', '')
+    need(len(compilers) == 1 and all(type(value) is str and re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', value)
+         for value in (node, npm)) and package.get('packageManager') == 'npm@'+npm, 'source_toolchain_contract')
+    compiler = compilers[0]
+    need(fixed['images']['backend-builder']['version_clues']['GOLANG_VERSION'] == compiler
+         and fixed['images']['frontend-builder']['version_clues']['NODE_VERSION'] == node,
+         'source_builder_toolchain_binding')
+    return compiler, node, npm
+
+
+def build(guard, helper, ring, index, assets, data, retain, context, stage_record=None):
     source, back, front, derivation = context
+    subject = guard.FIXED['source']
+    compiler, node, npm = toolchain_inputs(guard.FIXED, source)
     write_new(data/'recipe-derivation.json', encoded(derivation))
     for role, path in (('backend', back), ('frontend', front)):
         write_new(data/(role+'.Dockerfile'), regular(path, 65536))
@@ -894,18 +913,18 @@ def build(guard, helper, ring, index, assets, data, retain, context):
         'mkdir -p /tmp/telemetry; printf "off\\n" > /tmp/telemetry/mode; go version')
     node_version = guard.tool('byte-node-version', bases['frontend-builder'],
                               'node --version && npm --version').splitlines()
-    need(go_version == 'go version go1.25.12 linux/amd64'
-         and node_version == ['v24.19.0', '11.17.0'], 'actual_build_tools')
+    need(go_version == 'go version go'+compiler+' linux/amd64'
+         and node_version == ['v'+node, npm], 'actual_build_tools')
     images = {}; inventories = {}; membership = None; buildinfo = None
     # Exactly one backend and one complete production frontend build.
     for role, recipe, context in (('backend', back, source), ('frontend', front, source/'frontend')):
         iidfile = guard.work/(role+'.id')
         command = ['build', '--platform', 'linux/amd64', '--file', str(recipe),
                    '--tag', 'ur-byte-'+role+':'+guard.run_id, '--iidfile', str(iidfile)]
-        args = (['RUNTIME_VERSION=1.14.2', 'RUNTIME_COMMIT='+PRODUCT, 'RUNTIME_TREE='+TREE,
+        args = (['RUNTIME_VERSION='+subject['version'], 'RUNTIME_COMMIT='+subject['commit'], 'RUNTIME_TREE='+subject['tree'],
                  'UNIROUTER_RELEASE_TRUST_MODE=release', 'UNIROUTER_UPGRADE_TRUST_BUNDLE_B64='+ring,
                  'GOPROXY=https://proxy.golang.org,direct'] if role == 'backend' else
-                ['VITE_DEPLOY_ENV=production', 'VITE_APP_VERSION=1.14.2'])
+                ['VITE_DEPLOY_ENV=production', 'VITE_APP_VERSION='+subject['version']])
         for argument in args: command += ['--build-arg', argument]
         guard.docker('one retained '+role+' build', *command, str(context))
         image = regular(iidfile, 128).decode().strip()
@@ -923,8 +942,8 @@ def build(guard, helper, ring, index, assets, data, retain, context):
             need(binary is not None and binary.is_file(), 'actual_backend_missing')
             buildinfo = guard.tool('actual-backend-buildinfo', go,
                 'mkdir -p /tmp/telemetry; printf "off\\n" > /tmp/telemetry/mode; go version -m /inspect/uniroute', binary)
-            for value in ('go1.25.12', 'CGO_ENABLED=0', 'GOOS=linux', 'GOARCH=amd64',
-                          'main.buildVersion=1.14.2', 'main.buildCommit='+PRODUCT, 'main.buildTree='+TREE,
+            for value in ('go'+compiler, 'CGO_ENABLED=0', 'GOOS=linux', 'GOARCH=amd64',
+                          'main.buildVersion='+subject['version'], 'main.buildCommit='+subject['commit'], 'main.buildTree='+subject['tree'],
                           'github.com/uniroute/unirouter/internal/releasetrust.buildMode=release',
                           'github.com/uniroute/unirouter/internal/releasetrust.embeddedUpgradeKeyRingBase64='+ring):
                 need(value in buildinfo, 'backend_release_buildinfo')
@@ -945,7 +964,7 @@ def build(guard, helper, ring, index, assets, data, retain, context):
         retain(assets/(role+'-image.tar.gz'))
     verifier(guard, helper, source, go, assets, data)
     retain(assets/'uniroute-upgrade-linux-amd64')
-    write_new(data/'actual-component-bindings.json', encoded(component_binding(index, inventories, membership, buildinfo)))
+    write_new(data/'actual-component-bindings.json', encoded(component_binding(index, inventories, membership, buildinfo, subject, stage_record['inputs']['notices']['sha256'] if stage_record is not None else None)))
     write_new(data/'actual-image-inspection.json', encoded(guard.receipt['images']))
     # Command argv/log contents are intentionally excluded; identity/status/exit facts suffice here.
     write_new(data/'command-outcomes.json', encoded([
@@ -973,7 +992,10 @@ def safe_terminal(result):
         need(type(row['readback_matched']) is bool, 'summary_asset_verification')
         assets.append({k: row[k] for k in ('name', 'id', 'bytes', 'sha256', 'readback_matched')})
     value = {'kind': 'unsigned_byte_candidate_terminal', 'status': result['status'],
-        'run_id': result['run_id'], 'producer': result['producer'], 'product_source': PRODUCT,
+        'run_id': result['run_id'], 'producer': result['producer'], 'product_source': result.get('product_source', PRODUCT),
+        'stage_record_sha256': result.get('stage_record_sha256'),
+        'producer_result_sha256': result.get('producer_result_sha256'),
+        'publisher_candidate_sha256': result.get('publisher_candidate_sha256'),
         'error': result['error'], 'draft_id': result['draft_id'], 'assets': assets,
         'owned_cleanup_complete': result['owned_cleanup_complete'],
         'not_signed_published_installed_or_license_cleared': True}
@@ -1017,7 +1039,12 @@ def main():
     if sys.argv[1:] == ['--summary']:
         summary(os.environ); return 0
     need(not sys.argv[1:], 'argument_contract')
-    env = dict(os.environ)
+    public_names = ('EXPECTED_WORKFLOW_COMMIT', 'ADMISSION_SHA256', 'GITHUB_REPOSITORY', 'GITHUB_REPOSITORY_ID',
+        'GITHUB_EVENT_NAME', 'GITHUB_REF', 'GITHUB_RUN_ATTEMPT', 'GITHUB_ACTOR_ID', 'GITHUB_WORKFLOW_REF',
+        'GITHUB_SHA', 'GITHUB_WORKFLOW_SHA', 'GITHUB_RUN_ID', 'GITHUB_WORKSPACE', 'GITHUB_EVENT_PATH',
+        'RUNNER_ENVIRONMENT', 'RUNNER_OS', 'RUNNER_ARCH', 'RUNNER_TEMP', 'UR_BYTE_JOB_MONOTONIC', 'PATH',
+        'DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_TLS_VERIFY', 'DOCKER_CERT_PATH', 'BUILDKIT_HOST', 'BUILDX_BUILDER')
+    env = {name: os.environ[name] for name in public_names if name in os.environ}
     result = {'status': 'stopped_partial_candidate', 'run_id': env.get('GITHUB_RUN_ID', ''),
               'producer': None, 'error': None, 'draft_id': None, 'assets': [], 'owned_cleanup_complete': False}
     guard = draft = work = None
@@ -1025,18 +1052,26 @@ def main():
     try:
         producer = runtime_identity(env, load(regular(Path(env['GITHUB_EVENT_PATH']), 2*MIB)))
         result['producer'] = producer
-        ring, index = bound_inputs()
-        frontend_input_preflight()
+        stages = module('community_stage_contract', Path(__file__).with_name('community-stage-record.py'))
+        raw_record, stage_record, _ = stages.read_dispatch('producer')
+        result['product_source'] = stage_record['product']['commit']
+        result['stage_record_sha256'] = sha(raw_record)
+        ring, index = bound_inputs(stage_record=stage_record)
+        guard = module('accepted_byte_guards', Path(__file__).with_name('community-image-candidate.py'))
+        helper = module('accepted_source_observer', Path(__file__).with_name('community-source-evidence.py'))
+        subject = dict(stage_record['product'])
+        subject.update({key: stage_record['inputs']['source_inventory'][key] for key in ('tracked_files', 'tracked_regular_bytes')})
+        guard.configure_stage_inputs(subject, stage_record['inputs']['source_inventory']['files'], stage_record['inputs']['images'])
+        helper.configure_stage_inputs(guard.FIXED)
+        frontend_input_preflight(ROOT, ROOT/'.byte-product-source', guard.FIXED)
         base = Path(env['RUNNER_TEMP']).resolve(); need(base.is_dir(), 'runner_temp')
         work = base/('ur-byte-candidate-'+env['GITHUB_RUN_ID']+'-attempt1'); work.mkdir(mode=0o700)
         assets = work/'assets'; assets.mkdir(mode=0o700)
         data = work/'data'; data.mkdir(mode=0o700)
-        guard = module('accepted_byte_guards', Path(__file__).with_name('community-image-candidate.py'))
-        helper = module('accepted_source_observer', Path(__file__).with_name('community-source-evidence.py'))
-        # Token is retained only by the REST client; never inherited by build/tool commands.
-        token = env.pop('GITHUB_TOKEN', '')
-        os.environ.pop('GITHUB_TOKEN', None)
-        initialize_guard(guard, work, env)
+        initialize_guard(guard, work, env, stage_record)
+        # Only after closed record/native-context/source checks may the stage
+        # client read its temporary token; build/tool environments exclude it.
+        token = os.environ.pop('GITHUB_TOKEN', '')
         api = GitHub(token, guard=guard.time_guard); token = None
         draft = Draft(api, work, producer, env['GITHUB_RUN_ID'])
         draft.repository()
@@ -1048,7 +1083,7 @@ def main():
         draft.upload(marker)
         # Prove the retention channel before spending the app build time.
         with contextlib.redirect_stdout(io.StringIO()):
-            build(guard, helper, ring, index, assets, data, draft.upload, context)
+            build(guard, helper, ring, index, assets, data, draft.upload, context, stage_record)
         guard.receipt['status'] = 'built_candidate_with_unresolved_obligations'
         cleanup_attempted = True
         with contextlib.redirect_stdout(io.StringIO()): guard.cleanup()
@@ -1058,6 +1093,23 @@ def main():
         write_new(data/'draft-pre-upload-observations.json', encoded({'effects': draft.effects,
             'api_observations': api.observations, 'tag': draft.tag,
             'limits_of_claim': 'draft access checked at observations; repository writers retain control'}))
+        image_bindings = {}
+        for role in ('backend', 'frontend'):
+            retained = draft.expected[role+'-image.tar.gz']
+            observed = guard.receipt['images'][role]
+            image_bindings[role] = {'role': role, 'package_name': 'unirouter-'+role,
+                'repository': 'ghcr.io/foigent/unirouter-'+role, 'asset_id': retained['id'],
+                'archive_name': role+'-image.tar.gz', 'archive_bytes': retained['fact']['bytes'],
+                'archive_sha256': retained['fact']['sha256'], 'config_id': observed['id'],
+                'diff_ids': observed['rootfs_diff_ids']}
+        verifier_fact = draft.expected['uniroute-upgrade-linux-amd64']
+        source_members = {path.relative_to(data).as_posix(): regular(path, 28*MIB)
+                          for path in data.rglob('*') if path.is_file()}
+        chain = stages.producer_chain(raw_record, producer, int(env['GITHUB_RUN_ID']), draft.release['id'], image_bindings,
+            {'asset_id': verifier_fact['id'], **verifier_fact['fact']}, source_members)
+        for name, raw in chain.items(): write_new(data/name, raw)
+        result['producer_result_sha256'] = sha(chain['stage/producer-result.json'])
+        result['publisher_candidate_sha256'] = sha(chain['stage/publisher-candidate.json'])
         metadata_archive(data, assets/'candidate-evidence.tar.gz', guard.time_guard)
         checksums = ''.join(file_fact(assets/name)['sha256']+'  '+name+'\n' for name in ASSETS[:-1])
         write_new(assets/'SHA256SUMS', checksums.encode())

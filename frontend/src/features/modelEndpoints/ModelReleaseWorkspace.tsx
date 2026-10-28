@@ -78,7 +78,7 @@ function newIdempotencyKey(scope: 'author' | 'lifecycle') {
 }
 
 function selectionKey(selection: CanonicalDeploymentReleaseSelectionOption) {
-  return `${selection.deployment_id}:${selection.operation_id}`;
+  return `${selection.deployment_id}:${selection.operation_id}${selection.expected_upstream_observation_identity ? `@${selection.expected_upstream_observation_identity}` : ""}`;
 }
 
 function validPublicLimit(value: number) {
@@ -126,7 +126,7 @@ function AuthoringReceiptPanel({ receipt }: { receipt: CanonicalDeploymentReleas
     ]} />
     <div className="ur-model-endpoint-probe">
       <Text strong>{t("冻结的 Selection")}</Text>
-      {receipt.selections.map(selection => <Text code key={`${selection.deployment_id}:${selection.operation_id}`}>
+      {receipt.selections.map(selection => <Text code key={`${selection.deployment_id}:${selection.operation_id}${selection.expected_upstream_observation_identity ? `@${selection.expected_upstream_observation_identity}` : ""}`}>
         deployment_id={selection.deployment_id} · {selection.operation_id}
       </Text>)}
     </div>
@@ -357,7 +357,7 @@ export default function ModelReleaseWorkspace({
       Toast.error(t("请输入有效的公开上下文与输出上限（正整数）"));
       return;
     }
-    const selections = selected.map(option => ({ deployment_id: option.deployment_id, operation_id: option.operation_id }));
+    const selections = selected.map(option => ({ deployment_id: option.deployment_id, operation_id: option.operation_id, ...(option.expected_upstream_observation_identity ? {expected_upstream_observation_identity: option.expected_upstream_observation_identity} : {}) }));
     if (!reason || selections.length === 0) return;
     const input: CanonicalDeploymentReleaseAuthoringRequest = {
       public_model_id: authorOption.public_model.id,

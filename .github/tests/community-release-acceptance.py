@@ -252,12 +252,94 @@ def asset_url(release, name):
     return "https://github.com/foigent/unirouter/releases/download/" + release["tag"] + "/" + name
 
 
-def validate(config, *, ready=False):
+STAGE_PROGRAM_SHA256 = 'c12627c3c535ddb6884eeeb0e56653863ff98eb839bf1ca78e51f2578ef27260'
+
+
+def stage_module():
+    path = Path(__file__).with_name('community-stage-record.py')
+    require(path.is_file() and not path.is_symlink() and path.stat().st_size <= 128*1024
+            and sha(path) == STAGE_PROGRAM_SHA256, "Stage program identity changed.")
+    spec=importlib.util.spec_from_file_location('consumer_stage_contract',path)
+    value=importlib.util.module_from_spec(spec);spec.loader.exec_module(value);return value
+
+
+def target_schema(config):
+    return config['immutable']['product']['schema']
+
+
+def validate_current_fixed(config, stage_record):
+    stages=stage_module(); stages.validate_record(stage_record,'consumer')
+    require(config == stage_record['inputs']['config'], 'Consumer input differs from its exact stage record.')
+    fixed=config['immutable']
+    require(type(fixed['min_current_sequence']) is int and type(fixed['max_current_sequence']) is int
+            and 0 <= fixed['min_current_sequence'] <= fixed['max_current_sequence'] < 2**63
+            and type(fixed['historical_sequence_reserved_through']) is int
+            and fixed['max_current_sequence'] <= fixed['historical_sequence_reserved_through'] < 2**63,
+            'Unsupported predecessor sequence window.')
+    require(fixed['min_current_schema'] in stages.HEADS
+            and fixed['min_current_schema'] <= target_schema(config), 'Unsupported predecessor schema window.')
+    for item,maximum in ((fixed['verifier'],32*1024*1024),(fixed['public_ring'],1024)):
+        require(type(item) is dict and set(item)=={'size','sha256'} and type(item['size']) is int
+                and 0 < item['size'] <= maximum and re.fullmatch('[a-f0-9]{64}',item['sha256']) is not None,
+                'Consumer bounded file identity differs.')
+    require(re.fullmatch('[a-f0-9]{64}',fixed['native_acceptance_helper_sha256']) is not None
+            and re.fullmatch('[a-f0-9]{64}',fixed['provenance_sha256']) is not None, 'Consumer program/provenance identity differs.')
+    bootstrap=fixed['bootstrap_script']
+    require(set(bootstrap)=={'url','size','sha256'} and type(bootstrap['size']) is int and 0 < bootstrap['size'] <= 128*1024
+            and re.fullmatch('[a-f0-9]{64}',bootstrap['sha256']) is not None
+            and bootstrap['url']=='https://raw.githubusercontent.com/foigent/unirouter/'+fixed['product']['commit']+'/deploy/community/bootstrap.py',
+            'Consumer bootstrap source differs.')
+    require(type(fixed['images']) is dict and set(fixed['images'])=={'backend','frontend','postgres','redis','prometheus','grafana'},
+            'Consumer six-image closed set differs.')
+    repositories={'backend':'ghcr.io/foigent/unirouter-backend','frontend':'ghcr.io/foigent/unirouter-frontend',
+                  'postgres':'(?:docker.io/library/)?postgres','redis':'(?:docker.io/library/)?redis',
+                  'prometheus':'(?:docker.io/)?prom/prometheus','grafana':'(?:docker.io/)?grafana/grafana'}
+    for role,reference in fixed['images'].items():
+        require(type(reference) is str and re.fullmatch(repositories[role]+'@sha256:[a-f0-9]{64}',reference) is not None,
+                'Consumer image digest reference differs.')
+    artifacts=fixed['artifacts']; require(type(artifacts) is list and 1 <= len(artifacts) <= 64, 'Consumer payload bound differs.')
+    names=[]
+    for row in artifacts:
+        require(type(row) is dict and {'path','size','sha256'} <= set(row) <= {'path','size','sha256','media_type'}, 'Consumer payload fields differ.')
+        name=row['path'];require(type(name) is str and name.startswith('payload/') and len(name)<=256
+            and all(part not in ('','.','..') for part in name.split('/')) and re.fullmatch('[A-Za-z0-9._/+-]+',name) is not None
+            and type(row['size']) is int and 0 <= row['size'] <= 512*1024*1024
+            and re.fullmatch('[a-f0-9]{64}',row['sha256']) is not None, 'Consumer payload identity differs.')
+        if 'media_type' in row:require(type(row['media_type']) is str and len(row['media_type'])<=128,'Consumer media type differs.')
+        names.append(name)
+    require(names==sorted(set(names)) and sum(row['size'] for row in artifacts)<=512*1024*1024, 'Consumer payload closure differs.')
+    required={'payload/deploy/install.py','payload/install.json','payload/provenance/build-provenance.json'}
+    if target_schema(config)=='000128_upstream_release_observation':
+        required.update({'payload/deploy/upgrade.py','payload/deploy/recovery.py','payload/scripts/source-budget-restore-rebase.sql'})
+    require(required <= set(names), 'Consumer required installation/upgrade payload is missing.')
+    provenance=next((row for row in artifacts if row['path']=='payload/provenance/build-provenance.json'),None)
+    require(provenance is not None and provenance['sha256']==fixed['provenance_sha256'] and provenance['size']<=128*1024,
+            'Consumer signed provenance artifact differs.')
+    require(type(fixed['app_image_identities']) is list and len(fixed['app_image_identities'])==2
+            and {row['role'] for row in fixed['app_image_identities']}=={'backend','frontend'}, 'Consumer app image closure differs.')
+    for row in fixed['app_image_identities']:
+        require(set(row)=={'role','repository','tag','registry_digest_reference','config_id','diff_ids','native_archive_sha256','asset_id','operation'}
+                and row['repository']=='ghcr.io/foigent/unirouter-'+row['role']
+                and row['registry_digest_reference']==fixed['images'][row['role']]
+                and re.fullmatch('sha256:[a-f0-9]{64}',row['config_id']) is not None
+                and type(row['diff_ids']) is list and 0<len(row['diff_ids'])<=32
+                and all(re.fullmatch('sha256:[a-f0-9]{64}',layer) is not None for layer in row['diff_ids'])
+                and re.fullmatch('[a-f0-9]{64}',row['native_archive_sha256']) is not None
+                and type(row['asset_id']) is int and row['asset_id']>0, 'Consumer native app image identity differs.')
+    for key in ('accepted_assembly_run','accepted_draft_id','actual_private_publisher_run'):
+        require(type(fixed[key]) is int and fixed[key]>0,'Consumer native predecessor identity differs.')
+    require(fixed['actual_private_publisher_run']==stage_record['predecessor']['run_id'], 'Consumer publisher run differs.')
+
+
+def validate(config, *, ready=False, stage_record=None):
     require(set(config) == {"schema_version", "state", "immutable", "release"} and
             config["schema_version"] == "unirouter.formal-consumer-input.v1" and
             config["state"] in ("incomplete", "ready"), "Invalid consumer config shape.")
     fixed, release = config["immutable"], config["release"]
-    require(immutable_digest(fixed) == IMMUTABLE_SHA256, "Fixed product/image/payload/trust identity changed.")
+    if stage_record is None:
+        require(immutable_digest(fixed) == IMMUTABLE_SHA256, "Fixed product/image/payload/trust identity changed.")
+    else:
+        validate_current_fixed(config, stage_record)
     require(set(release) == RELEASE_KEYS, "Unexpected release decision fields.")
     require(fixed["manifest_schema_version"] == "unirouter.upgrade-manifest.v2" and
             fixed["expires_at"] == release["expires_at"] == "never", "Explicit signed non-expiring policy required.")
@@ -293,7 +375,7 @@ def validate(config, *, ready=False):
 def bootstrap_binding(config, value):
     f, r = config["immutable"], config["release"]
     require(value["release"] == {"version": f["product"]["version"], "commit": f["product"]["commit"],
-                "release_sequence": r["release_sequence"], "key_id": f["key_id"], "target_schema": SCHEMA},
+                "release_sequence": r["release_sequence"], "key_id": f["key_id"], "target_schema": target_schema(config)},
             "Public bootstrap release binding differs.")
     expected = {"verifier": ("uniroute-upgrade-linux-amd64", f["verifier"]),
                 "public_keys": ("public-keys.json", f["public_ring"]),
@@ -312,9 +394,9 @@ def manifest_binding(config, manifest):
                 "release_sequence": r["release_sequence"], "version": f["product"]["version"],
                 "commit": f["product"]["commit"], "created_at": r["created_at"], "expires_at": r["expires_at"],
                 "target_os": "linux", "target_arch": "amd64", "min_current_sequence": f["min_current_sequence"],
-                "max_current_sequence": f["max_current_sequence"], "min_current_schema": SCHEMA, "target_schema": SCHEMA,
+                "max_current_sequence": f["max_current_sequence"], "min_current_schema": f["min_current_schema"], "target_schema": target_schema(config),
                 "provenance_sha256": f["provenance_sha256"], "artifacts": f["artifacts"]}
-    require(manifest == expected, "Verified real manifest differs from the reviewed24-input contract.")
+    require(manifest == expected, "Verified real manifest differs from the exact reviewed payload contract.")
 
 
 def native_guard(repo):
@@ -365,7 +447,7 @@ def clean_environment(env):
         os.environ.update(old)
 
 
-def make_acceptance(repo, root, config, context):
+def make_acceptance(repo, root, config, context, *, stage_record=None):
     fixed = config["immutable"]
     base = load_module(repo / ".github/tests/community-installer.py",
                        fixed["native_acceptance_helper_sha256"], "accepted_native_installer")
@@ -394,6 +476,7 @@ def make_acceptance(repo, root, config, context):
             self.bootstrap_file, self.bootstrap_script = root / "bootstrap.json", root / "bootstrap.py"
             self.bootstrap_sha = config["release"]["bootstrap_sha256"]
             self.commit, self.tree, self.version = [fixed["product"][k] for k in ("commit", "tree", "version")]
+            self.schema = target_schema(config)
             self.release_sequence = config["release"]["release_sequence"]
             self.suffix = uuid.uuid4().hex[:10]
             self.images, self.image_ids = fixed["images"], {}
@@ -421,6 +504,12 @@ def make_acceptance(repo, root, config, context):
                 require(first is not None and first.isfile() and first.name == "manifest.json" and first.size <= 128 * 1024,
                         "Verified signed manifest is unavailable.")
                 manifest_binding(config, strict_json(archive.extractfile(first).read()))
+            if 'stage_chain' in fixed:
+                provenance=self.release/'payload/provenance/build-provenance.json'
+                require(provenance.is_file() and not provenance.is_symlink() and provenance.stat().st_size <= 128*1024
+                        and sha(provenance)==fixed['provenance_sha256'], 'Signed stage provenance bytes differ.')
+                proof=strict_json(provenance.read_bytes())
+                stage_module().verify_publication_bindings(proof['community_stage_chain'], config, stage_record)
             descriptor = strict_json((self.release / "payload/install.json").read_bytes())
             require(descriptor == {"schema_version": "unirouter.install.v1", "images": self.images},
                     "Real signed descriptor differs from actual accepted digest references.")
@@ -428,7 +517,7 @@ def make_acceptance(repo, root, config, context):
             base.private_write(self.other_ring, json.dumps({fixed["key_id"]: base64.b64encode(bytes(32)).decode()}).encode())
             self.result.update(real_owner_signed_public_package_verified=True,
                                package_sha256=r["package_sha256"], bootstrap_sha256=r["bootstrap_sha256"])
-            self.passed("actual public signed24-input package and independent trust bindings verified")
+            self.passed("actual full signed package and independent trust bindings verified")
             expected = {a["role"]: a for a in fixed["app_image_identities"]}
             for service, ref in self.images.items():
                 self.run("anonymous pull " + service, [self.docker, "pull", ref])
@@ -440,7 +529,7 @@ def make_acceptance(repo, root, config, context):
                 if service in expected:
                     verified_app_image_id(ref, expected[service], image)
                 self.image_ids[service] = image["Id"]
-            self.passed("six anonymous digest pulls and both app configs/ordered18layers verified")
+            self.passed("six anonymous digest pulls and both exact app configs and ordered layers verified")
 
         def negative_checks(self, directory, project):
             before = self.inventory(), base.files(self.release), base.files(self.instances)
@@ -477,7 +566,7 @@ def make_acceptance(repo, root, config, context):
             require(state["image_ids"] == self.image_ids, "installed images differ from producer inspection")
             actual = self.target(directory, project)
             require(all(plan["target"][k] == v for k, v in actual.items()), "database identity differs from original plan")
-            require(self.sql(directory, project, "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1") == SCHEMA, "schema is not M127")
+            require(self.sql(directory, project, "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1") == target_schema(config), "schema differs from exact signed target")
             comment = self.sql(directory, project, "SELECT obj_description('public.schema_migrations'::regclass)")
             record = json.loads(comment.split("\n", 1)[1])
             require(record["state"] == "completed" and record["plan"] == plan, "fresh owner is not completed for the original plan")
@@ -485,7 +574,7 @@ def make_acceptance(repo, root, config, context):
             require(rotation == "1", "administrator password rotation count is not one")
             release = json.loads(self.sql(directory, project, "SELECT jsonb_build_object('sequence',release_sequence,'version',version,'commit',commit,'package',package_sha256,'schema',target_schema)::text FROM release_state"))
             require(release == {"sequence": self.release_sequence, "version": self.version, "commit": self.commit,
-                                "package": self.config["release"]["package_sha256"], "schema": SCHEMA}, "initial release registration mismatch")
+                                "package": self.config["release"]["package_sha256"], "schema": target_schema(config)}, "initial release registration mismatch")
             ids = self.run("read installed containers", self.compose(directory, project) + ["ps", "-aq"]).splitlines()
             containers = json.loads(self.run("inspect installed containers", [self.docker, "inspect", *ids]))
             require(len(containers) == 6, "six services were not installed")
@@ -582,14 +671,15 @@ def make_acceptance(repo, root, config, context):
     return Formal()
 
 
-def execute(config, repo):
-    validate(config, ready=True)
+def execute(config, repo, stage_record=None):
+    require(stage_record is not None, 'Execution requires an exact current consumer stage record.')
+    validate(config, ready=True, stage_record=stage_record)
     context = native_guard(repo)  # All invalid inputs/context stop before creating any destination.
     reference_sources(repo, config)
     os.umask(0o077)
-    root = Path(tempfile.mkdtemp(prefix="ur-formal-39370754179-", dir="/var/tmp")).resolve()
+    root = Path(tempfile.mkdtemp(prefix="ur-formal-community-consumer-", dir="/var/tmp")).resolve()
     root.chmod(0o700)
-    fixture = make_acceptance(repo, root, config, context)
+    fixture = make_acceptance(repo, root, config, context, stage_record=stage_record)
     try:
         with clean_environment(fixture.env):
             fixture.execute()
@@ -608,20 +698,28 @@ def execute(config, repo):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("describe", "validate", "execute"))
+    parser.add_argument("--stage-dispatch", action="store_true", help="read the exact current manual stage record")
     args = parser.parse_args(argv)
     try:
         repo = Path(__file__).resolve().parents[2]
-        config = load_config(repo)
-        missing = validate(config, ready=args.action != "describe")
+        stage_record=None
+        if args.stage_dispatch:
+            _, stage_record, _=stage_module().read_dispatch('consumer')
+            config=stage_record['inputs']['config']
+        else:
+            require(args.action != 'execute', 'Execution requires an exact current consumer stage record.')
+            config = load_config(repo)  # Retained read-only audit of the historical signed input.
+        missing = validate(config, ready=args.action != "describe", stage_record=stage_record)
+        if stage_record is not None: reference_sources(repo, config)
         if args.action == "describe":
-            print(json.dumps({"source": config["immutable"]["product"]["commit"], "payload_entries": 24,
+            print(json.dumps({"source": config["immutable"]["product"]["commit"], "payload_entries": len(config["immutable"]["artifacts"]),
                               "ready": config["state"] == "ready" and not missing,
                               "missing_decisions": missing, "network_Docker_or_output_operations": 0}))
             return 0
         if args.action == "validate":
             print("Actual public input shape accepted; no network, Docker or destination operation.")
             return 0
-        return execute(config, repo)
+        return execute(config, repo, stage_record)
     except BaseException as error:
         print("Formal consumer stopped: " + (str(error) if isinstance(error, Stop) else type(error).__name__), file=sys.stderr)
         return 1

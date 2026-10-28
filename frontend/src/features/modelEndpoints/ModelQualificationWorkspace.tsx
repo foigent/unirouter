@@ -2,16 +2,16 @@ import '../../i18n/models';
 import { translate as t, translateLabel, useI18n } from '../../i18n';
 import { useEffect, useRef, useState } from 'react';
 import { Banner, Button, Checkbox, Input, Select, Space, Table, Typography } from '@douyinfe/semi-ui';
-import { modelDeploymentApi, type CapabilityProbePlan, type CanonicalCapabilityQualification, type CanonicalModelApplication, type CanonicalOperation, type SharedProbeObservation } from '../../api/modelDeployments';
+import { modelDeploymentApi, upstreamObservationConfirmation, type CapabilityProbePlan, type CanonicalCapabilityQualification, type CanonicalModelApplication, type CanonicalOperation, type SharedProbeObservation } from '../../api/modelDeployments';
 import { ApiError } from '../../api/transport';
 import { useAuthStore } from '../../store/auth';
 import { Surface } from '../../ui';
 import { capabilityShortName } from './ModelCapabilityQualificationPanel';
-import { endpointFailureText, EndpointUIError, type EndpointFailure } from './presentation';
+import { upstreamScopeLabel, endpointFailureText, EndpointUIError, type EndpointFailure } from './presentation';
 
 type Props = { selected: CanonicalModelApplication; operation: CanonicalOperation; canManage: boolean; canApprove: boolean; gatewayLicensed: boolean };
 type Run = { state: 'sending' | 'complete' | 'unconfirmed'; sourceRef?: string; observation?: SharedProbeObservation; message?: string };
-function approvable(v: CanonicalCapabilityQualification) { return v.latest_probe?.current && v.latest_probe.success && v.latest_probe.approval_id === 0; }
+function approvable(v: CanonicalCapabilityQualification) { return v.latest_probe?.upstream_scope?.state !== "stale" && v.latest_probe?.current && v.latest_probe.success && v.latest_probe.approval_id === 0; }
 function actor() { const s = useAuthStore.getState(), u = s.user; return s.isAuthenticated && u ? JSON.stringify([u.id, u.org_id, u.customer_context, u.organization_role, u.role]) : ''; }
 function safeSourceRef(e: unknown) {
   if (!(e instanceof ApiError) || !e.payload || typeof e.payload !== 'object') return undefined;
@@ -33,7 +33,7 @@ export default function ModelQualificationWorkspace({ selected, operation, canMa
   const [costAccepted, setCostAccepted] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<EndpointFailure | null>(null);
   const generation = useRef(0), inFlight = useRef(false), mounted = useRef(true);
   const target = JSON.stringify([selected.deployment.id, selected.deployment.config_revision, selected.connection.id, selected.connection.config_revision,
-    operation.operation_id, operation.revision, operation.profile_definition_digest, operation.protocol_profile_id, operation.protocol_profile_version,
+    selected.deployment.upstream_release_observation?.observation?.identity, operation.operation_id, operation.revision, operation.profile_definition_digest, operation.protocol_profile_id, operation.protocol_profile_version,
     operation.capability_probe_contracts, selected.credential.bindings.map(b => [b.id, b.state_revision, b.eligible])]);
   const load = async (stamp: number, who: string) => {
     const rows = await Promise.all(operation.capability_probe_contracts.map(c => modelDeploymentApi.getCapabilityQualification(selected.deployment.id, operation.operation_id, c.capability_id)));
@@ -107,7 +107,7 @@ export default function ModelQualificationWorkspace({ selected, operation, canMa
         if (!currentViews.current.some(v => v.capability_id === id && v.latest_probe?.capability_probe_id === probeID && approvable(v))) {
           setError({ fallback: '所选验证事实已变化，请刷新后重新选择。' }); break;
         }
-        const receipt = await modelDeploymentApi.approveCapability(selected.deployment.id, operation.operation_id, id, { capability_probe_id: probeID, reason: frozenReason });
+        const receipt = await modelDeploymentApi.approveCapability(selected.deployment.id, operation.operation_id, id, { capability_probe_id: probeID, reason: frozenReason, ...upstreamObservationConfirmation(selected.deployment) });
         if (!valid(stamp, who)) break;
         if (!receipt || !Number.isSafeInteger(receipt.approval_id) || receipt.approval_id <= 0 ||
             receipt.deployment_id !== selected.deployment.id || receipt.operation_id !== operation.operation_id ||
@@ -133,6 +133,7 @@ export default function ModelQualificationWorkspace({ selected, operation, canMa
           <div>{!v.latest_probe.current ? t("证据已失效") : !v.latest_probe.success ? t("验证未通过") : v.latest_probe.approval_id ? t("验证通过 · 此记录已批准") : v.latest_probe.approval_id === 0 ? t("验证通过 · 待批准") : t("验证通过 · 批准状态待回读")}</div>
           <Typography.Text type="tertiary">Probe #{v.latest_probe.capability_probe_id} · HTTP {v.latest_probe.status_code || t("未收到响应")}{v.latest_probe.approval_id ? ` · Approval #${v.latest_probe.approval_id}` : ''}</Typography.Text>
         </> : t("待验证") },
+        { title: t("上游声明范围"), render: (_: unknown, v: CanonicalCapabilityQualification) => upstreamScopeLabel(v.upstream_scope?.state) },
         { title: t("有效批准"), render: (_: unknown, v: CanonicalCapabilityQualification) => v.qualified ? `Approval #${v.preferred_approval_id} · Probe #${v.preferred_capability_probe_id}` : t("暂无有效批准") },
       ]}/>
       <Typography.Text type="tertiary">{t("新验证和批准不会自动更新活动 Release。逐项批准所选事实后，可到发布工作台核对并启用新的发布。")}</Typography.Text>

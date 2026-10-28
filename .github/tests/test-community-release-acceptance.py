@@ -11,6 +11,7 @@ import re
 import subprocess
 from pathlib import Path
 import tempfile
+import types
 import unittest
 from unittest import mock
 
@@ -22,6 +23,20 @@ spec.loader.exec_module(m)
 class ConsumerTests(unittest.TestCase):
     def setUp(self):
         self.config = m.load_config(ROOT)
+
+    def test_formal_instance_uses_closed_record_schema_instead_of_live_checkout(self):
+        spec=importlib.util.spec_from_file_location('native_fixture_for_consumer',ROOT/'.github/tests/community-installer.py')
+        native=importlib.util.module_from_spec(spec);spec.loader.exec_module(native)
+        for schema in ('000127_xinsight_communication_policy','000128_upstream_release_observation'):
+            with self.subTest(schema=schema),tempfile.TemporaryDirectory() as tmp:
+                config=copy.deepcopy(self.config)
+                config['immutable']['product']['schema']=schema
+                def loader(path,digest,name):
+                    return native if name=='accepted_native_installer' else types.SimpleNamespace()
+                with mock.patch.object(m,'load_module',side_effect=loader),mock.patch.object(m.shutil,'which',return_value='/fixture/docker'):
+                    instance=m.make_acceptance(ROOT,Path(tmp),config,{})
+                self.assertEqual(instance.schema,schema)
+                self.assertEqual(instance.release_sequence,config['release']['release_sequence'])
 
     @contextlib.contextmanager
     def synthetic(self):
@@ -51,6 +66,10 @@ class ConsumerTests(unittest.TestCase):
 
     def refuses_without_effects(self, c):
         with mock.patch.object(m.subprocess, 'run') as run, mock.patch.object(m.tempfile, 'mkdtemp') as mkdir:
+            # Preserve the actual historical data-negative assertions; missing
+            # current-stage authority must not make all of these pass trivially.
+            with self.assertRaises((m.Stop, ValueError, TypeError, KeyError)):
+                m.validate(c, ready=True)
             with self.assertRaises((m.Stop, ValueError, TypeError, KeyError)):
                 m.execute(c, ROOT)
             run.assert_not_called(); mkdir.assert_not_called()
@@ -82,7 +101,9 @@ class ConsumerTests(unittest.TestCase):
         self.assertEqual(self.config['release']['package_size'], 130032075)
         self.assertEqual(self.config['release']['package_sha256'],
                          '2a7177d08ed74f8cccdaaeca04a69cd1f2706727e8b282614651b7056d8309e7')
-        m.reference_sources(ROOT, self.config)
+        # The historical signed record stays readable. Its old bootstrap program
+        # must not be silently substituted by the current upgrade-capable owner.
+        with self.assertRaises(m.Stop): m.reference_sources(ROOT, self.config)
         with mock.patch.object(m.subprocess, 'run') as run, mock.patch.object(m.tempfile, 'mkdtemp') as mkdir:
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
@@ -169,7 +190,12 @@ class ConsumerTests(unittest.TestCase):
 
     def test_non_native_context_never_runs_git_or_creates_destination(self):
         with self.synthetic() as value:
-            self.refuses_without_effects(value)
+            self.assertEqual([],m.validate(value,ready=True))
+            with mock.patch.dict(os.environ,{},clear=True),mock.patch.object(m.subprocess,'run') as run, \
+                 mock.patch.object(m.tempfile,'mkdtemp') as mkdir:
+                with self.assertRaises(m.Stop):m.native_guard(ROOT)
+                with self.assertRaises(m.Stop):m.execute(value,ROOT)
+                run.assert_not_called();mkdir.assert_not_called()
 
     def native_environment_fixture(self):
         return {"PATH": "/usr/bin:/bin", "HOME": "/var/tmp/unused-test-home", "GITHUB_ACTIONS": "true",

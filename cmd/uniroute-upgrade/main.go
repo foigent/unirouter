@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"flag"
@@ -8,10 +9,12 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/uniroute/unirouter/internal/signing"
+	"github.com/uniroute/unirouter/internal/strictjson"
 	"github.com/uniroute/unirouter/internal/upgradebundle"
 )
 
@@ -49,6 +52,7 @@ func runPack(args []string, stdout io.Writer) error {
 	fs.SetOutput(io.Discard)
 	keyID := fs.String("key-id", "", "trusted upgrade signing key identifier")
 	privateKeyPath := fs.String("private-key", "", "Ed25519 private-key file")
+	expectedArtifacts := fs.String("expected-artifacts", "", "optional exact previously reviewed artifact JSON array")
 	releaseSequence := fs.Int64("release-sequence", 0, "monotonic release sequence")
 	version := fs.String("version", "", "release version")
 	commit := fs.String("commit", "", "exact source commit")
@@ -117,6 +121,11 @@ func runPack(args []string, stdout io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("create signed manifest: %w", err)
 	}
+	if *expectedArtifacts != "" {
+		if err := checkExpectedArtifacts(*expectedArtifacts, manifest.Artifacts); err != nil {
+			return err
+		}
+	}
 	privateRaw, err := os.ReadFile(*privateKeyPath)
 	if err != nil {
 		return fmt.Errorf("read private key: %w", err)
@@ -130,6 +139,45 @@ func runPack(args []string, stdout io.Writer) error {
 	}
 	_, err = fmt.Fprintf(stdout, "package=%s\nrelease_sequence=%d\nversion=%s\ncommit=%s\ntarget=%s/%s\ntarget_schema=%s\n", *outPath, manifest.ReleaseSequence, manifest.Version, manifest.Commit, manifest.TargetOS, manifest.TargetArch, manifest.TargetSchema)
 	return err
+}
+
+// A selected/previously reviewed byte inventory must match before any private
+// key is read or output is created. Pack's later stream rehash remains required.
+// This ordinary Artifact array is data, never signing or publication authority.
+func checkExpectedArtifacts(path string, actual []upgradebundle.Artifact) error {
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > 128*1024 {
+		return fmt.Errorf("expected artifact inventory must be a bounded regular file")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("cannot read expected artifact inventory")
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !os.SameFile(info, opened) {
+		return fmt.Errorf("expected artifact inventory changed")
+	}
+	raw, err := io.ReadAll(io.LimitReader(file, 128*1024+1))
+	if err != nil || len(raw) > 128*1024 || strictjson.Validate(raw) != nil {
+		return fmt.Errorf("invalid expected artifact inventory")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var expected []upgradebundle.Artifact
+	if err := decoder.Decode(&expected); err != nil || len(expected) == 0 || len(expected) > 64 {
+		return fmt.Errorf("invalid expected artifact inventory")
+	}
+	sort.Slice(expected, func(i, j int) bool { return expected[i].Path < expected[j].Path })
+	if len(expected) != len(actual) {
+		return fmt.Errorf("assembled artifacts differ from expected inventory")
+	}
+	for index, row := range expected {
+		if row != actual[index] {
+			return fmt.Errorf("assembled artifacts differ from expected inventory")
+		}
+	}
+	return nil
 }
 
 func runVerify(args []string, stdout io.Writer) error {

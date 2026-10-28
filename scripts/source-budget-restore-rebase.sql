@@ -22,6 +22,19 @@ BEGIN
     LOCK TABLE schema_migrations IN SHARE MODE;
     SELECT array_agg(version::text ORDER BY version) INTO ledger FROM schema_migrations;
     certified_ledger := ledger;
+    IF ledger[cardinality(ledger)]='000128_upstream_release_observation' THEN
+      IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000127_xinsight_communication_policy'
+         OR NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='model_deployments'::regclass AND attname='upstream_release_observation' AND NOT attisdropped AND atttypid='jsonb'::regtype)
+         OR NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='model_deployments'::regclass AND attname='upstream_observation_revision' AND NOT attisdropped AND atttypid='int8'::regtype AND attnotnull)
+         OR to_regprocedure('public.valid_upstream_release_observation(jsonb)') IS NULL
+         OR NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='model_deployments'::regclass AND conname='model_deployment_upstream_observation_shape' AND convalidated)
+         OR NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='model_deployments'::regclass AND tgname='model_deployment_upstream_observation_guard' AND NOT tgisinternal AND tgenabled='O')
+         OR NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='model_capability_routing_approvals'::regclass AND tgname='model_capability_upstream_scope_guard' AND NOT tgisinternal AND tgenabled='O')
+         OR NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='model_operation_production_approvals'::regclass AND tgname='model_operation_upstream_scope_guard' AND NOT tgisinternal AND tgenabled='O') THEN
+        RAISE EXCEPTION 'M128 restore requires exact observation guards and M127 predecessor'; END IF;
+      ledger:=ledger[1:cardinality(ledger)-1];
+      certified_ledger:=ledger;
+    END IF;
     IF ledger[cardinality(ledger)]='000127_xinsight_communication_policy' THEN
       IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000126_commercial_license_retirement'
          OR to_regclass('public.xinsight_communication_policies') IS NULL
@@ -126,12 +139,13 @@ BEGIN
        AND head IS DISTINCT FROM '000123_xinsight_policy_delegation'
        AND head IS DISTINCT FROM '000124_xinsight_receiver_adoption'
        AND head IS DISTINCT FROM '000125_xinsight_control_credential_lifecycle'
-       AND head IS DISTINCT FROM '000126_commercial_license_retirement' AND head IS DISTINCT FROM '000127_xinsight_communication_policy' THEN
+       AND head IS DISTINCT FROM '000126_commercial_license_retirement' AND head IS DISTINCT FROM '000127_xinsight_communication_policy'
+       AND head IS DISTINCT FROM '000128_upstream_release_observation' THEN
       IF present<>0 THEN RAISE EXCEPTION 'restored C tables require the exact M119 ledger'; END IF;
       RETURN;
     END IF;
     IF present<>8 THEN RAISE EXCEPTION 'restored C schema is incomplete'; END IF;
-    IF head IN ('000120_unpublished_content_reclamation','000121_gateway_pre_dispatch_terminal','000122_scoped_content_policy','000123_xinsight_policy_delegation','000124_xinsight_receiver_adoption','000125_xinsight_control_credential_lifecycle','000126_commercial_license_retirement','000127_xinsight_communication_policy') THEN
+    IF head IN ('000120_unpublished_content_reclamation','000121_gateway_pre_dispatch_terminal','000122_scoped_content_policy','000123_xinsight_policy_delegation','000124_xinsight_receiver_adoption','000125_xinsight_control_credential_lifecycle','000126_commercial_license_retirement','000127_xinsight_communication_policy','000128_upstream_release_observation') THEN
       IF NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='execution_content_objects'::regclass AND attname='reclaimed_at' AND NOT attisdropped AND atttypid='timestamptz'::regtype AND NOT attnotnull) THEN
         RAISE EXCEPTION 'restored content reclamation schema mismatch'; END IF;
     ELSIF EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='execution_content_objects'::regclass AND attname='reclaimed_at' AND NOT attisdropped) THEN

@@ -3,7 +3,6 @@ package modelcapabilityqualification
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"mime"
@@ -25,6 +24,10 @@ func validateChatStreamFunctionTools(b Binding, contentType string, reader io.Re
 		return observation, invalidOpenAIChatFunctionTools("content_type")
 	}
 	profile, err := b.ExecutionProfile()
+	if err != nil {
+		return observation, invalidOpenAIChatFunctionTools("probe_contract", err)
+	}
+	scenario, err := streamToolProbeScenarioForBinding(b)
 	if err != nil {
 		return observation, invalidOpenAIChatFunctionTools("probe_contract", err)
 	}
@@ -160,11 +163,10 @@ func validateChatStreamFunctionTools(b Binding, contentType string, reader io.Re
 		return observation, invalidOpenAIChatFunctionToolsDiagnostic("terminal", "terminal", "invalid_state", err)
 	}
 	calls := state.Calls()
-	if observation.FinishReason != "tool_calls" || len(calls) != 1 || calls[0].Name != "unirouter_probe_echo" {
+	if observation.FinishReason != "tool_calls" || len(calls) != 1 || calls[0].Name != scenario.functionName {
 		return observation, invalidOpenAIChatFunctionTools("tool_call_identity")
 	}
-	var args map[string]interface{}
-	if json.Unmarshal([]byte(calls[0].Arguments), &args) != nil || len(args) != 1 || args["value"] != "UNIROUTER_TOOL_PROBE_OK" {
+	if !scenario.matchesArguments(calls[0].Arguments) {
 		return observation, invalidOpenAIChatFunctionTools("tool_arguments")
 	}
 	observation.ToolCallObserved = true

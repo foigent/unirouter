@@ -24,6 +24,13 @@ import (
 // transactions.
 const migrationAdvisoryLockID int64 = 86420517831702491
 
+// LockMaintenanceTx shares the migration runner's lock for a bounded native
+// maintenance transaction. It grants no migration or runtime admission itself.
+func LockMaintenanceTx(ctx context.Context, tx pgx.Tx) error {
+	_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, migrationAdvisoryLockID)
+	return err
+}
+
 // CapabilityContractPublicationMarker identifies declaration-owned migrations
 // that ordinary startup and migrate-up paths must never apply implicitly.
 const CapabilityContractPublicationMarker = "-- unirouter:capability-contract-publication-v1"
@@ -337,8 +344,8 @@ func runOnConnection(ctx context.Context, conn *pgxpool.Conn, dir string, option
 	}
 	if options.runtimeBridge {
 		for _, version := range pending {
-			if version == schemaauthority.CommercialLicenseRetirementHead || version == schemaauthority.XInsightCommunicationHead {
-				return fmt.Errorf("M126/M127 require explicit maintenance migration; ordinary startup does not apply them")
+			if version == schemaauthority.CommercialLicenseRetirementHead || version == schemaauthority.XInsightCommunicationHead || version == schemaauthority.UpstreamReleaseObservationHead {
+				return fmt.Errorf("M126/M127/M128 require explicit maintenance migration; ordinary startup does not apply them")
 			}
 		}
 		options.scopeSet = true
@@ -373,6 +380,11 @@ func runOnConnection(ctx context.Context, conn *pgxpool.Conn, dir string, option
 	}
 	plannedVersions := append([]string(nil), appliedVersions...)
 	for _, version := range allowed {
+		if version == schemaauthority.UpstreamReleaseObservationHead {
+			if (!options.maintenance && !(options.fresh != nil && options.freshExpand == version)) || len(plannedVersions) == 0 || plannedVersions[len(plannedVersions)-1] != schemaauthority.XInsightCommunicationHead {
+				return fmt.Errorf("M128 requires exact M127 and an explicit maintenance/fresh owner")
+			}
+		}
 		if version == schemaauthority.XInsightCommunicationHead {
 			if (!options.maintenance && !(options.fresh != nil && options.freshExpand == version)) || len(plannedVersions) == 0 || plannedVersions[len(plannedVersions)-1] != schemaauthority.CommercialLicenseRetirementHead {
 				return fmt.Errorf("M127 requires exact M126 and an explicit maintenance/fresh owner")
@@ -698,6 +710,9 @@ func migrationTransactionBody(sqlContent string) string {
 }
 
 func validateCommercialRetirement(applied, artifact []string, maintenance, fresh bool) error {
+	if len(artifact) > 0 && artifact[len(artifact)-1] == schemaauthority.UpstreamReleaseObservationHead {
+		artifact = artifact[:len(artifact)-1]
+	}
 	if len(artifact) > 0 && artifact[len(artifact)-1] == schemaauthority.XInsightCommunicationHead {
 		artifact = artifact[:len(artifact)-1]
 	}

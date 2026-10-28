@@ -37,7 +37,7 @@ MAX_FILES = 8192
 MAX_JSON = 16*MIB
 CODE = Path(__file__).resolve().parents[2]
 REFERENCE = Path(__file__).with_name('community-image-candidate.py')
-REFERENCE_SHA = 'b086a0ff343fff562145b9c8f2531d8f308e632281e27522d2873d8a1cc465db'
+REFERENCE_SHA = 'a7f8fe1fe1c3cdec41016b429049d5b069dbfcb7338d7f7afbfbc99bb93b4d24'
 ORIGINAL_LOCK_SHA = '20becd6a150cf57a8d5925a507f0600528a27d028df92d9a878351453810c0d1'
 ORIGINAL_PACKAGE_SHA = '7f5fdf0a6c3882f913263546c3940b8f19514a198e1fba5e488be5b1648724ea'
 GAPS = {'notice_missing_or_mismatched', 'nested_archive_incomplete', 'binary_metadata_unavailable',
@@ -56,6 +56,37 @@ OPERATION_LABELS|={r+s for r in ['source-frontend-runtime','source-prometheus','
 
 class Rejected(Exception):
     pass
+
+
+_EXPECTED_STAGE = None
+
+
+def configure_stage_inputs(fixed):
+    """Install only the already validated exact source/image expectation once."""
+    global _EXPECTED_STAGE
+    need(_EXPECTED_STAGE is None, 'stage source inputs already bound')
+    import copy
+    _EXPECTED_STAGE = copy.deepcopy(fixed)
+
+
+def expected_source():
+    return SOURCE if _EXPECTED_STAGE is None else _EXPECTED_STAGE['source']
+
+
+def expected_images():
+    return IMAGES if _EXPECTED_STAGE is None else {role: _EXPECTED_STAGE['images'][role] for role in IMAGES}
+
+
+def require_frontend_parent(guard, image, iid):
+    expected = expected_images()['frontend-builder']['rootfs_diff_ids']
+    need(image == iid and guard.receipt['images']['source-frontend-builder']['rootfs_diff_ids'][:len(expected)] == expected, 'IDENTITY')
+
+
+def expected_frontend_hashes():
+    if _EXPECTED_STAGE is None:
+        return ORIGINAL_PACKAGE_SHA, ORIGINAL_LOCK_SHA
+    files = _EXPECTED_STAGE['source_files']
+    return files['frontend/package.json']['sha256'], files['frontend/package-lock.json']['sha256']
 
 
 def need(value, code='SCHEMA'):
@@ -259,9 +290,9 @@ def validate_membership(value):
           'unexplained_output_files','packages','limits','limits_of_claim']
     exact(value,keys)
     need(value['status']=='actual_build_graph_and_output_observations_not_license_clearance'
-         and value['source_commit']==SOURCE['commit'])
-    need(value['original_source_lock_sha256']==ORIGINAL_LOCK_SHA
-         and value['original_package_json_sha256']==ORIGINAL_PACKAGE_SHA)
+         and value['source_commit']==expected_source()['commit'])
+    need(value['original_source_lock_sha256']==expected_frontend_hashes()[1]
+         and value['original_package_json_sha256']==expected_frontend_hashes()[0])
     for key in keys:
         if key.endswith('_sha256'): hexsha(value[key])
     for key in ['actual_vite_version','actual_rollup_version']: text(value[key],64)
@@ -385,7 +416,10 @@ def load_reference(path=REFERENCE):
     # Compile the bytes just checked; do not permit an unrelated cached pyc.
     guard=types.ModuleType('ur_accepted_source_guards');guard.__file__=str(path.resolve())
     exec(compile(raw,str(path.resolve()),'exec'),guard.__dict__)
-    need(guard.FIXED['source']==SOURCE and {k:guard.FIXED['images'][k] for k in IMAGES}==IMAGES,'REFERENCE')
+    if _EXPECTED_STAGE is not None:
+        guard.configure_stage_inputs(_EXPECTED_STAGE['source'], _EXPECTED_STAGE['source_files'], _EXPECTED_STAGE['images'])
+    expected_images = IMAGES if _EXPECTED_STAGE is None else {key: _EXPECTED_STAGE['images'][key] for key in IMAGES}
+    need(guard.FIXED['source']==expected_source() and {k:guard.FIXED['images'][k] for k in IMAGES}==expected_images,'REFERENCE')
     return guard
 
 
@@ -494,17 +528,17 @@ def validate_terminal(value):
     for key in ['started_utc','ended_utc']:
         text(run[key],64); need(datetime.datetime.fromisoformat(run[key]).utcoffset()==datetime.timedelta(0))
     need(datetime.datetime.fromisoformat(run['ended_utc'])>=datetime.datetime.fromisoformat(run['started_utc']))
-    same_typed(value['expected_source'],SOURCE)
+    same_typed(value['expected_source'],expected_source())
     source=value['observed_source']
     if source is not None:
         exact(source,['commit','tree','files','regular_bytes','archive_sha256'])
         integer(source['files']);integer(source['regular_bytes'])
-        need(source['commit']==SOURCE['commit'] and source['tree']==SOURCE['tree']
-             and source['files']==SOURCE['tracked_files'] and source['regular_bytes']==SOURCE['tracked_regular_bytes'])
+        need(source['commit']==expected_source()['commit'] and source['tree']==expected_source()['tree']
+             and source['files']==expected_source()['tracked_files'] and source['regular_bytes']==expected_source()['tracked_regular_bytes'])
         hexsha(source['archive_sha256'])
-    need(type(value['images']) is dict and set(value['images'])<=set(IMAGES))
+    need(type(value['images']) is dict and set(value['images'])<=set(expected_images()))
     for role,image in value['images'].items():
-        same_typed(image,{key:IMAGES[role][key] for key in ['pull_reference','config_id','rootfs_diff_ids']})
+        same_typed(image,{key:expected_images()[role][key] for key in ['pull_reference','config_id','rootfs_diff_ids']})
     rows(value['notices'],5)
     need(len(value['notices'])==5)
     for row,fixed in zip(value['notices'],NOTICES):
@@ -558,7 +592,7 @@ def validate_terminal(value):
     same_typed(value['authority'],{'binary_source_proof':'build_declared_only','complete_license_clearance':False,
                                   'formal_artifact':False,'public_install_verified':False})
     if value['status']=='collected':
-        need(not value['gaps'] and value['failure'] is None and source is not None and set(value['images'])==set(IMAGES)
+        need(not value['gaps'] and value['failure'] is None and source is not None and set(value['images'])==set(expected_images())
              and all(x['status']=='matched' for x in value['notices']) and set(value['binaries'])==set(TAG_COMMITS)
              and all(x['comparison']=='full_embedded_revision_match' for x in value['binaries'].values())
              and f['status']=='observed' and not f['disposition'] and all(x['removed'] for x in value['cleanup'])
@@ -624,7 +658,7 @@ def configure(guard):
 def initial_terminal(expected,run_id):
     return {'schema':'ur-source-evidence-v1','status':'failed',
             'run':{'id':run_id,'attempt':1,'workflow_commit':expected,'started_utc':utc(),'ended_utc':utc()},
-            'expected_source':SOURCE,'observed_source':None,'images':{},
+            'expected_source':expected_source(),'observed_source':None,'images':{},
             'notices':[{'file':x['file'],'status':'not_observed','bytes':0,'sha256':None} for x in NOTICES],
             'binaries':{},'frontend':{'status':'not_observed','image_id':None,'membership_sha256':None,'disposition':[]},
             'cleanup':[],'operations':[],'gaps':[],'failure':None,'bundle':None,
@@ -660,9 +694,9 @@ def observe(guard,result):
         guard.disk_guard(initial=True)
         phase='source'; source=guard.source_export(); result['observed_source']=guard.receipt['source_export']
         phase='images'; ids={}
-        for role in IMAGES:
+        for role in expected_images():
             ids[role]=guard.pull(role)
-            result['images'][role]={key:IMAGES[role][key] for key in ['pull_reference','config_id','rootfs_diff_ids']}
+            result['images'][role]={key:expected_images()[role][key] for key in ['pull_reference','config_id','rootfs_diff_ids']}
         containers={role:guard.create('source-'+role,ids[role],['--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges']) for role in ['frontend-runtime','prometheus','grafana']}
         for row in guard.receipt['owned_containers']:
             need(not row['started'] and not any(x.get('Type')=='bind' for x in row['mounts']),'ENVIRONMENT')
@@ -739,7 +773,7 @@ def collect_frontend(guard,result,source,gaps):
                  '--tag','ur-source-evidence-frontend-builder:'+guard.run_id,'--iidfile',str(guard.work/'frontend-builder.id'),str(root))
     iid=regular(guard.work/'frontend-builder.id',128).decode().strip(); need(re.fullmatch('sha256:[0-9a-f]{64}',iid),'IDENTITY')
     image=guard.inspect_image('source-frontend-builder',iid)
-    need(image==iid and guard.receipt['images']['source-frontend-builder']['rootfs_diff_ids'][:len(IMAGES['frontend-builder']['rootfs_diff_ids'])]==IMAGES['frontend-builder']['rootfs_diff_ids'],'IDENTITY')
+    require_frontend_parent(guard, image, iid)
     cid=guard.create('source-frontend-output',iid,['--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges'])
     scratch=guard.work/'scratch/frontend'; scratch.mkdir()
     guard.stream_command('source evidence stopped frontend output',['docker','--config',str(guard.work/'docker-config'),

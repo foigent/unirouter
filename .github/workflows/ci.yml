@@ -125,6 +125,10 @@ jobs:
           python3 -I -B .github/tests/test-community-install-descriptor.py
           python3 -B scripts/test-community-installer.py
           python3 -B scripts/test-community-bootstrap.py
+          python3 -I -B scripts/test-community-upgrade.py
+          python3 -I -B .github/tests/test-community-release-materials.py
+          python3 -I -B .github/tests/test-community-stage-record.py
+          python3 -I -B .github/tests/test-community-stage-chain.py
           python3 -I -B .github/tests/test-community-byte-candidate.py
           python3 -I -B .github/tests/test-community-backend-reuse.py
           python3 -I -B .github/tests/test-private-image-publisher.py
@@ -416,6 +420,9 @@ jobs:
       - name: Type check
         run: npm run type-check
 
+      - name: Check actual frontend membership observer input binding
+        run: node --test ../.github/tests/test-frontend-membership-observer.mjs
+
       - name: Frontend tests
         run: npm test -- --run
 
@@ -504,6 +511,8 @@ jobs:
 
       - name: Build exact-head frontend
         working-directory: frontend
+        env:
+          VITE_APP_ENV: production
         run: npm run build
 
       - name: Install Chromium
@@ -511,10 +520,23 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run real-backend browser acceptances
+        env:
+          OVERVIEW_BROWSER_DIST: ${{ github.workspace }}/frontend/dist
+          OVERVIEW_BROWSER_ARTIFACTS: ${{ runner.temp }}/ur-customer-overview-browser
+          OVERVIEW_NAVIGATION_ONLY: '0'
         run: >-
           go test -tags=integration,pr4browser ./cmd/uniroute
-          -run '^(TestPR4AccessUXModelReadinessBrowserE2E|TestModelEndpointOnboardingBrowserE2E|TestSourceBudgetManagementBrowserE2E)$'
+          -run '^(TestPR4AccessUXModelReadinessBrowserE2E|TestModelEndpointOnboardingBrowserE2E|TestSourceBudgetManagementBrowserE2E|TestCustomerOverviewBrowserE2E)$'
           -count=1 -timeout=20m -v
+
+      - name: Preserve overview browser evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: customer-overview-browser-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ur-customer-overview-browser
+          if-no-files-found: warn
+          retention-days: 90
 
   docker:
     name: Docker Build

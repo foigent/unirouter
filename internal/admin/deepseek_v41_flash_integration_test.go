@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -27,14 +28,27 @@ import (
 	"github.com/uniroute/unirouter/internal/runtimegeneration"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
 	"github.com/uniroute/unirouter/internal/testutil"
+	"github.com/uniroute/unirouter/internal/upstreamrelease"
 )
 
 func TestCurrentDeepSeekFlashDataFirstHTTPPublicationQualificationActivationIntegration(t *testing.T) {
 	testPublishedDeepSeekFlashHTTPFlow(t, "deepseek-v41-flash.json")
 }
 
-func testPublishedDeepSeekFlashHTTPFlow(t *testing.T, bundleFile string) {
+func TestMeaningfulDeepSeekProbeSelectorSuccessorHTTPQualificationAndGatewayIntegration(t *testing.T) {
+	testPublishedDeepSeekFlashHTTPFlow(t, "deepseek-flash-meaningful-stream-probe.json")
+}
+
+func testPublishedDeepSeekFlashHTTPFlow(t *testing.T, bundleFile string, observationScopes ...bool) {
+	scoped := len(observationScopes) > 0 && observationScopes[0]
+	var observationState upstreamrelease.State
+	var dispatchHook func()
+	meaningful := bundleFile == "deepseek-flash-meaningful-stream-probe.json"
+	if meaningful {
+		bundleFile = "deepseek-v41-flash-provider-completion.json"
+	}
 	completion := bundleFile == "deepseek-v41-flash-provider-completion.json"
+	probeVersion := "1.0.0"
 	groupCount, singleCalls := 2, 7
 	if completion {
 		groupCount, singleCalls = 1, 10
@@ -80,6 +94,7 @@ func testPublishedDeepSeekFlashHTTPFlow(t *testing.T, bundleFile string) {
 	apply := func(request publication.PlanRequestV2) {
 		tx, e := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 		require.NoError(t, e)
+		defer tx.Rollback(ctx)
 		plan, e := publication.BuildPlanV2(ctx, tx, authority, request)
 		require.NoError(t, e)
 		require.NoError(t, tx.Rollback(ctx))
@@ -124,6 +139,12 @@ func testPublishedDeepSeekFlashHTTPFlow(t *testing.T, bundleFile string) {
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users(org_id,username,password_hash,organization_role,role,status) VALUES($1,'flash-review-local','fixture','platform_admin','platform_admin','active') RETURNING id`, operatorOrg).Scan(&approver))
 	h := NewHandlerWithAPIKeyHashSecret(pool, "flash-fixture", "flash-http-fixture-hash", []byte("0123456789abcdef01234567"), nil)
 	authorized := canonicalApplicationAuthorizedRequest(org, actor)
+	if scoped {
+		base := authorized
+		authorized = func(method, target, body string) *http.Request {
+			return withIntegrationCommittingActor(t, pool, base(method, target, body), actor)
+		}
+	}
 	// The original case creates a data-first public model. The successor case
 	// first creates 1.0.0, then publishes 1.1.0 and reuses that stable identity.
 	legacy := createCanonicalApplicationForTest(t, h, authorized, canonicalModelApplicationCreateRequest{
@@ -222,6 +243,13 @@ func testPublishedDeepSeekFlashHTTPFlow(t *testing.T, bundleFile string) {
 			response = strings.Replace(response, `,"usage":{"prompt_tokens":100,"completion_tokens":20,"total_tokens":120,"prompt_cache_hit_tokens":10,"prompt_cache_miss_tokens":90}`, "", 1)
 		case "limit":
 			response = strings.ReplaceAll(strings.ReplaceAll(response, `"completion_tokens":20`, `"completion_tokens":2049`), `"total_tokens":120`, `"total_tokens":2149`)
+		case "reasoning":
+			response = strings.ReplaceAll(response, `"reasoning_content":"brief"`, `"reasoning_content":""`)
+		}
+		if dispatchHook != nil {
+			hook := dispatchHook
+			dispatchHook = nil
+			hook()
 		}
 		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(response))}, nil
 	}))
@@ -313,6 +341,72 @@ func testPublishedDeepSeekFlashHTTPFlow(t *testing.T, bundleFile string) {
 		}
 	}
 	require.Equal(t, singleCalls, calls, "GET, approval and freeze must not repeat a Provider call")
+	if meaningful {
+		// Retain an actual old native failed fact before advancing the current
+		// selector. The task-only diagnostic is never imported as a Probe.
+		failureMode = "reasoning"
+		oldSnapshot, e := h.loadModelCapabilitySnapshot(ctx, org, actor, app.Deployment.ID, modelprofile.OperationOpenAIChat, "reasoning_effort", app.Credential.Bindings[0].ID)
+		require.NoError(t, e)
+		oldResult, e := h.probeCanonicalModelCapability(ctx, org, actor, app.Deployment.ID, modelprofile.OperationOpenAIChat, "reasoning_effort", modelCapabilityProbeRequest{CredentialBindingID: app.Credential.Bindings[0].ID}, auditMeta{})
+		require.NoError(t, e)
+		require.False(t, oldResult.Success)
+		require.Equal(t, "reasoning", oldResult.ContractErrorCode)
+		singleCalls++
+		var retainedSummary []byte
+		require.NoError(t, pool.QueryRow(ctx, `SELECT response_summary FROM model_capability_probes WHERE capability_probe_id=$1`, oldResult.CapabilityProbeID).Scan(&retainedSummary))
+		nextWire, e := os.ReadFile("../../capability-bundles/deepseek-flash-meaningful-stream-probe.json")
+		require.NoError(t, e)
+		nextBundle, e := publication.DecodeBundleV2(nextWire)
+		require.NoError(t, e)
+		require.Empty(t, nextBundle.Definitions)
+		authority.ApprovedBundleDigest = fmt.Sprintf("%x", sha256.Sum256(nextWire))
+		authority.Publisher.Carrier.Path = "capability-bundles/deepseek-flash-meaningful-stream-probe.json"
+		apply(publication.PlanRequestV2{PublicationID: "flash-meaningful-fixture", Kind: "delta", BundleBytes: nextWire})
+		require.NoError(t, publication.VerifyPublicationProjectionV2(ctx, pool))
+		// Reusing the stale @1 predecessor under a new publication identity is
+		// rejected by the real read-only Plan, without rewriting old bindings.
+		tx, e := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+		require.NoError(t, e)
+		_, e = publication.BuildPlanV2(ctx, tx, authority, publication.PlanRequestV2{PublicationID: "flash-stale-selector-fixture", Kind: "delta", BundleBytes: nextWire})
+		require.Error(t, e)
+		require.NoError(t, tx.Rollback(ctx))
+		current, e := h.loadModelCapabilitySnapshot(ctx, org, actor, app.Deployment.ID, modelprofile.OperationOpenAIChat, "reasoning_effort", app.Credential.Bindings[0].ID)
+		require.NoError(t, e)
+		require.False(t, sameModelCapabilitySnapshot(oldSnapshot, current))
+		require.Equal(t, qualification.DeepSeekMeaningfulStreamProbeVersion, current.ProbeContractVersion)
+		path := fmt.Sprintf("/api/v1/model-deployments/%d/operations/%s/capabilities/reasoning_effort", app.Deployment.ID, modelprofile.OperationOpenAIChat)
+		request := authorized(http.MethodGet, path, "")
+		request.SetPathValue("deploymentID", strconv.FormatInt(app.Deployment.ID, 10))
+		request.SetPathValue("operationID", modelprofile.OperationOpenAIChat)
+		request.SetPathValue("capabilityID", "reasoning_effort")
+		response := httptest.NewRecorder()
+		h.GetCanonicalModelCapabilityQualification(response, request)
+		require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+		var view modelCapabilityQualificationView
+		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &view))
+		require.Equal(t, "2.0.0", view.ProbeContractVersion)
+		require.NotNil(t, view.LatestProbe)
+		require.Equal(t, oldResult.CapabilityProbeID, view.LatestProbe.CapabilityProbeID)
+		require.False(t, view.LatestProbe.Current)
+		require.False(t, view.Qualified)
+		var oldVersion string
+		var oldSuccess bool
+		var afterSummary []byte
+		require.NoError(t, pool.QueryRow(ctx, `SELECT probe_contract_version,success,response_summary FROM model_capability_probes WHERE capability_probe_id=$1`, oldResult.CapabilityProbeID).Scan(&oldVersion, &oldSuccess, &afterSummary))
+		require.Equal(t, "1.0.0", oldVersion)
+		require.False(t, oldSuccess)
+		require.Equal(t, retainedSummary, afterSummary)
+		var retainedBindings, newBindings int
+		require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE probe_contract_version='1.0.0'),count(*) FILTER (WHERE probe_contract_version='2.0.0') FROM model_capability_probe_contract_bindings WHERE profile_definition_digest=$1 AND probe_contract_id=$2`, d.Digest(), qualification.DeepSeekProviderCompletionProbeContractID).Scan(&retainedBindings, &newBindings))
+		require.Equal(t, 6, retainedBindings)
+		require.Equal(t, 6, newBindings)
+		bundle, probeVersion = nextBundle, qualification.DeepSeekMeaningfulStreamProbeVersion
+		stream = strings.ReplaceAll(stream, "UNIROUTER_TOOL_PROBE_OK", "6429")
+		failureMode = ""
+	}
+	if scoped {
+		observationState = exerciseScopedProbeEpochs(t, pool, h, authorized, app, &singleCalls, &dispatchHook)
+	}
 	// Formal HTTP plan and execution, rather than inferring batch usability
 	// from a shared-contract unit test. Plans and readbacks cannot dispatch.
 	batchBase := fmt.Sprintf("/api/v1/model-deployments/%d/operations/%s", app.Deployment.ID, modelprofile.OperationOpenAIChat)
@@ -337,7 +431,7 @@ func testPublishedDeepSeekFlashHTTPFlow(t *testing.T, bundleFile string) {
 		require.Equal(t, 1, group.ProviderRequests)
 		currentCapability = "function_tools"
 		if completion {
-			require.Equal(t, qualification.DeepSeekProviderCompletionProbeContractID+"@1.0.0", group.ProbeContract)
+			require.Equal(t, qualification.DeepSeekProviderCompletionProbeContractID+"@"+probeVersion, group.ProbeContract)
 			require.Len(t, group.CapabilityIDs, 6)
 		} else if strings.HasSuffix(group.ProbeContract, "@3.0.0") {
 			require.Equal(t, []string{"reasoning_effort"}, group.CapabilityIDs)
@@ -384,7 +478,9 @@ func testPublishedDeepSeekFlashHTTPFlow(t *testing.T, bundleFile string) {
 	for _, fact := range batchResults {
 		batchProbeIDs[fact.CapabilityProbeID] = true
 		path := fmt.Sprintf("%s/capabilities/%s/routing-approvals", batchBase, fact.CapabilityID)
-		r := canonicalOperationProbeAuthorizedRequest(operatorOrg, org, approver, auth.RolePlatformAdmin)(http.MethodPost, path, fmt.Sprintf(`{"capability_probe_id":%d,"reason":"exact shared Flash fixture"}`, fact.CapabilityProbeID))
+		approvalWire, e := json.Marshal(modelCapabilityApprovalRequest{CapabilityProbeID: fact.CapabilityProbeID, Reason: "exact shared Flash fixture", ExpectedUpstreamObservationIdentity: upstreamrelease.Identity(observationState.Observation)})
+		require.NoError(t, e)
+		r := canonicalOperationProbeAuthorizedRequest(operatorOrg, org, approver, auth.RolePlatformAdmin)(http.MethodPost, path, string(approvalWire))
 		setBatchPath(r)
 		r.SetPathValue("capabilityID", fact.CapabilityID)
 		w := httptest.NewRecorder()
@@ -405,7 +501,7 @@ func testPublishedDeepSeekFlashHTTPFlow(t *testing.T, bundleFile string) {
 	if completion {
 		contextLimit, outputLimit = 131072, 2048
 	}
-	receipt, _ := serveCanonicalDeploymentReleaseAuthoring(t, h, authorized, canonicalDeploymentReleaseAuthoringRequest{PublicModelID: app.PublicModel.ID, Baseline: runtimechange.DeploymentReleaseBaseline{Kind: runtimechange.DeploymentReleaseBaselineInitial}, Selections: []runtimechange.DeploymentReleaseSelection{{DeploymentID: app.Deployment.ID, OperationID: modelprofile.OperationOpenAIChat}}, ProfileDefinitionDigest: d.Digest(), PublicContextLimit: contextLimit, PublicOutputLimit: outputLimit, CapabilityApprovalIDs: approvalIDs, Reason: "independent current Flash text fixture"}, "flash-v41-freeze", http.StatusCreated)
+	receipt, _ := serveCanonicalDeploymentReleaseAuthoring(t, h, authorized, canonicalDeploymentReleaseAuthoringRequest{PublicModelID: app.PublicModel.ID, Baseline: runtimechange.DeploymentReleaseBaseline{Kind: runtimechange.DeploymentReleaseBaselineInitial}, Selections: []runtimechange.DeploymentReleaseSelection{{DeploymentID: app.Deployment.ID, OperationID: modelprofile.OperationOpenAIChat, ExpectedUpstreamObservationIdentity: upstreamrelease.Identity(observationState.Observation)}}, ProfileDefinitionDigest: d.Digest(), PublicContextLimit: contextLimit, PublicOutputLimit: outputLimit, CapabilityApprovalIDs: approvalIDs, Reason: "independent current Flash text fixture"}, "flash-v41-freeze", http.StatusCreated)
 	sealed, err := releaseexecution.ReadSnapshot(ctx, pool, receipt.Release.ID)
 	require.NoError(t, err)
 	require.NoError(t, sealed.ValidateDefinition(d))
@@ -415,21 +511,52 @@ func testPublishedDeepSeekFlashHTTPFlow(t *testing.T, bundleFile string) {
 		require.True(t, batchProbeIDs[pin.ProbeID], "freeze must pin the exact batch fact")
 		if completion {
 			require.Equal(t, qualification.DeepSeekProviderCompletionProbeContractID, pin.ProbeContractID)
-			require.Equal(t, "1.0.0", pin.ProbeContractVersion)
+			require.Equal(t, probeVersion, pin.ProbeContractVersion)
 		}
 		if pin.CapabilityID == "reasoning_effort" {
 			effortPin = true
 			if completion {
-				require.Equal(t, "1.0.0", pin.ProbeContractVersion)
+				require.Equal(t, probeVersion, pin.ProbeContractVersion)
 			} else {
 				require.Equal(t, "3.0.0", pin.ProbeContractVersion)
 			}
 		}
 	}
 	require.True(t, effortPin)
-	verifyFirstDataGateway(t, h, authorized, receipt.Release, app, d, []byte(stream))
+	if scoped {
+		verifyFirstDataGateway(t, h, authorized, receipt.Release, app, d, []byte(stream), func() {
+			exerciseScopedApprovedHistory(t, pool, h, authorized, app, observationState, operatorOrg, approver, batchResults)
+		})
+	} else {
+		verifyFirstDataGateway(t, h, authorized, receipt.Release, app, d, []byte(stream))
+	}
 	retained, err := releaseexecution.ReadSnapshot(ctx, pool, receipt.Release.ID)
 	require.NoError(t, err)
 	require.Equal(t, sealed, retained)
 	require.Equal(t, singleCalls+groupCount, calls)
+	if meaningful {
+		// The old binary has no new Probe implementation. Prove the boundary
+		// rather than promising that a selector compensation makes it capable.
+		require.NoError(t, manifest.Require(schemaauthority.LatestSupportedMigration, sealed.Requirements))
+		oldManifest := manifest
+		oldManifest.Implementations = slices.DeleteFunc(slices.Clone(manifest.Implementations), func(ref modelprofile.ImplementationReference) bool {
+			return ref.Kind == "capability_probe" && ref.ID == qualification.DeepSeekProviderCompletionProbeContractID+"@2.0.0"
+		})
+		require.Error(t, oldManifest.Require(schemaauthority.LatestSupportedMigration, sealed.Requirements))
+		// Normal compensation moves the candidate selector only. The sealed
+		// active Release remains exactly readable from its immutable facts.
+		compensation := bundle
+		compensation.BindingDelta = nil
+		for i := range compensation.SelectorDelta {
+			compensation.SelectorDelta[i].ExpectedPredecessor = &publication.ContractIdentity{ProbeContractID: qualification.DeepSeekProviderCompletionProbeContractID, ProbeContractVersion: "2.0.0"}
+			compensation.SelectorDelta[i].Final.ProbeContractVersion = "1.0.0"
+		}
+		back, e := compensation.CanonicalBytes()
+		require.NoError(t, e)
+		authority.ApprovedBundleDigest = fmt.Sprintf("%x", sha256.Sum256(back))
+		apply(publication.PlanRequestV2{PublicationID: "flash-compensate-fixture", Kind: "compensation", CompensatesPublicationID: "flash-meaningful-fixture", BundleBytes: back})
+		after, e := releaseexecution.ReadSnapshot(ctx, pool, receipt.Release.ID)
+		require.NoError(t, e)
+		require.Equal(t, sealed, after)
+	}
 }

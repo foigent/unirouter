@@ -305,6 +305,16 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(1, labels.count("start-console"))
         self.assertEqual(1, labels.count("start-databases"))
 
+    def test_fresh_resume_refuses_upgrade_witness_before_service_commands(self):
+        self.prepare()
+        self.installer.state["upgrade"] = {"format": "unirouter.community-upgrade.v1", "pending": "withdraw"}
+        M.save_state(self.directory, self.installer.state)
+        before = list(self.fake.commands)
+        with self.assertRaisesRegex(M.InstallError, "upgrade witness"):
+            self.installer.load_state()
+        self.assertEqual(before, self.fake.commands)
+
+
     def test_rootless_daemon_is_rejected_before_preparation(self):
         original = self.installer.run
         def rootless(args, *, label, input=None):

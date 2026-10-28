@@ -303,7 +303,7 @@ func (h *Handler) dashboardDailyTrend(ctx context.Context, orgID int64, startTim
 	}
 
 	rows, err := h.db.Query(ctx,
-		`SELECT date_trunc($4, created_at) AS bucket, COUNT(*) AS requests, COALESCE(SUM(cost_micros), 0) AS cost
+		`SELECT date_trunc($4, created_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS bucket, COUNT(*) AS requests, COALESCE(SUM(cost_micros), 0) AS cost
 		 FROM call_logs
 		 WHERE org_id = $1 AND created_at >= $2 AND created_at < $3
 		 GROUP BY bucket

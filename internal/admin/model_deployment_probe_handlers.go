@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/uniroute/unirouter/internal/upstreamrelease"
 	"io"
 	"net/http"
 	"slices"
@@ -62,8 +63,9 @@ func (h *Handler) SetModelDeploymentProbeHTTPDoer(doer adapters.HTTPDoer) {
 }
 
 type canonicalOperationProbeRequest struct {
-	CredentialBindingID int64  `json:"credential_binding_id"`
-	ProbeText           string `json:"probe_text,omitempty"`
+	ExpectedUpstreamObservationIdentity string `json:"expected_upstream_observation_identity,omitempty"`
+	CredentialBindingID                 int64  `json:"credential_binding_id"`
+	ProbeText                           string `json:"probe_text,omitempty"`
 }
 
 type canonicalOperationProbeResponse struct {
@@ -85,6 +87,7 @@ type canonicalOperationProbeResponse struct {
 }
 
 type canonicalOperationProbeSnapshot struct {
+	UpstreamObservation     *upstreamrelease.Observation
 	CustomerOrgID           int64
 	DeploymentID            int64
 	ConnectionID            int64
@@ -330,6 +333,9 @@ func (h *Handler) probeCanonicalModelOperation(
 	if err != nil {
 		return canonicalOperationProbeResponse{}, err
 	}
+	if request.ExpectedUpstreamObservationIdentity != upstreamrelease.Identity(snapshot.UpstreamObservation) {
+		return canonicalOperationProbeResponse{}, errCanonicalOperationProbeConflict
+	}
 	sourceRef, err := middleware.NewOperationID()
 	if err != nil {
 		return canonicalOperationProbeResponse{}, fmt.Errorf("generate canonical operation probe identity: %w", err)
@@ -497,10 +503,20 @@ SELECT created_at,created_at<=transaction_timestamp() FROM credential_binding_de
 		}
 		return canonicalOperationProbeSnapshot{}, fmt.Errorf("lock canonical operation probe credential link: %w", err)
 	}
+	state, _, err := upstreamrelease.Read(ctx, tx, orgID, deploymentID, false)
+	if err != nil {
+		return snapshot, err
+	}
+	snapshot.UpstreamObservation = state.Observation
 	return snapshot, nil
 }
 
 func validateCanonicalOperationProbeSnapshot(snapshot canonicalOperationProbeSnapshot) error {
+	if snapshot.UpstreamObservation.Validate(upstreamrelease.Scope{
+		CustomerOrgID: snapshot.CustomerOrgID, DeploymentID: snapshot.DeploymentID, ConnectionID: snapshot.ConnectionID,
+		Provider: snapshot.Provider, BaseURL: snapshot.BaseURL, APIModel: snapshot.UpstreamModel}) != nil {
+		return errCanonicalOperationProbeConflict
+	}
 	spec, err := canonicalOperationProbeSpecForSnapshot(snapshot)
 	if err != nil {
 		return err
@@ -780,7 +796,8 @@ func resolveGLM5TurboOperationProbeThinking(profileID, profileVersion string) (m
 
 func canonicalOperationProbeRequestSummary(snapshot canonicalOperationProbeSnapshot) ([]byte, error) {
 	summary := map[string]interface{}{
-		"deployment_id": snapshot.DeploymentID, "connection_id": snapshot.ConnectionID,
+		"upstream_release_observation": snapshot.UpstreamObservation,
+		"deployment_id":                snapshot.DeploymentID, "connection_id": snapshot.ConnectionID,
 		"operation_id": snapshot.OperationID, "credential_binding_id": snapshot.CredentialBindingID,
 		"protocol_profile_id": snapshot.ProfileID, "protocol_profile_version": snapshot.ProfileVersion,
 		"execution_profile_id": snapshot.ExecutionProfileID, "execution_profile_version": snapshot.ExecutionProfileVersion,
@@ -924,7 +941,8 @@ func (h *Handler) persistCanonicalOperationProbe(
 		return canonicalOperationProbeResponse{}, err
 	}
 	responseMetadata := map[string]interface{}{
-		"provider_success": outcome.ProviderSuccess, "current": current,
+		"upstream_release_observation": snapshot.UpstreamObservation,
+		"provider_success":             outcome.ProviderSuccess, "current": current,
 		"reason_code": reasonCode, "provider_reason_code": outcome.ReasonCode,
 		"response_bytes": outcome.ResponseBytes,
 	}
@@ -1142,7 +1160,7 @@ func canonicalOperationProbeRouteInputsMatch(before, current canonicalOperationP
 	if validateCanonicalOperationProbeSnapshot(current) != nil {
 		return false
 	}
-	return before.CustomerOrgID == current.CustomerOrgID &&
+	return upstreamrelease.Matches(before.UpstreamObservation, current.UpstreamObservation) && before.CustomerOrgID == current.CustomerOrgID &&
 		before.DeploymentID == current.DeploymentID &&
 		before.ConnectionID == current.ConnectionID &&
 		before.CredentialBindingID == current.CredentialBindingID &&
@@ -1173,6 +1191,9 @@ func canonicalOperationProbeFingerprint(
 		strconv.FormatInt(snapshot.OperationRevision, 10), canonicalOperationProbeFingerprintBinding(snapshot),
 		strconv.FormatBool(outcome.ProviderSuccess), strconv.Itoa(outcome.StatusCode), outcome.ReasonCode,
 	}, "\x00")
+	if snapshot.UpstreamObservation != nil {
+		payload += "\x00" + snapshot.UpstreamObservation.Identity
+	}
 	digest := sha256.Sum256([]byte(payload))
 	return "sha256:" + hex.EncodeToString(digest[:])
 }

@@ -52,11 +52,11 @@ func TestRuntimeGenerationCLIExpandedLedgerLifecycleIntegration(t *testing.T) {
 			require.NoError(t, pool.QueryRow(t.Context(), `SELECT max(version) FROM schema_migrations`).Scan(&actualHead))
 			require.Equal(t, head, actualHead, "each CLI case must run on its named actual schema")
 			cfg := &config.Config{DB_DSN: pool.Config().ConnString(), DBMaxConnections: 3, MigrationsDir: dir}
-			if head != schemaauthority.XInsightCommunicationHead {
+			if head != schemaauthority.LatestSupportedMigration {
 				cfg.RuntimeEnvironment = "test"
 				_, err := invokeGenerationCLI(t, cfg, "inspect", nil)
-				if head == schemaauthority.CommercialLicenseRetirementHead {
-					require.NoError(t, err, "only exact M126 maintenance reads remain available")
+				if head == schemaauthority.XInsightCommunicationHead {
+					require.NoError(t, err, "only exact M127 predecessor maintenance reads remain available")
 				} else {
 					require.ErrorContains(t, err, "outside this artifact")
 				}

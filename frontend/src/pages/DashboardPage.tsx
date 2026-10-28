@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useLocation, useNavigate, useOutletContext } from 'react-router-dom';
 import { Button, Spin } from '@douyinfe/semi-ui';
 import { IconRefresh } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { dashboardApi, type DashboardStats } from '../api/dashboard';
 import { EmptyState, PageHeader, Surface } from '../ui';
 import { useAuthStore } from '../store/auth';
+import { newUIInstanceID } from '../utils/intentRequestId';
 import { authzContextForUser, hasLicensedFeature, isBillingRole, isOrgViewerRole, isPlatformAdminRole } from '../navigation';
 import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { useI18n, translateLabel } from '../i18n';
@@ -13,19 +15,47 @@ import OverviewWorkspace, { type DashboardAttention, type AttentionLoadState } f
 type TimeRange = '24h' | '7d' | '30d';
 const days: Record<TimeRange, number> = { '24h': 1, '7d': 7, '30d': 30 };
 
+type OverviewEntry = { scope: string; session: string; range: TimeRange; selected?: string | null };
+function restoreOverview(value: unknown, scope: string, session: string): OverviewEntry {
+  const fallback: OverviewEntry = { scope, session, range: '24h' };
+  if (!value || typeof value !== 'object') return fallback;
+  const entry = (value as { overview?: unknown }).overview;
+  if (!entry || typeof entry !== 'object') return fallback;
+  const saved = entry as Partial<OverviewEntry>;
+  if (saved.scope !== scope || saved.session !== session || !['24h', '7d', '30d'].includes(String(saved.range))) return fallback;
+  if (saved.selected !== undefined && saved.selected !== null && (typeof saved.selected !== 'string' || saved.selected.length === 0 || saved.selected.length > 1024)) return fallback;
+  return { scope, session, range: saved.range as TimeRange, selected: saved.selected };
+}
+
+
 export default function DashboardPage() {
   const { t, locale } = useI18n();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const outlet = useOutletContext<{ overviewSession: string } | null>();
+  const [standaloneSession] = useState(() => newUIInstanceID());
+  const session = outlet?.overviewSession || standaloneSession;
   const user = useAuthStore(state => state.user);
   const organizationRole = authzContextForUser(user).organizationRole;
   const customerContext = resolveCustomerContext(user);
   const selectedOrgID = effectiveCustomerOrgID(user);
   const platform = isPlatformAdminRole(organizationRole);
-  const scope = JSON.stringify([selectedOrgID, organizationRole, user?.id]);
+  const scope = JSON.stringify([selectedOrgID, organizationRole, user?.id, session]);
   const [result, setResult] = useState<{ stats: DashboardStats; scope: string } | null>(null);
   const stats = result?.scope === scope ? result.stats : null;
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
-  const [range, setRange] = useState<TimeRange>('24h');
+  const [entry, setEntry] = useState(() => restoreOverview(location.state, scope, session));
+  const activeEntry = entry.scope === scope && entry.session === session ? entry : { scope, session, range: '24h' as const, selected: undefined };
+  const range = activeEntry.range;
+  const remember = (nextRange: TimeRange, selected: string | null | undefined) => {
+    const next = { scope, session, range: nextRange, selected };
+    setEntry(next);
+    navigate({ pathname: location.pathname, search: location.search, hash: location.hash }, {
+      replace: true,
+      state: { ...(location.state && typeof location.state === 'object' ? location.state : {}), overview: next },
+    });
+  };
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [attention, setAttention] = useState<{ data: DashboardAttention; scope: string } | null>(null);
   const [attentionState, setAttentionState] = useState<AttentionLoadState>('idle');
@@ -103,12 +133,12 @@ export default function DashboardPage() {
   return <div className="ur-page ur-page-wide ur-overview" aria-busy={loading}>
     <PageHeader eyebrow={t('概览')} title={title} description={t('统一观察模型使用、运行质量与请求费用。')} actions={<>
       <div className="ur-range-selector" role="group" aria-label={t('时间范围')}>
-        {(['24h', '7d', '30d'] as const).map(value => <button type="button" key={value} aria-pressed={range === value} onClick={() => setRange(value)}>{t(value === '24h' ? '最近 24 小时' : value === '7d' ? '最近 7 天' : '最近 30 天')}</button>)}
+        {(['24h', '7d', '30d'] as const).map(value => <button type="button" key={value} aria-pressed={range === value} onClick={() => remember(value, activeEntry.selected)}>{t(value === '24h' ? '最近 24 小时' : value === '7d' ? '最近 7 天' : '最近 30 天')}</button>)}
       </div>
       <Button icon={<IconRefresh />} aria-label={t('刷新总览')} onClick={refresh} disabled={loading} />
     </>} />
     <div className="ur-overview-scope"><span>{t('数据范围：{name}', { name: scopeName })}</span>{lastUpdated && stats && <span>{t('更新时间')} {lastUpdated.toLocaleTimeString(locale)}</span>}</div>
     {loadError ? <Surface><EmptyState title={t('总览数据加载失败')} description={t('无法读取当前权限范围的总览数据。请检查网络或服务状态后重试。')} actions={<Button onClick={refresh} aria-label={t('重新加载总览')}>{t('重新加载')}</Button>} /></Surface>
-      : <Spin spinning={loading} size="large"><div className="ur-overview-loading">{stats && <OverviewWorkspace key={scope} stats={stats} attention={attention?.scope === scope ? attention.data : null} attentionState={attentionState} />}</div></Spin>}
+      : <Spin spinning={loading} size="large"><div className="ur-overview-loading">{stats && <OverviewWorkspace key={scope} initialSelection={activeEntry.selected} onSelectionChange={selected => remember(range, selected)} stats={stats} attention={attention?.scope === scope ? attention.data : null} attentionState={attentionState} />}</div></Spin>}
   </div>;
 }

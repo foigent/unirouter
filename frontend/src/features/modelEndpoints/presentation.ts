@@ -1,4 +1,5 @@
 import '../../i18n/models';
+import '../../i18n/upstreamRelease';
 import type { ModelEndpointTarget } from '../../api/modelEndpoints';
 import { ApiError } from '../../api/transport';
 import { translate as t } from '../../i18n';
@@ -89,4 +90,12 @@ export function circuitStateLabel(state: string) {
     case 'open': return '已熔断';
     default: return state || '未知';
   }
+}
+
+export function upstreamScopeLabel(state?: string): string {
+ switch(state) {
+  case 'current':return t('声明范围一致');
+  case 'stale':return t('声明范围待复验');
+  default:return t('声明范围未知');
+ }
 }

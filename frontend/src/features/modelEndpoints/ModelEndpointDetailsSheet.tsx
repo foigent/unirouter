@@ -11,6 +11,8 @@ import {
 } from '../../api/modelDeployments';
 import { LatencyText, StatusTag, Surface } from '../../ui';
 import { formatDateTime } from '../../utils/formatDate';
+import { upstreamScopeLabel } from './presentation';
+import UpstreamReleaseObservationPanel from './UpstreamReleaseObservationPanel';
 import ModelQualificationWorkspace from './ModelQualificationWorkspace';
 import ModelClientSetup from './ModelClientSetup';
 import ModelCapabilityQualificationPanel, { isQualifiedCapabilityID } from './ModelCapabilityQualificationPanel';
@@ -26,6 +28,7 @@ type Props = {
   gatewayRestriction: string;
   workingBindingID: number;
   onClose: () => void;
+  onCanonicalStateChanged?: () => void | Promise<void>;
   onProbe: (binding: CanonicalCredentialBinding) => void;
   onInspectRelease: (releaseRef: string) => void;
   onOpenReleaseWorkspace: () => void;
@@ -65,6 +68,7 @@ export default function ModelEndpointDetailsSheet(props: Props) {
     width="min(800px, 100vw)"
   >
     {selected && operation && <div className="ur-model-endpoint-sheet">
+      <UpstreamReleaseObservationPanel selected={selected} operation={operation} canManage={props.canManage} onChanged={props.onCanonicalStateChanged} />
       <div className="ur-model-endpoint-sheet-summary">
         <div>
           <Text type="tertiary">{t("精确持久身份")}</Text>
@@ -142,7 +146,7 @@ export default function ModelEndpointDetailsSheet(props: Props) {
             ? <Space wrap><Text code>{operation.execution_support.public_path}</Text><Text type="tertiary">executor {operation.execution_support.executor_contract_version}</Text></Space>
             : <Text type="tertiary">{t("当前 operation/profile 没有独立 execution-support binding")}</Text> },
           { key: t("生产资格"), value: operation.production_qualification
-            ? <Space wrap><StatusTag status={operation.production_qualification.qualified ? 'ready' : operation.production_qualification.state}>{operation.production_qualification.state}</StatusTag><Text type="tertiary">{operation.production_qualification.required ? t("需要绑定当前 revision 的独立审批") : t("此 operation 不要求独立生产资格")}</Text></Space>
+            ? <Space wrap><StatusTag status={operation.production_qualification.qualified ? 'ready' : operation.production_qualification.state}>{operation.production_qualification.state}</StatusTag>{operation.production_qualification.upstream_scope && <Text>{upstreamScopeLabel(operation.production_qualification.upstream_scope.state)}</Text>}<Text type="tertiary">{operation.production_qualification.required ? t("需要绑定当前 revision 的独立审批") : t("此 operation 不要求独立生产资格")}</Text></Space>
             : <Text type="tertiary">{t("旧服务端未投影 production qualification")}</Text> },
           { key: t("Operation 熔断"), value: `${operation.circuit_state} · revision ${operation.circuit_revision} · failures ${operation.circuit_fail_count}` },
         ]} />
