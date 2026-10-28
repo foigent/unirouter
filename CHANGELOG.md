@@ -15,6 +15,7 @@ those build identities do not replace the product version.
 - Show API alias, upstream declaration, UR contract and Probe applicability separately in English and Chinese. M128 requires exact M127 and stopped, retired writers; ordinary startup and rolling expand cannot apply it.
 
 ### Fixed
+- Give the isolated restored-content verifier a bounded private parent for its original read-only body/token mounts. Preserve separately mounted token files, original recovery metadata and native binding privacy checks.
 - Compare complete Docker mount inventories without depending on their returned record order throughout community upgrade and resume. Preserve every mount field, duplicate count and exact container/image guard; real mount replacement or permission changes still refuse maintenance.
 - Reset console scroll for new views and restore history positions after lazy content loads within the current session. Keep mobile model drawer controls and long audit identifiers within their containers, with keyboard focus and Escape support.
 - Improve English and Chinese status labels, compatibility notes and communication outcomes; compact empty dashboards and prioritize available integrations. Keep settlement definitions, reporting-only budgets and independent model readiness facts visible.

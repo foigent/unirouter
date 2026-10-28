@@ -1122,6 +1122,9 @@ class Upgrade(Installation):
                     "Restored content bytes/binding differ")
             token = Path(restored["verification_directory"]) / str(self._host_path(settings["SOURCE_CONTENT_STORAGE_TOKEN_FILE"])).lstrip("/")
             result = install.strict_json(self.command(self.docker + ["run", "--rm", "--network", "none", "--read-only", "--pull", "never",
+                # The native token reader requires a private parent, including
+                # for file-only mounts whose host parent was not archived.
+                "--tmpfs", "/restore:rw,noexec,nosuid,nodev,size=65536,mode=0700",
                 "--volume", str(restored_root) + ":/restore/content:ro", "--volume", str(token) + ":/restore/binding.token:ro",
                 self.witness["source_image"]["reference"], "./uniroute", "content-store", "check", "--root", "/restore/content",
                 "--identity", settings["SOURCE_CONTENT_STORAGE_IDENTITY"], "--token-file", "/restore/binding.token"], "native restored content binding check"))

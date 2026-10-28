@@ -511,6 +511,48 @@ class WholeUpgradeTests(unittest.TestCase):
         for row in state.resources.values(): row["Mounts"] = copy.deepcopy(inventory)
         return operation, state, calls, bind
 
+    def content_host(self, count, native):
+        """Nonempty real files; the Go test supplies the existing native CLI."""
+        operation, state, calls, bind = self.host(count)
+        body, parent = operation.directory / "bound-body", operation.directory / "bound-token"
+        body.mkdir(mode=0o700); parent.mkdir(mode=0o700)
+        objects, token = body / "objects", parent / "binding.token"
+        objects.mkdir(mode=0o700)
+        identity = "whole-owner-native-binding"
+        result = native(["init", "--root", str(objects), "--identity", identity, "--token-file", str(token)])
+        self.assertEqual(0, result.returncode, "native synthetic binding initialization failed")
+        raw = b"Nonempty retained whole-owner body; no customer or provider data.\n"
+        name = hashlib.sha256(raw).hexdigest()
+        (objects / name).write_bytes(raw); (objects / name).chmod(0o600)
+        binding = token.read_bytes().strip()
+        state.objects.append({"path": name, "bytes": len(raw), "digest": "sha256:" + name,
+            "identity": identity, "binding_sha": hashlib.sha256(binding).hexdigest()})
+        settings = {"SOURCE_CONTENT_STORAGE_ROOT": "/fixture-content/objects",
+            "SOURCE_CONTENT_STORAGE_IDENTITY": identity, "SOURCE_CONTENT_STORAGE_TOKEN_FILE": "/fixture-secrets/binding.token"}
+        state.running_env.update(settings)
+        for role in operation.roles:
+            state.resources["fixture-ur-" + role + "-1"]["Config"]["Env"].extend(key + "=" + value for key, value in settings.items())
+        env_path = operation.runtime / ".env"
+        text = env_path.read_text()
+        for key, value in settings.items():
+            text, count = re.subn(r"^" + key + r"=.*$", key + "=" + value, text, flags=re.M)
+            if not count: text += "\n" + key + "=" + value + "\n"
+        env_path.write_text(text)
+        operation.env_raw = env_path.read_bytes(); operation.env = M.environment(operation.env_raw)
+        original_run = operation.run
+        def configured(args, *, label, input=None):
+            result = original_run(args, label=label, input=input)
+            if label == "check retained effective Compose":
+                rendered = json.loads(result)
+                for role in operation.roles: rendered["services"][role]["environment"].update(settings)
+                return json.dumps(rendered)
+            return result
+        operation.run = configured
+        def bind_content(target):
+            bind(target); target.run = configured
+            return target
+        return operation, state, calls, bind_content, objects, token, raw
+
     def host(self, count):
         operation, state, calls = self.running_fixture(count)
         base_run = operation.run
@@ -528,7 +570,7 @@ class WholeUpgradeTests(unittest.TestCase):
         state.metadata["manifests"] = [{"artifact_digest": old_artifact, "manifest_digest": "f" * 64}]
         state.metadata["history"] = [dict(state.metadata["release"])]
         state.coverage = [{"coverage_epoch": 1, "ended_at": None, "state": "certified", "reason": "initial_certification"}]
-        state.streams = []
+        state.streams, state.objects = [], []
         state.business = [{"id": 1, "value": "synthetic preserved history"}]
         state.models = [{"id": 1, "name": "synthetic model"}]
         state.clones, state.dumps, state.processes, state.resources = {}, {}, {}, {}
@@ -547,7 +589,7 @@ class WholeUpgradeTests(unittest.TestCase):
         source_db = operation.env["POSTGRES_DB"]
         def database(db):
             if db == source_db:
-                return {"metadata": state.metadata, "coverage": state.coverage, "streams": state.streams, "business": state.business, "models": state.models}
+                return {"metadata": state.metadata, "coverage": state.coverage, "streams": state.streams, "objects": state.objects, "business": state.business, "models": state.models}
             return state.clones[db]
         def tables(db):
             data = database(db); meta = data["metadata"]
@@ -555,7 +597,8 @@ class WholeUpgradeTests(unittest.TestCase):
                 "schema_migrations": [{"version": value} for value in meta["ledger"]],
                 "runtime_generations": meta["generations"], "runtime_support_manifests": meta["manifests"],
                 "runtime_ingress_changes": meta["ingress"], "release_state": [meta["release"]], "release_history": meta["history"],
-                "execution_source_budget_coverage": data["coverage"], "execution_content_streams": data["streams"]}
+                "execution_source_budget_coverage": data["coverage"], "execution_content_streams": data["streams"],
+                "execution_content_objects": data["objects"]}
         def sql(query, db):
             if "pg_database_size" in query: return "1048576"
             if "rolcreatedb OR rolsuper" in query: return "t"
@@ -589,7 +632,7 @@ class WholeUpgradeTests(unittest.TestCase):
                     "pending_ingress": sum(row["status"] != "applied" for row in database(db)["metadata"]["ingress"])})
             if "'streams'" in query and "'coverage'" in query:
                 return json.dumps({"streams": database(db)["streams"], "coverage": database(db)["coverage"]})
-            if "FROM execution_content_objects WHERE state='ready'" in query: return "[]"
+            if "FROM execution_content_objects WHERE state='ready'" in query: return json.dumps(database(db)["objects"])
             if "SELECT count(*) FROM pg_database" in query: return "0"
             if query.startswith("CREATE DATABASE "):
                 clone = query.split('"')[1]; state.clones[clone] = None; return ""
@@ -981,5 +1024,96 @@ class WholeUpgradeTests(unittest.TestCase):
                     resumed.execute(resume=True)
                 self.assertEqual(before, state.native_calls)
                 self.assertEqual('completed', resumed.status()['state'])
+
+def native_content_restore_cases(native):
+    """Go tests always exercise this native boundary; early Python needs no Go.
+
+    Existing offline Docker/SQL transport maps the view to real restored files.
+    The existing CLI process actually initializes/checks every binding. Real
+    Linux acceptance separately qualifies tmpfs and read-only OCI mounts.
+    """
+    reports = []
+    for count in (1, 2):
+        for token_layout in ("directory", "file"):
+            for failure in (None, "parent", "identity", "token", "mode"):
+                case = WholeUpgradeTests(methodName="test_complete_single_and_dual_host_upgrade_uses_one_finite_owner")
+                try:
+                    case.setUp()
+                    operation, state, calls, bind, objects, token, raw = case.content_host(count, native)
+                    for role in operation.roles:
+                        state.resources["fixture-ur-" + role + "-1"]["Mounts"] = [
+                            {"Type": "bind", "Source": str(objects.parent), "Destination": "/fixture-content", "RW": True},
+                            {"Type": "bind", "Source": str(token.parent if token_layout == "directory" else token),
+                             "Destination": "/fixture-secrets" if token_layout == "directory" else "/fixture-secrets/binding.token", "RW": False}]
+                    before = M.recovery.filemeta(token), M.recovery.filemeta(objects / hashlib.sha256(raw).hexdigest())
+                    original_run = operation.run
+                    checked = []
+                    def run(args, *, label, input=None):
+                        if label != "native restored content binding check":
+                            return original_run(args, label=label, input=input)
+                        case.assertIn("--read-only", args)
+                        case.assertEqual("none", args[args.index("--network") + 1])
+                        case.assertEqual("never", args[args.index("--pull") + 1])
+                        parent, options = args[args.index("--tmpfs") + 1].split(":", 1)
+                        options = dict((value.split("=", 1) if "=" in value else (value, True)) for value in options.split(","))
+                        case.assertEqual({"rw": True, "noexec": True, "nosuid": True, "nodev": True,
+                                          "size": "65536", "mode": "0700"}, options)
+                        command = args[args.index("./uniroute") + 1:]
+                        case.assertEqual(["content-store", "check"], command[:2])
+                        flags = dict(zip(command[2::2], command[3::2]))
+                        case.assertEqual({"--root", "--identity", "--token-file"}, set(flags))
+                        case.assertEqual(parent, str(Path(flags["--token-file"]).parent))
+                        volumes = {}
+                        for index, value in enumerate(args):
+                            if value == "--volume":
+                                host, destination, mode = args[index + 1].rsplit(":", 2)
+                                case.assertEqual("ro", mode); volumes[destination] = Path(host)
+                        case.assertEqual({flags["--root"], flags["--token-file"]}, set(volumes))
+                        restored_root, restored_token = volumes[flags["--root"]], volumes[flags["--token-file"]]
+                        original_inventory = M.paired_file_inventory(operation._recovery_roots())["files"]
+                        case.assertEqual(token_layout == "directory", str(token.parent).lstrip("/") in original_inventory)
+                        frozen = M.recovery.filemeta(restored_token), M.recovery.filemeta(restored_root / hashlib.sha256(raw).hexdigest())
+                        with tempfile.TemporaryDirectory(prefix="content-view-", dir=operation.directory.parent) as directory:
+                            view = Path(directory).resolve()
+                            view.chmod(0o755 if failure == "parent" else int(options["mode"], 8))
+                            view_token = view / Path(flags["--token-file"]).name
+                            if failure == "token":
+                                value = restored_token.read_bytes().strip()
+                                different = (b"0" if value[:1] != b"0" else b"1") + value[1:]
+                                view_token.write_bytes(different + b"\n"); view_token.chmod(0o600)
+                            elif failure == "mode":
+                                view_token.write_bytes(restored_token.read_bytes()); view_token.chmod(0o644)
+                            else:
+                                view_token.hardlink_to(restored_token)
+                            native_args = ["check", "--root", str(restored_root), "--identity",
+                                "wrong-synthetic-identity" if failure == "identity" else flags["--identity"],
+                                "--token-file", str(view_token)]
+                            result = native(native_args)
+                        case.assertEqual(frozen, (M.recovery.filemeta(restored_token), M.recovery.filemeta(restored_root / hashlib.sha256(raw).hexdigest())))
+                        checked.append(result.returncode)
+                        if result.returncode:
+                            raise M.install.InstallError("native restored content binding check failed; native output kept private")
+                        return result.stdout.decode()
+                    operation.run = run
+                    with patch.object(M.shutil, "disk_usage", return_value=SimpleNamespace(free=32 << 30)):
+                        if failure:
+                            with case.assertRaisesRegex(M.install.InstallError, "native restored content binding check failed"):
+                                operation.execute()
+                            case.assertEqual("cold-pair", operation.witness["pending"])
+                            case.assertFalse(any(argv == ["migrate", "up"] for argv in state.native_calls))
+                        else:
+                            case.assertEqual("completed", operation.execute()["state"])
+                            resumed = M.Upgrade(operation.directory, operation.release.directory, operation.verifier,
+                                operation.public_keys, layout=operation.layout, edge_directory=operation.edge_directory, run=operation.run)
+                            bind(resumed)
+                            case.assertEqual("completed", resumed.execute(resume=True)["state"])
+                    case.assertEqual([1] if failure else [0], checked)
+                    case.assertEqual(before, (M.recovery.filemeta(token), M.recovery.filemeta(objects / hashlib.sha256(raw).hexdigest())))
+                    reports.append({"writers": count, "token_layout": token_layout, "failure": failure,
+                                    "native_binding_checks": len(checked), "original_and_restored_inputs_unchanged": True})
+                finally:
+                    case.doCleanups()
+    return reports
+
 
 if __name__ == "__main__": unittest.main()

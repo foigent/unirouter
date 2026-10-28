@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -77,4 +78,45 @@ func TestContentStoreCLIInvalidArgumentsNeverEchoValues(t *testing.T) {
 		require.Equal(t, contentStoreUsage, err.Error())
 		require.Empty(t, output.String())
 	}
+}
+
+func TestCommunityUpgradeRestoredContentUsesNativeBindingOwner(t *testing.T) {
+	_, source, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	repo := filepath.Clean(filepath.Join(filepath.Dir(source), "..", ".."))
+	// Reuse the existing native CLI helper. This always runs in the Go suite;
+	// early Python-only delivery preflight needs no Go or manual opt-in.
+	script := `import importlib.util,json,os,subprocess,sys
+from pathlib import Path
+spec=importlib.util.spec_from_file_location("host_fixture",Path(sys.argv[2])/"scripts/test-community-upgrade.py")
+module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+calls=[]
+def native(args):
+    env={"PATH":os.environ.get("PATH", ""),"CONTENT_STORE_TEST_ARGS":json.dumps(args)}
+    result=subprocess.run([sys.argv[1],"-test.run=^TestProcessContentStorageEntry$"],env=env,capture_output=True)
+    calls.append(result.returncode)
+    return result
+cases=module.native_content_restore_cases(native)
+print(json.dumps({"cases":len(cases),"native_calls":len(calls),"successful_upgrades":sum(c["failure"] is None for c in cases),"native_refusals":sum(c["failure"] is not None for c in cases),"inputs_unchanged":all(c["original_and_restored_inputs_unchanged"] for c in cases)}))
+`
+	command := exec.CommandContext(t.Context(), "python3", "-I", "-B", "-c", script, os.Args[0], repo)
+	command.Env = []string{"PATH=" + os.Getenv("PATH")}
+	var stdout, stderr bytes.Buffer
+	command.Stdout, command.Stderr = &stdout, &stderr
+	require.NoError(t, command.Run(), "native content/host fixture failed: %s", stderr.String())
+	var report struct {
+		Cases              int  `json:"cases"`
+		NativeCalls        int  `json:"native_calls"`
+		SuccessfulUpgrades int  `json:"successful_upgrades"`
+		NativeRefusals     int  `json:"native_refusals"`
+		InputsUnchanged    bool `json:"inputs_unchanged"`
+	}
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &report))
+	require.Equal(t, 20, report.Cases)
+	require.Equal(t, 40, report.NativeCalls)
+	require.Equal(t, 4, report.SuccessfulUpgrades)
+	require.Equal(t, 16, report.NativeRefusals)
+	require.True(t, report.InputsUnchanged)
+	t.Logf("native restored binding: cases=%d calls=%d successful_upgrades=%d refusals=%d inputs_unchanged=%t",
+		report.Cases, report.NativeCalls, report.SuccessfulUpgrades, report.NativeRefusals, report.InputsUnchanged)
 }
