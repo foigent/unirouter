@@ -2,6 +2,7 @@
 """Finite host-boundary tests. Docker and service operations are never executed."""
 import base64
 import copy
+import datetime
 import importlib.util
 import json
 import hashlib
@@ -52,6 +53,60 @@ class OfflineTar:
 
 
 class UpgradeBoundaryTests(unittest.TestCase):
+    def test_native_lease_expiry_preserves_postgres_precision_and_offsets(self):
+        for digits in range(7):
+            fraction = "1" * digits
+            microsecond = int(fraction.ljust(6, "0")) if fraction else 0
+            for suffix, seconds in (("Z", 0), ("+00:00", 0), ("-02:30", -9000),
+                                    ("+01:02:03", 3723), ("-00:00:30", -30)):
+                with self.subTest(digits=digits, offset=suffix):
+                    value = "2000-01-01T00:00:00" + ("." + fraction if fraction else "") + suffix
+                    expected = datetime.datetime(2000, 1, 1, microsecond=microsecond,
+                        tzinfo=datetime.timezone(datetime.timedelta(seconds=seconds)))
+                    self.assertEqual(expected, M._native_lease_expiry(value))
+                    self.assertEqual(microsecond, M._native_lease_expiry(value).microsecond)
+                    self.assertEqual(expected.utcoffset(), M._native_lease_expiry(value).utcoffset())
+
+    def test_native_lease_expiry_refuses_unknown_or_invalid_input_without_echo(self):
+        for value in (None, 0, True, {}, [], "secret-sentinel", "2000-01-01T00:00:00",
+                      "2000-01-01T00:00:00.1234567Z", "2000-01-01T00:00:00.Z",
+                      "2000-02-30T00:00:00Z", "2000-01-01T24:00:00Z",
+                      "2000-01-01T00:00:00+24:00", "2000-01-01T00:00:00+00:60",
+                      "2000-01-01T00:00:00+00:00:60", "2000-01-01T00:00:00+0000",
+                      "2000-01-01T00:00:00+01:02:03.1", "2000-01-01T00:00:00Z\n"):
+            with self.subTest(value=value):
+                with self.assertRaises(M.install.InstallError) as caught:
+                    M._native_lease_expiry(value)
+                self.assertEqual("Native lease expiry has an unsupported timestamp", str(caught.exception))
+
+    def test_retirement_ready_keeps_past_equal_future_and_invalid_lease_boundaries(self):
+        real_datetime = datetime.datetime
+        now = real_datetime(2026, 10, 28, microsecond=123000, tzinfo=datetime.timezone.utc)
+        class Clock(real_datetime):
+            @classmethod
+            def now(cls, tz=None): return now
+        operation = object.__new__(M.Upgrade)
+        for seconds in (0, 3723, -30):
+            for difference in (-1, 0, 1):
+                value = (now + datetime.timedelta(microseconds=difference)).astimezone(
+                    datetime.timezone(datetime.timedelta(seconds=seconds))).isoformat()
+                metadata = {"generations": [{"state": "draining", "lease_expires_at": value}]}
+                before = copy.deepcopy(metadata)
+                operation.native_metadata = lambda: metadata
+                with self.subTest(offset=seconds, difference=difference), patch.object(M.datetime, "datetime", Clock):
+                    if difference > 0:
+                        with self.assertRaisesRegex(M.install.InstallError, "lease is still live"):
+                            operation._retirement_ready()
+                    else:
+                        operation._retirement_ready()
+                self.assertEqual(before, metadata)
+        for value in (None, "invalid-private-input", "2000-01-01T00:00:00", "2099-01-01T00:00:00.1Z"):
+            metadata = {"generations": [{"state": "serving", "lease_expires_at": value}]}
+            before = copy.deepcopy(metadata)
+            operation.native_metadata = lambda: metadata
+            with self.assertRaises(M.install.InstallError): operation._retirement_ready()
+            self.assertEqual(before, metadata)
+
     @staticmethod
     def mount_inventory():
         return [{"Type": "bind", "Source": "/synthetic/content", "Destination": "/content",
@@ -864,6 +919,7 @@ class WholeUpgradeTests(unittest.TestCase):
                 source = state.metadata["release"]
                 path, document, generation = historical_fixture(operation.directory / "historical-inputs",
                     operation.state, state.metadata, source, kind, kind == "native_replacement")
+                generation["lease_expires_at"] = "2000-01-01T00:00:00" + (".1" if count == 1 else ".12345") + "+00:00"
                 with patch.object(M.shutil, "disk_usage", return_value=SimpleNamespace(free=32 << 30)):
                     with self.assertRaisesRegex(M.install.InstallError, "unaccounted"):
                         operation.check()  # Same real host entry without historical input remains strict.
@@ -891,6 +947,26 @@ class WholeUpgradeTests(unittest.TestCase):
                 self.assertEqual(reopen().execute(resume=True)["state"], "completed")
                 self.assertEqual(1, sum(argv == ["upgrade", "maintenance-retire"] for argv in state.native_calls))
                 self.assertEqual(next(row for row in state.metadata["generations"] if row["instance_id"] == generation["instance_id"])["revision"], 8)
+
+    def test_historical_host_preflight_preserves_every_postgres_lease_precision(self):
+        for count, kind in ((1, "process_exit"), (2, "native_replacement")):
+            for digits in range(7):
+                with self.subTest(writers=count, kind=kind, digits=digits):
+                    operation, state, calls, _ = self.host(count)
+                    path, _, generation = historical_fixture(operation.directory / "historical-inputs",
+                        operation.state, state.metadata, state.metadata["release"], kind, kind == "native_replacement")
+                    generation["lease_expires_at"] = "2000-01-01T00:00:00" + ("." + "1" * digits if digits else "") + "+00:00"
+                    operation.historical_path, operation.historical_raw = path, path.read_bytes()
+                    operation._historical_resource = lambda _: None  # Existing offline resource transport only.
+                    before = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in operation.directory.rglob("*") if p.is_file()}
+                    before_metadata = copy.deepcopy(state.metadata)
+                    with patch.object(M.shutil, "disk_usage", return_value=SimpleNamespace(free=32 << 30)):
+                        result = operation.check()
+                    self.assertEqual(count, result["writers"])
+                    self.assertEqual(0, result["writes"])
+                    self.assertEqual(before, {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in operation.directory.rglob("*") if p.is_file()})
+                    self.assertEqual(before_metadata, state.metadata)
+                    self.assertNotIn("upgrade", operation.state)
 
     def test_complete_union_limit_is_checked_before_maintenance_or_pull(self):
         operation, state, calls, _ = self.host(2)

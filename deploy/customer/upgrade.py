@@ -45,6 +45,21 @@ def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
 
 
+def _native_lease_expiry(value):
+    """Parse PostgreSQL's aware JSON timestamp on every supported Python."""
+    message = "Native lease expiry has an unsupported timestamp"
+    require(isinstance(value, str) and len(value) <= 35 and re.fullmatch(
+        r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
+        r"(?:\.[0-9]{1,6})?(?:Z|[+-][0-9]{2}:[0-9]{2}(?::[0-9]{2})?)", value), message)
+    # Python 3.10 fromisoformat accepts only three or six fractional digits;
+    # PostgreSQL removes trailing zeroes. %f preserves all 1..6 native digits.
+    pattern = "%Y-%m-%dT%H:%M:%S" + (".%f" if "." in value else "") + "%z"
+    try:
+        return datetime.datetime.strptime(value, pattern)
+    except ValueError:
+        raise install.InstallError(message) from None
+
+
 def same_mounts(observed, expected):
     """Docker's top-level mount inventory has no order; every record is exact."""
     return (isinstance(observed, list) and isinstance(expected, list)
@@ -216,7 +231,7 @@ class HistoricalObservations:
                 expected.update(state="stopped", revision=generation["revision"] + 1)
             actual = {key: rows[instance].get(key) for key in _GENERATION_FIELDS}
             require(canonical(actual) == canonical(expected), "Original historical generation changed")
-            expiry = datetime.datetime.fromisoformat(rows[instance]["lease_expires_at"].replace("Z", "+00:00"))
+            expiry = _native_lease_expiry(rows[instance]["lease_expires_at"])
             require(expiry <= datetime.datetime.now(datetime.timezone.utc), "Historical generation lease is still live")
             before = self.before(record["before"], installation["installation_id"])
             require(before["instance_id"] == instance and before["image"] == generation["artifact_digest"]
@@ -971,7 +986,7 @@ class Upgrade(Installation):
         now = datetime.datetime.now(datetime.timezone.utc)
         for row in metadata["generations"]:
             if row["state"] != "stopped":
-                expires = datetime.datetime.fromisoformat(row["lease_expires_at"].replace("Z", "+00:00"))
+                expires = _native_lease_expiry(row["lease_expires_at"])
                 require(expires <= now, "A stopped writer's original native lease is still live; wait and read back before retiring")
 
     def _retire(self):
