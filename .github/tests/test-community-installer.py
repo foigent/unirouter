@@ -25,6 +25,21 @@ fixture = load('installer_fixture', ROOT / '.github/tests/community-installer.py
 bootstrap = load('actual_bootstrap', ROOT / 'deploy/community/bootstrap.py')
 
 class InstallerFixtureContract(unittest.TestCase):
+    def test_independent_cases_use_one_explicit_port_for_commands_and_HTTP(self):
+        self.assertEqual(fixture.FIXTURE_PORTS, {'fresh':13000,'single':13001,'edge':13002})
+        work=object.__new__(fixture.Acceptance)
+        for name in ('repo','release','verifier','ring','bootstrap_file'):
+            setattr(work,name,Path('/fixture')/name)
+        work.bootstrap_sha='a'*64
+        self.assertEqual(work.loopback_port,13000)
+        for layout,port in fixture.FIXTURE_PORTS.items():
+            with self.subTest(layout=layout):
+                work.loopback_port=port
+                for command in (work.command('install',Path('/fixture/instance'),'fixture'),
+                                work.bootstrap_command('install',Path('/fixture/instance'),'fixture')):
+                    self.assertEqual(command[command.index('--port')+1],str(port))
+                self.assertEqual(work.loopback_url,'http://127.0.0.1:'+str(port))
+
     def test_actual_retained_installer_rejects_completed_case_network_until_released(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp).resolve();path=root/'retained-install.py'
@@ -110,8 +125,8 @@ class InstallerFixtureContract(unittest.TestCase):
                     self.assertIn('/fixture/retained/edge/runtime/upgrade-image.json',downs[3])
 
     def test_retained_install_failure_reports_its_actual_owner_and_only_authored_error(self):
-        for authored in (None,'Installation stopped: The signed release subnet overlaps an existing Docker network'):
-            with self.subTest(authored=authored):
+        for layout,authored in (('single',None),('edge','Installation stopped: The signed release subnet overlaps an existing Docker network')):
+            with self.subTest(layout=layout,authored=authored):
                 work=object.__new__(fixture.Acceptance);work.suffix='synthetic';work.result={'installer_stop':'stale earlier negative'}
                 old=SimpleNamespace(instances=Path('/fixture/retained'),result={},phase='before')
                 old.command=lambda *args:['not-executed']
@@ -121,9 +136,11 @@ class InstallerFixtureContract(unittest.TestCase):
                     raise fixture.Failed(label+' failed')
                 old.run=fail
                 with self.assertRaisesRegex(fixture.Failed,'install exact retained M127 predecessor failed'):
-                    work.qualify_upgrade(old,'single')
+                    work.qualify_upgrade(old,layout)
                 self.assertEqual(work.phase,'install exact retained M127 predecessor')
-                self.assertEqual(work.project,'ur-upgrade-single-synthetic');self.assertEqual(work.directory,old.instances/'single')
+                self.assertEqual(work.project,'ur-upgrade-'+layout+'-synthetic');self.assertEqual(work.directory,old.instances/layout)
+                self.assertEqual(work.loopback_port,fixture.FIXTURE_PORTS[layout])
+                self.assertEqual(old.loopback_port,work.loopback_port)
                 self.assertEqual(work.result.get('installer_stop'),authored)
 
     def test_native_json_stdout_stays_separate_from_retained_startup_diagnostics(self):
@@ -368,6 +385,7 @@ class InstallerFixtureContract(unittest.TestCase):
 
     def test_session_logout_expiry_and_cleanup_use_exact_fixture_scope(self):
         work=object.__new__(fixture.Acceptance);work.result={};work.passed=lambda _:None
+        work.loopback_port=fixture.FIXTURE_PORTS['edge']
         calls=[]
         def request(url,data=None,token=None):
             calls.append((url,token))
@@ -377,10 +395,37 @@ class InstallerFixtureContract(unittest.TestCase):
         sql=[];work.request=request;work.sql=lambda *args:sql.append(args[-1])
         work.session_refusals(Path('/fixture'),'fixture','public-synthetic-password')
         self.assertEqual(len([url for url,_ in calls if url.endswith('/bootstrap/first-customer')]),3)
+        self.assertTrue(all(url.startswith('http://127.0.0.1:13002/') for url,_ in calls))
         self.assertEqual(len(sql),2)
         self.assertIn('expires_at<clock_timestamp()',sql[1])
         self.assertNotIn('public-synthetic-session',''.join(sql))
         self.assertTrue(work.result['session_refusals']['expired_fixture_session_removed'])
+
+    def test_current_first_use_assertions_keep_case_port_through_backend_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory=Path(tmp);(directory/'runtime').mkdir();(directory/'evidence').mkdir()
+            for path in ('admin-password','install-state.json','evidence/install.json'):
+                (directory/path).write_text('public synthetic fixture')
+            work=object.__new__(fixture.Acceptance);work.repo=Path('/retained-product-source')
+            work.loopback_port=13001;work.docker='/fixture/docker';work.result={}
+            work.sql=lambda *args:'{"admin":{"org_id":1},"projects":[{"id":2}]}'
+            work.run=MagicMock();work.request=MagicMock()
+            work.session_refusals=MagicMock();work.passed=lambda _:None
+            first=MagicMock();first.Stop=RuntimeError;first.strict_json.side_effect=json.loads
+            first.FIRST_USE_TEST_INPUT='public synthetic chosen input'
+            first.immutable_digest.return_value='unchanged';first.first_customer_result.return_value=2
+            first.fixture_admin_login.return_value={'token':'public synthetic session'}
+            spec=SimpleNamespace(loader=SimpleNamespace(exec_module=lambda _:None))
+            with patch.object(fixture.importlib.util,'spec_from_file_location',return_value=spec) as selection, \
+                 patch.object(fixture.importlib.util,'module_from_spec',return_value=first):
+                work.native_first_use_checks(directory,'fixture')
+            self.assertEqual(selection.call_args.args[1],Path(fixture.__file__).with_name('community-release-acceptance.py'))
+            self.assertEqual(first.fixture_admin_login.call_count,3)
+            self.assertEqual(first.first_customer_request.call_count,3)
+            for call in first.fixture_admin_login.call_args_list+first.first_customer_request.call_args_list:
+                self.assertEqual(call.kwargs['loopback_port'],13001)
+            work.request.assert_called_once_with('http://127.0.0.1:13001/health/ready')
+            self.assertEqual(work.run.call_count,3)  # Password, native stop and native restart.
 
     def test_protected_projection_hashes_complete_original_rows_and_bounds_history(self):
         work=object.__new__(fixture.Acceptance); seen=[]

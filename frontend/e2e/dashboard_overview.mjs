@@ -5,7 +5,7 @@ import path from 'node:path';
 
 const fixture = JSON.parse(process.env.OVERVIEW_BROWSER_FIXTURE || '{}');
 const emptyFixture = JSON.parse(process.env.OVERVIEW_EMPTY_FIXTURE || '{}');
-assert.ok(fixture.base_url && fixture.empty_url && fixture.unavailable_url && fixture.ambiguous_url);
+assert.ok(fixture.base_url && fixture.empty_url && fixture.unavailable_url && fixture.ambiguous_url && fixture.selection_url);
 assert.ok(fixture.rows.length > 50 && fixture.deployment_id > 0);
 const allowed = ['platform_admin', 'org_admin', 'billing_admin', 'org_viewer'];
 const en = {
@@ -226,6 +226,36 @@ async function language(page, locale) {
   }
   await page.waitForFunction(expected => document.documentElement.lang === expected, locale); await paint(page);
 }
+async function inspectCurrentAvailability(page, result, locale) {
+  const english = locale === 'en-US';
+  const channels = result.data.channel_health;
+  assert.ok(Array.isArray(channels), 'platform current availability must remain available independently of window samples');
+  const metric = page.locator('.ur-overview-kpis .ur-metric').filter({ has: page.getByText(english ? 'Routable deployment operations' : '当前可路由部署操作', { exact: true }) });
+  assert.equal(await metric.count(), 1);
+  assert.equal((await metric.locator('.ur-metric-value').innerText()).trim(), `${channels.filter(row => row.available === true).length}/${channels.length}`);
+  await metric.getByText(english ? 'Current state · Not date-filtered' : '当前状态 · 不随时间筛选', { exact: true }).waitFor({ state: 'visible' });
+  await section(page, english ? 'Deployment availability' : '模型部署可用状态').waitFor({ state: 'visible' });
+}
+async function inspectEmptyWindow(item, result, locale) {
+  const { page } = item, labels = locale === 'en-US' ? en : zh;
+  assert.equal(result.data.total_requests, 0);
+  assert.equal(result.data.today_cost_micros, '0');
+  assert.deepEqual(result.data.model_distribution, []);
+  await page.getByText(locale === 'en-US' ? 'No requests or costs in this period' : '所选时段暂无请求与费用', { exact: true }).waitFor({ state: 'visible' });
+  const trends = section(page, labels.trend);
+  await trends.getByRole('heading', { name: locale === 'en-US' ? 'No trend samples in this period' : '所选时段暂无趋势样本', exact: true }).waitFor({ state: 'visible' });
+  assert.equal(await trends.locator('.recharts-wrapper').count(), 0, 'no charts may imply fabricated samples in an empty window');
+  assert.equal(await page.locator('.recharts-area-curve').count(), 0);
+  assert.equal(await page.locator('.ur-composition-ring').count(), 0);
+  await page.getByText(locale === 'en-US' ? 'No samples' : '暂无样本', { exact: true }).first().waitFor({ state: 'visible' });
+  const recent = section(page, labels.recent);
+  await recent.getByText(locale === 'en-US' ? 'Latest requests shown separately; not a complete aggregate of the selected period.' : '独立显示最近请求，不代表所选窗口完整聚合。', { exact: true }).waitFor({ state: 'visible' });
+  const recentIDs = result.data.recent_logs.map(row => row.request_id);
+  assert.deepEqual((await recent.locator('.ur-request-link').allTextContents()).map(text => text.trim()), recentIDs);
+  await inspectCurrentAvailability(page, result, locale);
+  assert.deepEqual(item.traffic.mutations, []);
+  return { trend_state: 'no_samples', trend_curve_count: 0, recent_request_ids: recentIDs, current_deployment_operations: result.data.channel_health.length };
+}
 async function inspectDOM(item, result, raw, role, locale, width) {
   const { page } = item, labels = locale === 'en-US' ? en : zh;
   const expected = validateAPI(result, raw, role);
@@ -250,6 +280,7 @@ async function inspectDOM(item, result, raw, role, locale, width) {
     assert.equal((await section(page, labels.settlement).locator('.ur-settlement-value').first().innerText()).trim(), expectedMoney(BigInt(raw.wallet.balance || 0) + BigInt(raw.wallet.granted || 0)));
   }
   assert.equal(await page.locator('.ur-deployment-health-row').count(), role === 'platform_admin' ? result.data.channel_health.length : 0);
+  if (role === 'platform_admin') await inspectCurrentAvailability(page, result, locale);
   if (role !== 'platform_admin') assert.ok((await page.locator('.ur-overview-scope').innerText()).includes(raw.org_name));
   assert.equal((await page.locator('.ur-overview').innerText()).includes('FOREIGN-OVERVIEW-DO-NOT-DISPLAY'), false);
   const size = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
@@ -415,27 +446,23 @@ try {
     assert.equal((await section(empty.page, labels.request).locator('.ur-composition-total').innerText()).trim(), '0');
     assert.equal((await section(empty.page, labels.cost).locator('.ur-composition-total').innerText()).trim(), '¥0.00');
     await empty.page.getByText(locale === 'en-US' ? 'No requests in this period' : '暂无请求', { exact: true }).waitFor();
-    assert.equal(await empty.page.locator('.recharts-area-curve').count(), 0, 'an empty window should not draw fabricated zero activity trends');
-    await empty.page.getByText(locale === 'en-US' ? 'No samples' : '暂无样本', { exact: true }).first().waitFor();
-    const zeroGeometry = [];
-    for (const panel of await section(empty.page, labels.trend).locator('.ur-overview-trend').all()) {
-      await panel.locator('.recharts-wrapper').scrollIntoViewIfNeeded(); await paint(empty.page);
-      const geometry = await panel.evaluate(element => {
-        const curve = element.querySelector('.recharts-area-curve');
-        const tick = [...element.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-tick-value')].find(item => item.textContent.trim() === '0');
-        if (!curve || !tick || !tick.hasAttribute('y')) return null;
-        const box = curve.getBBox();
-        return { x: box.x, y: box.y, width: box.width, height: box.height, zero_tick_y: Number(tick.getAttribute('y')), path: curve.getAttribute('d') };
-      });
-      assert.ok(geometry && geometry.path && geometry.width > 0);
-      assert.ok(Math.abs(geometry.height) <= 0.01, `empty curve was not horizontal: ${JSON.stringify(geometry)}`);
-      assert.ok(Math.abs(geometry.y - geometry.zero_tick_y) <= 0.01, `empty curve was not at zero: ${JSON.stringify(geometry)}`);
-      zeroGeometry.push(geometry);
-    }
-    assert.equal(zeroGeometry.length, 2);
-    cases.push({ role: 'platform_admin', locale, width: 1280, days: 1, requests: 0, cost_micros: '0', state: 'empty', zero_curve_geometry: zeroGeometry, api: empty.initial });
+    const emptyState = await inspectEmptyWindow(empty, empty.initial, locale);
+    cases.push({ role: 'platform_admin', locale, width: 1280, days: 1, requests: 0, cost_micros: '0', state: 'empty', ...emptyState, api: empty.initial });
   }
   await closeContext(empty.context);
+  // Existing real fixture has 48h/240h history but no 24h samples. Its recent
+  // request projection must survive a zero selected-window aggregate.
+  const history = await login('platform_admin', fixture.selection_url);
+  await ready(history.page);
+  assert.deepEqual(history.initial.data.recent_logs.map(row => row.request_id), ['selection-seven', 'selection-thirty']);
+  const start = Date.parse(new URL(history.initial.url).searchParams.get('start_time'));
+  assert.ok(history.initial.data.recent_logs.every(row => Date.parse(row.created_at) < start));
+  for (const locale of ['zh-CN', 'en-US']) {
+    await language(history.page, locale);
+    const emptyState = await inspectEmptyWindow(history, history.initial, locale);
+    cases.push({ role: 'platform_admin', locale, width: 1280, days: 1, requests: 0, cost_micros: '0', state: 'empty_window_with_recent_history', ...emptyState, api: history.initial });
+  }
+  await closeContext(history.context);
   assert.deepEqual(pageErrors, []);
 } finally {
   await closeOwnedBrowser();

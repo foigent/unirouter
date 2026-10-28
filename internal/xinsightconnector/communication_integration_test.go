@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -253,18 +254,29 @@ func TestCommunicationMigrationPreservesLegacyAndFencesOldWritersIntegration(t *
 	require.NoError(t, pool.QueryRow(ctx, fingerprint).Scan(&before))
 	ledger, e := schemaauthority.ExpectedLedger("../../migrations")
 	require.NoError(t, e)
-	oldLedger := ledger[:len(ledger)-1]
+	oldHead := slices.Index(ledger, schemaauthority.CommercialLicenseRetirementHead)
+	communicationHead := slices.Index(ledger, schemaauthority.XInsightCommunicationHead)
+	require.GreaterOrEqual(t, oldHead, 1)
+	require.Equal(t, oldHead+1, communicationHead)
+	oldLedger := ledger[:oldHead+1]
+	communicationLedger := ledger[:communicationHead+1]
+	heads := schemaauthority.SupportedSchemaHeads()
+	oldSupportHead := slices.Index(heads, schemaauthority.CommercialLicenseRetirementHead)
+	require.GreaterOrEqual(t, oldSupportHead, 1)
 	owner := runtimegeneration.Identity{Instance: "uri_" + strings.Repeat("a", 32), Artifact: "sha256:" + strings.Repeat("a", 64)}
-	_, _, e = runtimegeneration.Renew(ctx, pool, owner, runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads()), oldLedger, false)
+	_, _, e = runtimegeneration.Renew(ctx, pool, owner, runtimegeneration.CurrentManifest(heads[:oldSupportHead+1]), oldLedger, false)
 	require.NoError(t, e)
-	require.Error(t, migrate.RunExisting(ctx, pool, "../../migrations"), "live legacy writer prevents M127")
+	require.Error(t, migrate.RunExistingThrough(ctx, pool, "../../migrations", schemaauthority.XInsightCommunicationHead), "live legacy writer prevents M127")
 	var present bool
 	require.NoError(t, pool.QueryRow(ctx, `SELECT to_regclass('xinsight_communication_policies') IS NOT NULL`).Scan(&present))
 	require.False(t, present)
 	// Synthetic stopped-process proof. Production uses the existing retirement owner.
 	_, e = pool.Exec(ctx, `UPDATE runtime_generations SET state='stopped',ingress_state='absent' WHERE instance_id=$1`, owner.Instance)
 	require.NoError(t, e)
-	require.NoError(t, migrate.RunExisting(ctx, pool, "../../migrations"))
+	require.NoError(t, migrate.RunExistingThrough(ctx, pool, "../../migrations", schemaauthority.XInsightCommunicationHead))
+	var actualLedger []string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT array_agg(version ORDER BY version) FROM schema_migrations`).Scan(&actualLedger))
+	require.Equal(t, communicationLedger, actualLedger, "the historical migration stops at M127")
 	require.NoError(t, pool.QueryRow(ctx, fingerprint).Scan(&after))
 	require.Equal(t, before, after, "credential custody is unchanged")
 	store := NewCommunicationStore(journal.db, 1750, "", "")
@@ -272,8 +284,8 @@ func TestCommunicationMigrationPreservesLegacyAndFencesOldWritersIntegration(t *
 	require.NoError(t, e)
 	require.True(t, st.AutomaticEnabled)
 	require.Equal(t, 1750, st.CadenceMS)
-	require.Error(t, schemaauthority.VerifyRuntimeLedger(oldLedger, ledger), "old binary cannot honor M127 manual policy")
-	require.NoError(t, migrate.RunExisting(ctx, pool, "../../migrations"), "idempotent explicit migration")
+	require.Error(t, schemaauthority.VerifyRuntimeLedger(oldLedger, communicationLedger), "old binary cannot honor M127 manual policy")
+	require.NoError(t, migrate.RunExistingThrough(ctx, pool, "../../migrations", schemaauthority.XInsightCommunicationHead), "idempotent explicit migration")
 }
 
 func TestCommunicationKnownProcessExitRecoveryAndUnitBudgetIntegration(t *testing.T) {

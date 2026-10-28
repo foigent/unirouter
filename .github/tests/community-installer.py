@@ -32,6 +32,7 @@ import uuid
 RETAINED_COMMIT = "d92abe0a5bd4b997893ba6043a213d1a98108883"
 RETAINED_SCHEMA = "000127_xinsight_communication_policy"
 CURRENT_SCHEMA = "000128_upstream_release_observation"
+FIXTURE_PORTS = {"fresh": 13000, "single": 13001, "edge": 13002}
 SourceContract = namedtuple("SourceContract", "schema ledger supported_heads")
 # Match the accepted installation descriptor, not build-stage pull labels or floating tags.
 DEPENDENCIES = {
@@ -104,6 +105,12 @@ def source_contract(repo):
 
 
 class Acceptance:
+    loopback_port = FIXTURE_PORTS["fresh"]
+
+    @property
+    def loopback_url(self):
+        return "http://127.0.0.1:" + str(self.loopback_port)
+
     def __init__(self, repo, root, expected_commit):
         self.repo, self.root = repo, root
         self.logs = root / "logs"
@@ -345,12 +352,12 @@ class Acceptance:
         return [sys.executable, "-I", "-B", self.repo / "deploy/community/bootstrap.py", action,
                 "--bootstrap", self.bootstrap_file, "--bootstrap-sha256", self.bootstrap_sha,
                 "--directory", self.release, "--install-directory", directory,
-                "--name", project, "--port", "13000"]
+                "--name", project, "--port", str(self.loopback_port)]
 
     def command(self, action, directory, project, *, release=None, ring=None):
         return [sys.executable, "-B", self.release / "payload/deploy/install.py", action,
                 "--release", release or self.release, "--verifier", self.verifier,
-                "--public-keys", ring or self.ring, "--directory", directory, "--name", project, "--port", "13000"]
+                "--public-keys", ring or self.ring, "--directory", directory, "--name", project, "--port", str(self.loopback_port)]
 
     def negative_checks(self, directory, project):
         before = self.inventory(), files(self.release), files(self.instances)
@@ -425,7 +432,7 @@ class Acceptance:
             require(container["Image"] == state["image_ids"][name], "running image mismatch")
             require(container["State"]["Running"], "installed service is not running")
             for binds in (container["HostConfig"].get("PortBindings") or {}).values():
-                require(name == "frontend" and all(b["HostIp"] == "127.0.0.1" and b["HostPort"] == "13000" for b in binds), "non-loopback or unexpected published service")
+                require(name == "frontend" and all(b["HostIp"] == "127.0.0.1" and b["HostPort"] == str(self.loopback_port) for b in binds), "non-loopback or unexpected published service")
             if name in ("backend", "frontend", "postgres", "redis"):
                 require(container["State"].get("Health", {}).get("Status") == "healthy", "service health failed")
         return {"target": actual, "plan_sha256": sha(directory / "evidence/install.json"),
@@ -515,14 +522,14 @@ os.kill(parent, signal.SIGKILL)
         require(code != 0 and inventory == self.inventory(), "identity refusal changed resources")
         self.passed("exact schema, image, DB, release and one-rotation identities survive repeat resume")
         self.phase = "private console and authentication"
-        self.request("http://127.0.0.1:13000/health/ready")
-        page = self.request("http://127.0.0.1:13000/")
+        self.request(self.loopback_url + "/health/ready")
+        page = self.request(self.loopback_url + "/")
         require(b'<div id="root"' in page, "frontend application document unavailable")
         password = (directory / "admin-password").read_text().strip()
-        response = json.loads(self.request("http://127.0.0.1:13000/api/v1/auth/login",
+        response = json.loads(self.request(self.loopback_url + "/api/v1/auth/login",
                              data=json.dumps({"username": "admin", "password": password}).encode()))
         require(response.get("organization_role") == "platform_admin" and response.get("token"), "fresh administrator login failed")
-        status = json.loads(self.request("http://127.0.0.1:13000/api/v1/license", token=response["token"]))
+        status = json.loads(self.request(self.loopback_url + "/api/v1/license", token=response["token"]))
         require(status.get("status") == "not_required", "commercial License still required")
         self.passed("real NGINX console, administrator login and license not_required")
 
@@ -582,7 +589,7 @@ os.kill(parent, signal.SIGKILL)
         # These pure assertions are shared with the later real-public-package
         # consumer. This synthetic fixture never consumes its pending config.
         spec = importlib.util.spec_from_file_location("first_use_assertions",
-            self.repo / ".github/tests/community-release-acceptance.py")
+            Path(__file__).with_name("community-release-acceptance.py"))
         first = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(first)
         try:
@@ -597,9 +604,9 @@ os.kill(parent, signal.SIGKILL)
                  "--org-id", "1", "--password-stdin"], data=(first.FIRST_USE_TEST_INPUT + "\n").encode())
             first.password_choice_delta(before, snapshot())
             require(retained() == original_files, "password choice changed original installer files")
-            first.fixture_admin_login(generated, expected_status=401)
+            first.fixture_admin_login(generated, expected_status=401, loopback_port=self.loopback_port)
             self.session_refusals(directory, project, first.FIRST_USE_TEST_INPUT)
-            login = first.fixture_admin_login(first.FIRST_USE_TEST_INPUT)
+            login = first.fixture_admin_login(first.FIRST_USE_TEST_INPUT, loopback_port=self.loopback_port)
             self.result["caller_selected_password"] = {"initial_installer_rotations":1, "final_rotations":2,
                 "auth_epoch_advanced_once":True, "generated_old_input_refused":True,
                 "original_installer_files_unchanged":True}
@@ -607,23 +614,23 @@ os.kill(parent, signal.SIGKILL)
             token, intent = login["token"], uuid.uuid4().hex
             before = snapshot()
             self.phase = "native authenticated first-customer read-only preview"
-            preview = first.first_customer_request(token, intent, dry_run=True, expected_status=200)
+            preview = first.first_customer_request(token, intent, dry_run=True, expected_status=200, loopback_port=self.loopback_port)
             first.first_customer_preview(preview, before, expected_rotations=2)
             require(first.immutable_digest(before) == first.immutable_digest(snapshot()), "first-customer preview changed state")
             self.phase = "native first-customer commit and known-success replay"
-            created = first.first_customer_request(token, intent, dry_run=False, expected_status=201)
+            created = first.first_customer_request(token, intent, dry_run=False, expected_status=201, loopback_port=self.loopback_port)
             customer_id = first.first_customer_result(created, idempotent=False)
             after = snapshot()
             first.first_customer_transition(before, after, customer_id, intent)
-            replay = first.first_customer_request(token, intent, dry_run=False, expected_status=200)
+            replay = first.first_customer_request(token, intent, dry_run=False, expected_status=200, loopback_port=self.loopback_port)
             first.first_customer_result(replay, idempotent=True, customer_id=customer_id)
             require(first.immutable_digest(after) == first.immutable_digest(snapshot()), "known-success replay duplicated state")
             if restart:
                 self.run("stop only the native synthetic backend", self.compose(directory, project) + ["stop","-t","30","backend"])
                 self.run("restart synthetic backend with bounded native health wait", self.compose(directory, project) +
                     ["up","-d","--no-deps","--wait","--wait-timeout","120","--pull","never","--no-build","backend"])
-                self.request("http://127.0.0.1:13000/health/ready")
-                first.fixture_admin_login(first.FIRST_USE_TEST_INPUT)
+                self.request(self.loopback_url + "/health/ready")
+                first.fixture_admin_login(first.FIRST_USE_TEST_INPUT, loopback_port=self.loopback_port)
             restarted = snapshot()
             first.first_customer_transition(before, restarted, customer_id, intent, restarted=restart)
             self.result["first_customer"] = {"organization_id":customer_id,
@@ -638,11 +645,11 @@ os.kill(parent, signal.SIGKILL)
     def session_refusals(self, directory, project, password):
         """Exercise normal logout and server-expired sessions before bootstrap."""
         def login():
-            return json.loads(self.request("http://127.0.0.1:13000/api/v1/auth/login",
+            return json.loads(self.request(self.loopback_url + "/api/v1/auth/login",
                 data=json.dumps({"username": "admin", "password": password}).encode()))["token"]
         def refused(token):
             try:
-                self.request("http://127.0.0.1:13000/api/v1/bootstrap/first-customer",
+                self.request(self.loopback_url + "/api/v1/bootstrap/first-customer",
                     data=b'{"organization_name":"Synthetic refused customer","dry_run":true}', token=token)
             except urllib.error.HTTPError as error:
                 code = error.code
@@ -651,7 +658,7 @@ os.kill(parent, signal.SIGKILL)
             else:
                 raise Failed("invalid session was accepted for first-customer preview")
         token = login()
-        self.request("http://127.0.0.1:13000/api/v1/auth/logout", data=b"{}", token=token)
+        self.request(self.loopback_url + "/api/v1/auth/logout", data=b"{}", token=token)
         refused(token)
         token = login()
         # Only the latest synthetic administrator session, with a valid
@@ -977,6 +984,9 @@ raise SystemExit("expected cold-pair interruption was not reached")
         self.run("release exact completed case containers and network", compose + ["down"])
 
     def qualify_upgrade(self, old, layout):
+        # Independent installations must not share a recently used host port.
+        # The original installer's real collision check remains unchanged.
+        self.loopback_port = old.loopback_port = FIXTURE_PORTS[layout]
         project = "ur-upgrade-" + layout + "-" + self.suffix
         directory = old.instances / layout
         old.project, old.directory = project, directory
@@ -1043,8 +1053,8 @@ raise SystemExit("expected cold-pair interruption was not reached")
         require(all(witness["receipts"]["stop-" + role]["clean_exit"] and
                     witness["receipts"]["stop-" + role]["old_processes_gone"] for role in (*roles, "frontend", *(("edge",) if edge else ()))),
                 "original writer/receiver process exits are unproved")
-        self.request("http://127.0.0.1:13000/health/ready")
-        login = json.loads(self.request("http://127.0.0.1:13000/api/v1/auth/login", data=json.dumps(
+        self.request(self.loopback_url + "/health/ready")
+        login = json.loads(self.request(self.loopback_url + "/api/v1/auth/login", data=json.dumps(
             {"username": "admin", "password": "replacement-password-456"}).encode()))
         require(login.get("organization_role") == "platform_admin", "retained chosen password does not work after upgrade")
         require(self.sql(directory, project, "SELECT count(*) FROM transactions WHERE request_id='synthetic-linux-history'") == "1"

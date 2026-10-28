@@ -378,6 +378,29 @@ class FirstCustomerTests(unittest.TestCase):
         self.assertIsInstance(build.call_args.args[1],m.NoFirstCustomerRedirect)
         self.assertIsNone(build.call_args.args[1].redirect_request(None,None,302,'',{},'https://example.invalid'))
 
+    def test_shared_HTTP_helpers_accept_explicit_case_ports_without_host_selection(self):
+        for port in (13001,13002):
+            for login in (False,True):
+                value={'organization_role':'platform_admin','token':'public synthetic token'} if login else self.preview
+                response,opener=self.response_fixture(json.dumps(value).encode())
+                with self.subTest(port=port,login=login),mock.patch.object(m.urllib.request,'build_opener',return_value=opener) as build:
+                    result=m.fixture_admin_login(m.FIRST_USE_TEST_INPUT,loopback_port=port) if login else \
+                        m.first_customer_request('public synthetic token',self.intent,dry_run=True,expected_status=200,loopback_port=port)
+                self.assertEqual(result,value)
+                path='/auth/login' if login else '/bootstrap/first-customer'
+                self.assertEqual(opener.open.call_args.args[0].full_url,'http://127.0.0.1:'+str(port)+'/api/v1'+path)
+                self.assertEqual(build.call_args.args[0].proxies,{})
+                self.assertIsInstance(build.call_args.args[1],m.NoFirstCustomerRedirect)
+                response.read.assert_called_once_with(m.FIRST_CUSTOMER_LIMIT+1)
+
+    def test_shared_HTTP_helpers_reject_invalid_ports_before_transport(self):
+        for port in (True,False,0,1023,65536,'13001','https://example.invalid','127.0.0.1:13001',None):
+            with self.subTest(port=port),mock.patch.object(m.urllib.request,'build_opener') as build:
+                with self.assertRaises(m.Stop):m.fixture_admin_login(m.FIRST_USE_TEST_INPUT,loopback_port=port)
+                with self.assertRaises(m.Stop):m.first_customer_request('public synthetic token',self.intent,
+                    dry_run=True,expected_status=200,loopback_port=port)
+                build.assert_not_called()
+
     def test_http_create_requires_201_and_invalid_inputs_do_not_open_transport(self):
         response,opener=self.response_fixture(json.dumps(self.created).encode(),201)
         with mock.patch.object(m.urllib.request,'build_opener',return_value=opener):

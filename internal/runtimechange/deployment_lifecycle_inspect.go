@@ -244,14 +244,17 @@ func readDeploymentReleaseSelectionOptions(
 ) (map[int64][]DeploymentReleaseSelectionOption, error) {
 	rows, err := tx.Query(ctx, `
 SELECT deployment.public_model_id,deployment.id,operation.operation_id,
-       deployment.upstream_model,connection.name,COALESCE(deployment.upstream_release_observation->>'identity',''),
+       deployment.upstream_model,connection.name,COALESCE(upstream.observation->>'identity',''),
        COALESCE(to_jsonb(operation)->>'profile_definition_digest',''),
        COALESCE(deployment.max_context,0),COALESCE(deployment.default_max_output,0),
        CASE WHEN COALESCE(to_jsonb(operation)->>'profile_definition_digest','')='' THEN '[]' ELSE
-       COALESCE((SELECT jsonb_agg(q.approval_id ORDER BY q.approval_id)::text FROM model_capability_approval_qualifications q JOIN model_capability_probes p ON p.capability_probe_id=q.capability_probe_id WHERE q.deployment_id=deployment.id AND q.operation_id=operation.operation_id AND q.qualified AND (deployment.upstream_release_observation IS NULL OR (p.request_summary->'upstream_release_observation'->>'identity'=deployment.upstream_release_observation->>'identity' AND p.request_summary->'upstream_release_observation'->'scope'=deployment.upstream_release_observation->'scope'))),'[]') END
+       COALESCE((SELECT jsonb_agg(q.approval_id ORDER BY q.approval_id)::text FROM model_capability_approval_qualifications q JOIN model_capability_probes p ON p.capability_probe_id=q.capability_probe_id WHERE q.deployment_id=deployment.id AND q.operation_id=operation.operation_id AND q.qualified AND (upstream.observation IS NULL OR (p.request_summary->'upstream_release_observation'->>'identity'=upstream.observation->>'identity' AND p.request_summary->'upstream_release_observation'->'scope'=upstream.observation->'scope'))),'[]') END
   FROM model_deployments deployment
   JOIN provider_connections connection ON connection.id=deployment.connection_id
   JOIN model_deployment_operations operation ON operation.deployment_id=deployment.id
+  CROSS JOIN LATERAL (
+      VALUES (NULLIF(to_jsonb(deployment)->'upstream_release_observation','null'::jsonb))
+  ) AS upstream(observation)
   LEFT JOIN model_operation_execution_qualifications qualification
     ON qualification.deployment_id=operation.deployment_id
    AND qualification.operation_id=operation.operation_id

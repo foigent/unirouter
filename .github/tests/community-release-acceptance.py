@@ -105,12 +105,17 @@ def password_choice_delta(before, after):
             "Password choice changed protected identities, release state or seed inventory.")
 
 
-def fixture_admin_login(password, *, expected_status=200):
+def _fixture_loopback_origin(port):
+    require(type(port) is int and 1024 <= port <= 65535, "Invalid synthetic loopback port.")
+    return "http://127.0.0.1:" + str(port)
+
+
+def fixture_admin_login(password, *, expected_status=200, loopback_port=13000):
     require(isinstance(password, str) and password and len(password.encode()) <= 72 and
             "\r" not in password and "\n" not in password and
             type(expected_status) is int and expected_status in (200, 401),
             "Invalid synthetic administrator login input.")
-    request = urllib.request.Request("http://127.0.0.1:13000/api/v1/auth/login",
+    request = urllib.request.Request(_fixture_loopback_origin(loopback_port) + "/api/v1/auth/login",
         data=json.dumps({"username": "admin", "password": password}).encode(),
         headers={"Content-Type": "application/json"}, method="POST")
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoFirstCustomerRedirect())
@@ -139,14 +144,14 @@ class NoFirstCustomerRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def first_customer_request(token, request_id, *, dry_run, expected_status):
+def first_customer_request(token, request_id, *, dry_run, expected_status, loopback_port=13000):
     """One normal synthetic fixture POST; no credentials or response bodies in errors."""
     require(isinstance(token, str) and token and '\r' not in token and '\n' not in token
             and isinstance(request_id, str) and re.fullmatch(r'[a-z0-9]{32}', request_id) is not None
             and type(dry_run) is bool and expected_status in (200, 201),
             "Invalid first-customer fixture request.")
     body = json.dumps({'organization_name': FIRST_CUSTOMER_NAME, 'dry_run': dry_run}).encode()
-    request = urllib.request.Request('http://127.0.0.1:13000/api/v1/bootstrap/first-customer',
+    request = urllib.request.Request(_fixture_loopback_origin(loopback_port) + '/api/v1/bootstrap/first-customer',
         data=body, headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token,
                             CLIENT_REQUEST_ID_HEADER: request_id}, method='POST')
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoFirstCustomerRedirect())

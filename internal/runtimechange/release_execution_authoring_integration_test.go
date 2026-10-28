@@ -4,6 +4,7 @@ package runtimechange_test
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/billing"
+	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/modelexecution"
 	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelrouting"
@@ -21,10 +23,11 @@ import (
 	"github.com/uniroute/unirouter/internal/runtimegeneration"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
 	"github.com/uniroute/unirouter/internal/testutil"
+	"github.com/uniroute/unirouter/internal/upstreamrelease"
 )
 
-func TestDataReleaseAuthoringPinsDefinitionWithoutRewritingModelOrHistory(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+func prepareDataReleaseProfileFixture(t *testing.T, pool *pgxpool.Pool) (canonicalDeploymentFixture, modelprofile.Profile, modelprofile.Definition) {
+	t.Helper()
 	ctx := t.Context()
 	f := createCanonicalDeploymentFixtureWithProduct(t, pool, "data-release", "active", 1, 1, "glm", "https://open.bigmodel.cn/api/paas/v4", "glm-5.3")
 	makeSoleInitialCustomer(t, pool, f.OrgID)
@@ -78,6 +81,13 @@ FROM model_capability_current_probe_contracts WHERE execution_profile_id='glm.5.
 	require.NoError(t, err)
 	f.OperationRevision++
 	insertSuccessfulProbe(t, pool, f, "data-profile-candidate-operation")
+	return f, p, d
+}
+
+func TestDataReleaseAuthoringPinsDefinitionWithoutRewritingModelOrHistory(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := t.Context()
+	f, p, d := prepareDataReleaseProfileFixture(t, pool)
 	approvalID := insertDataReleaseReasoningApproval(t, pool, f, p)
 	manager, err := runtimechange.NewManager(pool, unusedDeploymentSnapshotBuilder{}, routingpolicy.Default())
 	require.NoError(t, err)
@@ -207,9 +217,92 @@ VALUES($1,$2,$3,$4,'serving','receiving',clock_timestamp()+interval '1 hour')`, 
 
 }
 
+func TestDeploymentReleaseSelectionObservationScopeIntegration(t *testing.T) {
+	for _, kind := range []string{"no_observation", "matching", "different_identity", "different_scope", "foreign_tenant"} {
+		t.Run(kind, func(t *testing.T) {
+			// Retained evidence may predate M128's new-approval guard. Keep it
+			// immutable through the actual migration; never disable that guard.
+			pool := testutil.SetupMigratedThroughTestDB(t, schemaauthority.XInsightCommunicationHead)
+			ctx := t.Context()
+			f, profile, definition := prepareDataReleaseProfileFixture(t, pool)
+			foreignOrg := testutil.NewTestOrg(t, pool)
+			current, scope, err := upstreamrelease.Read(ctx, pool, f.OrgID, f.DeploymentID, false)
+			require.NoError(t, err)
+			summary := map[string]any{}
+			if kind != "no_observation" {
+				current, err = upstreamrelease.Next(scope, current, upstreamrelease.Input{
+					ExpectedRevision: current.Revision, ExpectedIdentity: upstreamrelease.Identity(current.Observation),
+					ReleaseLabel: "selection observation", SourceURL: "https://provider.example.test/release",
+				}, f.UserID, time.Now())
+				require.NoError(t, err)
+				captured := *current.Observation
+				switch kind {
+				case "different_identity":
+					captured.Identity = "uor_" + strings.Repeat("f", 32)
+					require.NotEqual(t, current.Observation.Identity, captured.Identity)
+				case "different_scope":
+					captured.Scope.APIModel += "-different"
+				case "foreign_tenant":
+					captured.Scope.CustomerOrgID = foreignOrg
+				}
+				summary["upstream_release_observation"] = captured
+			}
+			wire, err := json.Marshal(summary)
+			require.NoError(t, err)
+			approvalID := insertDataReleaseReasoningApprovalWithSummary(t, pool, f, profile, wire)
+			require.NoError(t, migrate.RunExisting(ctx, pool, testutil.MigrationsDir(t)))
+			if current.Observation != nil {
+				observation, err := json.Marshal(current.Observation)
+				require.NoError(t, err)
+				_, err = pool.Exec(ctx, `UPDATE model_deployments SET upstream_release_observation=$2,upstream_observation_revision=$3 WHERE id=$1`, f.DeploymentID, observation, current.Revision)
+				require.NoError(t, err)
+			} else {
+				var absent bool
+				require.NoError(t, pool.QueryRow(ctx, `SELECT upstream_release_observation IS NULL FROM model_deployments WHERE id=$1`, f.DeploymentID).Scan(&absent))
+				require.True(t, absent, "exercise the actual M128 SQL NULL column")
+			}
+			var qualified bool
+			require.NoError(t, pool.QueryRow(ctx, `SELECT qualified FROM model_capability_approval_qualifications WHERE approval_id=$1`, approvalID).Scan(&qualified))
+			require.True(t, qualified, "observation filtering must be exercised independently of the retained qualification view")
+			manager := newScopeLifecycleManager(t, pool)
+			options, err := manager.ListDeploymentReleaseAuthoringOptions(ctx, f.OrgID)
+			require.NoError(t, err)
+			var selected *runtimechange.DeploymentReleaseSelectionOption
+			for _, model := range options.Models {
+				if model.PublicModel.ID != f.PublicModelID {
+					continue
+				}
+				for index := range model.SelectionOptions {
+					option := &model.SelectionOptions[index]
+					if option.DeploymentID == f.DeploymentID && option.OperationID == f.OperationID {
+						selected = option
+					}
+				}
+			}
+			require.NotNil(t, selected)
+			require.Equal(t, definition.Digest(), selected.ProfileDefinitionDigest)
+			require.Equal(t, upstreamrelease.Identity(current.Observation), selected.ExpectedUpstreamObservationIdentity)
+			if kind == "no_observation" || kind == "matching" {
+				require.Equal(t, []int64{approvalID}, selected.CapabilityApprovalIDs)
+			} else {
+				require.Empty(t, selected.CapabilityApprovalIDs)
+			}
+			foreign, err := manager.ListDeploymentReleaseAuthoringOptions(ctx, foreignOrg)
+			require.NoError(t, err)
+			require.Empty(t, foreign.Models, "a foreign tenant cannot see this model or its approval")
+			require.Empty(t, foreign.Releases)
+		})
+	}
+}
+
 // This DB fixture follows the retained binding/selector and Probe/Approval
 // tables. It proves authoring behavior without claiming a Provider call.
 func insertDataReleaseReasoningApproval(t *testing.T, pool *pgxpool.Pool, f canonicalDeploymentFixture, p modelprofile.Profile) int64 {
+	t.Helper()
+	return insertDataReleaseReasoningApprovalWithSummary(t, pool, f, p, []byte(`{}`))
+}
+
+func insertDataReleaseReasoningApprovalWithSummary(t *testing.T, pool *pgxpool.Pool, f canonicalDeploymentFixture, p modelprofile.Profile, requestSummary []byte) int64 {
 	t.Helper()
 	ctx := t.Context()
 	var contractID, contractVersion string
@@ -239,11 +332,11 @@ WHERE binding_id=$1 AND deployment_id=$2`, f.CredentialID, f.DeploymentID).Scan(
 VALUES ($1,$2,$3,$4,'reasoning',$5,$6,$7,$8,$9,$10,'glm','https://open.bigmodel.cn/api/paas/v4',
         'openai_compatible','{"endpoint_path_mode":"base_relative"}',
         $11,$12,$13,$14,1,$15,$16,$17,TRUE,TRUE,200,12,
-        $11,'','{}','{}','admin.model_capability_probe.v1','data-release-reasoning-fixture',$18,$19)
+        $11,'',$20::jsonb,'{}','admin.model_capability_probe.v1','data-release-reasoning-fixture',$18,$19)
 RETURNING capability_probe_id`, f.OrgID, f.DeploymentID, f.ConnectionID, f.OperationID,
 		p.ID, p.Version, f.ProtocolProfileID, f.ProtocolVersion, contractID, contractVersion,
 		f.UpstreamModel, f.ConnectionRevision, f.DeploymentRevision, f.OperationRevision,
-		f.CredentialID, f.CredentialRevision, linkCreated, fingerprint, f.UserID).Scan(&probeID))
+		f.CredentialID, f.CredentialRevision, linkCreated, fingerprint, f.UserID, requestSummary).Scan(&probeID))
 	var approvalID int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO model_capability_routing_approvals (
   capability_probe_id,customer_org_id,deployment_id,connection_id,operation_id,capability_id,
