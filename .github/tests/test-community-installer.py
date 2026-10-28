@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Offline checks of the actual native fixture and shipped bootstrap contract."""
 import ast
+from contextlib import redirect_stderr
 import hashlib
 import importlib.util
 import ipaddress
+import io
 import json
 from pathlib import Path
 import shutil
@@ -155,6 +157,69 @@ class InstallerFixtureContract(unittest.TestCase):
             command[-1]='import sys; print("public stdout"); print("authored failure",file=sys.stderr);sys.exit(7)'
             code,output=work.run('retain both failed streams',command,ok=False)
             self.assertEqual(code,7);self.assertIn('public stdout',output);self.assertIn('authored failure',output)
+
+    def test_shipped_upgrade_authored_platform_refusal_is_reported_without_child_output(self):
+        owner=load('actual_upgrade_error_boundary',ROOT/'deploy/customer/upgrade.py')
+        errors=io.StringIO()
+        with patch.object(owner.platform,'system',return_value='Darwin'), \
+             patch.object(owner,'Installation',side_effect=AssertionError('must stop before opening installation')), \
+             redirect_stderr(errors):
+            self.assertEqual(owner.main(['upgrade']),1)
+        self.assertEqual(errors.getvalue(),
+            'Upgrade stopped: This upgrade entry supports Linux amd64\n'
+            'Retain the original installation and upgrade evidence. No automatic reset or rollback was attempted.\n')
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);work=object.__new__(fixture.Acceptance)
+            work.repo,work.logs,work.release,work.env,work.result=root,root/'logs',root/'release',{},{}
+            work.logs.mkdir()
+            command=[fixture.sys.executable,'-I','-B',work.release/'payload/deploy/upgrade.py','upgrade']
+            def refuse(args,**kwargs):
+                kwargs['stdout'].write(b'synthetic-private-stdout\n')
+                kwargs['stderr'].write(errors.getvalue().encode()+b'synthetic-private-stderr\n')
+                return subprocess.CompletedProcess(args,1)
+            with patch.object(fixture.subprocess,'run',side_effect=refuse):
+                with self.assertRaises(fixture.Failed) as raised:work.run('actual authored refusal',command)
+            self.assertEqual(str(raised.exception),
+                'actual authored refusal failed: Upgrade stopped: This upgrade entry supports Linux amd64')
+            self.assertNotIn('synthetic-private',str(raised.exception));self.assertEqual(work.result,{})
+            self.assertTrue(all(path.stat().st_mode&0o777==0o600 for path in work.logs.iterdir()))
+
+    def test_upgrade_diagnostic_excludes_other_entries_stdout_success_and_expected_refusals(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);work=object.__new__(fixture.Acceptance)
+            work.repo,work.logs,work.release,work.env,work.result=root,root/'logs',root/'release',{},{}
+            work.logs.mkdir()
+            entry=str(work.release/'payload/deploy/upgrade.py')
+            direct=[fixture.sys.executable,'-I','-B',entry,'resume-upgrade']
+            marker=b'Upgrade stopped: synthetic-private-child-output\n'
+            cases=[('wrong entry',[*direct[:3],str(root/'other/upgrade.py'),*direct[4:]],b'',marker,1,True),
+                   ('path is hook data',[*direct[:3],str(root/'hook.py'),entry],b'',marker,1,True),
+                   ('not isolated',[fixture.sys.executable,entry,'upgrade'],b'',marker,1,True),
+                   ('stdout only',direct,marker,b'',1,True),
+                   ('success',direct,b'{}\n',marker,0,True),
+                   ('expected refusal',direct,b'',marker,1,False)]
+            for label,command,out,err,code,ok in cases:
+                with self.subTest(label=label):
+                    def child(args,**kwargs):
+                        kwargs['stdout'].write(out);kwargs['stderr'].write(err)
+                        return subprocess.CompletedProcess(args,code)
+                    with patch.object(fixture.subprocess,'run',side_effect=child):
+                        if code and ok:
+                            with self.assertRaises(fixture.Failed) as raised:work.run(label,command)
+                            self.assertEqual(str(raised.exception),label+' failed')
+                        else:
+                            result=work.run(label,command,ok=ok)
+                            self.assertEqual(result,out.decode() if ok else (code,(out+err).decode()))
+                    self.assertEqual(work.result,{})
+
+    def test_actual_install_execute_discards_secret_bearing_child_errors(self):
+        owner=load('actual_upgrade_child_error_owner',ROOT/'deploy/customer/install.py')
+        command=[fixture.sys.executable,'-I','-B','-c',
+            'import sys;print("synthetic-private-child-output",file=sys.stderr);sys.exit(7)']
+        with self.assertRaises(owner.InstallError) as raised:
+            owner.execute(command,label='native upgrade owner: upgrade maintenance-check')
+        self.assertEqual(str(raised.exception),
+            'native upgrade owner: upgrade maintenance-check failed (exit 7); no secret-bearing child output was logged')
 
     def test_workflow_covers_selector_and_shared_first_use_inputs(self):
         # A change to an imported selector/assertion must exercise the real
