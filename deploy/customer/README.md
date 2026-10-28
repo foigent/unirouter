@@ -2,7 +2,7 @@
 
 Explicitly non-expiring packages use signed `unirouter.upgrade-manifest.v2` with `expires_at: "never"` (UniRouter 1.14.0+). The standalone verifier and backend must both support v2, including `upgrade record-applied`. Existing finite v1 packages retain their original deadline; replacing or re-signing them cannot resume a plan bound to a different package hash. Every check/install/resume still verifies the original signature, hashes, creation time (with the existing five-minute future tolerance), platform, schema and release sequence. Non-expiring does not authorize rollback, skip trust checks or extend the owner's finite signing-authority window. Source code alone does not establish a published package or a verified deployment.
 
-UniRouter 1.14.2 uses the M127 maintenance/fresh-install contract. See
+Use the [current Linux guide](../../docs/community/install-linux.md) for the exact published artifact and fresh-install target. Existing M127 installations use the [finite M127 → M128 upgrade](../../docs/ops/COMMUNITY-UPGRADE.md). See
 [connection communication controls](../../docs/ops/XINSIGHT-COMMUNICATION.md) for manual defaults, migration and recovery. Earlier M126 candidate notes below remain historical.
 
 This directory is an input to the signed customer release, not a source-build
@@ -21,7 +21,7 @@ build version/commit and the embedded upgrade public trust root. Runtime
 environment variables cannot replace that root. The current runtime requires no commercial License import or LICENSE_* settings.
 
 A new installation uses the exact released backend image's explicit
-`fresh-install` owner through M127 before the runtime starts. The
+`fresh-install` owner through its declared schema before the runtime starts. The
 [Linux / ECS guide](../../docs/community/install-linux.md) describes the supported
 installer entry. Signed-artifact verification, installation on a new instance
 and a data-preserving upgrade of an existing instance are separate acceptance
