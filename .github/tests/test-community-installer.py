@@ -451,7 +451,7 @@ class InstallerFixtureContract(unittest.TestCase):
                     if 'top' in args:return 'PID\n98765\n'
                     if 'stop' in args or 'up' in args:
                         changed=True
-                        output='\n'.join(' Container '+project+'-backend-1 '+state for state in ('Recreated','Started','Healthy'))
+                        output='\n'.join(' Container '+project+'-backend-1  '+state for state in ('Recreated','Started','Healthy'))
                         return (0,output) if kwargs.get('ok') is False else output
                     self.fail('unexpected history command')
                 work.run=run;old=SimpleNamespace(compose=lambda *args:[work.docker,'compose','--project-name',project])

@@ -272,8 +272,10 @@ class HistoricalObservations:
                          command_path.with_name(command_path.name.removesuffix(".process.json") + ".stderr")),
                         "Native replacement output belongs to another command")
                 name = installation["project"] + "-" + record["service"] + "-1"
-                require(isinstance(output, str) and {"Container " + name + " " + state for state in ("Recreated", "Started", "Healthy")}
-                        .issubset({line.strip() for line in output.splitlines()}), "Original native replacement completion is missing")
+                # Compose's plain writer separates empty event fields with
+                # whitespace. Keep the exact name and all completion tokens.
+                require(isinstance(output, str) and {("Container", name, state) for state in ("Recreated", "Started", "Healthy")}
+                        .issubset({tuple(line.split()) for line in output.splitlines()}), "Original native replacement completion is missing")
                 require(current is None or current["Running"] is False and current["Pid"] == 0,
                         "Original replaced container is still live or unknown")
                 # No original PID/starttime/application exitcode was retained

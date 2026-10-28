@@ -440,7 +440,7 @@ def historical_fixture(root, installation, metadata, source, kind="process_exit"
         raw_successor = reference("successor.json", successor)
         record["successor"] = {key: dict(raw_successor, pointer="/" + key) for key in successor}
         name = installation["project"] + "-backend-1"
-        record["output"] = reference("operation.stderr", ("\n".join(" Container " + name + " " + state
+        record["output"] = reference("operation.stderr", ("\n".join(" Container " + name + "  " + state
             for state in ("Recreate", "Recreated", "Started", "Healthy")) + "\n").encode(), None)
     document = {"format": "unirouter.historical-exits.v1", "installation_id": installation["installation_id"],
         "project": installation["project"], "database_system_id": metadata["system_id"], "database": metadata["database"],
@@ -487,6 +487,68 @@ class HistoricalObservationTests(unittest.TestCase):
         with self.assertRaises(M.install.InstallError):
             self.validate(document, current=lambda _: {"Image": generation["artifact_digest"], "Project": "fixture-ur",
                 "Service": "backend", "Running": True, "Pid": 42})
+
+    def test_replacement_completion_spacing_preserves_original_raw_proof(self):
+        _, document, generation = self.prepare("native_replacement", True)
+        reference = document["records"][0]["output"]
+        path = Path(reference["path"])
+        for spacing in (" ", "  ", "\t", " \t "):
+            with self.subTest(spacing=repr(spacing)):
+                raw = ("\n".join(" Container" + spacing + "fixture-ur-backend-1" + spacing + state
+                    for state in ("Recreated", "Started", "Healthy")) + "\n").encode()
+                path.write_bytes(raw); reference["sha256"] = M.install.digest(path)
+                original = M.canonical(document)
+                evidence = M.HistoricalObservations(original)
+                actual = evidence.validate(self.installation, self.metadata, self.source, lambda _: None, lambda _: None)
+                self.assertEqual(raw, path.read_bytes())
+                self.assertEqual(raw, evidence.sources[str(path)])
+                self.assertEqual(original, M.canonical(document))
+                self.assertEqual(M.canonical(document["records"][0]), actual[generation["instance_id"]].observation)
+
+    def test_replacement_completion_requires_every_exact_token(self):
+        _, document, _ = self.prepare("native_replacement", True)
+        reference = document["records"][0]["output"]
+        path = Path(reference["path"])
+        rows = [" Container fixture-ur-backend-1  " + state for state in ("Recreated", "Started", "Healthy")]
+        variants = [[row for index, row in enumerate(rows) if index != missing] for missing in range(3)]
+        variants += [[row.replace("fixture-ur-backend-1", "other-backend-1") for row in rows],
+            [row.replace("fixture-ur-backend-1", "fixture-ur-backend-canary-1") for row in rows],
+            [row.replace("Recreated", "Recreate").replace("Started", "Starting").replace("Healthy", "Health") for row in rows],
+            [row + " extra" for row in rows], ["extra " + row for row in rows],
+            ["\x1b[32m" + row + "\x1b[0m" for row in rows],
+            [json.dumps({"id": "Container fixture-ur-backend-1", "status": state}) for state in ("Recreated", "Started", "Healthy")],
+            [rows[0], rows[0], rows[2]], [rows[0], rows[1], rows[2].replace("fixture-ur", "other")]]
+        for index, variant in enumerate(variants):
+            with self.subTest(variant=index):
+                raw = ("\n".join(variant) + "\n").encode(); path.write_bytes(raw); reference["sha256"] = M.install.digest(path)
+                with self.assertRaisesRegex(M.install.InstallError, "replacement completion is missing"):
+                    self.validate(document)
+                self.assertEqual(raw, path.read_bytes())
+
+    def test_replacement_completion_never_substitutes_command_identity_or_origin(self):
+        _, original, generation = self.prepare("native_replacement")
+        sources = {path: path.read_bytes() for path in (self.root / "observations").iterdir() if path.is_file()}
+        for kind in ("failed-command", "wrong-service", "same-successor", "live-original", "foreign-output", "changed-output"):
+            with self.subTest(kind=kind):
+                for path, raw in sources.items(): path.write_bytes(raw)
+                document = copy.deepcopy(original); record = document["records"][0]
+                if kind in ("failed-command", "wrong-service"):
+                    reference = record["command"]; path = Path(reference["path"]); receipt = json.loads(path.read_bytes())
+                    if kind == "failed-command": receipt["returncode"] = 1
+                    else: receipt["argv"][-1] = "frontend"
+                    path.write_bytes(M.canonical(receipt)); reference["sha256"] = M.install.digest(path)
+                elif kind == "same-successor":
+                    path = Path(record["successor"]["container_id"]["path"]); successor = json.loads(path.read_bytes())
+                    successor["container_id"] = "d" * 64; path.write_bytes(M.canonical(successor))
+                    for reference in record["successor"].values(): reference["sha256"] = M.install.digest(path)
+                elif kind == "foreign-output":
+                    reference = record["output"]; path = self.root / "other.stderr"
+                    M.install.private_file(path, Path(reference["path"]).read_bytes()); reference["path"] = str(path)
+                elif kind == "changed-output":
+                    Path(record["output"]["path"]).write_bytes(b"changed original progress")
+                current = (lambda _: {"Image": generation["artifact_digest"], "Project": "fixture-ur",
+                    "Service": "backend", "Running": True, "Pid": 42}) if kind == "live-original" else None
+                with self.assertRaises(M.install.InstallError): self.validate(document, current=current)
 
     def test_missing_argv_is_not_repaired_by_arbitrary_nonempty_program(self):
         _, document, _ = self.prepare("native_replacement", True)
@@ -966,6 +1028,29 @@ class WholeUpgradeTests(unittest.TestCase):
                     self.assertEqual(0, result["writes"])
                     self.assertEqual(before, {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in operation.directory.rglob("*") if p.is_file()})
                     self.assertEqual(before_metadata, state.metadata)
+                    self.assertNotIn("upgrade", operation.state)
+
+    def test_native_replacement_host_preflight_preserves_legacy_and_native_spacing(self):
+        for count in (1, 2):
+            for spacing in (" ", "  ", "\t"):
+                with self.subTest(writers=count, spacing=repr(spacing)):
+                    operation, state, calls, _ = self.host(count)
+                    path, document, _ = historical_fixture(operation.directory / "historical-inputs",
+                        operation.state, state.metadata, state.metadata["release"], "native_replacement", True)
+                    reference = document["records"][0]["output"]; output = Path(reference["path"])
+                    raw = ("\n".join(" Container" + spacing + "fixture-ur-backend-1" + spacing + status
+                        for status in ("Recreated", "Started", "Healthy")) + "\n").encode()
+                    output.write_bytes(raw); reference["sha256"] = M.install.digest(output); path.write_bytes(M.canonical(document))
+                    operation.historical_path, operation.historical_raw = path, path.read_bytes()
+                    operation._historical_resource = lambda _: None  # Existing offline native-resource transport.
+                    before = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in operation.directory.rglob("*") if p.is_file()}
+                    before_metadata = copy.deepcopy(state.metadata)
+                    with patch.object(M.shutil, "disk_usage", return_value=SimpleNamespace(free=32 << 30)):
+                        result = operation.check()
+                    self.assertEqual(count, result["writers"]); self.assertEqual(0, result["writes"])
+                    self.assertEqual(before, {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in operation.directory.rglob("*") if p.is_file()})
+                    self.assertEqual(before_metadata, state.metadata)
+                    self.assertEqual(raw, operation.historical_sources[str(output)])
                     self.assertNotIn("upgrade", operation.state)
 
     def test_complete_union_limit_is_checked_before_maintenance_or_pull(self):
