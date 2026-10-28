@@ -552,5 +552,14 @@ export const developerMessages = {
   "此面板只保留迁移期只读信息；模型执行写入统一由 canonical 模型部署与发布工作台完成。": "This panel retains read-only migration information. Model execution changes are managed by the canonical deployment and release workspace.",
   "旧连接检测、端点启用和凭证写入口已退役并固定返回 410。这里的旧投影仅供迁移审计，不代表 canonical 当前路由。": "Legacy connection probes, endpoint activation and credential writes are retired and return 410. These projections support migration audits and do not represent current canonical routing.",
   "当前连接没有历史模型记录": "No historical model records for this connection",
+  "将 api_key 和 base_url 配置为所选的 UniRouter 网关端点。": "Set api_key and base_url to the selected UniRouter Gateway Endpoint.",
+  "使用 SDK 的 Chat Completions 模型适配器；默认 Responses 路径不代表已支持运行。": "Use the SDK Chat Completions model adapter; the default Responses path is not a runtime claim.",
+  "端点 Profile 目前仅有合同定义；独立实现并验证前不可运行。": "Endpoint Profile exists as a contract only; runtime use is blocked until independently implemented and verified.",
+  "配置 base_url、api_key 以及明确批准的模型别名。": "Configure base_url, api_key and an explicitly approved model alias.",
+  "使用兼容 OpenAI 的模型客户端和 UniRouter Base URL。": "Use an OpenAI-compatible model client with the UniRouter Base URL.",
+  "将 UniRouter 注册为兼容 OpenAI 的供应商，密钥不得写入导出的配置。": "Register UniRouter as an OpenAI-compatible provider and keep secrets outside exported profiles.",
+  "使用自定义的兼容 OpenAI 模型入口与 Chat Completions 路径。": "Use the custom OpenAI-compatible model entry and Chat Completions path.",
+  "需要独立部署、支持幂等确认的事件适配器；不在网关进程内运行。": "Requires a separately deployed event adapter with idempotent acknowledgement; not part of the Gateway process.",
+  "需要明确的客户 Aily 环境，以及单独验证的适配器合同。": "Requires an exact customer Aily environment and separately verified adapter contract.",
 } as const;
 registerMessages(developerMessages);

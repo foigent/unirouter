@@ -415,7 +415,7 @@ export default function MediaJobsPage() {
           value={projectsLoading || loading || !contract ? '—' : String(jobs.filter((job) => outputReadable(job, clock)).length)}
           meta={t("到期后读取立即关闭")}
         />
-        <MetricTile label={t("固定保留")} value={contract?.retention || '—'} meta={contract ? t("七天后读取关闭并进入删除") : t("正在读取运行时合同")} />
+        <MetricTile label={t("固定保留")} value={contract?.retention === 'P7D' ? t('7 天') : contract?.retention || '—'} meta={contract?.retention === 'P7D' ? t("七天后读取关闭并进入删除") : contract ? t('保留期限由运行时合同决定') : t("正在读取运行时合同")} />
       </div>
 
       <div className="ur-context-explorer ur-media-explorer">

@@ -107,7 +107,7 @@ func verifyBudgetCoverageLedger(ledger []string, certifiedHead, certifiedDigest 
 		return fmt.Errorf("budget coverage schema head mismatch")
 	}
 	head := ledger[len(ledger)-1]
-	if head == schemaauthority.CommercialLicenseRetirementHead || head == schemaauthority.XInsightCommunicationHead {
+	if head == schemaauthority.CommercialLicenseRetirementHead || head == schemaauthority.XInsightCommunicationHead || head == schemaauthority.UpstreamReleaseObservationHead {
 		if err := schemaauthority.VerifyRuntimeLedger(ledger, ledger); err != nil {
 			return err
 		}

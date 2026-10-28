@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -85,7 +86,8 @@ func TestPostgres_Close(t *testing.T) {
 
 func TestPostgres_Tx_Commit(t *testing.T) {
 	dsn := getTestDSN(t)
-	db, err := NewPostgres(dsn, 5, 1)
+	// TEMP tables belong to one session; all fixture operations must share it.
+	db, err := NewPostgres(dsn, 1, 1)
 	if err != nil {
 		t.Fatalf("NewPostgres failed: %v", err)
 	}
@@ -94,7 +96,9 @@ func TestPostgres_Tx_Commit(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a temp table for testing
-	_, _ = db.Pool.Exec(ctx, "CREATE TEMP TABLE IF NOT EXISTS tx_test (id int, val text)")
+	if _, err := db.Pool.Exec(ctx, "CREATE TEMP TABLE tx_test (id int, val text)"); err != nil {
+		t.Fatalf("create temp table: %v", err)
+	}
 
 	committed := false
 	err = db.Tx(ctx, func(tx pgx.Tx) error {
@@ -125,7 +129,8 @@ func TestPostgres_Tx_Commit(t *testing.T) {
 
 func TestPostgres_Tx_Rollback(t *testing.T) {
 	dsn := getTestDSN(t)
-	db, err := NewPostgres(dsn, 5, 1)
+	// Keep setup, the real transaction and verification in the TEMP session.
+	db, err := NewPostgres(dsn, 1, 1)
 	if err != nil {
 		t.Fatalf("NewPostgres failed: %v", err)
 	}
@@ -134,21 +139,26 @@ func TestPostgres_Tx_Rollback(t *testing.T) {
 	ctx := context.Background()
 
 	// Create temp table
-	_, _ = db.Pool.Exec(ctx, "CREATE TEMP TABLE IF NOT EXISTS tx_rollback_test (id int)")
+	if _, err := db.Pool.Exec(ctx, "CREATE TEMP TABLE tx_rollback_test (id int)"); err != nil {
+		t.Fatalf("create temp table: %v", err)
+	}
 
 	// Insert a row outside transaction
-	_, _ = db.Pool.Exec(ctx, "INSERT INTO tx_rollback_test VALUES (99)")
+	if _, err := db.Pool.Exec(ctx, "INSERT INTO tx_rollback_test VALUES (99)"); err != nil {
+		t.Fatalf("seed outside transaction: %v", err)
+	}
 
 	// Transaction that fails — should rollback
+	rollbackErr := errors.New("simulated rollback")
 	err = db.Tx(ctx, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, "INSERT INTO tx_rollback_test VALUES (100)")
 		if err != nil {
 			return err
 		}
-		return fmt.Errorf("simulated error")
+		return rollbackErr
 	})
-	if err == nil {
-		t.Fatal("expected error from Tx with failing fn")
+	if !errors.Is(err, rollbackErr) {
+		t.Fatalf("expected callback rollback error, got %v", err)
 	}
 
 	// Verify the failed insert was rolled back (only 99 should exist)
@@ -159,6 +169,12 @@ func TestPostgres_Tx_Rollback(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("expected 0 rows (rollback), got %d", count)
+	}
+	if err := db.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM tx_rollback_test WHERE id = 99").Scan(&count); err != nil {
+		t.Fatalf("query retained seed: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one unchanged outside-transaction row, got %d", count)
 	}
 }
 

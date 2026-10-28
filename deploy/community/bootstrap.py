@@ -19,7 +19,7 @@ import tarfile
 import urllib.parse
 import urllib.request
 
-SCHEMA = "000127_xinsight_communication_policy"
+SCHEMA = "000128_upstream_release_observation"
 MAX_BOOTSTRAP = 32 * 1024
 MAX_MANIFEST = 128 * 1024
 MAX_SIGNATURE = 16 * 1024
@@ -29,6 +29,8 @@ ASSETS = {"verifier": ("uniroute-upgrade", 32 * 1024 * 1024),
           "public_keys": ("public-keys.json", 64 * 1024),
           "package": ("release.tar.gz", MAX_PAYLOAD)}
 INSTALLER = "payload/deploy/install.py"
+UPGRADER = "payload/deploy/upgrade.py"
+UPGRADE_ACTIONS = ("check-upgrade", "upgrade", "resume-upgrade", "upgrade-status")
 RECEIPT = "prepared.json"
 
 
@@ -153,7 +155,7 @@ class Bootstrap:
                 "Invalid release sequence.")
         require(isinstance(release["key_id"], str) and re.fullmatch(r"[A-Za-z0-9._-]{1,64}", release["key_id"]),
                 "Invalid signing key identifier.")
-        require(release["target_schema"] == SCHEMA, "This entry requires the M127 fresh-install contract.")
+        require(release["target_schema"] == SCHEMA, "This entry requires the current artifact fresh-install contract.")
         exact_keys(value["assets"], ASSETS)
         for name, (_, maximum) in ASSETS.items():
             asset = value["assets"][name]
@@ -417,9 +419,25 @@ def delegate(action, directory, installation, name, port, docker_socket):
     return subprocess.run(args, env=child_environment(), check=False).returncode
 
 
+def delegate_upgrade(action, directory, installation, source_package, layout, edge_directory, historical_exits=None):
+    require(action in UPGRADE_ACTIONS, "Unsupported finite upgrade action.")
+    require((directory / UPGRADER).is_file(), "This signed release has no community upgrade entry.")
+    args = [sys.executable, "-I", "-B", str(directory / UPGRADER), action,
+            "--release", str(directory), "--verifier", str(directory / "uniroute-upgrade"),
+            "--public-keys", str(directory / "public-keys.json"), "--directory", str(installation),
+            "--layout", layout]
+    if source_package is not None:
+        args += ["--source-package", str(source_package)]
+    if edge_directory is not None:
+        args += ["--edge-directory", str(edge_directory)]
+    if historical_exits is not None:
+        args += ["--historical-exits", str(historical_exits)]
+    return subprocess.run(args, env=child_environment(), check=False).returncode
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("prepare", "check", "install", "resume"))
+    parser.add_argument("action", choices=("prepare", "check", "install", "resume", *UPGRADE_ACTIONS))
     parser.add_argument("--bootstrap", type=Path, required=True, help="independently obtained, pinned bootstrap JSON")
     parser.add_argument("--bootstrap-sha256", required=True, help="SHA-256 from the independent trusted release instructions")
     parser.add_argument("--directory", type=Path, required=True, help="new private prepared-release directory; retain for resume")
@@ -427,6 +445,10 @@ def main(argv=None):
     parser.add_argument("--name", default="unirouter")
     parser.add_argument("--port", type=int, default=3000)
     parser.add_argument("--docker-socket", type=Path, default=Path("/var/run/docker.sock"))
+    parser.add_argument("--source-package", type=Path, help="retained exact currently installed signed full package")
+    parser.add_argument("--layout", choices=("community_single", "ur_edge_pair"), default="community_single")
+    parser.add_argument("--edge-directory", type=Path, help="original named UR edge configuration directory")
+    parser.add_argument("--historical-exits", type=Path, help="private original observations for known historical M127 exits")
     args = parser.parse_args(argv)
     os.umask(0o077)
     try:
@@ -440,6 +462,8 @@ def main(argv=None):
         if args.action == "prepare":
             print("Release prepared and verified. No installer, services or credentials were started.")
             return 0
+        if args.action in UPGRADE_ACTIONS:
+            return delegate_upgrade(args.action, args.directory, args.install_directory, args.source_package, args.layout, args.edge_directory, args.historical_exits)
         return delegate(args.action, args.directory, args.install_directory, args.name, args.port, args.docker_socket)
     except (Exception, KeyboardInterrupt) as exc:
         print("Community bootstrap stopped: " + (str(exc) if isinstance(exc, BootstrapError) else type(exc).__name__), file=sys.stderr)

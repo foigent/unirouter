@@ -55,4 +55,16 @@ describe('page-scoped UI catalogs', () => {
     expect(translate('更新时间')).toBe('Updated');
     expect(translate('读取失败')).toBe('Unavailable');
   });
+  it.each(['models-first', 'integrations-first'] as const)('loads the real model and integration domains without a collision: %s', async order => {
+    localStorage.setItem('unirouter.ui.locale', 'en-US');
+    const { translate } = await import('./index');
+    const models = () => import('../pages/ModelEndpointsPage');
+    const integrations = () => import('../pages/IntegrationsPage');
+    if (order === 'models-first') { await models(); await integrations(); }
+    else { await integrations(); await models(); }
+    expect(translate('检查时间')).toBe('Checked at');
+    expect(translate('模型身份与证据范围')).toBe('Model identity and evidence scope');
+    expect(translate('UR 出站通讯')).toBe('UR outbound communication');
+  });
+
 });

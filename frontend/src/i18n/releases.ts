@@ -146,6 +146,9 @@ export const releaseMessages = {
   "验证这些能力": "Validate capabilities",
   "集中批准理由": "Approval reason",
   "批准已选 {count} 项": "Approve {count} selected observations",
-  "刷新逐项状态": "Refresh capability states"
+  "刷新逐项状态": "Refresh capability states",
+  "模型发布工作台": "Model release workspace",
+  "创建候选发布，复核后推进发布步骤；创建候选不会自动切换流量。": "Create a release candidate, review it, then follow the release steps. Creating a candidate does not switch traffic.",
+  "发布校验与技术边界": "Release checks and technical boundaries",
 } as const;
 registerMessages(releaseMessages);

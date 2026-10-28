@@ -97,11 +97,22 @@ class OriginIdentityTests(unittest.TestCase):
             api=types.SimpleNamespace(request=request)
             guard=types.SimpleNamespace(work=None,owned=[],receipt={'commands':[],'cleanup':[]},
                                         cleanup=lambda:None,time_guard=lambda:None)
-            def initialize(g,work,env):g.work=work
+            stage=C.module('origin_test_stage',HERE/'community-stage-record.py')
+            fixture=types.ModuleType('origin_stage_fixture');fixture.__file__=str(HERE/'community-stage-fixtures.py')
+            exec(compile(Path(fixture.__file__).read_bytes(),fixture.__file__,'exec'),fixture.__dict__)
+            record=fixture.producer()
+            guard.configure_stage_inputs=lambda subject,files,images:None
+            def modules(name,path):
+                if name=='community_stage_contract':return types.SimpleNamespace(read_dispatch=lambda owner:(stage.canonical(record),record,{}))
+                if name=='accepted_byte_guards':return guard
+                if name=='accepted_source_observer':return types.SimpleNamespace(configure_stage_inputs=lambda fixed:None)
+                return None
+            guard.FIXED={'source':record['product'],'source_files':record['inputs']['source_inventory']['files'],'images':record['inputs']['images']}
+            def initialize(g,work,env,stage_record=None):g.work=work
             with patch.dict(os.environ,env,clear=True),patch.object(sys,'argv',[C.__file__]), \
                  patch.object(C,'runtime_identity',return_value='a'*40),patch.object(C,'bound_inputs',return_value=('ring',{})), \
                  patch.object(C,'frontend_input_preflight',return_value=None), \
-                 patch.object(C,'module',side_effect=lambda name,path:guard if name=='accepted_byte_guards' else None), \
+                 patch.object(C,'module',side_effect=modules), \
                  patch.object(C,'initialize_guard',side_effect=initialize),patch.object(C,'GitHub',return_value=api), \
                  patch.object(C,'prepare_source_inputs',side_effect=C.Stop('source_input_identity')):
                 self.assertEqual(C.main(),1)

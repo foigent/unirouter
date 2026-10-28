@@ -1,12 +1,29 @@
 name: Publish accepted community images (existing public packages)
-run-name: Accepted UR 1.14.2 image upload, source run 40141868711
+run-name: Publish exact record-bound accepted community images
 on:
   workflow_dispatch:
+    inputs:
+      stage_record_b64:
+        description: Exact reviewed stage record, canonical URL-safe base64
+        required: true
+        type: string
+      stage_record_sha256:
+        description: SHA256 of the decoded exact stage record
+        required: true
+        type: string
+      expected_workflow_commit:
+        description: Exact reviewed protected-main workflow program commit
+        required: true
+        type: string
+      admission_sha256:
+        description: Existing exact authorization, budget and queue admission digest
+        required: true
+        type: string
 permissions:
   contents: read
   packages: write
 concurrency:
-  group: ur-public-image-publication-40141868711
+  group: ur-public-image-publication
   cancel-in-progress: false
 jobs:
   publish-public:
@@ -14,274 +31,24 @@ jobs:
     permissions:
       contents: write
       packages: write
-    if: github.repository == 'foigent/unirouter' && github.ref == 'refs/heads/main'
+    if: github.repository == 'foigent/unirouter' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && github.actor_id == '252312344'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      STAGE_RECORD_B64: ${{ inputs.stage_record_b64 }}
+      STAGE_RECORD_SHA256: ${{ inputs.stage_record_sha256 }}
+      EXPECTED_WORKFLOW_COMMIT: ${{ inputs.expected_workflow_commit }}
+      ADMISSION_SHA256: ${{ inputs.admission_sha256 }}
     steps:
+      - name: Check out exact reviewed publisher program
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Validate exact publisher stage before token or downloads
+        run: python3 -I -B .github/tests/community-stage-record.py validate --stage publisher --dispatch
       - name: Upload exact accepted image bytes to existing public packages
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          python3 -I -B - --execute-approved-public-stage <<'PY'
-          """Review candidate: manual existing-public GHCR upload of two already accepted images.
-
-          Never run this during local preparation. --describe is strictly offline.
-          Actual execution requires a separately authorized GitHub workflow dispatch.
-          No image build, visibility transition, signing, release or container execution.
-          """
-          import argparse
-          import hashlib
-          import json
-          import os
-          from pathlib import Path
-          import re
-          import shutil
-          import stat
-          import subprocess
-          import tempfile
-
-          REPOSITORY = 'foigent/unirouter'
-          SOURCE = '21572d9e73ca901583a8b526c9af7cd0319d59f1'
-          DRAFT = 423035487
-          TAG = 'source-' + SOURCE + '-run-40141868711-linux-amd64'
-          WORKFLOW_REF = REPOSITORY + '/.github/workflows/publish-accepted-community-images.yml@refs/heads/main'
-          # The actual retained image identities are filled from the accepted native record
-          # by the local preparation script, never by workflow_dispatch inputs.
-          IMAGES = [{'role': 'backend',
-            'package_name': 'unirouter-backend',
-            'repository': 'ghcr.io/foigent/unirouter-backend',
-            'asset_id': 673551044,
-            'archive_name': 'backend-image.tar.gz',
-            'archive_bytes': 21244932,
-            'archive_sha256': 'debaeae075fb08bc189f62f637a72c7d47f64396dddb175fc9d18ac28a2d1900',
-            'config_id': 'sha256:b4e334f175efd703533cea2cf87385a208c55d8b91152d24635ef0d329a077bf',
-            'diff_ids': ['sha256:e63b02c2b5c761df2cb95e657d744f27d95da4e051235a13c80b88cd68eab188',
-                         'sha256:4252db452bd49286cce26d17bbc472efcb3367373d85b6cb446c04998658be34',
-                         'sha256:cbc3e8280b77d22fedecdcee49c8f57ffaea107c3a43d385f3d4136a6ef690cd',
-                         'sha256:77b4153f4a81fa536944d7a074582eaec13fedee27fdcb172eb61ec18937d603',
-                         'sha256:fbca98964e0481dea03cd7f4475dfefe685d551f00378b10793a7865f2d25a98',
-                         'sha256:4d94d6cb2db3823351203831beb8628b23ab7e42abe9005de54cae8c874c087b']},
-           {'role': 'frontend',
-            'package_name': 'unirouter-frontend',
-            'repository': 'ghcr.io/foigent/unirouter-frontend',
-            'asset_id': 673552955,
-            'archive_name': 'frontend-image.tar.gz',
-            'archive_bytes': 26976698,
-            'archive_sha256': 'b053512c78241402e6620ee4fb2fab29c193fcffd7fbed9ac345735d70ccd906',
-            'config_id': 'sha256:5e18f4cdf3a5528de39805bcbac27051edf0a47ae0325774717b576eda5e2209',
-            'diff_ids': ['sha256:31ad4a471c6852bfec14d757cc75a566c82a9769f12c3918cf6bf52cc0eeb3d0',
-                         'sha256:513bb45c86b3ab007a1f05b558211f5b69ae412d6834f4f890988a2f765fc399',
-                         'sha256:e0292b802b8d62769f1e2f7ea969575894d0f7d8fb6244c824c95997591ebb5e',
-                         'sha256:ccc7cae931833ad18af797b54e21afa361279bc2161e86ffe7eb89041cd6b962',
-                         'sha256:c66f3fc2d00b6f8f7c46c9d94a23d9b51e66883151fc5edaccdf781e90df929f',
-                         'sha256:0a7d4fc0fa12bb5b447649d680fc84a35167dde454e242fc843dbc670b208864',
-                         'sha256:9c436f5312f14af26c4dd62076f77841be450178171276e676ed18744ab020bc',
-                         'sha256:61d47f9d34fb476a81f30e840d869f301c2bde5b2b6878dd6577cbaf0b69842e',
-                         'sha256:fe4661befb6c96203f2f54c7814207830a596f9e11ff904f8a76079deecfecbc',
-                         'sha256:43d3cf9dcff215125492cf2571e97ae954ae10d02e598ec02a51386411407e0e',
-                         'sha256:c20dda1e340c5da2b6ee73075bbbac154567203a9fb55e921a45e5c2c3640d51',
-                         'sha256:8e15be05832c513528b4fa67aec4e9633357bbeeadc6f8c8dc663bd7bb1da807']}]
-
-          def require(ok, message):
-              if not ok:
-                  raise RuntimeError(message)
-
-          def check_context(env):
-              require(env.get('GITHUB_ACTIONS') == 'true', 'Requires the authorized GitHub Actions context.')
-              require(env.get('GITHUB_REPOSITORY') == REPOSITORY, 'Wrong repository.')
-              require(env.get('GITHUB_REF') == 'refs/heads/main', 'Only protected main is eligible.')
-              require(env.get('GITHUB_EVENT_NAME') == 'workflow_dispatch', 'Only explicit manual dispatch is eligible.')
-              require(env.get('GITHUB_WORKFLOW_REF') == WORKFLOW_REF, 'Wrong workflow identity.')
-              require(re.fullmatch(r'[0-9a-f]{40}', env.get('GITHUB_SHA', '')) is not None, 'Missing workflow commit.')
-
-          def describe():
-              return {'mode': 'offline_review_only', 'repository': REPOSITORY, 'source': SOURCE,
-                      'candidate_run': 40141868711, 'draft_id': DRAFT, 'images': IMAGES,
-                      'permissions': {'contents': 'write', 'packages': 'write'},
-                      'only_existing_public_upload_and_authenticated_identity_verification': True,
-                      'no_build_visibility_change_release_signing_install_or_container_run': True,
-                      'no_credential_access_subprocess_or_filesystem_write_in_describe': True}
-
-          def command(args, env, inp=None, output=None):
-              r = subprocess.run(args, input=inp, stdout=output if output is not None else subprocess.PIPE,
-                                 stderr=subprocess.PIPE, env=env, check=False)
-              # Never print raw child stderr: a download failure could contain a signed URL.
-              require(r.returncode == 0, 'Supported command failed: ' + args[0] + ' ' + args[1])
-              return r.stdout if output is None else b''
-
-          def decode_gh_response(stdout, returncode, allow404=False):
-              parts = re.split(rb'\r?\n\r?\n', stdout, maxsplit=1)
-              require(len(parts) == 2, 'GitHub response headers unavailable.')
-              status = re.match(rb'HTTP/[0-9.]+\s+([0-9]{3})', parts[0])
-              require(status is not None, 'GitHub response status unavailable.')
-              code = int(status.group(1))
-              if allow404 and code == 404:
-                  return None
-              require(code == 200 and returncode == 0, 'GitHub read failed with HTTP ' + str(code))
-              return json.loads(parts[1])
-
-          def gh(env, path, allow404=False):
-              r = subprocess.run(['gh', 'api', '--hostname', 'github.com', '--include', '--method', 'GET',
-                                  '--header', 'X-GitHub-Api-Version: 2022-11-28', path],
-                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, check=False)
-              return decode_gh_response(r.stdout, r.returncode, allow404)
-
-          def package_tag(env, image):
-              path = 'orgs/foigent/packages/container/' + image['package_name']
-              pkg = gh(env, path, allow404=True)
-              require(pkg is not None, 'Both existing public packages are required.')
-              require(pkg['visibility'] == 'public', 'Public-stage publisher requires already public packages.')
-              require((pkg.get('repository') or {}).get('full_name') == REPOSITORY, 'Existing package is not linked to this repository.')
-              # A successful, complete native API listing proves tag absence.
-              # A failed pull, failed API read or incomplete page never does.
-              page = 1; seen = set(); digest = None
-              while True:
-                  rows = gh(env, path + '/versions?state=active&per_page=100&page=' + str(page))
-                  require(isinstance(rows, list) and len(rows) <= 100, 'Invalid package version page.')
-                  for row in rows:
-                      ident = row['id']
-                      require(type(ident) is int and ident > 0 and ident not in seen, 'Package version listing changed or is ambiguous.')
-                      seen.add(ident)
-                      metadata = row['metadata']
-                      require(metadata['package_type'] == 'container', 'Wrong package version type.')
-                      tags = metadata['container']['tags']
-                      require(isinstance(tags, list) and all(isinstance(t, str) for t in tags)
-                              and len(set(tags)) == len(tags), 'Invalid package version tags.')
-                      if TAG in tags:
-                          require(digest is None and re.fullmatch(r'sha256:[0-9a-f]{64}', row['name']) is not None,
-                                  'Exact tag has an invalid or ambiguous digest.')
-                          digest = row['name']
-                  if len(rows) < 100:
-                      return (True, digest)
-                  page += 1
-
-          def inspected(env, reference):
-              q = json.loads(command(['docker', 'image', 'inspect', reference], env))
-              require(isinstance(q, list) and len(q) == 1, 'Ambiguous Docker image identity.')
-              return q[0]
-
-          def check_image(q, image):
-              require(q['Id'] == image['config_id'], 'Image config differs from accepted bytes.')
-              require(q['RootFS']['Layers'] == image['diff_ids'], 'Image filesystem layers differ from accepted bytes.')
-              require(q['Os'] == 'linux' and q['Architecture'] == 'amd64', 'Wrong image platform.')
-
-          def image_pin(q, image):
-              check_image(q, image)
-              digests = {d for d in q.get('RepoDigests', []) if d.startswith(image['repository'] + '@sha256:')}
-              require(len(digests) == 1, 'Registry manifest digest is unavailable or ambiguous.')
-              pin = digests.pop()
-              require(re.fullmatch(re.escape(image['repository']) + r'@sha256:[0-9a-f]{64}', pin) is not None,
-                      'Invalid registry digest reference.')
-              return pin
-
-          def execute():
-              check_context(os.environ)  # Must precede token access, tools, temp files or API calls.
-              require(bool(os.environ.get('GH_TOKEN')), 'Missing temporary repository GITHUB_TOKEN.')
-              for binary in ['gh', 'docker']:
-                  require(shutil.which(binary) is not None, 'Required preinstalled tool unavailable: ' + binary)
-              env = os.environ.copy()
-              repo = gh(env, 'repos/' + REPOSITORY)
-              require(repo['full_name'] == REPOSITORY and repo['visibility'] == 'public', 'Repository identity/cost premise changed.')
-              ref = gh(env, 'repos/' + REPOSITORY + '/git/ref/heads/main')
-              require(ref['object']['sha'] == env['GITHUB_SHA'], 'Main moved; review the current workflow before writing.')
-              release = gh(env, 'repos/' + REPOSITORY + '/releases/' + str(DRAFT))
-              require(release['id'] == DRAFT and release['draft'] is True, 'Exact candidate draft identity changed.')
-              assets = {a['id']: a for a in release['assets']}
-              states = {}
-              # Both targets are checked before any registry write. Never alter visibility,
-              # associate an unrelated package, or silently overwrite an existing tag.
-              for image in IMAGES:
-                  states[image['role']] = package_tag(env, image)
-                  asset = assets.get(image['asset_id'])
-                  require(asset is not None and asset['name'] == image['archive_name'] and asset['size'] == image['archive_bytes'], 'Exact native asset metadata differs.')
-                  require(asset.get('digest') == 'sha256:' + image['archive_sha256'], 'Native asset server digest differs.')
-              parent = Path(env.get('RUNNER_TEMP', ''))
-              require(parent.is_absolute() and parent.is_dir() and not parent.is_symlink(), 'Invalid runner temporary directory.')
-              directory = Path(tempfile.mkdtemp(prefix='ur-public-image-publish-', dir=parent))
-              directory.chmod(0o700)
-              config = directory / 'docker-config'; config.mkdir(mode=0o700)
-              # Explicit empty per-registry entry prevents use of a shared credential
-              # helper; login writes only this protected disposable-runner configuration.
-              config_file = config / 'config.json'
-              with config_file.open('x', encoding='utf-8') as f:
-                  json.dump({'auths': {'ghcr.io': {}}}, f)
-              config_file.chmod(0o600)
-              env['DOCKER_CONFIG'] = str(config)
-              actor = env.get('GITHUB_ACTOR', '')
-              require(bool(actor) and len(actor) <= 128, 'Missing publishing actor.')
-              command(['docker', 'login', 'ghcr.io', '--username', actor, '--password-stdin'],
-                      env, inp=(env['GH_TOKEN'] + '\n').encode())
-              prepared = []
-              for image in IMAGES:
-                  reference = image['repository'] + ':' + TAG
-                  digest = states[image['role']][1]
-                  if digest is not None:
-                      # A partial previous attempt may be resumed only by reusing the
-                      # exact existing tag/content. Missing or differing tags stop here.
-                      command(['docker', 'pull', reference], env)
-                      require(image_pin(inspected(env, reference), image) == image['repository'] + '@' + digest,
-                              'Existing tag digest changed during pull.')
-                      operation = 'reused_existing_exact_public_image_no_push'
-                  else:
-                      path = directory / image['archive_name']
-                      with path.open('xb') as f:
-                          path.chmod(0o600)
-                          command(['gh', 'api', '--hostname', 'github.com', 'repos/' + REPOSITORY + '/releases/assets/' + str(image['asset_id']),
-                                   '--header', 'X-GitHub-Api-Version: 2022-11-28',
-                                   '--header', 'Accept: application/octet-stream'], env, output=f)
-                      require(path.stat().st_size == image['archive_bytes'], 'Downloaded archive length differs.')
-                      h = hashlib.sha256()
-                      with path.open('rb') as f:
-                          for b in iter(lambda: f.read(1048576), b''): h.update(b)
-                      require(h.hexdigest() == image['archive_sha256'], 'Downloaded archive SHA256 differs.')
-                      command(['docker', 'load', '--input', str(path)], env)
-                      check_image(inspected(env, image['config_id']), image)
-                      command(['docker', 'image', 'tag', image['config_id'], reference], env)
-                      operation = 'new_public_push_of_exact_accepted_image'
-                  prepared.append((image, reference, operation))
-              # Validate both actual image contents and fresh target states before
-              # either registry write; a conflict in the second image stops both.
-              for image in IMAGES:
-                  require(package_tag(env, image) == states[image['role']], 'Package or exact tag changed before upload.')
-              results = []
-              for image, reference, operation in prepared:
-                  if states[image['role']][1] is None:
-                      require(package_tag(env, image) == states[image['role']], 'Package or exact tag changed before upload.')
-                      command(['docker', 'push', reference], env)
-                      command(['docker', 'pull', reference], env)
-                  pin = image_pin(inspected(env, reference), image)
-                  # Each push must preserve public visibility and the authorized repository association.
-                  pkg = gh(env, 'orgs/foigent/packages/container/' + image['package_name'])
-                  require(pkg['visibility'] == 'public' and (pkg.get('repository') or {}).get('full_name') == REPOSITORY,
-                          'Post-upload package identity/visibility differs; do not change policy automatically.')
-                  results.append({'role': image['role'], 'repository': image['repository'], 'tag': TAG,
-                                  'registry_digest_reference': pin, 'config_id': image['config_id'],
-                                  'diff_ids': image['diff_ids'], 'native_archive_sha256': image['archive_sha256'],
-                                  'asset_id': image['asset_id'], 'operation': operation})
-              result = {'status': 'public_images_authenticated_identity_verified_only', 'images': results,
-                        'product_source': SOURCE, 'candidate_run': 40141868711, 'draft_id': DRAFT,
-                        'publisher_workflow_commit': env['GITHUB_SHA'],
-                        'existing_public_package_metadata_verified': True, 'anonymous_pull_acceptance': False,
-                        'install_descriptor_or_signed_package_created': False}
-              summary = env.get('GITHUB_STEP_SUMMARY')
-              require(bool(summary), 'Missing job summary channel.')
-              with open(summary, 'a', encoding='utf-8') as f:
-                  f.write('### Exact public image receipt\n\n```json\n' + json.dumps(result, indent=2) + '\n```\n')
-              print(json.dumps(result, indent=2))
-              # Temporary token/config are confined to this disposable runner. No cleanup
-              # of user data, shared Docker configuration or existing images is performed.
-
-          def main():
-              p = argparse.ArgumentParser()
-              group = p.add_mutually_exclusive_group(required=True)
-              group.add_argument('--describe', action='store_true')
-              group.add_argument('--execute-approved-public-stage', action='store_true')
-              args = p.parse_args()
-              if args.describe:
-                  print(json.dumps(describe(), indent=2)); return
-              execute()
-
-          if __name__ == '__main__':
-              main()
-          PY
+        run: python3 -I -B .github/tests/community-image-publisher.py --execute-approved-public-stage

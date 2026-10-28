@@ -280,6 +280,9 @@ func (m *Manager) cutoverLegacyDeploymentInTx(
 	); err != nil {
 		return legacyLifecycleTransition{}, err
 	}
+	if err := requireExpansionUpstreamScope(ctx, tx, request.CustomerOrgID, target); err != nil {
+		return legacyLifecycleTransition{}, err
+	}
 	if err := m.validateAnyExecutableDeploymentRoute(
 		ctx, tx, request.CustomerOrgID, request.PublicModelID, target,
 	); err != nil {

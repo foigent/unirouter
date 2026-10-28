@@ -4,13 +4,14 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/runtimegeneration"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
+	"slices"
 	"testing"
 )
 
 func TestCommercialRetirementControlRejectsExpansionAndOtherSchemas(t *testing.T) {
 	artifact, err := schemaauthority.ExpectedLedger("../../migrations")
 	require.NoError(t, err)
-	artifact = artifact[:len(artifact)-1] // Exact historical M126 artifact, not the current head.
+	artifact = artifact[:slices.Index(artifact, schemaauthority.CommercialLicenseRetirementHead)+1] // Exact historical M126 artifact.
 	predecessor := artifact[:len(artifact)-1]
 	empty := []runtimegeneration.Identity{}
 	for _, command := range []string{"inspect", "read", "prepare", "complete", "stop-check", "stop-apply"} {
@@ -31,6 +32,7 @@ func TestCommercialRetirementControlRejectsExpansionAndOtherSchemas(t *testing.T
 func TestCommunicationMaintenanceCarrierRejectsExpansionAndOtherSchemas(t *testing.T) {
 	artifact, err := schemaauthority.ExpectedLedger("../../migrations")
 	require.NoError(t, err)
+	artifact = artifact[:slices.Index(artifact, schemaauthority.XInsightCommunicationHead)+1]
 	prior := artifact[:len(artifact)-1]
 	require.Equal(t, schemaauthority.CommercialLicenseRetirementHead, prior[len(prior)-1])
 	for _, command := range []string{"inspect", "read", "stop-check", "stop-apply", "prepare", "complete"} {

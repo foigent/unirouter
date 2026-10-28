@@ -97,7 +97,7 @@ func runRuntimeGenerationCLI(ctx context.Context, args []string, cfg *config.Con
 		}
 	}
 	head := actual[len(actual)-1]
-	if head != schemaauthority.CapabilityExpandHead && head != schemaauthority.StreamCounterExpandHead && head != schemaauthority.SourceFactsExpandHead && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead && head != schemaauthority.ScopedContentExpandHead && head != schemaauthority.XInsightPolicyExpandHead && (head != schemaauthority.XInsightAdoptionExpandHead && head != schemaauthority.XInsightCredentialExpandHead && head != schemaauthority.CommercialLicenseRetirementHead && head != schemaauthority.XInsightCommunicationHead) {
+	if head != schemaauthority.CapabilityExpandHead && head != schemaauthority.StreamCounterExpandHead && head != schemaauthority.SourceFactsExpandHead && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead && head != schemaauthority.ScopedContentExpandHead && head != schemaauthority.XInsightPolicyExpandHead && (head != schemaauthority.XInsightAdoptionExpandHead && head != schemaauthority.XInsightCredentialExpandHead && head != schemaauthority.CommercialLicenseRetirementHead && head != schemaauthority.XInsightCommunicationHead && head != schemaauthority.UpstreamReleaseObservationHead) {
 		return fmt.Errorf("runtime generation owner requires the exact expanded schema")
 	}
 	var result any
@@ -154,7 +154,7 @@ func maintenancePredecessorControlAllowed(artifact, actual []string, environment
 		return false
 	}
 	last, prior := artifact[len(artifact)-1], artifact[len(artifact)-2]
-	if !((last == schemaauthority.CommercialLicenseRetirementHead && prior == schemaauthority.XInsightCredentialExpandHead) || (last == schemaauthority.XInsightCommunicationHead && prior == schemaauthority.CommercialLicenseRetirementHead)) {
+	if !((last == schemaauthority.CommercialLicenseRetirementHead && prior == schemaauthority.XInsightCredentialExpandHead) || (last == schemaauthority.XInsightCommunicationHead && prior == schemaauthority.CommercialLicenseRetirementHead) || (last == schemaauthority.UpstreamReleaseObservationHead && prior == schemaauthority.XInsightCommunicationHead)) {
 		return false
 	}
 	if _, err := schemaauthority.RuntimeLedgers(artifact); err != nil {

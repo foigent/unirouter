@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setLocale } from '../../i18n';
@@ -9,7 +9,7 @@ vi.mock('../../api/xInsightCommunication', () => ({ xInsightCommunicationApi: { 
 const state = (project = 1): CommunicationState => ({ project_id: project, installation_id: `installation-${project}`, automatic_enabled: false, cadence_ms: 60000, revision: 1, effective: 'paused', peer_state: 'unknown', last_code: '' });
 const receipt = { idempotency_key: 'once', installation_id: 'installation-1', revision: 1, state: 'empty' as const, units: 1, requests: 1, started_at: '2026-10-19T00:00:00Z' };
 beforeEach(() => { setLocale('en-US'); vi.mocked(xInsightCommunicationApi.get).mockResolvedValue(state()); vi.mocked(xInsightCommunicationApi.once).mockResolvedValue(receipt); });
-afterEach(() => { vi.resetAllMocks(); setLocale('zh-CN'); });
+afterEach(() => { vi.resetAllMocks(); act(() => setLocale('zh-CN')); });
 describe('connection communication controls', () => {
   it('shows manual and unknown peer in English and explicitly runs a finite request', async () => {
     render(<XInsightCommunicationControls projectId={1} expansionEnabled />);
@@ -59,4 +59,17 @@ describe('connection communication controls', () => {
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();
     expect(xInsightCommunicationApi.update).not.toHaveBeenCalled();
   });
+});
+
+it('localizes the finite run outcome and counters without claiming XI has caught up', async () => {
+  vi.mocked(xInsightCommunicationApi.get).mockResolvedValue({ ...state(), last_run: { ...receipt, units: 3, requests: 8 } });
+  render(<XInsightCommunicationControls projectId={1} expansionEnabled />);
+  await screen.findByText('No work in this run');
+  expect(screen.getByText(/3\/8 operation units · 8\/24 requests/)).toBeInTheDocument();
+  expect(screen.getByText('No work in this run')).toHaveAttribute('title', 'empty');
+  act(() => setLocale('zh-CN'));
+  await screen.findByText('本轮结果为空');
+  expect(screen.getByText(/3\/8 个操作单元 · 8\/24 次请求/)).toBeInTheDocument();
+  expect(xInsightCommunicationApi.update).not.toHaveBeenCalled();
+  expect(xInsightCommunicationApi.once).not.toHaveBeenCalled();
 });

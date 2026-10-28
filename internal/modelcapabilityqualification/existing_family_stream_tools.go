@@ -9,6 +9,7 @@ import (
 
 const (
 	DeepSeekProviderCompletionProbeContractID     = "unirouter.capability-probe.deepseek-chat-stream-tools.v2"
+	DeepSeekMeaningfulStreamProbeVersion          = "2.0.0"
 	DeepSeekStreamFunctionToolsProbeContractID    = "unirouter.capability-probe.deepseek-chat-stream-tools.v1"
 	DeepSeekStreamReasoningEffortProbeVersion     = "2.0.0"
 	DeepSeekCurrentFlashDefaultEffortProbeVersion = "3.0.0"
@@ -59,10 +60,14 @@ func BuildExistingFamilyStreamFunctionToolsProbeRequest(b Binding) ([]byte, erro
 	if !ok {
 		return nil, ErrUnsupported
 	}
+	scenario, err := streamToolProbeScenarioForBinding(b)
+	if err != nil {
+		return nil, err
+	}
 	payload := map[string]interface{}{
 		"model": b.ExpectedUpstreamModel, "stream": true, "stream_options": map[string]bool{"include_usage": true},
-		"tool_choice": "auto", protocol.OutputLimitField: 1024, "tools": openAIChatProbeTools(),
-		"messages": []map[string]string{{"role": "user", "content": "Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly."}},
+		"tool_choice": "auto", protocol.OutputLimitField: 1024, "tools": scenario.tools(),
+		"messages": []map[string]string{{"role": "user", "content": scenario.prompt}},
 	}
 	if b.ProbeContractID == DeepSeekProviderCompletionProbeContractID {
 		payload[protocol.OutputLimitField] = 2048

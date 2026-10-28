@@ -21,6 +21,7 @@ import (
 	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/releaseexecution"
 	"github.com/uniroute/unirouter/internal/strictjson"
+	"github.com/uniroute/unirouter/internal/upstreamrelease"
 )
 
 const ManifestSchemaV1 = "unirouter.runtime-support.v1"
@@ -30,6 +31,12 @@ const SourceContentLifecycleContract = "unirouter.source-content-lifecycle.v1"
 const ScopedContentPolicyContract = "unirouter.content-policy.v2"
 const XInsightPolicyManagementContract = "unirouter.xinsight.policy-write.v1"
 const XInsightConnectorControlContract = "unirouter.xinsight.connector-control.v3"
+const UpstreamReleaseObservationContract = upstreamrelease.Schema
+
+func UpstreamReleaseObservationRequirements() []modelprofile.ImplementationReference {
+	return []modelprofile.ImplementationReference{{Kind: "upstream_release", ID: UpstreamReleaseObservationContract}}
+}
+
 const XInsightCommunicationContract = "unirouter.xinsight.communication.v1"
 
 func XInsightCommunicationRequirements() []modelprofile.ImplementationReference {
@@ -80,6 +87,7 @@ func CurrentManifest(schemaHeads []string) Manifest {
 	implementations := modelprofile.Implementations()
 	implementations = append(implementations, modelcapabilityqualification.ProbeImplementations()...)
 	implementations = append(implementations,
+		modelprofile.ImplementationReference{Kind: "upstream_release", ID: UpstreamReleaseObservationContract},
 		modelprofile.ImplementationReference{Kind: "source_facts", ID: sourceassets.SchemaVersion},
 		modelprofile.ImplementationReference{Kind: "source_content", ID: SourceContentLifecycleContract},
 		modelprofile.ImplementationReference{Kind: "source_content", ID: ScopedContentPolicyContract},

@@ -4,6 +4,28 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.15.0] - 2026-10-28
+
+### Added
+- Reuse exact existing runtime, notices, corresponding-source and system-material byte groups in ordinary full-v2 assembly. Compare the selected artifact inventory before private-key access and retain native streaming rehash. Fixed producer, publisher and consumer programs now accept closed stage records, retain actual predecessor evidence and compare full adjacent-stage identity through the existing signed provenance artifact.
+- Add one finite Linux amd64 community upgrade entry for retained M127 installations to M128: read-only check/status, signed full-package and exact predecessor admission, all-writer retirement, cold paired backup with independent restore, preserved configuration and explicit interruption readback. Standard single-writer and the named UR edge/stable-canary layout share the same native owners and host path. The legacy development/test retirement command keeps its existing environment boundary.
+- Admit explicitly proved historical M127 terminations into the same signed, atomic maintenance batch. Frozen original process or native replacement observations remain distinct from the current writers' clean-stop proofs; unknown history still refuses before maintenance.
+- Record a provider-neutral upstream release declaration with endpoint scope, source, server identity and compare-and-swap revision. Rechecking the same declaration preserves its identity; a changed declaration starts a new evidence epoch. Remote model weights remain unpinned.
+- Carry the recorded declaration through native operation/capability Probes, new approvals and immutable release-authoring confirmation. Guard new traffic expansion while preserving historical evidence, existing active execution and safety contraction.
+- Show API alias, upstream declaration, UR contract and Probe applicability separately in English and Chinese. M128 requires exact M127 and stopped, retired writers; ordinary startup and rolling expand cannot apply it.
+
+### Fixed
+- Read native Compose replacement completion by exact container and status tokens across plain-output spacing, retaining every required event and the original command evidence bytes.
+- Parse native PostgreSQL lease timestamps with every microsecond precision on supported Python versions, preserving explicit timezone offsets and exact expiry checks for current and historical writers.
+- Give the isolated restored-content verifier a bounded private parent for its original read-only body/token mounts. Preserve separately mounted token files, original recovery metadata and native binding privacy checks.
+- Compare complete Docker mount inventories without depending on their returned record order throughout community upgrade and resume. Preserve every mount field, duplicate count and exact container/image guard; real mount replacement or permission changes still refuse maintenance.
+- Reset console scroll for new views and restore history positions after lazy content loads within the current session. Keep mobile model drawer controls and long audit identifiers within their containers, with keyboard focus and Escape support.
+- Improve English and Chinese status labels, compatibility notes and communication outcomes; compact empty dashboards and prioritize available integrations. Keep settlement definitions, reporting-only budgets and independent model readiness facts visible.
+- Add a versioned meaningful-task successor for the current DeepSeek streamed-tools capability Probe. Request construction and strict answer validation share one private immutable task/tool/oracle description; legacy Probe bytes, bindings and evidence retain their original semantics.
+- Give native capability Probes their declared 30-second HTTP budget while retaining 15-second operation/discovery checks, parent cancellation, bounded headers and redirect refusal.
+- Provide a selector-only capability Bundle for the retained DeepSeek Definition. Publication, native qualification, approval and Gateway activation remain separate owner actions; the Probe declaration remains separate from the M128 schema change.
+- Local candidate only. This entry does not assert CI, publication, signed-artifact, Target, Provider or Gateway acceptance. A preceding binary cannot execute the new Probe; rollback requires the existing exact Release/implementation compatibility checks.
+
 ## [1.14.2] - 2026-10-25
 
 ### Fixed

@@ -15,9 +15,10 @@ interface IntegrationCardProps {
   description: string;
   boundary: string;
   action?: string;
+  onAction?: () => void;
 }
 
-function IntegrationCard({ title, state, description, boundary, action }: IntegrationCardProps) {
+function IntegrationCard({ title, state, description, boundary, action, onAction }: IntegrationCardProps) {
   useI18n();
   const statePresentation = state === 'available'
     ? { color: 'blue', label: t("可配置") }
@@ -33,9 +34,10 @@ function IntegrationCard({ title, state, description, boundary, action }: Integr
       <Paragraph>{description}</Paragraph>
       <dl className="ur-financial-truth-detail">
         <dt>{t("权限边界")}</dt><dd>{boundary}</dd>
-        <dt>{t("运行方式")}</dt><dd>{t("独立连接服务，不在 UniRouter 模型网关进程内运行")}</dd>
+        <dt>{t("运行方式")}</dt><dd>{state === 'planned' ? t('规划中的连接方式；尚未验证运行。') : t('异步连接，不参与模型请求的同步执行路径')}</dd>
         <dt>{t("当前动作")}</dt><dd>{action || t("等待具备真实企业环境后验证")}</dd>
       </dl>
+      {onAction && <Button type="primary" onClick={onAction}>{t('查看接入与通讯状态')}</Button>}
     </Surface>
   );
 }
@@ -60,20 +62,24 @@ export default function IntegrationsPage() {
       />
       <Banner
         type="info"
-        description={t("所有集成都按最小权限隔离运行，不进入模型请求关键路径。连接 X-Insight、飞书或其他企业系统，不会自动获得模型、管理员或财务权限。")}
+        description={t("集成须遵守最小权限，不应进入模型请求的同步执行路径。连接 X-Insight、飞书或其他企业系统，不会自动获得模型、管理员或财务权限。")}
         closeIcon={null}
         style={{ marginBottom: 16 }}
       />
       <Tabs activeKey={activeTab} onChange={changeTab} type="line">
         <TabPane tab={t("集成目录")} itemKey="catalog">
-          <div className="ur-integration-grid">
+          <div className="ur-integration-catalog">
             <IntegrationCard
               title={t("X-Insight 执行记录订阅")}
               state="available"
               description={t("在 Foigent 中，UniRouter 管理执行、用量与费用事实；X-Insight 异步接收已授权事实，用于证据分析与调查。完成请求摘要仅含元数据；来源类别和正文副本另行明确授权。")}
               boundary={t("UniRouter 提供来源事实，X-Insight 独立管理证据。接入需要已部署的受信 X-Insight、当前项目权限和两端确认；可配置不代表公开托管服务或已经连接。")}
               action={t("在“X-Insight”页签确认接入并查看同步状态")}
+              onAction={() => changeTab('xinsight')}
             />
+            <details className="ur-technical-details">
+              <summary>{t('规划中的集成（3）')}</summary>
+              <div className="ur-integration-grid">
             <IntegrationCard
               title={t("飞书企业机器人")}
               state="planned"
@@ -92,6 +98,8 @@ export default function IntegrationsPage() {
               description={t("未来对接飞书、钉钉、AD 等权威组织源，支持增量同步、离职停权和有效期证据。")}
               boundary={t("UniRouter 保存映射、有效权限与审计；权威人员和组织事实仍由企业目录拥有。")}
             />
+              </div>
+            </details>
           </div>
         </TabPane>
         <TabPane tab="X-Insight" itemKey="xinsight">

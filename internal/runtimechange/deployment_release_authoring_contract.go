@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/uniroute/unirouter/internal/upstreamrelease"
 	"regexp"
 	"slices"
 	"strings"
@@ -45,8 +46,9 @@ type DeploymentReleaseBaseline struct {
 // member. Revisions, profiles, paths, executor and public contracts are read
 // from the locked database snapshot by the server.
 type DeploymentReleaseSelection struct {
-	DeploymentID int64  `json:"deployment_id"`
-	OperationID  string `json:"operation_id"`
+	ExpectedUpstreamObservationIdentity string `json:"expected_upstream_observation_identity,omitempty"`
+	DeploymentID                        int64  `json:"deployment_id"`
+	OperationID                         string `json:"operation_id"`
 }
 
 type DeploymentReleaseAuthoringMutation struct {
@@ -253,6 +255,9 @@ func NormalizeDeploymentReleaseAuthoringMutation(
 	for index := range mutation.Selections {
 		selection := &mutation.Selections[index]
 		selection.OperationID = strings.TrimSpace(selection.OperationID)
+		if !upstreamrelease.ValidIdentity(selection.ExpectedUpstreamObservationIdentity) {
+			return DeploymentReleaseAuthoringMutation{}, fmt.Errorf("%w: upstream observation identity", ErrInvalid)
+		}
 		if mutation.ProfileDefinitionDigest != "" && selection.OperationID != modelprofile.OperationOpenAIChat {
 			return DeploymentReleaseAuthoringMutation{}, fmt.Errorf("%w: data Release v1 supports typed Chat only", ErrInvalid)
 		}

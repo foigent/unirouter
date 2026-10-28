@@ -1,4 +1,6 @@
 import '../i18n/developer';
+import { compatibilityNoteLabel } from '../features/apiDocs/compatibilityNoteLabel';
+import '../i18n/upstreamRelease';
 import { translate as t, useI18n, translateLabel, labelFor } from '../i18n';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
@@ -201,6 +203,8 @@ const endpointGroups: EndpointGroup[] = [
       ['GET', '/api/v1/model-deployments', '读取模型部署五条独立事实轴；安全只读，不受商业授权限制'],
       ['GET', '/api/v1/model-deployments/{deploymentID}/model-discovery', '使用所属连接和明确凭证读取北京业务空间的模型目录；仅管理员可用，目录不证明调用权限或执行资格，不运行推理探测'],
       ['GET', '/api/v1/model-deployments/{deploymentID}', '按持久 deployment ID 和 operation 精确读取，不回退到其他端点'],
+      ['GET', '/api/v1/model-deployments/{deploymentID}/upstream-release-observation', '读取维护者记录的上游发布声明；不会调用供应商或固定远端权重'],
+      ['PUT', '/api/v1/model-deployments/{deploymentID}/upstream-release-observation', '按端点修订和观察 CAS 记录上游声明；保留历史证据与现有流量'],
       ['POST', '/api/v1/model-deployments', '在同一事务中创建或精确重放连接、公共模型、部署、凭证绑定与 operation；仅对编译合同与数据库支持合同完全一致的 M88 DeepSeek Flash Chat streaming tuple 写入 enabled/declared 能力投影，不调用供应商，也不产生探测、批准、路由或 Release；要求角色权限 和 Idempotency-Key（24 小时、按操作者隔离，不保存请求或密钥）'],
       ['POST', '/api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes', '以精确 deployment、operation 与 credential binding 对 Chat Completions、Embeddings、Responses 或 Messages 执行有界真实探测；后两者必须使用 operation 绑定的 endpointprotocol profile 与不可变 public path，本地 fixture 不能充当探测'],
       ['POST', '/api/v1/model-deployments/{deploymentID}/operations/{operationID}/production-approvals', '仅 platform_admin 可追加仍然 current 的 Responses/Messages HTTPS 结构批准；要求角色权限，但单独批准不产生 M77 release-item 执行绑定、在线路由或生产流量证明'],
@@ -632,7 +636,7 @@ export default function ApiDocsPage() {
     { title: t("运行时"), dataIndex: 'runtime_state', width: 150, render: (value: string) => <Tag color={value === 'runtime_supported' ? 'green' : value === 'protocol_compatible' ? 'blue' : 'orange'}>{contractStateLabel(value)}</Tag> },
     { title: t("证据等级"), dataIndex: 'evidence_level', width: 150, render: (value: string) => <Tag color={value === 'verified' ? 'green' : value === 'protocol_compatible' ? 'blue' : 'red'}>{contractStateLabel(value)}</Tag> },
     { title: 'POC', dataIndex: 'recommended_for_poc', width: 80, render: (value: boolean) => value ? t("推荐") : t("不推荐") },
-    { title: t("配置边界"), dataIndex: 'configuration_note' },
+    { title: t("配置边界"), dataIndex: 'configuration_note', render: (value: string) => <span title={value}>{compatibilityNoteLabel(value)}</span> },
   ];
 
   const projectSelector = projects.length > 0 ? (

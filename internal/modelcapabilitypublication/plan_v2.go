@@ -128,7 +128,16 @@ func BuildPlanV2(ctx context.Context, tx pgx.Tx, a AuthorityV2, r PlanRequestV2)
 	if err := schemaauthority.VerifyRuntimeLedger(a.ArtifactMigrationLedger, ledger); err != nil {
 		return p, err
 	}
-	if ledger[len(ledger)-1] != schemaauthority.CapabilityExpandHead && ledger[len(ledger)-1] != schemaauthority.StreamCounterExpandHead && ledger[len(ledger)-1] != schemaauthority.SourceFactsExpandHead && ledger[len(ledger)-1] != schemaauthority.ObservationExpandHead && ledger[len(ledger)-1] != schemaauthority.BudgetSnapshotExpandHead && ledger[len(ledger)-1] != schemaauthority.ContentCaptureExpandHead && ledger[len(ledger)-1] != schemaauthority.ContentReclaimExpandHead && ledger[len(ledger)-1] != schemaauthority.PreDispatchExpandHead && (ledger[len(ledger)-1] != schemaauthority.ScopedContentExpandHead && ledger[len(ledger)-1] != schemaauthority.XInsightPolicyExpandHead && (ledger[len(ledger)-1] != schemaauthority.XInsightAdoptionExpandHead && ledger[len(ledger)-1] != schemaauthority.XInsightCredentialExpandHead && ledger[len(ledger)-1] != schemaauthority.CommercialLicenseRetirementHead && ledger[len(ledger)-1] != schemaauthority.XInsightCommunicationHead)) {
+	switch ledger[len(ledger)-1] {
+	case schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead,
+		schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead,
+		schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead,
+		schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead,
+		schemaauthority.ScopedContentExpandHead, schemaauthority.XInsightPolicyExpandHead,
+		schemaauthority.XInsightAdoptionExpandHead, schemaauthority.XInsightCredentialExpandHead,
+		schemaauthority.CommercialLicenseRetirementHead, schemaauthority.XInsightCommunicationHead,
+		schemaauthority.UpstreamReleaseObservationHead:
+	default:
 		return p, fmt.Errorf("explicit additive expand must precede capability authoring")
 	}
 	target, err := readTargetIdentity(ctx, tx, a.Environment)

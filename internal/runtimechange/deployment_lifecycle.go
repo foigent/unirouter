@@ -69,6 +69,9 @@ func (m *Manager) startDeploymentCanaryInTx(
 	if err := validateDeploymentRoutes(ctx, tx, request.CustomerOrgID, request.PublicModelID, target.Candidate.DeploymentRoutes); err != nil {
 		return DeploymentRelease{}, err
 	}
+	if err := requireExpansionUpstreamScope(ctx, tx, request.CustomerOrgID, target); err != nil {
+		return DeploymentRelease{}, err
+	}
 	if err := m.validateAnyExecutableDeploymentRoute(
 		ctx, tx, request.CustomerOrgID, request.PublicModelID, target,
 	); err != nil {
@@ -175,6 +178,9 @@ func (m *Manager) promoteDeploymentCanaryInTx(
 		return DeploymentRelease{}, err
 	}
 	if err := validateDeploymentRoutes(ctx, tx, request.CustomerOrgID, request.PublicModelID, target.Candidate.DeploymentRoutes); err != nil {
+		return DeploymentRelease{}, err
+	}
+	if err := requireExpansionUpstreamScope(ctx, tx, request.CustomerOrgID, target); err != nil {
 		return DeploymentRelease{}, err
 	}
 	if err := m.validateAnyExecutableDeploymentRoute(

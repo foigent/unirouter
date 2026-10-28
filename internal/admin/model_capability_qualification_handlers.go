@@ -25,6 +25,7 @@ import (
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
 	"github.com/uniroute/unirouter/internal/strictjson"
+	"github.com/uniroute/unirouter/internal/upstreamrelease"
 )
 
 const (
@@ -34,6 +35,21 @@ const (
 	modelCapabilityApprovalReasonMaxBytes  = 512
 )
 
+var modelCapabilityProbeDefaultHTTPClient = newModelCapabilityProbeHTTPClient()
+
+func newModelCapabilityProbeHTTPClient() *http.Client {
+	client := newCanonicalOperationProbeHTTPClient()
+	client.Timeout = modelCapabilityProbeTimeout
+	return client
+}
+
+func (h *Handler) modelCapabilityProbeDoer() modelDeploymentProbeHTTPDoer {
+	if h != nil && h.modelDeploymentProbeHTTPDoer != nil {
+		return h.modelDeploymentProbeHTTPDoer
+	}
+	return modelCapabilityProbeDefaultHTTPClient
+}
+
 var (
 	errModelCapabilityInvalid     = errors.New("model capability qualification request is invalid")
 	errModelCapabilityNotFound    = errors.New("model capability qualification target not found")
@@ -42,12 +58,14 @@ var (
 )
 
 type modelCapabilityProbeRequest struct {
-	CredentialBindingID int64 `json:"credential_binding_id"`
+	ExpectedUpstreamObservationIdentity string `json:"expected_upstream_observation_identity,omitempty"`
+	CredentialBindingID                 int64  `json:"credential_binding_id"`
 }
 
 type modelCapabilityApprovalRequest struct {
-	CapabilityProbeID int64  `json:"capability_probe_id"`
-	Reason            string `json:"reason"`
+	ExpectedUpstreamObservationIdentity string `json:"expected_upstream_observation_identity,omitempty"`
+	CapabilityProbeID                   int64  `json:"capability_probe_id"`
+	Reason                              string `json:"reason"`
 }
 
 type modelCapabilityProbeResult struct {
@@ -80,69 +98,75 @@ type modelCapabilityProbeResult struct {
 }
 
 type modelCapabilityApprovalResult struct {
-	ApprovalID         int64     `json:"approval_id"`
-	CapabilityProbeID  int64     `json:"capability_probe_id"`
-	DeploymentID       int64     `json:"deployment_id"`
-	OperationID        string    `json:"operation_id"`
-	CapabilityID       string    `json:"capability_id"`
-	Qualified          bool      `json:"qualified"`
-	QualificationState string    `json:"qualification_state"`
-	EvidenceRef        string    `json:"evidence_ref"`
-	ApprovedAt         time.Time `json:"approved_at"`
-	IdempotencyReplay  bool      `json:"idempotency_replay"`
+	UpstreamScope      upstreamrelease.Applicability `json:"upstream_scope"`
+	ApprovalID         int64                         `json:"approval_id"`
+	CapabilityProbeID  int64                         `json:"capability_probe_id"`
+	DeploymentID       int64                         `json:"deployment_id"`
+	OperationID        string                        `json:"operation_id"`
+	CapabilityID       string                        `json:"capability_id"`
+	Qualified          bool                          `json:"qualified"`
+	QualificationState string                        `json:"qualification_state"`
+	EvidenceRef        string                        `json:"evidence_ref"`
+	ApprovedAt         time.Time                     `json:"approved_at"`
+	IdempotencyReplay  bool                          `json:"idempotency_replay"`
 }
 
 type modelCapabilityQualificationView struct {
-	ProfileDefinitionDigest    string                    `json:"profile_definition_digest,omitempty"`
-	ContractVersion            string                    `json:"contract_version"`
-	DeploymentID               int64                     `json:"deployment_id"`
-	OperationID                string                    `json:"operation_id"`
-	CapabilityID               string                    `json:"capability_id"`
-	SupportState               string                    `json:"support_state"`
-	SupportRevision            int64                     `json:"support_revision"`
-	ExecutionProfileID         string                    `json:"execution_profile_id"`
-	ExecutionProfileVersion    string                    `json:"execution_profile_version"`
-	ProtocolProfileID          string                    `json:"protocol_profile_id"`
-	ProtocolProfileVersion     string                    `json:"protocol_profile_version"`
-	ProbeContractID            string                    `json:"probe_contract_id,omitempty"`
-	ProbeContractVersion       string                    `json:"probe_contract_version,omitempty"`
-	ProbeAvailable             bool                      `json:"probe_available"`
-	ProbeAvailabilityReason    string                    `json:"probe_availability_reason_code"`
-	State                      string                    `json:"state"`
-	Qualified                  bool                      `json:"qualified"`
-	QualificationState         string                    `json:"qualification_state"`
-	PreferredApprovalID        int64                     `json:"preferred_approval_id,omitempty"`
-	PreferredCapabilityProbeID int64                     `json:"preferred_capability_probe_id,omitempty"`
-	LatestProbe                *modelCapabilityProbeView `json:"latest_probe,omitempty"`
+	UpstreamReleaseObservation upstreamrelease.State         `json:"upstream_release_observation"`
+	UpstreamScope              upstreamrelease.Applicability `json:"upstream_scope"`
+	ProfileDefinitionDigest    string                        `json:"profile_definition_digest,omitempty"`
+	ContractVersion            string                        `json:"contract_version"`
+	DeploymentID               int64                         `json:"deployment_id"`
+	OperationID                string                        `json:"operation_id"`
+	CapabilityID               string                        `json:"capability_id"`
+	SupportState               string                        `json:"support_state"`
+	SupportRevision            int64                         `json:"support_revision"`
+	ExecutionProfileID         string                        `json:"execution_profile_id"`
+	ExecutionProfileVersion    string                        `json:"execution_profile_version"`
+	ProtocolProfileID          string                        `json:"protocol_profile_id"`
+	ProtocolProfileVersion     string                        `json:"protocol_profile_version"`
+	ProbeContractID            string                        `json:"probe_contract_id,omitempty"`
+	ProbeContractVersion       string                        `json:"probe_contract_version,omitempty"`
+	ProbeAvailable             bool                          `json:"probe_available"`
+	ProbeAvailabilityReason    string                        `json:"probe_availability_reason_code"`
+	State                      string                        `json:"state"`
+	Qualified                  bool                          `json:"qualified"`
+	QualificationState         string                        `json:"qualification_state"`
+	PreferredApprovalID        int64                         `json:"preferred_approval_id,omitempty"`
+	PreferredCapabilityProbeID int64                         `json:"preferred_capability_probe_id,omitempty"`
+	LatestProbe                *modelCapabilityProbeView     `json:"latest_probe,omitempty"`
 }
 
 type modelCapabilityProbeView struct {
-	CapabilityProbeID        int64     `json:"capability_probe_id"`
-	ApprovalID               int64     `json:"approval_id"`
-	CredentialBindingID      int64     `json:"credential_binding_id,omitempty"`
-	Success                  bool      `json:"success"`
-	ProviderSuccess          bool      `json:"provider_success"`
-	Current                  bool      `json:"current"`
-	StatusCode               int       `json:"status_code"`
-	LatencyMS                int64     `json:"latency_ms"`
-	ReportedModel            string    `json:"reported_model,omitempty"`
-	ErrorSummary             string    `json:"error_summary,omitempty"`
-	ContractErrorCode        string    `json:"contract_error_code,omitempty"`
-	DiagnosticStage          string    `json:"diagnostic_stage,omitempty"`
-	DiagnosticMember         string    `json:"diagnostic_member,omitempty"`
-	FinishReason             string    `json:"finish_reason,omitempty"`
-	PromptTokens             int64     `json:"prompt_tokens,omitempty"`
-	CompletionTokens         int64     `json:"completion_tokens,omitempty"`
-	TotalTokens              int64     `json:"total_tokens,omitempty"`
-	CacheReadCounterObserved bool      `json:"cache_read_counter_observed"`
-	CachedTokens             int64     `json:"cached_tokens"`
-	ReasoningObserved        bool      `json:"reasoning_observed,omitempty"`
-	ToolCallObserved         bool      `json:"tool_call_observed,omitempty"`
-	StructuredObserved       bool      `json:"structured_output_observed,omitempty"`
-	TestedAt                 time.Time `json:"tested_at"`
+	UpstreamReleaseObservation *upstreamrelease.Observation  `json:"upstream_release_observation"`
+	UpstreamScope              upstreamrelease.Applicability `json:"upstream_scope"`
+	CapabilityProbeID          int64                         `json:"capability_probe_id"`
+	ApprovalID                 int64                         `json:"approval_id"`
+	CredentialBindingID        int64                         `json:"credential_binding_id,omitempty"`
+	Success                    bool                          `json:"success"`
+	ProviderSuccess            bool                          `json:"provider_success"`
+	Current                    bool                          `json:"current"`
+	StatusCode                 int                           `json:"status_code"`
+	LatencyMS                  int64                         `json:"latency_ms"`
+	ReportedModel              string                        `json:"reported_model,omitempty"`
+	ErrorSummary               string                        `json:"error_summary,omitempty"`
+	ContractErrorCode          string                        `json:"contract_error_code,omitempty"`
+	DiagnosticStage            string                        `json:"diagnostic_stage,omitempty"`
+	DiagnosticMember           string                        `json:"diagnostic_member,omitempty"`
+	FinishReason               string                        `json:"finish_reason,omitempty"`
+	PromptTokens               int64                         `json:"prompt_tokens,omitempty"`
+	CompletionTokens           int64                         `json:"completion_tokens,omitempty"`
+	TotalTokens                int64                         `json:"total_tokens,omitempty"`
+	CacheReadCounterObserved   bool                          `json:"cache_read_counter_observed"`
+	CachedTokens               int64                         `json:"cached_tokens"`
+	ReasoningObserved          bool                          `json:"reasoning_observed,omitempty"`
+	ToolCallObserved           bool                          `json:"tool_call_observed,omitempty"`
+	StructuredObserved         bool                          `json:"structured_output_observed,omitempty"`
+	TestedAt                   time.Time                     `json:"tested_at"`
 }
 
 type modelCapabilitySnapshot struct {
+	UpstreamObservation       *upstreamrelease.Observation
 	Definition                modelprofile.Definition
 	DataBinding               modelcapabilityqualification.Binding
 	CustomerOrgID             int64
@@ -522,10 +546,20 @@ SELECT deployment.customer_org_id,deployment.id,deployment.public_model_id,
 			return snapshot, errModelCapabilityUnsupported
 		}
 	}
+	state, _, err := upstreamrelease.Read(ctx, tx, orgID, deploymentID, false)
+	if err != nil {
+		return snapshot, err
+	}
+	snapshot.UpstreamObservation = state.Observation
 	return snapshot, nil
 }
 
 func validateModelCapabilitySnapshot(snapshot modelCapabilitySnapshot) error {
+	if snapshot.UpstreamObservation.Validate(upstreamrelease.Scope{
+		CustomerOrgID: snapshot.CustomerOrgID, DeploymentID: snapshot.DeploymentID, ConnectionID: snapshot.ConnectionID,
+		Provider: snapshot.Provider, BaseURL: snapshot.BaseURL, APIModel: snapshot.UpstreamModel}) != nil {
+		return errModelCapabilityConflict
+	}
 	binding, err := modelcapabilityqualification.Resolve(
 		snapshot.OperationID, snapshot.CapabilityID,
 		snapshot.ExecutionProfileID, snapshot.ExecutionProfileVersion,
@@ -557,6 +591,9 @@ func (h *Handler) probeCanonicalModelCapability(ctx context.Context, orgID, acto
 	snapshot, err := h.loadModelCapabilitySnapshot(ctx, orgID, actorID, deploymentID, operationID, capabilityID, request.CredentialBindingID)
 	if err != nil {
 		return modelCapabilityProbeResult{}, err
+	}
+	if request.ExpectedUpstreamObservationIdentity != upstreamrelease.Identity(snapshot.UpstreamObservation) {
+		return modelCapabilityProbeResult{}, errModelCapabilityConflict
 	}
 	sourceRef, err := middleware.NewOperationID()
 	if err != nil {
@@ -607,7 +644,7 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 	}
 	started := time.Now()
 	outcome.DispatchState = "started"
-	response, err := h.canonicalOperationProbeDoer().Do(request)
+	response, err := h.modelCapabilityProbeDoer().Do(request)
 	if response != nil {
 		outcome.DispatchState = "response_received"
 	}
@@ -1247,8 +1284,10 @@ func (h *Handler) persistModelCapabilityProbeTx(ctx context.Context, tx pgx.Tx, 
 	for key, value := range outcome.RequestSummary {
 		requestSummaryFields[key] = value
 	}
+	requestSummaryFields["upstream_release_observation"] = snapshot.UpstreamObservation
 	requestSummary, _ := json.Marshal(requestSummaryFields)
 	responseSummaryFields := modelCapabilityProbeResponseSummaryFields(outcome, currentProof, reasonCode, shared)
+	responseSummaryFields["upstream_release_observation"] = snapshot.UpstreamObservation
 	responseSummary, _ := json.Marshal(responseSummaryFields)
 	fingerprint := modelCapabilityProbeFingerprint(snapshot, outcome, sourceRef)
 	errorSummary := ""
@@ -1423,7 +1462,7 @@ func summarizeModelCapabilityProbeRequest(snapshot modelCapabilitySnapshot, body
 }
 
 func sameModelCapabilitySnapshot(before, current modelCapabilitySnapshot) bool {
-	return before.Definition.Digest() == current.Definition.Digest() && before.CustomerOrgID == current.CustomerOrgID && before.DeploymentID == current.DeploymentID &&
+	return upstreamrelease.Matches(before.UpstreamObservation, current.UpstreamObservation) && before.Definition.Digest() == current.Definition.Digest() && before.CustomerOrgID == current.CustomerOrgID && before.DeploymentID == current.DeploymentID &&
 		before.PublicModelID == current.PublicModelID && before.ConnectionID == current.ConnectionID &&
 		before.CredentialBindingID == current.CredentialBindingID && before.Provider == current.Provider &&
 		before.BaseURL == current.BaseURL && before.AdapterType == current.AdapterType && bytes.Equal(before.AdapterConfig, current.AdapterConfig) &&
@@ -1450,6 +1489,9 @@ func modelCapabilityProbeFingerprint(snapshot modelCapabilitySnapshot, outcome m
 		strconv.FormatBool(outcome.ContractSuccess), strconv.Itoa(outcome.StatusCode), outcome.ReasonCode,
 		strconv.FormatBool(outcome.CacheReadCounterObserved), strconv.FormatInt(outcome.CachedTokens, 10),
 	}, "\x00")
+	if snapshot.UpstreamObservation != nil {
+		payload += "\x00" + snapshot.UpstreamObservation.Identity
+	}
 	digest := sha256.Sum256([]byte(payload))
 	return "sha256:" + hex.EncodeToString(digest[:])
 }
@@ -1489,6 +1531,18 @@ SELECT approval.approval_id,approval.capability_probe_id,approval.deployment_id,
 			existingActor != actorID || existingActorOrg != actorOrgID || existingReason != request.Reason {
 			return modelCapabilityApprovalResult{}, errModelCapabilityConflict
 		}
+		captured, scopeErr := upstreamrelease.Probe(ctx, tx, true, targetOrgID, deploymentID, request.CapabilityProbeID)
+		if scopeErr != nil {
+			return modelCapabilityApprovalResult{}, scopeErr
+		}
+		if upstreamrelease.Identity(captured) != request.ExpectedUpstreamObservationIdentity {
+			return modelCapabilityApprovalResult{}, errModelCapabilityConflict
+		}
+		current, liveScope, scopeErr := upstreamrelease.Read(ctx, tx, targetOrgID, deploymentID, false)
+		if scopeErr != nil {
+			return modelCapabilityApprovalResult{}, scopeErr
+		}
+		existing.UpstreamScope = upstreamrelease.AssessInScope(liveScope, current.Observation, captured)
 		existing.EvidenceRef = "capability_approval:" + strconv.FormatInt(existing.ApprovalID, 10)
 		existing.IdempotencyReplay = true
 		if err := tx.Commit(ctx); err != nil {
@@ -1498,6 +1552,20 @@ SELECT approval.approval_id,approval.capability_probe_id,approval.deployment_id,
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return modelCapabilityApprovalResult{}, fmt.Errorf("read capability approval replay: %w", err)
+	}
+	currentObservation, currentObservationScope, err := upstreamrelease.Read(ctx, tx, targetOrgID, deploymentID, true)
+	if err != nil {
+		return modelCapabilityApprovalResult{}, err
+	}
+	if currentObservation.Observation.Validate(currentObservationScope) != nil {
+		return modelCapabilityApprovalResult{}, errModelCapabilityConflict
+	}
+	capturedObservation, err := upstreamrelease.Probe(ctx, tx, true, targetOrgID, deploymentID, request.CapabilityProbeID)
+	if err != nil {
+		return modelCapabilityApprovalResult{}, err
+	}
+	if err := upstreamrelease.Require(currentObservation.Observation, capturedObservation, request.ExpectedUpstreamObservationIdentity); err != nil {
+		return modelCapabilityApprovalResult{}, errModelCapabilityConflict
 	}
 	var approvalID int64
 	var approvedAt time.Time
@@ -1547,7 +1615,8 @@ UPDATE model_deployment_capabilities
 		return modelCapabilityApprovalResult{}, errModelCapabilityConflict
 	}
 	result := modelCapabilityApprovalResult{
-		ApprovalID: approvalID, CapabilityProbeID: request.CapabilityProbeID,
+		UpstreamScope: upstreamrelease.Assess(currentObservation.Observation, capturedObservation),
+		ApprovalID:    approvalID, CapabilityProbeID: request.CapabilityProbeID,
 		DeploymentID: deploymentID, OperationID: operationID, CapabilityID: capabilityID,
 		Qualified: true, QualificationState: "qualified", EvidenceRef: evidenceRef, ApprovedAt: approvedAt,
 	}
@@ -1677,6 +1746,19 @@ SELECT approval_id,capability_probe_id,qualification_state,qualified
 		view.QualificationState = approvalState
 	}
 
+	var liveScope upstreamrelease.Scope
+	view.UpstreamReleaseObservation, liveScope, err = upstreamrelease.Read(ctx, tx, orgID, deploymentID, false)
+	if err != nil {
+		return view, err
+	}
+	view.UpstreamScope = upstreamrelease.AssessInScope(liveScope, view.UpstreamReleaseObservation.Observation, nil)
+	if view.Qualified {
+		approvedObservation, e := upstreamrelease.Probe(ctx, tx, true, orgID, deploymentID, view.PreferredCapabilityProbeID)
+		if e != nil {
+			return view, e
+		}
+		view.UpstreamScope = upstreamrelease.AssessInScope(liveScope, view.UpstreamReleaseObservation.Observation, approvedObservation)
+	}
 	latest := modelCapabilityProbeView{}
 	var responseSummary json.RawMessage
 	var latestCurrent bool
@@ -1745,6 +1827,14 @@ SELECT probe.capability_probe_id,probe.credential_binding_id,probe.success,
 	}
 	if err == nil {
 		latest.Current = latestCurrent
+		latest.UpstreamReleaseObservation, err = upstreamrelease.Probe(ctx, tx, true, orgID, deploymentID, latest.CapabilityProbeID)
+		if err != nil {
+			return view, err
+		}
+		latest.UpstreamScope = upstreamrelease.AssessInScope(liveScope, view.UpstreamReleaseObservation.Observation, latest.UpstreamReleaseObservation)
+		if !view.Qualified {
+			view.UpstreamScope = latest.UpstreamScope
+		}
 		var summary struct {
 			FinishReason             string `json:"finish_reason"`
 			ContractErrorCode        string `json:"contract_error_code"`

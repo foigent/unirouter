@@ -1,6 +1,6 @@
 import { ApiError } from '../api/client';
 
-const newID = () => {
+export const newUIInstanceID = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
   return `ui-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 };
@@ -14,7 +14,7 @@ export class IntentRequestIDs {
   get(intent: string) {
     const existing = this.ids.get(intent);
     if (existing) return existing;
-    const value = newID();
+    const value = newUIInstanceID();
     this.ids.set(intent, value);
     return value;
   }

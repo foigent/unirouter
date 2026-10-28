@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -32,7 +33,7 @@ type installedReleaseState struct {
 
 func runUpgradeCLI(ctx context.Context, args []string, cfg *config.Config) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: uniroute upgrade <status|verify|record-applied|preflight-legacy-rollback>")
+		return fmt.Errorf("usage: uniroute upgrade <status|verify|record-applied|maintenance-check|maintenance-retire|preflight-legacy-rollback>")
 	}
 	postgres, err := db.NewPostgres(cfg.DB_DSN, cfg.DBMaxConnections, cfg.DBMaxIdleConns)
 	if err != nil {
@@ -47,13 +48,26 @@ func runUpgradeCLI(ctx context.Context, args []string, cfg *config.Config) error
 		return runInstalledUpgradeVerify(ctx, args[1:], cfg, postgres.Pool)
 	case "record-applied":
 		return runUpgradeRecordApplied(ctx, args[1:], cfg, postgres.Pool)
+	case "maintenance-check", "maintenance-retire":
+		if len(args) != 1 {
+			return fmt.Errorf("community maintenance accepts its bounded input only on stdin")
+		}
+		var input communityMaintenanceInput
+		if err := readBoundedCLIJSON(os.Stdin, 64<<10, &input); err != nil {
+			return err
+		}
+		result, err := runCommunityMaintenance(ctx, postgres.Pool, cfg, input, args[0] == "maintenance-retire")
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(result)
 	case "preflight-legacy-rollback":
 		if len(args) != 1 {
 			return fmt.Errorf("usage: uniroute upgrade preflight-legacy-rollback")
 		}
 		return preflightLegacyPurposeRollback(ctx, postgres.Pool)
 	default:
-		return fmt.Errorf("unknown upgrade command %q; supported: status, verify, record-applied, preflight-legacy-rollback", args[0])
+		return fmt.Errorf("unknown upgrade command %q; supported: status, verify, record-applied, maintenance-check, maintenance-retire, preflight-legacy-rollback", args[0])
 	}
 }
 
@@ -135,6 +149,8 @@ func runUpgradeRecordApplied(ctx context.Context, args []string, cfg *config.Con
 	fs.SetOutput(io.Discard)
 	packagePath := fs.String("package", "", "signed upgrade bundle")
 	recordedBy := fs.String("recorded-by", "", "operator or deployment identity")
+	expectedSourceSequence := fs.Int64("expected-source-sequence", 0, "optional exact installed predecessor sequence")
+	expectedSourcePackage := fs.String("expected-source-package-sha256", "", "optional exact installed predecessor package digest")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -144,6 +160,15 @@ func runUpgradeRecordApplied(ctx context.Context, args []string, cfg *config.Con
 	}
 	if len(*recordedBy) > 128 {
 		return fmt.Errorf("--recorded-by must be at most 128 characters")
+	}
+	if *expectedSourceSequence < 0 || (*expectedSourceSequence == 0) != (*expectedSourcePackage == "") {
+		return fmt.Errorf("expected source sequence and package must be supplied together for an installed predecessor")
+	}
+	if *expectedSourcePackage != "" {
+		digest, err := hex.DecodeString(*expectedSourcePackage)
+		if err != nil || len(digest) != 32 || hex.EncodeToString(digest) != *expectedSourcePackage {
+			return fmt.Errorf("expected source package must be a lowercase SHA-256 digest")
+		}
 	}
 	if strings.TrimSpace(cfg.RuntimeVersion) == "" || strings.TrimSpace(cfg.RuntimeCommit) == "" {
 		return fmt.Errorf("RUNTIME_VERSION and RUNTIME_COMMIT must identify the running release before recording it")
@@ -175,6 +200,9 @@ func runUpgradeRecordApplied(ctx context.Context, args []string, cfg *config.Con
 	state, err := readInstalledReleaseState(ctx, tx, true)
 	if err != nil {
 		return err
+	}
+	if *expectedSourceSequence > 0 && (state.ReleaseSequence != *expectedSourceSequence || state.PackageSHA256 != *expectedSourcePackage) {
+		return fmt.Errorf("installed release predecessor changed before target recording")
 	}
 	schema, err := readCurrentSchema(ctx, tx)
 	if err != nil {

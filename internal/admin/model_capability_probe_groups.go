@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/uniroute/unirouter/internal/upstreamrelease"
 	"slices"
 	"sort"
 
@@ -61,7 +62,7 @@ func probeRequestDigest(body []byte) string {
 // Only hashes leave this function. Secrets and server-owned request bytes never
 // enter the public plan; exact identity and each support revision still pin it.
 func probeMemberPin(s modelCapabilitySnapshot) string {
-	return probeDigest([]any{s.CustomerOrgID, s.DeploymentID, s.PublicModelID, s.ConnectionID,
+	return probeDigest([]any{upstreamrelease.Identity(s.UpstreamObservation), s.CustomerOrgID, s.DeploymentID, s.PublicModelID, s.ConnectionID,
 		s.CredentialBindingID, s.Provider, s.BaseURL, s.AdapterType, string(s.AdapterConfig),
 		s.ConnectionRevision, s.UpstreamModel, s.DeploymentRevision, s.OperationID, s.OperationRevision,
 		s.ProtocolProfileID, s.ProtocolProfileVersion, s.CapabilityID, s.CapabilitySupportRevision,

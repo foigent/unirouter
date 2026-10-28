@@ -5,6 +5,7 @@ package modelcapabilityqualification
 // catalog or a claim that arbitrary capabilities can share an observation.
 func SharedStreamProbeContract(b Binding) (string, error) {
 	if b.ProbeContractVersion != "1.0.0" &&
+		!(b.ProbeContractID == DeepSeekProviderCompletionProbeContractID && b.ProbeContractVersion == DeepSeekMeaningfulStreamProbeVersion) &&
 		!(b.ProbeContractID == KimiStreamFunctionToolsProbeContractID && b.ProbeContractVersion == KimiStreamReasoningEffortProbeVersion) &&
 		!(b.ProbeContractID == DeepSeekStreamFunctionToolsProbeContractID && (b.ProbeContractVersion == DeepSeekStreamReasoningEffortProbeVersion || b.ProbeContractVersion == DeepSeekCurrentFlashDefaultEffortProbeVersion)) {
 		return "", ErrUnsupported

@@ -71,6 +71,23 @@ function renderApp(
 }
 
 describe('App shell', () => {
+  it('renders the shell without the randomUUID API', () => {
+    vi.stubGlobal('crypto', undefined);
+    try { renderApp(); expect(screen.getByRole('toolbar', { name: '全局工具栏' })).toBeTruthy(); }
+    finally { vi.unstubAllGlobals(); }
+  });
+
+  it('identifies the build label without presenting it as a runtime observation', () => {
+    vi.stubEnv('VITE_APP_ENV', 'production');
+    try {
+      renderApp();
+      const tag = screen.getByText('构建环境：生产环境');
+      expect(tag).toHaveAttribute('title', '构建时设置的环境标签，不表示当前服务的运行环境。');
+      fireEvent.click(within(screen.getByRole('toolbar')).getByRole('button', { name: 'English' }));
+      expect(screen.getByText('Build environment: Production')).toHaveAttribute('title', 'This label is set at build time; it does not describe the running service environment.');
+    } finally { vi.unstubAllEnvs(); }
+  });
+
   it('exposes a close action and Escape dismissal for the mobile navigation', () => {
     renderApp();
     const toggle = screen.getByRole('button', { name: '打开导航' });
@@ -182,7 +199,7 @@ describe('App shell', () => {
   it('does not hard-code production when deployment environment is unset', () => {
     renderApp();
 
-    expect(screen.getByText('环境未配置')).toBeTruthy();
+    expect(screen.getByText('构建环境：环境未配置')).toBeTruthy();
     expect(screen.queryByText('生产环境')).toBeNull();
     expect(screen.getByLabelText(`UniRouter 版本 V${__UNIROUTER_VERSION__}`)).toHaveTextContent(`V${__UNIROUTER_VERSION__}`);
   });
@@ -224,7 +241,7 @@ describe('App shell', () => {
     expect(screen.getByText('模型与端点')).toBeTruthy();
     expect(screen.getByText('人员与权限')).toBeTruthy();
     expect(screen.getByText('执行请求')).toBeTruthy();
-    expect(screen.getByText('预算与成本中心')).toBeTruthy();
+    expect(screen.getByText('结算与预算')).toBeTruthy();
     expect(screen.getByText('部署与网络')).toBeTruthy();
     expect(screen.getByText('集成管理')).toBeTruthy();
     expect(screen.getByText('API 与兼容性')).toBeTruthy();

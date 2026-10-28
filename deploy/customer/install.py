@@ -29,7 +29,7 @@ IMAGE_KEYS = {"backend": "UNIROUTER_BACKEND_IMAGE", "frontend": "UNIROUTER_FRONT
               "postgres": "POSTGRES_IMAGE", "redis": "REDIS_IMAGE",
               "prometheus": "PROMETHEUS_IMAGE", "grafana": "GRAFANA_IMAGE"}
 VOLUMES = ("postgres_data", "redis_data", "prometheus_data", "grafana_data")
-SCHEMA = "000127_xinsight_communication_policy"
+SCHEMA = "000128_upstream_release_observation"
 LABEL = "io.unirouter.installation"
 DESCRIPTOR = "payload/install.json"
 PREFIX = "payload/deploy/"
@@ -51,6 +51,10 @@ def digest(path):
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             h.update(block)
         return h.hexdigest()
+
+
+def immutable_image_reference(value):
+    return isinstance(value, str) and re.fullmatch(r"[a-z0-9][a-z0-9._:/-]*@sha256:[a-f0-9]{64}", value) is not None
 
 
 def strict_json(raw):
@@ -145,13 +149,13 @@ class Release:
                     and 0 < first.size <= MAX_METADATA, "Missing bounded release manifest")
             manifest_raw = archive.extractfile(first).read()
             self.manifest = strict_json(manifest_raw)
-        require(self.manifest.get("target_schema") == SCHEMA, "This installer requires the M127 release schema")
+        require(self.manifest.get("target_schema") == SCHEMA, "This installer requires the current artifact release schema")
         verified = fields(run([verifier, "verify", "--public-keys", public_keys,
                                "--package", package, "--target-os", "linux", "--target-arch", arch,
                                "--current-sequence", "0", "--current-schema", SCHEMA],
                               label="signed release verification"))
         # Verification is for the initial release registration after the formal
-        # fresh owner reaches M127, not a claim that an empty DB already has M127.
+        # fresh owner reaches the declared schema; an empty database has no schema yet.
         self.sha = digest(package)
         require(verified.get("verified") == "true" and verified.get("package_sha256") == self.sha,
                 "Release verifier did not confirm the selected package")
@@ -188,7 +192,7 @@ class Release:
         self.images = descriptor["images"]
         require(isinstance(self.images, dict) and set(self.images) == set(SERVICES), "Six signed service images are required")
         for reference in self.images.values():
-            require(isinstance(reference, str) and re.fullmatch(r"[a-z0-9][a-z0-9._:/-]*@sha256:[a-f0-9]{64}", reference),
+            require(immutable_image_reference(reference),
                     "Every signed image must have an immutable digest reference")
         sample = fields("\n".join(line for line in self.read_declared_metadata(PREFIX + ".env.example").decode().splitlines()
                                   if line and not line.startswith("#")))
@@ -369,6 +373,8 @@ class Installer:
         require(mode.st_uid == os.geteuid() and stat.S_IMODE(mode.st_mode) == 0o700,
                 "Original installation directory must be private and owned by the installer user")
         self.state = strict_json(regular(self.directory / "install-state.json").read_bytes())
+        require("upgrade" not in self.state,
+                "This installation has an upgrade witness; use resume-upgrade or upgrade-status, not fresh-install resume")
         expected = {"format": "unirouter.install-state.v1", "directory": str(self.directory),
                     "project": self.project, "port": self.port, "docker_socket": str(self.docker_socket),
                     "package_sha256": self.release.sha}

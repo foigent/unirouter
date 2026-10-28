@@ -17,6 +17,11 @@ on:
       - cmd/uniroute/cli.go
       - cmd/uniroute/first_customer_upgrade_history_integration_test.go
       - cmd/uniroute/upgrade_cli.go
+      - cmd/uniroute/community_maintenance_cli.go
+      - internal/schemaauthority/**
+      - internal/runtimegeneration/**
+      - migrations/**
+      - scripts/source-budget-restore-rebase.sql
       - cmd/uniroute-upgrade/**
       - internal/installstate/**
       - internal/migrate/fresh_install.go
@@ -47,6 +52,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Go
@@ -73,6 +79,7 @@ jobs:
           set -euo pipefail
           test "$RUNNER_ENVIRONMENT" = github-hosted
           test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
+          git cat-file -e d92abe0a5bd4b997893ba6043a213d1a98108883^{commit}
           sudo env PATH="$PATH" GITHUB_ACTIONS=true \
             RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" RUNNER_TEMP="$RUNNER_TEMP" \
             python3 -B .github/tests/community-installer.py \

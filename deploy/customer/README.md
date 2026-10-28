@@ -293,14 +293,15 @@ A customer package supporting D must carry the exact helper below as a declared
 artifact with its size and SHA-256 in the signed upgrade manifest, alongside this
 restoration instruction. This source template does not itself sign or release it.
 
-- Repository/package path: `scripts/source-budget-restore-rebase.sql`
-- SHA-256: `deb0f30c040dd7faa28e177209b2ea7e718bd9eb0ee0686d373b1b39bcec262c`
-- Bytes: `12818`
+- Repository path: `scripts/source-budget-restore-rebase.sql`
+- Signed payload path: `payload/scripts/source-budget-restore-rebase.sql`
+- SHA-256: `95b01f115c916251fe460bbdaf67c91afd3a978cea99d183dd52385e1983753d`
+- Bytes: `14544`
 
 After every supported SQL restore, while all database readers/writers are still
 stopped, run this helper with `psql -v ON_ERROR_STOP=1 -f` before restart. It retains
 the former D coverage epoch and records the database restore boundary. With the
-exact M119, M120, M121, M122, M123, M124, M125 or M126 schema it also changes each C recovery epoch in the same transaction,
+exact M119, M120, M121, M122, M123, M124, M125, M126, M127 or M128 schema it also changes each C recovery epoch in the same transaction,
 invalidating old C cursors and in-flight grants. It does not change money,
 credentials, source identity, A/B cursors, C registration, manifests or object
 allocation epochs. Any helper failure

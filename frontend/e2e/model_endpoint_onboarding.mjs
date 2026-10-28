@@ -141,7 +141,7 @@ try {
   assert.equal(probed.operation_advanced, true);
   await endpointSheet.getByText('当前成功', { exact: true }).waitFor({ state: 'visible' });
 
-  await endpointSheet.getByRole('button', { name: 'close', exact: true }).click();
+  await endpointSheet.getByRole('button', { name: '关闭模型详情', exact: true }).click();
   await endpointSheet.waitFor({ state: 'hidden' });
 
   const [refreshCollection] = await Promise.all([
@@ -208,8 +208,16 @@ try {
   await endpointSheet.getByText(`stable ${releaseRef}`, { exact: true }).waitFor({ state: 'visible' });
   await endpointSheet.getByRole('button', { name: '查看 Stable Release', exact: true }).waitFor({ state: 'visible' });
 
+  await endpointSheet.getByRole('button', { name: '关闭模型详情', exact: true }).click();
+  await endpointSheet.waitFor({ state: 'hidden' });
+  await page.getByRole('toolbar').getByRole('button', { name: 'English', exact: true }).click();
+  await page.getByRole('button', { name: 'View details', exact: true }).click();
+  endpointSheet = page.locator('.semi-sidesheet:visible').filter({ hasText: `Deployment #${deploymentID}` }).last();
+  await endpointSheet.getByRole('button', { name: 'Close model details', exact: true }).click();
+  await endpointSheet.waitFor({ state: 'hidden' });
+
   assert.deepEqual(browserErrors, []);
-  console.log('MODEL_ENDPOINT_CANONICAL_PATH create=ok probe=ok author=ok activate_initial=ok stable=ok');
+  console.log('MODEL_ENDPOINT_CANONICAL_PATH create=ok probe=ok author=ok activate_initial=ok stable=ok close_zh=ok close_en=ok');
 } catch (error) {
   const body = (await page.locator('body').innerText()).slice(0, 4_000);
   throw new Error(`${error.stack || error.message}\napiEvents=${apiEvents.join(' | ')}\nbrowserErrors=${browserErrors.join(' | ')}\nbody=${body}`);

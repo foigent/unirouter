@@ -95,6 +95,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(before[1][before[1].index("-run") + 1], pattern)
         self.assertIn("TestContentControl.*Integration", pattern)
         self.assertIn("TestContentPolicy.*Integration", pattern)
+        self.assertIn("TestCommunityMaintenance.*Integration", pattern)
         self.assertIn("TestContentCaptureMigration.*", pattern)
         self.assertIn("TestHistoricalM115RetirementPermitsOnlyProvedSuffix", pattern)
         self.assertIn("TestRetirementRacesFastAndSlowRenewWithoutReusingStoppedIdentity", pattern)

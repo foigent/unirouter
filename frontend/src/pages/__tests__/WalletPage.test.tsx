@@ -130,7 +130,7 @@ describe('WalletPage', () => {
     render(<WalletPage />);
 
     expect(await screen.findByText(/当前组织尚未建立运行时结算钱包/)).toBeTruthy();
-    expect(screen.queryByText('无法加载预算与成本中心数据')).toBeNull();
+    expect(screen.queryByText('无法加载结算与预算数据')).toBeNull();
     expect(screen.queryByRole('button', { name: '现金入账' })).toBeNull();
     expect(screen.queryByRole('button', { name: '现金调整' })).toBeNull();
     expect(mockTopUp).not.toHaveBeenCalled();

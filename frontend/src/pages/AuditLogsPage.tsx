@@ -322,7 +322,7 @@ export default function AuditLogsPage() {
   );
 
   const columns = [
-    { title: t('动作'), key: 'event', width: 200, render: (_: unknown, row: AuditLog) => <div className="ur-event-copy"><Tag color={actionColor(row.action)}>{row.action}</Tag><small>{formatDateTime(row.created_at)}</small></div> },
+    { title: t('动作'), key: 'event', width: 200, render: (_: unknown, row: AuditLog) => <div className="ur-event-copy"><Tag color={actionColor(row.action)}><span title={row.action}>{row.action}</span></Tag><small>{formatDateTime(row.created_at)}</small></div> },
     { title: t('范围'), key: 'scope', width: 180, render: (_: unknown, row: AuditLog) => <div className="ur-event-copy"><span>{organizationIdentity(row)}</span>{row.project_id ? <small>{projectIdentity(row.project_name, row.project_id)}</small> : null}</div> },
     { title: t('操作者'), key: 'actor', width: 170, render: (_: unknown, row: AuditLog) => <div className="ur-event-copy"><span>{actorIdentity(row)}</span><small>{row.source ? auditSourceLabel(row.source) : '—'}</small></div> },
     { title: t('目标'), key: 'target', width: 160, render: (_: unknown, row: AuditLog) => <div className="ur-event-copy"><span>{row.resource || '—'}</span>{row.resource_id ? <small>#{row.resource_id}</small> : null}</div> },
@@ -506,7 +506,7 @@ export default function AuditLogsPage() {
               <div className="ur-detail-hero">
                 <div>
                   <Text type="tertiary" size="small">{t("事件")}</Text>
-                  <div><Text strong>{selectedLog.action}</Text></div>
+                  <div><Text strong copyable>{selectedLog.action}</Text></div>
                   <Text code size="small">audit:{selectedLog.id}</Text>
                 </div>
                 <StatusTag status={selectedLog.source || 'unknown'}>

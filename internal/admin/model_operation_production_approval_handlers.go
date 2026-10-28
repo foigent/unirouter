@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/uniroute/unirouter/internal/upstreamrelease"
 	"io"
 	"net/http"
 	"strconv"
@@ -30,40 +31,42 @@ var (
 )
 
 type modelOperationProductionApprovalRequest struct {
-	ProbeID                         int64  `json:"probe_id"`
-	ExpectedConnectionRevision      int64  `json:"expected_connection_revision"`
-	ExpectedDeploymentRevision      int64  `json:"expected_deployment_revision"`
-	ExpectedOperationRevision       int64  `json:"expected_operation_revision"`
-	ExpectedExecutorContractVersion string `json:"expected_executor_contract_version"`
-	Reason                          string `json:"reason"`
+	ExpectedUpstreamObservationIdentity string `json:"expected_upstream_observation_identity,omitempty"`
+	ProbeID                             int64  `json:"probe_id"`
+	ExpectedConnectionRevision          int64  `json:"expected_connection_revision"`
+	ExpectedDeploymentRevision          int64  `json:"expected_deployment_revision"`
+	ExpectedOperationRevision           int64  `json:"expected_operation_revision"`
+	ExpectedExecutorContractVersion     string `json:"expected_executor_contract_version"`
+	Reason                              string `json:"reason"`
 }
 
 type modelOperationProductionApprovalResponse struct {
-	ApprovalID                int64     `json:"approval_id"`
-	ProbeID                   int64     `json:"probe_id"`
-	CustomerOrgID             int64     `json:"customer_org_id"`
-	DeploymentID              int64     `json:"deployment_id"`
-	OperationID               string    `json:"operation_id"`
-	PublicPath                string    `json:"public_path"`
-	ProtocolProfileID         string    `json:"protocol_profile_id"`
-	ProtocolProfileVersion    string    `json:"protocol_profile_version"`
-	ExecutorContractVersion   string    `json:"executor_contract_version"`
-	HTTPSOrigin               string    `json:"https_origin"`
-	SourceConnectionRevision  int64     `json:"source_connection_revision"`
-	SourceDeploymentRevision  int64     `json:"source_deployment_revision"`
-	ProbeOperationRevision    int64     `json:"probe_operation_revision"`
-	SourceOperationRevision   int64     `json:"source_operation_revision"`
-	ApprovedOperationRevision int64     `json:"approved_operation_revision"`
-	ApprovedBy                int64     `json:"approved_by"`
-	ApprovedByOrgID           int64     `json:"-"`
-	ApprovedAt                time.Time `json:"approved_at"`
-	Reason                    string    `json:"reason"`
-	Replayed                  bool      `json:"replayed"`
-	Qualified                 bool      `json:"qualified"`
-	QualificationState        string    `json:"qualification_state"`
-	CurrentConnectionRevision int64     `json:"current_connection_revision"`
-	CurrentDeploymentRevision int64     `json:"current_deployment_revision"`
-	CurrentOperationRevision  int64     `json:"current_operation_revision"`
+	UpstreamScope             upstreamrelease.Applicability `json:"upstream_scope"`
+	ApprovalID                int64                         `json:"approval_id"`
+	ProbeID                   int64                         `json:"probe_id"`
+	CustomerOrgID             int64                         `json:"customer_org_id"`
+	DeploymentID              int64                         `json:"deployment_id"`
+	OperationID               string                        `json:"operation_id"`
+	PublicPath                string                        `json:"public_path"`
+	ProtocolProfileID         string                        `json:"protocol_profile_id"`
+	ProtocolProfileVersion    string                        `json:"protocol_profile_version"`
+	ExecutorContractVersion   string                        `json:"executor_contract_version"`
+	HTTPSOrigin               string                        `json:"https_origin"`
+	SourceConnectionRevision  int64                         `json:"source_connection_revision"`
+	SourceDeploymentRevision  int64                         `json:"source_deployment_revision"`
+	ProbeOperationRevision    int64                         `json:"probe_operation_revision"`
+	SourceOperationRevision   int64                         `json:"source_operation_revision"`
+	ApprovedOperationRevision int64                         `json:"approved_operation_revision"`
+	ApprovedBy                int64                         `json:"approved_by"`
+	ApprovedByOrgID           int64                         `json:"-"`
+	ApprovedAt                time.Time                     `json:"approved_at"`
+	Reason                    string                        `json:"reason"`
+	Replayed                  bool                          `json:"replayed"`
+	Qualified                 bool                          `json:"qualified"`
+	QualificationState        string                        `json:"qualification_state"`
+	CurrentConnectionRevision int64                         `json:"current_connection_revision"`
+	CurrentDeploymentRevision int64                         `json:"current_deployment_revision"`
+	CurrentOperationRevision  int64                         `json:"current_operation_revision"`
 }
 
 type modelOperationProductionApprovalProof struct {
@@ -189,6 +192,18 @@ func (h *Handler) approveCanonicalModelOperationProduction(
 		if !modelOperationProductionApprovalReplayMatches(existing, actorID, actorOrgID, targetOrgID, deploymentID, operationID, request) {
 			return modelOperationProductionApprovalResponse{}, false, errModelOperationProductionApprovalConflict
 		}
+		captured, scopeErr := upstreamrelease.Probe(ctx, tx, false, targetOrgID, deploymentID, request.ProbeID)
+		if scopeErr != nil {
+			return modelOperationProductionApprovalResponse{}, false, scopeErr
+		}
+		if upstreamrelease.Identity(captured) != request.ExpectedUpstreamObservationIdentity {
+			return modelOperationProductionApprovalResponse{}, false, errModelOperationProductionApprovalConflict
+		}
+		current, liveScope, scopeErr := upstreamrelease.Read(ctx, tx, targetOrgID, deploymentID, false)
+		if scopeErr != nil {
+			return modelOperationProductionApprovalResponse{}, false, scopeErr
+		}
+		existing.UpstreamScope = upstreamrelease.AssessInScope(liveScope, current.Observation, captured)
 		existing.Replayed = true
 		if err := tx.Commit(ctx); err != nil {
 			return modelOperationProductionApprovalResponse{}, false, fmt.Errorf("commit production approval replay: %w", err)
@@ -225,6 +240,20 @@ func (h *Handler) approveCanonicalModelOperationProduction(
 		return modelOperationProductionApprovalResponse{}, false, errModelOperationProductionApprovalConflict
 	}
 
+	currentObservation, currentObservationScope, err := upstreamrelease.Read(ctx, tx, targetOrgID, deploymentID, true)
+	if err != nil {
+		return modelOperationProductionApprovalResponse{}, false, err
+	}
+	if currentObservation.Observation.Validate(currentObservationScope) != nil {
+		return modelOperationProductionApprovalResponse{}, false, errModelOperationProductionApprovalConflict
+	}
+	capturedObservation, err := upstreamrelease.Probe(ctx, tx, false, targetOrgID, deploymentID, request.ProbeID)
+	if err != nil {
+		return modelOperationProductionApprovalResponse{}, false, err
+	}
+	if err := upstreamrelease.Require(currentObservation.Observation, capturedObservation, request.ExpectedUpstreamObservationIdentity); err != nil {
+		return modelOperationProductionApprovalResponse{}, false, errModelOperationProductionApprovalConflict
+	}
 	var approvalID int64
 	err = tx.QueryRow(ctx, `
 INSERT INTO model_operation_production_approvals (
@@ -245,7 +274,7 @@ RETURNING approval_id`,
 	).Scan(&approvalID)
 	if err != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && (pgErr.Code == "23514" || pgErr.Code == "40001" || pgErr.Code == "42501" || pgErr.Code == "23505") {
+		if errors.As(err, &pgErr) && (pgErr.Code == "55000" || pgErr.Code == "23514" || pgErr.Code == "40001" || pgErr.Code == "42501" || pgErr.Code == "23505") {
 			return modelOperationProductionApprovalResponse{}, false, errModelOperationProductionApprovalConflict
 		}
 		return modelOperationProductionApprovalResponse{}, false, fmt.Errorf("append production approval: %w", err)
@@ -257,6 +286,7 @@ RETURNING approval_id`,
 		}
 		return modelOperationProductionApprovalResponse{}, false, err
 	}
+	response.UpstreamScope = upstreamrelease.Assess(currentObservation.Observation, capturedObservation)
 	if err := insertAuditEntry(ctx, tx, "model_deployment.operation_production_approve", "model_deployment", strconv.FormatInt(deploymentID, 10), map[string]interface{}{
 		"after": map[string]interface{}{
 			"approval_id": approvalID, "probe_id": request.ProbeID,

@@ -4,6 +4,7 @@ import { Tag } from '@douyinfe/semi-ui';
 interface StatusTagProps {
   status: string | number | boolean;
   children?: ReactNode;
+  title?: string;
 }
 
 function colorForStatus(status: string | number | boolean) {
@@ -23,10 +24,10 @@ function colorForStatus(status: string | number | boolean) {
   return 'blue';
 }
 
-export default function StatusTag({ status, children }: StatusTagProps) {
+export default function StatusTag({ status, children, title }: StatusTagProps) {
   return (
     <Tag size="small" color={colorForStatus(status) as never}>
-      {children ?? String(status)}
+      {title ? <span title={title}>{children ?? String(status)}</span> : children ?? String(status)}
     </Tag>
   );
 }

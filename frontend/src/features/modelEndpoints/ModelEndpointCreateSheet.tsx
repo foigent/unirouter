@@ -656,7 +656,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     }
     if (publicModelMode === 'existing'
       && (!selectedExistingPublicModel || !canonicalPublicModelExecutionLimitsReady(selectedExistingPublicModel))) {
-      Toast.error(t("所选公共模型缺少正整数 context/output 执行边界；请先在公共模型目录修复后再复用"));
+      Toast.error(t("所选公共模型缺少正整数 context/output 执行边界；请先在模型目录修复后再复用"));
       return;
     }
     const submittedOriginError = providerPresetBaseURLError(
@@ -983,7 +983,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
             disabled: !executionLimitsReady,
           };
         })}
-        extraText={t("缺少正整数 context_length 或 output_limit 的公共模型不可复用；请先在公共模型目录修复执行边界。")}
+        extraText={t("缺少正整数 context_length 或 output_limit 的公共模型不可复用；请先在模型目录修复执行边界。")}
       />
       <Form.Select field="profile_definition_digest" label={t("执行合同 revision")} initValue=""
         loading={dataProfilesLoading} onChange={selectDataProfile}

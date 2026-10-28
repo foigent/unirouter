@@ -1,7 +1,8 @@
 import '../i18n/integrations';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Banner, Button, InputNumber, Switch, Typography } from '@douyinfe/semi-ui';
-import { translate as t } from '../i18n';
+import { translate as t, useI18n } from '../i18n';
+import { formatDateTime } from '../utils/formatDate';
 import { ApiError } from '../api/transport';
 import { xInsightCommunicationApi, type CommunicationState } from '../api/xInsightCommunication';
 
@@ -11,6 +12,7 @@ export default function XInsightCommunicationControls(props: Props) {
   return <XInsightCommunicationPanel key={props.projectId} {...props} />;
 }
 function XInsightCommunicationPanel({ projectId, expansionEnabled }: Props) {
+  useI18n();
   const [state, setState] = useState<CommunicationState>();
   const [cadence, setCadence] = useState(60);
   const [error, setError] = useState('');
@@ -45,6 +47,7 @@ function XInsightCommunicationPanel({ projectId, expansionEnabled }: Props) {
     catch (e) { setError(e instanceof Error ? e.message : t('执行结果未确认，请重试同一请求')); }
     finally { setRunning(false); }
   }
+  const runLabels = { running: t('本轮执行中'), completed: t('本轮结束'), empty: t('本轮结果为空'), partial: t('本轮部分完成'), failed: t('本轮失败'), interrupted: t('本轮已中断') };
   const active = state && ['running', 'manual_running', 'pausing', 'completion_unknown'].includes(state.effective);
   const labels = { runtime_disabled: t('服务器通讯运行器未启用'), paused: t('已停止自动通讯'), automatic: t('自动通讯已启用'), running: t('自动通讯执行中'), manual_running: t('正在执行一次'), pausing: t('正在停止，等待在途操作完成'), completion_unknown: t('完成情况未知，禁止开始新操作') };
   return <section aria-label={t('UR 出站通讯')} style={{ display: 'grid', gap: 10 }}>
@@ -63,8 +66,8 @@ function XInsightCommunicationPanel({ projectId, expansionEnabled }: Props) {
         {active && <Button disabled={saving} onClick={() => { void update(false); }}>{t('完成当前操作后停止')}</Button>}
       </div>
       <Typography.Text>{t('执行一次最多 30 秒、8 个操作单元、24 次请求；不会保持后台通讯。结果不代表 XI 数据已追平。')}</Typography.Text>
-      <Typography.Text>{t('最近成功的控制通讯')}: {state.last_success_at || t('未知')} · {t('对端状态')}: {state.peer_observed_at ? `${t('仅上次观测')} ${state.peer_observed_at}` : t('未知')}</Typography.Text>
-      {state.last_run && <Typography.Text>{t('最近一次执行')}: {state.last_run.state} · {state.last_run.units}/8 · {state.last_run.requests}/24</Typography.Text>}
+      <Typography.Text>{t('最近成功的控制通讯')}: {state.last_success_at ? formatDateTime(state.last_success_at) : t('未知')} · {t('对端状态')}: {state.peer_observed_at ? `${t('仅上次观测')} ${formatDateTime(state.peer_observed_at)}` : t('未知')}</Typography.Text>
+      {state.last_run && <Typography.Text>{t('最近一次执行')}: <span title={state.last_run.state}>{runLabels[state.last_run.state] || state.last_run.state}</span> · {t('{units}/8 个操作单元 · {requests}/24 次请求', { units: state.last_run.units, requests: state.last_run.requests })}</Typography.Text>}
     </>}
     <Button onClick={() => { void refresh(); }}>{t('刷新本地通讯状态')}</Button>
   </section>;

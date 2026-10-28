@@ -194,7 +194,7 @@ export default function WalletPage() {
       setWallet(nextWallet);
     } catch (error: any) {
       if (version !== requestVersion.current) return;
-      const message = t("预算与成本中心数据加载失败{v0}", { v0: String(error?.message ? `：${error.message}` : '') });
+      const message = t("结算与预算数据加载失败{v0}", { v0: String(error?.message ? `：${error.message}` : '') });
       setLoadError(error?.message || "");
       Toast.error(message);
     } finally {
@@ -272,7 +272,7 @@ export default function WalletPage() {
     const blocker = customerContextBlockerCopy(customerContext.state as Exclude<typeof customerContext.state, 'ready'>);
     return (
       <div className="ur-page ur-finance-workspace">
-        <PageHeader eyebrow={t("成本与财务")} title={t("预算与成本中心")} description={t("结算账户和企业预算必须绑定当前部署唯一客户组织。")} />
+        <PageHeader eyebrow={t("成本与财务")} title={t("结算与预算")} description={t("结算账户和企业预算必须绑定当前部署唯一客户组织。")} />
         <Surface><EmptyState title={blocker.title} description={blocker.description} minHeight={360} /></Surface>
       </div>
     );
@@ -281,7 +281,7 @@ export default function WalletPage() {
   if (loading) {
     return (
       <div className="ur-page ur-finance-workspace">
-        <EmptyState title={t("加载预算与成本中心数据...")} minHeight={360} />
+        <EmptyState title={t("加载结算与预算数据...")} minHeight={360} />
       </div>
     );
   }
@@ -290,8 +290,8 @@ export default function WalletPage() {
     return (
       <div className="ur-page ur-finance-workspace">
         <EmptyState
-          title={t("无法加载预算与成本中心数据")}
-          description={loadError === null ? t("当前结算与预算数据不可用。") : t("预算与成本中心数据加载失败{v0}", {v0: loadError ? `: ${loadError}` : ""})}
+          title={t("无法加载结算与预算数据")}
+          description={loadError === null ? t("当前结算与预算数据不可用。") : t("结算与预算数据加载失败{v0}", {v0: loadError ? `: ${loadError}` : ""})}
           actions={<Button icon={<IconRefresh />} onClick={() => load()}>{t("重试")}</Button>}
           minHeight={360}
         />
@@ -314,8 +314,8 @@ export default function WalletPage() {
     <div className="ur-page ur-finance-workspace">
       <PageHeader
         eyebrow={t("成本与财务")}
-        title={t("预算与成本中心")}
-        description={t("统一查看请求级结算、项目预算和兼容额度；现有 wallet 是运行时结算内核，不代表企业银行账户、总账或 ERP 应付事实。")}
+        title={t("结算与预算")}
+        description={t("查看运行时结算、项目预算与成本中心。")}
         actions={(
           <Space>
             {platform ? <Text type="tertiary">{t("客户范围：")}{displayedOrgName || t("组织 #{v0}", { v0: String(displayedOrgID) })}</Text> : null}
@@ -324,12 +324,12 @@ export default function WalletPage() {
         )}
       />
 
-      <Banner
-        type="info"
-        closeIcon={null}
-        description={t("请求结算、结算流水、兼容额度和项目预算继续按原语义运行；企业财务期间、成本中心和预算版本已作为独立控制层落地，默认仅报表且不冒充银行账户、ERP 总账或请求拦截策略。")}
-        style={{ marginBottom: 16 }}
-      />
+      <p className="ur-boundary-note">{t('结算额度不代表银行账户或 ERP 总账；预算控制默认仅报表。')}</p>
+      <details className="ur-technical-details">
+        <summary>{t('结算口径与功能边界')}</summary>
+        <p>{t("统一查看请求级结算、项目预算和兼容额度；现有 wallet 是运行时结算内核，不代表企业银行账户、总账或 ERP 应付事实。")}</p>
+        <p>{t("请求结算、结算流水、兼容额度和项目预算继续按原语义运行；企业财务期间、成本中心和预算版本已作为独立控制层落地，默认仅报表且不冒充银行账户、ERP 总账或请求拦截策略。")}</p>
+      </details>
 
       <div className="ur-org-line" style={{ marginBottom: 12 }}>
         <Text>{t("当前范围:")} <Tag color="blue">{displayedOrgName || t("组织 #{v0}", { v0: String(displayedOrgID) })}</Tag></Text>

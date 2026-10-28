@@ -56,6 +56,28 @@ def utc():
 def digest(b):
     return hashlib.sha256(b).hexdigest()
 
+_STAGE_INPUTS_BOUND = False
+
+
+def configure_stage_inputs(subject, source_files, images):
+    """Bind validated finite data once; all native observers remain unchanged."""
+    global FIXED, _STAGE_INPUTS_BOUND
+    require(not _STAGE_INPUTS_BOUND, 'stage inputs already bound')
+    import copy
+    expected = copy.deepcopy(FIXED)
+    expected['source'] = copy.deepcopy(subject)
+    expected['source_files'] = copy.deepcopy(source_files)
+    expected['images'] = copy.deepcopy(images)
+    expected['historical_batch_a'] = expected.pop('accepted_batch_a')
+    expected['historical_batch_a']['declared_unique_compressed_layer_bytes'] = expected.pop('declared_unique_compressed_layer_bytes')
+    expected['not_bound']['npm_version'] = 'requires actual source-bound Node/npm probe'
+    FIXED = expected
+    receipt.pop('accepted_batch_a', None)
+    receipt['historical_batch_a'] = copy.deepcopy(expected['historical_batch_a'])
+    receipt['source'] = copy.deepcopy(expected['source'])
+    _STAGE_INPUTS_BOUND = True
+
+
 def require(ok, message):
     if not ok: raise Stop(message)
 

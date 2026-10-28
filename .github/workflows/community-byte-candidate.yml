@@ -3,8 +3,16 @@ name: Community unsigned byte candidate
 on:
   workflow_dispatch:
     inputs:
+      stage_record_b64:
+        description: Exact reviewed producer record, canonical URL-safe base64
+        required: true
+        type: string
+      stage_record_sha256:
+        description: SHA256 of the decoded exact producer record
+        required: true
+        type: string
       expected_workflow_commit:
-        description: Exact reviewed producer/default-main SHA; product source is separately fixed
+        description: Exact reviewed producer/default-main SHA; product source is bound by the stage record
         required: true
         type: string
       admission_sha256:
@@ -26,6 +34,8 @@ jobs:
     permissions:
       contents: write
     env:
+      STAGE_RECORD_B64: ${{ inputs.stage_record_b64 }}
+      STAGE_RECORD_SHA256: ${{ inputs.stage_record_sha256 }}
       EXPECTED_WORKFLOW_COMMIT: ${{ inputs.expected_workflow_commit }}
       ADMISSION_SHA256: ${{ inputs.admission_sha256 }}
     steps:
@@ -38,12 +48,16 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
           path: producer
-      - name: Checkout fixed product source
+      - name: Validate exact producer stage before product checkout
+        id: stage
+        working-directory: producer
+        run: python3 -I -B .github/tests/community-stage-record.py validate --stage producer --dispatch --github-output
+      - name: Checkout record-bound product source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: 21572d9e73ca901583a8b526c9af7cd0319d59f1
+          ref: ${{ steps.stage.outputs.product_commit }}
           persist-credentials: false
-          path: producer/.byte-source-21572d9e
+          path: producer/.byte-product-source
       - name: Validate producer offline guards
         working-directory: producer
         run: |

@@ -6,7 +6,6 @@ import {
 } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 
-const sourceCommit = '21572d9e73ca901583a8b526c9af7cd0319d59f1';
 const sha = (body) => createHash('sha256').update(body).digest('hex');
 const requireFact = (value, reason) => { if (!value) throw new Error(reason); };
 const maximum = { modules: 50000, watchFiles: 50000, packages: 2048,
@@ -14,7 +13,14 @@ const maximum = { modules: 50000, watchFiles: 50000, packages: 2048,
   inputBytes: 256*1024**2, edges: 200000,
   noticeFiles: 8192, noticeOne: 1024**2, noticeTotal: 8*1024**2 };
 
-export function membershipObserver() {
+export function membershipObserver(binding) {
+  requireFact(binding && Object.keys(binding).sort().join(',') === 'lock_sha256,package_sha256,source_commit'
+    && /^[a-f0-9]{40}$/.test(binding.source_commit)
+    && /^[a-f0-9]{64}$/.test(binding.package_sha256)
+    && /^[a-f0-9]{64}$/.test(binding.lock_sha256), 'exact observer input binding required');
+  const sourceCommit = binding.source_commit;
+  const packageSHA = binding.package_sha256;
+  const lockSHA = binding.lock_sha256;
   let config;
   let calls = 0;
   return {
@@ -59,8 +65,8 @@ export function membershipObserver() {
         };
         const originalPackageBody = bounded(join(root, '.ur-source-evidence/original-package.json'), 1024**2);
         const lockBody = bounded(join(root, '.ur-source-evidence/original-package-lock.json'), 1024**2);
-        requireFact(sha(lockBody) === '20becd6a150cf57a8d5925a507f0600528a27d028df92d9a878351453810c0d1'
-          && sha(originalPackageBody) === '7f5fdf0a6c3882f913263546c3940b8f19514a198e1fba5e488be5b1648724ea',
+        requireFact(sha(lockBody) === lockSHA
+          && sha(originalPackageBody) === packageSHA,
           'original source input identity mismatch');
         const postInstallLockBody = bounded(join(root, 'package-lock.json'), 1024**2);
         const postInstallPackageBody = bounded(join(root, 'package.json'), 1024**2);

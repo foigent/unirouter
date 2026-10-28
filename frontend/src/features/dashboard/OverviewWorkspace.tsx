@@ -27,8 +27,9 @@ function deploymentLabel(ch: DashboardChannelHealth) {
   return translateLabel(labels[ch.status] || (ch.available ? '可路由' : '不可路由'));
 }
 
-export default function OverviewWorkspace({ stats, attention, attentionState }: {
+export default function OverviewWorkspace({ stats, attention, attentionState, initialSelection, onSelectionChange }: {
   stats: DashboardStats; attention: DashboardAttention | null; attentionState: AttentionLoadState;
+  initialSelection?: string | null; onSelectionChange?: (model: string | null) => void;
 }) {
   const { t, locale } = useI18n();
   const navigate = useNavigate();
@@ -37,11 +38,16 @@ export default function OverviewWorkspace({ stats, attention, attentionState }: 
   const platform = isPlatformAdminRole(authz.organizationRole);
   const canReadWallet = platform || isBillingRole(authz.organizationRole);
   const canOpen = (path: string) => isRouteAllowedForAuthz(path, authz);
-  const [selected, setSelected] = useState<string | null>(() => [...(stats.model_distribution || [])].sort((a, b) => b.requests - a.requests)[0]?.model || null);
+  // undefined follows the current window's leader; null is an explicit All.
+  // Remember a user's model across windows, even when that window has no rows.
+  const [selected, setSelected] = useState<string | null | undefined>(initialSelection);
+  const chooseModel = (model: string | null) => { setSelected(model); onSelectionChange?.(model); };
   const models = [...(stats.model_distribution || [])].sort((a, b) => b.requests - a.requests || a.model.localeCompare(b.model));
   const requests = modelBreakdown(stats.model_distribution === undefined ? undefined : models, 'requests');
   const costs = modelBreakdown(stats.model_distribution === undefined ? undefined : models, 'cost');
-  const current = models.find(row => row.model === selected);
+  const chosen = models.find(row => row.model === selected);
+  const current = selected === null ? undefined : chosen || models[0];
+  const selectionMissing = typeof selected === 'string' && !chosen;
   const count = (value: number) => value.toLocaleString(locale);
   const duration = (value?: number) => value !== undefined && value > 0 ? `${Math.round(value).toLocaleString(locale)} ms` : '—';
   const rate = (value: number, samples: number) => samples > 0 ? `${(value * 100).toFixed(2)}%` : t('暂无样本');
@@ -52,6 +58,8 @@ export default function OverviewWorkspace({ stats, attention, attentionState }: 
   const hasThreshold = threshold !== null && threshold > 0n;
   const lowBalance = wallet !== null && hasThreshold && wallet <= threshold;
   const trend = (stats.daily_trend || []).map(point => ({ ...point, cost_yuan: microsToChartYuan(point.cost_micros) }));
+  const noWindowActivity = requests.state === 'empty' && costs.state === 'empty' && stats.total_requests === 0 && validAmount(stats.today_cost_micros) && BigInt(stats.today_cost_micros) === 0n;
+  const hasTrendActivity = trend.some(point => point.requests !== 0 || (validAmount(point.cost_micros) && BigInt(point.cost_micros) !== 0n));
   const trendLabel = (value: string) => {
     if (!value.includes('T')) return value.slice(5, 10);
     return new Date(value).toLocaleString(locale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -60,9 +68,16 @@ export default function OverviewWorkspace({ stats, attention, attentionState }: 
 
   return <div className="ur-overview-layout">
     <div className="ur-overview-main">
+      {noWindowActivity && <div className="ur-overview-window-empty">
+        <div><strong>{t('所选时段暂无请求与费用')}</strong><p>{t('可调整时间范围查看历史；当前部署可用状态与近期请求仍独立展示。')}</p></div>
+        <div className="ur-overview-empty-actions">
+          {canOpen('/channels') && <Button onClick={() => navigate('/channels')}>{t('查看模型接入')}</Button>}
+          {canOpen('/docs') && <Button onClick={() => navigate('/docs')}>{t('查看调用指南')}</Button>}
+        </div>
+      </div>}
       <div className="ur-composition-grid">
-        <ModelComposition data={requests} metric="requests" selected={current?.model || null} onSelect={setSelected} fallbackTotal={Number.isSafeInteger(stats.total_requests) ? BigInt(stats.total_requests) : undefined} />
-        <ModelComposition data={costs} metric="cost" selected={current?.model || null} onSelect={setSelected} fallbackTotal={validAmount(stats.today_cost_micros) ? BigInt(stats.today_cost_micros) : undefined} />
+        <ModelComposition data={requests} metric="requests" selected={current?.model || null} onSelect={chooseModel} fallbackTotal={Number.isSafeInteger(stats.total_requests) ? BigInt(stats.total_requests) : undefined} />
+        <ModelComposition data={costs} metric="cost" selected={current?.model || null} onSelect={chooseModel} fallbackTotal={validAmount(stats.today_cost_micros) ? BigInt(stats.today_cost_micros) : undefined} />
       </div>
       <div className="ur-overview-kpis">
         <MetricTile label={t('全模型成功率')} value={rate(stats.success_rate, stats.total_requests)} tone={stats.total_requests === 0 ? 'slate' : stats.success_rate >= 0.99 ? 'green' : 'amber'} meta={t('窗口统计')} />
@@ -70,7 +85,7 @@ export default function OverviewWorkspace({ stats, attention, attentionState }: 
         {platform && <MetricTile label={t('当前可路由部署操作')} value={`${channels.filter(ch => ch.available === true).length}/${channels.length}`} meta={t('当前状态 · 不随时间筛选')} />}
       </div>
       <Surface title={t('请求与费用趋势')} description={t('共用时间范围 · 独立纵轴')}>
-        <div className="ur-overview-trends">
+        {!hasTrendActivity ? <EmptyState title={t('所选时段暂无趋势样本')} description={t('有请求或费用记录后，将按同一时间范围显示两条独立趋势。')} /> : <div className="ur-overview-trends">
           {(['requests', 'cost_yuan'] as const).map(metric => <div className="ur-overview-trend" key={metric}>
             <h3>{t(metric === 'requests' ? '请求数' : '费用 · CNY')}</h3>
             {trend.length === 0 ? <EmptyState title={t('暂无趋势数据')} minHeight={190} /> : <ResponsiveContainer width="100%" height={210}>
@@ -84,11 +99,11 @@ export default function OverviewWorkspace({ stats, attention, attentionState }: 
               </AreaChart>
             </ResponsiveContainer>}
           </div>)}
-        </div>
+        </div>}
       </Surface>
       <Surface title={t('模型运行质量')} description={t('当前窗口所有模型；标识保留原样。')}>
         <div className="ur-table-shell"><Table size="small" rowKey="model" dataSource={models} pagination={false} empty={t('当前没有模型统计')} scroll={{ y: 320 }} columns={[
-          { title: t('模型'), dataIndex: 'model', render: (model: string) => <button type="button" className="ur-model-select" aria-pressed={current?.model === model} onClick={() => setSelected(model)}>{model}</button> },
+          { title: t('模型'), dataIndex: 'model', render: (model: string) => <button type="button" className="ur-model-select" aria-pressed={current?.model === model} onClick={() => chooseModel(model)}>{model}</button> },
           { title: t('请求'), dataIndex: 'requests', render: count },
           { title: t('费用'), dataIndex: 'cost_micros', render: recordedMoney },
           { title: t('成功率'), render: (_: unknown, row) => rate(row.success_rate, row.requests) },
@@ -119,9 +134,10 @@ export default function OverviewWorkspace({ stats, attention, attentionState }: 
       </Surface>
     </div>
     <aside className="ur-overview-inspector" aria-label={t('模型详情')}>
-      <Surface title={t('模型详情')} actions={current && <Button size="small" theme="borderless" onClick={() => setSelected(null)}>{t('全部模型')}</Button>}>
-        <label className="ur-model-picker">{t('选择模型')}<select value={current?.model || ''} onChange={event => setSelected(event.target.value || null)}><option value="">{t('全部模型')}</option>{models.map(model => <option key={model.model} value={model.model}>{model.model}</option>)}</select></label>
-        {!current ? <EmptyState title={t('选择模型')} description={t('从构成图或模型列表选择，查看请求、费用和运行质量。')} minHeight={160} /> : <>
+      <Surface title={t('模型详情')} actions={current && <Button size="small" theme="borderless" onClick={() => chooseModel(null)}>{t('全部模型')}</Button>}>
+        <label className="ur-model-picker">{t('选择模型')}<select value={current?.model || ''} onChange={event => chooseModel(event.target.value || null)}><option value="">{t('全部模型')}</option>{models.map(model => <option key={model.model} value={model.model}>{model.model}</option>)}</select></label>
+        {selectionMissing && current && <p role="status">{t('所选模型 {model} 在当前窗口暂无数据，现显示请求最多的模型。', { model: selected })}</p>}
+        {!current ? <EmptyState title={t('选择模型')} description={models.length === 0 ? t('当前时段没有可选模型；调整时间范围后可查看模型明细。') : t('从构成图或模型列表选择，查看请求、费用和运行质量。')} minHeight={100} /> : <>
           <h3 className="ur-inspector-model">{current.model}</h3>
           <dl className="ur-fact-list">
             <div><dt>{t('请求数')}</dt><dd>{count(current.requests)}</dd></div>

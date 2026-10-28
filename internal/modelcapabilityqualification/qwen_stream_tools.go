@@ -30,10 +30,14 @@ func BuildQwenStreamFunctionToolsProbeRequest(b Binding) ([]byte, error) {
 	if b.ProbeContractID == QwenProviderCompletionProbeContractID {
 		limit -= 10
 	}
+	scenario, err := streamToolProbeScenarioForBinding(b)
+	if err != nil {
+		return nil, err
+	}
 	return json.Marshal(map[string]interface{}{
 		"model": b.ExpectedUpstreamModel, "stream": true, "stream_options": map[string]bool{"include_usage": true},
 		"tool_choice": "auto", "max_completion_tokens": limit, "enable_thinking": true, "thinking_budget": 1024,
-		"tools":    openAIChatProbeTools(),
-		"messages": []map[string]string{{"role": "user", "content": "Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly."}},
+		"tools":    scenario.tools(),
+		"messages": []map[string]string{{"role": "user", "content": scenario.prompt}},
 	})
 }

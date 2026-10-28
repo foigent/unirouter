@@ -38,10 +38,11 @@ class TransitionSelection(unittest.TestCase):
                 work = root / 'fixture'; work.mkdir()
                 fixture = native.Acceptance(root, work, head)
             self.assertEqual(checked_out, {'old-source': native.OLD_COMMIT,
-                'new-source': native.RETIREMENT_COMMIT, 'successor-source': head})
+                'new-source': native.RETIREMENT_COMMIT, 'successor-source': native.SUCCESSOR_COMMIT})
             self.assertEqual(fixture.old_head, native.OLD_HEAD)
             self.assertEqual(fixture.new_head, native.RETIREMENT_HEAD)
-            self.assertEqual(fixture.result['sources']['successor']['commit'], head)
+            self.assertEqual(fixture.result['sources']['successor']['commit'], native.SUCCESSOR_COMMIT)
+            self.assertNotEqual(fixture.result['sources']['successor']['commit'], head)
             self.assertEqual(fixture.result['transitions'], [])
             self.assertTrue(all(command[0] == 'git' for _, command in commands))
 

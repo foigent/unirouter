@@ -1,6 +1,12 @@
 # Linux community installer candidate
 
-Current 1.13.0 delivery requires the M127 maintenance/fresh-install contract. See
+The local 1.15.0 candidate uses M128 for fresh installations and adds a finite
+[M127 → M128 community upgrade](COMMUNITY-UPGRADE.md). The new upgrade entry,
+its recovery module and the existing restore-rebase SQL must be declared in the
+same signed full package. This local candidate does not assert a released
+1.15.0 package, Linux/Docker acceptance or Target deployment.
+
+Historical delivery: 1.13.0 requires the M127 maintenance/fresh-install contract. See
 [connection communication controls](XINSIGHT-COMMUNICATION.md) for manual defaults, migration and recovery. Earlier M126 candidate notes below remain historical.
 
 Status: the accepted 1.10.0 source candidate `71b5a4ee72d649d08e1137e68edb8b4d866f0987`
@@ -69,6 +75,10 @@ interface declares every input's path, size and SHA-256. Include:
 - `payload/install.json`;
 - `payload/deploy/install.py`, `docker-compose.yml`, `.env.example`,
   `preflight.sh` and every required monitoring file under `config/`;
+- for the M128 upgrade entry, `payload/deploy/upgrade.py` and
+  `payload/deploy/recovery.py`; reuse the already required
+  `payload/scripts/source-budget-restore-rebase.sql` from the existing repository
+  restore owner, without a second payload copy;
 - the other required release materials, image/provenance and notices under
   the existing customer release contract.
 
@@ -573,3 +583,105 @@ Evidence and staged files are retained locally under
 `/private/tmp/unirouter-distribution-prep-20261011/`. They are incomplete,
 unsigned preparation, not an installation command or public release. No new
 experience-file entry is warranted.
+
+
+## Candidate: reusable material inputs and fixed stages (1.15.0)
+
+This is a local candidate, not permission to dispatch, sign or publish. Existing
+manual authorization, budget, queue and protected-main requirements remain.
+The three existing workflows keep their jobs, permissions and time limits;
+version, product source and actual image identities are now closed data inputs
+rather than per-release edits to executable code.
+
+Each workflow accepts exactly four inputs: `stage_record_b64`,
+`stage_record_sha256`, `expected_workflow_commit` and `admission_sha256`.
+The decoded record is at most 32 KiB; its canonical unpadded URL-safe base64 is
+at most 43,692 characters. The complete dispatch input is also bounded to
+65,535 characters and 25 properties. Records identify data; an `approved`
+field is rejected and no record grants dispatch or license clearance.
+
+The exact workflow-program checkout precedes loading the shared validator.
+The validator runs before product checkout, stage-token access, downloads,
+builds or writes. Only the validated product commit is used for the producer's
+second checkout. Data travels through environment variables or file arguments,
+never shell interpolation or `eval`.
+
+The producer retains three ordinary files in the existing
+`candidate-evidence.tar.gz`: its exact input record, a semantic result and the
+machine-generated publisher candidate. The semantic result hashes all original
+source-evidence members. Only those three exact chain files and the existing
+outer closed manifest are excluded from that semantic inventory; the outer
+manifest still covers every original member and all three files. There is no
+self-hashing archive or open-ended exclusion rule. The native six-asset set
+stays unchanged.
+
+The publisher checks the native producer run, draft ownership and full asset
+set, then downloads bounded evidence and verifies this complete chain before
+Docker login or either push. Both actual image configs, ordered layers,
+existing public-package association, complete tag pagination, fresh conflict
+checks and uncertain-write refusal remain. Its existing JSON log/summary now
+also contains a closed `stage_result` with actual run and program identities.
+It does not establish anonymous pull or installation acceptance.
+
+Use the shared offline helper to extract the next record and prepare ordinary
+provenance data, without copying individual run IDs or hashes:
+
+```sh
+python3 -I -B .github/tests/community-stage-record.py publisher-candidate \
+  --evidence candidate-evidence.tar.gz --out publisher-record.json
+python3 -I -B .github/tests/community-stage-record.py publication-bindings \
+  --publisher-record publisher-record.json --publisher-result publisher-receipt.json \
+  --out publication-bindings.json
+```
+
+`publisher-receipt.json` is the whole actual JSON receipt exported from the
+existing publisher log/summary, or its `stage_result`. Insert the helper's
+output as `community_stage_chain` in the existing
+`payload/provenance/build-provenance.json` before ordinary full-package
+assembly. Current source, image, obligation/disposition and release policy
+checks remain required. The provenance bytes, artifact inventory and final
+package are freshly bound by the existing v2 manifest and signature.
+
+After actual signed-package/bootstrap readback has filled the existing full
+consumer config, generate its record with `consumer-candidate`,
+`--publisher-record`, `--publisher-result`, `--config` and `--out`. It fills
+predecessor-owned run/image/hash facts from the receipt. It does not allocate a
+release sequence, sign or approve anything. The current consumer requires this
+record, checks the full signed provenance chain including the predecessor's
+program commit, and then retains the existing anonymous pulls, native
+installation, login, first-customer and interruption checks. The old tracked
+1.14.2 config remains read-only historical input; it cannot silently execute as
+the current release.
+
+Material selection uses one current preparation and optionally one explicit
+previous prepared release; it creates no cache or new storage lifecycle:
+
+```sh
+python3 -I -B .github/tests/community-release-materials.py \
+  --inventory current-material-inputs.json --current /absolute/current-preparation \
+  --previous /absolute/previous-preparation --previous-manifest previous-manifest.json \
+  --artifact-inventory-out selected-artifacts.json > selected-sources.json
+```
+
+The inventory is `unirouter.release-material-inputs.v1` with the ordinary
+`artifacts` array. Closed runtime, notices, corresponding-source and system
+material groups reuse prior bytes only when path, size, SHA-256 and media type
+match; available current bytes are also checked. This includes the already
+approved GCC source and system-material archives. Current inclusion and
+license obligations must still be checked; a matching byte group is not
+clearance. Release-specific provenance, dispositions and delivered docs always
+come from the current preparation.
+
+Pass each selected `sources` row as an ordinary native pack `--artifact`
+argument, using an argv array, and pass `--expected-artifacts
+selected-artifacts.json`. The native pack owner compares the complete desired
+inventory after manifest construction and before reading the private key or
+creating output; streaming hash verification still detects later drift.
+The current CLI's ordinary artifact arguments carry no media type; a selected
+nonempty media type therefore refuses instead of being silently dropped.
+The Go `Source` API retains its existing explicit media-type support.
+
+The installed deliverable remains the same complete signed v2 package. Local
+reuse does not implement differential client downloads or prove a reduction in
+Target transfer size. No new trust root, signing key, resource, package
+visibility, scheduler or long-term ledger is introduced.

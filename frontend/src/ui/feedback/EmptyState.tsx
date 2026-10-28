@@ -8,7 +8,7 @@ interface EmptyStateProps {
   minHeight?: number;
 }
 
-export default function EmptyState({ title, description, actions, minHeight = 220 }: EmptyStateProps) {
+export default function EmptyState({ title, description, actions, minHeight = 128 }: EmptyStateProps) {
   return (
     <div className="ur-empty-state" style={{ minHeight }}>
       <Empty title={title} description={description} />

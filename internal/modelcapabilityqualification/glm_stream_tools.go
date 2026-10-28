@@ -41,10 +41,14 @@ func BuildGLMStreamFunctionToolsProbeRequest(b Binding) ([]byte, error) {
 	if !ok || reasoning.ToggleControl.Field != "thinking" || !slices.Contains(reasoning.ToggleControl.AllowedValues, "enabled") {
 		return nil, ErrUnsupported
 	}
+	scenario, err := streamToolProbeScenarioForBinding(b)
+	if err != nil {
+		return nil, err
+	}
 	return json.Marshal(map[string]interface{}{
 		"model": b.ExpectedUpstreamModel, "stream": true, "stream_options": map[string]bool{"include_usage": true},
-		"tool_choice": "auto", "max_tokens": 1024, "thinking": map[string]string{"type": "enabled"}, "tools": openAIChatProbeTools(),
-		"messages": []map[string]string{{"role": "user", "content": "Think briefly, then call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly."}},
+		"tool_choice": "auto", "max_tokens": 1024, "thinking": map[string]string{"type": "enabled"}, "tools": scenario.tools(),
+		"messages": []map[string]string{{"role": "user", "content": scenario.prompt}},
 	})
 }
 

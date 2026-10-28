@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -79,7 +80,7 @@ func (tx *ambiguousCommitTx) Commit(ctx context.Context) error {
 
 func TestAuthorizeOwnerSurvivesCommitAmbiguityAcrossCompatibleExpandIntegration(t *testing.T) {
 	fixture := newPreRetirementExecutionFixture(t, true, false)
-	dir := "../../migrations"
+	dir := testutil.PreRetirementMigrationsDir(t)
 	require.NoError(t, testutil.RewindEmptySourceFactsForLegacyTest(t.Context(), fixture.pool, dir))
 	counterDown, err := os.ReadFile(filepath.Join(dir, schemaauthority.StreamCounterExpandHead+".down.sql"))
 	require.NoError(t, err)
@@ -89,9 +90,11 @@ func TestAuthorizeOwnerSurvivesCommitAmbiguityAcrossCompatibleExpandIntegration(
 	require.NoError(t, err)
 	_, err = fixture.pool.Exec(t.Context(), string(down))
 	require.NoError(t, err)
-	ledger, err := schemaauthority.ExpectedLedger(dir)
+	ledger, err := testutil.PreRetirementLedger(t)
 	require.NoError(t, err)
-	ledger = ledger[:len(ledger)-2] // Preserve this historical M113→M114 commit-ambiguity fixture.
+	capabilityHead := slices.Index(ledger, schemaauthority.CapabilityExpandHead)
+	require.GreaterOrEqual(t, capabilityHead, 1)
+	ledger = ledger[:capabilityHead+1] // Exact historical M113→M114 artifact.
 	wire, err := os.ReadFile(filepath.Join(dir, schemaauthority.CapabilityExpandHead+".up.sql"))
 	require.NoError(t, err)
 	process := runtimegeneration.Identity{Instance: "uri_" + strings.Repeat("a", 32), Artifact: "sha256:" + strings.Repeat("b", 64)}
@@ -100,6 +103,7 @@ func TestAuthorizeOwnerSurvivesCommitAmbiguityAcrossCompatibleExpandIntegration(
 	identity := fixture.freeze(t, "bridge-ambiguous-owner")
 	starter := &ambiguousCommitStarter{pool: fixture.pool, mode: commitThenError, afterCommit: func(ctx context.Context) error {
 		return migrate.RunCompatibleExpand(ctx, fixture.pool, dir, migrate.CompatibleExpandHooks{
+			Version:        schemaauthority.CapabilityExpandHead,
 			ExpectedSHA256: fmt.Sprintf("sha256:%x", sha256.Sum256(wire)), Before: func(context.Context, *pgxpool.Conn) error { return nil },
 			After: func(ctx context.Context, tx pgx.Tx) error {
 				return runtimegeneration.BootstrapVerifiedBridge(ctx, tx, process, manifest, ledger)

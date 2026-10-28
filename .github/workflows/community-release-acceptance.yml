@@ -1,8 +1,25 @@
 name: Formal Community Release Acceptance
-run-name: UR 1.14.2 real public release consumer
+run-name: Consume exact record-bound signed public community release
 
 on:
   workflow_dispatch:
+    inputs:
+      stage_record_b64:
+        description: Exact reviewed stage record, canonical URL-safe base64
+        required: true
+        type: string
+      stage_record_sha256:
+        description: SHA256 of the decoded exact stage record
+        required: true
+        type: string
+      expected_workflow_commit:
+        description: Exact reviewed protected-main workflow program commit
+        required: true
+        type: string
+      admission_sha256:
+        description: Existing exact authorization, budget and queue admission digest
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -13,9 +30,14 @@ concurrency:
 
 jobs:
   public-release-consumer:
-    if: github.repository == 'foigent/unirouter' && github.ref == 'refs/heads/main' && github.event.repository.private == false
+    if: github.repository == 'foigent/unirouter' && github.ref == 'refs/heads/main' && github.event.repository.private == false && github.run_attempt == 1 && github.actor_id == '252312344'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      STAGE_RECORD_B64: ${{ inputs.stage_record_b64 }}
+      STAGE_RECORD_SHA256: ${{ inputs.stage_record_sha256 }}
+      EXPECTED_WORKFLOW_COMMIT: ${{ inputs.expected_workflow_commit }}
+      ADMISSION_SHA256: ${{ inputs.admission_sha256 }}
     steps:
       - name: Check out exact reviewed workflow commit
         uses: actions/checkout@v7
@@ -23,13 +45,16 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
+      - name: Validate exact consumer stage before downloads or tools
+        run: python3 -I -B .github/tests/community-stage-record.py validate --stage consumer --dispatch
+
+      - name: Refuse incomplete real release inputs before any consumer effect
+        run: python3 -I -B .github/tests/community-release-acceptance.py validate --stage-dispatch
+
       - name: Set up supported Python
         uses: actions/setup-python@v7
         with:
           python-version: '3.10'
-
-      - name: Refuse incomplete real release inputs before any consumer effect
-        run: python3 -I -B .github/tests/community-release-acceptance.py validate
 
       - name: Consume exact real signed public release on this disposable runner
         shell: bash
@@ -41,7 +66,12 @@ jobs:
             GITHUB_REF="$GITHUB_REF" GITHUB_SHA="$GITHUB_SHA" GITHUB_EVENT_NAME="$GITHUB_EVENT_NAME" \
             GITHUB_WORKFLOW_REF="$GITHUB_WORKFLOW_REF" GITHUB_WORKSPACE="$GITHUB_WORKSPACE" \
             GITHUB_RUN_ID="$GITHUB_RUN_ID" GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
-            python3 -I -B .github/tests/community-release-acceptance.py execute
+            GITHUB_REPOSITORY_ID="$GITHUB_REPOSITORY_ID" GITHUB_ACTOR_ID="$GITHUB_ACTOR_ID" \
+            GITHUB_WORKFLOW_SHA="$GITHUB_WORKFLOW_SHA" GITHUB_EVENT_PATH="$GITHUB_EVENT_PATH" \
+            RUNNER_OS="$RUNNER_OS" RUNNER_ARCH="$RUNNER_ARCH" \
+            STAGE_RECORD_B64="$STAGE_RECORD_B64" STAGE_RECORD_SHA256="$STAGE_RECORD_SHA256" \
+            EXPECTED_WORKFLOW_COMMIT="$EXPECTED_WORKFLOW_COMMIT" ADMISSION_SHA256="$ADMISSION_SHA256" \
+            python3 -I -B .github/tests/community-release-acceptance.py execute --stage-dispatch
 
       # The complete allowlisted report is in the native job log. No new
       # artifact/cache, real key, image build, registry login, publish or Target.

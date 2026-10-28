@@ -346,5 +346,26 @@ class BootstrapTests(unittest.TestCase):
             self.assertNotIn('shell',kwargs)
 
 
+    def test_upgrade_delegates_one_signed_program_with_fixed_argv(self):
+        self.output.mkdir(mode=0o700)
+        program = self.output / b.UPGRADER
+        program.parent.mkdir(parents=True)
+        program.write_text("synthetic signed payload")
+        for action in b.UPGRADE_ACTIONS:
+            with self.subTest(action=action), mock.patch.object(b.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)) as run:
+                self.assertEqual(0, b.delegate_upgrade(action, self.output, Path('/opt/ur'), Path('/retained/source.tar.gz'), 'ur_edge_pair', Path('/opt/ur-edge'), Path('/original/historical-exits.json')))
+                argv = run.call_args.args[0]
+                self.assertEqual([sys.executable, '-I', '-B', str(program), action], argv[:5])
+                self.assertIn('--source-package', argv)
+                self.assertNotIn('--name', argv)
+                self.assertNotIn('--port', argv)
+                self.assertEqual('ur_edge_pair', argv[argv.index('--layout') + 1])
+                self.assertEqual('/original/historical-exits.json', argv[argv.index('--historical-exits') + 1])
+                self.assertNotIn('shell', run.call_args.kwargs)
+        program.unlink()
+        with mock.patch.object(b.subprocess, 'run') as run:
+            with self.assertRaises(b.BootstrapError): b.delegate_upgrade('upgrade', self.output, Path('/opt/ur'), None, 'community_single', None)
+            run.assert_not_called()
+
 if __name__ == '__main__':
     unittest.main()

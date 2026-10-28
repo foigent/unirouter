@@ -15,6 +15,7 @@ import (
 	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelqualification"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
+	"github.com/uniroute/unirouter/internal/upstreamrelease"
 )
 
 type deploymentReleaseAuthoringClaim struct {
@@ -283,6 +284,9 @@ SELECT model_name,lifecycle,context_length,output_limit,
 	if err := validateDeploymentRouteInputs(
 		ctx, tx, command.CustomerOrgID, command.Mutation.PublicModelID, routes,
 	); err != nil {
+		return DeploymentRelease{}, err
+	}
+	if err := requireAuthoringUpstreamScope(ctx, tx, command); err != nil {
 		return DeploymentRelease{}, err
 	}
 	for index := range routes {
@@ -620,6 +624,14 @@ func insertDeploymentReleaseAuthoringAudit(
 	command DeploymentReleaseAuthoringCommand,
 	release DeploymentRelease,
 ) (int64, error) {
+	observations := map[string]*upstreamrelease.Observation{}
+	for _, selection := range command.Mutation.Selections {
+		state, _, err := upstreamrelease.Read(ctx, tx, command.CustomerOrgID, selection.DeploymentID, false)
+		if err != nil {
+			return 0, err
+		}
+		observations[strconv.FormatInt(selection.DeploymentID, 10)] = state.Observation
+	}
 	detail, err := json.Marshal(map[string]interface{}{
 		"receipt_id": receiptID, "contract_version": DeploymentReleaseAuthoringReceiptContractVersion,
 		"server_operation_id": command.ServerOperationID, "runtime_mutation": "none",
@@ -627,6 +639,7 @@ func insertDeploymentReleaseAuthoringAudit(
 		"release_ref":     release.ReleaseRef, "candidate_hash": release.CandidateHash,
 		"route_items_hash": release.RouteItemsHash, "route_items_count": release.RouteItemsCount,
 		"baseline": command.Mutation.Baseline, "selections": command.Mutation.Selections,
+		"upstream_release_observations": observations,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("%w: encode deployment release authoring audit: %v", ErrUnavailable, err)

@@ -89,6 +89,9 @@ func (m *Manager) activateInitialDeploymentStableInTx(
 	); err != nil {
 		return DeploymentRelease{}, err
 	}
+	if err := requireExpansionUpstreamScope(ctx, tx, request.CustomerOrgID, target); err != nil {
+		return DeploymentRelease{}, err
+	}
 	if err := m.validateAnyExecutableDeploymentRoute(
 		ctx, tx, request.CustomerOrgID, request.PublicModelID, target,
 	); err != nil {

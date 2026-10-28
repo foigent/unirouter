@@ -20,9 +20,12 @@ describe('IntegrationsPage', () => {
     expect(screen.getByText(/不会自动获得模型、管理员或财务权限/)).toBeTruthy();
     expect(screen.getByText(/凭据与事件处理留在 Adapter/)).toBeTruthy();
     expect(screen.getByText('可配置')).toBeTruthy();
+    expect(screen.getByText('异步连接，不参与模型请求的同步执行路径')).toBeInTheDocument();
+    expect(screen.getAllByText('规划中的连接方式；尚未验证运行。')).toHaveLength(3);
     expect(dataExchangeRender).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'X-Insight' }));
+    expect(screen.getByText('规划中的集成（3）').closest('details')).not.toHaveAttribute('open');
+    fireEvent.click(screen.getByRole('button', { name: '查看接入与通讯状态' }));
     expect(screen.getByText('X-Insight 连接工作区')).toBeTruthy();
     expect(dataExchangeRender).toHaveBeenCalled();
   });

@@ -283,10 +283,7 @@ func openAIChatRuntimeProbePrompt() string {
 }
 
 func openAIChatProbeTools() []map[string]interface{} {
-	return []map[string]interface{}{{"type": "function", "function": map[string]interface{}{
-		"name": "unirouter_probe_echo", "description": "Return the supplied probe value through a function call.",
-		"parameters": map[string]interface{}{"type": "object", "properties": map[string]interface{}{"value": map[string]string{"type": "string"}}, "required": []string{"value"}, "additionalProperties": false},
-	}}}
+	return legacyStreamToolProbeScenario().tools()
 }
 
 // BuildOpenAIChatFunctionToolsProbeRequest derives the exact fixed request

@@ -163,7 +163,7 @@ export default function GrantsPage() {
       <PageHeader
         eyebrow={t("成本与财务")}
         title={t("赠送额度")}
-        description={t("查看并发放兼容赠送额度。正式入口已合并到“预算与成本中心”，本路径仅保留旧链接兼容。")}
+        description={t("查看并发放兼容赠送额度。正式入口已合并到“结算与预算”，本路径仅保留旧链接兼容。")}
       />
       <GrantCreditsPanel />
     </div>
