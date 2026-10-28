@@ -386,13 +386,35 @@ class InstallerFixtureContract(unittest.TestCase):
         self.assertEqual(args[args.index('--layout')+1],'ur_edge_pair')
         self.assertEqual(args[args.index('--historical-exits')+1],Path('/original/history.json'))
 
-    def test_unknown_native_failure_never_waits_or_repeats_mutation(self):
-        work=object.__new__(fixture.Acceptance);work.upgrade_command=lambda *args,**kwargs:['fixture']
-        calls=[];work.run=lambda *args,**kw:(calls.append(args) or (1,'different native failure'))
-        work.wait_stopped_leases=lambda *args:self.fail('unknown failure must not be retried')
-        with self.assertRaisesRegex(fixture.Failed,'outside its known lease wait'):
-            work.run_native_upgrade(Path('/original'))
-        self.assertEqual(len(calls),1)
+    def test_native_upgrade_uses_one_safe_error_boundary_for_all_control_flow(self):
+        lease="Upgrade stopped: A stopped writer's original native lease is still live; wait and read back before retiring"
+        unknown='Upgrade stopped: This upgrade entry supports Linux amd64'
+        resume_error='Upgrade stopped: Native retirement commit is unconfirmed'
+        cases=[('unknown initial refusal',[(1,unknown)],['upgrade'],'run actual shipped upgrade failed: '+unknown),
+               ('known lease then success',[(1,lease),(0,'')],['upgrade','wait','resume-upgrade'],None),
+               ('known lease then resume refusal',[(1,lease),(1,resume_error)],['upgrade','wait','resume-upgrade'],
+                'resume after proved native lease expiry failed: '+resume_error),
+               ('initial success',[(0,'')],['upgrade'],None)]
+        for label,replies,expected_calls,expected_error in cases:
+            with self.subTest(label=label),tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp);work=object.__new__(fixture.Acceptance)
+                work.repo,work.logs,work.release,work.env,work.result=root,root/'logs',root/'release',{},{}
+                work.logs.mkdir();work.verifier=root/'verifier';work.ring=root/'public-ring'
+                calls=[];remaining=list(replies)
+                def child(argv,**kwargs):
+                    self.assertEqual(argv[:4],[fixture.sys.executable,'-I','-B',str(work.release/'payload/deploy/upgrade.py')])
+                    calls.append(argv[4]);code,error=remaining.pop(0)
+                    kwargs['stdout'].write(b'synthetic-private-stdout\n' if code else b'{"state":"completed"}\n')
+                    kwargs['stderr'].write((error+'\nsynthetic-private-stderr\n').encode())
+                    return subprocess.CompletedProcess(argv,code)
+                work.wait_stopped_leases=lambda directory:calls.append('wait')
+                with patch.object(fixture.subprocess,'run',side_effect=child):
+                    if expected_error:
+                        with self.assertRaises(fixture.Failed) as raised:work.run_native_upgrade(root/'installation')
+                        self.assertEqual(str(raised.exception),expected_error)
+                        self.assertNotIn('synthetic-private',str(raised.exception))
+                    else:work.run_native_upgrade(root/'installation')
+                self.assertEqual(calls,expected_calls);self.assertEqual(remaining,[]);self.assertEqual(work.result,{})
 
     def test_real_history_driver_captures_both_kinds_for_the_actual_shipped_validator(self):
         # Native effects are simulated only in this offline driver test. The

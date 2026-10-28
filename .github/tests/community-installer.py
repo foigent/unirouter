@@ -851,10 +851,12 @@ clock_timestamp()+interval '1 day','synthetic-linux-history',clock_timestamp());
             time.sleep(delay + 0.05)
 
     def run_native_upgrade(self, directory, edge=None, history=None):
-        code, output = self.run("run actual shipped upgrade", self.upgrade_command("upgrade", directory, edge, history=history), ok=False)
-        if code:
-            require("Upgrade stopped: A stopped writer's original native lease is still live; wait and read back before retiring" in output,
-                    "native upgrade failed outside its known lease wait")
+        label = "run actual shipped upgrade"
+        try:
+            self.run(label, self.upgrade_command("upgrade", directory, edge, history=history))
+        except Failed as exc:
+            if str(exc) != label + " failed: Upgrade stopped: A stopped writer's original native lease is still live; wait and read back before retiring":
+                raise
             self.wait_stopped_leases(directory)
             self.run("resume after proved native lease expiry", self.upgrade_command("resume-upgrade", directory, edge, history=history))
 
