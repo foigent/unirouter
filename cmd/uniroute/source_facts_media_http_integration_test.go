@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/png"
@@ -25,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/admin"
@@ -58,7 +60,7 @@ func TestSourceFactsMediaHTTPIntegration(t *testing.T) {
 				_, nonceErr := rand.Read(nonce)
 				require.NoError(t, nonceErr)
 				idempotencyKey := "same-media-" + hex.EncodeToString(nonce)
-				pool := testutil.SetupMigratedTestDB(t)
+				pool := sourceHTTPContentDiagnosticPool(t, testutil.SetupMigratedTestDB(t))
 				sourceHTTPIsolateRedisIdentities(t, pool)
 				org, owner, project := seedPRD2P0OrgProjectUser(t, pool, auth.RoleDeveloper)
 				seedPRD2P0ModelGovernance(t, pool, org, project)
@@ -113,7 +115,7 @@ func TestSourceFactsMediaHTTPIntegration(t *testing.T) {
 					require.NoError(t, err)
 					actual, err := mediajob.NewGPTImageProvider(gateway.NewRouter(pool), imageKey, mediajob.GPTImageProviderOptions{HTTPClient: server.Client()})
 					require.NoError(t, err)
-					actual.SetSourceObserver(source)
+					actual.SetSourceObserver(sourceMediaRouteDiagnostics{Service: source, t: t})
 					originalProvider = actual
 				}
 
@@ -248,6 +250,12 @@ func TestSourceFactsMediaHTTPIntegration(t *testing.T) {
 				}
 				job, err = store.Get(ctx, mediajob.Scope{OrgID: org, ProjectID: project}, job.JobID)
 				require.NoError(t, err)
+				terminal, providerCalls := job, provider.calls.Load()
+				t.Cleanup(func() {
+					if t.Failed() {
+						t.Logf("media_terminal error_code=%q outcome=%q attempt=%d provider_calls=%d", terminal.ErrorCode, terminal.Lifecycle.Outcome, terminal.Attempt, providerCalls)
+					}
+				})
 				require.True(t, job.Terminal())
 				var currentAdmission, dispatch []byte
 				require.NoError(t, pool.QueryRow(ctx, `SELECT source_context,source_dispatch_context FROM async_media_jobs WHERE job_id=$1`, job.JobID).Scan(&currentAdmission, &dispatch))
@@ -392,4 +400,49 @@ func sourceMediaLicense(t *testing.T) *licensing.Runtime {
 	status := runtime.Replace(raw)
 	require.True(t, status.Valid && status.Enforceable)
 	return runtime
+}
+
+type sourceMediaRouteDiagnostics struct {
+	*sourcefacts.Service
+	t *testing.T
+}
+
+func sourceMediaRouteDiagnosticLine(elapsed time.Duration, err error) string {
+	class, state := sourceHTTPCaptureErrorClass(err), "none"
+	var pgError *pgconn.PgError
+	if errors.As(err, &pgError) {
+		class, state = "postgres", "other"
+		switch pgError.Code {
+		case "P0001", "40001", "40P01", "55P03", "57014", "25P02", "23502", "23503", "23505", "23514", "08000", "08003", "08006", "42501", "42P01", "42703", "53300", "53400", "53200", "XX000":
+			state = pgError.Code
+		}
+	}
+	return fmt.Sprintf("media_before_route stage=%s elapsed=%s class=%s sqlstate=%s", sourcefacts.CaptureErrorStage(err), elapsed, class, state)
+}
+
+func (s sourceMediaRouteDiagnostics) BeforeMediaRoute(ctx context.Context, job mediajob.Job, route mediajob.SourceMediaRoute) error {
+	start := time.Now()
+	err := s.Service.BeforeMediaRoute(ctx, job, route)
+	if err != nil {
+		s.t.Log(sourceMediaRouteDiagnosticLine(time.Since(start), err))
+	}
+	return err
+}
+
+func TestSourceObservationsMediaRouteDiagnosticWhitelist(t *testing.T) {
+	poison := "secret-request\nkey=secret-value SQL=secret-statement"
+	for _, test := range []struct {
+		err      error
+		contains string
+	}{
+		{fmt.Errorf("%s: %w", poison, &pgconn.PgError{Code: "P0001", Message: poison, Detail: poison}), "sqlstate=P0001"},
+		{&pgconn.PgError{Code: poison, Message: poison}, "sqlstate=other"},
+		{fmt.Errorf("%s: %w", poison, context.DeadlineExceeded), "class=deadline_exceeded"},
+		{fmt.Errorf("%s: %w", poison, context.Canceled), "class=context_canceled"},
+	} {
+		line := sourceMediaRouteDiagnosticLine(time.Millisecond, test.err)
+		if strings.Contains(line, "secret") || !strings.Contains(line, test.contains) {
+			t.Fatal("unsafe or incomplete media diagnostic", line)
+		}
+	}
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Signed, bounded recovery of the known post-start setup timestamp conflict.
+"""Signed, bounded recovery of known setup timestamp and expired-session drift.
 
 This entry is not an installer. Verify its complete recovery envelope with the
 already trusted native verifier BEFORE extracting or executing this program.
@@ -19,12 +19,13 @@ import stat
 import subprocess
 import tarfile
 
-TOOL_VERSION = "1.15.1-recovery.1"
-PLAN_SCHEMA = "unirouter.timestamp-recovery.v1"
+TOOL_VERSION = "1.15.2-recovery.1"
+PLAN_SCHEMA = "unirouter.timestamp-recovery.v2"
 OWNER_SCHEMA = "unirouter.timestamp-recovery-owner.v1"
 M127 = "000127_xinsight_communication_policy"
 M128 = "000128_upstream_release_observation"
 TABLE = "xinsight_connector_installations"
+SESSION_TABLE = "admin_sessions"
 ARTIFACTS = {"payload/recovery/resume.py", "payload/recovery/plan.json", "payload/provenance/build-provenance.json"}
 MAX_BUNDLE = 1 << 20
 VERIFIER_SHA256 = "d767e64f2db31f97c886c53e14fe30b948794933aef28137db982442a2a0b02f"
@@ -85,7 +86,7 @@ def closed(value, keys):
 
 
 def validate_plan(p):
-    closed(p, "schema_version tool_version identity source candidate database cold_pair frozen writer allowed_row")
+    closed(p, "schema_version tool_version identity source candidate database cold_pair frozen writer allowed_row allowed_session_gc")
     need(p["schema_version"] == PLAN_SCHEMA and p["tool_version"] == TOOL_VERSION, "Unsupported recovery plan")
     closed(p["identity"], "target_instance hostname installation_id operation_id directory release_directory source_package layout edge_directory historical_exits")
     closed(p["source"], "release_sequence package_sha256")
@@ -95,6 +96,7 @@ def validate_plan(p):
     closed(p["frozen"], "initial_witness_sha256 source_state_sha256 configuration_map_sha256 prefix_receipts_sha256")
     closed(p["writer"], "container_id instance_id artifact_digest started_at pid")
     closed(p["allowed_row"], "installation_id org_id project_id updated_at setup_state setup_progress_sha256 all_other_columns_sha256")
+    session_gc_binding(p)
     need(p["database"]["schema"] == M128 and p["identity"]["layout"] in ("community_single", "ur_edge_pair"), "Unsupported recovery layout/schema")
     need(type(p["source"]["release_sequence"]) is int and type(p["candidate"]["release_sequence"]) is int
          and 0 < p["source"]["release_sequence"] < p["candidate"]["release_sequence"], "Invalid recovery predecessor")
@@ -117,13 +119,74 @@ def stamp(value):
     return parsed.astimezone(dt.timezone.utc)
 
 
-def docker_start_ceiling(value):
+def docker_start_floor(value):
     need(isinstance(value, str), "Invalid candidate start identity")
     match = re.fullmatch(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d{1,9}))?Z", value)
     need(match, "Invalid candidate start identity")
     fraction = (match[2] or "").ljust(9, "0")
-    result = stamp(match[1] + "." + fraction[:6] + "Z")
-    return result + (dt.timedelta(microseconds=1) if int(fraction[6:]) else dt.timedelta())
+    return stamp(match[1] + "." + fraction[:6] + "Z")
+
+
+def docker_start_ceiling(value):
+    result = docker_start_floor(value)
+    fraction = value[:-1].partition(".")[2]
+    return result + (dt.timedelta(microseconds=1) if int(fraction[6:] or "0") else dt.timedelta())
+
+
+def session_gc_binding(plan):
+    gc = plan["allowed_session_gc"]
+    closed(gc, "table source_table max_removed expires_before")
+    closed(gc["source_table"], "count sha256")
+    need(gc["table"] == SESSION_TABLE and type(gc["source_table"]["count"]) is int and gc["source_table"]["count"] == 1
+         and type(gc["max_removed"]) is int and gc["max_removed"] == 1
+         and isinstance(gc["source_table"]["sha256"], str) and re.fullmatch(r"[a-f0-9]{64}", gc["source_table"]["sha256"])
+         and gc["expires_before"] == docker_start_floor(plan["writer"]["started_at"]).isoformat(), "Wrong exact session cleanup binding")
+    return gc
+
+
+def session_probe_query(cutoff):
+    # A fixed cutoff, full-row hashes and table aggregate share one SQL snapshot.
+    cutoff = stamp(cutoff).isoformat()
+    row = "encode(sha256(convert_to(to_jsonb(t)::text,'UTF8')),'hex')"
+    return """SET TIME ZONE 'UTC'; BEGIN READ ONLY; SELECT jsonb_build_object(
+'table',jsonb_build_object('count',count(*),'sha256',encode(sha256(convert_to(COALESCE(string_agg(""" + row + ",'' ORDER BY to_jsonb(t)::text),''),'UTF8')),'hex'))," + """
+'rows',COALESCE(jsonb_agg(jsonb_build_object(
+'key_sha256',encode(sha256(convert_to(id::text,'UTF8')),'hex'),
+'row_sha256',""" + row + ", 'expired_before',expires_at<'" + cutoff + "'::timestamptz) ORDER BY id),'[]'::jsonb)) FROM admin_sessions t; COMMIT;"
+
+
+def session_gc_delta(source, current, plan, original_table):
+    """Allow only the bound original session's proved pre-start expiry deletion."""
+    gc = session_gc_binding(plan)
+    need(gc["source_table"] == original_table, "Wrong original session table")
+    def rows(probe):
+        closed(probe, "table rows"); closed(probe["table"], "count sha256")
+        need(isinstance(probe["rows"], list) and type(probe["table"]["count"]) is int
+             and 0 <= probe["table"]["count"] <= 1 and probe["table"]["count"] == len(probe["rows"]), "Unexpected session population")
+        result = {}
+        for row in probe["rows"]:
+            closed(row, "key_sha256 row_sha256 expired_before")
+            need(all(isinstance(row[k], str) and re.fullmatch(r"[a-f0-9]{64}", row[k]) for k in ("key_sha256", "row_sha256"))
+                 and type(row["expired_before"]) is bool and row["key_sha256"] not in result, "Invalid private session observation")
+            result[row["key_sha256"]] = row
+        need(probe["table"]["sha256"] == sha("".join(r["row_sha256"] for r in result.values()).encode()), "Incoherent session observation")
+        return result
+    originals, retained = rows(source), rows(current)
+    need(source["table"] == original_table and set(retained).issubset(originals)
+         and all(row == originals[key] for key,row in retained.items()), "Added or changed original session")
+    missing = sorted(set(originals) - set(retained))
+    need(len(missing) <= gc["max_removed"] and all(originals[key]["expired_before"] for key in missing), "Missing session was not already expired")
+    # Expected rows come only from the authenticated original observation.
+    remaining = [row for key,row in originals.items() if key not in missing]
+    reference = {"count":len(remaining), "sha256":sha("".join(r["row_sha256"] for r in remaining).encode())}
+    return missing, reference, {"source_table":source["table"], "retained_count":len(remaining), "removed_count":len(missing),
+        "expires_before":gc["expires_before"], "removed_original_set_sha256":sha(canonical([originals[k]["row_sha256"] for k in missing]))}
+
+
+def session_source_projection(missing):
+    need(all(isinstance(k,str) and re.fullmatch(r"[a-f0-9]{64}",k) for k in missing), "Invalid session projection identity")
+    where = " WHERE encode(sha256(convert_to(id::text,'UTF8')),'hex') NOT IN (" + ",".join("'" + k + "'" for k in missing) + ")" if missing else ""
+    return "to_jsonb(t)", where
 
 
 def conditional_row_projection(row_id):
@@ -347,12 +410,20 @@ def make_owner_class(old):
             need(old.recovery.table_fingerprints(sql, pair["verification_database"]) == pair["restored_tables"]
                  and old.recovery.boundaries(sql, pair["verification_database"]) == pair["restored_boundaries"], "Original isolated restore changed")
             expected = dict(pair["tables"])
+            cutoff = p["allowed_session_gc"]["expires_before"]
+            source_sessions = strict_json(self.sql(session_probe_query(cutoff), pair["verification_database"]))
+            live_sessions = strict_json(self.sql(session_probe_query(cutoff)))
+            missing, session_reference, session_proof = session_gc_delta(source_sessions, live_sessions, p, expected[SESSION_TABLE])
             # The restored table was validated against its retained full proof
             # before applying this single explicitly signed conditional projection.
-            restored = old.recovery.table_fingerprints(sql, pair["verification_database"], projections={TABLE:(projection, "")})
+            restored = old.recovery.table_fingerprints(sql, pair["verification_database"],
+                projections={TABLE:(projection, ""), SESSION_TABLE:session_source_projection(missing)})
+            need(restored[SESSION_TABLE] == session_reference, "Restored session observation changed during preservation")
             expected[TABLE] = restored[TABLE]
+            expected[SESSION_TABLE] = restored[SESSION_TABLE]
             projections[TABLE] = (projection, "")
             actual = old.recovery.table_fingerprints(sql, self.env["POSTGRES_DB"], projections=projections)
+            need(actual[SESSION_TABLE] == live_sessions["table"], "Live session observation changed during preservation")
             if recorded:
                 need(isinstance(self._recorded_release(), dict), "Exact native candidate record is required")
                 actual.pop("release_state"); expected.pop("release_state")
@@ -360,7 +431,7 @@ def make_owner_class(old):
             need(self.sql("SELECT count(*) FROM model_deployments WHERE upstream_release_observation IS NOT NULL OR upstream_observation_revision<>0;") == "0", "Unexpected observation writes precede admission")
             proof = {"owner_package_sha256":self.repair_identity["package_sha256"], "plan_sha256":self.repair_identity["plan_sha256"],
                      "cold_pair_sha256":p["cold_pair"]["receipt_sha256"], "table":TABLE, "installation_id":row_id,
-                     "field":"updated_at", **delta,
+                     "field":"updated_at", **delta, "session_gc":session_proof,
                      "original_whole_table_sha256":pair["tables"][TABLE]["sha256"],
                      "original_row_sha256":sha(canonical(source["row"])), "observed_row_sha256":sha(canonical(current["row"])),
                      "projected_tables_sha256":sha(canonical(actual)), "all_other_facts_equal":True}

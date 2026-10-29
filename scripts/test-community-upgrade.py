@@ -691,6 +691,7 @@ class WholeUpgradeTests(unittest.TestCase):
         state.business = [{"id": 1, "value": "synthetic preserved history"}]
         state.models = [{"id": 1, "name": "synthetic model"}]
         state.setups = []
+        state.sessions = []
         state.clones, state.dumps, state.processes, state.resources = {}, {}, {}, {}
         state.failure = None
         state.native_calls = []
@@ -707,11 +708,11 @@ class WholeUpgradeTests(unittest.TestCase):
         source_db = operation.env["POSTGRES_DB"]
         def database(db):
             if db == source_db:
-                return {"metadata": state.metadata, "coverage": state.coverage, "streams": state.streams, "objects": state.objects, "business": state.business, "models": state.models, "setups": state.setups}
+                return {"metadata": state.metadata, "coverage": state.coverage, "streams": state.streams, "objects": state.objects, "business": state.business, "models": state.models, "setups": state.setups, "sessions":state.sessions}
             return state.clones[db]
         def tables(db):
             data = database(db); meta = data["metadata"]
-            return {"business_history": data["business"], "model_deployments": data["models"], "xinsight_connector_installations": data["setups"],
+            return {"business_history": data["business"], "model_deployments": data["models"], "xinsight_connector_installations": data["setups"], "admin_sessions":data["sessions"],
                 "schema_migrations": [{"version": value} for value in meta["ledger"]],
                 "runtime_generations": meta["generations"], "runtime_support_manifests": meta["manifests"],
                 "runtime_ingress_changes": meta["ingress"], "release_state": [meta["release"]], "release_history": meta["history"],
@@ -721,6 +722,14 @@ class WholeUpgradeTests(unittest.TestCase):
             if "pg_database_size" in query: return "1048576"
             if "rolcreatedb OR rolsuper" in query: return "t"
             if "pg_control_system()" in query: return json.dumps(database(db)["metadata"])
+            if "'key_sha256'" in query and "FROM admin_sessions" in query:
+                cutoff = re.search("expires_at<'([^']+)'",query)[1]
+                rows = database(db)["sessions"]
+                hashes = [hashlib.sha256(M.canonical(row)).hexdigest() for row in sorted(rows,key=M.canonical)]
+                return json.dumps({"table":{"count":len(rows),"sha256":hashlib.sha256("".join(hashes).encode()).hexdigest()},
+                    "rows":[{"key_sha256":hashlib.sha256(str(row["id"]).encode()).hexdigest(),
+                    "row_sha256":hashlib.sha256(M.canonical(row)).hexdigest(),
+                    "expired_before":datetime.datetime.fromisoformat(row["expires_at"].replace('Z','+00:00')) < datetime.datetime.fromisoformat(cutoff)} for row in rows]})
             if "'stable_sha256'" in query and "FROM xinsight_connector_installations" in query:
                 identity = re.search("installation_id='([^']+)'", query)[1]
                 row = next(row for row in database(db)["setups"] if row["installation_id"] == identity)
@@ -740,6 +749,9 @@ class WholeUpgradeTests(unittest.TestCase):
                     if name == "xinsight_connector_installations" and "CASE WHEN installation_id=" in part:
                         identity = re.search("CASE WHEN installation_id='([^']+)'", part)[1]
                         values = [{k:v for k,v in row.items() if k != "updated_at" or row["installation_id"] != identity} for row in values]
+                    if name == "admin_sessions" and "NOT IN (" in part:
+                        missing = re.findall("'([a-f0-9]{64})'",part)
+                        values = [row for row in values if hashlib.sha256(str(row['id']).encode()).hexdigest() not in missing]
                     for key in ("instance_id", "artifact_digest", "change_id"):
                         match = re.search("WHERE " + key + r" IN \(([^)]+)\)", part)
                         if match: values = [row for row in values if row[key] in re.findall("'([^']*)'", match[1])]
@@ -750,7 +762,8 @@ class WholeUpgradeTests(unittest.TestCase):
                     if name == "execution_source_budget_coverage" and "-'ended_at'" in part:
                         maximum = int(re.search(r"coverage_epoch<=(\d+)", part)[1])
                         values = [{key: value for key, value in row.items() if key != "ended_at"} for row in values if row["coverage_epoch"] <= maximum]
-                    result[name] = {"count": len(values), "sha256": hashlib.sha256(M.canonical(sorted(values, key=lambda row: M.canonical(row)))).hexdigest()}
+                    material = "".join(hashlib.sha256(M.canonical(row)).hexdigest() for row in sorted(values,key=M.canonical)).encode() if name == "admin_sessions" else M.canonical(sorted(values,key=M.canonical))
+                    result[name] = {"count": len(values), "sha256": hashlib.sha256(material).hexdigest()}
                 return json.dumps(result)
             if "final" not in query and "'active_generations'" in query:
                 return json.dumps({"clients": 0, "prepared": 0, "unsettled": 0, "reserved": 0, "expired_ready": 0, "pending_capture": 0,
