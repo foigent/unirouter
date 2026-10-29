@@ -30,7 +30,12 @@ type normalSetupFixture struct {
 
 func newNormalSetupFixture(t *testing.T) normalSetupFixture {
 	t.Helper()
-	f := normalSetupFixture{sourceControlFixture: newContentControlIntegrationFixture(t)}
+	return newNormalSetupFixtureFromSource(t, newContentControlIntegrationFixture(t))
+}
+
+func newNormalSetupFixtureFromSource(t *testing.T, source sourceControlFixture) normalSetupFixture {
+	t.Helper()
+	f := normalSetupFixture{sourceControlFixture: source}
 	enableEnrollmentObservations(t, &f.sourceControlFixture)
 	contentPolicyIntegrationStore(t, f.sourceControlFixture, contentcapture.ModeMetadataOnly)
 	service, e := completedfeed.NewService(f.pool, syntheticSourceControlSecret, f.source.SourceInstance(), true)

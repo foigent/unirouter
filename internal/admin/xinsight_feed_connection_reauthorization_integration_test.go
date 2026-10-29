@@ -175,7 +175,11 @@ type xInsightFeedAuthorizationFixture struct {
 
 func newXInsightFeedAuthorizationFixture(t *testing.T, activeConnection bool) xInsightFeedAuthorizationFixture {
 	t.Helper()
-	pool := testutil.SetupMigratedTestDB(t)
+	return newXInsightFeedAuthorizationFixtureWithPool(t, activeConnection, testutil.SetupMigratedTestDB(t))
+}
+
+func newXInsightFeedAuthorizationFixtureWithPool(t *testing.T, activeConnection bool, pool *pgxpool.Pool) xInsightFeedAuthorizationFixture {
+	t.Helper()
 	ctx := context.Background()
 	var fixture xInsightFeedAuthorizationFixture
 	fixture.pool = pool

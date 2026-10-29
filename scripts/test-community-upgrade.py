@@ -690,6 +690,7 @@ class WholeUpgradeTests(unittest.TestCase):
         state.streams, state.objects = [], []
         state.business = [{"id": 1, "value": "synthetic preserved history"}]
         state.models = [{"id": 1, "name": "synthetic model"}]
+        state.setups = []
         state.clones, state.dumps, state.processes, state.resources = {}, {}, {}, {}
         state.failure = None
         state.native_calls = []
@@ -706,11 +707,11 @@ class WholeUpgradeTests(unittest.TestCase):
         source_db = operation.env["POSTGRES_DB"]
         def database(db):
             if db == source_db:
-                return {"metadata": state.metadata, "coverage": state.coverage, "streams": state.streams, "objects": state.objects, "business": state.business, "models": state.models}
+                return {"metadata": state.metadata, "coverage": state.coverage, "streams": state.streams, "objects": state.objects, "business": state.business, "models": state.models, "setups": state.setups}
             return state.clones[db]
         def tables(db):
             data = database(db); meta = data["metadata"]
-            return {"business_history": data["business"], "model_deployments": data["models"],
+            return {"business_history": data["business"], "model_deployments": data["models"], "xinsight_connector_installations": data["setups"],
                 "schema_migrations": [{"version": value} for value in meta["ledger"]],
                 "runtime_generations": meta["generations"], "runtime_support_manifests": meta["manifests"],
                 "runtime_ingress_changes": meta["ingress"], "release_state": [meta["release"]], "release_history": meta["history"],
@@ -720,6 +721,11 @@ class WholeUpgradeTests(unittest.TestCase):
             if "pg_database_size" in query: return "1048576"
             if "rolcreatedb OR rolsuper" in query: return "t"
             if "pg_control_system()" in query: return json.dumps(database(db)["metadata"])
+            if "'stable_sha256'" in query and "FROM xinsight_connector_installations" in query:
+                identity = re.search("installation_id='([^']+)'", query)[1]
+                row = next(row for row in database(db)["setups"] if row["installation_id"] == identity)
+                return json.dumps({"row": copy.deepcopy(row), "stable_sha256": hashlib.sha256(M.canonical({k:v for k,v in row.items() if k != "updated_at"})).hexdigest(),
+                    "progress_sha256": hashlib.sha256(M.canonical(row["setup_progress"])).hexdigest(), "clock": "2026-11-01T00:00:00Z"})
             if "FROM pg_tables" in query: return json.dumps(sorted(tables(db)))
             if "fingerprints;" in query:
                 result = {}
@@ -731,6 +737,9 @@ class WholeUpgradeTests(unittest.TestCase):
                         values = [{key: value for key, value in row.items() if key not in ("upstream_release_observation", "upstream_observation_revision")} for row in values]
                     if name == "schema_migrations" and "WHERE version<>" in part:
                         values = [row for row in values if row["version"] != M.TARGET_SCHEMA]
+                    if name == "xinsight_connector_installations" and "CASE WHEN installation_id=" in part:
+                        identity = re.search("CASE WHEN installation_id='([^']+)'", part)[1]
+                        values = [{k:v for k,v in row.items() if k != "updated_at" or row["installation_id"] != identity} for row in values]
                     for key in ("instance_id", "artifact_digest", "change_id"):
                         match = re.search("WHERE " + key + r" IN \(([^)]+)\)", part)
                         if match: values = [row for row in values if row[key] in re.findall("'([^']*)'", match[1])]
@@ -841,7 +850,7 @@ class WholeUpgradeTests(unittest.TestCase):
                 for index, role in enumerate(operation.roles):
                     name = "fixture-ur-" + role + "-1"; row = state.resources[name]
                     row.update(Id="new-" + role, Image=new_ids["backend"])
-                    row["State"].update(Running=True, Pid=201 + index)
+                    row["State"].update(Running=True, Pid=201 + index, StartedAt="2026-10-29T00:00:00.123456789Z")
                     identity = "uri_" + ("c" if index == 0 else "d") * 32
                     state.metadata["generations"].append({"instance_id": identity, "artifact_digest": new_ids["backend"], "manifest_digest": operation.witness["candidate_support_sha256"], "schema_head": M.TARGET_SCHEMA, "state": "serving", "ingress_state": "absent", "revision": 1})
                 state.metadata["manifests"].append({"artifact_digest": new_ids["backend"], "manifest_digest": operation.witness["candidate_support_sha256"]})

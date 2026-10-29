@@ -369,3 +369,29 @@ orphan objects, temporary files, directories and the binding marker are retained
 Failures keep unreleased accounting for a later verified batch. These scheduling
 bounds are not a capacity or cleanup-throughput guarantee. Shutdown cancels and
 waits for maintenance before capture shutdown and closing the storage root.
+
+### Separately signed maintenance recovery
+
+`recovery_resume.py` is an operator recovery entry, distributed separately from
+the application package as `1.15.1-recovery.1`. It handles only a retained upgrade
+whose candidate writer has started on M128 and whose sole protected-data
+difference is one explicitly signed setup row's `updated_at`. It does not change
+the original row, backup, release package or completed native receipts. All other
+original rows, fields, configuration, content and isolated restore facts remain
+protected. The normal setup controller avoids creating this no-op timestamp
+change in subsequent application builds.
+
+Before extracting or running any new recovery code, verify the complete recovery
+envelope with the retained trusted native verifier and public ring. Its closed
+inventory contains three text files: the recovery program, an installation and
+operation-specific plan, and source provenance. It is not a fresh-install image
+package. Signing a plan and executing it require their own explicit decisions;
+the presence of this source file grants no maintenance authorization.
+
+The recovery entry authenticates the retained application package before loading
+its original host programs, then continues their existing checkpoints and steps.
+`check` uses the existing lock without creating a lock or writing a witness.
+Interrupted continuation retains the same operation; completion records the
+original application's release identity. A changed writer, other data drift or
+unknown checkpoint refuses continuation. Preserve the evidence and review that
+specific failure instead of editing timestamps, receipts or signed files.
