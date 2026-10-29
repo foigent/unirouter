@@ -373,13 +373,28 @@ waits for maintenance before capture shutdown and closing the storage root.
 ### Separately signed maintenance recovery
 
 `recovery_resume.py` is an operator recovery entry, distributed separately from
-the application package as `1.15.1-recovery.1`. It handles only a retained upgrade
-whose candidate writer has started on M128 and whose sole protected-data
-difference is one explicitly signed setup row's `updated_at`. It does not change
+the application package as `1.15.2-recovery.1`. It handles only a retained upgrade
+whose candidate writer has started on M128 with an explicitly signed setup
+row's `updated_at` difference and the possible cleanup of its one original,
+already expired admin session. The closed `unirouter.timestamp-recovery.v2`
+plan binds the original full table
+fingerprint, count one, maximum deletion one and an expiry cutoff floored from
+the exact writer start. Every retained session must remain fully identical;
+new or modified sessions and missing live sessions refuse. Only proved missing
+expired originals are excluded from the unchanged restore's expected table.
+The final table observation must agree with that proof before any effect.
+The earlier `1.15.1-recovery.1` package retains its original timestamp-only rule.
+Neither recovery version changes
 the original row, backup, release package or completed native receipts. All other
 original rows, fields, configuration, content and isolated restore facts remain
 protected. The normal setup controller avoids creating this no-op timestamp
 change in subsequent application builds.
+
+The formal application's existing background cleanup can still run during
+maintenance. This bounded recovery does not add a background-writer admission
+gate or a general retention exception. Preflight all preservation conditions,
+body inventory and current background work before creating a new signed
+candidate; an unexpected additional change still refuses.
 
 Before extracting or running any new recovery code, verify the complete recovery
 envelope with the retained trusted native verifier and public ring. Its closed

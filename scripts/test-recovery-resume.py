@@ -27,16 +27,19 @@ M = F.M
 class RecoveryTests(F.WholeUpgradeTests):
     # Reuse the existing transport fixture and original class constructor. Only
     # this class's test_recovery_* cases are selected by this script's main.
-    def pending(self, second_row=False):
+    def pending(self, second_row=False, cleanup=True, expired=True):
         operation, state, calls, bind = self.host(1)
         state.setups.append({"installation_id":"xci_" + "A" * 22, "org_id":2, "project_id":2,
             "setup_state":"waiting_data", "setup_progress":{"source_grant_id":1},
             "control_fence":1, "updated_at":"2026-10-28T00:00:00Z"})
         if second_row:
             state.setups.append(dict(state.setups[0], installation_id="xci_" + "B" * 22, project_id=3))
+        state.sessions.append({"id":1,"user_id":2,"sid_hash":"synthetic-only", "revoked_at":None,
+            "expires_at":"2026-10-28T23:00:00Z" if expired else "2026-11-01T00:00:00Z"})
         def tick(point):
             if point == "done:start-writers":
                 state.setups[0]["updated_at"] = "2026-10-29T00:00:01Z"
+                if cleanup and expired: state.sessions.clear()
         operation.test_checkpoint = tick
         with patch.object(M.shutil, "disk_usage", return_value=F.SimpleNamespace(free=32 << 30)):
             with self.assertRaisesRegex(M.install.InstallError, "Protected original database/content facts changed"):
@@ -63,6 +66,8 @@ class RecoveryTests(F.WholeUpgradeTests):
                 "updated_at":old["updated_at"], "setup_state":old["setup_state"],
                 "setup_progress_sha256":R.sha(M.canonical(old["setup_progress"])),
                 "all_other_columns_sha256":R.sha(M.canonical({k:v for k,v in old.items() if k != "updated_at"}))}}
+        plan["allowed_session_gc"] = {"table":R.SESSION_TABLE,"source_table":pair["tables"][R.SESSION_TABLE],
+            "max_removed":1,"expires_before":R.docker_start_floor(start).isoformat()}
         identity = {"schema_version":R.OWNER_SCHEMA, "package_sha256":"7" * 64, "plan_sha256":R.sha(R.canonical(plan)),
                     "source_commit":"9" * 40, "tool_version":R.TOOL_VERSION, "release_sequence":12}
         def reopen(read_only=False, plan_override=None, identity_override=None):
@@ -183,6 +188,7 @@ class RecoveryTests(F.WholeUpgradeTests):
         state.business.append({"id":2,"value":"legitimate"})
         state.setups[0]["setup_progress"]["later_real_change"] = True
         state.models[0].update(upstream_release_observation={"synthetic":True}, upstream_observation_revision=1)
+        state.sessions.append({"id":2,"user_id":2,"sid_hash":"synthetic-post-admission","expires_at":"2026-12-01T00:00:00Z"})
         before = self.snapshot(operation.directory)
         self.assertTrue(R.check_owner(reopen(True), M, plan["candidate"]["release_sequence"])["checked"])
         self.assertEqual(before, self.snapshot(operation.directory))
@@ -209,8 +215,70 @@ class RecoveryTests(F.WholeUpgradeTests):
         with self.assertRaises(R.RecoveryError): R.public_fields("verified=true\nverified=true\n")
 
     def test_recovery_nanosecond_start_rounds_toward_safe_microsecond(self):
+        self.assertEqual(R.stamp("2026-10-29T00:00:00.123456Z"), R.docker_start_floor("2026-10-29T00:00:00.123456789Z"))
         self.assertEqual(R.stamp("2026-10-29T00:00:00.123457Z"), R.docker_start_ceiling("2026-10-29T00:00:00.123456789Z"))
         self.assertEqual(R.stamp("2026-10-29T00:00:00.123456Z"), R.docker_start_ceiling("2026-10-29T00:00:00.123456000Z"))
+
+    def test_recovery_expired_session_gc_and_retained_live_session(self):
+        for cleanup,expired in ((True,True),(False,True),(False,False)):
+            with self.subTest(cleanup=cleanup,expired=expired):
+                operation,state,calls,bind,plan,identity,reopen=self.pending(cleanup=cleanup,expired=expired)
+                before=self.snapshot(operation.directory)
+                result=R.check_owner(reopen(True),M,plan['source']['release_sequence'])
+                self.assertEqual(int(cleanup and expired),result['observation']['session_gc']['removed_count'])
+                self.assertEqual(before,self.snapshot(operation.directory))
+                with redirect_stdout(io.StringIO()):self.assertEqual('completed',reopen().execute(resume=True)['state'])
+
+    def test_recovery_session_changes_and_plan_drift_refuse_before_effect(self):
+        for kind in ('missing_live','changed_live','new_expired','changed_expired','late_expiry','cutoff','count','hash','maximum','unknown_field'):
+            with self.subTest(kind=kind):
+                live=kind in ('missing_live','changed_live')
+                operation,state,calls,bind,plan,identity,reopen=self.pending(cleanup=False,expired=not live)
+                if kind in ('missing_live','late_expiry'):state.sessions.clear()
+                if kind in ('changed_live','changed_expired'):state.sessions[0]['sid_hash']='synthetic-changed'
+                if kind=='new_expired':state.sessions.append(dict(state.sessions[0],id=2))
+                if kind=='late_expiry':
+                    clone=state.clones[plan['cold_pair']['verification_database']]
+                    clone['sessions'][0]['expires_at']='2026-10-29T00:00:00.000001Z'
+                if kind=='cutoff':plan['allowed_session_gc']['expires_before']='2026-10-30T00:00:00+00:00'
+                if kind=='count':plan['allowed_session_gc']['source_table']=dict(plan['allowed_session_gc']['source_table'],count=2)
+                if kind=='hash':plan['allowed_session_gc']['source_table']=dict(plan['allowed_session_gc']['source_table'],sha256='0'*64)
+                if kind=='maximum':plan['allowed_session_gc']['max_removed']=2
+                if kind=='unknown_field':plan['allowed_session_gc']['extra']=True
+                before,native=self.snapshot(operation.directory),list(state.native_calls)
+                with redirect_stdout(io.StringIO()):
+                    with self.assertRaises((R.RecoveryError,M.install.InstallError)):
+                        reopen().execute(resume=True)
+                self.assertEqual(before,self.snapshot(operation.directory));self.assertEqual(native,state.native_calls)
+
+    def test_recovery_session_observation_race_refuses_before_first_effect(self):
+        for side in ('live','live_changed','restore'):
+            with self.subTest(side=side):
+                operation,state,calls,bind,plan,identity,reopen=self.pending(cleanup=side!='live_changed',expired=side!='live_changed')
+                before,native=self.snapshot(operation.directory),list(state.native_calls)
+                original=M.recovery.table_fingerprints
+                fired=[]
+                def change(sql,db,*args,**kwargs):
+                    projections=kwargs.get('projections',{})
+                    wanted=(db==operation.env['POSTGRES_DB']) if side.startswith('live') else (db==plan['cold_pair']['verification_database'] and R.SESSION_TABLE in projections)
+                    if wanted and projections and not fired:
+                        rows=state.sessions if side.startswith('live') else state.clones[db]['sessions']
+                        if side=='live_changed':rows[0]['sid_hash']='synthetic-race-change'
+                        else:rows.append({'id':2,'user_id':2,'sid_hash':'synthetic-race','revoked_at':None,'expires_at':'2026-10-28T23:00:00Z'})
+                        fired.append(True)
+                    return original(sql,db,*args,**kwargs)
+                with patch.object(M.recovery,'table_fingerprints',side_effect=change),redirect_stdout(io.StringIO()):
+                    with self.assertRaises(R.RecoveryError):reopen().execute(resume=True)
+                self.assertEqual([True],fired)
+                self.assertEqual(before,self.snapshot(operation.directory));self.assertEqual(native,state.native_calls)
+
+    def test_recovery_body_guard_still_refuses_before_first_effect(self):
+        operation,state,calls,bind,plan,identity,reopen=self.pending()
+        before,native=self.snapshot(operation.directory),list(state.native_calls)
+        owner=reopen()
+        with patch.object(owner,'_content',return_value={'objects':[],'inventory':{'synthetic-changed':True}}),redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(R.RecoveryError,'Other protected original'):owner.execute(resume=True)
+        self.assertEqual(before,self.snapshot(operation.directory));self.assertEqual(native,state.native_calls)
 
 
 def native_envelope_cases(native, directory, private_key, ring):

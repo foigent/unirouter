@@ -4,6 +4,13 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.15.2] - 2026-10-30
+
+### Fixed
+
+- Extend the finite, separately signed maintenance recovery to prove removal of the one original admin session that had already expired before the bound candidate writer started. Retained sessions must remain fully identical; new, modified or missing live sessions refuse recovery. Bind the exact original table and cutoff, derive the expected table only from the unchanged isolated restore, and reject changed observations before any recovery witness or native effect.
+- The new recovery envelope uses `1.15.2-recovery.1`; earlier signed packages remain immutable. Original application images, backup and native completion identity remain unchanged. This source candidate does not assert a new signed artifact or Target recovery.
+
 ## [1.15.1] - 2026-10-29
 
 ### Fixed

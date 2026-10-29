@@ -323,3 +323,126 @@ print(json.dumps({"accepted":accepted,"projection":m.conditional_row_projection(
 	accepted, _ = oracle(bad)
 	require.False(t, accepted, "a future timestamp must fail")
 }
+
+func TestRecoverySessionGCActualPairedUpgradeAndCleanupIntegration(t *testing.T) {
+	for _, scenario := range []string{"expired", "live", "at_cutoff", "after_cutoff", "mixed"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := normalSetupM127Fixture(t)
+			pairNormalSetup(t, f)
+			// Only this test's newly isolated synthetic database is changed.
+			_, err := f.pool.Exec(t.Context(), `DELETE FROM admin_sessions`)
+			require.NoError(t, err)
+			_, err = f.pool.Exec(t.Context(), `INSERT INTO admin_sessions(user_id,sid_hash,issued_at,expires_at)
+VALUES($1,decode(repeat('31',32),'hex'),now()-interval '2 hours',now()-interval '1 hour')`, f.actorID)
+			require.NoError(t, err)
+			require.NoError(t, migrate.RunExisting(t.Context(), f.pool, testutil.MigrationsDir(t)))
+			require.NoError(t, f.handler.AdvanceXInsightSetups(t.Context(), 32))
+			var started time.Time
+			require.NoError(t, f.pool.QueryRow(t.Context(), `SELECT clock_timestamp()`).Scan(&started))
+			cutoff := started.UTC().Truncate(time.Microsecond).Format("2006-01-02T15:04:05.000000-07:00")
+			if started.Nanosecond() == 0 {
+				cutoff = started.UTC().Format("2006-01-02T15:04:05-07:00")
+			}
+			if scenario == "live" || scenario == "mixed" {
+				if scenario == "live" {
+					_, err = f.pool.Exec(t.Context(), `UPDATE admin_sessions SET expires_at=now()+interval '1 hour'`)
+				} else {
+					_, err = f.pool.Exec(t.Context(), `INSERT INTO admin_sessions(user_id,sid_hash,issued_at,expires_at)
+VALUES($1,decode(repeat('32',32),'hex'),now()-interval '1 hour',now()+interval '1 hour')`, f.actorID)
+				}
+				require.NoError(t, err)
+			}
+			if scenario == "at_cutoff" || scenario == "after_cutoff" {
+				expires := started
+				if scenario == "after_cutoff" {
+					expires = expires.Add(time.Microsecond)
+				}
+				_, err = f.pool.Exec(t.Context(), `UPDATE admin_sessions SET expires_at=$1`, expires)
+				require.NoError(t, err)
+			}
+			conn, err := f.pool.Acquire(t.Context())
+			require.NoError(t, err)
+			defer conn.Release()
+			_, err = conn.Exec(t.Context(), `CREATE TEMP TABLE original_admin_sessions AS TABLE admin_sessions`)
+			require.NoError(t, err)
+			_, file, _, ok := runtime.Caller(0)
+			require.True(t, ok)
+			repo := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+			script := `import importlib.util,json,sys
+from pathlib import Path
+s=importlib.util.spec_from_file_location("actual_recovery",Path(sys.argv[1])/"deploy/customer/recovery_resume.py")
+m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+v=json.loads(sys.stdin.read())
+if v["action"]=="query":print(json.dumps({"query":m.session_probe_query(v["cutoff"])}))
+else:
+ try:
+  missing,reference,proof=m.session_gc_delta(v["source"],v["current"],v["plan"],v["source"]["table"])
+  print(json.dumps({"accepted":True,"reference":reference,"where":m.session_source_projection(missing)[1],"proof":proof}))
+ except m.RecoveryError:print(json.dumps({"accepted":False}))`
+			bridge := func(input map[string]any) map[string]json.RawMessage {
+				wire, e := json.Marshal(input)
+				require.NoError(t, e)
+				command := exec.CommandContext(t.Context(), "/usr/bin/python3", "-I", "-B", "-c", script, repo)
+				command.Env = []string{"PATH=" + os.Getenv("PATH")}
+				command.Stdin = bytes.NewReader(wire)
+				var out, diagnostic bytes.Buffer
+				command.Stdout, command.Stderr = &out, &diagnostic
+				require.NoError(t, command.Run(), "oracle process failed: %s", diagnostic.String())
+				var result map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal(out.Bytes(), &result))
+				return result
+			}
+			var query string
+			require.NoError(t, json.Unmarshal(bridge(map[string]any{"action": "query", "cutoff": cutoff})["query"], &query))
+			// Execute the unchanged production multi-statement READ ONLY query
+			// through native simple protocol, retaining only its hash observations.
+			probe := func(text string) map[string]json.RawMessage {
+				results, e := conn.Conn().PgConn().Exec(t.Context(), text).ReadAll()
+				require.NoError(t, e)
+				var raw []byte
+				for _, r := range results {
+					if len(r.Rows) == 1 && len(r.Rows[0]) == 1 {
+						raw = r.Rows[0][0]
+					}
+				}
+				var result map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal(raw, &result))
+				return result
+			}
+			sourceQuery := strings.Replace(query, "FROM admin_sessions t", "FROM original_admin_sessions t", 1)
+			original := probe(sourceQuery)
+			plan := map[string]any{"writer": map[string]string{"started_at": started.UTC().Format(time.RFC3339Nano)},
+				"allowed_session_gc": map[string]any{"table": "admin_sessions", "source_table": original["table"], "max_removed": 1, "expires_before": cutoff}}
+			input := func(current map[string]json.RawMessage) map[string]any {
+				return map[string]any{"action": "delta", "source": original, "current": current, "plan": plan}
+			}
+			// Invoke the actual production cleanup; no SQL imitation of deletion.
+			require.NoError(t, f.handler.CleanupOldData(t.Context(), 30))
+			current := probe(query)
+			result := bridge(input(current))
+			accepted := string(result["accepted"]) == "true"
+			require.Equal(t, scenario == "expired" || scenario == "live", accepted)
+			if !accepted {
+				return
+			}
+			var where string
+			require.NoError(t, json.Unmarshal(result["where"], &where))
+			projected := probe(strings.Replace(sourceQuery, "FROM original_admin_sessions t", "FROM original_admin_sessions t"+where, 1))
+			require.JSONEq(t, string(result["reference"]), string(projected["table"]), "expected fingerprint must be derived from original rows")
+			require.JSONEq(t, string(result["reference"]), string(current["table"]))
+			if scenario == "live" {
+				_, err = f.pool.Exec(t.Context(), `UPDATE admin_sessions SET revoked_at=now()`)
+				require.NoError(t, err)
+				require.Equal(t, "false", string(bridge(input(probe(query)))["accepted"]), "a retained live row change refuses")
+				_, err = f.pool.Exec(t.Context(), `DELETE FROM admin_sessions`)
+				require.NoError(t, err)
+				require.Equal(t, "false", string(bridge(input(probe(query)))["accepted"]), "missing live row refuses")
+			} else {
+				_, err = f.pool.Exec(t.Context(), `INSERT INTO admin_sessions(user_id,sid_hash,issued_at,expires_at)
+VALUES($1,decode(repeat('33',32),'hex'),now()-interval '2 hours',now()-interval '1 hour')`, f.actorID)
+				require.NoError(t, err)
+				require.Equal(t, "false", string(bridge(input(probe(query)))["accepted"]), "a newly added expired row refuses")
+			}
+		})
+	}
+}
