@@ -317,7 +317,7 @@ func (h *Handler) advanceXInsightSetup(ctx context.Context, id string) error {
 		next = "waiting_data"
 	}
 	raw, _ := json.Marshal(progress)
-	_, e = tx.Exec(ctx, `UPDATE xinsight_connector_installations SET setup_state=$2,setup_progress=$3::jsonb,updated_at=clock_timestamp() WHERE installation_id=$1`, id, next, raw)
+	_, e = tx.Exec(ctx, `UPDATE xinsight_connector_installations SET setup_state=$2,setup_progress=$3::jsonb,updated_at=clock_timestamp() WHERE installation_id=$1 AND (setup_state IS DISTINCT FROM $2 OR setup_progress IS DISTINCT FROM $3::jsonb)`, id, next, raw)
 	if e != nil {
 		return e
 	}

@@ -4,6 +4,15 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.15.1] - 2026-10-29
+
+### Fixed
+
+- Preserve an X-Insight setup record when its normal reconciliation finds no state or progress change. Real progress, state transitions, authorization failures and audit rollback keep their existing behavior.
+- Add a separately signed, bounded maintenance recovery entry for an already stopped M127-to-M128 upgrade whose only protected-data difference is one explicitly bound setup timestamp after the candidate writer started. Reuse the original authenticated release, constructor, checkpoints and remaining native steps; preserve the original backup and completed receipts. Reject other row, field, configuration, writer or restore changes before recording the recovery owner. Read-only checks create no lock or witness.
+- The recovery tool has its own `1.15.1-recovery.1` envelope identity and three text payloads. It is not an application install package and does not relabel, rebuild or replace the signed 1.15.0 images. Completion retains the original application release identity.
+- Local source candidate only. No CI, signed recovery artifact, Target recovery or Production acceptance is asserted by this entry.
+
 ## [1.15.0] - 2026-10-28
 
 ### Added
