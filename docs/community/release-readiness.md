@@ -1,10 +1,22 @@
 # Open-source release readiness
 
-Status on **2026-10-29: Preview17 is signed and published, and its exact public package passed formal Linux installation acceptance**. English is the primary community language; Chinese entry points and contributions are welcome.
+Status on **2026-10-31: Preview20 is signed and public, and its exact public package passed formal Linux installation acceptance**. English is the primary community language; Chinese entry points and contributions are welcome.
 
-## Current public preview — 1.15.0 / M128
+## Current public preview — 1.15.3 / M129
 
-The [English Linux guide](install-linux.md) and [Chinese companion](install-linux.zh-CN.md) bind [v1.15.0-preview.17](https://github.com/foigent/unirouter/releases/tag/v1.15.0-preview.17). Product source is `4eb32b5514d47aa91610fc66ef561368d6a18900`, release sequence 17, with 26 signed payloads and `expires_at: never`. The package is 130,045,928 bytes, SHA-256 `87f9fbd62b95a8293613f4fe726a2eca0ce723f31d4349a94b3e04a0844e23bf`. The signed predecessor window is 0–16 with minimum schema M127. Existing M127 servers use the [finite upgrade runbook](../ops/COMMUNITY-UPGRADE.md).
+The [English Linux guide](install-linux.md) and [Chinese companion](install-linux.zh-CN.md) bind [v1.15.3-preview.20](https://github.com/foigent/unirouter/releases/tag/v1.15.3-preview.20). Product source is `1a0230b50f799e2f9c64089270d525ec1ac34ca7`, release sequence 20, with 26 signed payloads and `expires_at: never`. The package is 130,052,464 bytes, SHA-256 `d3a6b16abd7561a19ca9b7e35c5e8aaa7fa018a2fb1f221c1a0dc30826c8726b`. Its signed predecessor range is 0–19 with minimum schema M127; existing M127/M128 installations use the [data-preserving upgrade runbook](../ops/COMMUNITY-UPGRADE.md). The original signing trust root is unchanged. The unsigned bootstrap JSON is independently pinned by its hash.
+
+[Formal consumer 41196358700](https://github.com/foigent/unirouter/actions/runs/41196358700), attempt 1, passed all 12 checks on disposable Ubuntu 24.04: exact public signed download and all payloads; six anonymous image pulls and exact app config/layer identities; fresh M129 installation; trust/collision refusals and check purity; same-identity interrupted installation/resume; console/login with `license: not_required`; native chosen-password behavior; read-only first-customer preview, single zero-wallet creation/replay and preserved identities after restart. It made no Provider call, signature or image build.
+
+[Source PR #486](https://github.com/foigent/unirouter/pull/486), [candidate Linux tests](https://github.com/foigent/unirouter/actions/runs/41166284675) and [exact-main protocol validation](https://github.com/foigent/unirouter/actions/runs/41170407453) passed. The candidate Linux cases separately qualify M127/M128→M129 and later M129→M129 ordinary upgrades with paired backups and independent restore, using synthetic data and temporary trust. Accepted [producer 41171563978](https://github.com/foigent/unirouter/actions/runs/41171563978) and [publisher 41173193200](https://github.com/foigent/unirouter/actions/runs/41173193200) bind the two application images and signed publication chain. Four dependency images retain their existing exact signed references. No rebuild, repeated push or second signature was needed for public delivery.
+
+The six public attachments are the complete signed package, Linux verifier, original public ring, independently pinned bootstrap JSON, historical retained-image source/NOTICE companion and checksums. Current source dispositions, notices and required source materials are inside the signed package. Historical materials and original third-party terms remain applicable; publication is not blanket license clearance.
+
+Original-host M128→M129 maintenance, real Provider/UI and ordinary UR→XI acceptance remain separate, pending results. Public-package installation does not establish those environment-specific results. Historical previews and failed candidates retain their original evidence and identities.
+
+## Historical public preview — 1.15.0 / M128 (2026-10-29)
+
+The retained [English Preview17 guide](https://github.com/foigent/unirouter/blob/1a0230b50f799e2f9c64089270d525ec1ac34ca7/docs/community/install-linux.md) and [Chinese companion](https://github.com/foigent/unirouter/blob/1a0230b50f799e2f9c64089270d525ec1ac34ca7/docs/community/install-linux.zh-CN.md) bind [v1.15.0-preview.17](https://github.com/foigent/unirouter/releases/tag/v1.15.0-preview.17). Product source is `4eb32b5514d47aa91610fc66ef561368d6a18900`, release sequence 17, with 26 signed payloads and `expires_at: never`. The package is 130,045,928 bytes, SHA-256 `87f9fbd62b95a8293613f4fe726a2eca0ce723f31d4349a94b3e04a0844e23bf`. The signed predecessor window is 0–16 with minimum schema M127. Existing M127 servers use the [finite upgrade runbook](../ops/COMMUNITY-UPGRADE.md).
 
 The actual holder signature, complete 28-member archive, all 26 payload hashes, native predecessor 0/16/M127 verification and out-of-range/schema rejection passed. The trust root is unchanged. Bootstrap JSON is unsigned and independently pinned by its hash.
 
