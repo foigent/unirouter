@@ -1,10 +1,6 @@
 # Community upgrade: retained installations and exact schema transitions
 
-Local correction candidate, 2026-10-30: the ordinary owner supports exact
-M127 → M129, M128 → M129, and later M129 → M129 application upgrades. M129
-corrects the persisted M128 observation validator's namespace for native
-PostgreSQL restore. These changes have no allocated release version/sequence
-and do not establish Linux, signed-artifact or Target acceptance.
+Current signed entry on 2026-10-31: [1.15.3 / sequence 20](https://github.com/foigent/unirouter/releases/tag/v1.15.3-preview.20) targets M129. [Source PR #486](https://github.com/foigent/unirouter/pull/486) passed [disposable Linux qualification](https://github.com/foigent/unirouter/actions/runs/41166284675) for exact M127 → M129, M128 → M129 and later M129 → M129 ordinary upgrades. [Formal public-package consumer](https://github.com/foigent/unirouter/actions/runs/41196358700) separately passed fresh M129 installation and recovery. M129 corrects the persisted M128 observation validator's namespace for native PostgreSQL restore. Existing-server maintenance still requires the original-host admission, cold pair and independent restore below; these results do not establish its deployment.
 
 Historical status on 2026-10-29: [1.15.0 / sequence 17](https://github.com/foigent/unirouter/releases/tag/v1.15.0-preview.17) is signed and public. Its [formal Linux consumer](https://github.com/foigent/unirouter/actions/runs/40739178872) passed exact signed-package download, anonymous image pulls, fresh M128 installation and recovery. Source PR #482 separately passed real disposable Linux M127 → M128 upgrade cases. Each existing server still requires the original-host checks and retained evidence below before maintenance; these results do not establish its deployment.
 

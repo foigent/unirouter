@@ -33,6 +33,14 @@ clearly and link to the current English source. Historical records retain
 their original language; translate active contributor documentation as it is
 maintained rather than rewriting historical evidence.
 
+## Try the signed Linux preview
+
+Use the [English Linux guide](docs/community/install-linux.md) or its linked
+Chinese companion. [Release readiness](docs/community/release-readiness.md)
+records the exact package and real installation/upgrade evidence. Installer
+feedback should include the release tag, OS/architecture, expected result and
+sanitized output from the failing step.
+
 ## Before you start
 
 For a small, well-understood correction, a focused PR with its validation is
