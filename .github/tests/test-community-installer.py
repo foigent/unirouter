@@ -27,6 +27,52 @@ fixture = load('installer_fixture', ROOT / '.github/tests/community-installer.py
 bootstrap = load('actual_bootstrap', ROOT / 'deploy/community/bootstrap.py')
 
 class InstallerFixtureContract(unittest.TestCase):
+    def test_historical_content_uses_native_pairing_producer_and_retains_storage_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);body=root/'historical-body';(body/'objects').mkdir(parents=True)
+            (body/'binding.token').write_text('a'*64)
+            statements=[]
+            def sql(directory,project,query):
+                statements.append(query)
+                return '17' if query.startswith('INSERT INTO projects') else ''
+            old=SimpleNamespace(root=root,result={'first_customer':{'organization_id':2}},sql=sql,
+                compose=lambda *args:['not-executed'],run=lambda *args:'{"services":{}}')
+            work=object.__new__(fixture.Acceptance)
+            actual_body,name,rendered=work.historical_data(old,root/'instance','synthetic')
+            self.assertEqual(actual_body,body);self.assertEqual(rendered,{'services':{}})
+            self.assertIn("VALUES(2,17,'synthetic-source-control');",statements[1])
+            self.assertIn("1,'community-linux-history','"+'a'*64+"'",statements[1])
+            self.assertIn("'topup','completed',1234567,1234567",statements[1])
+            self.assertEqual((body/'objects'/name).read_bytes(),
+                b'Synthetic retained customer body; no provider or customer data.\n')
+            self.assertEqual(fixture.sha(body/'objects'/name),name)
+
+    def test_m128_observation_seed_validates_address_before_bound_go_command(self):
+        for host in ('172.18.0.2','not-an-address','172.18.0.2 172.19.0.3'):
+            with self.subTest(host=host):
+                work=object.__new__(fixture.Acceptance);work.docker='/fixture/docker';work.env={}
+                calls=[];target={'system_identifier':'synthetic-system','database':'uniroute','database_oid':17}
+                old=SimpleNamespace(target=MagicMock(return_value=target))
+                def run(label,args,**kwargs):
+                    calls.append((label,args,kwargs))
+                    if label=='read M128 synthetic database identity':
+                        return json.dumps({'services':{'postgres':{'environment':{
+                            'POSTGRES_USER':'fixture','POSTGRES_PASSWORD':'synthetic-unused','POSTGRES_DB':'uniroute'}}}})
+                    if label=='read M128 private database address':return host
+                    self.assertEqual(label,'seed typed nonempty M128 observation');return ''
+                work.run=run
+                if host!='172.18.0.2':
+                    with self.assertRaises(ValueError):work.seed_native_observation(old,Path('/fixture/instance'),'synthetic')
+                    self.assertEqual(len(calls),2);old.target.assert_not_called();continue
+                work.seed_native_observation(old,Path('/fixture/instance'),'synthetic')
+                _,args,kwargs=calls[-1]
+                self.assertEqual(args,['go','test','-tags=integration','./cmd/uniroute','-run',
+                    '^TestCommunityInstallerSeedM128ObservationIntegration$','-count=1','-timeout=90s'])
+                self.assertTrue(all('synthetic-unused' not in str(arg) for arg in args))
+                self.assertEqual(json.loads(kwargs['env']['UR_COMMUNITY_INSTALLER_SEED_TARGET']),target)
+                self.assertEqual(kwargs['env']['UR_COMMUNITY_INSTALLER_SEED'],'observation-m128')
+                self.assertEqual(kwargs['env']['REQUIRE_TEST_DATABASE'],'1')
+
     def test_independent_cases_use_one_explicit_port_for_commands_and_HTTP(self):
         self.assertEqual(fixture.FIXTURE_PORTS, {'fresh':13000,'single':13001,'edge':13002})
         work=object.__new__(fixture.Acceptance)

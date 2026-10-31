@@ -1256,10 +1256,24 @@ class ArtifactOwnerReadFixtureTests(unittest.TestCase):
         bridge,current=self.load_carrier().carrier_read_ledgers(migrations)
         self.assertEqual(bridge[0],"maintenance_predecessor")
         self.assertEqual(current[0],"current")
-        self.assertEqual(bridge[1][-1],"000127_xinsight_communication_policy")
-        self.assertEqual(current[1][-1],"000128_upstream_release_observation")
+        self.assertEqual(bridge[1][-1],"000128_upstream_release_observation")
+        self.assertEqual(current[1][-1],"000129_upstream_observation_restore_namespace")
         self.assertEqual(current[1],sorted(p.name[:-7] for p in migrations.glob("*.up.sql")))
         self.assertEqual(bridge[1],current[1][:-1])
+
+    def test_current_read_fixture_refuses_missing_reviewed_tail_and_future_extension(self):
+        migrations=Path(__file__).resolve().parent.parent/"migrations"
+        original=sorted(p.name for p in migrations.glob("*.up.sql"))
+        for missing in ("000126_commercial_license_retirement", "000127_xinsight_communication_policy",
+                        "000128_upstream_release_observation", "000129_upstream_observation_restore_namespace", None):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory(prefix="ur-carrier-current-") as root:
+                for name in original:
+                    if name != str(missing)+".up.sql":
+                        (Path(root)/name).write_text("")
+                if missing is None:
+                    (Path(root)/"000130_unknown_future.up.sql").write_text("")
+                with self.assertRaisesRegex(RuntimeError,"exact reviewed artifact heads"):
+                    self.load_carrier().carrier_read_ledgers(Path(root))
 
     def test_unknown_future_head_cannot_keep_a_stale_success_label(self):
         import tempfile

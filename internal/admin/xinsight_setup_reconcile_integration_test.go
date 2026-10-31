@@ -90,17 +90,41 @@ func TestBackgroundStartupProtectsPairedUpgradeAndReleasesActualWritersIntegrati
 VALUES($1,'synthetic-ordinary-admin','synthetic-unusable-hash','org_admin','org_admin','active') RETURNING id`, ordinaryOrg).Scan(&ordinaryUser))
 	require.NoError(t, pool.QueryRow(t.Context(), `INSERT INTO projects(org_id,name,slug,status,budget_period)
 VALUES($1,'Ordinary default','default','active','none') RETURNING id`, ordinaryOrg).Scan(&ordinaryProject))
-	_, err := pool.Exec(t.Context(), `INSERT INTO wallets(org_id) VALUES($1)`, ordinaryOrg)
+	body := filepath.Join(t.TempDir(), "synthetic-protected-body")
+	raw := []byte("Synthetic paired upgrade body; no customer or Provider data.\n")
+	require.NoError(t, os.WriteFile(body, raw, 0600))
+	digest := fmt.Sprintf("%x", sha256.Sum256(raw))
+	// Match the real installer's nonempty retained history before pairing.
+	// Producer identity and the independently bound storage identity differ.
+	_, err := pool.Exec(t.Context(), `INSERT INTO wallets(org_id,balance_micros) VALUES($1,1234567);
+INSERT INTO transactions(request_id,org_id,project_id,type,status,amount_micros,balance_after_micros,note)
+VALUES('synthetic-linux-history',$1,$2,'topup','completed',1234567,1234567,'Synthetic preservation fixture');
+INSERT INTO execution_content_streams(org_id,project_id,source_instance) VALUES($1,$2,'synthetic-source-control');
+INSERT INTO execution_content_objects(content_ref,org_id,project_id,source_fact_id,revision,storage_identity,
+storage_binding_token,policy_version,policy_config,policy_effective_at,recovery_epoch,relative_path,state,
+reserved_bytes,saved_bytes,digest,expires_at,lease_owner,lease_expires_at)
+VALUES('uc1_'||$3,$1,$2,'synthetic-linux-history',1,'community-linux-history',$4,1,
+convert_to('{}','UTF8'),clock_timestamp(),1,$3,'ready',0,$5,'sha256:'||$3,
+clock_timestamp()+interval '1 day','synthetic-linux-history',clock_timestamp());`,
+		pgx.QueryExecModeSimpleProtocol, ordinaryOrg, ordinaryProject, digest, strings.Repeat("a", 64), len(raw))
 	require.NoError(t, err)
 	ordinaryRows := func() string {
 		var row string
 		require.NoError(t, pool.QueryRow(t.Context(), `SELECT jsonb_build_object('org',(SELECT to_jsonb(o) FROM orgs o WHERE id=$1),
 'users',(SELECT jsonb_agg(to_jsonb(u) ORDER BY id) FROM users u WHERE org_id=$1),
 'projects',(SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM projects p WHERE org_id=$1),
-'wallet',(SELECT to_jsonb(w) FROM wallets w WHERE org_id=$1))::text`, ordinaryOrg).Scan(&row))
+'wallet',(SELECT to_jsonb(w) FROM wallets w WHERE org_id=$1),
+'transactions',(SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM transactions x WHERE org_id=$1),
+'content_streams',(SELECT jsonb_agg(to_jsonb(s) ORDER BY project_id) FROM execution_content_streams s WHERE org_id=$1),
+'content_objects',(SELECT jsonb_agg(to_jsonb(o) ORDER BY content_ref) FROM execution_content_objects o WHERE org_id=$1))::text`, ordinaryOrg).Scan(&row))
 		return row
 	}
 	ordinaryBefore := ordinaryRows()
+	wrongProducer, err := sourcefacts.New(pool, sourcefacts.Options{Enabled: true, ContentEnabled: true,
+		SourceInstance: "community-linux-history", CursorSecret: syntheticSourceControlSecret})
+	require.NoError(t, err)
+	require.EqualError(t, wrongProducer.CheckReady(t.Context()), "content producer instance changed")
+	require.Equal(t, ordinaryBefore, ordinaryRows(), "readiness refusal cannot rebind protected history")
 	source := sourceControlFixture{xInsightFeedAuthorizationFixture: newXInsightFeedAuthorizationFixtureWithPool(t, false, pool)}
 	source.source, err = sourcefacts.New(pool, sourcefacts.Options{Enabled: true, ContentEnabled: true, SourceInstance: "synthetic-source-control", CursorSecret: syntheticSourceControlSecret})
 	require.NoError(t, err)
@@ -147,9 +171,6 @@ VALUES($1,decode(repeat('81',32),'hex'),now()-interval '2 hours',now()-interval 
 		return v
 	}
 	before := protected()
-	body := filepath.Join(t.TempDir(), "synthetic-protected-body")
-	raw := []byte("Synthetic paired upgrade body; no customer or Provider data.\n")
-	require.NoError(t, os.WriteFile(body, raw, 0600))
 	startup := runtimegeneration.NewBackgroundStartup()
 	defer startup.Stop()
 	var baselineCalls atomic.Int32
@@ -219,6 +240,7 @@ VALUES($1,decode(repeat('81',32),'hex'),now()-interval '2 hours',now()-interval 
 	currentBody, err := os.ReadFile(body)
 	require.NoError(t, err)
 	require.Equal(t, raw, currentBody)
+	require.Equal(t, ordinaryBefore, ordinaryRows(), "released native writers preserve retained customer, money and content history")
 	require.NotEqual(t, before, protected(), "legitimate writes resume after admission")
 }
 

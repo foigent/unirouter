@@ -13,6 +13,7 @@ from collections import namedtuple
 from datetime import datetime, timedelta, timezone
 import hashlib
 import importlib.util
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -773,8 +774,10 @@ os.kill(parent, signal.SIGKILL)
 UPDATE wallets SET balance_micros=1234567 WHERE org_id={org};
 INSERT INTO transactions(request_id,org_id,project_id,type,status,amount_micros,balance_after_micros,note)
 VALUES('synthetic-linux-history',{org},{project_id},'topup','completed',1234567,1234567,'Synthetic preservation fixture');
+-- This producer must match the existing native pairing fixture.
+-- The community-linux-history storage identity remains independently bound.
 INSERT INTO execution_content_streams(org_id,project_id,source_instance)
-VALUES({org},{project_id},'community-linux-history');
+VALUES({org},{project_id},'synthetic-source-control');
 INSERT INTO execution_content_objects(content_ref,org_id,project_id,source_fact_id,revision,storage_identity,
 storage_binding_token,policy_version,policy_config,policy_effective_at,recovery_epoch,relative_path,state,
 reserved_bytes,saved_bytes,digest,expires_at,lease_owner,lease_expires_at)
