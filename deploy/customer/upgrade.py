@@ -34,8 +34,10 @@ _RECOVERY_SPEC.loader.exec_module(recovery)
 require = install.require
 SCHEMA = "unirouter.community-upgrade.v1"
 SOURCE_SCHEMA = "000127_xinsight_communication_policy"
+OBSERVATION_SCHEMA = "000128_upstream_release_observation"
 TARGET_SCHEMA = install.SCHEMA
 _NOT_STARTED = object()
+_NATIVE_MIGRATION_CONTINUATION = object()
 _HistoricalExit = namedtuple("_HistoricalExit", "generation observation")
 _GENERATION_FIELDS = ("instance_id", "artifact_digest", "manifest_digest", "compatibility_epoch",
                       "schema_head", "revision", "state", "ingress_state")
@@ -43,6 +45,36 @@ _GENERATION_FIELDS = ("instance_id", "artifact_digest", "manifest_digest", "comp
 
 def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+
+
+def transition_ledger(source):
+    # The source binary proves its full ledger; the native candidate repeats
+    # exact artifact/prefix equality under maintenance locks before retirement.
+    require(isinstance(source, list) and source and all(isinstance(v, str) and v for v in source)
+            and source == sorted(set(source)) and source[-1] in (SOURCE_SCHEMA, OBSERVATION_SCHEMA, TARGET_SCHEMA),
+            "Unsupported complete source ledger")
+    # This is a finite append-only contract, not numeric head compatibility.
+    suffix = {SOURCE_SCHEMA: [OBSERVATION_SCHEMA, TARGET_SCHEMA], OBSERVATION_SCHEMA: [TARGET_SCHEMA], TARGET_SCHEMA: []}
+    return source + suffix[source[-1]]
+
+
+def source_head(metadata):
+    transition_ledger(metadata["ledger"])
+    return metadata["ledger"][-1]
+
+
+def operation_evidence(directory, operation, create=False):
+    require(isinstance(operation, str) and re.fullmatch(r"ucu_[a-f0-9]{32}", operation),
+            "Invalid private operation identity")
+    path = directory
+    for component in ("upgrades", operation):
+        path = path / component
+        if create:
+            path.mkdir(mode=0o700, exist_ok=True)
+        require(path.is_dir() and not path.is_symlink() and path == path.resolve()
+                and path.stat().st_uid == os.geteuid() and stat.S_IMODE(path.stat().st_mode) == 0o700,
+                "Unsafe private upgrade evidence directory")
+    return path
 
 
 def _native_lease_expiry(value):
@@ -224,7 +256,7 @@ class HistoricalObservations:
             exact_fields(generation, _GENERATION_FIELDS, "Incomplete original generation binding")
             instance = generation["instance_id"]
             require(instance not in result and instance in rows and type(generation["revision"]) is int
-                    and generation["revision"] > 0 and generation["schema_head"] == SOURCE_SCHEMA
+                    and generation["revision"] > 0 and generation["schema_head"] == source.get("target_schema", SOURCE_SCHEMA)
                     and generation["ingress_state"] == "absent", "Historical generation is duplicate or unsupported")
             expected = dict(generation)
             if retired:
@@ -354,21 +386,68 @@ class Installation:
  'manifests',(SELECT COALESCE(jsonb_agg(to_jsonb(m) ORDER BY artifact_digest),'[]') FROM runtime_support_manifests m),
  'ingress',(SELECT COALESCE(jsonb_agg(to_jsonb(c) ORDER BY change_id),'[]') FROM runtime_ingress_changes c));"""))
 
+    def previous_completed(self, source, candidate):
+        previous = self.state.get("upgrade")
+        require(previous and previous.get("format") == SCHEMA and previous.get("state") == "completed"
+                and previous.get("pending") is None and previous.get("candidate", {}).get("package_sha256") != candidate["package_sha256"],
+                "An upgrade already owns this installation; use resume-upgrade")
+        current = self.state.get("current_release", {})
+        for key in ("release_sequence", "version", "commit", "package_sha256"):
+            require(previous.get("candidate", {}).get(key) == current.get(key) == source.get(key)
+                    and source.get(key) is not None, "Completed predecessor and installed source disagree")
+        require(self.state["package_sha256"] == source["package_sha256"],
+                "Completed predecessor package identity changed")
+        self.source_snapshot(previous)
+
+    def source_snapshot(self, witness):
+        if "source_state_path" in witness:
+            require("source_state_bytes" not in witness and "source_state" not in witness,
+                    "Ambiguous source snapshot representation")
+            directory = operation_evidence(self.directory, witness["operation_id"])
+            path = directory / "source-install-state.json"
+            require(witness["source_state_path"] == str(path.relative_to(self.directory)),
+                    "Source snapshot path differs from the exact operation")
+            raw = read_private(path, 1 << 20)
+        else:
+            # Retained legacy operations keep their exact embedded format.
+            raw = base64.b64decode(witness["source_state_bytes"], validate=True)
+            require(install.strict_json(raw) == witness["source_state"], "Retained original installation state changed")
+        source = install.strict_json(raw)
+        require(hashlib.sha256(raw).hexdigest() == witness["source_state_sha256"]
+                and source.get("installation_id") == self.state["installation_id"]
+                and source.get("directory") == str(self.directory)
+                and source.get("package_sha256") == witness["source"]["package_sha256"],
+                "Retained original installation state changed")
+        return raw
+
     def claim(self, source, candidate, details=None):
-        require("upgrade" not in self.state, "An upgrade already owns this installation; use resume-upgrade")
+        if "upgrade" in self.state:
+            self.previous_completed(source, candidate)
         require(re.fullmatch(r"[a-f0-9]{64}", candidate.get("package_sha256", ""))
                 and candidate["package_sha256"] != self.state["package_sha256"],
                 "Upgrade claim must revoke the original package resume identity")
-        snapshot = copy.deepcopy(self.state)
+        details = details or {}
+        evidence = operation_evidence(self.directory, details.get("operation_id"), create=True)
+        snapshot = evidence / "source-install-state.json"
+        require(not snapshot.exists() and not snapshot.is_symlink(), "Source snapshot already exists; preserve preparation")
+        install.private_file(snapshot, self.state_raw)
+        # The directory entry must be durable before install-state claims the
+        # new operation. A crash leaves either the old authority or its exact
+        # retained snapshot, never an unbacked reference.
+        for parent in (evidence, evidence.parent, self.directory):
+            fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        if hasattr(self, "_checkpoint"):
+            self._checkpoint("source-state-retained")
         self.state["upgrade"] = {"format": SCHEMA, "state": "preparing", "pending": None, "done": [],
                                  "source": source, "candidate": candidate,
                                  "source_state_sha256": hashlib.sha256(self.state_raw).hexdigest(),
-                                 "source_state_bytes": base64.b64encode(self.state_raw).decode(),
-                                 "source_state": snapshot, "receipts": {}}
-        # The original M127 installer already validates this exact field before
-        # any restart/password step. Changing it atomically revokes stale resume
-        # even when an old installer does not know the new upgrade member.
-        self.state["upgrade"].update(details or {})
+                                 "source_state_path": str(snapshot.relative_to(self.directory)), "receipts": {}}
+        self.state["upgrade"].update(details)
+        # Retain exact old bytes before atomically revoking stale resume.
         self.state["package_sha256"] = candidate["package_sha256"]
         install.save_state(self.directory, self.state)
 
@@ -378,8 +457,12 @@ def retained_installation(metadata):
     envelope = metadata.get("installation", "")
     require(envelope.startswith(prefix), "Original completed installation envelope is required")
     original = install.strict_json(envelope[len(prefix):])
-    require(original.get("state") == "completed" and metadata["ledger"][-1] == SOURCE_SCHEMA,
-            "Community maintenance requires the exact completed M127 source")
+    head = source_head(metadata)
+    origin = original.get("plan", {}).get("artifact", {}).get("ledger")
+    require(original.get("state") == "completed" and isinstance(origin, list) and origin
+            and origin == sorted(set(origin)) and metadata["ledger"][:len(origin)] == origin
+            and head in (SOURCE_SCHEMA, OBSERVATION_SCHEMA, TARGET_SCHEMA),
+            "Community maintenance requires the exact completed source origin")
     return original
 
 
@@ -405,7 +488,7 @@ def maintenance_input(metadata, source, candidate, trusted_ring_sha256, stop_pro
     state = metadata["release"]
     require(state["package_sha256"] == source["package_sha256"]
             and state["release_sequence"] == source["release_sequence"]
-            and state["target_schema"] == SOURCE_SCHEMA,
+            and state["target_schema"] == source_head(metadata),
             "Installed source identity changed")
     document = {"schema_version": "unirouter.community-maintenance.v1",
                 "installation_id": original["plan"]["installation_id"],
@@ -422,8 +505,8 @@ def maintenance_input(metadata, source, candidate, trusted_ring_sha256, stop_pro
                 "expected_database": metadata["database"], "expected_database_oid": metadata["database_oid"],
                 "expected_ingress_head": heads[0]["change_id"], "retirements": []}
     for row in sorted(active, key=lambda value: value["instance_id"]):
-        require(row["ingress_state"] == "absent" and row["schema_head"] == SOURCE_SCHEMA,
-                "Retirement requires exact absent M127 generations")
+        require(row["ingress_state"] == "absent" and row["schema_head"] == source_head(metadata),
+                "Retirement requires exact absent source generations")
         if row["instance_id"] in historical:
             observation = historical[row["instance_id"]]
             require(isinstance(observation, _HistoricalExit) and observation.generation ==
@@ -455,14 +538,21 @@ class Upgrade(Installation):
         super().__init__(directory, run)
         require(layout in ("community_single", "ur_edge_pair"), "Unsupported upgrade layout")
         self.layout, self.edge_directory = layout, edge_directory
-        retained_package = self.state.get("upgrade", {}).get("source_package") or self.state.get("current_release", {}).get("package")
-        self.source_package = install.regular(source_package or (Path(retained_package) if retained_package else directory / "release.tar.gz"))
-        for path in (self.source_package, release_directory, verifier, public_keys):
+        for path in (release_directory, verifier, public_keys):
             require(path.is_absolute() and path == path.resolve() and not any(c in str(path) for c in (",", ":", "\n", "\r")),
                     "Upgrade inputs need absolute real paths safe for the existing Docker mount interface")
         self.verifier, self.public_keys = install.regular(verifier), install.regular(public_keys)
         self.release = install.Release(release_directory, release_directory / "release.tar.gz", verifier,
                                        public_keys, "amd64", run)
+        previous = self.state.get("upgrade", {})
+        self.continuing = bool(previous and previous.get("candidate", {}).get("package_sha256") == self.release.sha)
+        require(not previous or self.continuing or (previous.get("state") == "completed" and previous.get("pending") is None),
+                "An existing upgrade owns this installation; use its exact resume-upgrade")
+        retained = previous if self.continuing else self.state.get("current_release", {})
+        retained_package = retained.get("source_package") if self.continuing else retained.get("package")
+        self.source_package = install.regular(source_package or (Path(retained_package) if retained_package else directory / "release.tar.gz"))
+        require(self.source_package.is_absolute() and self.source_package == self.source_package.resolve()
+                and not any(c in str(self.source_package) for c in (",", ":", "\n", "\r")), "Unsafe retained source package path")
         for name in ("upgrade.py", "recovery.py"):
             declared = install.PREFIX + name
             require(declared in self.release.files
@@ -490,7 +580,7 @@ class Upgrade(Installation):
                     "Unknown external ingress layout")
             self.edge_compose = self.docker + ["compose", "--project-name", self.state["project"] + "-edge",
                 "--project-directory", str(edge_directory), "--env-file", "/dev/null", "-f", str(edge_directory / "compose.edge.json")]
-        override = self.state.get("upgrade", {}).get("image_override") or self.state.get("current_release", {}).get("image_override")
+        override = retained.get("image_override")
         if override and Path(override).exists():
             require(Path(override) == self.runtime / "upgrade-image.json", "Unknown retained upgrade image override")
             self.compose += ["-f", override]
@@ -499,7 +589,7 @@ class Upgrade(Installation):
         self.source = None
         self.metadata = None
         self.writer_instances = {}
-        retained_history = self.state.get("upgrade", {}).get("historical_exits_path")
+        retained_history = previous.get("historical_exits_path") if self.continuing else None
         self.historical_path = historical_exits or (Path(retained_history) if retained_history else None)
         self.historical_raw = None
         self.historical_sources = {}
@@ -524,7 +614,7 @@ class Upgrade(Installation):
         if self.historical_path is None:
             return {}
         require(read_private(self.historical_path) == self.historical_raw, "Historical exit input changed")
-        witness = self.state.get("upgrade", {})
+        witness = self.state.get("upgrade", {}) if self.continuing else {}
         if witness:
             require(witness.get("historical_exits_path") == str(self.historical_path)
                     and witness.get("historical_exits_sha256") == hashlib.sha256(self.historical_raw).hexdigest(),
@@ -536,7 +626,7 @@ class Upgrade(Installation):
         retired = bool(retired_inputs) and all(
             (row := rows.get(item["instance_id"])) and row["state"] == "stopped" and row["ingress_state"] == "absent"
             and row["artifact_digest"] == item["artifact_digest"] and row["manifest_digest"] == item["manifest_digest"]
-            and row["revision"] == item["expected_revision"] + 1 and row["schema_head"] == SOURCE_SCHEMA
+            and row["revision"] == item["expected_revision"] + 1 and row["schema_head"] == source.get("target_schema", SOURCE_SCHEMA)
             for item in retired_inputs)
         observations = HistoricalObservations(self.historical_raw)
         result = observations.validate(self.state, metadata, source, self._historical_resource, self._process_start, retired)
@@ -610,6 +700,7 @@ class Upgrade(Installation):
 
     def _begin(self):
         report = self.check()
+        source_override = self._source_image_override()
         ingress = self._ingress_config()
         configuration = [self.runtime / name for name in (".env", "docker-compose.yml", "installation.json", "runtime-image.json")]
         if self.edge_directory:
@@ -636,17 +727,18 @@ class Upgrade(Installation):
             configuration_sha256=config_sha256, rendering_sha256=rendering_sha256,
             preparation_head=preparation_head, preparation_fleet=preparation_fleet,
             environment_sha256=hashlib.sha256(self.env_raw).hexdigest(),
-            source_ledger=self.metadata["ledger"], database_system_id=self.metadata["system_id"],
+            source_ledger=self.metadata["ledger"], target_ledger=transition_ledger(self.metadata["ledger"]), database_system_id=self.metadata["system_id"],
             database=self.metadata["database"], database_oid=self.metadata["database_oid"],
             source_containers={role: {key: value for key, value in row.items() if key in ("Id", "Image", "Mounts")}
                                for role, row in self.containers.items()},
-            image_override=str(self.runtime / "upgrade-image.json"),
+            image_override=str(self.runtime / "upgrade-image.json"), source_image_override=source_override,
             content_settings={key: self.rendered["services"]["backend"].get("environment", {}).get(key, "")
                               for key in ("SOURCE_CONTENT_STORAGE_ROOT", "SOURCE_CONTENT_STORAGE_IDENTITY", "SOURCE_CONTENT_STORAGE_TOKEN_FILE")})
         if self.historical_path is not None:
             details.update(historical_exits_path=str(self.historical_path),
                 historical_exits_sha256=hashlib.sha256(self.historical_raw).hexdigest())
         self.claim(self.source, report["candidate"], details)
+        self.continuing = True
         witness = self.witness
         self._resume_context()
         self._checkpoint("claimed")
@@ -660,12 +752,12 @@ class Upgrade(Installation):
         require(parent == parent.resolve() and stat.S_IMODE(parent.stat().st_mode) == 0o700, "Unsafe upgrade evidence parent")
         self.evidence.mkdir(mode=0o700, exist_ok=True)
         require(self.evidence == self.evidence.resolve() and stat.S_IMODE(self.evidence.stat().st_mode) == 0o700, "Unsafe upgrade evidence directory")
-        self._write_owned(self.evidence / "source-install-state.json", base64.b64decode(witness["source_state_bytes"]))
+        self._write_owned(self.evidence / "source-install-state.json", self.source_snapshot(witness))
         self._retain_historical()
         self._retain_candidate()
         support_raw = self._carrier(True, ["runtime-generation", "support"])
         support = install.strict_json(support_raw)
-        require(SOURCE_SCHEMA in support.get("schema_heads", []) and TARGET_SCHEMA in support.get("schema_heads", []),
+        require(witness["source_ledger"][-1] in support.get("schema_heads", []) and TARGET_SCHEMA in support.get("schema_heads", []),
                 "Candidate artifact does not declare this finite schema successor")
         witness["candidate_support_sha256"] = hashlib.sha256(support_raw.encode()).hexdigest()
         self._assert_configuration()
@@ -702,15 +794,13 @@ class Upgrade(Installation):
                 "Retained source package/layout/settings changed; preserve the pending installation")
         require(re.fullmatch(r"ucu_[a-f0-9]{32}", witness["operation_id"])
                 and witness["candidate_manifest_sha256"] == self._manifest_digest(), "Candidate manifest or private evidence identity changed")
-        raw_state = base64.b64decode(witness["source_state_bytes"], validate=True)
-        require(hashlib.sha256(raw_state).hexdigest() == witness["source_state_sha256"]
-                and install.strict_json(raw_state) == witness["source_state"], "Retained original installation state changed")
+        self.source_snapshot(witness)
+        self._target_ledger()
         # A completed readback can still run the native carrier through this
         # Compose definition. Freeze execution configuration for that readback;
         # legitimate new business rows are outside this file identity check.
         self._assert_configuration()
-        if Path(witness["image_override"]).exists():
-            require(read_private(Path(witness["image_override"])) == canonical(self._image_override()), "Upgrade image override changed during recovery")
+        self._override_phase()
         self.evidence = self.directory / "upgrades" / witness["operation_id"]
         self.retained_candidate = self.directory / "releases" / (self.release.sha + ".tar.gz")
         self.containers = witness["source_containers"]
@@ -776,7 +866,7 @@ class Upgrade(Installation):
             result = _NOT_STARTED
         # Only the step's own readback can establish that its effect was never
         # started. An unknown result is not permission to repeat a mutation.
-        if result is _NOT_STARTED:
+        if result is _NOT_STARTED or (name == "migrate" and result is _NATIVE_MIGRATION_CONTINUATION):
             result = action()
             self._checkpoint("effect:" + name)
         require(isinstance(result, dict), "Upgrade step has no verified receipt")
@@ -1105,8 +1195,34 @@ class Upgrade(Installation):
         self.witness["verification_database"] = clone
         self._save()
         self.sql('CREATE DATABASE "' + clone + '" OWNER "' + self.env["POSTGRES_USER"] + '";', "postgres")
-        self._files(self.docker + ["exec", "-i", pg, "pg_restore", "--exit-on-error", "--single-transaction", "-U", self.env["POSTGRES_USER"], "-d", clone],
-                    "restore cold dump into independent database", input_path=dump)
+        restore_args = self.docker + ["exec", "-i", pg, "pg_restore", "--exit-on-error", "--single-transaction", "-U", self.env["POSTGRES_USER"], "-d", clone]
+        compatibility = None
+        if metadata["ledger"][-1] == OBSERVATION_SCHEMA:
+            self._files(restore_args + ["--section=pre-data"], "restore independent database pre-data", input_path=dump)
+            source = copy.deepcopy(self.witness["retirement_input"])
+            source["retirements"] = []
+            document = {"schema_version": "unirouter.community-restore-compatibility.v1", "source": source,
+                        "clone_database": clone, "clone_database_oid": int(self.sql("SELECT oid FROM pg_database WHERE datname='" + clone + "';", "postgres")),
+                        "dump_path": "/upgrade/evidence/backup/database.dump", "dump_sha256": install.digest(dump)}
+            self._write_owned(backup / "restore-compatibility-input.json", canonical(document))
+            checked = install.strict_json(self._carrier(True, ["upgrade", "restore-compat-check"], document, database=clone))
+            require(checked.get("status") in ("eligible", "applied"), "Independent restore compatibility is unconfirmed")
+            compatibility = install.strict_json(self._carrier(True, ["upgrade", "restore-compat-apply"], document, database=clone))
+            # Validate the one permitted DDL receipt. Execution reads the
+            # canonical fragment from the candidate binary's own M129 file.
+            correction_sha = hashlib.sha256(b"ALTER FUNCTION public.valid_upstream_release_observation(jsonb) SET search_path TO pg_catalog, public;").hexdigest()
+            require(compatibility.get("schema_version") == document["schema_version"] and compatibility.get("status") == "applied"
+                    and compatibility.get("source_package_sha256") == self.witness["source"]["package_sha256"]
+                    and compatibility.get("clone_database") == clone and compatibility.get("clone_database_oid") == document["clone_database_oid"]
+                    and compatibility.get("dump_sha256") == document["dump_sha256"]
+                    and compatibility.get("correction_migration") == TARGET_SCHEMA and compatibility.get("correction_sha256") == correction_sha
+                    and compatibility.get("restored_definition", {}).get("config") == ["search_path=pg_catalog, public"],
+                    "Independent restore correction receipt differs from its bound source and signed DDL")
+            self._write_owned(backup / "restore-compatibility-receipt.json", canonical(compatibility))
+            for section in ("data", "post-data"):
+                self._files(restore_args + ["--section=" + section], "restore independent database " + section, input_path=dump)
+        else:
+            self._files(restore_args, "restore cold dump into independent database", input_path=dump)
         require(recovery.table_fingerprints(sql, clone) == tables and recovery.boundaries(sql, clone) == before,
                 "Independent database restore differs from the cold source")
         # This is the original SQL restore owner shipped in the signed package,
@@ -1130,7 +1246,10 @@ class Upgrade(Installation):
                 "Restored financial coverage successor differs")
         origin = retained_installation(metadata)["plan"]
         self._write_owned(self.evidence / "source-install-plan.json", canonical(origin))
-        checked = self._carrier(False, ["fresh-install", "check", "--plan", "/upgrade/evidence/source-install-plan.json"], database=clone)
+        completed_check = ["fresh-install", "check", "--plan", "/upgrade/evidence/source-install-plan.json"]
+        if metadata["ledger"][-1] == OBSERVATION_SCHEMA:
+            completed_check += ["--completed-source-schema", OBSERVATION_SCHEMA]
+        checked = self._carrier(metadata["ledger"][-1] != SOURCE_SCHEMA, completed_check, database=clone)
         require("state=completed" in checked, "Source artifact did not validate the independent restored origin")
         if content["inventory"] is not None:
             restored_root = Path(restored["verification_directory"]) / content["root"].lstrip("/")
@@ -1153,7 +1272,7 @@ class Upgrade(Installation):
                    "content": content, "roots": [str(path) for path in roots], "files": inventory,
                    "dump_sha256": install.digest(dump), "rebase_sha256": install.digest(self.rebase),
                    "verification_database": clone, "restored_tables": recovery.table_fingerprints(sql, clone),
-                   "restored_boundaries": after, "source_metadata": metadata}
+                   "restored_boundaries": after, "source_metadata": metadata, "ddl_compatibility_delta": compatibility}
         self._write_owned(backup / "receipt.json", canonical(receipt))
         return {"receipt_sha256": install.digest(backup / "receipt.json"), "dump_sha256": receipt["dump_sha256"], "verification_database": clone}
 
@@ -1166,9 +1285,24 @@ class Upgrade(Installation):
             return None
         receipt = install.strict_json(read_private(receipt_path, 16 << 20))
         require(install.digest(backup / "database.dump") == receipt["dump_sha256"] and install.digest(self.rebase) == receipt["rebase_sha256"], "Retained cold dump/restore owner changed")
+        compatibility = receipt.get("ddl_compatibility_delta")
+        if self.witness["source_ledger"][-1] == OBSERVATION_SCHEMA:
+            require(isinstance(compatibility, dict) and compatibility == install.strict_json(read_private(backup / "restore-compatibility-receipt.json", 65536))
+                    and compatibility["dump_sha256"] == receipt["dump_sha256"] and compatibility["clone_database"] == receipt["verification_database"]
+                    and compatibility["source_package_sha256"] == self.witness["source"]["package_sha256"] and compatibility["status"] == "applied",
+                    "Retained declared restore compatibility delta changed")
+            self._carrier(True, ["fresh-install", "check", "--plan", "/upgrade/evidence/source-install-plan.json", "--completed-source-schema", OBSERVATION_SCHEMA], database=receipt["verification_database"])
+        else:
+            require(compatibility is None, "Unexpected restore DDL compatibility delta")
         restore_and_verify_paired_files(backup, self.run)
         sql = lambda db, query: self.sql(query, db)
-        require(recovery.table_fingerprints(sql, self.env["POSTGRES_DB"]) == receipt["tables"] and self._content() == receipt["content"]
+        actual_ledger = self.native_metadata()["ledger"]
+        if actual_ledger == self.witness["source_ledger"]:
+            source_unchanged = recovery.table_fingerprints(sql, self.env["POSTGRES_DB"]) == receipt["tables"]
+        else:
+            self._preserved(migration_prefix=True)
+            source_unchanged = True
+        require(source_unchanged and self._content() == receipt["content"]
                 and paired_file_inventory([Path(path) for path in receipt["roots"]])["files"] == receipt["files"]["files"]
                 and recovery.table_fingerprints(sql, receipt["verification_database"]) == receipt["restored_tables"]
                 and recovery.boundaries(sql, receipt["verification_database"]) == receipt["restored_boundaries"],
@@ -1188,10 +1322,20 @@ class Upgrade(Installation):
         require(values, "Expected a nonempty retained identity set")
         return "(" + ",".join("'" + str(value).replace("'", "''") + "'" for value in values) + ")"
 
-    def _preserved(self, recorded=False):
+    def _target_ledger(self):
+        expected = transition_ledger(self.witness["source_ledger"])
+        require(self.witness.get("target_ledger", expected) == expected, "Frozen target ledger changed")
+        return expected
+
+    def _preserved(self, recorded=False, migration_prefix=False):
         pair = self._pair()
         metadata = self.native_metadata()
-        require(metadata["ledger"] == self.witness["source_ledger"] + [TARGET_SCHEMA], "Exact M128 successor ledger is required")
+        if migration_prefix:
+            require(self.witness["pending"] == "migrate" and self.witness["source_ledger"][-1] == SOURCE_SCHEMA
+                    and metadata["ledger"] == self.witness["source_ledger"] + [OBSERVATION_SCHEMA],
+                    "Only the exact known pending native migration prefix may continue")
+        else:
+            require(metadata["ledger"] == self._target_ledger(), "Exact target ledger is required")
         original = pair["source_metadata"]
         new_instances = {row["instance_id"] for row in self.witness["receipts"].get("start-writers", {}).get("writers", {}).values()}
         require({row["instance_id"] for row in metadata["generations"]} == {row["instance_id"] for row in original["generations"]} | new_instances,
@@ -1205,35 +1349,52 @@ class Upgrade(Installation):
         if self.witness.get("admission"): ingress.add(self.witness["admission"]["change_id"])
         require({row["change_id"] for row in metadata["ingress"]}.issubset(ingress), "Unknown ingress transition appeared")
         projections = {
-            "model_deployments": ("to_jsonb(t)-'upstream_release_observation'-'upstream_observation_revision'", ""),
-            "schema_migrations": ("to_jsonb(t)", " WHERE version<>'" + TARGET_SCHEMA + "'"),
             "runtime_generations": ("to_jsonb(t)", " WHERE instance_id IN " + self._in(row["instance_id"] for row in original["generations"])),
             "runtime_support_manifests": ("to_jsonb(t)", " WHERE artifact_digest IN " + self._in(row["artifact_digest"] for row in original["manifests"])),
             "runtime_ingress_changes": ("to_jsonb(t)", " WHERE change_id IN " + self._in(row["change_id"] for row in original["ingress"])),
             "release_history": ("to_jsonb(t)", " WHERE release_sequence<=" + str(self.witness["source"]["release_sequence"]))}
+        expanding = self.witness["source_ledger"][-1] == SOURCE_SCHEMA
+        if expanding:
+            projections["model_deployments"] = ("to_jsonb(t)-'upstream_release_observation'-'upstream_observation_revision'", "")
+        added = metadata["ledger"][len(self.witness["source_ledger"]):]
+        if added:
+            projections["schema_migrations"] = ("to_jsonb(t)", " WHERE version NOT IN " + self._in(added))
         actual = recovery.table_fingerprints(lambda db, query: self.sql(query, db), self.env["POSTGRES_DB"], projections=projections)
         expected = dict(pair["tables"])
         if recorded:
             require(isinstance(self._recorded_release(), dict), "Exact target release record is required")
             actual.pop("release_state"); expected.pop("release_state")
         require(actual == expected and self._content() == pair["content"], "Protected original database/content facts changed")
-        require(self.sql("SELECT count(*) FROM model_deployments WHERE upstream_release_observation IS NOT NULL OR upstream_observation_revision<>0;") == "0",
+        require(not expanding or self.sql("SELECT count(*) FROM model_deployments WHERE upstream_release_observation IS NOT NULL OR upstream_observation_revision<>0;") == "0",
                 "Unexpected post-migration observation writes precede admission")
         return metadata
 
     def _migration_result(self):
         metadata = self.native_metadata()
-        if metadata["ledger"] == self.witness["source_ledger"]:
+        if self.witness["source_ledger"][-1] != TARGET_SCHEMA and metadata["ledger"] == self.witness["source_ledger"]:
             return _NOT_STARTED
-        require(metadata["ledger"] == self.witness["source_ledger"] + [TARGET_SCHEMA], "Migration has an unexpected ledger outcome")
+        if self.witness["source_ledger"][-1] == SOURCE_SCHEMA and metadata["ledger"] == self.witness["source_ledger"] + [OBSERVATION_SCHEMA]:
+            # The existing native migration owner commits each exact SQL once.
+            # Re-enter only this known interrupted suffix after full cold/data
+            # proof; this is not a replay of an unknown external effect.
+            require(isinstance(self._backup_result(), dict), "Verified cold recovery pair is required")
+            return _NATIVE_MIGRATION_CONTINUATION
+        require(metadata["ledger"] == self._target_ledger(), "Migration has an unexpected ledger outcome")
         self._carrier(True, ["runtime-generation", "inspect"])
         self._preserved()
-        return {"schema": TARGET_SCHEMA, "ledger_sha256": hashlib.sha256(canonical(metadata["ledger"])).hexdigest()}
+        receipt = {"schema": TARGET_SCHEMA, "ledger_sha256": hashlib.sha256(canonical(metadata["ledger"])).hexdigest()}
+        if self.witness["source_ledger"][-1] == TARGET_SCHEMA:
+            # Equality is not proof of cold backup or complete native authority.
+            require(isinstance(self._backup_result(), dict), "Verified cold recovery pair is required")
+            self._carrier(True, ["fresh-install", "check", "--plan", "/upgrade/evidence/source-install-plan.json"])
+            receipt["mode"] = "same_schema"
+        return receipt
 
     def _migrate(self):
         # Reprove the completed cold pair immediately before native mutation.
         require(isinstance(self._backup_result(), dict), "Verified cold recovery pair is required")
-        self._carrier(True, ["migrate", "up"])
+        if self.witness["source_ledger"][-1] != TARGET_SCHEMA:
+            self._carrier(True, ["migrate", "up"])
         result = self._migration_result()
         require(isinstance(result, dict), "Native migration result is unconfirmed")
         return result
@@ -1242,17 +1403,75 @@ class Upgrade(Installation):
         return {"services": {**{role: {"image": self.release.images["backend"], "environment": {"RUNTIME_IMAGE_DIGEST": self.witness["candidate_image"]["id"]}}
                                   for role in self.roles}, "frontend": {"image": self.release.images["frontend"]}}}
 
-    def _configured_images(self):
+    def _source_image_override(self):
+        path = self.runtime / "upgrade-image.json"
+        if not path.exists() and not path.is_symlink():
+            require(not self.state.get("current_release", {}).get("image_override"), "Installed image override is missing")
+            return None
+        require(self.state.get("current_release", {}).get("image_override") == str(path), "Unowned source image override")
+        raw = read_private(path)
+        expected = {"services": {**{role: {"image": self.source["images"]["backend"],
+                    "environment": {"RUNTIME_IMAGE_DIGEST": self.containers["backend"]["Image"]}} for role in self.roles},
+                    "frontend": {"image": self.source["images"]["frontend"]}}}
+        require(raw == canonical(expected), "Source image override differs from installed signed images")
+        return {"bytes":base64.b64encode(raw).decode(), "sha256":hashlib.sha256(raw).hexdigest(), "metadata":recovery.filemeta(path)}
+
+    def _override_phase(self):
         path = Path(self.witness["image_override"])
-        if not path.exists():
+        require(path == self.runtime / "upgrade-image.json", "Unknown image override path")
+        present = path.exists() or path.is_symlink()
+        raw = read_private(path) if present else None
+        old = self.witness.get("source_image_override")
+        if old is not None:
+            source = base64.b64decode(old["bytes"], validate=True)
+            require(hashlib.sha256(source).hexdigest() == old["sha256"], "Source image override binding changed")
+            was_source = raw == source and recovery.filemeta(path) == old["metadata"] if present else False
+        else:
+            was_source = not present
+        configured = "configure-images" in self.witness["done"]
+        switching = self.witness["pending"] == "configure-images"
+        if raw == canonical(self._image_override()) and (configured or switching):
+            if old is not None and raw == source:
+                require(was_source, "Unchanged image override metadata drifted")
+            if configured:
+                receipt = self.witness["receipts"]["configure-images"]
+                require(receipt == {"file":str(path),"sha256":hashlib.sha256(raw).hexdigest()}, "Configured image receipt changed")
+            return "candidate"
+        require(not configured and was_source, "Image override changed outside its exact configure step")
+        return "source"
+
+    def _configured_images(self):
+        if self._override_phase() != "candidate":
             return _NOT_STARTED
-        require(read_private(path) == canonical(self._image_override()), "Retained candidate image override changed")
+        path = Path(self.witness["image_override"])
         if str(path) not in self.compose:
             self.compose += ["-f", str(path)]
         return {"file": str(path), "sha256": install.digest(path)}
 
     def _configure_images(self):
-        self._write_owned(Path(self.witness["image_override"]), canonical(self._image_override()))
+        result = self._configured_images()
+        if isinstance(result, dict):
+            return result
+        require(self._override_phase() == "source", "Image configuration has an unexpected outcome")
+        path = Path(self.witness["image_override"])
+        staging = self.evidence / "image-override.next.json"
+        self._write_owned(staging, canonical(self._image_override()))
+        require(staging.stat().st_dev == path.parent.stat().st_dev, "Image override requires the same local filesystem")
+        fd = os.open(self.evidence, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        self._checkpoint("prepared:configure-images")
+        require(self._override_phase() == "source", "Source image override changed before atomic replacement")
+        os.replace(staging, path)
+        for parent in (path.parent, self.evidence):
+            fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        self._checkpoint("replaced:configure-images")
         return self._configured_images()
 
     def _new_writers(self):
@@ -1287,8 +1506,10 @@ class Upgrade(Installation):
         return {"writers": found}
 
     def _start_writers(self):
+        require(all(self._stopped(role) == self.witness["receipts"]["stop-" + role] for role in self.roles),
+                "Original writer no longer matches its proved exit")
         self._preserved()
-        self.command(self.compose + ["up", "-d", "--wait", "--no-deps", "--pull", "never", "--no-build", *self.roles], "start exact candidate writers")
+        self.command(self.compose + ["up", "-d", "--wait", "--force-recreate", "--no-deps", "--pull", "never", "--no-build", *self.roles], "start exact candidate writers")
         result = self._new_writers()
         require(isinstance(result, dict), "Candidate writer startup is unconfirmed")
         return result
@@ -1360,6 +1581,8 @@ class Upgrade(Installation):
         return {"frontend_container": front["Id"], "frontend_image": front["Image"], "edge": bool(self.edge_compose)}
 
     def _start_receivers(self):
+        require(self._stopped("frontend") == self.witness["receipts"]["stop-frontend"],
+                "Original frontend no longer matches its proved exit")
         self._preserved(recorded=True)
         self._verify_original_configuration()
         require(isinstance(self._new_writers(), dict), "Exact new writers are required before receiver start")
@@ -1367,7 +1590,7 @@ class Upgrade(Installation):
             "candidate_package_sha256": self.release.sha}
         self._save()
         require(isinstance(self._admission_prepared(), dict), "Prepare native membership before starting any receiver")
-        self.command(self.compose + ["up", "-d", "--wait", "--no-deps", "--pull", "never", "--no-build", "frontend"], "start exact candidate frontend")
+        self.command(self.compose + ["up", "-d", "--wait", "--force-recreate", "--no-deps", "--pull", "never", "--no-build", "frontend"], "start exact candidate frontend")
         if self.edge_compose:
             self.command(self.edge_compose + ["start", "nginx"], "start retained named edge")
         result = self._receivers_started()
@@ -1397,7 +1620,12 @@ class Upgrade(Installation):
         pair = self._pair()
         current = paired_file_inventory([Path(path) for path in pair["roots"]])["files"]
         addition = str(Path(self.witness["image_override"])).lstrip("/")
-        require(current.pop(addition, None) == recovery.filemeta(Path(self.witness["image_override"])) and current == pair["files"]["files"],
+        expected = dict(pair["files"]["files"])
+        previous = expected.pop(addition, None)
+        source = self.witness.get("source_image_override")
+        require(previous == (None if source is None else source["metadata"])
+                and self._override_phase() == "candidate"
+                and current.pop(addition, None) == recovery.filemeta(Path(self.witness["image_override"])) and current == expected,
                 "Retained original configuration changed beyond the exact candidate image override")
 
     def _verify_completed(self):
@@ -1408,7 +1636,7 @@ class Upgrade(Installation):
             "cold_pair_receipt_sha256": self.witness["receipts"]["cold-pair"]["receipt_sha256"],
             "candidate_package_sha256": self.release.sha}, "Retained pre-admission verification identity is absent")
         metadata = self.native_metadata()
-        require(metadata["ledger"] == self.witness["source_ledger"] + [TARGET_SCHEMA]
+        require(metadata["ledger"] == self._target_ledger()
                 and isinstance(self._recorded_release(), dict), "Completed upgrade lacks its exact native release/schema")
         self._carrier(True, ["runtime-generation", "inspect"])
         require(isinstance(self._new_writers(), dict) and isinstance(self._receivers_started(), dict)
@@ -1422,7 +1650,7 @@ class Upgrade(Installation):
 
     def source_release(self, metadata):
         state = metadata["release"]
-        require(state["release_sequence"] > 0 and state["target_schema"] == SOURCE_SCHEMA
+        require(state["release_sequence"] > 0 and state["target_schema"] == source_head(metadata)
                 and metadata["recorded_at"], "Original native source release/history is required")
         with tarfile.open(self.source_package, "r:gz") as archive:
             first = archive.next()
@@ -1432,7 +1660,7 @@ class Upgrade(Installation):
             manifest = install.strict_json(manifest_raw)
         verified = install.fields(self.command([self.verifier, "verify", "--public-keys", self.public_keys,
             "--package", self.source_package, "--target-os", "linux", "--target-arch", "amd64",
-            "--current-sequence", str(manifest["min_current_sequence"]), "--current-schema", SOURCE_SCHEMA,
+            "--current-sequence", str(manifest["min_current_sequence"]), "--current-schema", state["target_schema"],
             "--at", metadata["recorded_at"]], "verify retained source signature"))
         source_sha = install.digest(self.source_package)
         require(verified.get("verified") == "true" and verified.get("package_sha256") == source_sha
@@ -1457,10 +1685,12 @@ class Upgrade(Installation):
         require(all(install.immutable_image_reference(value) for value in images["images"].values()),
                 "Retained source images must keep their immutable digest references")
         return {"release_sequence": state["release_sequence"], "version": state["version"], "commit": state["commit"],
-                "package_sha256": source_sha, "manifest_sha256": verified["manifest_sha256"], "images": images["images"]}
+                "target_schema": state["target_schema"], "package_sha256": source_sha, "manifest_sha256": verified["manifest_sha256"], "images": images["images"]}
 
     def check(self, allow_preparing=False):
-        require("upgrade" not in self.state or (allow_preparing and self.witness["state"] == "preparing"),
+        previous = self.state.get("upgrade")
+        require(not previous or (allow_preparing and self.continuing and self.witness["state"] == "preparing")
+                or (not self.continuing and previous.get("state") == "completed" and previous.get("pending") is None),
                 "An existing upgrade owns this installation; inspect upgrade-status")
         info = install.strict_json(self.command(self.docker + ["info", "--format", "{{json .}}"],
                                                "check original Docker daemon"))
@@ -1473,14 +1703,16 @@ class Upgrade(Installation):
         require(self.metadata["database"] == self.env["POSTGRES_DB"] and unquote(dsn.path.lstrip("/")) == self.env["POSTGRES_DB"]
                 and unquote(dsn.username or "") == self.env["POSTGRES_USER"] and dsn.hostname == "postgres" and dsn.port in (None, 5432),
                 "Native database and original runtime connection differ")
-        require(self.metadata["ledger"] and self.metadata["ledger"][-1] == SOURCE_SCHEMA,
-                "This finite upgrade starts from M127 only")
+        source_head(self.metadata)
         original = retained_installation(self.metadata)
         require(original["plan"]["target"]["environment"] == self.env.get("RUNTIME_ENVIRONMENT"),
                 "Current environment differs from the retained installation scope")
         self.source = self.source_release(self.metadata)
         manifest = self.release.manifest
-        require(manifest["min_current_schema"] == SOURCE_SCHEMA and manifest["target_schema"] == TARGET_SCHEMA
+        if previous and not self.continuing:
+            self.previous_completed(self.source, {"package_sha256": self.release.sha})
+        require(manifest["min_current_schema"] in (SOURCE_SCHEMA, OBSERVATION_SCHEMA, TARGET_SCHEMA)
+                and manifest["min_current_schema"] <= source_head(self.metadata) and manifest["target_schema"] == TARGET_SCHEMA
                 and manifest["min_current_sequence"] <= self.source["release_sequence"] <= manifest["max_current_sequence"]
                 and manifest["release_sequence"] > self.source["release_sequence"],
                 "Candidate does not admit this exact installed source")

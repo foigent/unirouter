@@ -21,9 +21,14 @@ import (
 	"github.com/uniroute/unirouter/internal/signing"
 	"github.com/uniroute/unirouter/internal/strictjson"
 	"github.com/uniroute/unirouter/internal/upgradebundle"
+	"github.com/uniroute/unirouter/internal/upstreamrelease"
 )
 
 const communityMaintenanceSchema = "unirouter.community-maintenance.v1"
+
+func communitySourceHead(head string) bool {
+	return head == schemaauthority.XInsightCommunicationHead || head == schemaauthority.UpstreamReleaseObservationHead || head == schemaauthority.UpstreamObservationRestoreHead
+}
 
 // This is a binding document, never a reusable approval. In particular, it
 // cannot supply public keys, change the configured environment or admit a
@@ -105,7 +110,7 @@ func (in communityMaintenanceInput) validate(cfg *config.Config) error {
 	}
 	seen := make(map[string]bool, len(in.Retirements))
 	for _, r := range in.Retirements {
-		if seen[r.InstanceID] || r.ExpectedIngressHead != in.ExpectedIngressHead || r.ExpectedEnvironment != in.ExpectedEnvironment || r.ExpectedDatabaseSystemID != in.ExpectedDatabaseSystemID || r.ExpectedSchemaHead != schemaauthority.XInsightCommunicationHead {
+		if seen[r.InstanceID] || r.ExpectedIngressHead != in.ExpectedIngressHead || r.ExpectedEnvironment != in.ExpectedEnvironment || r.ExpectedDatabaseSystemID != in.ExpectedDatabaseSystemID || !communitySourceHead(r.ExpectedSchemaHead) {
 			return fmt.Errorf("community retirement binding differs from the exact installation")
 		}
 		seen[r.InstanceID] = true
@@ -128,11 +133,11 @@ func verifyCommunityMaintenancePackages(in communityMaintenanceInput, cfg *confi
 		return zero, "", fmt.Errorf("installed trust ring binding changed")
 	}
 	if state.ReleaseSequence != in.ExpectedSequence || state.PackageSHA256 != in.ExpectedSourcePackageSHA256 ||
-		state.TargetSchema != schemaauthority.XInsightCommunicationHead || state.TrustedKeyID == "" ||
+		!communitySourceHead(state.TargetSchema) || state.TrustedKeyID == "" ||
 		recorded.ReleaseSequence != state.ReleaseSequence || recorded.Version != state.Version || recorded.Commit != state.Commit ||
 		recorded.TargetSchema != state.TargetSchema || recorded.KeyID != state.TrustedKeyID ||
 		communityManifestSHA256(recorded) != in.ExpectedSourceManifestSHA256 {
-		return zero, "", fmt.Errorf("installed M127 release binding changed")
+		return zero, "", fmt.Errorf("installed community release binding changed")
 	}
 	source, err := verifyInstalledPackage(in.SourcePackage, cfg.UpgradePublicKeys, recorded.MinCurrentSequence, recorded.TargetSchema, recordedAt, 0)
 	if err != nil {
@@ -148,9 +153,9 @@ func verifyCommunityMaintenancePackages(in communityMaintenanceInput, cfg *confi
 	m := candidate.Manifest
 	if candidate.BundleSHA256 != in.ExpectedCandidatePackageSHA256 || communityManifestSHA256(m) != in.ExpectedCandidateManifestSHA256 ||
 		m.KeyID != state.TrustedKeyID ||
-		m.MinCurrentSchema != schemaauthority.XInsightCommunicationHead || m.TargetSchema != schemaauthority.UpstreamReleaseObservationHead ||
+		!communitySourceHead(m.MinCurrentSchema) || m.TargetSchema != schemaauthority.UpstreamObservationRestoreHead ||
 		m.Version != cfg.RuntimeVersion || m.Commit != cfg.RuntimeCommit {
-		return zero, "", fmt.Errorf("candidate must bind this installed key and exact M127 to M128 artifact")
+		return zero, "", fmt.Errorf("candidate must bind this installed key and a supported exact M129 target")
 	}
 	return candidate, ringSHA, nil
 }
@@ -194,10 +199,10 @@ func runCommunityMaintenance(ctx context.Context, pool *pgxpool.Pool, cfg *confi
 	if err != nil {
 		return result, err
 	}
-	if len(artifact) < 2 || artifact[len(artifact)-1] != schemaauthority.UpstreamReleaseObservationHead ||
-		!slices.Equal(snapshot.Ledger, artifact[:len(artifact)-1]) || snapshot.Record == nil || snapshot.Record.State != "completed" ||
+	if len(artifact) < 3 || artifact[len(artifact)-1] != schemaauthority.UpstreamObservationRestoreHead || artifact[len(artifact)-2] != schemaauthority.UpstreamReleaseObservationHead || artifact[len(artifact)-3] != schemaauthority.XInsightCommunicationHead ||
+		!(slices.Equal(snapshot.Ledger, artifact[:len(artifact)-2]) || slices.Equal(snapshot.Ledger, artifact[:len(artifact)-1]) || slices.Equal(snapshot.Ledger, artifact)) || snapshot.Record == nil || snapshot.Record.State != "completed" ||
 		snapshot.Record.Plan.InstallationID != in.InstallationID || snapshot.Record.Plan.Digest != in.InstallationPlanDigest {
-		return result, fmt.Errorf("community maintenance requires the exact complete M127 installation")
+		return result, fmt.Errorf("community maintenance requires the exact complete M127, M128 or M129 installation")
 	}
 	var systemID, database string
 	var databaseOID int64
@@ -210,6 +215,25 @@ func runCommunityMaintenance(ctx context.Context, pool *pgxpool.Pool, cfg *confi
 	state, err := readInstalledReleaseState(ctx, tx, apply)
 	if err != nil {
 		return result, err
+	}
+	sourceHead := snapshot.Ledger[len(snapshot.Ledger)-1]
+	if sourceHead == schemaauthority.UpstreamReleaseObservationHead {
+		if _, err := upstreamrelease.ReadNamespace(ctx, tx); err != nil {
+			return result, err
+		}
+	}
+	if sourceHead == schemaauthority.UpstreamObservationRestoreHead {
+		if err := upstreamrelease.CheckNamespace(ctx, tx); err != nil {
+			return result, err
+		}
+	}
+	if state.TargetSchema != sourceHead {
+		return result, fmt.Errorf("installed source release and exact ledger disagree")
+	}
+	for _, retirement := range in.Retirements {
+		if retirement.ExpectedSchemaHead != sourceHead {
+			return result, fmt.Errorf("retirement differs from verified source ledger")
+		}
 	}
 	var recordedRaw, stateRaw []byte
 	var recordedAt time.Time
@@ -265,7 +289,7 @@ func runCommunityMaintenance(ctx context.Context, pool *pgxpool.Pool, cfg *confi
 	}
 	result = communityMaintenanceResult{SchemaVersion: communityMaintenanceSchema, Status: "eligible", SourceSequence: state.ReleaseSequence, CandidateSequence: candidate.Manifest.ReleaseSequence, CandidatePackageSHA256: candidate.BundleSHA256, TrustedRingSHA256: ringSHA, Retirements: make([]runtimegeneration.RetirementResult, 0, len(in.Retirements))}
 	for _, r := range in.Retirements {
-		checked, e := runtimegeneration.CheckM127MaintenanceRetirementTx(ctx, tx, r, apply)
+		checked, e := runtimegeneration.CheckCommunityMaintenanceRetirementTx(ctx, tx, r, sourceHead, apply)
 		if e != nil {
 			return result, e
 		}
@@ -273,7 +297,7 @@ func runCommunityMaintenance(ctx context.Context, pool *pgxpool.Pool, cfg *confi
 	}
 	if apply {
 		for i, r := range in.Retirements {
-			result.Retirements[i], err = runtimegeneration.ApplyM127MaintenanceRetirementTx(ctx, tx, r)
+			result.Retirements[i], err = runtimegeneration.ApplyCommunityMaintenanceRetirementTx(ctx, tx, r, sourceHead)
 			if err != nil {
 				return result, err
 			}

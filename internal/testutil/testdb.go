@@ -148,6 +148,9 @@ func PreRetirementLedger(t *testing.T) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(ledger) > 0 && ledger[len(ledger)-1] == schemaauthority.UpstreamObservationRestoreHead {
+		ledger = ledger[:len(ledger)-1]
+	}
 	if len(ledger) > 0 && ledger[len(ledger)-1] == schemaauthority.UpstreamReleaseObservationHead {
 		ledger = ledger[:len(ledger)-1]
 	}
@@ -444,7 +447,7 @@ func runStrictTestArtifactInstallThrough(ctx context.Context, pool *pgxpool.Pool
 			return err
 		}
 	}
-	if ceiling == schemaauthority.CommercialLicenseRetirementHead || ceiling == schemaauthority.XInsightCommunicationHead || ceiling == schemaauthority.UpstreamReleaseObservationHead {
+	if ceiling == schemaauthority.CommercialLicenseRetirementHead || ceiling == schemaauthority.XInsightCommunicationHead || (ceiling == schemaauthority.UpstreamReleaseObservationHead || ceiling == schemaauthority.UpstreamObservationRestoreHead) {
 		if err := migrate.RunExistingThrough(ctx, pool, migrationsDir, ceiling); err != nil {
 			return err
 		}

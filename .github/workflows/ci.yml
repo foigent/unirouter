@@ -522,11 +522,13 @@ jobs:
       - name: Run real-backend browser acceptances
         env:
           OVERVIEW_BROWSER_DIST: ${{ github.workspace }}/frontend/dist
-          OVERVIEW_BROWSER_ARTIFACTS: ${{ runner.temp }}/ur-customer-overview-browser
+          OVERVIEW_BROWSER_ARTIFACTS: ${{ runner.temp }}/ur-customer-overview-browser/overview
           OVERVIEW_NAVIGATION_ONLY: '0'
+          FIRST_USE_REDIS_ISOLATED: '1'
+          FIRST_USE_EVIDENCE_DIR: ${{ runner.temp }}/ur-customer-overview-browser/community-first-use
         run: >-
           go test -tags=integration,pr4browser ./cmd/uniroute
-          -run '^(TestPR4AccessUXModelReadinessBrowserE2E|TestModelEndpointOnboardingBrowserE2E|TestSourceBudgetManagementBrowserE2E|TestCustomerOverviewBrowserE2E)$'
+          -run '^(TestPR4AccessUXModelReadinessBrowserE2E|TestModelEndpointOnboardingBrowserE2E|TestSourceBudgetManagementBrowserE2E|TestCustomerOverviewBrowserE2E|TestCommunityFirstUseBusinessBrowserE2E)$'
           -count=1 -timeout=20m -v
 
       - name: Preserve overview browser evidence

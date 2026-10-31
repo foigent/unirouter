@@ -55,8 +55,8 @@ func TestRuntimeGenerationCLIExpandedLedgerLifecycleIntegration(t *testing.T) {
 			if head != schemaauthority.LatestSupportedMigration {
 				cfg.RuntimeEnvironment = "test"
 				_, err := invokeGenerationCLI(t, cfg, "inspect", nil)
-				if head == schemaauthority.XInsightCommunicationHead {
-					require.NoError(t, err, "only exact M127 predecessor maintenance reads remain available")
+				if head == schemaauthority.XInsightCommunicationHead || head == schemaauthority.UpstreamReleaseObservationHead {
+					require.NoError(t, err, "only exact M127/M128 predecessor maintenance reads remain available")
 				} else {
 					require.ErrorContains(t, err, "outside this artifact")
 				}

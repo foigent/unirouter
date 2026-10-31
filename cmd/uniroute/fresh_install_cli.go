@@ -24,6 +24,7 @@ import (
 	publication "github.com/uniroute/unirouter/internal/modelcapabilitypublication"
 	"github.com/uniroute/unirouter/internal/runtimegeneration"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
+	"github.com/uniroute/unirouter/internal/upstreamrelease"
 )
 
 const freshUsage = "usage: uniroute fresh-install plan --out <new-plan.json> | check --plan <plan.json> | apply|resume --plan <plan.json> --evidence-dir <private-directory>"
@@ -41,10 +42,11 @@ func runFreshInstallCLI(ctx context.Context, args []string, cfg *config.Config) 
 	out := fs.String("out", "", "new outer installation Plan")
 	planPath := fs.String("plan", "", "original installation Plan")
 	evidence := fs.String("evidence-dir", "", "private durable independent publication Plan directory")
+	completedSource := fs.String("completed-source-schema", "", "read-only exact completed restore predecessor")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
-	if fs.NArg() != 0 || (action == "plan" && (*out == "" || *planPath != "" || *evidence != "")) || (action != "plan" && (*out != "" || *planPath == "")) || (action == "check" && *evidence != "") || ((action == "apply" || action == "resume") && *evidence == "") {
+	if (*completedSource != "" && (action != "check" || *completedSource != schemaauthority.UpstreamReleaseObservationHead)) || fs.NArg() != 0 || (action == "plan" && (*out == "" || *planPath != "" || *evidence != "")) || (action != "plan" && (*out != "" || *planPath == "")) || (action == "check" && *evidence != "") || ((action == "apply" || action == "resume") && *evidence == "") {
 		return fmt.Errorf("%s", freshUsage)
 	}
 	artifact, err := freshArtifact(cfg)
@@ -80,7 +82,7 @@ func runFreshInstallCLI(ctx context.Context, args []string, cfg *config.Config) 
 		return err
 	}
 	if action == "check" {
-		s, err := checkFreshInstall(ctx, postgres.Pool, p)
+		s, err := checkFreshInstallAtSource(ctx, postgres.Pool, p, artifact.Ledger, *completedSource)
 		if err != nil {
 			return err
 		}
@@ -184,7 +186,11 @@ func planFreshInstall(ctx context.Context, pool *pgxpool.Pool, environment strin
 	return p, p.Validate()
 }
 
-func checkFreshInstall(ctx context.Context, pool *pgxpool.Pool, p installstate.Plan) (installstate.Snapshot, error) {
+func checkFreshInstall(ctx context.Context, pool *pgxpool.Pool, p installstate.Plan, artifact []string) (installstate.Snapshot, error) {
+	return checkFreshInstallAtSource(ctx, pool, p, artifact, "")
+}
+
+func checkFreshInstallAtSource(ctx context.Context, pool *pgxpool.Pool, p installstate.Plan, artifact []string, completedSource string) (installstate.Snapshot, error) {
 	var s installstate.Snapshot
 	tx, err := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
@@ -196,9 +202,26 @@ func checkFreshInstall(ctx context.Context, pool *pgxpool.Pool, p installstate.P
 		return s, err
 	}
 	if s.Record != nil && s.Record.Plan.Digest == p.Digest && s.Record.State == "completed" {
-		// A restored complete DB keeps its origin envelope. This read-only
-		// check verifies today's state without rebinding or recertifying it.
-		return s, verifyFreshCompletion(ctx, tx, p.Artifact.Ledger)
+		// A completed origin stays historical after an application upgrade or
+		// supported restore. Only check uses today's exact binary authority;
+		// active/apply/resume still require the original exact artifact.
+		if !freshPrefix(p.Artifact.Ledger, artifact) {
+			return s, fmt.Errorf("completed origin is not a prefix of this artifact")
+		}
+		if completedSource != "" {
+			if completedSource != schemaauthority.UpstreamReleaseObservationHead || len(artifact) < 2 || artifact[len(artifact)-1] != schemaauthority.UpstreamObservationRestoreHead || artifact[len(artifact)-2] != completedSource ||
+				schemaauthority.VerifyLedger(artifact, artifact) != nil || !slices.Equal(s.Ledger, artifact[:len(artifact)-1]) || !freshPrefix(p.Artifact.Ledger, s.Ledger) {
+				return s, fmt.Errorf("completed-source check requires the exact full corrected M128 predecessor")
+			}
+			if err := upstreamrelease.CheckNamespace(ctx, tx); err != nil {
+				return s, err
+			}
+			return s, verifyFreshContents(ctx, tx, s.Ledger)
+		}
+		return s, verifyFreshCompletion(ctx, tx, artifact)
+	}
+	if completedSource != "" {
+		return s, fmt.Errorf("completed-source check requires the original completed installation")
 	}
 	target, err := installstate.ReadTarget(ctx, tx, p.Target.Environment)
 	if err != nil {
@@ -283,7 +306,7 @@ func executeFreshInstallObserved(ctx context.Context, owner *migrate.FreshOwner,
 			return err
 		}
 	}
-	for _, version := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.XInsightPolicyExpandHead, schemaauthority.XInsightAdoptionExpandHead, schemaauthority.XInsightCredentialExpandHead, schemaauthority.CommercialLicenseRetirementHead, schemaauthority.XInsightCommunicationHead, schemaauthority.UpstreamReleaseObservationHead} {
+	for _, version := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.XInsightPolicyExpandHead, schemaauthority.XInsightAdoptionExpandHead, schemaauthority.XInsightCredentialExpandHead, schemaauthority.CommercialLicenseRetirementHead, schemaauthority.XInsightCommunicationHead, schemaauthority.UpstreamReleaseObservationHead, schemaauthority.UpstreamObservationRestoreHead} {
 		s, err := owner.Snapshot(ctx)
 		if err != nil {
 			return err
@@ -301,7 +324,7 @@ func executeFreshInstallObserved(ctx context.Context, owner *migrate.FreshOwner,
 				return nil
 			}
 		}
-		if version == schemaauthority.ContentCaptureExpandHead || version == schemaauthority.ContentReclaimExpandHead || version == schemaauthority.PreDispatchExpandHead || (version == schemaauthority.ScopedContentExpandHead || (version == schemaauthority.XInsightPolicyExpandHead || (version == schemaauthority.XInsightAdoptionExpandHead || version == schemaauthority.XInsightCredentialExpandHead || version == schemaauthority.CommercialLicenseRetirementHead || version == schemaauthority.XInsightCommunicationHead || version == schemaauthority.UpstreamReleaseObservationHead))) {
+		if version == schemaauthority.ContentCaptureExpandHead || version == schemaauthority.ContentReclaimExpandHead || version == schemaauthority.PreDispatchExpandHead || (version == schemaauthority.ScopedContentExpandHead || (version == schemaauthority.XInsightPolicyExpandHead || (version == schemaauthority.XInsightAdoptionExpandHead || version == schemaauthority.XInsightCredentialExpandHead || version == schemaauthority.CommercialLicenseRetirementHead || version == schemaauthority.XInsightCommunicationHead || version == schemaauthority.UpstreamReleaseObservationHead || version == schemaauthority.UpstreamObservationRestoreHead))) {
 			final = func(ctx context.Context, tx pgx.Tx) error {
 				if version == p.Artifact.Ledger[len(p.Artifact.Ledger)-1] {
 					return verifyFreshCompletion(ctx, tx, p.Artifact.Ledger)
@@ -487,10 +510,22 @@ func verifyFreshCompletion(ctx context.Context, q interface {
 	if err := schemaauthority.VerifyLedger(artifact, actual); err != nil {
 		return err
 	}
+	if len(actual) > 0 && actual[len(actual)-1] == schemaauthority.UpstreamObservationRestoreHead {
+		if err := upstreamrelease.CheckNamespace(ctx, q); err != nil {
+			return err
+		}
+	}
+	return verifyFreshContents(ctx, q, actual)
+}
+
+func verifyFreshContents(ctx context.Context, q interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+}, actual []string) error {
 	if err := publication.VerifyRuntimeStaticProjection(ctx, q, actual); err != nil {
 		return err
 	}
-	_, err = runtimegeneration.ReadBudgetCoverage(ctx, q)
+	_, err := runtimegeneration.ReadBudgetCoverage(ctx, q)
 	return err
 }
 

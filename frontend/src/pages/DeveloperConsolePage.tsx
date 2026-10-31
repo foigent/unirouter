@@ -630,6 +630,7 @@ export default function DeveloperConsolePage() {
           content: '',
           latency_ms: elapsed(),
           headers_ms: headersMS,
+          request_id: response.headers.get('X-Request-ID') || undefined,
           error: (typeof error === 'string' ? error : error?.message) || `HTTP ${response.status}`,
           doc_url: error?.doc_url,
         });

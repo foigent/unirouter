@@ -27,6 +27,52 @@ fixture = load('installer_fixture', ROOT / '.github/tests/community-installer.py
 bootstrap = load('actual_bootstrap', ROOT / 'deploy/community/bootstrap.py')
 
 class InstallerFixtureContract(unittest.TestCase):
+    def test_historical_content_uses_native_pairing_producer_and_retains_storage_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);body=root/'historical-body';(body/'objects').mkdir(parents=True)
+            (body/'binding.token').write_text('a'*64)
+            statements=[]
+            def sql(directory,project,query):
+                statements.append(query)
+                return '17' if query.startswith('INSERT INTO projects') else ''
+            old=SimpleNamespace(root=root,result={'first_customer':{'organization_id':2}},sql=sql,
+                compose=lambda *args:['not-executed'],run=lambda *args:'{"services":{}}')
+            work=object.__new__(fixture.Acceptance)
+            actual_body,name,rendered=work.historical_data(old,root/'instance','synthetic')
+            self.assertEqual(actual_body,body);self.assertEqual(rendered,{'services':{}})
+            self.assertIn("VALUES(2,17,'synthetic-source-control');",statements[1])
+            self.assertIn("1,'community-linux-history','"+'a'*64+"'",statements[1])
+            self.assertIn("'topup','completed',1234567,1234567",statements[1])
+            self.assertEqual((body/'objects'/name).read_bytes(),
+                b'Synthetic retained customer body; no provider or customer data.\n')
+            self.assertEqual(fixture.sha(body/'objects'/name),name)
+
+    def test_m128_observation_seed_validates_address_before_bound_go_command(self):
+        for host in ('172.18.0.2','not-an-address','172.18.0.2 172.19.0.3'):
+            with self.subTest(host=host):
+                work=object.__new__(fixture.Acceptance);work.docker='/fixture/docker';work.env={}
+                calls=[];target={'system_identifier':'synthetic-system','database':'uniroute','database_oid':17}
+                old=SimpleNamespace(target=MagicMock(return_value=target))
+                def run(label,args,**kwargs):
+                    calls.append((label,args,kwargs))
+                    if label=='read M128 synthetic database identity':
+                        return json.dumps({'services':{'postgres':{'environment':{
+                            'POSTGRES_USER':'fixture','POSTGRES_PASSWORD':'synthetic-unused','POSTGRES_DB':'uniroute'}}}})
+                    if label=='read M128 private database address':return host
+                    self.assertEqual(label,'seed typed nonempty M128 observation');return ''
+                work.run=run
+                if host!='172.18.0.2':
+                    with self.assertRaises(ValueError):work.seed_native_observation(old,Path('/fixture/instance'),'synthetic')
+                    self.assertEqual(len(calls),2);old.target.assert_not_called();continue
+                work.seed_native_observation(old,Path('/fixture/instance'),'synthetic')
+                _,args,kwargs=calls[-1]
+                self.assertEqual(args,['go','test','-tags=integration','./cmd/uniroute','-run',
+                    '^TestCommunityInstallerSeedM128ObservationIntegration$','-count=1','-timeout=90s'])
+                self.assertTrue(all('synthetic-unused' not in str(arg) for arg in args))
+                self.assertEqual(json.loads(kwargs['env']['UR_COMMUNITY_INSTALLER_SEED_TARGET']),target)
+                self.assertEqual(kwargs['env']['UR_COMMUNITY_INSTALLER_SEED'],'observation-m128')
+                self.assertEqual(kwargs['env']['REQUIRE_TEST_DATABASE'],'1')
+
     def test_independent_cases_use_one_explicit_port_for_commands_and_HTTP(self):
         self.assertEqual(fixture.FIXTURE_PORTS, {'fresh':13000,'single':13001,'edge':13002})
         work=object.__new__(fixture.Acceptance)
@@ -90,10 +136,11 @@ class InstallerFixtureContract(unittest.TestCase):
                     self.assertTrue(set(args).isdisjoint({'-v','--volumes','--rmi','--remove-orphans'}))
 
     def test_execute_releases_only_verified_cases_in_fresh_single_edge_order(self):
-        for failure in (None,'fresh','single'):
+        for failure in (None,'fresh','single','m128','same-schema'):
             with self.subTest(failure=failure):
                 work=object.__new__(fixture.Acceptance);work.docker='/fixture/docker'
-                work.instances=Path('/fixture/instances');work.suffix='synthetic';work.schema=fixture.CURRENT_SCHEMA;work.result={}
+                work.instances=Path('/fixture/instances');work.suffix='synthetic';work.schema=fixture.CURRENT_SCHEMA
+                work.result={'checks':[],'finite_upgrades':[]}
                 events=[];downs=[]
                 def verify(label):
                     events.append(label)
@@ -104,24 +151,46 @@ class InstallerFixtureContract(unittest.TestCase):
                 def run(label,args):
                     args=[str(arg) for arg in args];downs.append(args);events.append('down:'+args[args.index('--project-name')+1])
                 work.run=run
-                def retained():
+                def retained(*,observation=False):
+                    if observation:
+                        events.append('prepare:m128')
+                        def first(*args,**kwargs):
+                            self.assertTrue(kwargs['retain']);events.append('m127-to-m128')
+                            return ('retained-m128',)
+                        return SimpleNamespace(qualify_upgrade=first)
                     events.append('prepare:retained')
                     self.assertEqual(len(downs),1,'fresh network released before retained installation')
                     return SimpleNamespace()
                 work.retained_release=retained
-                def qualify(old,layout):
-                    verify(layout)
+                def qualify(old,layout,**kwargs):
+                    verify('m128' if kwargs.get('existing') else layout)
+                    if kwargs.get('existing'):
+                        self.assertTrue(kwargs['retain'])
+                        return ('completed-m129',)
                     directory=Path('/fixture/retained')/layout
                     work.release_completed_case(directory,'ur-'+layout,directory/'edge' if layout=='edge' else None,upgraded=True)
                 work.qualify_upgrade=qualify
+                def same_schema():
+                    events.append('repack:same-images')
+                    following=SimpleNamespace(result={'checks':[],'finite_upgrades':[{'mode':'same_schema'}]},phase='same-schema')
+                    def upgrade(old,layout,**kwargs):
+                        self.assertIs(old,work);self.assertEqual(kwargs,{'existing':('completed-m129',)})
+                        verify('same-schema')
+                        work.release_completed_case(Path('/fixture/retained/single'),'ur-single',upgraded=True)
+                    following.qualify_upgrade=upgrade
+                    return following
+                work.same_schema_release=same_schema
                 if failure:
                     with self.assertRaisesRegex(fixture.Failed,'preserve failed case'):work.execute()
-                    self.assertEqual(len(downs),0 if failure=='fresh' else 1)
+                    self.assertEqual(len(downs),{'fresh':0,'single':1,'m128':4,'same-schema':4}[failure])
+                    self.assertNotEqual(work.result.get('status'),'passed')
                 else:
                     work.execute()
                     self.assertEqual(events,['fresh','down:ur-native-synthetic','prepare:retained','single','down:ur-single',
-                        'edge','down:ur-edge-edge','down:ur-edge'])
+                        'edge','down:ur-edge-edge','down:ur-edge','prepare:m128','m127-to-m128','m128',
+                        'repack:same-images','same-schema','down:ur-single'])
                     self.assertEqual(work.result['status'],'passed')
+                    self.assertEqual(work.result['finite_upgrades'],[{'mode':'same_schema'}])
                     self.assertIn('/fixture/retained/single/runtime/upgrade-image.json',downs[1])
                     self.assertIn('/fixture/retained/edge/edge/runtime-overrides.json',downs[3])
                     self.assertIn('/fixture/retained/edge/runtime/upgrade-image.json',downs[3])
@@ -277,17 +346,17 @@ class InstallerFixtureContract(unittest.TestCase):
             with self.assertRaisesRegex(fixture.Failed, '^community bootstrap preparation failed$'):
                 fixture.prepare_bootstrap_fixture(bootstrap, raw, hashlib.sha256(raw).hexdigest(), Path('unused'), object())
 
-    def retained_metadata(self, root):
+    def retained_metadata(self, root, commit=fixture.RETAINED_COMMIT):
         git = ['git', '-C', str(ROOT)]
         names = ['deploy/customer/install.py', 'deploy/community/bootstrap.py', 'internal/schemaauthority/version.go']
-        names += subprocess.check_output(git + ['ls-tree','-r','--name-only',fixture.RETAINED_COMMIT,'--','migrations']).decode().splitlines()
+        names += subprocess.check_output(git + ['ls-tree','-r','--name-only',commit,'--','migrations']).decode().splitlines()
         for name in names:
             if name.startswith('migrations/') and not name.endswith('.up.sql'): continue
             path = root / name; path.parent.mkdir(parents=True,exist_ok=True)
             # The source-contract reader consumes the exact Git ledger names;
             # actual native ledger/SQL validation belongs to the Linux binary.
             path.write_bytes(b'' if name.startswith('migrations/') else
-                             subprocess.check_output(git + ['show',fixture.RETAINED_COMMIT + ':' + name]))
+                             subprocess.check_output(git + ['show',commit + ':' + name]))
 
     def test_retained_contract_reads_the_real_pinned_git_source(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -296,7 +365,16 @@ class InstallerFixtureContract(unittest.TestCase):
             self.assertEqual(old.schema, fixture.RETAINED_SCHEMA)
             self.assertEqual(old.ledger[-1], fixture.RETAINED_SCHEMA)
             self.assertNotIn(fixture.CURRENT_SCHEMA, old.supported_heads)
-            self.assertEqual(fixture.source_contract(ROOT).ledger, old.ledger + (fixture.CURRENT_SCHEMA,))
+            self.assertEqual(fixture.source_contract(ROOT).ledger, old.ledger + (fixture.OBSERVATION_SCHEMA,fixture.CURRENT_SCHEMA,))
+
+    def test_retained_m128_contract_reads_the_actual_original_application_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);self.retained_metadata(root,fixture.OBSERVATION_COMMIT)
+            old=fixture.source_contract(root)
+            self.assertEqual(old.schema,fixture.OBSERVATION_SCHEMA)
+            self.assertEqual(fixture.source_contract(ROOT).ledger,old.ledger+(fixture.CURRENT_SCHEMA,))
+            self.assertNotIn(fixture.CURRENT_SCHEMA,old.supported_heads)
+            self.assertEqual(subprocess.check_output(['git','-C',str(ROOT),'show',fixture.OBSERVATION_COMMIT+':VERSION']).decode().strip(),'1.15.0')
 
     def test_schema_drift_is_rejected_before_any_runtime_operation(self):
         cases = ('bootstrap','native','ledger','unknown','nonliteral','duplicate')
@@ -315,12 +393,12 @@ class InstallerFixtureContract(unittest.TestCase):
                 with patch.object(fixture.subprocess,'run',side_effect=AssertionError('must remain source-only')):
                     with self.assertRaises(fixture.Failed): fixture.source_contract(root)
 
-    def exercise_release_preparation(self, repo, schema, version, commit):
+    def exercise_release_preparation(self, repo, schema, version, commit, *, same_schema=False):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp); work=object.__new__(fixture.Acceptance)
             work.repo,work.root,work.release=repo,root,root/'release';work.release.mkdir()
             work.commit,work.tree,work.version=commit,'b'*40,version
-            work.schema,work.release_sequence=schema,2 if schema==fixture.CURRENT_SCHEMA else 1
+            work.schema,work.release_sequence=schema,{fixture.RETAINED_SCHEMA:1,fixture.OBSERVATION_SCHEMA:2,fixture.CURRENT_SCHEMA:3}[schema]
             work.verifier,work.ring=root/'verifier',root/'ring.json'
             work.verifier.write_bytes(b'synthetic verifier');work.ring.write_bytes(b'{}')
             work.images,work.image_ids,work.result={},{},{'checks':[]}
@@ -334,10 +412,10 @@ class InstallerFixtureContract(unittest.TestCase):
                 if label=='pack synthetic signed release':
                     expected=json.loads(Path(args[args.index('--expected-artifacts')+1]).read_bytes())
                     paths={row['path']:row for row in expected}
-                    for name in (('upgrade.py','recovery.py','install.py') if schema==fixture.CURRENT_SCHEMA else ('install.py',)):
+                    for name in (('upgrade.py','recovery.py','install.py') if schema in (fixture.OBSERVATION_SCHEMA,fixture.CURRENT_SCHEMA) else ('install.py',)):
                         p='payload/deploy/'+name;self.assertIn(p,paths)
                         self.assertEqual(paths[p]['sha256'],fixture.sha(repo/'deploy/customer'/name))
-                    if schema==fixture.CURRENT_SCHEMA:
+                    if schema in (fixture.OBSERVATION_SCHEMA,fixture.CURRENT_SCHEMA):
                         self.assertIn('payload/scripts/source-budget-restore-rebase.sql',paths)
                     else:
                         self.assertNotIn('payload/deploy/upgrade.py',paths)
@@ -347,19 +425,44 @@ class InstallerFixtureContract(unittest.TestCase):
                         self.assertIn('SOURCE_CONTENT_STORAGE_ROOT=/fixture-body/objects\n',sample)
                         self.assertIn('initialize retained synthetic content through native owner',[label for label,_ in commands])
                     self.assertIn('--no-expiry',args);self.assertNotIn('--expires-at',args)
-                    for flag,value in (('--release-sequence',str(work.release_sequence)),('--min-current-sequence','0'),
-                        ('--max-current-sequence',str(work.release_sequence-1)),('--min-current-schema',fixture.RETAINED_SCHEMA),
+                    sequence=int(args[args.index('--release-sequence')+1])
+                    self.assertIn(sequence,(work.release_sequence,work.release_sequence+1) if same_schema else (work.release_sequence,))
+                    for flag,value in (('--min-current-sequence','0'),
+                        ('--max-current-sequence',str(sequence-1)),('--min-current-schema',fixture.RETAINED_SCHEMA),
                         ('--target-schema',schema)):
                         self.assertEqual(args[args.index(flag)+1],value)
-                    Path(args[args.index('--out')+1]).write_bytes(b'synthetic-not-a-signed-package')
+                    Path(args[args.index('--out')+1]).write_bytes(b'synthetic-not-a-signed-package-'+str(sequence).encode())
                 return ''
             def prepare(module,raw,digest,directory,fetch):
                 anchor=module.Bootstrap(raw,digest)
                 self.assertEqual(anchor.release['target_schema'],schema)
-                shutil.copytree(work.release,directory)
+                shutil.copytree(directory.parent/'release',directory)
             work.run=run;work.docker='/fixture/docker';work.passed=lambda label:None
             with patch.object(fixture,'prepare_bootstrap_fixture',side_effect=prepare):
-                work.prepare_release(root/'public-synthetic-key-only')
+                work.prepare_release(root/'test.private')
+                if same_schema:
+                    before=fixture.files(work.release)
+                    following=work.same_schema_release()
+                    self.assertEqual(fixture.files(work.release),before)
+                    self.assertEqual(following.release_sequence,4)
+                    self.assertIs(following.ring,work.ring);self.assertIs(following.verifier,work.verifier)
+                    self.assertIs(following.images,work.images);self.assertIs(following.image_ids,work.image_ids)
+                    packs=[args for label,args in commands if label=='pack synthetic signed release']
+                    self.assertEqual([args[args.index('--release-sequence')+1] for args in packs],['3','4'])
+                    self.assertTrue(all(args[args.index('--private-key')+1]==str(root/'test.private') for args in packs[1:]))
+                    # Execute only the observer with harmless Python children.
+                    # This proves its real subprocess hook, not Linux upgrade.
+                    program=root/'observer-contract.py'
+                    program.write_text('import subprocess,sys\nsubprocess.run([sys.executable,"-c","pass","./uniroute",*sys.argv[1:3],"synthetic-secret-must-not-be-retained"],check=True)\nsys.exit(int(sys.argv[3]))\n')
+                    for verb,operation,exit_code in (('runtime-generation','inspect',0),('migrate','up',7)):
+                        result=subprocess.run([fixture.sys.executable,'-I','-B',str(following.migration_observer),
+                            str(following.migration_audit),str(program),verb,operation,str(exit_code)],capture_output=True)
+                        self.assertEqual(result.returncode,exit_code,result.stderr)
+                    raw=following.migration_audit.read_text()
+                    self.assertEqual([json.loads(line) for line in raw.splitlines()],
+                        [{'native_owner_calls':1,'migration_owner_calls':0},{'native_owner_calls':1,'migration_owner_calls':1}])
+                    self.assertNotIn('synthetic-secret',raw)
+                    self.assertEqual(following.migration_audit.stat().st_mode&0o777,0o600)
             builds=[args for label,args in commands if label.startswith('build exact')]
             self.assertEqual(len(builds),2)
             backend=next(args for args in builds if 'RUNTIME_COMMIT='+commit in args)
@@ -368,6 +471,135 @@ class InstallerFixtureContract(unittest.TestCase):
 
     def test_actual_release_preparation_carries_full_payload_and_native_presign_inventory(self):
         self.exercise_release_preparation(ROOT,fixture.CURRENT_SCHEMA,'1.15.0','a'*40)
+
+    def test_same_schema_repack_reuses_exact_images_payload_key_and_native_command_observer(self):
+        self.exercise_release_preparation(ROOT,fixture.CURRENT_SCHEMA,'1.15.2','a'*40,same_schema=True)
+
+    def test_existing_source_qualification_retains_native_contract_and_refuses_proof_drift(self):
+        # The Linux entry uses these same checks on completed M128 and M129
+        # sources. Only native effects are simulated in this offline driver.
+        cases=[(fixture.CURRENT_SCHEMA,drift) for drift in
+            (None,'mode','ledger','ledger-row','migration','original-receipt','source-snapshot','resume','read-only','candidate')]
+        cases += [(fixture.OBSERVATION_SCHEMA,drift) for drift in
+            (None,'original-receipt','source-snapshot','resume','read-only','candidate','ddl-compat','observation')]
+        for schema,drift in cases:
+            with self.subTest(schema=schema,drift=drift),tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp).resolve();directory=root/'instance';directory.mkdir()
+                for name in ('runtime','evidence','upgrades/prior','releases'):
+                    (directory/name).mkdir(parents=True)
+                for name in ('runtime/.env','admin-password','release.tar.gz','evidence/install.json','upgrades/prior/receipt.json','releases/prior.tar.gz'):
+                    fixture.private_write(directory/name,b'synthetic original bytes')
+                body=root/'body';(body/'objects').mkdir(parents=True)
+                name=hashlib.sha256(b'synthetic historical body').hexdigest()
+                fixture.private_write(body/'objects'/name,b'synthetic historical body')
+                work=object.__new__(fixture.Acceptance)
+                work.root,work.instances,work.suffix=root,root/'instances','synthetic'
+                work.release=root/'candidate';work.release.mkdir()
+                fixture.private_write(work.release/'release.tar.gz',b'synthetic next package')
+                source=root/'source';source.mkdir();fixture.private_write(source/'release.tar.gz',b'synthetic current package')
+                work.schema=fixture.CURRENT_SCHEMA;work.release_sequence=4
+                work.source_contract=fixture.source_contract(ROOT);ledger=list(work.source_contract.ledger)
+                same_schema=schema==fixture.CURRENT_SCHEMA
+                source_sequence=3 if same_schema else 2
+                source_ledger=ledger if same_schema else ledger[:-1]
+                work.verifier,work.ring=root/'verifier',root/'public-ring'
+                work.result={};work.migration_audit=root/'migration-owner-audit.jsonl'
+                checked={'writes':0,'writers':1,'source':{'release_sequence':source_sequence,'package_sha256':fixture.sha(source/'release.tar.gz')},
+                    'candidate':{'release_sequence':4,'package_sha256':fixture.sha(work.release/'release.tar.gz'),'version':'1.15.2','commit':'a'*40}}
+                prior=dict(checked['candidate'],release_sequence=source_sequence,package_sha256=checked['source']['package_sha256'])
+                original=json.dumps({'upgrade':{'candidate':prior,'state':'completed','pending':None},'current_release':prior}).encode()
+                fixture.private_write(directory/'install-state.json',original)
+                recovery=load('same_schema_fixture_inventory',ROOT/'deploy/customer/recovery.py')
+                work.recovery_module=lambda:recovery
+                tables={table:{'count':1,'sha256':'b'*64} for table in ('users','orgs','projects','wallets','transactions',
+                    'project_members','audit_logs','release_history','execution_content_objects','execution_content_streams','model_deployments','schema_migrations')}
+                native_done=False
+                def fingerprint(*args,**kwargs):
+                    return dict(tables,schema_migrations={'count':len(ledger),'sha256':'changed-ledger-row'}) if drift=='ledger-row' and native_done else tables
+                work.upgrade_fingerprint=fingerprint
+                work.inventory=lambda:{'unchanged-original-resources':True}
+                def sql(_directory,_project,query,database='uniroute'):
+                    if 'FROM schema_migrations' in query:return json.dumps(ledger if native_done else source_ledger)
+                    if 'FROM release_history' in query:return '4'
+                    if 'FROM model_deployments' in query and drift=='observation':return '0'
+                    if 'count(*)' in query:return '1'
+                    self.fail('unexpected fixture SQL')
+                work.sql=sql
+                old=SimpleNamespace(schema=schema,release_sequence=source_sequence,release=source,instances=work.instances,sql=lambda *args:'0')
+                history=directory/'evidence/history.json';fixture.private_write(history,b'original observation')
+                work.historical_observations=MagicMock(side_effect=AssertionError('completed source must not manufacture another history exit'))
+                work.seed_native_pair=MagicMock(side_effect=AssertionError('must reuse existing pairing') if same_schema else None)
+                work.seed_native_observation=MagicMock(side_effect=AssertionError('must reuse existing observation') if same_schema else None)
+                work.interrupt_startup_hold=MagicMock(side_effect=AssertionError('must not repeat real timer wait'))
+                work.verify_released_cleanup=MagicMock(side_effect=AssertionError('must reuse timer coverage'))
+                calls=[]
+                def run(label,args,**kwargs):
+                    calls.append(label)
+                    if label=='check exact supported source without effects':
+                        result=json.loads(json.dumps(checked))
+                        if drift=='read-only':result['writes']=1
+                        if drift=='candidate':result['candidate']['package_sha256']='0'*64
+                        return json.dumps(result)
+                    if label=='read actual source upgrade status':return json.dumps({'state':'completed','candidate':prior})
+                    if label=='read back completed native upgrade resume':
+                        if drift=='resume':(directory/'install-state.json').write_bytes((directory/'install-state.json').read_bytes()+b' ')
+                        return '{}'
+                    self.fail('unexpected child command: '+label)
+                work.run=run
+                def native(*args):
+                    nonlocal native_done
+                    native_done=True
+                    calls.append('normal-native-owner')
+                    operation=directory/'upgrades/next';backup=operation/'backup';backup.mkdir(parents=True)
+                    fixture.private_write(operation/'source-install-state.json',b'changed source snapshot' if drift=='source-snapshot' else original)
+                    receipt={'verification_database':'independent-verification','restored_tables':tables,'tables':tables}
+                    if not same_schema:
+                        receipt.update(ddl_compatibility_delta={'status':'wrong' if drift=='ddl-compat' else 'applied',
+                            'correction_migration':fixture.CURRENT_SCHEMA},source_metadata={'ledger':source_ledger})
+                    fixture.private_write(backup/'receipt.json',json.dumps(receipt).encode())
+                    restored=backup/'restore-files'/str(body/'objects'/name).lstrip('/')
+                    restored.parent.mkdir(parents=True);fixture.private_write(restored,b'synthetic historical body')
+                    witness={'state':'completed','pending':None,'operation_id':'next','source_state_path':'upgrades/next/source-install-state.json',
+                        'candidate':checked['candidate'],'source':checked['source'],'source_ledger':source_ledger[:-1] if drift=='ledger' else source_ledger,
+                        'receipts':{'migrate':{'mode':'wrong' if drift=='mode' else ('same_schema' if same_schema else 'compatible_expand'),
+                            'ledger_sha256':hashlib.sha256(json.dumps(ledger,sort_keys=True,separators=(',',':')).encode()).hexdigest()},
+                            'stop-backend':{'clean_exit':True,'old_processes_gone':True},
+                            'stop-frontend':{'clean_exit':True,'old_processes_gone':True}}}
+                    (directory/'install-state.json').write_text(json.dumps({'upgrade':witness}))
+                    if drift=='original-receipt':(directory/'upgrades/prior/receipt.json').write_bytes(b'changed old receipt')
+                    fixture.private_write(work.migration_audit,json.dumps({'native_owner_calls':1,
+                        'migration_owner_calls':1 if drift=='migration' or not same_schema else 0}).encode()+b'\n')
+                work.run_native_upgrade=native
+                work.request=MagicMock(return_value=b'{"organization_role":"platform_admin"}')
+                work.wait_business_startup=MagicMock();work.passed=MagicMock();work.release_completed_case=MagicMock()
+                existing=(directory,'original-project',body,name,{})
+                with patch.object(fixture.subprocess,'run',side_effect=AssertionError('offline driver must not launch services')):
+                    if drift:
+                        with self.assertRaises(fixture.Failed):work.qualify_upgrade(old,'single',existing=existing)
+                        work.release_completed_case.assert_not_called()
+                    else:
+                        work.qualify_upgrade(old,'single',existing=existing)
+                        result=work.result['finite_upgrades'][-1]
+                        self.assertEqual(result['source_schema'],schema)
+                        self.assertFalse(result['new_historical_input'])
+                        self.assertIsNone(result['historical_kind']);self.assertIsNone(result['history_without_evidence_refused'])
+                        self.assertTrue(result['original_operation_evidence_unchanged'])
+                        if same_schema:
+                            self.assertEqual((result['source_sequence'],result['candidate_sequence']),(3,4))
+                            self.assertEqual(result['mode'],'same_schema');self.assertEqual(result['migration_owner_calls'],0)
+                            self.assertTrue(result['complete_ledger_unchanged'])
+                        self.assertEqual(calls.count('normal-native-owner'),1)
+                        self.assertEqual(calls.count('read back completed native upgrade resume'),1)
+                        work.release_completed_case.assert_called_once_with(directory,'original-project',None,upgraded=True)
+                        self.assertEqual((directory/'upgrades/prior/receipt.json').read_bytes(),b'synthetic original bytes')
+                        self.assertEqual((directory/'upgrades/next/source-install-state.json').read_bytes(),original)
+                work.historical_observations.assert_not_called()
+                if same_schema:
+                    work.seed_native_pair.assert_not_called();work.seed_native_observation.assert_not_called()
+                else:
+                    work.seed_native_pair.assert_called_once_with(old,directory,'original-project',{})
+                    work.seed_native_observation.assert_called_once_with(old,directory,'original-project')
+                work.interrupt_startup_hold.assert_not_called();work.verify_released_cleanup.assert_not_called()
 
     def test_retained_package_uses_same_trust_and_body_configuration_before_first_start(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -382,7 +614,7 @@ class InstallerFixtureContract(unittest.TestCase):
         work=object.__new__(fixture.Acceptance);work.release=Path('/candidate');work.verifier=Path('/verifier');work.ring=Path('/ring')
         args=work.upgrade_command('resume-upgrade',Path('/original'),Path('/original/edge'),history=Path('/original/history.json'))
         self.assertEqual(args[3],Path('/candidate/payload/deploy/upgrade.py'))
-        self.assertEqual(args[args.index('--source-package')+1],Path('/original/release.tar.gz'))
+        self.assertNotIn('--source-package',args,'ordinary owner must choose completed current_release, not the historical origin')
         self.assertEqual(args[args.index('--layout')+1],'ur_edge_pair')
         self.assertEqual(args[args.index('--historical-exits')+1],Path('/original/history.json'))
 
@@ -395,15 +627,20 @@ class InstallerFixtureContract(unittest.TestCase):
                ('known lease then resume refusal',[(1,lease),(1,resume_error)],['upgrade','wait','resume-upgrade'],
                 'resume after proved native lease expiry failed: '+resume_error),
                ('initial success',[(0,'')],['upgrade'],None)]
-        for label,replies,expected_calls,expected_error in cases:
-            with self.subTest(label=label),tempfile.TemporaryDirectory() as tmp:
+        for observed,label,replies,expected_calls,expected_error in ((observed,*case) for observed in (False,True) for case in cases):
+            with self.subTest(label=label,observed=observed),tempfile.TemporaryDirectory() as tmp:
                 root=Path(tmp);work=object.__new__(fixture.Acceptance)
                 work.repo,work.logs,work.release,work.env,work.result=root,root/'logs',root/'release',{},{}
                 work.logs.mkdir();work.verifier=root/'verifier';work.ring=root/'public-ring'
+                if observed:
+                    work.migration_observer=root/'observe-migration-owner.py';work.migration_audit=root/'audit.jsonl'
                 calls=[];remaining=list(replies)
                 def child(argv,**kwargs):
-                    self.assertEqual(argv[:4],[fixture.sys.executable,'-I','-B',str(work.release/'payload/deploy/upgrade.py')])
-                    calls.append(argv[4]);code,error=remaining.pop(0)
+                    prefix=[fixture.sys.executable,'-I','-B']
+                    if observed:prefix.extend([str(work.migration_observer),str(work.migration_audit)])
+                    prefix.append(str(work.release/'payload/deploy/upgrade.py'))
+                    self.assertEqual(argv[:len(prefix)],prefix)
+                    calls.append(argv[len(prefix)]);code,error=remaining.pop(0)
                     kwargs['stdout'].write(b'synthetic-private-stdout\n' if code else b'{"state":"completed"}\n')
                     kwargs['stderr'].write((error+'\nsynthetic-private-stderr\n').encode())
                     return subprocess.CompletedProcess(argv,code)
@@ -454,7 +691,7 @@ class InstallerFixtureContract(unittest.TestCase):
                         output='\n'.join(' Container '+project+'-backend-1  '+state for state in ('Recreated','Started','Healthy'))
                         return (0,output) if kwargs.get('ok') is False else output
                     self.fail('unexpected history command')
-                work.run=run;old=SimpleNamespace(compose=lambda *args:[work.docker,'compose','--project-name',project])
+                work.run=run;old=SimpleNamespace(compose=lambda *args:[work.docker,'compose','--project-name',project],release_sequence=1)
                 edge=root/'edge' if replacement else None
                 with patch.object(owner.Upgrade,'_process_start',side_effect=lambda _:None if changed else '100'), \
                      patch.object(fixture.importlib.util,'spec_from_file_location',return_value=SimpleNamespace(loader=SimpleNamespace(exec_module=lambda _:None))), \
@@ -478,7 +715,7 @@ class InstallerFixtureContract(unittest.TestCase):
             calls.append((url,token))
             if url.endswith('/auth/login'):return b'{"token":"public-synthetic-session"}'
             if url.endswith('/auth/logout'):return b'{}'
-            raise fixture.urllib.error.HTTPError(url,401,'fixture refusal',{},None)
+            raise fixture.urllib.error.HTTPError(url,401,'fixture refusal',{},io.BytesIO())
         sql=[];work.request=request;work.sql=lambda *args:sql.append(args[-1])
         work.session_refusals(Path('/fixture'),'fixture','public-synthetic-password')
         self.assertEqual(len([url for url,_ in calls if url.endswith('/bootstrap/first-customer')]),3)

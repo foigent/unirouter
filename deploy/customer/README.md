@@ -2,7 +2,7 @@
 
 Explicitly non-expiring packages use signed `unirouter.upgrade-manifest.v2` with `expires_at: "never"` (UniRouter 1.14.0+). The standalone verifier and backend must both support v2, including `upgrade record-applied`. Existing finite v1 packages retain their original deadline; replacing or re-signing them cannot resume a plan bound to a different package hash. Every check/install/resume still verifies the original signature, hashes, creation time (with the existing five-minute future tolerance), platform, schema and release sequence. Non-expiring does not authorize rollback, skip trust checks or extend the owner's finite signing-authority window. Source code alone does not establish a published package or a verified deployment.
 
-Use the [current Linux guide](../../docs/community/install-linux.md) for the exact published artifact and fresh-install target. Existing M127 installations use the [finite M127 → M128 upgrade](../../docs/ops/COMMUNITY-UPGRADE.md). See
+Use the [current Linux guide](../../docs/community/install-linux.md) for the exact published artifact and fresh-install target. Existing installations use the [finite retained-source upgrade](../../docs/ops/COMMUNITY-UPGRADE.md). See
 [connection communication controls](../../docs/ops/XINSIGHT-COMMUNICATION.md) for manual defaults, migration and recovery. Earlier M126 candidate notes below remain historical.
 
 This directory is an input to the signed customer release, not a source-build
@@ -295,13 +295,13 @@ restoration instruction. This source template does not itself sign or release it
 
 - Repository path: `scripts/source-budget-restore-rebase.sql`
 - Signed payload path: `payload/scripts/source-budget-restore-rebase.sql`
-- SHA-256: `95b01f115c916251fe460bbdaf67c91afd3a978cea99d183dd52385e1983753d`
-- Bytes: `14544`
+- SHA-256: `e8ddfaf2fecc7c584a206d544e77ae396e7a7e993fe4d25803838abf1ecfee63`
+- Bytes: `16520`
 
 After every supported SQL restore, while all database readers/writers are still
 stopped, run this helper with `psql -v ON_ERROR_STOP=1 -f` before restart. It retains
 the former D coverage epoch and records the database restore boundary. With the
-exact M119, M120, M121, M122, M123, M124, M125, M126, M127 or M128 schema it also changes each C recovery epoch in the same transaction,
+exact M119, M120, M121, M122, M123, M124, M125, M126, M127, M128 or M129 schema it also changes each C recovery epoch in the same transaction,
 invalidating old C cursors and in-flight grants. It does not change money,
 credentials, source identity, A/B cursors, C registration, manifests or object
 allocation epochs. Any helper failure

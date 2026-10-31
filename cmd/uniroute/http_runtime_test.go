@@ -13,11 +13,101 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/config"
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/runtimegeneration"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
 )
+
+func TestHTTPRuntimeBackgroundStartupKeepsHealthAndFencesReceiverWindow(t *testing.T) {
+	for _, outcome := range []string{"success", "failure", "cancel"} {
+		t.Run(outcome, func(t *testing.T) {
+			runtime := testHTTPRuntime(t)
+			runtime.leaseRequired, runtime.leaseUntil = true, time.Now().Add(time.Hour)
+			s := runtimegeneration.NewBackgroundStartup()
+			defer s.Stop()
+			runtime.background = s
+			var calls atomic.Int32
+			worker := s.Go(t.Context(), func(context.Context) { calls.Add(1) })
+			entered, release := make(chan struct{}), make(chan struct{})
+			s.Start(func(ctx context.Context) error {
+				close(entered)
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-release:
+				}
+				if outcome == "failure" {
+					return errors.New("synthetic baseline failure")
+				}
+				return nil
+			})
+			handler := runtime.handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
+			checkHeld := func() {
+				t.Helper()
+				require.Equal(t, "serving", runtime.status().State, "native health must not deadlock prepare/admit")
+				for _, path := range []string{"/health/live", "/health/ready"} {
+					for _, method := range []string{http.MethodGet, http.MethodHead} {
+						w := httptest.NewRecorder()
+						handler.ServeHTTP(w, httptest.NewRequest(method, path, nil))
+						require.Equal(t, http.StatusOK, w.Code)
+					}
+				}
+				for _, path := range []string{"/v1/chat/completions", "/admin/login", "/health/ready", "/health/other"} {
+					w := httptest.NewRecorder()
+					handler.ServeHTTP(w, httptest.NewRequest(http.MethodPost, path, nil))
+					require.Equal(t, http.StatusServiceUnavailable, w.Code)
+				}
+				require.Zero(t, calls.Load())
+			}
+			checkHeld() // Frontend is listening, but native head is still pending.
+			s.Admit()
+			<-entered
+			checkHeld() // Applied ingress alone is insufficient during baseline.
+			if outcome == "cancel" {
+				s.Stop()
+			} else {
+				close(release)
+			}
+			select {
+			case <-s.Done():
+			case <-time.After(2 * time.Second):
+				t.Fatal("deferred baseline did not finish")
+			}
+			<-worker
+			if outcome != "success" {
+				checkHeld()
+				return
+			}
+			require.Equal(t, int32(1), calls.Load())
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil))
+			require.Equal(t, http.StatusOK, w.Code)
+			// Startup cancellation does not take authority away from a started
+			// dependency group; existing runtime drain owns the new-request fence.
+			s.Stop()
+			require.True(t, s.Ready())
+			runtime.beginDrain()
+			w = httptest.NewRecorder()
+			handler.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil))
+			require.Equal(t, http.StatusServiceUnavailable, w.Code)
+			require.True(t, runtime.canClaimRecovery(), "accepted financial recovery remains available while draining")
+		})
+	}
+}
+
+func TestCleanupStartupWaitCancelsWithoutDatabaseWork(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() { defer close(done); startCleanupLoop(ctx, nil, 30, 30) }()
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("cleanup initial wait ignored cancellation")
+	}
+}
 
 func testHTTPRuntime(t *testing.T) *httpRuntime {
 	t.Helper()

@@ -1,0 +1,208 @@
+name: unirouter
+
+x-unirouter-json-logging: &unirouter-json-logging
+  driver: json-file
+  options:
+    max-size: ${DOCKER_LOG_MAX_SIZE:-20m}
+    max-file: "${DOCKER_LOG_MAX_FILES:-3}"
+
+# Customer runtime template. This file intentionally contains no build context,
+# source mount, or host migration mount. It is shipped inside a signed release
+# together with immutable prebuilt image artifacts.
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:?Set the approved PostgreSQL image digest reference}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-uniroute}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-uniroute}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging: *unirouter-json-logging
+
+  redis:
+    image: ${REDIS_IMAGE:?Set the approved Redis image digest reference}
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping 2>/dev/null | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging: *unirouter-json-logging
+
+  backend:
+    stop_grace_period: ${UNIROUTER_STOP_GRACE_PERIOD:-35m}
+    image: ${UNIROUTER_BACKEND_IMAGE:?Set the signed release backend image reference}
+    environment:
+      LISTEN_PORT: 8080
+      MIGRATIONS_DIR: /app/migrations
+      SKIP_MIGRATION: "false"
+      SHUTDOWN_TIMEOUT_SECONDS: ${SHUTDOWN_TIMEOUT_SECONDS:-120}
+      DB_DSN: ${DB_DSN:?Set the PostgreSQL connection string with a URL-encoded password}
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+      REDIS_DB: ${REDIS_DB:-0}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+      API_KEY_HASH_SECRET: ${API_KEY_HASH_SECRET:?Set API_KEY_HASH_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY}
+      RESPONSE_CACHE_INDEX_KEY: ${RESPONSE_CACHE_INDEX_KEY:-}
+      RESPONSE_CACHE_ENCRYPTION_KEY: ${RESPONSE_CACHE_ENCRYPTION_KEY:-}
+      RESPONSE_CACHE_KEY_VERSION: ${RESPONSE_CACHE_KEY_VERSION:-}
+      UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET: ${UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET:?Set a notification Webhook HMAC secret of at least 32 bytes}
+      UNIROUTE_ALLOW_DEFAULT_ADMIN_LOGIN: "false"
+      ADMIN_CORS_ALLOWED_ORIGINS: ${ADMIN_CORS_ALLOWED_ORIGINS:-}
+      METRICS_ENABLED: ${METRICS_ENABLED:-true}
+      METRICS_ALLOWED_CIDRS: ${METRICS_ALLOWED_CIDRS:-}
+      TRACE_EVENTS_ENABLED: ${TRACE_EVENTS_ENABLED:-true}
+      TRACE_EVENT_SAMPLE_RATE: ${TRACE_EVENT_SAMPLE_RATE:-1}
+      TRACE_EVENT_RETENTION_DAYS: ${TRACE_EVENT_RETENTION_DAYS:-30}
+      PAYLOAD_CAPTURE_MODE: ${PAYLOAD_CAPTURE_MODE:-metadata_only}
+      EVIDENCE_CONTEXT_TRUST_SECRET: ${EVIDENCE_CONTEXT_TRUST_SECRET:-}
+      RUNTIME_ENVIRONMENT: ${RUNTIME_ENVIRONMENT:-production}
+      RUNTIME_DEPLOYMENT_MODE: ${RUNTIME_DEPLOYMENT_MODE:-docker-compose}
+      RUNTIME_DEPLOYMENT_ROLE: stable
+      MODEL_ROUTE_AUTHORITY: ${MODEL_ROUTE_AUTHORITY:-canonical}
+      MODEL_ROUTE_COMPATIBILITY_ENABLED: ${MODEL_ROUTE_COMPATIBILITY_ENABLED:-false}
+      BILLING_MODE: ${BILLING_MODE:-cost_observation}
+      # Upgrade compatibility only. After complete Rate Cards are reviewed,
+      # activated and preflighted, set rate_card; strict mode never falls back.
+      REQUEST_PRICING_AUTHORITY: ${REQUEST_PRICING_AUTHORITY:-legacy}
+      PROMETHEUS_URL: http://prometheus:9090
+      GRAFANA_URL: http://grafana:3000
+      COMPLETED_EXECUTION_FEED_ENABLED: ${COMPLETED_EXECUTION_FEED_ENABLED:-false}
+      SOURCE_FACTS_ENABLED: ${SOURCE_FACTS_ENABLED:-false}
+      SOURCE_OBSERVATIONS_ENABLED: ${SOURCE_OBSERVATIONS_ENABLED:-false}
+      SOURCE_BUDGET_SNAPSHOTS_ENABLED: ${SOURCE_BUDGET_SNAPSHOTS_ENABLED:-false}
+      SOURCE_CONTENT_ENABLED: ${SOURCE_CONTENT_ENABLED:-false}
+      SOURCE_CONTENT_FULL_ENABLED: ${SOURCE_CONTENT_FULL_ENABLED:-false}
+      SOURCE_CONTENT_STORAGE_ROOT: ${SOURCE_CONTENT_STORAGE_ROOT:-}
+      SOURCE_CONTENT_STORAGE_IDENTITY: ${SOURCE_CONTENT_STORAGE_IDENTITY:-}
+      SOURCE_CONTENT_STORAGE_TOKEN_FILE: ${SOURCE_CONTENT_STORAGE_TOKEN_FILE:-}
+      COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE: ${COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE:-}
+      COMPLETED_EXECUTION_FEED_REFERENCE_MODE: ${COMPLETED_EXECUTION_FEED_REFERENCE_MODE:-legacy}
+      XINSIGHT_CONNECTOR_AGENT_ENABLED: ${XINSIGHT_CONNECTOR_AGENT_ENABLED:-false}
+      XINSIGHT_CONNECTOR_CONTROL_ORIGIN: ${XINSIGHT_CONNECTOR_CONTROL_ORIGIN:-}
+      XINSIGHT_CONNECTOR_POLL_MILLISECONDS: ${XINSIGHT_CONNECTOR_POLL_MILLISECONDS:-1000}
+      XINSIGHT_CONNECTOR_REQUEST_TIMEOUT_MILLISECONDS: ${XINSIGHT_CONNECTOR_REQUEST_TIMEOUT_MILLISECONDS:-5000}
+      XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON: '${XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON:-[]}'
+      XINSIGHT_CONNECTOR_STATIC_PEER_JSON: '${XINSIGHT_CONNECTOR_STATIC_PEER_JSON:-}'
+      ASYNC_MEDIA_ENABLED: ${ASYNC_MEDIA_ENABLED:-false}
+      ASYNC_MEDIA_ADMISSION_ENABLED: ${ASYNC_MEDIA_ADMISSION_ENABLED:-}
+      ASYNC_MEDIA_S3_REGION: ${ASYNC_MEDIA_S3_REGION:-us-east-1}
+      ASYNC_MEDIA_S3_BUCKET: ${ASYNC_MEDIA_S3_BUCKET:-}
+      ASYNC_MEDIA_S3_ENDPOINT: ${ASYNC_MEDIA_S3_ENDPOINT:-}
+      ASYNC_MEDIA_S3_PREFIX: ${ASYNC_MEDIA_S3_PREFIX:-unirouter-media}
+      ASYNC_MEDIA_S3_FORCE_PATH_STYLE: ${ASYNC_MEDIA_S3_FORCE_PATH_STYLE:-false}
+      ASYNC_MEDIA_WORKER_ID: ${ASYNC_MEDIA_WORKER_ID:-}
+      ASYNC_MEDIA_LEASE_SECONDS: ${ASYNC_MEDIA_LEASE_SECONDS:-300}
+      ASYNC_MEDIA_PURGE_LEASE_SECONDS: ${ASYNC_MEDIA_PURGE_LEASE_SECONDS:-60}
+      ASYNC_MEDIA_POLL_MILLISECONDS: ${ASYNC_MEDIA_POLL_MILLISECONDS:-500}
+      ASYNC_MEDIA_PROVIDER_TIMEOUT_SECONDS: ${ASYNC_MEDIA_PROVIDER_TIMEOUT_SECONDS:-180}
+      ASYNC_MEDIA_MAX_ATTEMPTS: ${ASYNC_MEDIA_MAX_ATTEMPTS:-3}
+      LOGIN_RATE_LIMIT_ENABLED: ${LOGIN_RATE_LIMIT_ENABLED:-true}
+      LOGIN_RATE_LIMIT_WINDOW_SECONDS: ${LOGIN_RATE_LIMIT_WINDOW_SECONDS:-60}
+      LOGIN_RATE_LIMIT_IP_REQUESTS: ${LOGIN_RATE_LIMIT_IP_REQUESTS:-30}
+      LOGIN_RATE_LIMIT_USER_REQUESTS: ${LOGIN_RATE_LIMIT_USER_REQUESTS:-10}
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:?Set the exact frontend proxy /32 and any approved edge proxy hop CIDRs}
+      GUARDRAIL_ORG_ACTIVE_POLICY_LIMIT: ${GUARDRAIL_ORG_ACTIVE_POLICY_LIMIT:-256}
+      GUARDRAIL_PLATFORM_ACTIVE_POLICY_LIMIT: ${GUARDRAIL_PLATFORM_ACTIVE_POLICY_LIMIT:-256}
+      GUARDRAIL_CACHED_POLICY_LIMIT: ${GUARDRAIL_CACHED_POLICY_LIMIT:-4096}
+      GUARDRAIL_CACHED_TENANT_LIMIT: ${GUARDRAIL_CACHED_TENANT_LIMIT:-4096}
+      OIDC_ENABLED: ${OIDC_ENABLED:-false}
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_REDIRECT_URL: ${OIDC_REDIRECT_URL:-}
+      OIDC_PROVIDER_NAME: ${OIDC_PROVIDER_NAME:-OIDC}
+      OIDC_SCOPES: ${OIDC_SCOPES:-openid,email,profile}
+      OIDC_ALLOWED_EMAIL_DOMAIN: ${OIDC_ALLOWED_EMAIL_DOMAIN:-}
+      OIDC_AUTO_PROVISION: ${OIDC_AUTO_PROVISION:-false}
+      OIDC_DEFAULT_ORG_ID: ${OIDC_DEFAULT_ORG_ID:-}
+      OIDC_DEFAULT_ROLE: ${OIDC_DEFAULT_ROLE:-viewer}
+      OIDC_DEFAULT_PROJECT_SLUG: ${OIDC_DEFAULT_PROJECT_SLUG:-default}
+      OIDC_USERNAME_CLAIM: ${OIDC_USERNAME_CLAIM:-preferred_username}
+      OIDC_EMAIL_CLAIM: ${OIDC_EMAIL_CLAIM:-email}
+      OIDC_ROLE_CLAIM: ${OIDC_ROLE_CLAIM:-uniroute_role}
+      OIDC_ORG_ID_CLAIM: ${OIDC_ORG_ID_CLAIM:-uniroute_org_id}
+      LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-30}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health/ready >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    logging: *unirouter-json-logging
+
+  frontend:
+    image: ${UNIROUTER_FRONTEND_IMAGE:?Set the signed release frontend image reference}
+    ports:
+      - "${UNIROUTER_LISTEN_ADDRESS:-127.0.0.1}:${UNIROUTER_HTTP_PORT:-3000}:80"
+    networks:
+      default:
+        ipv4_address: ${UNIROUTER_FRONTEND_PROXY_IP:?Set the fixed frontend proxy address inside UNIROUTER_INTERNAL_NETWORK_CIDR}
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health/ready >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging: *unirouter-json-logging
+
+  prometheus:
+    image: ${PROMETHEUS_IMAGE:?Set the approved Prometheus image digest reference}
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+    restart: unless-stopped
+    logging: *unirouter-json-logging
+
+  grafana:
+    image: ${GRAFANA_IMAGE:?Set the approved Grafana image digest reference}
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    logging: *unirouter-json-logging
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${UNIROUTER_INTERNAL_NETWORK_CIDR:?Set the dedicated internal Docker network CIDR}
+          gateway: ${UNIROUTER_INTERNAL_NETWORK_GATEWAY:?Set the gateway inside the internal Docker network CIDR}

@@ -40,7 +40,7 @@ PREFIX = '/repos/' + REPO
 ROOT = Path(__file__).resolve().parents[2]
 INPUTS = ROOT / '.github/release-inputs'
 BOUND = {
-    'community-stage-record.py': 'c12627c3c535ddb6884eeeb0e56653863ff98eb839bf1ca78e51f2578ef27260',
+    'community-stage-record.py': 'b98a96d9ae3cef71f9f5d613378672d2e4fb11fa0fda92fb4861c9c7dcdc30bf',
     'community-backend-reuse.py': '0a834c5ab5907b6a3266848a96f21eacd95a9d4da9de9d83e3ffcc7b445006f1',
     'community-image-candidate.py': 'a7f8fe1fe1c3cdec41016b429049d5b069dbfcb7338d7f7afbfbc99bb93b4d24',
     'community-source-evidence.py': '15efa4bc55b5a2c8f0947613dbe5f59d179250ba0d5446c2646d1d43816afa11',

@@ -52,6 +52,7 @@ import (
 	"github.com/uniroute/unirouter/internal/responsecache"
 	"github.com/uniroute/unirouter/internal/runtimechange"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
+	"github.com/uniroute/unirouter/internal/runtimegeneration"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
 	"github.com/uniroute/unirouter/internal/sourcefacts"
 	"github.com/uniroute/unirouter/internal/telemetryexport"
@@ -143,7 +144,27 @@ func main() {
 		log.Fatalf("Schema authority identity failed: %v", err)
 	}
 	httpRuntime.schemaDigest = fmt.Sprintf("%x", sha256.Sum256(ledgerBytes))
-	baseline, err := customercontext.EnsureBaseline(context.Background(), postgres.Pool)
+	// Register native authority before any business mutator. The same renewal
+	// cadence observes admission while a maintenance candidate remains held.
+	background := runtimegeneration.NewBackgroundStartup()
+	httpRuntime.background = background
+	defer background.Stop()
+	if err := validateStreamCounterSchema(cfg.EffectiveStreamCounterVersion(), actualSchemaLedger); err != nil {
+		log.Fatalf("Stream counter schema: %v", err)
+	}
+	stopRuntimeGeneration, runtimeGenerationDone, err := startRuntimeGeneration(context.Background(), postgres.Pool, httpRuntime, expectedSchemaLedger, actualSchemaLedger, background)
+	if err != nil {
+		log.Fatalf("Runtime generation authority failed: %v", err)
+	}
+	defer stopRuntimeGeneration()
+	baseline := customercontext.Baseline{}
+	deferBaseline := !background.Admitted()
+	if deferBaseline {
+		baseline.Customer, err = customercontext.Resolve(context.Background(), postgres.Pool)
+		log.Print("Business background startup held by native ingress; customer initialization is read-only")
+	} else {
+		baseline, err = customercontext.EnsureBaseline(context.Background(), postgres.Pool)
+	}
 	if err != nil {
 		log.Fatalf("Failed to initialize single-customer baseline: %v", err)
 	}
@@ -379,7 +400,7 @@ func main() {
 		log.Fatalf("Async-media content policy preflight refused: %v", err)
 	}
 	mediaStore.SetContentPolicy(mediaContentPolicy)
-	contentCaptureRuntime.startMaintenance(sourceFactsSvc)
+	contentCaptureRuntime.startMaintenance(sourceFactsSvc, background)
 	billingSvc.SetTerminalMaterializer(billing.TerminalMaterializers{completedFeedSvc, sourceFactsSvc})
 	billingSvc.SetReservationMaterializer(sourceFactsSvc)
 	if cfg.SourceObservationsEnabled {
@@ -392,7 +413,7 @@ func main() {
 	// Source readiness and all immutable worker hooks precede Run. Its job
 	// and purge loops both perform work immediately, before waiting for a tick.
 	var stopAsyncMedia context.CancelFunc
-	var asyncMediaDone chan struct{}
+	var asyncMediaDone <-chan struct{}
 	if cfg.AsyncMediaEnabled {
 		mediaProvider, providerErr := mediajob.NewGPTImageProvider(
 			router,
@@ -428,14 +449,12 @@ func main() {
 		}
 		asyncMediaCtx, cancelAsyncMedia := context.WithCancel(context.Background())
 		stopAsyncMedia = cancelAsyncMedia
-		asyncMediaDone = make(chan struct{})
-		go func() {
-			defer close(asyncMediaDone)
-			runErr := mediaWorker.Run(asyncMediaCtx)
+		asyncMediaDone = background.Go(asyncMediaCtx, func(ctx context.Context) {
+			runErr := mediaWorker.Run(ctx)
 			if runErr != nil && !errors.Is(runErr, context.Canceled) {
 				log.Printf("Async-media worker stopped: %v", runErr)
 			}
-		}()
+		})
 		log.Printf(
 			"Async-media Image V1 enabled: profile=%s retention=P7D video=false admission=%t",
 			mediajob.Evidence(true, cfg.AsyncMediaAdmissionEnabled).ProfileID,
@@ -454,7 +473,6 @@ func main() {
 	sharedPolicyBilling.SetTerminalHooks(terminalHookSvc)
 	settlementRecoveryCtx, stopSettlementRecovery := context.WithCancel(context.Background())
 	defer stopSettlementRecovery()
-	settlementRecoveryDone := make(chan struct{})
 	admissionCtrl := middleware.NewDefaultAdmissionController()
 	initialFilterCtx, cancelInitialFilterLoad := context.WithTimeout(context.Background(), 10*time.Second)
 	initialSensitiveWords, initialSensitiveVersion, err := loadSensitiveWords(initialFilterCtx, postgres.Pool)
@@ -643,19 +661,18 @@ func main() {
 		}
 	}
 	outboxCtx, stopOutbox := context.WithCancel(context.Background())
-	sourceFactsRetentionDone := make(chan struct{})
-	go func() { defer close(sourceFactsRetentionDone); sourceFactsSvc.RunRetention(outboxCtx) }()
-	outboxDone := make(chan struct{})
+	sourceFactsRetentionDone := background.Go(outboxCtx, sourceFactsSvc.RunRetention)
+	outboxDone := background.Go(outboxCtx, outboxSvc.Run)
+	billingSvc.SetRecoveryAdmission(httpRuntime.canClaimRecovery)
+	settlementRecoveryDone := background.Go(settlementRecoveryCtx, func(ctx context.Context) {
+		billingSvc.RunSettlementRecoveryLoop(ctx, 10*time.Second, 100)
+	})
 	completedFeedRetentionCtx, stopCompletedFeedRetention := context.WithCancel(context.Background())
-	completedFeedRetentionDone := make(chan struct{})
-	go func() {
-		defer close(completedFeedRetentionDone)
-		completedFeedSvc.RunRetention(completedFeedRetentionCtx)
-	}()
+	completedFeedRetentionDone := background.Go(completedFeedRetentionCtx, completedFeedSvc.RunRetention)
 	xInsightConnectorRuntimeCtx, stopXInsightConnectorRuntime := context.WithCancel(context.Background())
-	xInsightConnectorRuntimeDone := startXInsightConnectorRuntime(
-		xInsightConnectorRuntimeCtx, xInsightConnectorRuntime,
-	)
+	xInsightConnectorRuntimeDone := background.Go(xInsightConnectorRuntimeCtx, func(ctx context.Context) {
+		<-startXInsightConnectorRuntime(ctx, xInsightConnectorRuntime)
+	})
 	oidcService, err := oidc.NewService(oidc.Config{
 		Enabled:            cfg.OIDCEnabled,
 		IssuerURL:          cfg.OIDCIssuerURL,
@@ -682,10 +699,12 @@ func main() {
 	// Load sensitive words from settings and periodically refresh all instances.
 	go startSensitiveWordsReloadLoop(postgres.Pool, sensitiveFilter, time.Minute)
 
-	// Start cleanup goroutine
-	if cfg.LogRetentionDays > 0 || cfg.TraceEventRetentionDays > 0 {
-		go startCleanupLoop(adminHandler, cfg.LogRetentionDays, cfg.TraceEventRetentionDays)
-	}
+	cleanupCtx, stopCleanup := context.WithCancel(context.Background())
+	cleanupDone := background.Go(cleanupCtx, func(ctx context.Context) {
+		if cfg.LogRetentionDays > 0 || cfg.TraceEventRetentionDays > 0 {
+			startCleanupLoop(ctx, adminHandler, cfg.LogRetentionDays, cfg.TraceEventRetentionDays)
+		}
+	})
 
 	// Build HTTP mux
 	mux := http.NewServeMux()
@@ -1344,25 +1363,20 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 		IdleTimeout:  120 * time.Second,
 	}
 
-	if err := validateStreamCounterSchema(cfg.EffectiveStreamCounterVersion(), actualSchemaLedger); err != nil {
-		log.Fatalf("Stream counter schema: %v", err)
-	}
-	// Start server in goroutine
-	stopRuntimeGeneration, runtimeGenerationDone, err := startRuntimeGeneration(context.Background(), postgres.Pool, httpRuntime, expectedSchemaLedger, actualSchemaLedger)
-	if err != nil {
-		log.Fatalf("Runtime generation authority failed: %v", err)
-	}
-	defer stopRuntimeGeneration()
-	// No worker may claim committed source dispatch events until this binary's
-	// actual generation/support has passed the original startup authority.
+	// Only this one startup group may launch the collected business writers.
+	// Deferred baseline failure/cancellation launches none of them.
+	background.Start(func(ctx context.Context) error {
+		if !deferBaseline {
+			return nil
+		}
+		_, err := customercontext.EnsureResolvedBaseline(ctx, postgres.Pool, baseline.Customer)
+		return err
+	})
 	go func() {
-		defer close(outboxDone)
-		outboxSvc.Run(outboxCtx)
-	}()
-	billingSvc.SetRecoveryAdmission(httpRuntime.canClaimRecovery)
-	go func() {
-		defer close(settlementRecoveryDone)
-		billingSvc.RunSettlementRecoveryLoop(settlementRecoveryCtx, 10*time.Second, 100)
+		<-background.Done()
+		if err := background.Err(); err != nil && !errors.Is(err, context.Canceled) {
+			log.Fatalf("Business background startup failed: %v", err)
+		}
 	}()
 
 	runtimeStatus := httpRuntime.status()
@@ -1381,6 +1395,9 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	<-quit
 	log.Println("Shutting down server...")
 	signal.Stop(quit)
+	// Stop a still-held launch before draining; already running dependencies
+	// remain alive until accepted handlers have persisted their terminal facts.
+	background.Stop()
 	ctx, cancel := context.WithTimeout(context.Background(), httpRuntime.drainTimeout)
 	defer cancel()
 	httpDrained := false
@@ -1396,12 +1413,15 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	stopXInsightConnectorRuntime()
 	stopSettlementRecovery()
 	stopCompletedFeedRetention()
+	stopCleanup()
 	for _, worker := range []struct {
 		name string
 		done <-chan struct{}
 	}{
 		{"X-Insight Connector runtime", xInsightConnectorRuntimeDone},
 		{"settlement recovery", settlementRecoveryDone},
+		{"general cleanup", cleanupDone},
+		{"background startup", background.Done()},
 	} {
 		select {
 		case <-worker.done:
@@ -1669,23 +1689,31 @@ func startNotificationRetryLoop(eventSvc *billing.EventService) {
 	}
 }
 
-// startCleanupLoop runs the cleanup task periodically.
-func startCleanupLoop(handler *admin.Handler, retentionDays, traceEventRetentionDays int) {
-	ticker := time.NewTicker(1 * time.Hour)
+// startCleanupLoop preserves the original five-minute/hourly schedule, with
+// cancelable waits and operations owned by the runtime shutdown path.
+func startCleanupLoop(parent context.Context, handler *admin.Handler, retentionDays, traceEventRetentionDays int) {
+	ticker := time.NewTicker(time.Hour)
 	defer ticker.Stop()
-
-	time.Sleep(5 * time.Minute)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	if err := handler.CleanupOldDataWithTraceRetention(ctx, retentionDays, traceEventRetentionDays); err != nil {
-		log.Printf("Cleanup error: %v", err)
+	initial := time.NewTimer(5 * time.Minute)
+	defer initial.Stop()
+	select {
+	case <-parent.Done():
+		return
+	case <-initial.C:
 	}
-	cancel()
-
-	for range ticker.C {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		if err := handler.CleanupOldDataWithTraceRetention(ctx, retentionDays, traceEventRetentionDays); err != nil {
+	for {
+		if parent.Err() != nil {
+			return
+		}
+		ctx, cancel := context.WithTimeout(parent, 5*time.Minute)
+		if err := handler.CleanupOldDataWithTraceRetention(ctx, retentionDays, traceEventRetentionDays); err != nil && parent.Err() == nil {
 			log.Printf("Cleanup error: %v", err)
 		}
 		cancel()
+		select {
+		case <-parent.Done():
+			return
+		case <-ticker.C:
+		}
 	}
 }

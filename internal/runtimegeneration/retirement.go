@@ -199,24 +199,24 @@ func applyRetirementTx(ctx context.Context, tx pgx.Tx, r RetirementInput, result
 	return result, nil
 }
 
-// CheckM127MaintenanceRetirementTx and ApplyM127MaintenanceRetirementTx are
+// CheckCommunityMaintenanceRetirementTx and ApplyCommunityMaintenanceRetirementTx are
 // transaction participants of the signed community upgrade owner. That owner
-// verifies the installed package, configured trust ring and exact M127 -> M128
+// verifies the installed package, configured trust ring and finite M127/M128/M129 -> M129
 // candidate under its release/migration locks before calling these functions.
 // They do not commit, grant serving authority or widen legacy stop commands.
-func CheckM127MaintenanceRetirementTx(ctx context.Context, tx pgx.Tx, r RetirementInput, forUpdate bool) (RetirementResult, error) {
+func CheckCommunityMaintenanceRetirementTx(ctx context.Context, tx pgx.Tx, r RetirementInput, sourceHead string, forUpdate bool) (RetirementResult, error) {
 	if err := r.validateIdentity(); err != nil {
 		return RetirementResult{}, err
 	}
-	if r.ExpectedSchemaHead != schemaauthority.XInsightCommunicationHead ||
-		(r.ExpectedEnvironment != "production" && r.ExpectedEnvironment != "development" && r.ExpectedEnvironment != "test") {
-		return RetirementResult{}, fmt.Errorf("community retirement requires the exact M127 maintenance predecessor")
+	if (sourceHead != schemaauthority.XInsightCommunicationHead && sourceHead != schemaauthority.UpstreamReleaseObservationHead && sourceHead != schemaauthority.UpstreamObservationRestoreHead) ||
+		r.ExpectedSchemaHead != sourceHead || (r.ExpectedEnvironment != "production" && r.ExpectedEnvironment != "development" && r.ExpectedEnvironment != "test") {
+		return RetirementResult{}, fmt.Errorf("community retirement requires the verified exact M127, M128 or M129 predecessor")
 	}
 	return readRetirement(ctx, tx, r, forUpdate)
 }
 
-func ApplyM127MaintenanceRetirementTx(ctx context.Context, tx pgx.Tx, r RetirementInput) (RetirementResult, error) {
-	result, err := CheckM127MaintenanceRetirementTx(ctx, tx, r, true)
+func ApplyCommunityMaintenanceRetirementTx(ctx context.Context, tx pgx.Tx, r RetirementInput, sourceHead string) (RetirementResult, error) {
+	result, err := CheckCommunityMaintenanceRetirementTx(ctx, tx, r, sourceHead, true)
 	if err != nil {
 		return result, err
 	}

@@ -1251,15 +1251,58 @@ class ArtifactOwnerReadFixtureTests(unittest.TestCase):
         spec.loader.exec_module(module)
         return module
 
+    def test_read_fixture_uses_exact_original_validator_and_canonical_correction(self):
+        migrations=Path(__file__).resolve().parent.parent/"migrations"
+        carrier=self.load_carrier()
+        with patch.object(carrier.r,"run",side_effect=AssertionError("offline input read used Docker")):
+            functions,correction=carrier.carrier_read_namespace_sql(migrations)
+        self.assertEqual("934220eb5e26f57110186440404abfcb1958f890f85d571bbf5327c49ebefa1e",
+                         rollout.digest(functions.encode()))
+        self.assertEqual(2,functions.count("CREATE FUNCTION "))
+        self.assertEqual("ALTER FUNCTION public.valid_upstream_release_observation(jsonb) SET search_path TO pg_catalog, public;",correction)
+
+    def test_read_fixture_refuses_missing_ambiguous_or_changed_namespace_inputs(self):
+        migrations=Path(__file__).resolve().parent.parent/"migrations"
+        old="000128_upstream_release_observation.up.sql"
+        new="000129_upstream_observation_restore_namespace.up.sql"
+        original={name:(migrations/name).read_text() for name in (old,new)}
+        cases=((old,"CREATE FUNCTION valid_upstream_release_text(","CREATE FUNCTION missing_text("),
+               (old,"CREATE FUNCTION valid_upstream_release_text(","CREATE FUNCTION valid_upstream_release_text(\nCREATE FUNCTION valid_upstream_release_text("),
+               (old,"octet_length(v)<=n","octet_length(v)<n"),
+               (new,"-- unirouter:observation-namespace-correction-begin\n","-- missing-marker\n"),
+               (new,"-- unirouter:observation-namespace-correction-begin\n","-- unirouter:observation-namespace-correction-begin\n-- unirouter:observation-namespace-correction-begin\n"),
+               (new,"SET search_path TO pg_catalog, public;","SET search_path TO public;"))
+        for name,before,after in cases:
+            with self.subTest(file=name,changed=after), tempfile.TemporaryDirectory(prefix="ur-carrier-namespace-") as root:
+                for file,text in original.items(): (Path(root)/file).write_text(text.replace(before,after) if file==name else text)
+                snapshot={p.name:p.read_bytes() for p in Path(root).iterdir()}
+                with self.assertRaisesRegex(RuntimeError,"carrier read fixture"):
+                    self.load_carrier().carrier_read_namespace_sql(Path(root))
+                self.assertEqual(snapshot,{p.name:p.read_bytes() for p in Path(root).iterdir()})
+
     def test_exact_current_artifact_and_bridge_are_reported_separately(self):
         migrations=Path(__file__).resolve().parent.parent/"migrations"
         bridge,current=self.load_carrier().carrier_read_ledgers(migrations)
         self.assertEqual(bridge[0],"maintenance_predecessor")
         self.assertEqual(current[0],"current")
-        self.assertEqual(bridge[1][-1],"000127_xinsight_communication_policy")
-        self.assertEqual(current[1][-1],"000128_upstream_release_observation")
+        self.assertEqual(bridge[1][-1],"000128_upstream_release_observation")
+        self.assertEqual(current[1][-1],"000129_upstream_observation_restore_namespace")
         self.assertEqual(current[1],sorted(p.name[:-7] for p in migrations.glob("*.up.sql")))
         self.assertEqual(bridge[1],current[1][:-1])
+
+    def test_current_read_fixture_refuses_missing_reviewed_tail_and_future_extension(self):
+        migrations=Path(__file__).resolve().parent.parent/"migrations"
+        original=sorted(p.name for p in migrations.glob("*.up.sql"))
+        for missing in ("000126_commercial_license_retirement", "000127_xinsight_communication_policy",
+                        "000128_upstream_release_observation", "000129_upstream_observation_restore_namespace", None):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory(prefix="ur-carrier-current-") as root:
+                for name in original:
+                    if name != str(missing)+".up.sql":
+                        (Path(root)/name).write_text("")
+                if missing is None:
+                    (Path(root)/"000130_unknown_future.up.sql").write_text("")
+                with self.assertRaisesRegex(RuntimeError,"exact reviewed artifact heads"):
+                    self.load_carrier().carrier_read_ledgers(Path(root))
 
     def test_unknown_future_head_cannot_keep_a_stale_success_label(self):
         import tempfile

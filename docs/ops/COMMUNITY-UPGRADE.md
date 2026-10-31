@@ -1,16 +1,22 @@
-# Community upgrade: retained M127 to M128
+# Community upgrade: retained installations and exact schema transitions
 
-Status on 2026-10-29: [1.15.0 / sequence 17](https://github.com/foigent/unirouter/releases/tag/v1.15.0-preview.17) is signed and public. Its [formal Linux consumer](https://github.com/foigent/unirouter/actions/runs/40739178872) passed exact signed-package download, anonymous image pulls, fresh M128 installation and recovery. Source PR #482 separately passed real disposable Linux M127 → M128 upgrade cases. Each existing server still requires the original-host checks and retained evidence below before maintenance; these results do not establish its deployment.
+Local correction candidate, 2026-10-30: the ordinary owner supports exact
+M127 → M129, M128 → M129, and later M129 → M129 application upgrades. M129
+corrects the persisted M128 observation validator's namespace for native
+PostgreSQL restore. These changes have no allocated release version/sequence
+and do not establish Linux, signed-artifact or Target acceptance.
+
+Historical status on 2026-10-29: [1.15.0 / sequence 17](https://github.com/foigent/unirouter/releases/tag/v1.15.0-preview.17) is signed and public. Its [formal Linux consumer](https://github.com/foigent/unirouter/actions/runs/40739178872) passed exact signed-package download, anonymous image pulls, fresh M128 installation and recovery. Source PR #482 separately passed real disposable Linux M127 → M128 upgrade cases. Each existing server still requires the original-host checks and retained evidence below before maintenance; these results do not establish its deployment.
 
 The entry upgrades one existing Linux amd64 community installation while
 preserving its database, content, settings, credentials and release history.
 It reuses the full signed release, installed trust ring, installer identity,
 native ingress/generation/upgrade owners and existing cold-recovery checks.
-Fresh M128 installation continues to use `install`/`resume`.
+Fresh installation continues to use `install`/`resume` and the exact candidate schema.
 
 ## Supported source
 
-- Exact complete M127, completed native installation envelope, and its recorded
+- Exact complete M127, M128 or M129, completed native installation envelope, and its recorded
   signed full package. Use the package actually named by native release history;
   after an earlier manual patch it may differ from the install directory's
   original `release.tar.gz`.
@@ -25,7 +31,7 @@ Fresh M128 installation continues to use `install`/`resume`.
 Unknown layouts, receivers, writers, configuration drift, unresolved ingress,
 missing source/trust bindings and insufficient recovery capacity stop the whole
 operation. This finite route does not search arbitrary version paths or provide
-rolling M127/M128 compatibility. Existing historical maintenance paths retain
+rolling compatibility or arbitrary future schema heads. Existing historical maintenance paths retain
 only their previously supported scope.
 
 ## One entry for check, upgrade, resume and status
@@ -49,12 +55,23 @@ Replace only `check-upgrade` with `upgrade` to perform maintenance. Retain the
 same installation, release, verifier, key ring, source package and named layout
 arguments for `resume-upgrade`. The original source package is never overwritten.
 A full candidate copy is retained under the installation's private `releases/`.
+
+For a subsequent upgrade, omit `--source-package` to select the package in the
+completed `current_release` record. An explicit package must still match the
+actual native release state/history and recorded signature admission time.
+`resume-upgrade` refers to the current candidate's unfinished operation; a
+completed prior candidate does not block a new `upgrade` claim. The new claim
+retains the exact prior `install-state.json` bytes in its own private operation
+directory with a digest, instead of recursively embedding old witnesses. Legacy
+embedded witnesses remain readable; closed recovery-tool fields are historical
+data and are never executed. The existing image override is bound to the source
+and replaced atomically only at the image configuration step.
 For the named adapter also supply `--layout ur_edge_pair --edge-directory` with
 its original absolute edge directory. These are existing paths, not new resources.
 
 ### Retained historical exits
 
-A normally restarted M127 installation may retain earlier runtime-generation
+A normally restarted supported installation may retain earlier runtime-generation
 rows. Supply `--historical-exits /absolute/private/historical-exits.json` when
 those rows have original, independently reviewed termination evidence. The
 same optional argument works through the online bootstrap. The current serving
@@ -136,8 +153,11 @@ outside that file check and remain valid.
    body bindings and the existing financial/content restore rebase. Both the
    original and verification objects are retained. No restore overwrites the
    original database or content tree.
-5. Run the candidate's native migration, verify exact M128 additions and original
-   table facts, preserve configuration/credentials, start exact candidate writer
+5. For M127/M128 sources, run the candidate's existing native migration owner
+   for the exact missing suffix. A proved interrupted M127 → M128 prefix may
+   continue only the missing M129 migration after full cold/data checks. For a
+   same-schema M129 source, verify the full ledger/cold pair without invoking
+   migrations. Verify original table facts, preserve configuration/credentials, start exact candidate writer
    images and verify native readiness. Record the signed target release only
    with the exact installed source sequence/package under the native lock.
 6. Verify original database/content/configuration before opening receivers.
@@ -145,6 +165,19 @@ outside that file check and remain valid.
    admission. Post-admission checks verify native release/runtime/admission and
    retained recovery archive identity. Legitimate new business writes do not
    invalidate the successful upgrade or cause migration/recording to repeat.
+
+A legacy M128 cold dump with a nonempty observation uses PostgreSQL's native
+pre-data/data/post-data restore stages on the private empty verification clone.
+Between pre-data and COPY, the candidate's existing upgrade CLI verifies the
+exact signed source, database/clone identity, retained dump and known function
+bodies/configuration, then applies only the canonical function-local namespace
+correction from M129. The receipt declares this DDL delta separately. The raw
+dump, source database and full M128 clone ledger remain unchanged. No CHECK,
+foreign key or trigger is disabled. The read-only `fresh-install check
+--completed-source-schema 000128_upstream_release_observation` accepts only this
+full corrected predecessor with its original completed Plan; it grants no
+ordinary runtime, fresh apply or resume authority. Corrected M129 archives use
+ordinary PostgreSQL restore and the existing financial/content rebase checks.
 
 An interrupted operation uses the same host witness and each native outcome's
 readback. A proved unstarted action can proceed; an unknown physical stop or
@@ -164,8 +197,9 @@ The host entry is `deploy/customer/upgrade.py`; database decisions remain in
 `upgrade record-applied` and the original runtime-generation owner. The private
 `recovery.py` extracts the already used byte/archive/SQL checks; it does not
 certify a new schema or Target by itself. Narrow, code-owned M128 projections
-exclude only the new schema row/columns and separately verified native appends
-when comparing original data. Other original tables, including financial and
+exclude only the exact newly added schema rows, the M128 columns when the
+source lacks them, and separately verified native appends. Existing M128/M129
+observations and nonzero revisions stay in the full comparison. Other original tables, including financial and
 immutable business history, stay in the comparison.
 
 `scripts/test-community-upgrade.py` runs the real finite host entry against

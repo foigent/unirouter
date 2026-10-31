@@ -22,6 +22,28 @@ BEGIN
     LOCK TABLE schema_migrations IN SHARE MODE;
     SELECT array_agg(version::text ORDER BY version) INTO ledger FROM schema_migrations;
     certified_ledger := ledger;
+    IF ledger[cardinality(ledger)]='000129_upstream_observation_restore_namespace' THEN
+      IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000128_upstream_release_observation' THEN
+        RAISE EXCEPTION 'M129 restore requires the exact M128 predecessor'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN pg_language l ON l.oid=p.prolang
+   WHERE n.nspname='public' AND p.proname='valid_upstream_release_observation'
+   AND p.oid='public.valid_upstream_release_observation(jsonb)'::regprocedure
+   AND p.provolatile='i' AND NOT p.prosecdef AND NOT p.proisstrict AND NOT p.proleakproof
+   AND p.proparallel='u' AND p.prorettype='boolean'::regtype AND l.lanname='plpgsql'
+   AND p.prokind='f' AND NOT p.proretset AND p.provariadic=0 AND p.pronargdefaults=0 AND p.proargnames=ARRAY['v']::text[]
+   AND encode(sha256(convert_to(p.prosrc,'UTF8')),'hex')='f2ffc71b42a5c0c9e92c0e06f495345ac8d76550284eb82b208727ccc8a70356'
+   AND p.proconfig=ARRAY['search_path=pg_catalog, public']
+   AND EXISTS(SELECT 1 FROM pg_proc h JOIN pg_language hl ON hl.oid=h.prolang
+    WHERE h.oid='public.valid_upstream_release_text(text,integer,boolean)'::regprocedure
+    AND encode(sha256(convert_to(h.prosrc,'UTF8')),'hex')='a46a33ebafc84191586d578546880f7bdaabcd46820c65ae0254c3530c7c4d95'
+    AND h.provolatile='i' AND NOT h.prosecdef AND NOT h.proisstrict AND NOT h.proleakproof
+    AND h.proparallel='u' AND h.prorettype='boolean'::regtype AND hl.lanname='sql' AND h.proconfig IS NULL
+    AND h.prokind='f' AND NOT h.proretset AND h.provariadic=0 AND h.pronargdefaults=0 AND h.proargnames=ARRAY['v','n','required']::text[])) THEN
+  RAISE EXCEPTION 'M129 restore refuses an unknown or uncorrected observation validator';
+ END IF;
+      ledger:=ledger[1:cardinality(ledger)-1];
+      certified_ledger:=ledger;
+    END IF;
     IF ledger[cardinality(ledger)]='000128_upstream_release_observation' THEN
       IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000127_xinsight_communication_policy'
          OR NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='model_deployments'::regclass AND attname='upstream_release_observation' AND NOT attisdropped AND atttypid='jsonb'::regtype)
@@ -140,12 +162,12 @@ BEGIN
        AND head IS DISTINCT FROM '000124_xinsight_receiver_adoption'
        AND head IS DISTINCT FROM '000125_xinsight_control_credential_lifecycle'
        AND head IS DISTINCT FROM '000126_commercial_license_retirement' AND head IS DISTINCT FROM '000127_xinsight_communication_policy'
-       AND head IS DISTINCT FROM '000128_upstream_release_observation' THEN
+       AND head IS DISTINCT FROM '000128_upstream_release_observation' AND head IS DISTINCT FROM '000129_upstream_observation_restore_namespace' THEN
       IF present<>0 THEN RAISE EXCEPTION 'restored C tables require the exact M119 ledger'; END IF;
       RETURN;
     END IF;
     IF present<>8 THEN RAISE EXCEPTION 'restored C schema is incomplete'; END IF;
-    IF head IN ('000120_unpublished_content_reclamation','000121_gateway_pre_dispatch_terminal','000122_scoped_content_policy','000123_xinsight_policy_delegation','000124_xinsight_receiver_adoption','000125_xinsight_control_credential_lifecycle','000126_commercial_license_retirement','000127_xinsight_communication_policy','000128_upstream_release_observation') THEN
+    IF head IN ('000120_unpublished_content_reclamation','000121_gateway_pre_dispatch_terminal','000122_scoped_content_policy','000123_xinsight_policy_delegation','000124_xinsight_receiver_adoption','000125_xinsight_control_credential_lifecycle','000126_commercial_license_retirement','000127_xinsight_communication_policy','000128_upstream_release_observation','000129_upstream_observation_restore_namespace') THEN
       IF NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='execution_content_objects'::regclass AND attname='reclaimed_at' AND NOT attisdropped AND atttypid='timestamptz'::regtype AND NOT attnotnull) THEN
         RAISE EXCEPTION 'restored content reclamation schema mismatch'; END IF;
     ELSIF EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='execution_content_objects'::regclass AND attname='reclaimed_at' AND NOT attisdropped) THEN

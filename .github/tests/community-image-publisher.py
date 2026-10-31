@@ -113,7 +113,7 @@ def image_pin(q, image):
             'Invalid registry digest reference.')
     return pin
 
-STAGE_PROGRAM_SHA256 = 'c12627c3c535ddb6884eeeb0e56653863ff98eb839bf1ca78e51f2578ef27260'
+STAGE_PROGRAM_SHA256 = 'b98a96d9ae3cef71f9f5d613378672d2e4fb11fa0fda92fb4861c9c7dcdc30bf'
 
 
 def stage_module():

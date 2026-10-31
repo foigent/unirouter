@@ -125,26 +125,29 @@ export default function LimitPoliciesPage() {
 
   useEffect(() => {
     if (customerContextReady) load(1, pageSize);
-  }, [customerContextReady, customerOrgID]);
+  }, [customerContextReady, customerOrgID, platform]);
   useEffect(() => {
     if (!customerContextReady || !customerOrgID) return;
     void (async () => {
       try {
-        const [keyData, projectData, endpointProjection] = await Promise.all([
+        const [keyData, projectData, modelNames] = await Promise.all([
           loadAllPages<KeyOption>((page, size) => api.getKeys(page, size)),
           loadAllPages<any>((page, size) => api.getProjects(page, size, { org_id: customerOrgID })),
-          modelEndpointApi.getModelEndpoints(),
+          platform
+            ? modelEndpointApi.getModelEndpoints().then(projection => (projection.models || []).map(item => item.public_model))
+            : loadAllPages<{ model_name: string }>((page, size) => api.getModelCatalog(page, size, { org_id: customerOrgID }))
+              .then(catalog => catalog.map(item => item.model_name)),
         ]);
         setKeys((keyData || []).filter((key) => key.org_id === customerOrgID));
         setProjects((projectData || [])
           .filter((project: any) => project.org_id === customerOrgID)
           .map((project: any) => ({ value: project.id, label: projectDisplayName(project) })));
-        setModels((endpointProjection.models || []).map(item => item.public_model).filter(Boolean));
+        setModels(Array.from(new Set(modelNames.filter(Boolean))));
       } catch {
         Toast.error(t("策略选项加载失败，请刷新后重试"));
       }
     })();
-  }, [customerContextReady, customerOrgID]);
+  }, [customerContextReady, customerOrgID, platform]);
 
   const openCreate = () => {
     setEditing(null);

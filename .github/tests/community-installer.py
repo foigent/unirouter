@@ -13,6 +13,7 @@ from collections import namedtuple
 from datetime import datetime, timedelta, timezone
 import hashlib
 import importlib.util
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -26,12 +27,15 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 
 RETAINED_COMMIT = "d92abe0a5bd4b997893ba6043a213d1a98108883"
 RETAINED_SCHEMA = "000127_xinsight_communication_policy"
-CURRENT_SCHEMA = "000128_upstream_release_observation"
+OBSERVATION_COMMIT = "4eb32b5514d47aa91610fc66ef561368d6a18900"
+OBSERVATION_SCHEMA = "000128_upstream_release_observation"
+CURRENT_SCHEMA = "000129_upstream_observation_restore_namespace"
 FIXTURE_PORTS = {"fresh": 13000, "single": 13001, "edge": 13002}
 SourceContract = namedtuple("SourceContract", "schema ledger supported_heads")
 # Match the accepted installation descriptor, not build-stage pull labels or floating tags.
@@ -86,7 +90,7 @@ def source_contract(repo):
             heads.append(ast.literal_eval(assignments[0]))
         except (ValueError, TypeError):
             raise Failed("shipped schema metadata must be literal") from None
-    require(heads[0] == heads[1] and heads[0] in (RETAINED_SCHEMA, CURRENT_SCHEMA),
+    require(heads[0] == heads[1] and heads[0] in (RETAINED_SCHEMA, OBSERVATION_SCHEMA, CURRENT_SCHEMA),
             "shipped installer/bootstrap schema disagreement or unsupported fixture source")
     text = (repo / "internal/schemaauthority/version.go").read_text()
     constants = dict(re.findall(r'^const ([A-Za-z]+) = "([a-z0-9_]+)"$', text, re.M))
@@ -131,7 +135,7 @@ class Acceptance:
         require(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", self.version), "invalid version")
         self.source_contract = source_contract(repo)
         self.schema = self.source_contract.schema
-        self.release_sequence = 2 if self.schema == CURRENT_SCHEMA else 1
+        self.release_sequence = {RETAINED_SCHEMA:1, OBSERVATION_SCHEMA:2, CURRENT_SCHEMA:3}[self.schema]
         self.result.update(commit=self.commit, tree=self.tree, version=self.version)
         self.release = root / "release"
         self.release.mkdir(mode=0o700)
@@ -164,8 +168,10 @@ class Acceptance:
                 self.result["installer_stop"] = stopped[-1]
         if ok:
             failure = label + " failed"
-            if result.returncode != 0 and hasattr(self, "release") and argv[:4] == [
-                    sys.executable, "-I", "-B", str(self.release / "payload/deploy/upgrade.py")]:
+            entry = [sys.executable, "-I", "-B", str(self.release / "payload/deploy/upgrade.py")] if hasattr(self, "release") else []
+            if hasattr(self, "migration_observer"):
+                entry = entry[:3] + [str(self.migration_observer), str(self.migration_audit)] + entry[3:]
+            if result.returncode != 0 and entry and argv[:len(entry)] == entry:
                 # Only the direct shipped entry owns this authored boundary.
                 # Its child failures discard raw output in install.execute.
                 stopped = [line for line in stderr.splitlines() if line.startswith("Upgrade stopped: ")]
@@ -262,7 +268,7 @@ class Acceptance:
         deploy = self.release / "payload/deploy"
         deploy.mkdir(parents=True)
         names = ["install.py", "docker-compose.yml", ".env.example", "preflight.sh"]
-        if self.schema == CURRENT_SCHEMA:
+        if self.schema in (OBSERVATION_SCHEMA,CURRENT_SCHEMA):
             names += ["upgrade.py", "recovery.py"]
         for name in names:
             shutil.copyfile(self.repo / "deploy/customer" / name, deploy / name)
@@ -290,7 +296,7 @@ class Acceptance:
             require(count == 1, "retained fixture backend declaration differs")
             (deploy / "docker-compose.yml").write_text(compose)
             self.result["historical_fixture_config"] = "native body binding; signed synthetic operator configuration before first start"
-        if self.schema == CURRENT_SCHEMA:
+        if self.schema in (OBSERVATION_SCHEMA,CURRENT_SCHEMA):
             scripts = self.release / "payload/scripts"
             scripts.mkdir()
             shutil.copyfile(self.repo / "scripts/source-budget-restore-rebase.sql",
@@ -311,6 +317,10 @@ class Acceptance:
         require(selected["images"] == self.images, "native selected descriptor differs from inspected images")
         (self.release / "payload/install.json").write_bytes(selector.wire(selected))
         self.result["descriptor_selection"] = "pinned upstream names and native exact RepoDigests"
+        self.pack_release(private)
+
+    def pack_release(self, private):
+        """Use the normal pack/bootstrap path with the already selected payload."""
         now = datetime.now(timezone.utc)
         stamp = lambda value: value.isoformat(timespec="seconds").replace("+00:00", "Z")
         payload = sorted(path for path in (self.release / "payload").rglob("*") if path.is_file())
@@ -357,6 +367,48 @@ class Acceptance:
         self.result["bootstrap_sha256"] = self.bootstrap_sha
         self.result["bootstrap_transport"] = "local fixture; no public-download claim"
         self.passed("pinned synthetic bootstrap prepares the exact signed installer")
+
+    def same_schema_release(self):
+        """Only a higher synthetic package sequence; reuse exact candidate images."""
+        require(self.schema == CURRENT_SCHEMA, "same-schema fixture needs the completed current candidate")
+        self.phase = "prepare higher-sequence same-schema fixture"
+        following = copy.copy(self)
+        following.root = self.root / "same-schema"
+        following.root.mkdir(mode=0o700)
+        following.logs = following.root / "logs"
+        following.logs.mkdir(mode=0o700)
+        following.result = {"checks": []}
+        following.release = following.root / "release"
+        following.release.mkdir(mode=0o700)
+        shutil.copytree(self.release / "payload", following.release / "payload")
+        following.release_sequence = self.release_sequence + 1
+        following.pack_release(self.root / "test.private")
+        require(files(following.release / "payload") == files(self.release / "payload")
+            and following.images == self.images and following.image_ids == self.image_ids
+            and sha(following.release / "release.tar.gz") != sha(self.release / "release.tar.gz"),
+            "same-schema package must retain exact payload/images and have a new signed identity")
+        # Observe real child launches without replacing the shipped CLI or any
+        # effect. Only two integer counts are retained, never argv/env/output.
+        following.migration_audit = following.root / "migration-owner-audit.jsonl"
+        following.migration_observer = following.root / "observe-migration-owner.py"
+        private_write(following.migration_observer, b'''import json,os,runpy,sys
+report,program,*args=sys.argv[1:]
+counts={"native_owner_calls":0,"migration_owner_calls":0}
+def observe(event,values):
+    if event!="subprocess.Popen": return
+    argv=values[1]
+    if isinstance(argv,(list,tuple)) and "./uniroute" in argv:
+        native=argv[argv.index("./uniroute")+1:]
+        counts["native_owner_calls"]+=1
+        if list(native[:2])==["migrate","up"]: counts["migration_owner_calls"]+=1
+sys.addaudithook(observe)
+sys.argv=[program,*args]
+try: runpy.run_path(program,run_name="__main__")
+finally:
+    fd=os.open(report,os.O_WRONLY|os.O_APPEND|os.O_CREAT|os.O_NOFOLLOW,0o600)
+    with os.fdopen(fd,"a") as stream: stream.write(json.dumps(counts)+"\\n")
+''')
+        return following
 
     def bootstrap_command(self, action, directory, project):
         return [sys.executable, "-I", "-B", self.repo / "deploy/community/bootstrap.py", action,
@@ -683,20 +735,22 @@ os.kill(parent, signal.SIGKILL)
         self.result["session_refusals"] = {"logged_out": True, "server_expired": True, "expired_fixture_session_removed": True}
         self.passed("normal logged-out, server-expired and cleaned sessions cannot bootstrap a customer")
 
-    def retained_release(self):
+    def retained_release(self, *, observation=False):
         """Build the retained predecessor once, using this fixture's same trust."""
-        source = self.root / "retained-source"
+        label = "retained-m128" if observation else "retained"
+        commit = OBSERVATION_COMMIT if observation else RETAINED_COMMIT
+        source = self.root / (label + "-source")
         git = ["git", "-c", "safe.directory=" + str(self.repo)]
         self.run("clone retained M127 source", git + ["clone", "--shared", "--no-checkout", self.repo, source])
-        self.run("select retained M127 source", ["git", "-C", source, "checkout", "--detach", RETAINED_COMMIT])
-        root = self.root / "retained-fixture"
+        self.run("select retained M127 source", ["git", "-C", source, "checkout", "--detach", commit])
+        root = self.root / (label + "-fixture")
         root.mkdir(mode=0o700)
-        old = Acceptance(source, root, RETAINED_COMMIT)
-        require(old.version == "1.14.2" and old.schema == RETAINED_SCHEMA, "retained source identity changed")
+        old = Acceptance(source, root, commit)
+        require(old.version == ("1.15.0" if observation else "1.14.2") and old.schema == (OBSERVATION_SCHEMA if observation else RETAINED_SCHEMA), "retained source identity changed")
         old.verifier, old.keygen, old.ring, old.other_ring = self.verifier, self.keygen, self.ring, self.other_ring
         require(shutil.disk_usage(root).free >= 8 << 30, "insufficient space before retained fixture builds")
         old.prepare_release(self.root / "test.private")
-        self.result["retained_source"] = {"commit": old.commit, "tree": old.tree, "version": old.version,
+        self.result["retained_m128_source" if observation else "retained_source"] = {"commit": old.commit, "tree": old.tree, "version": old.version,
             "schema": old.schema, "package_sha256": old.result["test_package_sha256"]}
         return old
 
@@ -720,8 +774,10 @@ os.kill(parent, signal.SIGKILL)
 UPDATE wallets SET balance_micros=1234567 WHERE org_id={org};
 INSERT INTO transactions(request_id,org_id,project_id,type,status,amount_micros,balance_after_micros,note)
 VALUES('synthetic-linux-history',{org},{project_id},'topup','completed',1234567,1234567,'Synthetic preservation fixture');
+-- This producer must match the existing native pairing fixture.
+-- The community-linux-history storage identity remains independently bound.
 INSERT INTO execution_content_streams(org_id,project_id,source_instance)
-VALUES({org},{project_id},'community-linux-history');
+VALUES({org},{project_id},'synthetic-source-control');
 INSERT INTO execution_content_objects(content_ref,org_id,project_id,source_fact_id,revision,storage_identity,
 storage_binding_token,policy_version,policy_config,policy_effective_at,recovery_epoch,relative_path,state,
 reserved_bytes,saved_bytes,digest,expires_at,lease_owner,lease_expires_at)
@@ -734,6 +790,127 @@ clock_timestamp()+interval '1 day','synthetic-linux-history',clock_timestamp());
         rendered = json.loads(old.run("read retained runtime for body mount", old.compose(directory, project) +
                                       ["config", "--format", "json"]))
         return body, name, rendered
+
+    def seed_native_pair(self, old, directory, project, rendered):
+        """Reuse the native Go consent/redeem/control/ack fixture, not raw setup SQL."""
+        container = old.run("read owned synthetic postgres identity", old.compose(directory, project) +
+                            ["ps", "-q", "postgres"]).strip()
+        host = old.run("read owned synthetic postgres address", [self.docker, "inspect", "--format",
+            "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", container]).strip()
+        require(re.fullmatch(r"[0-9]+(?:\.[0-9]+){3}", host) is not None, "owned fixture database address missing")
+        env = dict(self.env)
+        database = rendered["services"]["postgres"]["environment"]
+        # Only generated fixture credentials, passed in the child environment;
+        # no URI/password enters argv, public results or the seed's stdout.
+        env.update(GITHUB_ACTIONS="true", UR_COMMUNITY_INSTALLER_SEED="paired-m127",
+            UR_COMMUNITY_INSTALLER_SEED_SCHEMA=old.schema,
+            UR_COMMUNITY_INSTALLER_SEED_TARGET=json.dumps(old.target(directory, project)),
+            TEST_DATABASE_URL="postgres://" + urllib.parse.quote(database["POSTGRES_USER"], safe="") + ":" +
+                urllib.parse.quote(database["POSTGRES_PASSWORD"], safe="") + "@" + host + ":5432/" +
+                urllib.parse.quote(database["POSTGRES_DB"], safe="") + "?sslmode=disable")
+        self.run("seed native paired M127 setup with existing fixture", ["go", "test", "-tags=integration",
+            "./internal/admin", "-run", "^TestCommunityInstallerSeedPairedM127Integration$", "-count=1", "-timeout=90s"], env=env)
+        require(old.sql(directory, project, "SELECT count(*) FROM xinsight_connector_installations "
+            "WHERE setup_state='waiting_data'") == "1", "native pairing fixture did not finish")
+
+    def seed_native_observation(self, old, directory, project):
+        rendered=json.loads(self.run("read M128 synthetic database identity",self.compose(directory,project)+["config","--format","json"]))
+        database=rendered["services"]["postgres"]["environment"]
+        host=self.run("read M128 private database address",[self.docker,"inspect","--format",'{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}',project+"-postgres-1"]).strip()
+        ipaddress.ip_address(host)
+        env=dict(self.env,GITHUB_ACTIONS="true",REQUIRE_TEST_DATABASE="1",UR_COMMUNITY_INSTALLER_SEED="observation-m128",
+            UR_COMMUNITY_INSTALLER_SEED_TARGET=json.dumps(old.target(directory,project)),
+            TEST_DATABASE_URL="postgres://"+urllib.parse.quote(database["POSTGRES_USER"],safe="")+":"+
+                urllib.parse.quote(database["POSTGRES_PASSWORD"],safe="")+"@"+host+":5432/"+
+                urllib.parse.quote(database["POSTGRES_DB"],safe="")+"?sslmode=disable")
+        self.run("seed typed nonempty M128 observation",["go","test","-tags=integration","./cmd/uniroute","-run","^TestCommunityInstallerSeedM128ObservationIntegration$","-count=1","-timeout=90s"],env=env)
+
+    def interrupt_startup_hold(self, directory, project, history, body):
+        """One real process/timer case in the existing single-writer fixture.
+
+        Seed expired/live sessions only after the old writer physically stops,
+        before its cold pair, so the old five-minute cleanup cannot race inputs.
+        Then retain the new writer through cleanup eligibility while held.
+        """
+        hook = self.root / "startup-hold-checkpoint.py"
+        private_write(hook, b'''import importlib.util,sys
+from pathlib import Path
+program,directory,release,verifier,ring,history=map(Path,sys.argv[1:7])
+point=sys.argv[7]
+spec=importlib.util.spec_from_file_location("shipped_startup_hold",program)
+owner=importlib.util.module_from_spec(spec);spec.loader.exec_module(owner)
+operation=owner.Upgrade(directory,release,verifier,ring,historical_exits=history)
+class Interrupted(Exception): pass
+def checkpoint(name):
+    if name=="effect:stop-backend":
+        operation.sql("INSERT INTO admin_sessions(user_id,sid_hash,issued_at,expires_at) "
+            "SELECT id,decode(repeat('91',32),'hex'),clock_timestamp()-interval '2 hours',clock_timestamp()-interval '1 hour' "
+            "FROM users WHERE username='admin' ON CONFLICT DO NOTHING; "
+            "INSERT INTO admin_sessions(user_id,sid_hash,issued_at,expires_at) "
+            "SELECT id,decode(repeat('92',32),'hex'),clock_timestamp()-interval '1 hour',clock_timestamp()+interval '2 hours' "
+            "FROM users WHERE username='admin' ON CONFLICT DO NOTHING")
+    if name==point: raise Interrupted()
+operation.test_checkpoint=checkpoint
+try: operation.execute(resume=operation.continuing)
+except Interrupted: sys.exit(73)
+except owner.install.InstallError as error:
+    if str(error)=="A stopped writer's original native lease is still live; wait and read back before retiring": sys.exit(74)
+    raise
+raise SystemExit("expected startup-hold checkpoint was not reached")
+''')
+        def pause(point):
+            argv = [sys.executable, "-I", "-B", hook, self.release / "payload/deploy/upgrade.py", directory,
+                    self.release, self.verifier, self.ring, history, point]
+            code, _ = self.run("pause real ordinary upgrade at " + point, argv, ok=False)
+            if code == 74:
+                self.wait_stopped_leases(directory)
+                code, _ = self.run("continue proved lease boundary to " + point, argv, ok=False)
+            require(code == 73, "startup-hold checkpoint was not reached")
+        pause("effect:start-writers")
+        state = json.loads((directory / "install-state.json").read_bytes())
+        require(state["upgrade"]["pending"] == "start-writers", "unexpected held writer checkpoint")
+        require(self.sql(directory, project, "SELECT count(*) FROM admin_sessions WHERE "
+            "sid_hash IN(decode(repeat('91',32),'hex'),decode(repeat('92',32),'hex'))") == "2",
+            "cold source did not retain both synthetic sessions")
+        before = self.upgrade_fingerprint(directory, project, running=True), self.protected_upgrade_files(directory, body, None)
+        time.sleep(310)  # Cross the original real cleanup interval, not an accelerated clock.
+        self.run("read held ordinary upgrade status", self.upgrade_command("upgrade-status", directory, history=history))
+        require(before == (self.upgrade_fingerprint(directory, project, running=True), self.protected_upgrade_files(directory, body, None)),
+                "held process or status changed full protected rows/body/configuration")
+        pause("done:start-receivers")
+        prefix = json.loads((directory / "install-state.json").read_bytes())["upgrade"]["receipts"]
+        self.request(self.loopback_url + "/health/ready")
+        try:
+            self.request(self.loopback_url + "/api/v1/auth/oidc/config")
+        except urllib.error.HTTPError as error:
+            require(error.code == 503, "held receiver returned another status")
+            error.close()
+        else:
+            raise Failed("receiver accepted ordinary HTTP before native admission")
+        self.run("resume normal upgrade after held receiver", self.upgrade_command("resume-upgrade", directory, history=history))
+        completed = json.loads((directory / "install-state.json").read_bytes())["upgrade"]
+        require(all(completed["receipts"][key] == value for key, value in prefix.items()),
+                "resume repeated an already accepted upgrade prefix")
+
+    def wait_business_startup(self):
+        deadline = time.monotonic() + 20
+        while True:
+            try:
+                self.request(self.loopback_url + "/api/v1/auth/oidc/config")
+                return
+            except urllib.error.HTTPError as error:
+                require(error.code == 503 and time.monotonic() < deadline, "ordinary HTTP startup did not release")
+                error.close()
+                time.sleep(1)
+
+    def verify_released_cleanup(self, directory, project):
+        deadline = time.monotonic() + 330
+        while self.sql(directory, project, "SELECT count(*) FROM admin_sessions WHERE sid_hash=decode(repeat('91',32),'hex')") != "0":
+            require(time.monotonic() < deadline, "actual cleanup timer did not run after admission")
+            time.sleep(5)
+        require(self.sql(directory, project, "SELECT count(*) FROM admin_sessions WHERE "
+            "sid_hash=decode(repeat('92',32),'hex') AND expires_at>clock_timestamp()") == "1",
+            "post-admission cleanup removed the live session")
 
     def named_edge(self, old, directory, project, rendered):
         """The supported named adapter; reuse the existing TLS/NGINX inputs."""
@@ -790,11 +967,13 @@ clock_timestamp()+interval '1 day','synthetic-linux-history',clock_timestamp());
     def upgrade_command(self, action, directory, edge=None, *, history=None):
         command = [sys.executable, "-I", "-B", self.release / "payload/deploy/upgrade.py", action,
             "--directory", directory, "--release", self.release, "--verifier", self.verifier,
-            "--public-keys", self.ring, "--source-package", directory / "release.tar.gz"]
+            "--public-keys", self.ring]
         if edge:
             command += ["--layout", "ur_edge_pair", "--edge-directory", edge]
         if history:
             command += ["--historical-exits", history]
+        if hasattr(self, "migration_observer"):
+            command = command[:3] + [self.migration_observer, self.migration_audit] + command[3:]
         return command
 
     def recovery_module(self):
@@ -811,7 +990,7 @@ clock_timestamp()+interval '1 day','synthetic-linux-history',clock_timestamp());
         return recovery.table_fingerprints(lambda db, query: self.sql(directory, project, query, db),
                                            database, projections=projections)
 
-    def protected_upgrade_rows(self, directory, project, source_sequence):
+    def protected_upgrade_rows(self, directory, project, source_sequence, source_schema=RETAINED_SCHEMA):
         # Reuse the existing full-row hash algorithm, independently of the
         # upgrader's receipt. User/password/epoch bytes are hashed inside PG;
         # no password hash or session token is returned or logged here.
@@ -819,7 +998,7 @@ clock_timestamp()+interval '1 day','synthetic-linux-history',clock_timestamp());
                        "release_history": ("to_jsonb(t)", " WHERE release_sequence<=" + str(source_sequence))}
         rows = self.upgrade_fingerprint(directory, project, projections=projections)
         return {table: rows[table] for table in ("users", "orgs", "projects", "wallets", "transactions",
-            "project_members", "audit_logs", "release_history", "execution_content_objects", "execution_content_streams")}
+            "project_members", "audit_logs", "release_history", "execution_content_objects", "execution_content_streams", *(("model_deployments",) if source_schema >= OBSERVATION_SCHEMA else ())) }
 
     def protected_upgrade_files(self, directory, body, edge):
         roots = [directory / "runtime", directory / "admin-password", directory / "release.tar.gz",
@@ -870,12 +1049,12 @@ from pathlib import Path
 program,directory,release,verifier,ring,edge,history=map(Path,sys.argv[1:])
 spec=importlib.util.spec_from_file_location("shipped_upgrade",program)
 owner=importlib.util.module_from_spec(spec); spec.loader.exec_module(owner)
-operation=owner.Upgrade(directory,release,verifier,ring,directory/"release.tar.gz","ur_edge_pair",edge,historical_exits=history)
+operation=owner.Upgrade(directory,release,verifier,ring,layout="ur_edge_pair",edge_directory=edge,historical_exits=history)
 class Interrupted(Exception): pass
 def checkpoint(point):
     if point=="effect:cold-pair": raise Interrupted()
 operation.test_checkpoint=checkpoint
-try: operation.execute(resume="upgrade" in operation.state)
+try: operation.execute(resume=operation.continuing)
 except Interrupted: sys.exit(73)
 except owner.install.InstallError as error:
     if str(error)=="A stopped writer's original native lease is still live; wait and read back before retiring": sys.exit(74)
@@ -912,7 +1091,7 @@ raise SystemExit("expected cold-pair interruption was not reached")
         spec = importlib.util.spec_from_file_location("shipped_history_contract", self.release / "payload/deploy/upgrade.py")
         owner = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(owner)
-        folder = directory / "evidence/historical-observations"
+        folder = directory / ("evidence/historical-observations-" + str(old.release_sequence))
         folder.mkdir(mode=0o700)
         def reference(name, value, pointer=""):
             path = folder / name
@@ -933,6 +1112,10 @@ raise SystemExit("expected cold-pair interruption was not reached")
         record = {"kind": "native_replacement" if edge else "process_exit", "service": "backend",
             "before": {key: dict(before_ref, pointer="/" + key) for key in before}, "program": None}
         compose = old.compose(directory, project)
+        override=installation.get("current_release",{}).get("image_override")
+        if override:
+            require(Path(override)==directory/"runtime/upgrade-image.json", "unexpected completed-source override")
+            compose += ["-f",override]
         if edge:
             compose += ["-f", edge / "runtime-overrides.json"]
         if edge:
@@ -995,62 +1178,104 @@ raise SystemExit("expected cold-pair interruption was not reached")
             compose += ["-f", directory / "runtime/upgrade-image.json"]
         self.run("release exact completed case containers and network", compose + ["down"])
 
-    def qualify_upgrade(self, old, layout):
+    def qualify_upgrade(self, old, layout, *, retain=False, existing=None, instance_name=None):
         # Independent installations must not share a recently used host port.
         # The original installer's real collision check remains unchanged.
         self.loopback_port = old.loopback_port = FIXTURE_PORTS[layout]
-        project = "ur-upgrade-" + layout + "-" + self.suffix
-        directory = old.instances / layout
+        case = instance_name or layout
+        project = "ur-upgrade-" + case + "-" + self.suffix
+        directory = old.instances / case
+        if existing:
+            directory,project,body,name,rendered = existing
         old.project, old.directory = project, directory
         self.project, self.directory = project, directory
         self.result.pop("installer_stop", None)
         try:
-            old.run("install exact retained M127 predecessor", old.command("install", directory, project))
-            old.installed_checks(directory, project)
-            old.native_first_use_checks(directory, project, restart=False)
+            if not existing:
+                old.run("install exact retained M127 predecessor", old.command("install", directory, project))
+                old.installed_checks(directory, project)
+                old.native_first_use_checks(directory, project, restart=False)
         except Failed:
             self.phase = old.phase
             if "installer_stop" in old.result:
                 self.result["installer_stop"] = old.result["installer_stop"]
             raise
-        body, name, rendered = self.historical_data(old, directory, project)
+        if not existing:
+            body, name, rendered = self.historical_data(old, directory, project)
+        same_schema = old.schema == self.schema
+        preserve_previous = existing is not None or same_schema
+        if old.schema != CURRENT_SCHEMA and (not retain or existing):
+            self.seed_native_pair(old, directory, project, rendered)
+        if old.schema == OBSERVATION_SCHEMA:
+            self.seed_native_observation(old,directory,project)
         edge = self.named_edge(old, directory, project, rendered) if layout == "edge" else None
-        history = self.historical_observations(old, directory, project, edge)
-        # Let the native audit worker finish its bounded synthetic login work
+        # A completed preceding upgrade already retired its old generations.
+        # Leave its current receiver for the ordinary owner to withdraw/stop;
+        # it is not a new historical exit awaiting import.
+        history = None if existing is not None else self.historical_observations(old, directory, project, edge)
+        # Let the native outbox finish its bounded synthetic login/pairing work
         # before a no-write comparison; heartbeat timing alone is projected out.
         deadline = time.monotonic() + 60
-        while old.sql(directory, project, "SELECT count(*) FROM internal_outbox_events WHERE payload->>'action'='login'") != "0":
-            require(time.monotonic() < deadline, "retained login audit did not materialize")
+        while old.sql(directory, project, "SELECT count(*) FROM internal_outbox_events") != "0":
+            require(time.monotonic() < deadline, "retained synthetic outbox did not drain")
             time.sleep(1)
-        protected_rows = self.protected_upgrade_rows(directory, project, old.release_sequence)
+        protected_rows = self.protected_upgrade_rows(directory, project, old.release_sequence,old.schema)
         protected_files = self.protected_upgrade_files(directory, body, edge)
+        source_state = (directory / "install-state.json").read_bytes()
+        source_ledger = tuple(json.loads(self.sql(directory, project,
+            "SELECT jsonb_agg(version ORDER BY version) FROM schema_migrations")))
+        # Freeze existing operation/release originals independently of the new
+        # operation's own receipts; newly created evidence is not an exception.
+        if preserve_previous:
+            original_roots = [directory / "evidence"] + [path for name in ("upgrades", "releases")
+                if (directory / name).exists() for path in (directory / name).iterdir()]
+            original_history = self.recovery_module().private_inventory(original_roots)
         require(all(protected_rows[table]["count"] > 0 for table in
             ("users", "orgs", "projects", "wallets", "transactions", "audit_logs", "release_history", "execution_content_objects")),
             "source preservation projection lacks nonempty account/business/financial/body facts")
         before = files(directory), self.inventory(), self.upgrade_fingerprint(directory, project, running=True)
-        code, output = self.run("refuse original history without its observations", self.upgrade_command("check-upgrade", directory, edge), ok=False)
-        require(code != 0 and "unaccounted or missing writer" in output, "history without evidence was admitted")
-        checked = json.loads(self.run("check actual M127 to M128 without effects", self.upgrade_command("check-upgrade", directory, edge, history=history)))
-        status = json.loads(self.run("read actual not-started upgrade status", self.upgrade_command("upgrade-status", directory, edge, history=history)))
-        require(checked["writes"] == 0 and checked["writers"] == (2 if edge else 1) and status["state"] == "not_started",
+        if history is not None:
+            code, output = self.run("refuse original history without its observations", self.upgrade_command("check-upgrade", directory, edge), ok=False)
+            require(code != 0 and "unaccounted or missing writer" in output, "history without evidence was admitted")
+        checked = json.loads(self.run("check exact supported source without effects", self.upgrade_command("check-upgrade", directory, edge, history=history)))
+        status = json.loads(self.run("read actual source upgrade status", self.upgrade_command("upgrade-status", directory, edge, history=history)))
+        require(checked["writes"] == 0 and checked["writers"] == (2 if edge else 1)
+            and checked["source"]["release_sequence"] == old.release_sequence
+            and checked["source"]["package_sha256"] == sha(old.release / "release.tar.gz")
+            and checked["candidate"]["release_sequence"] == self.release_sequence
+            and checked["candidate"]["package_sha256"] == sha(self.release / "release.tar.gz")
+            and status["state"] == ("completed" if existing else "not_started")
+            and (not existing or status["candidate"] == json.loads(source_state)["upgrade"]["candidate"]),
                 "native finite upgrade preflight differs")
         require(before == (files(directory), self.inventory(), self.upgrade_fingerprint(directory, project, running=True)),
                 "read-only upgrade check/status changed source state")
         require(self.protected_upgrade_files(directory, body, edge) == protected_files,
                 "read-only upgrade check/status changed protected body or configuration")
-        if edge:
+        # execute() already verifies the same candidate's real timers in
+        # M127 -> M129 single. M128 restore/data and M129 same-schema use the
+        # ordinary owner, without another wait for the unchanged candidate.
+        if retain or (not edge and old.schema in (OBSERVATION_SCHEMA, CURRENT_SCHEMA)):
+            self.run_native_upgrade(directory,edge,history)
+        elif edge:
             self.interrupt_upgrade(directory, edge, history)
         else:
-            self.run_native_upgrade(directory, history=history)
+            self.interrupt_startup_hold(directory, project, history, body)
+        if preserve_previous:
+            before_resume = files(directory), self.inventory(), self.upgrade_fingerprint(directory, project, running=True)
         self.run("read back completed native upgrade resume", self.upgrade_command("resume-upgrade", directory, edge, history=history))
+        require(not preserve_previous or before_resume == (files(directory), self.inventory(), self.upgrade_fingerprint(directory, project, running=True)),
+                "completed native resume changed retained files/resources/database")
         state = json.loads((directory / "install-state.json").read_bytes())
         witness = state["upgrade"]
         require(witness["state"] == "completed" and witness["pending"] is None, "finite upgrade remains incomplete")
-        require(self.protected_upgrade_rows(directory, project, old.release_sequence) == protected_rows and
+        require(self.protected_upgrade_rows(directory, project, old.release_sequence,old.schema) == protected_rows and
             self.protected_upgrade_files(directory, body, edge) == protected_files,
             "independent original account/financial/audit/configuration projection changed")
         require(tuple(json.loads(self.sql(directory, project, "SELECT jsonb_agg(version ORDER BY version) FROM schema_migrations")))
                 == self.source_contract.ledger, "upgraded complete ledger differs from candidate")
+        require(not preserve_previous or (self.recovery_module().private_inventory(original_roots) == original_history
+            and (directory / witness["source_state_path"]).read_bytes() == source_state),
+            "original operation/release evidence or exact source installation state changed")
         backup = directory / "upgrades" / witness["operation_id"] / "backup"
         pair = json.loads((backup / "receipt.json").read_bytes())
         require(pair["verification_database"] != "uniroute"
@@ -1066,13 +1291,17 @@ raise SystemExit("expected cold-pair interruption was not reached")
                     witness["receipts"]["stop-" + role]["old_processes_gone"] for role in (*roles, "frontend", *(("edge",) if edge else ()))),
                 "original writer/receiver process exits are unproved")
         self.request(self.loopback_url + "/health/ready")
+        self.wait_business_startup()
+        if not edge and not retain and old.schema == RETAINED_SCHEMA:
+            self.verify_released_cleanup(directory, project)
         login = json.loads(self.request(self.loopback_url + "/api/v1/auth/login", data=json.dumps(
             {"username": "admin", "password": "replacement-password-456"}).encode()))
         require(login.get("organization_role") == "platform_admin", "retained chosen password does not work after upgrade")
         require(self.sql(directory, project, "SELECT count(*) FROM transactions WHERE request_id='synthetic-linux-history'") == "1"
             and self.sql(directory, project, "SELECT count(*) FROM audit_logs WHERE action='bootstrap.first_customer'") == "1"
-            and self.sql(directory, project, "SELECT count(*) FROM release_history") == "2", "retained business or release history differs")
-        require(self.protected_upgrade_rows(directory, project, old.release_sequence) == protected_rows and
+            and self.sql(directory, project, "SELECT count(*) FROM release_history") == str(self.release_sequence
+                if existing else 2), "retained business or release history differs")
+        require(self.protected_upgrade_rows(directory, project, old.release_sequence,old.schema) == protected_rows and
             self.protected_upgrade_files(directory, body, edge) == protected_files,
             "post-upgrade login changed original protected facts")
         if edge:
@@ -1083,9 +1312,38 @@ raise SystemExit("expected cold-pair interruption was not reached")
             "independent_original_row_and_configuration_equality": True,
             "independent_database_and_body_restore": True, "read_only_no_effects": True,
             "physical_exits_proved": True, "completed_resume": True, "known_checkpoint_resume": bool(edge),
-            "historical_kind": "native_replacement" if edge else "process_exit", "history_without_evidence_refused": True,
+            "new_historical_input": history is not None,
+            "historical_kind": ("native_replacement" if edge else "process_exit") if history is not None else None,
+            "history_without_evidence_refused": True if history is not None else None,
+            "original_operation_evidence_unchanged": True if preserve_previous else None,
             "unknown_outcome_refused": bool(edge), "provider_calls": 0})
-        self.passed("real " + layout + " M127 to M128 upgrade, paired restore and preserved first use")
+        if same_schema:
+            migration = witness["receipts"]["migrate"]
+            audit = [json.loads(line) for line in self.migration_audit.read_text().splitlines()]
+            require(source_ledger == self.source_contract.ledger == tuple(witness["source_ledger"])
+                and self.upgrade_fingerprint(directory, project)["schema_migrations"] == before[2]["schema_migrations"]
+                and migration["mode"] == "same_schema"
+                and migration["ledger_sha256"] == hashlib.sha256(json.dumps(list(source_ledger), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                and self.release_sequence > old.release_sequence
+                and witness["candidate"] == checked["candidate"]
+                and witness["source"]["package_sha256"] == checked["source"]["package_sha256"]
+                and audit and sum(row["native_owner_calls"] for row in audit) > 0
+                and all(row["migration_owner_calls"] == 0 for row in audit),
+                "same-schema native identity, unchanged complete ledger or no-migration proof differs")
+            self.result["finite_upgrades"][-1].update(mode="same_schema", source_sequence=old.release_sequence,
+                candidate_sequence=self.release_sequence, source_package_sha256=checked["source"]["package_sha256"],
+                candidate_package_sha256=checked["candidate"]["package_sha256"], complete_ledger_unchanged=True,
+                migration_owner_calls=0, original_operation_evidence_unchanged=True)
+        if old.schema == OBSERVATION_SCHEMA:
+            delta=pair.get("ddl_compatibility_delta")
+            require(type(delta) is dict and delta["status"]=="applied" and delta["correction_migration"]==CURRENT_SCHEMA
+                and pair["source_metadata"]["ledger"][-1]==OBSERVATION_SCHEMA,
+                "legacy M128 cold-pair must declare only its canonical namespace compatibility correction")
+            require(self.sql(directory,project,"SELECT count(*) FROM model_deployments WHERE upstream_release_observation IS NOT NULL AND upstream_observation_revision>0")=="1",
+                "nonempty original M128 observation was lost")
+        self.passed("real " + layout + " " + old.schema + " to " + self.schema + " upgrade, native restore and preserved first use")
+        if retain:
+            return directory,project,body,name,rendered
         self.release_completed_case(directory, project, edge, upgraded=True)
 
     def execute(self):
@@ -1099,10 +1357,23 @@ raise SystemExit("expected cold-pair interruption was not reached")
         self.installed_checks(directory, project)
         self.native_first_use_checks(directory, project)
         self.release_completed_case(directory, project)
-        require(self.schema == CURRENT_SCHEMA, "current Linux qualification requires the M128 candidate")
+        require(self.schema == CURRENT_SCHEMA, "current Linux qualification requires the M129 candidate")
         old = self.retained_release()
         for layout in ("single", "edge"):
             self.qualify_upgrade(old, layout)
+        m128 = self.retained_release(observation=True)
+        # This is an actual completed ordinary M127 -> retained M128 upgrade,
+        # not a freshly fabricated M128 database or re-execution of rescue19.
+        retained = m128.qualify_upgrade(old,"single",retain=True,instance_name="m128-origin")
+        current = self.qualify_upgrade(m128,"single",existing=retained,retain=True)
+        following = self.same_schema_release()
+        try:
+            following.qualify_upgrade(self,"single",existing=current)
+        except Failed:
+            self.phase = following.phase
+            raise
+        self.result["finite_upgrades"].extend(following.result["finite_upgrades"])
+        self.result["checks"].extend(following.result["checks"])
         self.result["status"] = "passed"
         self.result.pop("installer_stop", None)
         # All resources belong to this disposable runner; no broad prune/cleanup.

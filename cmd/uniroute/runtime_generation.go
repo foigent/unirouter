@@ -18,7 +18,7 @@ import (
 // A bridge starts on the exact legacy schema without inventing lease rows.
 // After the explicit expand, it verifies that committed authority and joins
 // the lease protocol. Actual ingress membership remains controller-owned.
-func startRuntimeGeneration(ctx context.Context, pool *pgxpool.Pool, runtime *httpRuntime, artifactLedger []string, initialLedger []string) (func(), <-chan struct{}, error) {
+func startRuntimeGeneration(ctx context.Context, pool *pgxpool.Pool, runtime *httpRuntime, artifactLedger []string, initialLedger []string, background *runtimegeneration.BackgroundStartup) (func(), <-chan struct{}, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	head := initialLedger[len(initialLedger)-1]
@@ -54,33 +54,48 @@ func startRuntimeGeneration(ctx context.Context, pool *pgxpool.Pool, runtime *ht
 		runtime.leaseRequired = true
 		runtime.mu.Unlock()
 		until, renewedHead, err := runtimegeneration.Renew(leaseCtx, pool, identity, manifest, artifactLedger, draining)
-		runtime.mu.Lock()
-		defer runtime.mu.Unlock()
 		if err != nil {
 			return err
 		}
-		if renewedHead != head {
-			ledgers, err := schemaauthority.RuntimeLedgers(artifactLedger)
-			if err != nil {
-				return err
-			}
-			for _, ledger := range ledgers {
-				if ledger[len(ledger)-1] == renewedHead {
-					wire, _ := json.Marshal(ledger)
-					runtime.schemaDigest = fmt.Sprintf("%x", sha256.Sum256(wire))
-					head = renewedHead
-					break
+		runtime.mu.Lock()
+		if err := func() error {
+			if renewedHead != head {
+				ledgers, err := schemaauthority.RuntimeLedgers(artifactLedger)
+				if err != nil {
+					return err
+				}
+				for _, ledger := range ledgers {
+					if ledger[len(ledger)-1] == renewedHead {
+						wire, _ := json.Marshal(ledger)
+						runtime.schemaDigest = fmt.Sprintf("%x", sha256.Sum256(wire))
+						head = renewedHead
+						break
+					}
+				}
+				if head != renewedHead {
+					return runtimegeneration.ErrIncompatible
 				}
 			}
-			if head != renewedHead {
-				return runtimegeneration.ErrIncompatible
+			if err := validateStreamCounterSchema(runtime.streamCounterVersion, []string{renewedHead}); err != nil {
+				return fmt.Errorf("%w: %v", runtimegeneration.ErrIncompatible, err)
+			}
+			runtime.leaseUntil = until
+			runtime.authorityUnavailable = false
+			return nil
+		}(); err != nil {
+			runtime.mu.Unlock()
+			return err
+		}
+		runtime.mu.Unlock()
+		if !draining && !background.Admitted() {
+			allowed, err := runtimegeneration.BackgroundStartAllowed(leaseCtx, pool, identity, artifactLedger)
+			if err != nil {
+				return fmt.Errorf("background startup authority: %w", err)
+			}
+			if allowed {
+				background.Admit()
 			}
 		}
-		if err := validateStreamCounterSchema(runtime.streamCounterVersion, []string{renewedHead}); err != nil {
-			return fmt.Errorf("%w: %v", runtimegeneration.ErrIncompatible, err)
-		}
-		runtime.leaseUntil = until
-		runtime.authorityUnavailable = false
 		return nil
 	}
 	if err := refresh(); err != nil {
@@ -128,7 +143,7 @@ func validateStreamCounterSchema(version string, ledger []string) error {
 	if _, err := metering.CounterSource(version); err != nil {
 		return err
 	}
-	if version == metering.GatewayCounterEstimateVersionV3 && (len(ledger) == 0 || (ledger[len(ledger)-1] != schemaauthority.StreamCounterExpandHead && ledger[len(ledger)-1] != schemaauthority.SourceFactsExpandHead && ledger[len(ledger)-1] != schemaauthority.ObservationExpandHead && ledger[len(ledger)-1] != schemaauthority.BudgetSnapshotExpandHead && ledger[len(ledger)-1] != schemaauthority.ContentCaptureExpandHead && ledger[len(ledger)-1] != schemaauthority.ContentReclaimExpandHead && ledger[len(ledger)-1] != schemaauthority.PreDispatchExpandHead && (ledger[len(ledger)-1] != schemaauthority.ScopedContentExpandHead && ledger[len(ledger)-1] != schemaauthority.XInsightPolicyExpandHead && (ledger[len(ledger)-1] != schemaauthority.XInsightAdoptionExpandHead && ledger[len(ledger)-1] != schemaauthority.XInsightCredentialExpandHead && ledger[len(ledger)-1] != schemaauthority.CommercialLicenseRetirementHead && ledger[len(ledger)-1] != schemaauthority.XInsightCommunicationHead && ledger[len(ledger)-1] != schemaauthority.UpstreamReleaseObservationHead)))) {
+	if version == metering.GatewayCounterEstimateVersionV3 && (len(ledger) == 0 || (ledger[len(ledger)-1] != schemaauthority.StreamCounterExpandHead && ledger[len(ledger)-1] != schemaauthority.SourceFactsExpandHead && ledger[len(ledger)-1] != schemaauthority.ObservationExpandHead && ledger[len(ledger)-1] != schemaauthority.BudgetSnapshotExpandHead && ledger[len(ledger)-1] != schemaauthority.ContentCaptureExpandHead && ledger[len(ledger)-1] != schemaauthority.ContentReclaimExpandHead && ledger[len(ledger)-1] != schemaauthority.PreDispatchExpandHead && (ledger[len(ledger)-1] != schemaauthority.ScopedContentExpandHead && ledger[len(ledger)-1] != schemaauthority.XInsightPolicyExpandHead && (ledger[len(ledger)-1] != schemaauthority.XInsightAdoptionExpandHead && ledger[len(ledger)-1] != schemaauthority.XInsightCredentialExpandHead && ledger[len(ledger)-1] != schemaauthority.CommercialLicenseRetirementHead && ledger[len(ledger)-1] != schemaauthority.XInsightCommunicationHead && ledger[len(ledger)-1] != schemaauthority.UpstreamReleaseObservationHead && ledger[len(ledger)-1] != schemaauthority.UpstreamObservationRestoreHead)))) {
 		return fmt.Errorf("stream counter v3 requires a supported schema from M115 through M126")
 	}
 	return nil

@@ -500,6 +500,25 @@ describe('DeveloperConsolePage', () => {
     },
   );
 
+  it.each([true, false])('uses the gateway response header for a refused request identity (header present: %s)', async hasHeader => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      error: { message: 'Synthetic shared limit exceeded', request_id: 'untrusted-body-identity' },
+    }), { status: 429, headers: hasHeader ? { 'X-Request-ID': 'op-canonical-refusal' } : {} }));
+    try {
+      renderPage();
+      await screen.findByText('Company Chat');
+      fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
+      await userEvent.click(screen.getByRole('button', { name: /运行$/ }));
+      expect(await screen.findByText('HTTP 429')).toBeTruthy();
+      expect(screen.getByText('Synthetic shared limit exceeded')).toBeTruthy();
+      expect(screen.queryByText('untrusted-body-identity')).toBeNull();
+      if (hasHeader) expect(screen.getByText('op-canonical-refusal')).toBeTruthy();
+      else expect(screen.queryByText('op-canonical-refusal')).toBeNull();
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
   it('measures non-stream completion after the response body and preserves omitted parameters', async () => {
     let clock = 0;
     const nowMock = vi.spyOn(performance, 'now').mockImplementation(() => clock);

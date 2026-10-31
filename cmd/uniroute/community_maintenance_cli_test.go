@@ -68,7 +68,7 @@ func newMaintenancePackageFixture(t *testing.T) maintenancePackageFixture {
 	// One full signed package supports both fresh sequence 0 and the exact
 	// installed M127 source. Native maintenance separately binds that source;
 	// narrowing the manifest window would needlessly split the delivery path.
-	candidate, err := upgradebundle.CreateManifest(upgradebundle.ManifestOptions{KeyID: "installed-fixture", ReleaseSequence: 11, Version: "1.15.0", Commit: strings.Repeat("b", 40), CreatedAt: now.Add(-time.Minute), NoExpiry: true, TargetOS: runtime.GOOS, TargetArch: runtime.GOARCH, MinCurrentSequence: 0, MaxCurrentSequence: 10, MinCurrentSchema: schemaauthority.XInsightCommunicationHead, TargetSchema: schemaauthority.UpstreamReleaseObservationHead}, sources)
+	candidate, err := upgradebundle.CreateManifest(upgradebundle.ManifestOptions{KeyID: "installed-fixture", ReleaseSequence: 11, Version: "1.15.0", Commit: strings.Repeat("b", 40), CreatedAt: now.Add(-time.Minute), NoExpiry: true, TargetOS: runtime.GOOS, TargetArch: runtime.GOARCH, MinCurrentSequence: 0, MaxCurrentSequence: 10, MinCurrentSchema: schemaauthority.XInsightCommunicationHead, TargetSchema: schemaauthority.UpstreamObservationRestoreHead}, sources)
 	require.NoError(t, err)
 	sourcePath, s := packMaintenanceFixture(t, source, key, sources)
 	targetPath, c := packMaintenanceFixture(t, candidate, key, sources)
