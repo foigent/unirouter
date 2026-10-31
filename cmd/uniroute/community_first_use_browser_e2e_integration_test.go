@@ -382,7 +382,7 @@ func verifyCommunityBusinessSQL(t *testing.T, pool *pgxpool.Pool, f pr4BrowserFi
 	require.Equal(t, 1, count)
 	store, err := enterprisefinance.NewPostgresStore(pool)
 	require.NoError(t, err)
-	quote, err := store.ResolveRequestPriceQuote(ctx, f.OrgID, f.ReadyModel, time.Now().UTC())
+	quote, err := store.ResolveRequestPriceQuote(ctx, f.OrgID, f.ReadyModel, time.Now().UTC().Truncate(time.Microsecond))
 	require.NoError(t, err)
 	require.EqualValues(t, 3, quote.RateCardVersion)
 	require.Equal(t, f.ReadyModel, quote.ModelRef)

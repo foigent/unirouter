@@ -1237,6 +1237,31 @@ class WholeUpgradeTests(unittest.TestCase):
         M.install.save_state(old.directory,old.state)
         return old,state,calls,bind
 
+    def test_completed_source_checks_keep_receiving_writer_and_refuse_unaccounted_history(self):
+        for legacy in (True, False):
+            with self.subTest(legacy_m128=legacy):
+                old, state, calls, bind = self.legacy128_completed17() if legacy else self.completed17()
+                active = [row for row in state.metadata["generations"] if row["state"] != "stopped"]
+                self.assertEqual(1, len(active))
+                self.assertEqual("receiving", active[0]["ingress_state"])
+                self.assertTrue(any(row["state"] == "stopped" for row in state.metadata["generations"]))
+                operation = self.next_candidate(old, state, bind, 20)
+                original = (old.directory / "install-state.json").read_bytes()
+                before = copy.deepcopy(state.metadata)
+                result = operation.check()
+                self.assertEqual((0, 1), (result["writes"], result["writers"]))
+                self.assertEqual(before, state.metadata)
+                self.assertEqual(original, (old.directory / "install-state.json").read_bytes())
+                # No historical input is needed for the current receiving
+                # writer. An additional unaccounted old generation still fails.
+                state.metadata["generations"].append(dict(active[0], instance_id="uri_" + "f" * 32,
+                    ingress_state="absent", lease_expires_at="2000-01-01T00:00:00Z"))
+                before = copy.deepcopy(state.metadata)
+                with self.assertRaisesRegex(M.install.InstallError, "unaccounted"):
+                    operation.check()
+                self.assertEqual(before, state.metadata)
+                self.assertEqual(original, (old.directory / "install-state.json").read_bytes())
+
     def test_legacy_m128_completed17_closed19_uses_bound_phased_restore_then_migrates_once(self):
         for count in (1,2):
             with self.subTest(writers=count):

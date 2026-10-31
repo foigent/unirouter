@@ -475,11 +475,15 @@ class InstallerFixtureContract(unittest.TestCase):
     def test_same_schema_repack_reuses_exact_images_payload_key_and_native_command_observer(self):
         self.exercise_release_preparation(ROOT,fixture.CURRENT_SCHEMA,'1.15.2','a'*40,same_schema=True)
 
-    def test_same_schema_qualification_retains_native_contract_and_refuses_proof_drift(self):
-        # Simulate only native effects here. The real Linux entry calls this
-        # exact qualification driver on the completed populated M129 instance.
-        for drift in (None,'mode','ledger','ledger-row','migration','original-receipt','source-snapshot','resume','read-only','candidate'):
-            with self.subTest(drift=drift),tempfile.TemporaryDirectory() as tmp:
+    def test_existing_source_qualification_retains_native_contract_and_refuses_proof_drift(self):
+        # The Linux entry uses these same checks on completed M128 and M129
+        # sources. Only native effects are simulated in this offline driver.
+        cases=[(fixture.CURRENT_SCHEMA,drift) for drift in
+            (None,'mode','ledger','ledger-row','migration','original-receipt','source-snapshot','resume','read-only','candidate')]
+        cases += [(fixture.OBSERVATION_SCHEMA,drift) for drift in
+            (None,'original-receipt','source-snapshot','resume','read-only','candidate','ddl-compat','observation')]
+        for schema,drift in cases:
+            with self.subTest(schema=schema,drift=drift),tempfile.TemporaryDirectory() as tmp:
                 root=Path(tmp).resolve();directory=root/'instance';directory.mkdir()
                 for name in ('runtime','evidence','upgrades/prior','releases'):
                     (directory/name).mkdir(parents=True)
@@ -495,11 +499,14 @@ class InstallerFixtureContract(unittest.TestCase):
                 source=root/'source';source.mkdir();fixture.private_write(source/'release.tar.gz',b'synthetic current package')
                 work.schema=fixture.CURRENT_SCHEMA;work.release_sequence=4
                 work.source_contract=fixture.source_contract(ROOT);ledger=list(work.source_contract.ledger)
+                same_schema=schema==fixture.CURRENT_SCHEMA
+                source_sequence=3 if same_schema else 2
+                source_ledger=ledger if same_schema else ledger[:-1]
                 work.verifier,work.ring=root/'verifier',root/'public-ring'
                 work.result={};work.migration_audit=root/'migration-owner-audit.jsonl'
-                checked={'writes':0,'writers':1,'source':{'release_sequence':3,'package_sha256':fixture.sha(source/'release.tar.gz')},
+                checked={'writes':0,'writers':1,'source':{'release_sequence':source_sequence,'package_sha256':fixture.sha(source/'release.tar.gz')},
                     'candidate':{'release_sequence':4,'package_sha256':fixture.sha(work.release/'release.tar.gz'),'version':'1.15.2','commit':'a'*40}}
-                prior=dict(checked['candidate'],release_sequence=3,package_sha256=checked['source']['package_sha256'])
+                prior=dict(checked['candidate'],release_sequence=source_sequence,package_sha256=checked['source']['package_sha256'])
                 original=json.dumps({'upgrade':{'candidate':prior,'state':'completed','pending':None},'current_release':prior}).encode()
                 fixture.private_write(directory/'install-state.json',original)
                 recovery=load('same_schema_fixture_inventory',ROOT/'deploy/customer/recovery.py')
@@ -512,22 +519,22 @@ class InstallerFixtureContract(unittest.TestCase):
                 work.upgrade_fingerprint=fingerprint
                 work.inventory=lambda:{'unchanged-original-resources':True}
                 def sql(_directory,_project,query,database='uniroute'):
-                    if 'FROM schema_migrations' in query:return json.dumps(ledger)
+                    if 'FROM schema_migrations' in query:return json.dumps(ledger if native_done else source_ledger)
                     if 'FROM release_history' in query:return '4'
+                    if 'FROM model_deployments' in query and drift=='observation':return '0'
                     if 'count(*)' in query:return '1'
                     self.fail('unexpected fixture SQL')
                 work.sql=sql
-                old=SimpleNamespace(schema=fixture.CURRENT_SCHEMA,release_sequence=3,release=source,instances=work.instances,sql=lambda *args:'0')
+                old=SimpleNamespace(schema=schema,release_sequence=source_sequence,release=source,instances=work.instances,sql=lambda *args:'0')
                 history=directory/'evidence/history.json';fixture.private_write(history,b'original observation')
-                work.historical_observations=lambda *args:history
-                work.seed_native_pair=MagicMock(side_effect=AssertionError('must reuse existing pairing'))
-                work.seed_native_observation=MagicMock(side_effect=AssertionError('must reuse existing observation'))
+                work.historical_observations=MagicMock(side_effect=AssertionError('completed source must not manufacture another history exit'))
+                work.seed_native_pair=MagicMock(side_effect=AssertionError('must reuse existing pairing') if same_schema else None)
+                work.seed_native_observation=MagicMock(side_effect=AssertionError('must reuse existing observation') if same_schema else None)
                 work.interrupt_startup_hold=MagicMock(side_effect=AssertionError('must not repeat real timer wait'))
                 work.verify_released_cleanup=MagicMock(side_effect=AssertionError('must reuse timer coverage'))
                 calls=[]
                 def run(label,args,**kwargs):
                     calls.append(label)
-                    if label=='refuse original history without its observations':return 1,'unaccounted or missing writer'
                     if label=='check exact supported source without effects':
                         result=json.loads(json.dumps(checked))
                         if drift=='read-only':result['writes']=1
@@ -545,20 +552,23 @@ class InstallerFixtureContract(unittest.TestCase):
                     calls.append('normal-native-owner')
                     operation=directory/'upgrades/next';backup=operation/'backup';backup.mkdir(parents=True)
                     fixture.private_write(operation/'source-install-state.json',b'changed source snapshot' if drift=='source-snapshot' else original)
-                    fixture.private_write(backup/'receipt.json',json.dumps({'verification_database':'independent-verification',
-                        'restored_tables':tables,'tables':tables}).encode())
+                    receipt={'verification_database':'independent-verification','restored_tables':tables,'tables':tables}
+                    if not same_schema:
+                        receipt.update(ddl_compatibility_delta={'status':'wrong' if drift=='ddl-compat' else 'applied',
+                            'correction_migration':fixture.CURRENT_SCHEMA},source_metadata={'ledger':source_ledger})
+                    fixture.private_write(backup/'receipt.json',json.dumps(receipt).encode())
                     restored=backup/'restore-files'/str(body/'objects'/name).lstrip('/')
                     restored.parent.mkdir(parents=True);fixture.private_write(restored,b'synthetic historical body')
                     witness={'state':'completed','pending':None,'operation_id':'next','source_state_path':'upgrades/next/source-install-state.json',
-                        'candidate':checked['candidate'],'source':checked['source'],'source_ledger':ledger[:-1] if drift=='ledger' else ledger,
-                        'receipts':{'migrate':{'mode':'wrong' if drift=='mode' else 'same_schema',
+                        'candidate':checked['candidate'],'source':checked['source'],'source_ledger':source_ledger[:-1] if drift=='ledger' else source_ledger,
+                        'receipts':{'migrate':{'mode':'wrong' if drift=='mode' else ('same_schema' if same_schema else 'compatible_expand'),
                             'ledger_sha256':hashlib.sha256(json.dumps(ledger,sort_keys=True,separators=(',',':')).encode()).hexdigest()},
                             'stop-backend':{'clean_exit':True,'old_processes_gone':True},
                             'stop-frontend':{'clean_exit':True,'old_processes_gone':True}}}
                     (directory/'install-state.json').write_text(json.dumps({'upgrade':witness}))
                     if drift=='original-receipt':(directory/'upgrades/prior/receipt.json').write_bytes(b'changed old receipt')
                     fixture.private_write(work.migration_audit,json.dumps({'native_owner_calls':1,
-                        'migration_owner_calls':1 if drift=='migration' else 0}).encode()+b'\n')
+                        'migration_owner_calls':1 if drift=='migration' or not same_schema else 0}).encode()+b'\n')
                 work.run_native_upgrade=native
                 work.request=MagicMock(return_value=b'{"organization_role":"platform_admin"}')
                 work.wait_business_startup=MagicMock();work.passed=MagicMock();work.release_completed_case=MagicMock()
@@ -570,15 +580,25 @@ class InstallerFixtureContract(unittest.TestCase):
                     else:
                         work.qualify_upgrade(old,'single',existing=existing)
                         result=work.result['finite_upgrades'][-1]
-                        self.assertEqual((result['source_sequence'],result['candidate_sequence']),(3,4))
-                        self.assertEqual(result['mode'],'same_schema');self.assertEqual(result['migration_owner_calls'],0)
-                        self.assertTrue(result['complete_ledger_unchanged']);self.assertTrue(result['original_operation_evidence_unchanged'])
+                        self.assertEqual(result['source_schema'],schema)
+                        self.assertFalse(result['new_historical_input'])
+                        self.assertIsNone(result['historical_kind']);self.assertIsNone(result['history_without_evidence_refused'])
+                        self.assertTrue(result['original_operation_evidence_unchanged'])
+                        if same_schema:
+                            self.assertEqual((result['source_sequence'],result['candidate_sequence']),(3,4))
+                            self.assertEqual(result['mode'],'same_schema');self.assertEqual(result['migration_owner_calls'],0)
+                            self.assertTrue(result['complete_ledger_unchanged'])
                         self.assertEqual(calls.count('normal-native-owner'),1)
                         self.assertEqual(calls.count('read back completed native upgrade resume'),1)
                         work.release_completed_case.assert_called_once_with(directory,'original-project',None,upgraded=True)
                         self.assertEqual((directory/'upgrades/prior/receipt.json').read_bytes(),b'synthetic original bytes')
                         self.assertEqual((directory/'upgrades/next/source-install-state.json').read_bytes(),original)
-                work.seed_native_pair.assert_not_called();work.seed_native_observation.assert_not_called()
+                work.historical_observations.assert_not_called()
+                if same_schema:
+                    work.seed_native_pair.assert_not_called();work.seed_native_observation.assert_not_called()
+                else:
+                    work.seed_native_pair.assert_called_once_with(old,directory,'original-project',{})
+                    work.seed_native_observation.assert_called_once_with(old,directory,'original-project')
                 work.interrupt_startup_hold.assert_not_called();work.verify_released_cleanup.assert_not_called()
 
     def test_retained_package_uses_same_trust_and_body_configuration_before_first_start(self):

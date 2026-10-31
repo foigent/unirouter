@@ -1203,12 +1203,16 @@ raise SystemExit("expected cold-pair interruption was not reached")
         if not existing:
             body, name, rendered = self.historical_data(old, directory, project)
         same_schema = old.schema == self.schema
+        preserve_previous = existing is not None or same_schema
         if old.schema != CURRENT_SCHEMA and (not retain or existing):
             self.seed_native_pair(old, directory, project, rendered)
         if old.schema == OBSERVATION_SCHEMA:
             self.seed_native_observation(old,directory,project)
         edge = self.named_edge(old, directory, project, rendered) if layout == "edge" else None
-        history = self.historical_observations(old, directory, project, edge)
+        # A completed preceding upgrade already retired its old generations.
+        # Leave its current receiver for the ordinary owner to withdraw/stop;
+        # it is not a new historical exit awaiting import.
+        history = None if existing is not None else self.historical_observations(old, directory, project, edge)
         # Let the native outbox finish its bounded synthetic login/pairing work
         # before a no-write comparison; heartbeat timing alone is projected out.
         deadline = time.monotonic() + 60
@@ -1222,7 +1226,7 @@ raise SystemExit("expected cold-pair interruption was not reached")
             "SELECT jsonb_agg(version ORDER BY version) FROM schema_migrations")))
         # Freeze existing operation/release originals independently of the new
         # operation's own receipts; newly created evidence is not an exception.
-        if same_schema:
+        if preserve_previous:
             original_roots = [directory / "evidence"] + [path for name in ("upgrades", "releases")
                 if (directory / name).exists() for path in (directory / name).iterdir()]
             original_history = self.recovery_module().private_inventory(original_roots)
@@ -1230,8 +1234,9 @@ raise SystemExit("expected cold-pair interruption was not reached")
             ("users", "orgs", "projects", "wallets", "transactions", "audit_logs", "release_history", "execution_content_objects")),
             "source preservation projection lacks nonempty account/business/financial/body facts")
         before = files(directory), self.inventory(), self.upgrade_fingerprint(directory, project, running=True)
-        code, output = self.run("refuse original history without its observations", self.upgrade_command("check-upgrade", directory, edge), ok=False)
-        require(code != 0 and "unaccounted or missing writer" in output, "history without evidence was admitted")
+        if history is not None:
+            code, output = self.run("refuse original history without its observations", self.upgrade_command("check-upgrade", directory, edge), ok=False)
+            require(code != 0 and "unaccounted or missing writer" in output, "history without evidence was admitted")
         checked = json.loads(self.run("check exact supported source without effects", self.upgrade_command("check-upgrade", directory, edge, history=history)))
         status = json.loads(self.run("read actual source upgrade status", self.upgrade_command("upgrade-status", directory, edge, history=history)))
         require(checked["writes"] == 0 and checked["writers"] == (2 if edge else 1)
@@ -1255,10 +1260,10 @@ raise SystemExit("expected cold-pair interruption was not reached")
             self.interrupt_upgrade(directory, edge, history)
         else:
             self.interrupt_startup_hold(directory, project, history, body)
-        if same_schema:
+        if preserve_previous:
             before_resume = files(directory), self.inventory(), self.upgrade_fingerprint(directory, project, running=True)
         self.run("read back completed native upgrade resume", self.upgrade_command("resume-upgrade", directory, edge, history=history))
-        require(not same_schema or before_resume == (files(directory), self.inventory(), self.upgrade_fingerprint(directory, project, running=True)),
+        require(not preserve_previous or before_resume == (files(directory), self.inventory(), self.upgrade_fingerprint(directory, project, running=True)),
                 "completed native resume changed retained files/resources/database")
         state = json.loads((directory / "install-state.json").read_bytes())
         witness = state["upgrade"]
@@ -1268,7 +1273,7 @@ raise SystemExit("expected cold-pair interruption was not reached")
             "independent original account/financial/audit/configuration projection changed")
         require(tuple(json.loads(self.sql(directory, project, "SELECT jsonb_agg(version ORDER BY version) FROM schema_migrations")))
                 == self.source_contract.ledger, "upgraded complete ledger differs from candidate")
-        require(not same_schema or (self.recovery_module().private_inventory(original_roots) == original_history
+        require(not preserve_previous or (self.recovery_module().private_inventory(original_roots) == original_history
             and (directory / witness["source_state_path"]).read_bytes() == source_state),
             "original operation/release evidence or exact source installation state changed")
         backup = directory / "upgrades" / witness["operation_id"] / "backup"
@@ -1307,7 +1312,10 @@ raise SystemExit("expected cold-pair interruption was not reached")
             "independent_original_row_and_configuration_equality": True,
             "independent_database_and_body_restore": True, "read_only_no_effects": True,
             "physical_exits_proved": True, "completed_resume": True, "known_checkpoint_resume": bool(edge),
-            "historical_kind": "native_replacement" if edge else "process_exit", "history_without_evidence_refused": True,
+            "new_historical_input": history is not None,
+            "historical_kind": ("native_replacement" if edge else "process_exit") if history is not None else None,
+            "history_without_evidence_refused": True if history is not None else None,
+            "original_operation_evidence_unchanged": True if preserve_previous else None,
             "unknown_outcome_refused": bool(edge), "provider_calls": 0})
         if same_schema:
             migration = witness["receipts"]["migrate"]
