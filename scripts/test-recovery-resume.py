@@ -20,7 +20,24 @@ def load(name, path):
     spec.loader.exec_module(module)
     return module
 R = load("timestamp_recovery", ROOT / "deploy/customer/recovery_resume.py")
-F = load("existing_finite_owner_fixture", ROOT / "scripts/test-community-upgrade.py")
+HISTORICAL_ROOT = ROOT / "scripts/testdata/recovery-m128"
+
+
+def load_historical_fixture():
+    raw = (HISTORICAL_ROOT / "SOURCE.json").read_bytes()
+    if R.sha(raw) != "9755e0d630d719ad0044b0fd1641bcedd070ecdd42aeb881ac055617ec0eaf8e":
+        raise AssertionError("Historical recovery source manifest changed")
+    source = json.loads(raw)
+    if source["source_commit"] != "2b219aad9dd4f07d986862b7d0ac67557335477e":
+        raise AssertionError("Wrong historical recovery source commit")
+    for file in source["files"]:
+        raw = (HISTORICAL_ROOT / file["file"]).read_bytes()
+        if len(raw) != file["bytes"] or R.sha(raw) != file["sha256"]:
+            raise AssertionError("Historical recovery fixture bytes changed: " + file["file"])
+    return load("existing_finite_owner_fixture", HISTORICAL_ROOT / "scripts/test-community-upgrade.py")
+
+
+F = load_historical_fixture()
 M = F.M
 
 
@@ -29,13 +46,15 @@ class RecoveryTests(F.WholeUpgradeTests):
     # this class's test_recovery_* cases are selected by this script's main.
     def pending(self, second_row=False, cleanup=True, expired=True):
         operation, state, calls, bind = self.host(1)
-        state.setups.append({"installation_id":"xci_" + "A" * 22, "org_id":2, "project_id":2,
+        # Construct the bounded historical source independently of the normal
+        # upgrade fixture's paired setup and expired/live session defaults.
+        state.setups = [{"installation_id":"xci_" + "A" * 22, "org_id":2, "project_id":2,
             "setup_state":"waiting_data", "setup_progress":{"source_grant_id":1},
-            "control_fence":1, "updated_at":"2026-10-28T00:00:00Z"})
+            "control_fence":1, "updated_at":"2026-10-28T00:00:00Z"}]
         if second_row:
             state.setups.append(dict(state.setups[0], installation_id="xci_" + "B" * 22, project_id=3))
-        state.sessions.append({"id":1,"user_id":2,"sid_hash":"synthetic-only", "revoked_at":None,
-            "expires_at":"2026-10-28T23:00:00Z" if expired else "2026-11-01T00:00:00Z"})
+        state.sessions = [{"id":1,"user_id":2,"sid_hash":"synthetic-only", "revoked_at":None,
+            "expires_at":"2026-10-28T23:00:00Z" if expired else "2026-11-01T00:00:00Z"}]
         def tick(point):
             if point == "done:start-writers":
                 state.setups[0]["updated_at"] = "2026-10-29T00:00:01Z"
@@ -80,6 +99,43 @@ class RecoveryTests(F.WholeUpgradeTests):
 
     def snapshot(self, directory):
         return {str(p): (R.sha(p.read_bytes()), p.stat().st_mode) for p in directory.rglob("*") if p.is_file()}
+
+    def test_recovery_fixture_has_exact_historical_source(self):
+        self.assertEqual(R.M128, M.TARGET_SCHEMA)
+        for name, expected in (("upgrade.py", R.UPGRADE_SHA256), ("recovery.py", R.RECOVERY_SHA256)):
+            self.assertEqual(expected, R.sha((HISTORICAL_ROOT / "deploy/customer" / name).read_bytes()))
+        for second_row in (False, True):
+            with self.subTest(second_row=second_row):
+                _, state, _, _, plan, _, _ = self.pending(second_row=second_row)
+                source = state.clones[plan["cold_pair"]["verification_database"]]
+                self.assertEqual([1], [row["id"] for row in source["sessions"]])
+                self.assertEqual(["xci_" + "A" * 22] + (["xci_" + "B" * 22] if second_row else []),
+                                 [row["installation_id"] for row in source["setups"]])
+                self.assertEqual("xci_" + "A" * 22, plan["allowed_row"]["installation_id"])
+                self.assertEqual(1, plan["allowed_session_gc"]["source_table"]["count"])
+                self.assertEqual(plan, R.validate_plan(plan))
+
+    def test_recovery_historical_input_drift_refuses_before_import(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            manifest = (HISTORICAL_ROOT / "SOURCE.json").read_bytes()
+            (root / "SOURCE.json").write_bytes(manifest)
+            for file in json.loads(manifest)["files"]:
+                path = root / file["file"]
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes((HISTORICAL_ROOT / file["file"]).read_bytes())
+            def forbid_import(*_):
+                self.fail("Changed historical fixture must not be imported")
+            for relative, reason in (("SOURCE.json", "source manifest changed"),
+                                     ("scripts/test-community-upgrade.py", "fixture bytes changed")):
+                with self.subTest(file=relative):
+                    path = root / relative
+                    original = path.read_bytes()
+                    path.write_bytes(original + b"\n")
+                    with patch.dict(globals(), HISTORICAL_ROOT=root, load=forbid_import):
+                        with self.assertRaisesRegex(AssertionError, reason):
+                            load_historical_fixture()
+                    path.write_bytes(original)
 
     def test_recovery_check_is_pure_and_resume_reuses_original_native_steps(self):
         operation, state, calls, bind, plan, identity, reopen = self.pending()
@@ -310,7 +366,7 @@ def native_envelope_cases(native, directory, private_key, ring):
         old_files = {}
         for name in ("install.py", "recovery.py", "upgrade.py"):
             dest = old / "payload/deploy" / name
-            dest.write_bytes((ROOT / "deploy/customer" / name).read_bytes())
+            dest.write_bytes((HISTORICAL_ROOT / "deploy/customer" / name).read_bytes())
             old_files["payload/deploy/" + name] = dest
         old_package = old / "release.tar.gz"
         pack(old_package, old_files, version="1.15.0", sequence=11, minimum=10, maximum=10, schema=R.M127)

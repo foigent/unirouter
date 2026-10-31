@@ -1506,8 +1506,10 @@ class Upgrade(Installation):
         return {"writers": found}
 
     def _start_writers(self):
+        require(all(self._stopped(role) == self.witness["receipts"]["stop-" + role] for role in self.roles),
+                "Original writer no longer matches its proved exit")
         self._preserved()
-        self.command(self.compose + ["up", "-d", "--wait", "--no-deps", "--pull", "never", "--no-build", *self.roles], "start exact candidate writers")
+        self.command(self.compose + ["up", "-d", "--wait", "--force-recreate", "--no-deps", "--pull", "never", "--no-build", *self.roles], "start exact candidate writers")
         result = self._new_writers()
         require(isinstance(result, dict), "Candidate writer startup is unconfirmed")
         return result
@@ -1579,6 +1581,8 @@ class Upgrade(Installation):
         return {"frontend_container": front["Id"], "frontend_image": front["Image"], "edge": bool(self.edge_compose)}
 
     def _start_receivers(self):
+        require(self._stopped("frontend") == self.witness["receipts"]["stop-frontend"],
+                "Original frontend no longer matches its proved exit")
         self._preserved(recorded=True)
         self._verify_original_configuration()
         require(isinstance(self._new_writers(), dict), "Exact new writers are required before receiver start")
@@ -1586,7 +1590,7 @@ class Upgrade(Installation):
             "candidate_package_sha256": self.release.sha}
         self._save()
         require(isinstance(self._admission_prepared(), dict), "Prepare native membership before starting any receiver")
-        self.command(self.compose + ["up", "-d", "--wait", "--no-deps", "--pull", "never", "--no-build", "frontend"], "start exact candidate frontend")
+        self.command(self.compose + ["up", "-d", "--wait", "--force-recreate", "--no-deps", "--pull", "never", "--no-build", "frontend"], "start exact candidate frontend")
         if self.edge_compose:
             self.command(self.edge_compose + ["start", "nginx"], "start retained named edge")
         result = self._receivers_started()

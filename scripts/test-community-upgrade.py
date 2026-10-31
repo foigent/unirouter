@@ -937,7 +937,9 @@ class WholeUpgradeTests(unittest.TestCase):
                 state.hop += 1
                 for index, role in enumerate(operation.roles):
                     name = "fixture-ur-" + role + "-1"; row = state.resources[name]
-                    row.update(Id="new-" + str(state.hop) + "-" + role, Image=new_ids["backend"])
+                    if "--force-recreate" in args or row["Image"] != new_ids["backend"]:
+                        row.update(Id="new-" + str(state.hop) + "-" + role)
+                    row["Image"] = new_ids["backend"]
                     deployed_env = dict(state.running_env, RUNTIME_IMAGE_DIGEST=new_ids["backend"])
                     row["Config"]["Env"] = [key+"="+value for key,value in deployed_env.items()]
                     row["State"].update(Running=True, Pid=201 + index, StartedAt="2026-10-29T00:00:00.123456789Z")
@@ -945,7 +947,11 @@ class WholeUpgradeTests(unittest.TestCase):
                     state.processes[str(201 + index)] = "new-start-" + str(state.hop)
                     state.metadata["generations"].append({"instance_id": identity, "artifact_digest": new_ids["backend"], "manifest_digest": operation.witness["candidate_support_sha256"], "schema_head": M.TARGET_SCHEMA, "state": "serving", "ingress_state": "absent", "revision": 1,
                         "compatibility_epoch":"unirouter.runtime-compatibility.v1", "lease_expires_at":"2000-01-01T00:00:00Z"})
-                state.metadata["manifests"].append({"artifact_digest": new_ids["backend"], "manifest_digest": operation.witness["candidate_support_sha256"]})
+                existing = [m for m in state.metadata["manifests"] if m["artifact_digest"] == new_ids["backend"]]
+                if existing:
+                    self.assertTrue(all(m["manifest_digest"] == operation.witness["candidate_support_sha256"] for m in existing))
+                else:
+                    state.metadata["manifests"].append({"artifact_digest": new_ids["backend"], "manifest_digest": operation.witness["candidate_support_sha256"]})
                 return ""
             if label == "check candidate writer readiness":
                 row = next(row for row in state.resources.values() if row["Id"] == args[args.index("exec")+1])
@@ -958,7 +964,10 @@ class WholeUpgradeTests(unittest.TestCase):
                 name = "uniroute-nginx" if "edge" in label else "fixture-ur-frontend-1"
                 pid = 302 if "edge" in label else 301
                 row = state.resources[name]; row["State"].update(Running=True, Pid=pid)
-                if "frontend" in label: row.update(Id="new-frontend-"+str(state.hop), Image=new_ids["frontend"])
+                if "frontend" in label:
+                    if "--force-recreate" in args or row["Image"] != new_ids["frontend"]:
+                        row.update(Id="new-frontend-"+str(state.hop))
+                    row["Image"] = new_ids["frontend"]
                 state.processes[str(pid)] = "new-receiver-"+str(state.hop)
                 return ""
             if args and args[0] == "tar": return archive.run(args, label=label, input=input)
@@ -1170,7 +1179,7 @@ class WholeUpgradeTests(unittest.TestCase):
         return bind(M.Upgrade(operation.directory, operation.release.directory, operation.verifier, operation.public_keys,
                               operation.source_package, operation.layout, operation.edge_directory, operation.run))
 
-    def next_candidate(self, operation, state, bind, sequence):
+    def next_candidate(self, operation, state, bind, sequence, *, same_images=False):
         """Another synthetic package for the same existing host simulator."""
         directory = operation.directory.parent / ("candidate-" + str(sequence))
         shutil.copytree(operation.release.directory, directory)
@@ -1178,10 +1187,11 @@ class WholeUpgradeTests(unittest.TestCase):
         manifest.update(release_sequence=sequence, max_current_sequence=sequence-1,
                         version="0.0."+str(sequence), commit=hashlib.sha256(str(sequence).encode()).hexdigest()[:40])
         descriptor = json.loads((directory / I.M.DESCRIPTOR).read_bytes())
-        for role in ("backend", "frontend"):
-            digest = hashlib.sha256((str(sequence)+role).encode()).hexdigest()
-            descriptor["images"][role] = "registry.example.invalid/"+role+"@sha256:"+digest
-            state.candidate_ids[role] = "sha256:"+digest
+        if not same_images:
+            for role in ("backend", "frontend"):
+                digest = hashlib.sha256((str(sequence)+role).encode()).hexdigest()
+                descriptor["images"][role] = "registry.example.invalid/"+role+"@sha256:"+digest
+                state.candidate_ids[role] = "sha256:"+digest
         (directory / I.M.DESCRIPTOR).write_bytes(M.canonical(descriptor))
         with tarfile.open(directory / "release.tar.gz", "w:gz") as archive:
             for artifact in manifest["artifacts"]:
@@ -1198,6 +1208,75 @@ class WholeUpgradeTests(unittest.TestCase):
         state.running_env["RUNTIME_IMAGE_DIGEST"] = state.resources["fixture-ur-backend-1"]["Image"]
         return bind(M.Upgrade(operation.directory, directory, operation.verifier, operation.public_keys,
                              layout=operation.layout, edge_directory=operation.edge_directory, run=operation.run))
+
+    def test_same_images_replace_app_containers_once_across_lost_receipts(self):
+        for count in (1, 2):
+            for interrupt in (None, "effect:start-writers", "effect:start-receivers"):
+                with self.subTest(writers=count, interrupt=interrupt):
+                    old, state, calls, bind = self.completed17(count)
+                    before_ids = {role: state.resources["fixture-ur-" + role + "-1"]["Id"]
+                                  for role in (*old.roles, "frontend")}
+                    before_rows = copy.deepcopy((state.business, state.models, state.setups, state.sessions))
+                    before_ledger = list(state.metadata["ledger"])
+                    migrations = state.native_calls.count(["migrate", "up"])
+                    calls_before = len(calls)
+                    operation = self.next_candidate(old, state, bind, 20, same_images=True)
+                    self.assertEqual(old.release.images, operation.release.images)
+                    def stop(point):
+                        if point == interrupt: raise Interrupted()
+                    operation.test_checkpoint = stop
+                    with patch.object(M.shutil, "disk_usage", return_value=SimpleNamespace(free=32 << 30)):
+                        if interrupt:
+                            with self.assertRaises(Interrupted): operation.execute()
+                            operation = self.reopen(operation, bind)
+                            self.assertEqual("completed", operation.execute(resume=True)["state"])
+                        else:
+                            self.assertEqual("completed", operation.execute()["state"])
+                        completed = (operation.directory / "install-state.json").read_bytes()
+                        self.assertEqual("completed", self.reopen(operation, bind).execute(resume=True)["state"])
+                    self.assertEqual(completed, (operation.directory / "install-state.json").read_bytes())
+                    self.assertEqual(2, state.hop, "Lost receipts must not recreate writers again")
+                    starts = [(label, args) for label, args in calls[calls_before:]
+                              if label in ("start exact candidate writers", "start exact candidate frontend")]
+                    self.assertEqual(2, len(starts), "Each application start effect occurs once")
+                    for _, args in starts:
+                        for flag in ("--force-recreate", "--no-deps", "--no-build"):
+                            self.assertIn(flag, args)
+                        self.assertEqual("never", args[args.index("--pull") + 1])
+                    for role, original_id in before_ids.items():
+                        self.assertNotEqual(original_id, state.resources["fixture-ur-" + role + "-1"]["Id"])
+                    self.assertEqual(before_ledger, state.metadata["ledger"])
+                    self.assertEqual(migrations, state.native_calls.count(["migrate", "up"]))
+                    self.assertEqual(before_rows, (state.business, state.models, state.setups, state.sessions))
+
+    def test_same_image_original_restart_still_refuses_without_effects(self):
+        for role in ("backend", "backend-canary", "frontend"):
+            for pending in (False, True):
+                with self.subTest(role=role, pending=pending):
+                    old, state, calls, bind = self.completed17(2)
+                    operation = self.next_candidate(old, state, bind, 20, same_images=True)
+                    phase = "start-receivers" if role == "frontend" else "start-writers"
+                    checkpoint = "started:" + phase if pending else (
+                        "done:prepare-admission" if role == "frontend" else "done:configure-images")
+                    def stop(point):
+                        if point == checkpoint: raise Interrupted()
+                    operation.test_checkpoint = stop
+                    with patch.object(M.shutil, "disk_usage", return_value=SimpleNamespace(free=32 << 30)):
+                        with self.assertRaises(Interrupted): operation.execute()
+                    state.resources["fixture-ur-" + role + "-1"]["State"].update(Running=True, Pid=919)
+                    path = operation.directory / "install-state.json"
+                    original = path.read_bytes()
+                    expected = json.loads(original)
+                    if not pending:
+                        # A fresh step records its existing intent before its
+                        # action; refusal may retain only that pending marker.
+                        expected["upgrade"]["pending"] = phase
+                    before = list(state.native_calls), state.hop, copy.deepcopy((state.business, state.models, state.setups, state.sessions))
+                    with self.assertRaises(M.install.InstallError):
+                        self.reopen(operation, bind).execute(resume=True)
+                    self.assertEqual(expected, json.loads(path.read_bytes()))
+                    if pending: self.assertEqual(original, path.read_bytes())
+                    self.assertEqual(before, (state.native_calls, state.hop, (state.business, state.models, state.setups, state.sessions)))
 
     def completed17(self, count=1):
         operation, state, calls, bind = self.host(count, source_sequence=16)

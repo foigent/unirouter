@@ -1,0 +1,53 @@
+{
+  "schema_version": "unirouter.test-historical-source.v1",
+  "purpose": "Frozen M127-to-M128 source inputs for the bounded historical recovery tests. Test data only; not an installer or supported runtime entry.",
+  "source_commit": "2b219aad9dd4f07d986862b7d0ac67557335477e",
+  "target_schema": "000128_upstream_release_observation",
+  "files": [
+    {
+      "file": "deploy/customer/upgrade.py",
+      "bytes": 111753,
+      "sha256": "bb62a391ebded4266054b7f0892a1ded9d37d32654f83455083db9d8fb6c7131"
+    },
+    {
+      "file": "deploy/customer/recovery.py",
+      "bytes": 8514,
+      "sha256": "41038f3e0913aa55c4e1740f35af3df52c0aea0ff520234e57408512c8b972e1"
+    },
+    {
+      "file": "deploy/customer/install.py",
+      "bytes": 32171,
+      "sha256": "d14f617bf185a00281196435e366a0c7f7596e669eaf18a9eeb0d7ac6b4e780d"
+    },
+    {
+      "file": "scripts/test-community-upgrade.py",
+      "bytes": 93958,
+      "sha256": "9fa0b53287e46f983440d4152808ccbacbf7b5d7b60afab335e36eea694064dc"
+    },
+    {
+      "file": "scripts/test-community-installer.py",
+      "bytes": 21795,
+      "sha256": "82012c69263d9934cf195653c2189f424a7d6bf651d6a5bf667b553f5bcf8bf3"
+    },
+    {
+      "file": "deploy/customer/docker-compose.yml",
+      "bytes": 10101,
+      "sha256": "654379514b1e0f4d30a80872c196e544f5766544ecf6ff314336df479f25c56b"
+    },
+    {
+      "file": "deploy/customer/.env.example",
+      "bytes": 6764,
+      "sha256": "dc59cc278042d5fddbd53d5ce1b24ed7f662a3b6843603680ff88e95231649b4"
+    },
+    {
+      "file": "deploy/customer/preflight.sh",
+      "bytes": 17500,
+      "sha256": "932f930033660ba74d2492a35829e783737bf170c0281b47173051474b21f57b"
+    },
+    {
+      "file": "scripts/source-budget-restore-rebase.sql",
+      "bytes": 14544,
+      "sha256": "95b01f115c916251fe460bbdaf67c91afd3a978cea99d183dd52385e1983753d"
+    }
+  ]
+}
