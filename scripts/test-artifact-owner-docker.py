@@ -33,6 +33,28 @@ def carrier_read_ledgers(migrations, historical=False):
     return [("bridge" if historical else "maintenance_predecessor",versions[:-1]),("current",versions)]
 
 
+def carrier_read_namespace_sql(migrations):
+    # Copy the original predicates and the existing M129 correction, rather
+    # than claiming a current ledger over a database missing its read contract.
+    source=(migrations/"000128_upstream_release_observation.up.sql").read_text()
+    begin="CREATE FUNCTION valid_upstream_release_text("
+    end="\nALTER TABLE model_deployments\n"
+    if source.count(begin)!=1 or source.count(end)!=1:
+        raise RuntimeError("carrier read fixture requires exact validator definitions")
+    functions=begin+source.split(begin,1)[1].split(end,1)[0]
+    if r.digest(functions.encode())!="934220eb5e26f57110186440404abfcb1958f890f85d571bbf5327c49ebefa1e":
+        raise RuntimeError("carrier read fixture validator definitions changed")
+    source=(migrations/"000129_upstream_observation_restore_namespace.up.sql").read_text()
+    begin="-- unirouter:observation-namespace-correction-begin\n"
+    end="-- unirouter:observation-namespace-correction-end"
+    if source.count(begin)!=1 or source.count(end)!=1:
+        raise RuntimeError("carrier read fixture requires exact namespace correction")
+    correction=source.split(begin,1)[1].split(end,1)[0].strip()
+    if correction!="ALTER FUNCTION public.valid_upstream_release_observation(jsonb) SET search_path TO pg_catalog, public;":
+        raise RuntimeError("carrier read fixture namespace correction changed")
+    return functions,correction
+
+
 def carrier_compose(image, repo):
     return {"services": {
         "db": {"image":"postgres:16-alpine", "environment":{"POSTGRES_PASSWORD":"owner-fixture-only"},
@@ -79,13 +101,15 @@ def main():
                 if time.monotonic()>deadline: raise RuntimeError("isolated fixture database did not start")
                 time.sleep(.2)
             ledgers=carrier_read_ledgers(repo/"migrations")
-            # Only the read fixture's tables are created; not a fake installation
-            # claim. The migrated Go suite separately proves the full DB states.
+            # Only the read tables and exact namespace predicates are created;
+            # the migrated Go suite separately proves the full DB states.
             sql="""CREATE TABLE schema_migrations(version text);
 CREATE TABLE runtime_ingress_changes(change_id text, predecessor_id text, status text);
 CREATE TABLE runtime_support_manifests(artifact_digest text, manifest_digest text);
 CREATE TABLE runtime_generations(instance_id text, artifact_digest text, compatibility_epoch text, schema_head text, revision bigint, state text, ingress_state text, lease_expires_at timestamptz);
 """
+            functions,correction=carrier_read_namespace_sql(repo/"migrations")
+            sql+=functions
             r.run(["docker","exec","-i",pg,"psql","-U","postgres","-v","ON_ERROR_STOP=1"],data=sql.encode())
             source={"directory":str(repo),"version":"1.0.0-ci","commit":"a"*40,"tree":"b"*40}
             desired={"tag":args.image,"digest":image["Id"]}
@@ -106,16 +130,35 @@ CREATE TABLE runtime_generations(instance_id text, artifact_digest text, compati
                 readback="SELECT jsonb_build_object('ledger',(SELECT jsonb_agg(version ORDER BY version) FROM schema_migrations),'ingress',(SELECT count(*) FROM runtime_ingress_changes),'manifests',(SELECT count(*) FROM runtime_support_manifests),'generations',(SELECT count(*) FROM runtime_generations))::text;"
                 def state():
                     return r.load(r.run(["docker","exec",pg,"psql","-U","postgres","-Atc",readback]))
+                def namespace():
+                    query="SELECT jsonb_agg(jsonb_build_object('name',p.proname,'body_sha256',encode(sha256(convert_to(p.prosrc,'UTF8')),'hex'),'config',p.proconfig) ORDER BY p.proname)::text FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN ('valid_upstream_release_text','valid_upstream_release_observation');"
+                    return r.load(r.run(["docker","exec",pg,"psql","-U","postgres","-Atc",query]))
                 for label,versions in ledgers:
                     sql="BEGIN; TRUNCATE schema_migrations; INSERT INTO schema_migrations VALUES "+",".join("('"+v+"')" for v in versions)+"; COMMIT;"
                     r.run(["docker","exec","-i",pg,"psql","-U","postgres","-v","ON_ERROR_STOP=1"],data=sql.encode())
                     before=state()
                     assert before=={"ledger":versions,"ingress":0,"manifests":0,"generations":0},before
+                    if label=="current":
+                        invalid_namespace=namespace()
+                        assert all(row["config"] is None for row in invalid_namespace)
+                        try:
+                            owner.artifact_owner_command("ignored","inspect")
+                            raise AssertionError("M129 must refuse its uncorrected validator namespace")
+                        except RuntimeError as exc:
+                            assert str(exc).startswith("Artifact owner refused inspect"),str(exc)
+                        assert state()==before and namespace()==invalid_namespace,"refused inspect changed the read fixture"
+                        assert r.inspect(name,missing_ok=True) is None
+                        r.run(["docker","exec","-i",pg,"psql","-U","postgres","-v","ON_ERROR_STOP=1"],data=correction.encode())
+                    namespace_before=namespace()
+                    expected_config=["search_path=pg_catalog, public"] if label=="current" else None
+                    assert namespace_before[0]["name"]=="valid_upstream_release_observation"
+                    assert namespace_before[0]["config"]==expected_config
                     result=owner.artifact_owner_command("ignored","inspect")
                     assert result=={"head":"","head_status":"","generations":[]},result
                     assert state()==before,"inspect changed the read fixture"
+                    assert namespace()==namespace_before,"inspect changed the validator namespace"
                     assert r.inspect(name,missing_ok=True) is None
-                    reports.append({"role":label,"head":versions[-1],"ledger_count":len(versions),"ledger_sha256":r.digest(r.canonical(versions)),"inspect":"passed","unchanged":"passed"})
+                    reports.append({"role":label,"head":versions[-1],"ledger_count":len(versions),"ledger_sha256":r.digest(r.canonical(versions)),"inspect":"passed","unchanged":"passed","namespace_config":expected_config,"uncorrected_namespace_refused":label=="current"})
                 fixture_artifact="sha256:"+"a"*64
                 fixture_manifest="b"*64
                 fixture_instance="uri_"+"c"*32
@@ -132,6 +175,7 @@ CREATE TABLE runtime_generations(instance_id text, artifact_digest text, compati
                     "revision":fixture_revision,"state":"draining","ingress_state":"absent","lease_live":False,
                     "support_manifest_digest":fixture_manifest}]},result
                 assert state()==with_row,"inspect changed the populated read fixture"
+                assert namespace()==namespace_before,"populated inspect changed the validator namespace"
                 reports[-1]["inspect_revision"]="passed"
                 r.run(["docker","exec","-i",pg,"psql","-U","postgres","-v","ON_ERROR_STOP=1"],
                       data=b"TRUNCATE runtime_generations, runtime_support_manifests;")
@@ -152,8 +196,9 @@ CREATE TABLE runtime_generations(instance_id text, artifact_digest text, compati
                     pass
                 assert r.inspect(name,missing_ok=True) is None
                 assert state()==before,"lost response changed the read fixture"
+                assert namespace()==namespace_before,"lost response changed the validator namespace"
                 docker_version=r.run(["docker","version","--format","{{.Client.Version}} / {{.Server.Version}}"]).decode().strip()
-                print(json.dumps({"docker_carrier":"passed","docker_client_server":docker_version,"python_version":platform.python_version(),"tested_ledgers":reports,"fixture_schema_scope":"four read tables only; not a full migration or installation","lost_response_cleanup":"passed","ingress_writes":0,"provider_calls":0}))
+                print(json.dumps({"docker_carrier":"passed","docker_client_server":docker_version,"python_version":platform.python_version(),"tested_ledgers":reports,"fixture_schema_scope":"four read tables and exact M128/M129 validator DDL only; not a full migration or installation","lost_response_cleanup":"passed","ingress_writes":0,"provider_calls":0}))
             finally:
                 r.HELD_LOCK_FDS.clear();os.close(fd)
         finally:
