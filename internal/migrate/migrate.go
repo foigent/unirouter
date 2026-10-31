@@ -344,8 +344,8 @@ func runOnConnection(ctx context.Context, conn *pgxpool.Conn, dir string, option
 	}
 	if options.runtimeBridge {
 		for _, version := range pending {
-			if version == schemaauthority.CommercialLicenseRetirementHead || version == schemaauthority.XInsightCommunicationHead || version == schemaauthority.UpstreamReleaseObservationHead {
-				return fmt.Errorf("M126/M127/M128 require explicit maintenance migration; ordinary startup does not apply them")
+			if version == schemaauthority.CommercialLicenseRetirementHead || version == schemaauthority.XInsightCommunicationHead || (version == schemaauthority.UpstreamReleaseObservationHead || version == schemaauthority.UpstreamObservationRestoreHead) {
+				return fmt.Errorf("M126/M127/M128/M129 require explicit maintenance migration; ordinary startup does not apply them")
 			}
 		}
 		options.scopeSet = true
@@ -380,6 +380,11 @@ func runOnConnection(ctx context.Context, conn *pgxpool.Conn, dir string, option
 	}
 	plannedVersions := append([]string(nil), appliedVersions...)
 	for _, version := range allowed {
+		if version == schemaauthority.UpstreamObservationRestoreHead {
+			if (!options.maintenance && !(options.fresh != nil && options.freshExpand == version)) || len(plannedVersions) == 0 || plannedVersions[len(plannedVersions)-1] != schemaauthority.UpstreamReleaseObservationHead {
+				return fmt.Errorf("M129 requires exact M128 and an explicit maintenance/fresh owner")
+			}
+		}
 		if version == schemaauthority.UpstreamReleaseObservationHead {
 			if (!options.maintenance && !(options.fresh != nil && options.freshExpand == version)) || len(plannedVersions) == 0 || plannedVersions[len(plannedVersions)-1] != schemaauthority.XInsightCommunicationHead {
 				return fmt.Errorf("M128 requires exact M127 and an explicit maintenance/fresh owner")
@@ -710,6 +715,9 @@ func migrationTransactionBody(sqlContent string) string {
 }
 
 func validateCommercialRetirement(applied, artifact []string, maintenance, fresh bool) error {
+	if len(artifact) > 0 && artifact[len(artifact)-1] == schemaauthority.UpstreamObservationRestoreHead {
+		artifact = artifact[:len(artifact)-1]
+	}
 	if len(artifact) > 0 && artifact[len(artifact)-1] == schemaauthority.UpstreamReleaseObservationHead {
 		artifact = artifact[:len(artifact)-1]
 	}

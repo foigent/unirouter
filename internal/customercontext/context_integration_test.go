@@ -10,6 +10,21 @@ import (
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
+func TestEnsureResolvedBaselineRejectsDeferredIdentityDriftWithoutWritesIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+	before, err := Resolve(t.Context(), pool)
+	require.NoError(t, err)
+	require.True(t, before.Ready())
+	_, err = pool.Exec(t.Context(), `UPDATE orgs SET name='changed while held' WHERE id=$1`, orgID)
+	require.NoError(t, err)
+	_, err = EnsureResolvedBaseline(t.Context(), pool, before)
+	require.ErrorContains(t, err, "customer context changed during deferred startup")
+	var count int
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT count(*) FROM projects WHERE org_id=$1 AND slug='default'`, orgID).Scan(&count))
+	require.Zero(t, count, "a deferred identity mismatch cannot create a baseline for another snapshot")
+}
+
 func TestEnsureBaselineAdoptsSoleRootAndPreservesExistingStateIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()

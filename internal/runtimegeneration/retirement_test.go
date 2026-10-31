@@ -21,6 +21,6 @@ func TestLegacyRetirementStillRejectsProductionBeforeDatabase(t *testing.T) {
 	input.ExpectedSchemaHead = schemaauthority.UpstreamReleaseObservationHead
 	// This is a valid generic historical identity, but never the finite
 	// production-capable community predecessor.
-	_, err = CheckM127MaintenanceRetirementTx(context.Background(), nil, input, false)
-	require.ErrorContains(t, err, "exact M127 maintenance predecessor")
+	_, err = CheckCommunityMaintenanceRetirementTx(context.Background(), nil, input, schemaauthority.XInsightCommunicationHead, false)
+	require.ErrorContains(t, err, "verified exact M127, M128 or M129 predecessor")
 }

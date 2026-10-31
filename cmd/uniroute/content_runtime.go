@@ -14,6 +14,7 @@ import (
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modeloperation"
+	"github.com/uniroute/unirouter/internal/runtimegeneration"
 	"github.com/uniroute/unirouter/internal/sourcefacts"
 )
 
@@ -76,11 +77,11 @@ func newContentRuntime(cfg *config.Config, source *sourcefacts.Service) (*conten
 }
 
 // startMaintenance is called once by the runtime owner, after preflight.
-func (c *contentRuntime) startMaintenance(source *sourcefacts.Service) {
+func (c *contentRuntime) startMaintenance(source *sourcefacts.Service, background *runtimegeneration.BackgroundStartup) {
 	if c == nil || c.files == nil {
 		return
 	}
-	c.startExpiryOwner(func(ctx context.Context) {
+	c.startExpiryOwner(background, func(ctx context.Context) {
 		result, err := source.ReclaimExpiredContent(ctx, c.files, 1000)
 		if err != nil && ctx.Err() == nil {
 			log.Printf("Content expiry incomplete: examined=%d reclaimed=%d failed=%d", result.Examined, result.Reclaimed, result.Failed)
@@ -88,13 +89,10 @@ func (c *contentRuntime) startMaintenance(source *sourcefacts.Service) {
 	})
 }
 
-func (c *contentRuntime) startExpiryOwner(reclaim func(context.Context)) {
+func (c *contentRuntime) startExpiryOwner(background *runtimegeneration.BackgroundStartup, reclaim func(context.Context)) {
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
 	c.maintenanceCancel = cancel
-	c.maintenanceDone = done
-	go func() {
-		defer close(done)
+	c.maintenanceDone = background.Go(ctx, func(ctx context.Context) {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
 		for {
@@ -110,7 +108,7 @@ func (c *contentRuntime) startExpiryOwner(reclaim func(context.Context)) {
 			case <-ticker.C:
 			}
 		}
-	}()
+	})
 }
 
 func (c *contentRuntime) registerReads(mux *http.ServeMux, source *sourcefacts.Service, resolver middleware.ClientIPResolver) error {

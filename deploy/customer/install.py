@@ -29,7 +29,7 @@ IMAGE_KEYS = {"backend": "UNIROUTER_BACKEND_IMAGE", "frontend": "UNIROUTER_FRONT
               "postgres": "POSTGRES_IMAGE", "redis": "REDIS_IMAGE",
               "prometheus": "PROMETHEUS_IMAGE", "grafana": "GRAFANA_IMAGE"}
 VOLUMES = ("postgres_data", "redis_data", "prometheus_data", "grafana_data")
-SCHEMA = "000128_upstream_release_observation"
+SCHEMA = "000129_upstream_observation_restore_namespace"
 LABEL = "io.unirouter.installation"
 DESCRIPTOR = "payload/install.json"
 PREFIX = "payload/deploy/"

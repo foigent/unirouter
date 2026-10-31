@@ -4,6 +4,22 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.15.3] - 2026-10-31
+
+### Fixed
+
+- Gate the default-customer baseline and background writers on the existing native runtime lease and ingress admission. Keep health checks available while ordinary requests wait for startup completion; preserve original account data and no-op connector reconciliation during maintenance verification.
+- Add M129 to correct the persisted M128 upstream-observation validator's PostgreSQL namespace binding. Verify and restore populated M128 cold backups through the existing isolated restore owner without changing the original dump, source ledger, CHECK constraints, foreign keys or triggers.
+- Extend the ordinary full-package upgrade owner to exact M127/M128-to-M129 and M129-to-M129 transitions. Subsequent upgrades bind the completed current release and image override, retain prior installation-state bytes and operation evidence, and verify the full cold recovery pair. Same-schema upgrades preserve the complete ledger without invoking migrations.
+- Verify original data before receiver admission, then retain completed-upgrade validity when legitimate business writes occur afterward. Completed resume checks current release/runtime/admission and retained recovery evidence without repeating migration or release recording.
+- Let sign-in preview metrics wrap to the available width instead of forcing three columns on narrow screens.
+- Show the canonical gateway `X-Request-ID` in the project request debugger after an HTTP refusal, so the displayed failure can be correlated with the retained request evidence.
+- Load organization-administrator shared-limit selectors from the existing customer model catalog, preserving platform inventory permissions and valid project/key options.
+
+### Validation boundary
+
+- Normal application patch candidate, separate from the historical `1.15.2-recovery.1` maintenance envelope. Supporting source, PostgreSQL, browser and offline contract checks are local; this version entry does not assert native Linux/Docker qualification, a signed artifact, public release, Target deployment, external Provider/X-Insight integration or Production acceptance. The prepared Linux fixture includes retained-source and same-schema upgrades; its actual execution and existing 45-minute budget remain unverified.
+
 ## [1.15.2] - 2026-10-30
 
 ### Fixed

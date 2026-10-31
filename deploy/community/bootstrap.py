@@ -19,7 +19,7 @@ import tarfile
 import urllib.parse
 import urllib.request
 
-SCHEMA = "000128_upstream_release_observation"
+SCHEMA = "000129_upstream_observation_restore_namespace"
 MAX_BOOTSTRAP = 32 * 1024
 MAX_MANIFEST = 128 * 1024
 MAX_SIGNATURE = 16 * 1024

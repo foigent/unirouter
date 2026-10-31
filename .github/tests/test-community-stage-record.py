@@ -19,12 +19,31 @@ class StageTests(unittest.TestCase):
         return dict(M.encode(value),expected_workflow_commit='a'*40,admission_sha256='b'*64)
 
     def test_two_versions_and_sources_use_the_same_program(self):
-        for version, commit in (('1.15.0','a'*40),('1.15.1','b'*40)):
-            for value in (F.producer(version,commit),F.publisher(F.producer(version,commit)['product'])):
+        for version, commit, schema in (('1.15.0','a'*40,'000128_upstream_release_observation'),
+                ('1.15.1','b'*40,'000128_upstream_release_observation'),
+                ('1.15.3','e'*40,'000129_upstream_observation_restore_namespace')):
+            source=F.producer(version,commit,schema=schema)
+            for value in (source,F.publisher(source['product'])):
                 with self.subTest(version=version,stage=value['stage']):
                     raw,actual=M.from_dispatch(self.inputs(value),value['stage'])
                     self.assertEqual(value,actual)
                     self.assertEqual(M.sha(raw),M.encode(value)['stage_record_sha256'])
+
+    def test_m129_requires_both_migration_inputs_and_does_not_widen_m128(self):
+        current='000129_upstream_observation_restore_namespace'
+        prior='000128_upstream_release_observation'
+        record=F.producer('1.15.3','e'*40,schema=current)
+        M.validate_record(record,'producer')
+        self.assertEqual(F.producer()['product']['schema'],prior)
+        self.assertNotIn('migrations/'+current+'.up.sql',F.producer()['inputs']['source_inventory']['files'])
+        for kind in ('missing-current','missing-prior','unknown-schema','extra-current-on-m128'):
+            with self.subTest(kind=kind):
+                changed=copy.deepcopy(record)
+                if kind=='missing-current':del changed['inputs']['source_inventory']['files']['migrations/'+current+'.up.sql']
+                elif kind=='missing-prior':del changed['inputs']['source_inventory']['files']['migrations/'+prior+'.up.sql']
+                elif kind=='unknown-schema':changed['product']['schema']='000130_unknown'
+                else:changed['product']['schema']=prior
+                with self.assertRaises(M.Stop):M.validate_record(changed,'producer')
 
     def test_decode_and_aggregate_input_limits_are_independent(self):
         value=F.producer(); raw=M.canonical(value)
@@ -82,8 +101,8 @@ class StageTests(unittest.TestCase):
         with self.assertRaises(M.Stop):M.check_context(env,changed,'producer',inputs)
 
 class ProducerChainTests(unittest.TestCase):
-    def chain(self):
-        original=F.producer();raw=M.canonical(original)
+    def chain(self, *, schema='000128_upstream_release_observation'):
+        original=F.producer(schema=schema);raw=M.canonical(original)
         images=F.publisher(original['product'])['inputs']['images']
         members={'source-and-fixed-inputs.json':b'{"synthetic":"source"}', 'actual-image-inspection.json':b'{"synthetic":"observed"}'}
         files=dict(members)
@@ -97,10 +116,20 @@ class ProducerChainTests(unittest.TestCase):
         files[M.CLOSED_MANIFEST]=M.canonical({'files':facts,'bytes':sum(row['bytes'] for row in facts.values()),'scope':'synthetic exact metadata closure'})
 
     def test_parent_and_machine_next_record_have_non_circular_complete_closure(self):
-        files,child=self.chain();result=M.verify_producer_chain(files,child)
-        self.assertEqual({'source-and-fixed-inputs.json','actual-image-inspection.json'},set(result['members']))
-        self.assertTrue(set(M.CHAIN_PATHS)<=set(json.loads(files[M.CLOSED_MANIFEST])['files']))
-        self.assertNotIn(M.CLOSED_MANIFEST,result['members'])
+        for schema in ('000128_upstream_release_observation','000129_upstream_observation_restore_namespace'):
+            with self.subTest(schema=schema):
+                files,child=self.chain(schema=schema);result=M.verify_producer_chain(files,child)
+                self.assertEqual(schema,result['product']['schema'])
+                self.assertEqual({'source-and-fixed-inputs.json','actual-image-inspection.json'},set(result['members']))
+                self.assertTrue(set(M.CHAIN_PATHS)<=set(json.loads(files[M.CLOSED_MANIFEST])['files']))
+                self.assertNotIn(M.CLOSED_MANIFEST,result['members'])
+
+    def test_m129_parent_cannot_be_rebound_to_m128_child_with_rebuilt_outer_closure(self):
+        files,child=self.chain(schema='000129_upstream_observation_restore_namespace')
+        child['product']['schema']='000128_upstream_release_observation'
+        files[M.CHAIN_PATHS[2]]=M.canonical(child)
+        self.close(files)
+        with self.assertRaisesRegex(M.Stop,'stage_predecessor_binding'):M.verify_producer_chain(files,child)
 
     def test_extra_missing_changed_or_cross_source_refuse_even_with_rebuilt_outer_manifest(self):
         for kind in ('extra','missing','changed','source','chain_extra','self_reference'):
@@ -122,12 +151,14 @@ class CurrentSourceBindingTests(unittest.TestCase):
     def test_different_stage_source_and_image_facts_reach_existing_actual_owners(self):
         import ast
         import types
-        for version,character in (('1.15.0','a'),('1.15.1','b')):
+        for version,character,schema in (('1.15.0','a','000128_upstream_release_observation'),
+                ('1.15.1','b','000128_upstream_release_observation'),
+                ('1.15.3','e','000129_upstream_observation_restore_namespace')):
             guard=types.ModuleType('guard_'+character);guard.__file__=str(ROOT/'community-image-candidate.py')
             exec(compile(Path(guard.__file__).read_bytes(),guard.__file__,'exec'),guard.__dict__)
             observer=types.ModuleType('observer_'+character);observer.__file__=str(ROOT/'community-source-evidence.py')
             exec(compile(Path(observer.__file__).read_bytes(),observer.__file__,'exec'),observer.__dict__)
-            record=F.producer(version,character*40)
+            record=F.producer(version,character*40,schema=schema)
             record['inputs']['source_inventory']['files']['frontend/package.json']['sha256']=character*64
             record['inputs']['source_inventory']['files']['frontend/package-lock.json']['sha256']=('c' if character=='a' else 'd')*64
             record['inputs']['images']['frontend-builder']['config_id']='sha256:'+character*64

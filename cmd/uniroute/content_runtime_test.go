@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/config"
 	"github.com/uniroute/unirouter/internal/contentcapture"
+	"github.com/uniroute/unirouter/internal/runtimegeneration"
 )
 
 func TestContentRuntimeStoreOpensOnlyExistingExactBinding(t *testing.T) {
@@ -86,7 +87,11 @@ func TestContentRuntimeMaintenanceCancelAndTimeoutRetainsRoot(t *testing.T) {
 	entered := make(chan struct{})
 	cancelled := make(chan struct{})
 	release := make(chan struct{})
-	runtime.startExpiryOwner(func(ctx context.Context) { close(entered); <-ctx.Done(); close(cancelled); <-release })
+	background := runtimegeneration.NewBackgroundStartup()
+	defer background.Stop()
+	runtime.startExpiryOwner(background, func(ctx context.Context) { close(entered); <-ctx.Done(); close(cancelled); <-release })
+	background.Admit()
+	background.Start(nil)
 	<-entered
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 	defer cancel()

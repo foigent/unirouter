@@ -4,26 +4,223 @@ package admin
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/customercontext"
 	"github.com/uniroute/unirouter/internal/migrate"
+	"github.com/uniroute/unirouter/internal/runtimegeneration"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
 	"github.com/uniroute/unirouter/internal/sourcefacts"
 	"github.com/uniroute/unirouter/internal/testutil"
 	"github.com/uniroute/unirouter/internal/xinsightconnector"
 )
+
+// Opt-in seed for the existing disposable Linux installer acceptance. It uses
+// the same native consent/redeem/control/ack fixture as the isolated PG test,
+// against the installer's exact, independently bound M127 synthetic database.
+// Ordinary integration runs skip this; no schema install/reset/cleanup occurs.
+func TestCommunityInstallerSeedPairedM127Integration(t *testing.T) {
+	if os.Getenv("UR_COMMUNITY_INSTALLER_SEED") != "paired-m127" {
+		t.Skip("only the disposable community installer explicitly seeds this fixture")
+	}
+	require.Equal(t, "linux", runtime.GOOS)
+	require.Equal(t, "true", os.Getenv("GITHUB_ACTIONS"))
+	var expected struct {
+		SystemIdentifier string `json:"system_identifier"`
+		Database         string `json:"database"`
+		DatabaseOID      int64  `json:"database_oid"`
+		Owner            string `json:"owner"`
+		Role             string `json:"role"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(os.Getenv("UR_COMMUNITY_INSTALLER_SEED_TARGET")), &expected))
+	require.NotEmpty(t, expected.SystemIdentifier)
+	require.Positive(t, expected.DatabaseOID)
+	require.Equal(t, "uniroute", expected.Database)
+	pool, err := pgxpool.New(t.Context(), os.Getenv("TEST_DATABASE_URL"))
+	require.NoError(t, err)
+	defer pool.Close()
+	var system, database, role, ceiling string
+	var oid int64
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT (SELECT system_identifier::text FROM pg_control_system()),current_database(),
+(SELECT oid::bigint FROM pg_database WHERE datname=current_database()),current_user,(SELECT max(version) FROM schema_migrations)`).Scan(&system, &database, &oid, &role, &ceiling))
+	require.Equal(t, expected.SystemIdentifier, system)
+	require.Equal(t, expected.Database, database)
+	require.Equal(t, expected.DatabaseOID, oid)
+	require.Equal(t, expected.Owner, role)
+	require.Equal(t, expected.Role, role)
+	expectedSchema := os.Getenv("UR_COMMUNITY_INSTALLER_SEED_SCHEMA")
+	require.Contains(t, []string{schemaauthority.XInsightCommunicationHead, schemaauthority.UpstreamReleaseObservationHead}, expectedSchema)
+	require.Equal(t, expectedSchema, ceiling)
+	f := sourceControlFixture{xInsightFeedAuthorizationFixture: newXInsightFeedAuthorizationFixtureWithPool(t, false, pool)}
+	f.source, err = sourcefacts.New(pool, sourcefacts.Options{Enabled: true, ContentEnabled: true, SourceInstance: "synthetic-source-control", CursorSecret: syntheticSourceControlSecret})
+	require.NoError(t, err)
+	require.NoError(t, f.source.CheckReady(t.Context()))
+	f.handler = NewHandler(pool, syntheticSourceControlSecret, []byte("0123456789abcdef01234567"), nil)
+	f.handler.SetSourceFactsController(f.source)
+	pairNormalSetup(t, newNormalSetupFixtureFromSource(t, f))
+}
+
+// The supported real predecessor includes a native paired setup, an eligible
+// session and a live session. Exercise actual business callbacks through the
+// production startup owner; no Provider or external XI participates.
+func TestBackgroundStartupProtectsPairedUpgradeAndReleasesActualWritersIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedThroughTestDB(t, schemaauthority.XInsightCommunicationHead)
+	// Model the installer's already populated ordinary customer, then add the
+	// exact same native seed fixture. Its extra standard org must not replace
+	// or mutate the explicit customer. Leave one real baseline membership due.
+	var ordinaryOrg, ordinaryUser, ordinaryProject int64
+	require.NoError(t, pool.QueryRow(t.Context(), `INSERT INTO orgs(name,status,org_type) VALUES('synthetic ordinary customer','active','customer') RETURNING id`).Scan(&ordinaryOrg))
+	require.NoError(t, pool.QueryRow(t.Context(), `INSERT INTO users(org_id,username,password_hash,role,organization_role,status)
+VALUES($1,'synthetic-ordinary-admin','synthetic-unusable-hash','org_admin','org_admin','active') RETURNING id`, ordinaryOrg).Scan(&ordinaryUser))
+	require.NoError(t, pool.QueryRow(t.Context(), `INSERT INTO projects(org_id,name,slug,status,budget_period)
+VALUES($1,'Ordinary default','default','active','none') RETURNING id`, ordinaryOrg).Scan(&ordinaryProject))
+	_, err := pool.Exec(t.Context(), `INSERT INTO wallets(org_id) VALUES($1)`, ordinaryOrg)
+	require.NoError(t, err)
+	ordinaryRows := func() string {
+		var row string
+		require.NoError(t, pool.QueryRow(t.Context(), `SELECT jsonb_build_object('org',(SELECT to_jsonb(o) FROM orgs o WHERE id=$1),
+'users',(SELECT jsonb_agg(to_jsonb(u) ORDER BY id) FROM users u WHERE org_id=$1),
+'projects',(SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM projects p WHERE org_id=$1),
+'wallet',(SELECT to_jsonb(w) FROM wallets w WHERE org_id=$1))::text`, ordinaryOrg).Scan(&row))
+		return row
+	}
+	ordinaryBefore := ordinaryRows()
+	source := sourceControlFixture{xInsightFeedAuthorizationFixture: newXInsightFeedAuthorizationFixtureWithPool(t, false, pool)}
+	source.source, err = sourcefacts.New(pool, sourcefacts.Options{Enabled: true, ContentEnabled: true, SourceInstance: "synthetic-source-control", CursorSecret: syntheticSourceControlSecret})
+	require.NoError(t, err)
+	require.NoError(t, source.source.CheckReady(t.Context()))
+	source.handler = NewHandler(pool, syntheticSourceControlSecret, []byte("0123456789abcdef01234567"), nil)
+	source.handler.SetSourceFactsController(source.source)
+	f := newNormalSetupFixtureFromSource(t, source)
+	pairNormalSetup(t, f)
+	require.Equal(t, ordinaryBefore, ordinaryRows(), "native paired seed preserves the populated ordinary customer")
+	_, err = f.pool.Exec(t.Context(), `UPDATE xinsight_connector_installations SET setup_state='provisioning' WHERE installation_id=$1`, cp2bInstallationID)
+	require.NoError(t, err)
+	_, err = f.pool.Exec(t.Context(), `INSERT INTO admin_sessions(user_id,sid_hash,issued_at,expires_at)
+VALUES($1,decode(repeat('81',32),'hex'),now()-interval '2 hours',now()-interval '1 hour'),
+($1,decode(repeat('82',32),'hex'),now()-interval '1 hour',now()+interval '1 hour')`, f.actorID)
+	require.NoError(t, err)
+	beforeMigration := normalSetupOriginalTables(t, f)
+	require.NoError(t, migrate.RunExisting(t.Context(), f.pool, testutil.MigrationsDir(t)))
+	require.Equal(t, beforeMigration, normalSetupOriginalTables(t, f), "M127 protected rows survive the real M128 migration")
+	ledger, err := schemaauthority.ExpectedLedger(testutil.MigrationsDir(t))
+	require.NoError(t, err)
+	id := runtimegeneration.Identity{Instance: "uri_" + strings.Repeat("8", 32), Artifact: "sha256:" + strings.Repeat("8", 64)}
+	_, _, err = runtimegeneration.Renew(t.Context(), f.pool, id, runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads()), ledger, false)
+	require.NoError(t, err)
+	newPlan := func(name, previous, expected string, members []runtimegeneration.Identity) runtimegeneration.IngressPlan {
+		wire := []byte(name)
+		return runtimegeneration.IngressPlan{ChangeID: name, PredecessorID: previous, ExpectedConfigDigest: expected,
+			DesiredConfigBytes: wire, DesiredConfigDigest: fmt.Sprintf("%x", sha256.Sum256(wire)), Before: []runtimegeneration.Identity{}, After: members}
+	}
+	empty := newPlan("synthetic-maintenance", "", strings.Repeat("0", 64), []runtimegeneration.Identity{})
+	_, err = runtimegeneration.PrepareIngress(t.Context(), f.pool, empty)
+	require.NoError(t, err)
+	_, err = runtimegeneration.CompleteIngress(t.Context(), f.pool, empty.ChangeID, empty.DesiredConfigDigest, true, json.RawMessage(`{"synthetic":true}`))
+	require.NoError(t, err)
+	customer, err := customercontext.Resolve(t.Context(), f.pool)
+	require.NoError(t, err)
+	require.True(t, customer.Ready())
+	require.Equal(t, ordinaryOrg, customer.OrganizationID, "paired standard org cannot take over ordinary customer identity")
+	protected := func() map[string]string {
+		v := normalSetupOriginalTables(t, f)
+		// Only the existing native-control projections change in this test.
+		delete(v, "runtime_generations")
+		delete(v, "runtime_support_manifests")
+		delete(v, "runtime_ingress_changes")
+		return v
+	}
+	before := protected()
+	body := filepath.Join(t.TempDir(), "synthetic-protected-body")
+	raw := []byte("Synthetic paired upgrade body; no customer or Provider data.\n")
+	require.NoError(t, os.WriteFile(body, raw, 0600))
+	startup := runtimegeneration.NewBackgroundStartup()
+	defer startup.Stop()
+	var baselineCalls atomic.Int32
+	cleanupError, setupError := make(chan error, 1), make(chan error, 1)
+	cleanupDone := startup.Go(t.Context(), func(ctx context.Context) { cleanupError <- f.handler.CleanupOldData(ctx, 30) })
+	setupDone := startup.Go(t.Context(), func(ctx context.Context) { setupError <- f.handler.AdvanceXInsightSetups(ctx, 32) })
+	startup.Start(func(ctx context.Context) error {
+		baselineCalls.Add(1)
+		_, err := customercontext.EnsureResolvedBaseline(ctx, f.pool, customer)
+		return err
+	})
+	observe := func(want bool) {
+		t.Helper()
+		allowed, err := runtimegeneration.BackgroundStartAllowed(t.Context(), f.pool, id, ledger)
+		require.NoError(t, err)
+		require.Equal(t, want, allowed)
+		if allowed {
+			startup.Admit()
+		}
+	}
+	observe(false)
+	require.Zero(t, baselineCalls.Load())
+	require.False(t, startup.Ready())
+	require.Equal(t, before, protected(), "actual cleanup/setup/baseline remain silent while held")
+	// A legitimate setup transition is waiting, rather than being hidden by
+	// timestamp exceptions. Unrelated/progress mutations still change hashes.
+	tx, err := f.pool.Begin(t.Context())
+	require.NoError(t, err)
+	var original, changed string
+	require.NoError(t, tx.QueryRow(t.Context(), `SELECT to_jsonb(t)::text FROM xinsight_connector_installations t WHERE installation_id=$1`, cp2bInstallationID).Scan(&original))
+	_, err = tx.Exec(t.Context(), `UPDATE xinsight_connector_installations SET setup_progress='{"unexpected":true}' WHERE installation_id=$1`, cp2bInstallationID)
+	require.NoError(t, err)
+	require.NoError(t, tx.QueryRow(t.Context(), `SELECT to_jsonb(t)::text FROM xinsight_connector_installations t WHERE installation_id=$1`, cp2bInstallationID).Scan(&changed))
+	require.NotEqual(t, original, changed, "full protected rows detect changes outside startup")
+	require.NoError(t, tx.Rollback(t.Context()))
+	join := newPlan("synthetic-admit", empty.ChangeID, empty.DesiredConfigDigest, []runtimegeneration.Identity{id})
+	_, err = runtimegeneration.PrepareIngress(t.Context(), f.pool, join)
+	require.NoError(t, err)
+	observe(false)
+	require.Equal(t, before, protected(), "pending_join is not applied admission")
+	_, err = runtimegeneration.CompleteIngress(t.Context(), f.pool, join.ChangeID, join.DesiredConfigDigest, true, json.RawMessage(`{"synthetic":true}`))
+	require.NoError(t, err)
+	observe(true)
+	select {
+	case <-startup.Done():
+	case <-time.After(10 * time.Second):
+		t.Fatal("actual deferred baseline did not finish")
+	}
+	require.NoError(t, startup.Err())
+	<-cleanupDone
+	<-setupDone
+	require.NoError(t, <-cleanupError)
+	require.NoError(t, <-setupError)
+	observe(true)
+	require.Equal(t, int32(1), baselineCalls.Load())
+	require.True(t, startup.Ready())
+	var membership int
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT count(*) FROM project_members WHERE project_id=$1 AND user_id=$2 AND role='project_admin'`, ordinaryProject, ordinaryUser).Scan(&membership))
+	require.Equal(t, 1, membership, "the deferred real baseline mutator runs only after admission")
+	var expired, live int
+	require.NoError(t, f.pool.QueryRow(t.Context(), `SELECT count(*) FILTER(WHERE expires_at<clock_timestamp()),count(*) FILTER(WHERE sid_hash=decode(repeat('82',32),'hex')) FROM admin_sessions`).Scan(&expired, &live))
+	require.Zero(t, expired)
+	require.Equal(t, 1, live)
+	var state string
+	require.NoError(t, f.pool.QueryRow(t.Context(), `SELECT setup_state FROM xinsight_connector_installations WHERE installation_id=$1`, cp2bInstallationID).Scan(&state))
+	require.Equal(t, "waiting_data", state)
+	currentBody, err := os.ReadFile(body)
+	require.NoError(t, err)
+	require.Equal(t, raw, currentBody)
+	require.NotEqual(t, before, protected(), "legitimate writes resume after admission")
+}
 
 // Build the real supported predecessor, rather than downgrading a current
 // fixture or inserting a fabricated completed setup row.
@@ -161,7 +358,7 @@ func normalSetupOriginalTables(t *testing.T, f normalSetupFixture) map[string]st
 			expr += "-'upstream_release_observation'-'upstream_observation_revision'"
 		}
 		if name == "schema_migrations" {
-			where = " WHERE version<>'" + schemaauthority.UpstreamReleaseObservationHead + "'"
+			where = " WHERE version NOT IN ('" + schemaauthority.UpstreamReleaseObservationHead + "','" + schemaauthority.UpstreamObservationRestoreHead + "')"
 		}
 		var raw string
 		require.NoError(t, f.pool.QueryRow(t.Context(), `SELECT COALESCE(jsonb_agg(`+expr+` ORDER BY (`+expr+`)::text),'[]')::text FROM `+pgx.Identifier{name}.Sanitize()+` t`+where).Scan(&raw))
@@ -183,7 +380,7 @@ func TestXInsightNormalSetupPairedReconciliationPreservesM127AndM128RowsIntegrat
 		require.Equal(t, revision, currentRevision, "a semantic no-op must not issue a row UPDATE")
 	}
 	require.Equal(t, before, normalSetupOriginalTables(t, f))
-	require.NoError(t, migrate.RunExisting(t.Context(), f.pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunExistingThrough(t.Context(), f.pool, testutil.MigrationsDir(t), schemaauthority.UpstreamReleaseObservationHead))
 	var head string
 	require.NoError(t, f.pool.QueryRow(t.Context(), `SELECT max(version) FROM schema_migrations`).Scan(&head))
 	require.Equal(t, schemaauthority.UpstreamReleaseObservationHead, head)

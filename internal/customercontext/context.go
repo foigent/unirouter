@@ -105,7 +105,21 @@ func Resolve(ctx context.Context, q customerQueryRower) (Snapshot, error) {
 // workflows may legitimately leave absent. It is safe for stable and canary
 // processes to call concurrently.
 func EnsureBaseline(ctx context.Context, q db.DBQuerier) (Baseline, error) {
+	return ensureBaseline(ctx, q, nil)
+}
+
+// EnsureResolvedBaseline resumes deferred startup for the same customer that
+// passed read-only initialization. It retains the normal principal/row locks
+// and revalidation, rather than silently adopting another customer on release.
+func EnsureResolvedBaseline(ctx context.Context, q db.DBQuerier, expected Snapshot) (Baseline, error) {
+	return ensureBaseline(ctx, q, &expected)
+}
+
+func ensureBaseline(ctx context.Context, q db.DBQuerier, expected *Snapshot) (Baseline, error) {
 	snapshot, err := Resolve(ctx, q)
+	if err == nil && expected != nil && snapshot != *expected {
+		return Baseline{Customer: snapshot}, fmt.Errorf("customer context changed during deferred startup")
+	}
 	if err != nil || !snapshot.Ready() {
 		return Baseline{Customer: snapshot}, err
 	}

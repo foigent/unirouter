@@ -11,6 +11,7 @@ import (
 	"github.com/uniroute/unirouter/internal/modelcapabilitypublication"
 	"github.com/uniroute/unirouter/internal/runtimegeneration"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
+	"github.com/uniroute/unirouter/internal/upstreamrelease"
 )
 
 // Schema and capability state must come from one committed generation. This
@@ -28,6 +29,11 @@ func verifyRuntimeAuthority(ctx context.Context, pool *pgxpool.Pool, artifact []
 	actual, err := readCompatibleRuntimeSchema(ctx, tx, artifact)
 	if err != nil {
 		return nil, err
+	}
+	if actual[len(actual)-1] == schemaauthority.UpstreamObservationRestoreHead {
+		if err := upstreamrelease.CheckNamespace(ctx, tx); err != nil {
+			return nil, err
+		}
 	}
 	if err := modelcapabilitypublication.VerifyRuntimeStaticProjection(ctx, tx, actual); err != nil {
 		return nil, err

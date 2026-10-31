@@ -35,8 +35,8 @@ func TestUpstreamObservationM127MaintenanceAndEmptyDownIntegration(t *testing.T)
 	var exists bool
 	require.NoError(t, pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name='model_deployments' AND column_name='upstream_release_observation')`).Scan(&exists))
 	require.False(t, exists)
-	require.NoError(t, migrate.RunExisting(ctx, pool, dir))
-	require.NoError(t, migrate.RunRuntime(ctx, pool, dir))
+	require.NoError(t, migrate.RunExistingThrough(ctx, pool, dir, schemaauthority.UpstreamReleaseObservationHead))
+	require.Error(t, migrate.RunRuntime(ctx, pool, dir), "current corrected binary cannot run on historical M128")
 	after, err := runtimegeneration.ReadBudgetCoverage(ctx, pool)
 	require.NoError(t, err)
 	require.Equal(t, before, after, "retain original financial coverage proof")
@@ -52,12 +52,13 @@ func TestUpstreamObservationM127MaintenanceAndEmptyDownIntegration(t *testing.T)
 	require.False(t, exists)
 }
 
-func TestUpstreamObservationM128FreshSchemaIntegration(t *testing.T) {
+func TestUpstreamObservationCorrectedFreshSchemaIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := t.Context()
 	var head string
 	require.NoError(t, pool.QueryRow(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&head))
-	require.Equal(t, schemaauthority.UpstreamReleaseObservationHead, head)
+	require.Equal(t, schemaauthority.UpstreamObservationRestoreHead, head)
+	require.NoError(t, upstreamrelease.CheckNamespace(ctx, pool))
 	_, err := runtimegeneration.ReadBudgetCoverage(ctx, pool)
 	require.NoError(t, err)
 	var valid bool
@@ -121,7 +122,7 @@ func seedUpstreamObservationDownFixture(t *testing.T, pool *pgxpool.Pool) (int64
 func TestUpstreamObservationM128DownRetainsDeclarationsAndEvidenceIntegration(t *testing.T) {
 	for _, kind := range []string{"declaration", "retained_probe"} {
 		t.Run(kind, func(t *testing.T) {
-			pool := testutil.SetupMigratedTestDB(t)
+			pool := testutil.SetupMigratedThroughTestDB(t, schemaauthority.UpstreamReleaseObservationHead)
 			ctx := t.Context()
 			deployment, connection, observation := seedUpstreamObservationDownFixture(t, pool)
 			wire, err := json.Marshal(observation)

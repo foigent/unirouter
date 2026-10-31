@@ -7,7 +7,7 @@ import (
 )
 
 func TestFreshExpansionRequiresExactProgressAndSeparateM118M119Verifiers(t *testing.T) {
-	artifact := []string{schemaauthority.LegacyCapabilityHead, schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.XInsightPolicyExpandHead, schemaauthority.XInsightAdoptionExpandHead, schemaauthority.XInsightCredentialExpandHead, schemaauthority.CommercialLicenseRetirementHead}
+	artifact := []string{schemaauthority.LegacyCapabilityHead, schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.XInsightPolicyExpandHead, schemaauthority.XInsightAdoptionExpandHead, schemaauthority.XInsightCredentialExpandHead, schemaauthority.CommercialLicenseRetirementHead, schemaauthority.XInsightCommunicationHead, schemaauthority.UpstreamReleaseObservationHead, schemaauthority.UpstreamObservationRestoreHead}
 	for i := 1; i < len(artifact); i++ {
 		needsVerifier := i >= 5
 		if err := validateFreshExpansion(artifact, artifact[:i], artifact[i], needsVerifier); err != nil {

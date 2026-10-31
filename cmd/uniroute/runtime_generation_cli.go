@@ -15,6 +15,7 @@ import (
 	"github.com/uniroute/unirouter/internal/runtimegeneration"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
 	"github.com/uniroute/unirouter/internal/strictjson"
+	"github.com/uniroute/unirouter/internal/upstreamrelease"
 )
 
 // This CLI is the existing Target operator channel, not an HTTP admin bypass.
@@ -97,8 +98,13 @@ func runRuntimeGenerationCLI(ctx context.Context, args []string, cfg *config.Con
 		}
 	}
 	head := actual[len(actual)-1]
-	if head != schemaauthority.CapabilityExpandHead && head != schemaauthority.StreamCounterExpandHead && head != schemaauthority.SourceFactsExpandHead && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead && head != schemaauthority.ScopedContentExpandHead && head != schemaauthority.XInsightPolicyExpandHead && (head != schemaauthority.XInsightAdoptionExpandHead && head != schemaauthority.XInsightCredentialExpandHead && head != schemaauthority.CommercialLicenseRetirementHead && head != schemaauthority.XInsightCommunicationHead && head != schemaauthority.UpstreamReleaseObservationHead) {
+	if head != schemaauthority.CapabilityExpandHead && head != schemaauthority.StreamCounterExpandHead && head != schemaauthority.SourceFactsExpandHead && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead && head != schemaauthority.ScopedContentExpandHead && head != schemaauthority.XInsightPolicyExpandHead && (head != schemaauthority.XInsightAdoptionExpandHead && head != schemaauthority.XInsightCredentialExpandHead && head != schemaauthority.CommercialLicenseRetirementHead && head != schemaauthority.XInsightCommunicationHead && head != schemaauthority.UpstreamReleaseObservationHead && head != schemaauthority.UpstreamObservationRestoreHead) {
 		return fmt.Errorf("runtime generation owner requires the exact expanded schema")
+	}
+	if head == schemaauthority.UpstreamObservationRestoreHead {
+		if err := upstreamrelease.CheckNamespace(ctx, postgres.Pool); err != nil {
+			return err
+		}
 	}
 	var result any
 	switch args[0] {
@@ -154,13 +160,13 @@ func maintenancePredecessorControlAllowed(artifact, actual []string, environment
 		return false
 	}
 	last, prior := artifact[len(artifact)-1], artifact[len(artifact)-2]
-	if !((last == schemaauthority.CommercialLicenseRetirementHead && prior == schemaauthority.XInsightCredentialExpandHead) || (last == schemaauthority.XInsightCommunicationHead && prior == schemaauthority.CommercialLicenseRetirementHead) || (last == schemaauthority.UpstreamReleaseObservationHead && prior == schemaauthority.XInsightCommunicationHead)) {
+	if !((last == schemaauthority.CommercialLicenseRetirementHead && prior == schemaauthority.XInsightCredentialExpandHead) || (last == schemaauthority.XInsightCommunicationHead && prior == schemaauthority.CommercialLicenseRetirementHead) || (last == schemaauthority.UpstreamReleaseObservationHead && prior == schemaauthority.XInsightCommunicationHead) || (last == schemaauthority.UpstreamObservationRestoreHead && prior == schemaauthority.UpstreamReleaseObservationHead)) {
 		return false
 	}
 	if _, err := schemaauthority.RuntimeLedgers(artifact); err != nil {
 		return false
 	}
-	if !slices.Equal(actual, artifact[:len(artifact)-1]) {
+	if !slices.Equal(actual, artifact[:len(artifact)-1]) && !(last == schemaauthority.UpstreamObservationRestoreHead && len(artifact) >= 3 && artifact[len(artifact)-3] == schemaauthority.XInsightCommunicationHead && slices.Equal(actual, artifact[:len(artifact)-2])) {
 		return false
 	}
 	switch command {

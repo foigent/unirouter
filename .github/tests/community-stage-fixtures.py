@@ -6,13 +6,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-def producer(version="1.15.0", commit="a" * 40):
+def producer(version="1.15.0", commit="a" * 40, *, schema="000128_upstream_release_observation"):
     for node in ast.parse((ROOT / ".github/tests/community-image-candidate.py").read_text()).body:
         if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "FIXED" for target in node.targets):
             legacy = json.loads(ast.literal_eval(node.value.args[0])); break
-    subject = {"repository": "foigent/unirouter", "commit": commit, "tree": "b" * 40, "version": version, "schema": "000128_upstream_release_observation"}
+    subject = {"repository": "foigent/unirouter", "commit": commit, "tree": "b" * 40, "version": version, "schema": schema}
     files = copy.deepcopy(legacy["source_files"])
     files["migrations/000128_upstream_release_observation.up.sql"] = {"bytes": 100, "sha256": "c" * 64}
+    if schema == "000129_upstream_observation_restore_namespace":
+        files["migrations/000129_upstream_observation_restore_namespace.up.sql"] = {"bytes": 100, "sha256": "e" * 64}
     return {"schema_version": "unirouter.community-stage.v1", "stage": "producer", "product": subject, "predecessor": None,
             "inputs": {"source_inventory": {"tracked_files": 3000, "tracked_regular_bytes": 50000000, "files": files},
                        "images": legacy["images"], "notices": {"bytes": 335927, "sha256": "d" * 64,

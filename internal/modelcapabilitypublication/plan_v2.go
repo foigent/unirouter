@@ -136,7 +136,7 @@ func BuildPlanV2(ctx context.Context, tx pgx.Tx, a AuthorityV2, r PlanRequestV2)
 		schemaauthority.ScopedContentExpandHead, schemaauthority.XInsightPolicyExpandHead,
 		schemaauthority.XInsightAdoptionExpandHead, schemaauthority.XInsightCredentialExpandHead,
 		schemaauthority.CommercialLicenseRetirementHead, schemaauthority.XInsightCommunicationHead,
-		schemaauthority.UpstreamReleaseObservationHead:
+		schemaauthority.UpstreamReleaseObservationHead, schemaauthority.UpstreamObservationRestoreHead:
 	default:
 		return p, fmt.Errorf("explicit additive expand must precede capability authoring")
 	}

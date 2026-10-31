@@ -19,8 +19,9 @@ const XInsightCredentialExpandHead = "000125_xinsight_control_credential_lifecyc
 const CommercialLicenseRetirementHead = "000126_commercial_license_retirement"
 const XInsightCommunicationHead = "000127_xinsight_communication_policy"
 const UpstreamReleaseObservationHead = "000128_upstream_release_observation"
-const LatestSupportedMigration = UpstreamReleaseObservationHead
+const UpstreamObservationRestoreHead = "000129_upstream_observation_restore_namespace"
+const LatestSupportedMigration = UpstreamObservationRestoreHead
 
 func SupportedSchemaHeads() []string {
-	return []string{LegacyCapabilityHead, CapabilityExpandHead, StreamCounterExpandHead, SourceFactsExpandHead, ObservationExpandHead, BudgetSnapshotExpandHead, ContentCaptureExpandHead, ContentReclaimExpandHead, PreDispatchExpandHead, ScopedContentExpandHead, XInsightPolicyExpandHead, XInsightAdoptionExpandHead, XInsightCredentialExpandHead, CommercialLicenseRetirementHead, XInsightCommunicationHead, UpstreamReleaseObservationHead}
+	return []string{LegacyCapabilityHead, CapabilityExpandHead, StreamCounterExpandHead, SourceFactsExpandHead, ObservationExpandHead, BudgetSnapshotExpandHead, ContentCaptureExpandHead, ContentReclaimExpandHead, PreDispatchExpandHead, ScopedContentExpandHead, XInsightPolicyExpandHead, XInsightAdoptionExpandHead, XInsightCredentialExpandHead, CommercialLicenseRetirementHead, XInsightCommunicationHead, UpstreamReleaseObservationHead, UpstreamObservationRestoreHead}
 }

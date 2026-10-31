@@ -257,7 +257,7 @@ def asset_url(release, name):
     return "https://github.com/foigent/unirouter/releases/download/" + release["tag"] + "/" + name
 
 
-STAGE_PROGRAM_SHA256 = 'c12627c3c535ddb6884eeeb0e56653863ff98eb839bf1ca78e51f2578ef27260'
+STAGE_PROGRAM_SHA256 = 'b98a96d9ae3cef71f9f5d613378672d2e4fb11fa0fda92fb4861c9c7dcdc30bf'
 
 
 def stage_module():
@@ -314,7 +314,7 @@ def validate_current_fixed(config, stage_record):
         names.append(name)
     require(names==sorted(set(names)) and sum(row['size'] for row in artifacts)<=512*1024*1024, 'Consumer payload closure differs.')
     required={'payload/deploy/install.py','payload/install.json','payload/provenance/build-provenance.json'}
-    if target_schema(config)=='000128_upstream_release_observation':
+    if target_schema(config) in ('000128_upstream_release_observation','000129_upstream_observation_restore_namespace'):
         required.update({'payload/deploy/upgrade.py','payload/deploy/recovery.py','payload/scripts/source-budget-restore-rebase.sql'})
     require(required <= set(names), 'Consumer required installation/upgrade payload is missing.')
     provenance=next((row for row in artifacts if row['path']=='payload/provenance/build-provenance.json'),None)

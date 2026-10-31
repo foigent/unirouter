@@ -23,10 +23,11 @@ M=module('chain_contract','community-stage-record.py')
 P=module('chain_publisher_tests','test-private-image-publisher.py')
 C=module('chain_consumer','community-release-acceptance.py')
 F=module('chain_fixtures','community-stage-fixtures.py')
+B=module('chain_byte_producer','community-byte-candidate.py')
 
 class StageChainTests(unittest.TestCase):
-    def setup_chain(self,path,version='1.15.0',commit='a'*40):
-        world=P.World(path);world.source=F.producer(version,commit)
+    def setup_chain(self,path,version='1.15.0',commit='a'*40, *, schema='000128_upstream_release_observation'):
+        world=P.World(path);world.source=F.producer(version,commit,schema=schema)
         world.tag='source-'+commit+'-run-'+str(world.parent_run)+'-linux-amd64';world.prepare_chain()
         terminal=world.execute();publisher=M.canonical(world.record);result=M.canonical(terminal['stage_result'])
         bindings=M.publication_bindings(publisher,result)
@@ -55,7 +56,8 @@ class StageChainTests(unittest.TestCase):
         inputs={'stage_record_b64':base64.urlsafe_b64encode(body).decode().rstrip('='),'stage_record_sha256':M.sha(body),
             'expected_workflow_commit':'a'*40,'admission_sha256':'d'*64}
         event=path/'consumer-event.json';event.write_bytes(M.canonical({'repository':{'id':M.REPOSITORY_ID,'full_name':M.REPOSITORY},'sender':{'id':M.ACTOR_ID},'inputs':inputs}))
-        return {'GITHUB_REPOSITORY':M.REPOSITORY,'GITHUB_REPOSITORY_ID':str(M.REPOSITORY_ID),
+        return {'GITHUB_ACTIONS':'true','GITHUB_RUN_ID':'67890','RUNNER_TEMP':str(path),'GITHUB_WORKSPACE':str(ROOT),
+            'GITHUB_REPOSITORY':M.REPOSITORY,'GITHUB_REPOSITORY_ID':str(M.REPOSITORY_ID),
             'GITHUB_REF':'refs/heads/main','GITHUB_EVENT_NAME':'workflow_dispatch','GITHUB_SHA':'a'*40,
             'GITHUB_WORKFLOW_SHA':'a'*40,'GITHUB_RUN_ATTEMPT':'1','GITHUB_ACTOR_ID':str(M.ACTOR_ID),
             'GITHUB_WORKFLOW_REF':M.REPOSITORY+'/.github/workflows/'+M.WORKFLOWS[stage]+'@refs/heads/main',
@@ -64,9 +66,14 @@ class StageChainTests(unittest.TestCase):
             'EXPECTED_WORKFLOW_COMMIT':inputs['expected_workflow_commit'],'ADMISSION_SHA256':inputs['admission_sha256']}
 
     def test_two_versions_connect_actual_publisher_and_current_consumer_owners(self):
-        for version,commit in (('1.15.0','a'*40),('1.15.1','b'*40)):
-            with self.subTest(version=version),tempfile.TemporaryDirectory() as tmp:
-                world,publisher,result,bindings,provenance,record=self.setup_chain(Path(tmp),version,commit)
+        for version,commit,schema in (('1.15.0','a'*40,'000128_upstream_release_observation'),
+                ('1.15.1','b'*40,'000128_upstream_release_observation'),
+                ('1.15.3','e'*40,'000129_upstream_observation_restore_namespace')):
+            with self.subTest(version=version,schema=schema),tempfile.TemporaryDirectory() as tmp:
+                world,publisher,result,bindings,provenance,record=self.setup_chain(Path(tmp),version,commit,schema=schema)
+                actual_producer_stage=B.module('current_producer_stage',HERE/'community-stage-record.py')
+                actual_producer_stage.validate_record(world.source,'producer')
+                self.assertEqual(schema,json.loads(result)['product']['schema'])
                 config=record['inputs']['config'];self.assertEqual([],C.validate(config,ready=True,stage_record=record))
                 C.reference_sources(ROOT,config)
                 M.verify_publication_bindings(bindings,config,record)
@@ -88,6 +95,82 @@ class StageChainTests(unittest.TestCase):
                 self.assertEqual(world.parent_run,config['immutable']['accepted_assembly_run'])
                 self.assertEqual(67890,config['immutable']['actual_private_publisher_run'])
                 self.assertLessEqual(len(M.canonical(record)),M.MAX_RAW)
+
+    def test_m129_signed_handoff_rejects_internally_consistent_m128_consumer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _,_,_,bindings,_,record=self.setup_chain(Path(tmp),'1.15.3','e'*40,
+                schema='000129_upstream_observation_restore_namespace')
+            changed=copy.deepcopy(record)
+            changed['product']['schema']='000128_upstream_release_observation'
+            changed['inputs']['config']['immutable']['product']['schema']=changed['product']['schema']
+            M.validate_record(changed,'consumer')
+            with self.assertRaisesRegex(M.Stop,'stage_consumer_full_predecessor'):
+                M.verify_publication_bindings(bindings,changed['inputs']['config'],changed)
+
+    def test_three_actual_loaders_reject_changed_stage_bytes_before_import(self):
+        raw=(HERE/'community-stage-record.py').read_bytes()
+        for stage,owner in (('producer',B),('publisher',P.H),('consumer',C)):
+            with self.subTest(stage=stage),tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp);path=root/'community-stage-record.py';path.write_bytes(raw)
+                loader=(lambda:B.module('exact_stage_loader',path)) if stage=='producer' else owner.stage_module
+                with patch.object(owner,'__file__',str(root/Path(owner.__file__).name)):
+                    loaded=loader()
+                    loaded.validate_record(F.producer('1.15.3','e'*40,
+                        schema='000129_upstream_observation_restore_namespace'),'producer')
+                    path.write_bytes(raw+b'\nraise AssertionError("tampered program must never import")\n')
+                    with self.assertRaisesRegex(Exception,'observer_identity|Stage program identity changed'):
+                        loader()
+
+    def test_stage_hash_and_schema_refusals_precede_effects_at_all_three_actual_entries(self):
+        class PublicEnvironment(dict):
+            def get(self,key,*default):
+                if key in ('GH_TOKEN','GITHUB_TOKEN'):raise AssertionError('credential read before stage validation')
+                return super().get(key,*default)
+            def __getitem__(self,key):
+                if key in ('GH_TOKEN','GITHUB_TOKEN'):raise AssertionError('credential copied before stage validation')
+                return super().__getitem__(key)
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            world,publisher,_,_,_,consumer=self.setup_chain(root,'1.15.3','e'*40,
+                schema='000129_upstream_observation_restore_namespace')
+            original_stage=(HERE/'community-stage-record.py').read_bytes()
+            entries=(('producer',B,world.source),('publisher',P.H,json.loads(publisher)),('consumer',C,consumer))
+            cases=[(kind,*entry) for kind in ('hash','unknown-schema') for entry in entries]
+            cases.append(('missing-m129','producer',B,world.source))
+            for index,(kind,stage,owner,original_record) in enumerate(cases):
+                with self.subTest(stage=stage,kind=kind):
+                    record=copy.deepcopy(original_record)
+                    if kind=='unknown-schema':record['product']['schema']='000130_unknown'
+                    elif kind=='missing-m129':del record['inputs']['source_inventory']['files']['migrations/000129_upstream_observation_restore_namespace.up.sql']
+                    (root/'community-stage-record.py').write_bytes(original_stage+
+                        (b'\nraise AssertionError("tampered program must never import")\n' if kind=='hash' else b''))
+                    env=PublicEnvironment(self.native_env(root,record,stage))
+                    env['GITHUB_RUN_ID']=str(67890+index)
+                    loader='module' if stage=='producer' else 'stage_module'
+                    with patch.object(owner,'__file__',str(root/Path(owner.__file__).name)), \
+                         patch.object(owner,loader,wraps=getattr(owner,loader)) as actual_loader, \
+                         patch.object(os,'environ',env),patch.object(B.sys,'argv',[B.__file__]), \
+                         patch.object(subprocess,'run',side_effect=AssertionError('external process before validation')) as process, \
+                         patch.object(tempfile,'mkdtemp',side_effect=AssertionError('destination before validation')) as destination, \
+                         patch.object(B,'GitHub',side_effect=AssertionError('external client before validation')) as client, \
+                         patch.object(B,'bound_inputs',side_effect=AssertionError('fixed inputs before stage validation')) as inputs, \
+                         patch.object(B,'initialize_guard',side_effect=AssertionError('tool owner before validation')) as tools, \
+                         patch.object(P.H,'gh',side_effect=AssertionError('external API before validation')) as api, \
+                         patch.object(P.H,'command',side_effect=AssertionError('Docker before validation')) as docker, \
+                         patch.object(C,'native_guard',side_effect=AssertionError('native destination before validation')) as native, \
+                         patch.object(C.urllib.request,'urlopen',side_effect=AssertionError('network before validation')) as network, \
+                         contextlib.redirect_stdout(io.StringIO()),contextlib.redirect_stderr(io.StringIO()) as errors:
+                        if stage=='producer':self.assertEqual(1,B.main())
+                        elif stage=='publisher':
+                            with self.assertRaisesRegex(Exception,'Stage program identity changed' if kind=='hash' else 'stage_product_scope'):P.H.execute()
+                        else:
+                            self.assertEqual(1,C.main(['execute','--stage-dispatch']))
+                            # The consumer redacts a foreign shared-parser
+                            # exception to its class, preserving that boundary.
+                            self.assertEqual('Formal consumer stopped: '+
+                                ('Stage program identity changed.' if kind=='hash' else 'Stop')+'\n',errors.getvalue())
+                        self.assertEqual(1,actual_loader.call_count)
+                        for effect in (process,destination,client,inputs,tools,api,docker,native,network):effect.assert_not_called()
 
     def test_signed_provenance_rejects_cross_source_parent_assets_layers_or_registry(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -154,26 +237,28 @@ class StageChainTests(unittest.TestCase):
                 self.assertEqual(0 if changed else 1,sum(label.startswith('anonymous pull') for label in calls))
 
     def test_invalid_current_inputs_refuse_at_actual_entry_before_effects(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            _,_,_,_,_,original=self.setup_chain(Path(tmp))
-            for kind in ('ring','source','payload_duplicate','schema','parent','app_layer','unknown','sequence','missing_upgrade'):
-                with self.subTest(kind=kind):
-                    record=copy.deepcopy(original);fixed=record['inputs']['config']['immutable']
-                    if kind=='ring':fixed['public_ring']['sha256']='0'*64
-                    elif kind=='source':fixed['product']['commit']='f'*40
-                    elif kind=='payload_duplicate':fixed['artifacts'].append(copy.deepcopy(fixed['artifacts'][0]))
-                    elif kind=='schema':fixed['min_current_schema']='unknown'
-                    elif kind=='parent':record['predecessor']['run_id']+=1
-                    elif kind=='app_layer':fixed['app_image_identities'][0]['diff_ids']=['invalid']
-                    elif kind=='unknown':fixed['approval']=True
-                    elif kind=='missing_upgrade':fixed['artifacts']=[row for row in fixed['artifacts'] if row['path']!='payload/deploy/upgrade.py']
-                    else:fixed['max_current_sequence']=True
-                    env=self.native_env(Path(tmp),record,'consumer')
-                    with patch.dict(os.environ,env,clear=True),patch.object(C.subprocess,'run') as process, \
-                         patch.object(C.tempfile,'mkdtemp') as destination,patch.object(C,'native_guard') as context, \
-                         patch.object(C.urllib.request,'urlopen') as network,contextlib.redirect_stderr(io.StringIO()):
-                        self.assertEqual(1,C.main(['execute','--stage-dispatch']))
-                        process.assert_not_called();destination.assert_not_called();context.assert_not_called();network.assert_not_called()
+        for schema in ('000128_upstream_release_observation','000129_upstream_observation_restore_namespace'):
+            with self.subTest(schema=schema),tempfile.TemporaryDirectory() as tmp:
+                _,_,_,_,_,original=self.setup_chain(Path(tmp),schema=schema)
+                for kind in ('ring','source','payload_duplicate','schema','schema_binding','parent','app_layer','unknown','sequence','missing_upgrade'):
+                    with self.subTest(kind=kind):
+                        record=copy.deepcopy(original);fixed=record['inputs']['config']['immutable']
+                        if kind=='ring':fixed['public_ring']['sha256']='0'*64
+                        elif kind=='source':fixed['product']['commit']='f'*40
+                        elif kind=='payload_duplicate':fixed['artifacts'].append(copy.deepcopy(fixed['artifacts'][0]))
+                        elif kind=='schema':fixed['min_current_schema']='unknown'
+                        elif kind=='schema_binding':record['product']['schema']='000128_upstream_release_observation' if schema.endswith('namespace') else '000129_upstream_observation_restore_namespace'
+                        elif kind=='parent':record['predecessor']['run_id']+=1
+                        elif kind=='app_layer':fixed['app_image_identities'][0]['diff_ids']=['invalid']
+                        elif kind=='unknown':fixed['approval']=True
+                        elif kind=='missing_upgrade':fixed['artifacts']=[row for row in fixed['artifacts'] if row['path']!='payload/deploy/upgrade.py']
+                        else:fixed['max_current_sequence']=True
+                        env=self.native_env(Path(tmp),record,'consumer')
+                        with patch.dict(os.environ,env,clear=True),patch.object(C.subprocess,'run') as process, \
+                             patch.object(C.tempfile,'mkdtemp') as destination,patch.object(C,'native_guard') as context, \
+                             patch.object(C.urllib.request,'urlopen') as network,contextlib.redirect_stderr(io.StringIO()):
+                            self.assertEqual(1,C.main(['execute','--stage-dispatch']))
+                            process.assert_not_called();destination.assert_not_called();context.assert_not_called();network.assert_not_called()
 
     def test_workflow_effect_order_uses_the_shared_validator_and_record_data(self):
         for stage,workflow in M.WORKFLOWS.items():

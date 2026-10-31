@@ -45,3 +45,20 @@ func TestCommunicationMaintenanceCarrierRejectsExpansionAndOtherSchemas(t *testi
 	}
 	require.False(t, maintenancePredecessorControlAllowed(artifact, prior, "test", "prepare", []runtimegeneration.Identity{{Instance: "any"}}))
 }
+
+func TestCorrectedObservationMaintenanceCarrierKeepsFiniteWithdrawalBoundary(t *testing.T) {
+	artifact, err := schemaauthority.ExpectedLedger("../../migrations")
+	require.NoError(t, err)
+	for _, prior := range [][]string{artifact[:len(artifact)-1], artifact[:len(artifact)-2]} {
+		for _, cmd := range []string{"inspect", "read", "stop-check", "stop-apply", "prepare", "complete"} {
+			require.True(t, maintenancePredecessorControlAllowed(artifact, prior, "test", cmd, []runtimegeneration.Identity{}))
+			require.False(t, maintenancePredecessorControlAllowed(artifact, prior, "production", cmd, []runtimegeneration.Identity{}))
+			require.False(t, maintenancePredecessorControlAllowed(artifact, prior[1:], "test", cmd, []runtimegeneration.Identity{}))
+		}
+		require.False(t, maintenancePredecessorControlAllowed(artifact, prior, "test", "prepare", []runtimegeneration.Identity{{Instance: "any"}}))
+		for _, cmd := range []string{"register", "expand", "serve", "unknown"} {
+			require.False(t, maintenancePredecessorControlAllowed(artifact, prior, "test", cmd, nil))
+		}
+	}
+	require.False(t, maintenancePredecessorControlAllowed(artifact, artifact[:len(artifact)-3], "test", "inspect", nil))
+}

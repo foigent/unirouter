@@ -48,6 +48,8 @@ func runUpgradeCLI(ctx context.Context, args []string, cfg *config.Config) error
 		return runInstalledUpgradeVerify(ctx, args[1:], cfg, postgres.Pool)
 	case "record-applied":
 		return runUpgradeRecordApplied(ctx, args[1:], cfg, postgres.Pool)
+	case "restore-compat-check", "restore-compat-apply":
+		return runRestoreCompatibilityCLI(ctx, args[1:], cfg, postgres.Pool, args[0] == "restore-compat-apply")
 	case "maintenance-check", "maintenance-retire":
 		if len(args) != 1 {
 			return fmt.Errorf("community maintenance accepts its bounded input only on stdin")

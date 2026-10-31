@@ -9,9 +9,11 @@ import (
 func TestUpstreamObservationExactMaintenanceBoundary(t *testing.T) {
 	artifact, err := ExpectedLedger("../../migrations")
 	require.NoError(t, err)
-	require.Equal(t, UpstreamReleaseObservationHead, artifact[len(artifact)-1])
+	require.Equal(t, UpstreamObservationRestoreHead, artifact[len(artifact)-1])
+	require.Equal(t, UpstreamReleaseObservationHead, artifact[len(artifact)-2])
 	prior := artifact[:len(artifact)-1]
-	require.Equal(t, XInsightCommunicationHead, prior[len(prior)-1])
+	require.Equal(t, UpstreamReleaseObservationHead, prior[len(prior)-1])
+	require.Equal(t, XInsightCommunicationHead, prior[len(prior)-2])
 	require.NoError(t, VerifyRuntimeLedger(artifact, artifact))
 	require.Error(t, VerifyRuntimeLedger(artifact, prior))
 	require.Error(t, VerifyRuntimeLedger(prior, artifact))

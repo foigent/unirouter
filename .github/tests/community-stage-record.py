@@ -26,7 +26,7 @@ MAX_ENCODED = ((MAX_RAW + 2) // 3) * 4
 MAX_DISPATCH = 65535
 MAX_INPUTS = 25
 WORKFLOWS = {"producer": "community-byte-candidate.yml", "publisher": "publish-accepted-community-images.yml", "consumer": "community-release-acceptance.yml"}
-HEADS = {"000127_xinsight_communication_policy", "000128_upstream_release_observation"}
+HEADS = {"000127_xinsight_communication_policy", "000128_upstream_release_observation", "000129_upstream_observation_restore_namespace"}
 RING = {"key_id": "ur-community-upgrade-20261011-a", "bytes": 83,
         "sha256": "96c91635460ddfb2a14aa1ea97d8445951730e9eb04a33cbdf4320141e61d63d",
         "decoded_key_sha256": "765f38f8a4a4f38bf7e94aa3236c28f74dccac56431ab3a1d035a880f6086116"}
@@ -133,8 +133,10 @@ def producer_inputs(value, subject):
     exact(inventory, ("tracked_files", "tracked_regular_bytes", "files"))
     integer(inventory["tracked_files"], 1, 100000); integer(inventory["tracked_regular_bytes"], 1, 512*1024*1024)
     expected = set(SOURCE_FILES)
-    if subject["schema"] == "000128_upstream_release_observation":
+    if subject["schema"] in ("000128_upstream_release_observation", "000129_upstream_observation_restore_namespace"):
         expected.add("migrations/000128_upstream_release_observation.up.sql")
+    if subject["schema"] == "000129_upstream_observation_restore_namespace":
+        expected.add("migrations/000129_upstream_observation_restore_namespace.up.sql")
     exact(inventory["files"], expected)
     for row in inventory["files"].values(): file_fact(row, 4*1024*1024)
     exact(value["images"], BASE_REPOS)

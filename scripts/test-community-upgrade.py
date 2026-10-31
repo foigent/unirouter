@@ -8,6 +8,7 @@ import json
 import hashlib
 import io
 import re
+import shutil
 from types import SimpleNamespace
 from pathlib import Path
 import tempfile
@@ -157,15 +158,37 @@ class UpgradeBoundaryTests(unittest.TestCase):
     def test_claim_retains_original_bytes_and_revokes_old_package_binding(self):
         installation = M.Installation(self.installer.directory, self.installer.fake.run)
         original = installation.state_raw
-        installation.claim({"package_sha256": self.installer.release.sha}, {"package_sha256": "f" * 64})
+        installation.claim({"package_sha256": self.installer.release.sha}, {"package_sha256": "f" * 64}, {"operation_id":"ucu_"+"a"*32})
         witness = installation.state["upgrade"]
-        self.assertEqual(original, base64.b64decode(witness["source_state_bytes"]))
+        self.assertEqual(original, installation.source_snapshot(witness))
         self.assertEqual("f" * 64, installation.state["package_sha256"])
         self.assertEqual(self.installer.release.sha, M.install.digest(self.installer.directory / "release.tar.gz"))
         with self.assertRaisesRegex(M.install.InstallError, "already owns"):
             installation.claim({}, {"package_sha256": "e" * 64})
         with self.assertRaisesRegex(I.M.InstallError, "upgrade witness"):
             self.installer.installer.load_state()
+
+    def test_identical_image_override_is_confirmed_without_rewriting(self):
+        # Directly cover the permitted owner input where only package metadata
+        # changes. Configuration already equals the requested exact bytes.
+        operation = M.Upgrade.__new__(M.Upgrade)
+        operation.directory = self.installer.directory
+        operation.runtime = operation.directory / "runtime"
+        operation.release = SimpleNamespace(sha="f"*64, images=self.installer.release.images)
+        operation.roles = ("backend",)
+        operation.compose = []
+        operation.state = {"upgrade":{"format":M.SCHEMA,"candidate":{"package_sha256":"f"*64},
+            "candidate_image":{"id":"sha256:"+"a"*64},"done":[],"pending":"configure-images",
+            "receipts":{},"image_override":str(operation.runtime/"upgrade-image.json")}}
+        path = Path(operation.witness["image_override"])
+        raw = M.canonical(operation._image_override())
+        M.install.private_file(path,raw)
+        operation.witness["source_image_override"] = {"bytes":base64.b64encode(raw).decode(),
+            "sha256":hashlib.sha256(raw).hexdigest(),"metadata":M.recovery.filemeta(path)}
+        before = path.read_bytes(), M.recovery.filemeta(path)
+        operation._write_owned = lambda *args: self.fail("unchanged override was rewritten")
+        self.assertEqual({"file":str(path),"sha256":hashlib.sha256(raw).hexdigest()},operation._configure_images())
+        self.assertEqual(before,(path.read_bytes(),M.recovery.filemeta(path)))
 
     def test_single_and_dual_writer_bindings_share_native_input(self):
         for count in (1, 2):
@@ -255,13 +278,13 @@ class UpgradeBoundaryTests(unittest.TestCase):
             with self.assertRaisesRegex(M.install.InstallError, "archive changed"):
                 M.restore_and_verify_paired_files(evidence, transport.run)
 
-    def running_fixture(self, count):
+    def running_fixture(self, count, source_sequence=10):
         fixture = I.InstallerTests(methodName="test_check_is_read_only")
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
         data = fixture.fixture
-        data.manifest.update(version="1.15.0", release_sequence=11, min_current_sequence=0,
-                             max_current_sequence=10, min_current_schema=M.SOURCE_SCHEMA, key_id="fixture-release")
+        data.manifest.update(version="1.15.0", release_sequence=source_sequence+1, min_current_sequence=0,
+                             max_current_sequence=source_sequence, min_current_schema=M.SOURCE_SCHEMA, key_id="fixture-release")
         for name in ("upgrade.py", "recovery.py", "source-budget-restore-rebase.sql"):
             raw = (ROOT / ("scripts" if name.endswith(".sql") else "deploy/customer") / name).read_bytes()
             member = ("payload/scripts/" if name.endswith(".sql") else I.M.PREFIX) + name
@@ -274,6 +297,10 @@ class UpgradeBoundaryTests(unittest.TestCase):
         with tarfile.open(data.package, "w:gz") as archive:
             member = tarfile.TarInfo("manifest.json"); member.size = len(manifest_raw)
             archive.addfile(member, io.BytesIO(manifest_raw))
+            for artifact in data.manifest["artifacts"]:
+                raw = (data.release / artifact["path"]).read_bytes()
+                member = tarfile.TarInfo(artifact["path"]); member.size = len(raw)
+                archive.addfile(member, io.BytesIO(raw))
         data.keys.write_text(json.dumps({"fixture-release": base64.b64encode(b"t" * 32).decode()}))
         fixture.release = data.load()
         fixture.fake = I.DockerFixture(fixture.release, fixture.directory)
@@ -286,7 +313,7 @@ class UpgradeBoundaryTests(unittest.TestCase):
         images = {name: "sha256:" + str(index) * 64 for index, name in enumerate(I.M.SERVICES, 1)}
         image_by_reference = {reference: images[name] for name, reference in old_images.items()}
         descriptor = json.dumps({"schema_version": "unirouter.install.v1", "images": old_images}).encode()
-        source_manifest = {"version": "1.14.2", "commit": "a" * 40, "release_sequence": 10,
+        source_manifest = {"version": "1.14.2", "commit": "a" * 40, "release_sequence": source_sequence,
                            "target_schema": M.SOURCE_SCHEMA, "min_current_sequence": 0, "key_id": "fixture-release",
                            "artifacts": [{"path": I.M.DESCRIPTOR, "size": len(descriptor), "sha256": hashlib.sha256(descriptor).hexdigest()}]}
         source_raw = json.dumps(source_manifest).encode()
@@ -309,7 +336,7 @@ class UpgradeBoundaryTests(unittest.TestCase):
         rendered_env = {"RUNTIME_ENVIRONMENT": "production", "JWT_SECRET": M.environment(env_raw.encode())["JWT_SECRET"],
                         "RUNTIME_IMAGE_DIGEST": images["backend"]}
         metadata, _, _, _ = self.fixture(count)
-        metadata["release"].update(version="1.14.2", commit="a" * 40, package_sha256=old_sha, trusted_key_id="fixture-release")
+        metadata["release"].update(release_sequence=source_sequence, version="1.14.2", commit="a" * 40, package_sha256=old_sha, trusted_key_id="fixture-release")
         metadata["recorded_at"] = "2026-10-25T00:00:00Z"
         metadata["database"] = M.environment(env_raw.encode())["POSTGRES_DB"]
         for row in metadata["generations"]:
@@ -386,7 +413,7 @@ class UpgradeBoundaryTests(unittest.TestCase):
 
     @staticmethod
     def fixture(count):
-        original = {"state": "completed", "plan": {"installation_id": "ufi_" + "a" * 32, "digest": "d" * 64, "target": {"environment": "production"}}}
+        original = {"state": "completed", "plan": {"installation_id": "ufi_" + "a" * 32, "digest": "d" * 64, "target": {"environment": "production"}, "artifact":{"ledger":[M.SOURCE_SCHEMA]}}}
         metadata = {"installation": "unirouter.fresh-install.v1\n" + json.dumps(original), "ledger": [M.SOURCE_SCHEMA],
                     "database": "actual-source-db", "database_oid": 1234, "system_id": "123456789",
                     "release": {"release_sequence": 10, "package_sha256": "a" * 64, "target_schema": M.SOURCE_SCHEMA},
@@ -670,8 +697,8 @@ class WholeUpgradeTests(unittest.TestCase):
             return target
         return operation, state, calls, bind_content, objects, token, raw
 
-    def host(self, count):
-        operation, state, calls = self.running_fixture(count)
+    def host(self, count, source_sequence=10):
+        operation, state, calls = self.running_fixture(count, source_sequence)
         base_run = operation.run
         archive = OfflineTar()
         raw_ingress = b"synthetic ingress\n"
@@ -690,12 +717,19 @@ class WholeUpgradeTests(unittest.TestCase):
         state.streams, state.objects = [], []
         state.business = [{"id": 1, "value": "synthetic preserved history"}]
         state.models = [{"id": 1, "name": "synthetic model"}]
-        state.setups = []
-        state.sessions = []
+        state.setups = [{"installation_id": "synthetic-paired-installation", "org_id": 2, "project_id": 2,
+            "setup_state": "waiting_data", "setup_progress": {"paired": True, "grants": 1},
+            "updated_at": "2026-10-01T00:00:00Z"}]
+        state.sessions = [{"id": 1, "user_id": 1, "sid_hash": "synthetic-expired-hash",
+            "expires_at": "2026-10-01T00:00:00Z"}, {"id": 2, "user_id": 1,
+            "sid_hash": "synthetic-live-hash", "expires_at": "2099-01-01T00:00:00Z"}]
         state.clones, state.dumps, state.processes, state.resources = {}, {}, {}, {}
         state.failure = None
         state.native_calls = []
         new_ids = {"backend": "sha256:" + "d" * 64, "frontend": "sha256:" + "e" * 64}
+        state.candidate_ids = new_ids
+        state.hop = 0
+        state.next_identity = 2
         source_calls = list(M.install.SERVICES) + (["backend-canary"] if count == 2 else []) + (["edge"] if count == 2 else [])
         for index, role in enumerate(source_calls, 101):
             name = "uniroute-nginx" if role == "edge" else "fixture-ur-" + role + "-1"
@@ -744,8 +778,9 @@ class WholeUpgradeTests(unittest.TestCase):
                     values = copy.deepcopy(rows)
                     if name == "model_deployments" and "-'upstream_release_observation'" in part:
                         values = [{key: value for key, value in row.items() if key not in ("upstream_release_observation", "upstream_observation_revision")} for row in values]
-                    if name == "schema_migrations" and "WHERE version<>" in part:
-                        values = [row for row in values if row["version"] != M.TARGET_SCHEMA]
+                    if name == "schema_migrations" and "WHERE version NOT IN" in part:
+                        excluded = re.findall("'([^']*)'",part.split("WHERE version NOT IN",1)[1])
+                        values = [row for row in values if row["version"] not in excluded]
                     if name == "xinsight_connector_installations" and "CASE WHEN installation_id=" in part:
                         identity = re.search("CASE WHEN installation_id='([^']+)'", part)[1]
                         values = [{k:v for k,v in row.items() if k != "updated_at" or row["installation_id"] != identity} for row in values]
@@ -773,6 +808,7 @@ class WholeUpgradeTests(unittest.TestCase):
                 return json.dumps({"streams": database(db)["streams"], "coverage": database(db)["coverage"]})
             if "FROM execution_content_objects WHERE state='ready'" in query: return json.dumps(database(db)["objects"])
             if "SELECT count(*) FROM pg_database" in query: return "0"
+            if "SELECT oid FROM pg_database" in query: return "901"
             if query.startswith("CREATE DATABASE "):
                 clone = query.split('"')[1]; state.clones[clone] = None; return ""
             if "restore_rebase" in query and "DO $$" in query:
@@ -787,8 +823,33 @@ class WholeUpgradeTests(unittest.TestCase):
                 M.install.private_file(output_path, b"synthetic native custom dump")
                 state.dumps[str(output_path)] = copy.deepcopy(database(source_db))
             elif "--list" not in args:
-                state.clones[args[-1]] = copy.deepcopy(state.dumps[str(input_path)])
+                if "--section=pre-data" in args: return
+                clone = args[args.index("-d")+1]
+                if "--section=post-data" not in args:
+                    state.clones[clone] = copy.deepcopy(state.dumps[str(input_path)])
         def run(args, *, label, input=None):
+            if label in ("signed release verification", "verify retained source signature"):
+                package = Path(args[args.index("--package") + 1])
+                with tarfile.open(package) as incoming:
+                    raw = incoming.extractfile("manifest.json").read(); manifest = json.loads(raw)
+                return "verified=true\npackage_sha256=" + M.install.digest(package) + "\nmanifest_sha256=" + hashlib.sha256(raw).hexdigest() + "\n" + "\n".join(key + "=" + str(manifest[key]) for key in ("version", "commit", "target_schema", "release_sequence"))
+            if label in ("check retained effective Compose", "check retained signed image bytes"):
+                with tarfile.open(operation.source_package) as incoming:
+                    references = json.load(incoming.extractfile(I.M.DESCRIPTOR))["images"]
+                if label == "check retained signed image bytes":
+                    role = next(role for role, ref in references.items() if ref == args[-1])
+                    return json.dumps([{"Id": state.resources["fixture-ur-"+role+"-1"]["Image"], "Os":"linux", "Architecture":"amd64"}])
+                expected_env = dict(state.running_env)
+                expected_env["JWT_SECRET"] = M.environment((operation.runtime / ".env").read_bytes())["JWT_SECRET"]
+                expected_env["RUNTIME_IMAGE_DIGEST"] = state.resources["fixture-ur-backend-1"]["Image"]
+                return json.dumps({"services":{role:{"image":references["backend" if role in operation.roles else role],
+                    "environment":dict(expected_env) if role in operation.roles else {}} for role in set(I.M.SERVICES)|set(operation.roles)}})
+            if label == "check exact source writer readiness":
+                row = next((row for row in state.resources.values() if row["Id"] == args[args.index("exec")+1]),None)
+                if row is None:raise M.install.InstallError("synthetic source container no longer exists")
+                active = [g for g in state.metadata["generations"] if g["state"] != "stopped" and g["artifact_digest"] == row["Image"]]
+                index = 1 if row["Config"]["Labels"]["com.docker.compose.service"] == "backend-canary" and not state.duplicate_instance else 0
+                return json.dumps({"status":"ok","runtime":{"artifact_digest":row["Image"],"instance":active[index]["instance_id"],"state":"serving"}})
             if label == "read exact installation metadata":
                 calls.append((label, list(args)))
                 return sql(input.decode(), args[-1])
@@ -821,7 +882,7 @@ class WholeUpgradeTests(unittest.TestCase):
                 state.native_calls.append(argv)
                 document = json.loads(input) if input else None
                 if argv == ["runtime-generation", "support"]:
-                    return json.dumps({"schema_heads": [M.SOURCE_SCHEMA, M.TARGET_SCHEMA]}, separators=(",", ":"))
+                    return json.dumps({"schema_heads": [M.SOURCE_SCHEMA, M.OBSERVATION_SCHEMA, M.TARGET_SCHEMA]}, separators=(",", ":"))
                 if argv == ["runtime-generation", "prepare"]:
                     state.metadata["ingress"].append(dict(document, status="pending"))
                     before = {row["instance"] for row in document["membership_before"]}
@@ -845,10 +906,23 @@ class WholeUpgradeTests(unittest.TestCase):
                         self.assertEqual(item["expected_revision"], row["revision"])
                     for row in state.metadata["generations"]: row.update(state="stopped", revision=row["revision"] + 1)
                     return "{}"
-                if argv == ["fresh-install", "check", "--plan", "/upgrade/evidence/source-install-plan.json"]: return "state=completed"
+                if argv[:2] == ["upgrade", "restore-compat-check"] or argv[:2] == ["upgrade", "restore-compat-apply"]:
+                    correction="ALTER FUNCTION public.valid_upstream_release_observation(jsonb) SET search_path TO pg_catalog, public;"
+                    return json.dumps(dict(schema_version=document["schema_version"],status="applied" if argv[1].endswith("apply") else "eligible",
+                        source_package_sha256=operation.witness["source"]["package_sha256"],clone_database=document["clone_database"],
+                        clone_database_oid=document["clone_database_oid"],dump_sha256=document["dump_sha256"],correction_migration=M.TARGET_SCHEMA,
+                        correction_sha256=hashlib.sha256(correction.encode()).hexdigest(),source_definition={"body_sha256":"synthetic","config":None},
+                        restored_definition={"body_sha256":"synthetic","config":["search_path=pg_catalog, public"]}))
+                if argv[:2] == ["fresh-install", "check"]: return "state=completed"
                 if argv == ["migrate", "up"]:
-                    state.metadata["ledger"].append(M.TARGET_SCHEMA)
-                    for row in state.models: row.update(upstream_release_observation=None, upstream_observation_revision=0)
+                    expanding = state.metadata["ledger"][-1] == M.SOURCE_SCHEMA
+                    if expanding:
+                        for row in state.models: row.update(upstream_release_observation=None, upstream_observation_revision=0)
+                    if state.failure == "migrate-after-observation":
+                        state.metadata["ledger"].append(M.OBSERVATION_SCHEMA)
+                        state.failure = None
+                        raise Interrupted("native migration committed M128, M129 not started")
+                    state.metadata["ledger"] = M.transition_ledger(state.metadata["ledger"])
                     return ""
                 if argv == ["runtime-generation", "inspect"]: return "{}"
                 if argv[:2] == ["upgrade", "record-applied"]:
@@ -860,24 +934,32 @@ class WholeUpgradeTests(unittest.TestCase):
                 raise AssertionError("unexpected native finite owner")
             if label == "start exact candidate writers":
                 calls.append((label, list(args)))
+                state.hop += 1
                 for index, role in enumerate(operation.roles):
                     name = "fixture-ur-" + role + "-1"; row = state.resources[name]
-                    row.update(Id="new-" + role, Image=new_ids["backend"])
+                    row.update(Id="new-" + str(state.hop) + "-" + role, Image=new_ids["backend"])
+                    deployed_env = dict(state.running_env, RUNTIME_IMAGE_DIGEST=new_ids["backend"])
+                    row["Config"]["Env"] = [key+"="+value for key,value in deployed_env.items()]
                     row["State"].update(Running=True, Pid=201 + index, StartedAt="2026-10-29T00:00:00.123456789Z")
-                    identity = "uri_" + ("c" if index == 0 else "d") * 32
-                    state.metadata["generations"].append({"instance_id": identity, "artifact_digest": new_ids["backend"], "manifest_digest": operation.witness["candidate_support_sha256"], "schema_head": M.TARGET_SCHEMA, "state": "serving", "ingress_state": "absent", "revision": 1})
+                    identity = "uri_" + format(state.next_identity + index, "x") * 32
+                    state.processes[str(201 + index)] = "new-start-" + str(state.hop)
+                    state.metadata["generations"].append({"instance_id": identity, "artifact_digest": new_ids["backend"], "manifest_digest": operation.witness["candidate_support_sha256"], "schema_head": M.TARGET_SCHEMA, "state": "serving", "ingress_state": "absent", "revision": 1,
+                        "compatibility_epoch":"unirouter.runtime-compatibility.v1", "lease_expires_at":"2000-01-01T00:00:00Z"})
                 state.metadata["manifests"].append({"artifact_digest": new_ids["backend"], "manifest_digest": operation.witness["candidate_support_sha256"]})
                 return ""
             if label == "check candidate writer readiness":
-                role = args[args.index("exec") + 1].removeprefix("new-")
+                row = next(row for row in state.resources.values() if row["Id"] == args[args.index("exec")+1])
+                role = row["Config"]["Labels"]["com.docker.compose.service"]
                 index = operation.roles.index(role)
-                return json.dumps({"status": "ok", "runtime": {"state": "serving", "artifact_digest": new_ids["backend"], "instance": "uri_" + ("c" if index == 0 else "d") * 32,
+                return json.dumps({"status": "ok", "runtime": {"state": "serving", "artifact_digest": new_ids["backend"], "instance": "uri_" + format(state.next_identity + index, "x") * 32,
                     "lease_remaining_seconds": 30, "schema_ledger_digest": operation.witness["receipts"]["migrate"]["ledger_sha256"], "support_manifest_digest": operation.witness["candidate_support_sha256"]}})
             if label in ("start exact candidate frontend", "start retained named edge"):
                 calls.append((label, list(args)))
                 name = "uniroute-nginx" if "edge" in label else "fixture-ur-frontend-1"
-                row = state.resources[name]; row["State"].update(Running=True, Pid=301)
-                if "frontend" in label: row.update(Id="new-frontend", Image=new_ids["frontend"])
+                pid = 302 if "edge" in label else 301
+                row = state.resources[name]; row["State"].update(Running=True, Pid=pid)
+                if "frontend" in label: row.update(Id="new-frontend-"+str(state.hop), Image=new_ids["frontend"])
+                state.processes[str(pid)] = "new-receiver-"+str(state.hop)
                 return ""
             if args and args[0] == "tar": return archive.run(args, label=label, input=input)
             return base_run(args, label=label, input=input)
@@ -1088,6 +1170,245 @@ class WholeUpgradeTests(unittest.TestCase):
         return bind(M.Upgrade(operation.directory, operation.release.directory, operation.verifier, operation.public_keys,
                               operation.source_package, operation.layout, operation.edge_directory, operation.run))
 
+    def next_candidate(self, operation, state, bind, sequence):
+        """Another synthetic package for the same existing host simulator."""
+        directory = operation.directory.parent / ("candidate-" + str(sequence))
+        shutil.copytree(operation.release.directory, directory)
+        manifest = copy.deepcopy(operation.release.manifest)
+        manifest.update(release_sequence=sequence, max_current_sequence=sequence-1,
+                        version="0.0."+str(sequence), commit=hashlib.sha256(str(sequence).encode()).hexdigest()[:40])
+        descriptor = json.loads((directory / I.M.DESCRIPTOR).read_bytes())
+        for role in ("backend", "frontend"):
+            digest = hashlib.sha256((str(sequence)+role).encode()).hexdigest()
+            descriptor["images"][role] = "registry.example.invalid/"+role+"@sha256:"+digest
+            state.candidate_ids[role] = "sha256:"+digest
+        (directory / I.M.DESCRIPTOR).write_bytes(M.canonical(descriptor))
+        with tarfile.open(directory / "release.tar.gz", "w:gz") as archive:
+            for artifact in manifest["artifacts"]:
+                raw = (directory / artifact["path"]).read_bytes()
+                artifact.update(size=len(raw), sha256=hashlib.sha256(raw).hexdigest())
+            wire = M.canonical(manifest)
+            member = tarfile.TarInfo("manifest.json"); member.size = len(wire)
+            archive.addfile(member, io.BytesIO(wire))
+            for artifact in manifest["artifacts"]:
+                raw = (directory / artifact["path"]).read_bytes()
+                member = tarfile.TarInfo(artifact["path"]); member.size = len(raw)
+                archive.addfile(member, io.BytesIO(raw))
+        state.next_identity += len(operation.roles)
+        state.running_env["RUNTIME_IMAGE_DIGEST"] = state.resources["fixture-ur-backend-1"]["Image"]
+        return bind(M.Upgrade(operation.directory, directory, operation.verifier, operation.public_keys,
+                             layout=operation.layout, edge_directory=operation.edge_directory, run=operation.run))
+
+    def completed17(self, count=1):
+        operation, state, calls, bind = self.host(count, source_sequence=16)
+        with patch.object(M.shutil, "disk_usage", return_value=SimpleNamespace(free=32 << 30)):
+            self.assertEqual("completed", operation.execute()["state"])
+        # This current-head synthetic application tests historical witness shape
+        # (embedded source16 and opaque closed tool19), not actual M128 artifact
+        # execution. Real legacy M128 restore is covered by native PG tests.
+        raw = operation.source_snapshot(operation.witness)
+        operation.witness.pop("source_state_path")
+        operation.witness.update(source_state_bytes=base64.b64encode(raw).decode(), source_state=json.loads(raw),
+                                 closed_recovery={"signed_tool_sequence":19,"application_sequence":17,"synthetic":True})
+        M.install.save_state(operation.directory, operation.state)
+        state.models[0].update(upstream_release_observation={"synthetic":"existing declared upstream version"}, upstream_observation_revision=7)
+        return operation, state, calls, bind
+
+    def legacy128_completed17(self, count=1):
+        # Construct an explicit historical simulator input, not a claim that
+        # today's M129 owner created a historical M128 application artifact.
+        old,state,calls,bind=self.completed17(count)
+        manifest=copy.deepcopy(old.release.manifest);manifest["target_schema"]=M.OBSERVATION_SCHEMA
+        package=old.directory/"synthetic-historical-m128-17.tar.gz"
+        with tarfile.open(package,"w:gz") as archive:
+            wire=M.canonical(manifest);entry=tarfile.TarInfo("manifest.json");entry.size=len(wire);archive.addfile(entry,io.BytesIO(wire))
+            for artifact in manifest["artifacts"]:
+                wire=(old.release.directory/artifact["path"]).read_bytes();entry=tarfile.TarInfo(artifact["path"]);entry.size=len(wire);archive.addfile(entry,io.BytesIO(wire))
+        package.chmod(0o600);sha=M.install.digest(package)
+        state.metadata["ledger"].remove(M.TARGET_SCHEMA)
+        state.metadata["release"].update(target_schema=M.OBSERVATION_SCHEMA,package_sha256=sha)
+        for row in state.metadata["history"]:
+            if row["release_sequence"]==17:row.update(target_schema=M.OBSERVATION_SCHEMA,package_sha256=sha)
+        for row in state.metadata["generations"]:
+            if row["schema_head"]==M.TARGET_SCHEMA:row["schema_head"]=M.OBSERVATION_SCHEMA
+        old.state["current_release"].update(package=str(package),package_sha256=sha)
+        old.state["package_sha256"]=sha
+        old.witness["candidate"]["package_sha256"]=sha
+        M.install.save_state(old.directory,old.state)
+        return old,state,calls,bind
+
+    def test_legacy_m128_completed17_closed19_uses_bound_phased_restore_then_migrates_once(self):
+        for count in (1,2):
+            with self.subTest(writers=count):
+                old,state,calls,bind=self.legacy128_completed17(count)
+                observation=copy.deepcopy(state.models);original=(old.directory/"install-state.json").read_bytes()
+                operation=self.next_candidate(old,state,bind,20)
+                before=len(state.native_calls)
+                def interrupt(point):
+                    if point=="effect:cold-pair":raise Interrupted(point)
+                operation.test_checkpoint=interrupt
+                with patch.object(M.shutil,"disk_usage",return_value=SimpleNamespace(free=32<<30)):
+                    with self.assertRaises(Interrupted):operation.execute()
+                    cloned=copy.deepcopy(state.clones)
+                    phase_calls=[(label,args) for label,args in calls if "pg_restore" in args and "--list" not in args]
+                    self.assertEqual(["--section=pre-data","--section=data","--section=post-data"],
+                        [next(arg for arg in args if arg.startswith("--section=")) for _,args in phase_calls[-3:]])
+                    resumed=self.reopen(operation,bind)
+                    self.assertEqual("completed",resumed.execute(resume=True)["state"])
+                self.assertEqual(cloned,state.clones,"completed cold-pair readback does not replay partial restore")
+                self.assertEqual(observation,state.models)
+                self.assertEqual(original,operation.source_snapshot(operation.witness))
+                self.assertEqual([M.SOURCE_SCHEMA,M.OBSERVATION_SCHEMA,M.TARGET_SCHEMA],state.metadata["ledger"])
+                self.assertEqual(1,state.native_calls[before:].count(["migrate","up"]))
+                restore_calls=[argv for argv in state.native_calls[before:] if argv[:1]==["upgrade"] and argv[1].startswith("restore-compat-")]
+                self.assertEqual([["upgrade","restore-compat-check"],["upgrade","restore-compat-apply"]],restore_calls)
+                self.assertIn(["fresh-install","check","--plan","/upgrade/evidence/source-install-plan.json","--completed-source-schema",M.OBSERVATION_SCHEMA],state.native_calls[before:])
+                pair=resumed._pair();self.assertEqual("applied",pair["ddl_compatibility_delta"]["status"])
+                self.assertEqual(M.OBSERVATION_SCHEMA,pair["source_metadata"]["ledger"][-1])
+
+    def test_legacy_m128_partial_cold_pair_is_preserved_and_never_blind_replayed(self):
+        old,state,calls,bind=self.legacy128_completed17()
+        operation=self.next_candidate(old,state,bind,20)
+        original=operation._files
+        def partial(args,label,**kwargs):
+            result=original(args,label,**kwargs)
+            if "--section=pre-data" in args:raise Interrupted("partial pre-data restore")
+            return result
+        operation._files=partial
+        with patch.object(M.shutil,"disk_usage",return_value=SimpleNamespace(free=32<<30)):
+            with self.assertRaises(Interrupted):operation.execute()
+        before=list(calls),list(state.native_calls)
+        with self.assertRaisesRegex(M.install.InstallError,"result is unconfirmed"):
+            self.reopen(operation,bind).execute(resume=True)
+        self.assertEqual(before[1],state.native_calls)
+        self.assertFalse(any("pg_restore" in args for _,args in calls[len(before[0]):]))
+        self.assertEqual("cold-pair",operation.witness["pending"])
+
+    def test_completed17_with_closed19_supports_second_and_repeated_same_schema_upgrade(self):
+        for count in (1, 2):
+            with self.subTest(writers=count):
+                operation, state, calls, bind = self.completed17(count)
+                observation = copy.deepcopy(state.models)
+                for sequence in (20, 21):
+                    original = (operation.directory / "install-state.json").read_bytes()
+                    old_folder = operation.evidence
+                    old_files = {str(p):p.read_bytes() for p in old_folder.rglob("*") if p.is_file()}
+                    operation = self.next_candidate(operation, state, bind, sequence)
+                    before = list(state.native_calls), {str(p):p.read_bytes() for p in operation.directory.rglob("*") if p.is_file()}
+                    with patch.object(M.shutil, "disk_usage", return_value=SimpleNamespace(free=32 << 30)):
+                        checked = operation.check()
+                        self.assertEqual(sequence-1 if sequence==21 else 17, checked["source"]["release_sequence"])
+                        self.assertEqual(before[1], {str(p):p.read_bytes() for p in operation.directory.rglob("*") if p.is_file()})
+                        self.assertEqual("completed", operation.execute()["state"])
+                    self.assertEqual(original, operation.source_snapshot(operation.witness))
+                    self.assertNotIn("source_state_bytes", operation.witness)
+                    self.assertNotIn("source_state", operation.witness)
+                    self.assertLess(len((operation.directory / "install-state.json").read_bytes()), 1 << 20)
+                    self.assertEqual(observation, state.models)
+                    self.assertEqual([M.SOURCE_SCHEMA,M.OBSERVATION_SCHEMA,M.TARGET_SCHEMA], state.metadata["ledger"])
+                    self.assertEqual("same_schema", operation.witness["receipts"]["migrate"]["mode"])
+                    self.assertNotIn(["migrate","up"], state.native_calls[len(before[0]):])
+                    self.assertEqual(old_files, {str(p):p.read_bytes() for p in old_folder.rglob("*") if p.is_file()})
+                    native = list(state.native_calls)
+                    self.assertEqual("completed", self.reopen(operation, bind).execute(resume=True)["state"])
+                    self.assertEqual(native+[["runtime-generation","inspect"]], state.native_calls)
+
+    def test_same_schema_interruptions_and_orphan_preparation_keep_original_bytes(self):
+        for point in ("source-state-retained", "effect:migrate", "done:start-writers", "done:start-receivers"):
+            with self.subTest(checkpoint=point):
+                old, state, _, bind = self.completed17()
+                original = (old.directory / "install-state.json").read_bytes()
+                operation = self.next_candidate(old, state, bind, 20)
+                def interrupt(name):
+                    if name == point: raise Interrupted(point)
+                operation.test_checkpoint = interrupt
+                with patch.object(M.shutil, "disk_usage", return_value=SimpleNamespace(free=32 << 30)):
+                    with self.assertRaises(Interrupted): operation.execute()
+                if point == "source-state-retained":
+                    self.assertEqual(original, (old.directory / "install-state.json").read_bytes())
+                    orphans = {str(p):p.read_bytes() for p in (old.directory/"upgrades").rglob("source-install-state.json")}
+                resumed = self.reopen(operation, bind)
+                with patch.object(M.shutil, "disk_usage", return_value=SimpleNamespace(free=32 << 30)):
+                    self.assertEqual("completed", resumed.execute(resume=point!="source-state-retained")["state"])
+                if point == "source-state-retained":
+                    for name, raw in orphans.items(): self.assertEqual(raw, Path(name).read_bytes())
+                self.assertEqual(1, state.native_calls.count(["migrate","up"]), "only the original M127 expansion migrates")
+
+    def test_known_native_migration_prefix_continues_with_full_cold_proof(self):
+        operation,state,_,bind=self.host(1)
+        state.failure="migrate-after-observation"
+        with patch.object(M.shutil,"disk_usage",return_value=SimpleNamespace(free=32<<30)):
+            with self.assertRaises(Interrupted):operation.execute()
+            self.assertEqual([M.SOURCE_SCHEMA,M.OBSERVATION_SCHEMA],state.metadata["ledger"])
+            self.assertEqual("migrate",operation.witness["pending"])
+            self.assertEqual("completed",self.reopen(operation,bind).execute(resume=True)["state"])
+        self.assertEqual([M.SOURCE_SCHEMA,M.OBSERVATION_SCHEMA,M.TARGET_SCHEMA],state.metadata["ledger"])
+        self.assertEqual(2,state.native_calls.count(["migrate","up"]))
+
+    def test_same_schema_mutation_or_missing_cold_proof_refuses_without_migration(self):
+        for fault in ("observation", "schema_row", "expired_session", "cold_restore"):
+            with self.subTest(fault=fault):
+                old, state, _, bind = self.completed17()
+                operation = self.next_candidate(old, state, bind, 20)
+                def interrupt(point):
+                    if point == "done:cold-pair": raise Interrupted(point)
+                operation.test_checkpoint = interrupt
+                with patch.object(M.shutil, "disk_usage", return_value=SimpleNamespace(free=32 << 30)):
+                    with self.assertRaises(Interrupted): operation.execute()
+                if fault == "observation": state.models[0]["upstream_observation_revision"] += 1
+                elif fault == "schema_row": state.metadata["ledger"].pop()
+                elif fault == "expired_session": state.sessions.pop(0)
+                else: state.clones[operation.witness["verification_database"]]["business"][0]["value"]="unexpected restore mutation"
+                before = list(state.native_calls)
+                with self.assertRaises(M.install.InstallError): self.reopen(operation, bind).execute(resume=True)
+                self.assertNotIn(["migrate","up"], state.native_calls[len(before):])
+
+    def test_second_upgrade_binds_old_override_and_reconciles_atomic_replacement(self):
+        for point in ("claimed","prepared:configure-images","replaced:configure-images","effect:configure-images"):
+            with self.subTest(checkpoint=point):
+                old,state,_,bind=self.completed17()
+                path=old.runtime/"upgrade-image.json"
+                original=path.read_bytes()
+                operation=self.next_candidate(old,state,bind,20)
+                def interrupt(name):
+                    if name==point:raise Interrupted(point)
+                operation.test_checkpoint=interrupt
+                with patch.object(M.shutil,"disk_usage",return_value=SimpleNamespace(free=32<<30)):
+                    with self.assertRaises(Interrupted):operation.execute()
+                self.assertEqual(original,base64.b64decode(operation.witness["source_image_override"]["bytes"]))
+                if point in ("claimed","prepared:configure-images"):self.assertEqual(original,path.read_bytes())
+                else:self.assertEqual(M.canonical(operation._image_override()),path.read_bytes())
+                resumed=self.reopen(operation,bind)
+                with patch.object(M.shutil,"disk_usage",return_value=SimpleNamespace(free=32<<30)):
+                    self.assertEqual("completed",resumed.execute(resume=True)["state"])
+                self.assertNotEqual(original,path.read_bytes())
+                self.assertEqual(1,state.native_calls.count(["migrate","up"]))
+
+    def test_snapshot_binding_and_preparing_override_drift_fail_before_service_effects(self):
+        for fault in ("snapshot_hash","snapshot_mode","snapshot_path","snapshot_symlink","directory_symlink","old_override"):
+            with self.subTest(fault=fault):
+                old,state,_,bind=self.completed17()
+                operation=self.next_candidate(old,state,bind,20)
+                def interrupt(point):
+                    if point=="claimed":raise Interrupted(point)
+                operation.test_checkpoint=interrupt
+                with patch.object(M.shutil,"disk_usage",return_value=SimpleNamespace(free=32<<30)):
+                    with self.assertRaises(Interrupted):operation.execute()
+                path=operation.directory/operation.witness["source_state_path"]
+                if fault=="snapshot_hash":path.write_bytes(b"{}")
+                elif fault=="snapshot_mode":path.chmod(0o644)
+                elif fault=="snapshot_path":
+                    operation.witness["source_state_path"]="../outside-source.json"
+                    M.install.save_state(operation.directory,operation.state)
+                elif fault=="snapshot_symlink":
+                    target=path.with_suffix(".retained");path.rename(target);path.symlink_to(target)
+                elif fault=="directory_symlink":
+                    parent=path.parent;target=parent.with_name(parent.name+"-retained");parent.rename(target);parent.symlink_to(target,target_is_directory=True)
+                else:(operation.runtime/"upgrade-image.json").write_bytes(b"{}")
+                before=list(state.native_calls)
+                with self.assertRaises(M.install.InstallError):self.reopen(operation,bind).execute(resume=True)
+                self.assertEqual(before,state.native_calls)
+
     def test_every_flat_checkpoint_resumes_with_native_readback(self):
         for count in (1, 2):
             baseline, _, _, _ = self.host(count)
@@ -1104,10 +1425,48 @@ class WholeUpgradeTests(unittest.TestCase):
                     with patch.object(M.shutil, "disk_usage", return_value=SimpleNamespace(free=32 << 30)):
                         with self.assertRaises(Interrupted): operation.execute()
                     resumed = self.reopen(operation, bind)
-                    result = resumed.execute(resume=True)
+                    result = resumed.execute(resume=point != "source-state-retained")
                     self.assertEqual("completed", result["state"])
                     self.assertEqual(1, state.native_calls.count(["migrate", "up"]))
                     self.assertEqual(1, sum(argv[:2] == ["upgrade", "record-applied"] for argv in state.native_calls))
+
+    def test_populated_startup_interruptions_preserve_setup_and_sessions_without_exceptions(self):
+        # Owner simulation only: actual Go workers/native PG are tested in Go;
+        # the Linux fixture separately crosses the real cleanup timer.
+        for count in (1, 2):
+            for point in ("effect:start-writers", "done:prepare-admission", "done:start-receivers"):
+                with self.subTest(writers=count, checkpoint=point):
+                    operation, state, _, bind = self.host(count)
+                    original = copy.deepcopy((state.setups, state.sessions))
+                    def interrupt(name):
+                        if name == point: raise Interrupted(point)
+                    operation.test_checkpoint = interrupt
+                    with patch.object(M.shutil, "disk_usage", return_value=SimpleNamespace(free=32 << 30)):
+                        with self.assertRaises(Interrupted): operation.execute()
+                    prefix = copy.deepcopy(operation.witness["receipts"])
+                    resumed = self.reopen(operation, bind)
+                    self.assertEqual("completed", resumed.execute(resume=True)["state"])
+                    self.assertEqual(original, (state.setups, state.sessions))
+                    for step, receipt in prefix.items():
+                        self.assertEqual(receipt, resumed.witness["receipts"][step])
+                    self.assertEqual(1, state.native_calls.count(["migrate", "up"]))
+
+    def test_held_protected_mutations_still_refuse_strict_resume(self):
+        for kind in ("setup_clock", "setup_progress", "expired_session_delete", "unrelated_history"):
+            with self.subTest(mutation=kind):
+                operation, state, _, bind = self.host(1)
+                def interrupt(point):
+                    if point == "done:start-writers": raise Interrupted(point)
+                operation.test_checkpoint = interrupt
+                with patch.object(M.shutil, "disk_usage", return_value=SimpleNamespace(free=32 << 30)):
+                    with self.assertRaises(Interrupted): operation.execute()
+                if kind == "setup_clock": state.setups[0]["updated_at"] = "2026-11-01T00:00:00Z"
+                elif kind == "setup_progress": state.setups[0]["setup_progress"]["unexpected"] = True
+                elif kind == "expired_session_delete": state.sessions.pop(0)
+                else: state.business[0]["value"] = "unrelated mutation while held"
+                before = list(state.native_calls)
+                with self.assertRaises(M.install.InstallError): self.reopen(operation, bind).execute(resume=True)
+                self.assertFalse(any(argv[:2] == ["upgrade", "record-applied"] for argv in state.native_calls[len(before):]))
 
     def test_live_old_lease_waits_without_claiming_retirement_pending(self):
         operation, state, _, bind = self.host(2)

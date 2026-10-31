@@ -9,12 +9,15 @@ import (
 )
 
 func TestUpstreamObservationRequiresExactImplementationAndHead(t *testing.T) {
-	m := CurrentManifest(schemaauthority.SupportedSchemaHeads())
-	require.NoError(t, requireLeaseManifest(m, schemaauthority.UpstreamReleaseObservationHead))
-	absent := m
-	absent.Implementations = slices.DeleteFunc(slices.Clone(m.Implementations), func(r modelprofile.ImplementationReference) bool { return r.ID == UpstreamReleaseObservationContract })
-	require.ErrorIs(t, requireLeaseManifest(absent, schemaauthority.UpstreamReleaseObservationHead), ErrIncompatible)
-	absent = m
-	absent.SchemaHeads = slices.DeleteFunc(slices.Clone(m.SchemaHeads), func(h string) bool { return h == schemaauthority.UpstreamReleaseObservationHead })
-	require.ErrorIs(t, requireLeaseManifest(absent, schemaauthority.UpstreamReleaseObservationHead), ErrIncompatible)
+	for _, head := range []string{schemaauthority.UpstreamReleaseObservationHead, schemaauthority.UpstreamObservationRestoreHead} {
+		m := CurrentManifest(schemaauthority.SupportedSchemaHeads())
+		require.NoError(t, requireLeaseManifest(m, head))
+		absent := m
+		absent.Implementations = slices.DeleteFunc(slices.Clone(m.Implementations), func(r modelprofile.ImplementationReference) bool { return r.ID == UpstreamReleaseObservationContract })
+		require.ErrorIs(t, requireLeaseManifest(absent, head), ErrIncompatible)
+		absent = m
+		absent.SchemaHeads = slices.DeleteFunc(slices.Clone(m.SchemaHeads), func(h string) bool { return h == head })
+		require.ErrorIs(t, requireLeaseManifest(absent, head), ErrIncompatible)
+
+	}
 }

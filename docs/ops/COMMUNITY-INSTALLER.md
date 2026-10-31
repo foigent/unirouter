@@ -1,10 +1,11 @@
 # Linux community installer candidate
 
-The local 1.15.0 candidate uses M128 for fresh installations and adds a finite
-[M127 → M128 community upgrade](COMMUNITY-UPGRADE.md). The new upgrade entry,
-its recovery module and the existing restore-rebase SQL must be declared in the
-same signed full package. This local candidate does not assert a released
-1.15.0 package, Linux/Docker acceptance or Target deployment.
+The current local correction candidate uses M129 for fresh installations and
+supports [finite retained-source and same-schema upgrades](COMMUNITY-UPGRADE.md).
+The upgrade entry, its recovery module and the existing restore-rebase SQL stay
+in the same signed full package. No new release version or sequence is allocated
+by this local work; Linux/Docker, signed-artifact and Target acceptance remain
+separate from local test results.
 
 Historical delivery: 1.13.0 requires the M127 maintenance/fresh-install contract. See
 [connection communication controls](XINSIGHT-COMMUNICATION.md) for manual defaults, migration and recovery. Earlier M126 candidate notes below remain historical.
@@ -75,7 +76,7 @@ interface declares every input's path, size and SHA-256. Include:
 - `payload/install.json`;
 - `payload/deploy/install.py`, `docker-compose.yml`, `.env.example`,
   `preflight.sh` and every required monitoring file under `config/`;
-- for the M128 upgrade entry, `payload/deploy/upgrade.py` and
+- for the current upgrade entry, `payload/deploy/upgrade.py` and
   `payload/deploy/recovery.py`; reuse the already required
   `payload/scripts/source-budget-restore-rebase.sql` from the existing repository
   restore owner, without a second payload copy;
@@ -110,10 +111,11 @@ temporary Linux native fixture before allocating the next signed identity.
 The fixture uses separate temporary trust and loopback test apps; its result
 does not replace the later real signed-package consumer or Target upgrade.
 
-The current bundle must admit current sequence zero and post-fresh M127, with target
-schema `000127_xinsight_communication_policy`. This is verification for initial
+The current candidate must admit sequence zero for initial registration and
+its explicitly signed upgrade window, with target schema
+`000129_upstream_observation_restore_namespace`. This is verification for initial
 release registration after the formal fresh owner completes, not an assertion
-that the empty database already contains M127. The embedded backend trust
+that the empty database already contains that schema. The embedded backend trust
 root must accept the actual package and its version/commit/platform/schema.
 The independent verifier now returns `manifest_sha256`, computed from the
 exact canonical manifest accepted by the signature verifier. The installer

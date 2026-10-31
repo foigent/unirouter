@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   getOrganizations: vi.fn(),
   getProjects: vi.fn(),
   getModelEndpoints: vi.fn(),
+  getModelCatalog: vi.fn(),
 }));
 
 vi.mock('../../api/client', () => ({ api: mocks }));
@@ -63,6 +64,7 @@ describe('LimitPoliciesPage', () => {
     mocks.getOrganizations.mockResolvedValue({ data: [{ id: 22, name: 'Acme', status: 'active' }], total: 1 });
     mocks.getProjects.mockResolvedValue({ data: [{ id: 9, org_id: 22, name: 'Customer API', status: 'active' }], total: 1 });
     mocks.getModelEndpoints.mockResolvedValue({ models: [{ public_model: 'company-chat' }] });
+    mocks.getModelCatalog.mockResolvedValue({data:[{model_name:'company-chat',request_model:'company-chat'}],total:1});
   });
 
   it('explains quotas, shadow mode, selectors, and bounded failure behavior in plain language', async () => {
@@ -91,6 +93,24 @@ describe('LimitPoliciesPage', () => {
     expect(screen.getByRole('combobox', { name: 'Redis 无法确认额度时' })).toBeTruthy();
     expect(mocks.getOrganizations).not.toHaveBeenCalled();
     expect(mocks.getProjects).toHaveBeenCalledWith(1, 100, { org_id: 22 });
+  });
+
+  it('loads customer selectors for an organization admin without platform endpoint inventory', async () => {
+    const user = userEvent.setup();
+    useAuthStore.setState({ user: { id: 2, username: 'org-admin', role: 'org_admin', org_id: 22, org_name: 'Acme' } });
+    mocks.getModelEndpoints.mockRejectedValue(new Error('Forbidden: platform inventory'));
+    mocks.getModelCatalog.mockResolvedValue({ data: [{ model_name: 'gpt-4o', canonical_model: 'gpt-4o', request_model: 'company-chat' }, { model_name: 'gpt-4o', canonical_model: 'gpt-4o', request_model: 'company-chat-2' }], total: 2 });
+    render(<LimitPoliciesPage />);
+    await screen.findByText('production-chat');
+    await waitFor(() => expect(mocks.getModelCatalog).toHaveBeenCalledWith(1, 100, { org_id: 22 }));
+    expect(mocks.getModelEndpoints).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: /新增策略/ }));
+    await user.click(screen.getByRole('combobox', { name: '项目（可选）' }));
+    expect(await screen.findByText('Customer API')).toBeTruthy();
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('combobox', { name: '模型（可选）' }));
+    expect(await screen.findByText('gpt-4o')).toBeTruthy();
+    expect(screen.queryByText('company-chat-2')).toBeNull();
   });
 
   it('keeps billing administrators read-only', async () => {

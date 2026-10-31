@@ -37,6 +37,7 @@ type httpRuntime struct {
 	leaseRequired        bool
 	leaseUntil           time.Time
 	authorityUnavailable bool
+	background           *runtimegeneration.BackgroundStartup
 }
 
 type httpRuntimeStatus struct {
@@ -110,7 +111,8 @@ func (runtime *httpRuntime) handler(next http.Handler) http.Handler {
 			return
 		}
 		runtime.mu.Lock()
-		if runtime.draining || runtime.authorityUnavailable || (runtime.leaseRequired && !time.Now().Before(runtime.leaseUntil)) {
+		if runtime.draining || runtime.authorityUnavailable || (runtime.leaseRequired && !time.Now().Before(runtime.leaseUntil)) ||
+			(runtime.background != nil && !runtime.background.Ready()) {
 			runtime.mu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Connection", "close")
