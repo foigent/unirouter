@@ -40,7 +40,7 @@ jobs:
       ADMISSION_SHA256: ${{ inputs.admission_sha256 }}
     steps:
       - name: Check out exact reviewed workflow commit
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
