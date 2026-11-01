@@ -6,11 +6,12 @@ Explicitly non-expiring packages use signed `unirouter.upgrade-manifest.v2` with
 
 [简体中文](install-linux.zh-CN.md) · [First model request](getting-started.md)
 
-**Linux amd64 preview: v1.15.3-preview.20, source
-`1a0230b50f799e2f9c64089270d525ec1ac34ca7`, M129, release sequence 20.**
-The actual signature and all 26 payloads have been verified. The signed predecessor sequence range is 0–19, with minimum schema M127; existing M127/M128 instances use the upgrade guide.
-The six release attachments and both UR images are public. [Formal Linux acceptance](https://github.com/foigent/unirouter/actions/runs/41196358700) passed the complete public signed download, six anonymous image pulls, M129 installation, login, first-customer initialization and interruption recovery.
-[Source PR #486](https://github.com/foigent/unirouter/pull/486) separately passed [disposable Linux installation and ordinary-upgrade cases](https://github.com/foigent/unirouter/actions/runs/41166284675), covering M127/M128→M129 and later M129→M129 with synthetic data and temporary trust.
+**Linux amd64 preview: v1.15.4-preview.21, source
+`d71a9d14affc6b12a08fa2ee5aa501400120fc86`, M129, release sequence 21.**
+The actual signature and all 26 payloads have been verified. The signed predecessor sequence range is 0–20, with minimum schema M127; existing M127/M128 instances use the upgrade guide.
+The six release attachments and both UR images are public. [Formal Linux acceptance](https://github.com/foigent/unirouter/actions/runs/41303722595) passed the complete public signed download, six anonymous image pulls, M129 installation, login, first-customer initialization and interruption recovery.
+[Source PR #488](https://github.com/foigent/unirouter/pull/488) separately passed [disposable Linux installation and ordinary-upgrade cases](https://github.com/foigent/unirouter/actions/runs/41278582188), covering M127/M128→M129 and later M129→M129 with synthetic data and temporary trust.
+This version also fixes recognition of retained initial-bootstrap inventories during later upgrades and resumes interrupted downloads of the same pinned full package. The source Linux cases cover retained sequence 13 snapshots, later 16/17 identities and ordinary upgrades.
 These results do not claim an upgrade of your existing server or real Provider/UR→XI acceptance. Run the original-host checks before maintenance. See [release status](release-readiness.md).
 This entry installs a new instance. Retain prior attempts and use unused paths and a new project; resume cannot switch package hashes. Historical versions and failed candidates remain preserved; sequence 14 is not installable or reused. Cloning the repository does not supply signed release assets.
 
@@ -45,7 +46,7 @@ PostgreSQL and Redis have no published host ports.
 ## Download and install this preview
 
 Obtain this guide through the authenticated official repository and review the
-[preview release](https://github.com/foigent/unirouter/releases/tag/v1.15.3-preview.20)
+[preview release](https://github.com/foigent/unirouter/releases/tag/v1.15.4-preview.21)
 before executing downloaded code. The script is pinned to the product source;
 the JSON pins the verifier, public ring and signed package. A checksum beside
 an untrusted download does not independently establish trust. This entry does
@@ -53,11 +54,11 @@ not replace an existing public ring or require a private signing key.
 
 | Download | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `bootstrap.py` at source 1a0230b5 | 25,086 | `499e6e018c13709eef883e672ff381256cbe5c9f7e7b896a30b64a091e33be05` |
-| `community-bootstrap.json` | 1,130 | `7628632bf1d4039985481ce79bfd1fae2eaefa6144b2f39b343c818816df35d2` |
+| `bootstrap.py` at source d71a9d14 | 30,618 | `ca6788a538fe94c431f3811435f9088e4274f854d5411054abe3b8ec1c4c268c` |
+| `community-bootstrap.json` | 1,130 | `e9797a832abe9141a03a06a20716edf1f5691d82e65aff04409d0cf5da2227bd` |
 | `uniroute-upgrade-linux-amd64` | 4,117,964 | `d767e64f2db31f97c886c53e14fe30b948794933aef28137db982442a2a0b02f` |
 | `public-keys.json` | 83 | `96c91635460ddfb2a14aa1ea97d8445951730e9eb04a33cbdf4320141e61d63d` |
-| `unirouter-1.15.3-linux-amd64.tar.gz` | 130,052,464 | `d3a6b16abd7561a19ca9b7e35c5e8aaa7fa018a2fb1f221c1a0dc30826c8726b` |
+| `unirouter-1.15.4-linux-amd64.tar.gz` | 130,052,374 | `afb997a369aa9da413068e45e022aa4ab9227e123d32f611a8c48c8b15a2fe2b` |
 
 Open a root shell with `sudo -i`, then run
 the block below. It requires unused download, preparation and runtime paths;
@@ -67,21 +68,21 @@ the installer executes.
 ```sh
 set -eu
 umask 077
-mkdir -m 700 /opt/unirouter-downloads-1.15.3
-cd /opt/unirouter-downloads-1.15.3
+mkdir -m 700 /opt/unirouter-downloads-1.15.4
+cd /opt/unirouter-downloads-1.15.4
 curl --fail --location --proto '=https' --proto-redir '=https' \
   --output bootstrap.py \
-  https://raw.githubusercontent.com/foigent/unirouter/1a0230b50f799e2f9c64089270d525ec1ac34ca7/deploy/community/bootstrap.py
+  https://raw.githubusercontent.com/foigent/unirouter/d71a9d14affc6b12a08fa2ee5aa501400120fc86/deploy/community/bootstrap.py
 curl --fail --location --proto '=https' --proto-redir '=https' \
   --output community-bootstrap.json \
-  https://github.com/foigent/unirouter/releases/download/v1.15.3-preview.20/community-bootstrap.json
+  https://github.com/foigent/unirouter/releases/download/v1.15.4-preview.21/community-bootstrap.json
 printf '%s  %s\n' \
-  499e6e018c13709eef883e672ff381256cbe5c9f7e7b896a30b64a091e33be05 bootstrap.py \
-  7628632bf1d4039985481ce79bfd1fae2eaefa6144b2f39b343c818816df35d2 community-bootstrap.json \
+  ca6788a538fe94c431f3811435f9088e4274f854d5411054abe3b8ec1c4c268c bootstrap.py \
+  e9797a832abe9141a03a06a20716edf1f5691d82e65aff04409d0cf5da2227bd community-bootstrap.json \
   | sha256sum --check --status
 python3 -I -B bootstrap.py install \
   --bootstrap community-bootstrap.json \
-  --bootstrap-sha256 7628632bf1d4039985481ce79bfd1fae2eaefa6144b2f39b343c818816df35d2 \
+  --bootstrap-sha256 e9797a832abe9141a03a06a20716edf1f5691d82e65aff04409d0cf5da2227bd \
   --directory /opt/unirouter-release
 ```
 
@@ -92,6 +93,8 @@ the same arguments. Preparation creates no installation secrets or services;
 `check` after preparation makes no changes or downloads. Keep the same root
 identity and root-controlled paths throughout.
 
+If only the release-asset download was interrupted, keep the original JSON, hash and directory. Run the final invocation above with `prepare` in place of `install`, keeping every other argument; after preparation succeeds, run the original `install` invocation. Do not repeat the whole download block. Continuation accepts the same pinned package only, without reusing partial downloads across versions.
+
 If installation is interrupted, do not run the download block again. Keep its
 original JSON/hash, prepared release, database volumes and runtime directory.
 From the same root shell and download directory, replace `install` with `resume`
@@ -100,11 +103,11 @@ uses the original database plan and does not redownload or regenerate secrets.
 See [interrupted installation](#if-installation-stops) below.
 
 The release also includes
-[`unirouter-retained-images-source-notices.tar.gz`](https://github.com/foigent/unirouter/releases/download/v1.15.3-preview.20/unirouter-retained-images-source-notices.tar.gz)
+[`unirouter-retained-images-source-notices.tar.gz`](https://github.com/foigent/unirouter/releases/download/v1.15.4-preview.21/unirouter-retained-images-source-notices.tar.gz)
 and `SHA256SUMS`. The unchanged historical companion retains the 1.12/1.13
 image mappings and shared-material references. Retained 1.14.0 materials remain
 in [Preview 13](https://github.com/foigent/unirouter/releases/tag/v1.14.0-preview.13).
-The current signed package contains 1.15.3 source-disposition, component notices
+The current signed package contains 1.15.4 source-disposition, component notices
 and required source materials. Third-party terms remain applicable.
 
 ## Check, then install a directly prepared package
@@ -194,9 +197,10 @@ any registration write.
 If the administrator-password operation has an uncertain result, resume stops
 for maintainer readback. Repeating that operation would create another audit
 entry and break the existing first-customer requirement. Do not delete audits,
-regenerate secrets or reset the database to get past the error. A failure during
-initial file preparation, before `install-state.json` exists, also needs
-inspection; it is not an automatically resumable database installation.
+regenerate secrets or reset the database to get past the error. A failure after asset downloads, such as interrupted payload extraction before
+`install-state.json` exists, also needs inspection; it is not an automatically
+resumable database installation. For download-only interruptions, use the
+`prepare` continuation described above.
 
 For help, share the product version, stopped step and sanitized installer
 error. Do not upload `.env`, `admin-password`, a database dump or raw child
