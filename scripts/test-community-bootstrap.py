@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
-"""Offline transport/adversarial preparation checks; no server or Docker use."""
+"""Local transport/adversarial checks; ephemeral loopback HTTP only, no Docker."""
 import contextlib
 import copy
 import gzip
 import hashlib
+import http.server
 import importlib.util
 import io
 import json
 import os
 from pathlib import Path
+import random
 import stat
 import subprocess
 import sys
 import tarfile
 import tempfile
+import threading
 import unittest
 from unittest import mock
 import urllib.request
@@ -102,6 +105,243 @@ class BootstrapTests(unittest.TestCase):
     def snapshot(self):
         return {str(p.relative_to(self.root)):(p.lstat().st_mode, p.read_bytes() if p.is_file() and not p.is_symlink() else None)
                 for p in self.root.rglob("*")}
+
+    @contextlib.contextmanager
+    def http_transport(self, mode="normal", interrupt_once=False):
+        """Real HTTP body/headers; only routing and reported HTTPS URL are adapted.
+
+        This tests transfer semantics/bytes without creating TLS credentials.
+        Production HTTPS URL and redirect-policy tests remain independent.
+        """
+        assets, records = self.assets, []
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                name = self.path.lstrip("/")
+                raw, requested = assets[name], self.headers.get("Range")
+                offset = int(requested.removeprefix("bytes=").removesuffix("-")) if requested else 0
+                ranged = requested is not None and mode != "ignored-range"
+                body = raw[offset:] if ranged else raw
+                self.send_response(206 if ranged else 200)
+                length = len(body) + (1 if mode == "wrong-length" else 0)
+                self.send_header("Content-Length", str(length))
+                if mode == "duplicate-length":
+                    self.send_header("Content-Length", str(length))
+                if ranged and mode != "missing-range":
+                    start = offset + (1 if mode == "wrong-start" else 0)
+                    total = len(raw) + (1 if mode == "wrong-total" else 0)
+                    end = len(raw) - (2 if mode == "wrong-end" else 1)
+                    value = f"bytes {start}-{end}/{total}"
+                    self.send_header("Content-Range", value)
+                    if mode == "duplicate-range":
+                        self.send_header("Content-Range", value)
+                if mode == "encoded":
+                    self.send_header("Content-Encoding", "gzip")
+                self.end_headers()
+                if interrupt_once and name == "package" and not any(r["name"] == name for r in records):
+                    body = body[:len(body)//3]
+                record = {"name":name, "range":requested, "body_bytes_written":0}
+                records.append(record)
+                try:
+                    self.wfile.write(body)
+                    self.wfile.flush()
+                    record["body_bytes_written"] = len(body)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                self.close_connection = True
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval":0.01}, daemon=True)
+        real_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        class Adapter:
+            def open(self, request, timeout):
+                local = urllib.request.Request(f"http://127.0.0.1:{server.server_port}" +
+                                               urllib.parse.urlsplit(request.full_url).path,
+                                               headers=dict(request.header_items()))
+                response = real_opener.open(local, timeout=timeout)
+                response.geturl = lambda: request.full_url
+                return response
+        thread.start()
+        try:
+            with mock.patch.object(b.urllib.request, "build_opener", return_value=Adapter()):
+                yield records
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+            self.assertFalse(thread.is_alive())
+
+    def download_stage(self, anchor):
+        self.output.mkdir(mode=0o700)
+        b.write_new(self.output / "bootstrap.json", anchor.raw)
+
+    def test_actual_http_interruption_range_continuation_and_zero_network_completed_reuse(self):
+        # Cross multiple downloader reads; compressed repetition would hide this.
+        self.payload["payload/example.bin"] = random.Random(0).randbytes(3 * 1024 * 1024 + 8192)
+        self.manifest["artifacts"] = [{"path":name, "size":len(data), "sha256":sha(data)}
+                                      for name, data in sorted(self.payload.items())]
+        self.assets["package"] = archive_bytes(self.manifest, self.payload)
+        anchor, verify = self.bootstrap(), mock.Mock(side_effect=self.verify)
+        with self.http_transport(interrupt_once=True) as records:
+            with self.assertRaises(b.BootstrapError):
+                b.prepare(anchor, self.output, b.download, verify)
+            prefix = (self.output / "release.tar.gz").read_bytes()
+            self.assertEqual(prefix, self.assets["package"][:len(prefix)])
+            self.assertGreater(len(prefix), 0)
+            verify.assert_not_called()
+            before = self.snapshot()
+            with self.assertRaises(b.BootstrapError):
+                b.check_prepared(anchor, self.output, verify)
+            self.assertEqual(before, self.snapshot())
+            verify.assert_not_called()
+            b.prepare(anchor, self.output, b.download, verify)
+            self.assertEqual(verify.call_count, 1)
+            self.assertEqual([r["range"] for r in records if r["name"] == "package"],
+                             [None, f"bytes={len(prefix)}-"])
+            self.assertEqual(sum(r["body_bytes_written"] for r in records), sum(map(len, self.assets.values())))
+            before, requests = self.snapshot(), len(records)
+            with mock.patch.object(b, "delegate") as delegate:
+                b.prepare(anchor, self.output, b.download, lambda _:self.verified_fields())
+                delegate.assert_not_called()
+            self.assertEqual(len(records), requests)
+            self.assertEqual(before, self.snapshot())
+            package_requests = [r for r in records if r["name"] == "package"]
+            print(json.dumps({"local_HTTP_transport":"interruption_then_standard_Range",
+                              "initial_package_body_bytes":package_requests[0]["body_bytes_written"],
+                              "continued_package_body_bytes":package_requests[1]["body_bytes_written"],
+                              "complete_package_bytes":len(self.assets["package"]),
+                              "all_asset_body_bytes_written":sum(r["body_bytes_written"] for r in records),
+                              "completed_prepare_reuse_new_requests":len(records)-requests}), flush=True)
+
+    def test_actual_http_bad_range_headers_never_append(self):
+        asset = self.bootstrap().assets["package"]
+        prefix = self.assets["package"][:37]
+        for mode in ("ignored-range", "missing-range", "wrong-start", "wrong-end", "wrong-total", "duplicate-range", "wrong-length",
+                     "duplicate-length", "encoded"):
+            with self.subTest(mode=mode):
+                target = self.root / mode
+                b.write_new(target, prefix)
+                with self.http_transport(mode=mode), self.assertRaises(b.BootstrapError):
+                    b.download(asset, target)
+                self.assertEqual(target.read_bytes(), prefix)
+
+    def test_bad_prefix_is_retained_and_never_verified_then_refused_without_network(self):
+        anchor, verify = self.bootstrap(), mock.Mock()
+        self.download_stage(anchor)
+        prefix = b"wrong prefix"
+        b.write_new(self.output / "release.tar.gz", prefix)
+        with self.http_transport() as records:
+            with self.assertRaises(b.BootstrapError):
+                b.prepare(anchor, self.output, b.download, verify)
+            verify.assert_not_called()
+            bad = (self.output / "release.tar.gz").read_bytes()
+            self.assertEqual(bad, prefix + self.assets["package"][len(prefix):])
+            before, requests = self.snapshot(), len(records)
+            with self.assertRaises(b.BootstrapError):
+                b.prepare(anchor, self.output, b.download, verify)
+            self.assertEqual(requests, len(records))
+            self.assertEqual(before, self.snapshot())
+            self.assertFalse((self.output / b.INSTALLER).exists())
+            self.assertFalse((self.output / b.RECEIPT).exists())
+
+    def test_all_complete_assets_reuse_without_network_but_reverify_before_receipt(self):
+        anchor = self.bootstrap()
+        self.download_stage(anchor)
+        for name, (filename, _) in b.ASSETS.items():
+            b.write_new(self.output / filename, self.assets[name])
+        verify = mock.Mock(side_effect=self.verify)
+        with self.http_transport() as records:
+            b.prepare(anchor, self.output, b.download, verify)
+            self.assertEqual(records, [])
+        self.assertEqual(verify.call_count, 1)
+        self.assertTrue((self.output / b.RECEIPT).is_file())
+
+    def test_same_length_corrupt_later_asset_refuses_before_any_network(self):
+        anchor, verify = self.bootstrap(), mock.Mock()
+        self.download_stage(anchor)
+        b.write_new(self.output / "release.tar.gz", b"x" * len(self.assets["package"]))
+        before = self.snapshot()
+        with self.http_transport() as records, self.assertRaises(b.BootstrapError):
+            b.prepare(anchor, self.output, b.download, verify)
+        self.assertEqual(records, [])
+        verify.assert_not_called()
+        self.assertEqual(before, self.snapshot())
+
+    def test_partial_assets_reject_links_special_files_permissions_and_oversize(self):
+        anchor = self.bootstrap()
+        source = self.root / "original"
+        b.write_new(source, b"partial")
+        for kind in ("symlink", "hardlink", "fifo", "directory", "writable", "oversized"):
+            with self.subTest(kind=kind):
+                self.output = self.root / kind
+                self.download_stage(anchor)
+                target = self.output / "uniroute-upgrade"
+                if kind == "symlink": target.symlink_to(source)
+                elif kind == "hardlink": os.link(source, target)
+                elif kind == "fifo": os.mkfifo(target, 0o600)
+                elif kind == "directory": target.mkdir(mode=0o700)
+                else:
+                    b.write_new(target, b"partial" if kind == "writable" else b"x"*(len(self.assets["verifier"])+1))
+                    if kind == "writable": target.chmod(0o666)
+                fetch, verify = mock.Mock(), mock.Mock()
+                with self.assertRaises((b.BootstrapError, OSError)):
+                    b.prepare(anchor, self.output, fetch, verify)
+                fetch.assert_not_called()
+                verify.assert_not_called()
+
+    def test_mixed_bootstrap_extraction_remnants_and_concurrent_prepare_do_not_fetch(self):
+        anchor = self.bootstrap()
+        self.download_stage(anchor)
+        fetch, verify = mock.Mock(), mock.Mock()
+        other = self.bootstrap(lambda value:value["release"].update(version="1.11.1"))
+        with self.assertRaises(b.BootstrapError): b.prepare(other, self.output, fetch, verify)
+        with b.preparation_lock(self.output), self.assertRaises(b.BootstrapError):
+            b.prepare(anchor, self.output, fetch, verify)
+        (self.output / "payload").mkdir(mode=0o700)
+        with self.assertRaises(b.BootstrapError): b.prepare(anchor, self.output, fetch, verify)
+        fetch.assert_not_called()
+        verify.assert_not_called()
+
+    def test_foreign_partial_file_owner_is_refused_before_network(self):
+        anchor = self.bootstrap()
+        self.download_stage(anchor)
+        target = self.output / "release.tar.gz"
+        b.write_new(target, self.assets["package"][:37])
+        inode, original_fstat = target.stat().st_ino, os.fstat
+        def foreign(fd):
+            value = original_fstat(fd)
+            if value.st_ino == inode:
+                changed = list(value)
+                changed[4] = os.geteuid() + 12345
+                return os.stat_result(changed)
+            return value
+        fetch, verify = mock.Mock(), mock.Mock()
+        with mock.patch.object(b.os, "fstat", side_effect=foreign), self.assertRaises(b.BootstrapError):
+            b.prepare(anchor, self.output, fetch, verify)
+        fetch.assert_not_called()
+        verify.assert_not_called()
+
+    def test_replaced_partial_descriptor_is_not_appended(self):
+        raw, prefix = self.assets["package"], self.assets["package"][:37]
+        target = self.root / "partial"
+        b.write_new(target, prefix)
+        class Response(io.BytesIO):
+            status = 206
+            headers = {"Content-Length":str(len(raw)-len(prefix)),
+                       "Content-Range":f"bytes {len(prefix)}-{len(raw)-1}/{len(raw)}"}
+            def geturl(self): return "https://example.invalid/package"
+        retained = self.root / "retained"
+        def replace(*args, **kwargs):
+            target.rename(retained)
+            b.write_new(target, b"z" * len(prefix))
+            return Response(raw[len(prefix):])
+        with mock.patch.object(b.urllib.request, "build_opener") as opener:
+            opener.return_value.open.side_effect = replace
+            with self.assertRaises(b.BootstrapError): b.download(self.bootstrap().assets["package"], target)
+        self.assertEqual(retained.read_bytes(), prefix)
+        self.assertEqual(target.read_bytes(), b"z" * len(prefix))
 
     def test_prepare_binds_verifier_before_payload_and_never_runs_installer(self):
         with mock.patch.object(b, "delegate") as delegate:
@@ -279,7 +519,9 @@ class BootstrapTests(unittest.TestCase):
             b.download(asset,self.root/'download')
             self.assertEqual((self.root/'download').read_bytes(),raw)
             opener.return_value.open.return_value = Response(raw)
-            with self.assertRaises(FileExistsError): b.download(asset,self.root/'download')
+            opener.return_value.open.reset_mock()
+            b.download(asset,self.root/'download')
+            opener.return_value.open.assert_not_called()
             for name, body in (('large',raw+b'x'),('short',raw[:-1]),('wrong',b'x'*len(raw))):
                 opener.return_value.open.return_value = Response(body)
                 with self.assertRaises(b.BootstrapError): b.download(asset,self.root/name)

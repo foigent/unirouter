@@ -4,6 +4,18 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.15.4] - 2026-11-01
+
+### Fixed
+
+- Validate a retained fresh-installer snapshot against its own original package when native releases advanced before the first host-owned upgrade. Preserve exact snapshot bytes, installation identity, signed current-source checks and completed-operation bindings for embedded and external snapshots.
+- Resume interrupted downloads of the same pinned complete package through validated HTTP range responses. Reuse complete assets only after checking their identities, keep the private owner and file guards, and retain the original full-package signature and payload checks before execution. Changed bootstrap inputs, corrupt complete assets and incomplete extraction refuse reuse.
+
+### Validation
+
+- Add a clearly declared structural historical-installer input to the existing Linux fixture: preserve the actual native-source package and original snapshot, exercise the frozen native M127-to-M128 owner, and retain all current data, body, configuration, backup/restore and subsequent-upgrade checks. Do not fabricate database release history; compare its actual original count plus one across sparse release sequences.
+- The functional patches have local regression evidence and a separately reviewed unsigned read-only check against the retained host. Native Linux execution of the combined candidate, new signed artifacts, publication and Target upgrade remain pending. Same-package resume and local assembly-material reuse do not implement cross-version reuse of the large source-material download.
+
 ## [1.15.3] - 2026-10-31
 
 ### Fixed
