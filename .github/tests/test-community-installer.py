@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Offline checks of the actual native fixture and shipped bootstrap contract."""
 import ast
+import base64
+import copy
 from contextlib import redirect_stderr
 import hashlib
 import importlib.util
@@ -27,6 +29,108 @@ fixture = load('installer_fixture', ROOT / '.github/tests/community-installer.py
 bootstrap = load('actual_bootstrap', ROOT / 'deploy/community/bootstrap.py')
 
 class InstallerFixtureContract(unittest.TestCase):
+    def test_structural_origin_retains_real_source_and_never_creates_database_history(self):
+        for fault in (None, 'installer', 'current-release', 'native', 'history', 'collision', 'payload', 'authority-drift'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp).resolve();directory=root/'instance';directory.mkdir(mode=0o700)
+                (directory/'evidence').mkdir(mode=0o700)
+                old=object.__new__(fixture.Acceptance)
+                old.schema=fixture.RETAINED_SCHEMA;old.release_sequence=16
+                old.release=root/'native16';(old.release/'payload').mkdir(parents=True)
+                fixture.private_write(old.release/'release.tar.gz',b'synthetic native16 package')
+                fixture.private_write(old.release/'payload/unchanged',b'original payload')
+                old.images={'backend':'synthetic exact original image'}
+                fixture.private_write(directory/'release.tar.gz',(old.release/'release.tar.gz').read_bytes())
+                native_sha=fixture.sha(directory/'release.tar.gz')
+                state={'format':'unirouter.install-state.v1','directory':str(directory),'project':'original',
+                    'installation_id':'synthetic-original','package_sha256':native_sha,'pending':None,'done':['start-console']}
+                if fault=='installer':state['package_sha256']='0'*64
+                if fault=='current-release':state['current_release']={}
+                original=json.dumps(state).encode();fixture.private_write(directory/'install-state.json',original)
+                authority={'release':{'release_sequence':16,'package_sha256':native_sha},
+                    'history':[{'release_sequence':16,'package_sha256':native_sha}]}
+                if fault=='native':authority['release']['package_sha256']='0'*64
+                if fault=='history':authority['history'].append({'release_sequence':13})
+                queries=[]
+                def sql(_directory,_project,query):
+                    queries.append(query);self.assertTrue(query.startswith('SELECT '))
+                    value=copy.deepcopy(authority)
+                    if fault=='authority-drift' and len(queries)>1:value['release']['release_sequence']=18
+                    return json.dumps(value)
+                old.sql=sql
+                work=object.__new__(fixture.Acceptance);work.root=root/'candidate17';work.root.mkdir(mode=0o700)
+                work.schema=fixture.OBSERVATION_SCHEMA;work.release_sequence=17;work.result={}
+                work.release=work.root/'release';work.verifier=root/'verifier';work.ring=root/'ring'
+                work.fixture_private=root/'existing-test-key-not-opened';packs=[]
+                def pack(origin,private):
+                    packs.append((origin.release_sequence,private))
+                    fixture.private_write(origin.release/'release.tar.gz',
+                        b'synthetic native16 package' if fault=='collision' else b'unsigned offline origin13 stand-in')
+                    if fault=='payload':(origin.release/'payload/unchanged').write_bytes(b'changed payload')
+                with patch.object(fixture.Acceptance,'pack_release',pack), \
+                     patch.object(fixture.subprocess,'run',side_effect=AssertionError('offline helper must not execute signing/services')):
+                    if fault:
+                        with self.assertRaises(fixture.Failed):work.structural_installer_origin(old,directory,'original',13)
+                    else:
+                        work.structural_installer_origin(old,directory,'original',13)
+                        changed=json.loads((directory/'install-state.json').read_bytes())
+                        self.assertEqual(changed,dict(state,package_sha256=fixture.sha(directory/'release.tar.gz')))
+                        self.assertNotEqual(changed['package_sha256'],native_sha)
+                        self.assertEqual((directory/'evidence/structural-installer-origin/original-native-install-state.json').read_bytes(),original)
+                        retained=directory/'releases'/(native_sha+'.tar.gz')
+                        self.assertEqual(retained.read_bytes(),b'synthetic native16 package')
+                        self.assertEqual(work.structural_source,(directory,retained))
+                        command=work.upgrade_command('check-upgrade',directory)
+                        self.assertEqual(command[command.index('--source-package')+1],retained)
+                        self.assertNotIn('--source-package',work.upgrade_command('check-upgrade',root/'other'))
+                        self.assertFalse(work.result['structural_origin']['native_origin_to_source_upgrade_claimed'])
+                        self.assertFalse(work.result['structural_origin']['native_history_modified'])
+                        self.assertEqual(work.result['structural_origin']['additional_image_builds'],0)
+                        declaration=json.loads((directory/'evidence/structural-installer-origin/declaration.json').read_bytes())
+                        self.assertEqual(work.result['structural_origin'],dict(declaration,constructed=True))
+                if fault in ('installer','current-release','native','history','collision','payload'):
+                    if fault not in ('collision','payload'):self.assertFalse(packs)
+                    self.assertEqual((directory/'install-state.json').read_bytes(),original)
+                    self.assertEqual(fixture.sha(directory/'release.tar.gz'),native_sha)
+                if fault not in ('installer','current-release','native','history'):
+                    self.assertEqual(packs,[(13,work.fixture_private)])
+                if fault=='authority-drift':
+                    self.assertFalse(work.result['structural_origin']['constructed'])
+                    self.assertTrue((directory/'evidence/structural-installer-origin/declaration.json').is_file())
+                self.assertEqual((old.release/'release.tar.gz').read_bytes(),b'synthetic native16 package')
+
+    def test_structural_origin_legacy_witness_binding_and_native_execution_wiring(self):
+        for fault in (None,'raw','decoded','origin','native','sequence','candidate','external'):
+            with self.subTest(fault=fault):
+                work=object.__new__(fixture.Acceptance)
+                work.result={'structural_origin':{'origin_package_sha256':'a'*64,
+                    'native_source_package_sha256':'b'*64,'actual_native_initial_sequence':16}}
+                snapshot={'package_sha256':'a'*64};raw=json.dumps(snapshot).encode()
+                witness={'source_state_bytes':base64.b64encode(raw).decode(),'source_state':snapshot,
+                    'source_state_sha256':hashlib.sha256(raw).hexdigest(),
+                    'source':{'package_sha256':'b'*64,'release_sequence':16},'candidate':{'release_sequence':17}}
+                if fault=='raw':witness['source_state_sha256']='0'*64
+                elif fault=='decoded':witness['source_state']={}
+                elif fault=='origin':work.result['structural_origin']['origin_package_sha256']='0'*64
+                elif fault=='native':witness['source']['package_sha256']='0'*64
+                elif fault=='sequence':witness['source']['release_sequence']=15
+                elif fault=='candidate':witness['candidate']['release_sequence']=18
+                elif fault=='external':witness['source_state_path']='not-a-legacy-embedded-snapshot'
+                value=json.dumps({'upgrade':witness}).encode()
+                if fault:
+                    with self.assertRaises(fixture.Failed):work.verify_structural_origin_witness(value,17)
+                    self.assertNotIn('actual_completed_legacy_witness_observed',work.result['structural_origin'])
+                else:
+                    work.verify_structural_origin_witness(value,17)
+                    self.assertTrue(work.result['structural_origin']['actual_completed_legacy_witness_observed'])
+        tree=ast.parse((ROOT/'.github/tests/community-installer.py').read_text())
+        execute=next(n for cls in tree.body if isinstance(cls,ast.ClassDef) and cls.name=='Acceptance'
+            for n in cls.body if isinstance(n,ast.FunctionDef) and n.name=='execute')
+        calls=[n for n in ast.walk(execute) if isinstance(n,ast.Call) and isinstance(n.func,ast.Attribute)
+            and n.func.attr=='qualify_upgrade' and isinstance(n.func.value,ast.Name) and n.func.value.id=='m128']
+        self.assertEqual(len(calls),1)
+        self.assertTrue(any(k.arg=='origin_sequence' and isinstance(k.value,ast.Constant) and k.value.value==13 for k in calls[0].keywords))
+
     def test_historical_content_uses_native_pairing_producer_and_retains_storage_identity(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);body=root/'historical-body';(body/'objects').mkdir(parents=True)
@@ -136,7 +240,7 @@ class InstallerFixtureContract(unittest.TestCase):
                     self.assertTrue(set(args).isdisjoint({'-v','--volumes','--rmi','--remove-orphans'}))
 
     def test_execute_releases_only_verified_cases_in_fresh_single_edge_order(self):
-        for failure in (None,'fresh','single','m128','same-schema'):
+        for failure in (None,'fresh','single','m127-to-m128','m128','same-schema'):
             with self.subTest(failure=failure):
                 work=object.__new__(fixture.Acceptance);work.docker='/fixture/docker'
                 work.instances=Path('/fixture/instances');work.suffix='synthetic';work.schema=fixture.CURRENT_SCHEMA
@@ -155,9 +259,11 @@ class InstallerFixtureContract(unittest.TestCase):
                     if observation:
                         events.append('prepare:m128')
                         def first(*args,**kwargs):
-                            self.assertTrue(kwargs['retain']);events.append('m127-to-m128')
+                            self.assertTrue(kwargs['retain']);self.assertEqual(kwargs['origin_sequence'],13)
+                            verify('m127-to-m128')
                             return ('retained-m128',)
-                        return SimpleNamespace(qualify_upgrade=first)
+                        return SimpleNamespace(qualify_upgrade=first,phase='frozen m127-to-m128',
+                            result={'structural_origin':{'classification':'STRUCTURAL_HISTORICAL_INSTALLER_IDENTITY'}})
                     events.append('prepare:retained')
                     self.assertEqual(len(downs),1,'fresh network released before retained installation')
                     return SimpleNamespace()
@@ -182,8 +288,11 @@ class InstallerFixtureContract(unittest.TestCase):
                 work.same_schema_release=same_schema
                 if failure:
                     with self.assertRaisesRegex(fixture.Failed,'preserve failed case'):work.execute()
-                    self.assertEqual(len(downs),{'fresh':0,'single':1,'m128':4,'same-schema':4}[failure])
+                    self.assertEqual(len(downs),{'fresh':0,'single':1,'m127-to-m128':4,'m128':4,'same-schema':4}[failure])
                     self.assertNotEqual(work.result.get('status'),'passed')
+                    if failure in ('m127-to-m128','m128','same-schema'):
+                        self.assertEqual(work.result['structural_origin']['classification'],'STRUCTURAL_HISTORICAL_INSTALLER_IDENTITY')
+                    if failure=='m127-to-m128':self.assertEqual(work.phase,'frozen m127-to-m128')
                 else:
                     work.execute()
                     self.assertEqual(events,['fresh','down:ur-native-synthetic','prepare:retained','single','down:ur-single',
@@ -479,9 +588,9 @@ class InstallerFixtureContract(unittest.TestCase):
         # The Linux entry uses these same checks on completed M128 and M129
         # sources. Only native effects are simulated in this offline driver.
         cases=[(fixture.CURRENT_SCHEMA,drift) for drift in
-            (None,'mode','ledger','ledger-row','migration','original-receipt','source-snapshot','resume','read-only','candidate')]
+            (None,'mode','ledger','ledger-row','migration','original-receipt','source-snapshot','resume','read-only','candidate','history-extra','history-missing')]
         cases += [(fixture.OBSERVATION_SCHEMA,drift) for drift in
-            (None,'original-receipt','source-snapshot','resume','read-only','candidate','ddl-compat','observation')]
+            (None,'original-receipt','source-snapshot','resume','read-only','candidate','ddl-compat','observation','history-extra','history-missing')]
         for schema,drift in cases:
             with self.subTest(schema=schema,drift=drift),tempfile.TemporaryDirectory() as tmp:
                 root=Path(tmp).resolve();directory=root/'instance';directory.mkdir()
@@ -520,7 +629,8 @@ class InstallerFixtureContract(unittest.TestCase):
                 work.inventory=lambda:{'unchanged-original-resources':True}
                 def sql(_directory,_project,query,database='uniroute'):
                     if 'FROM schema_migrations' in query:return json.dumps(ledger if native_done else source_ledger)
-                    if 'FROM release_history' in query:return '4'
+                    if 'FROM release_history' in query:
+                        return str(tables['release_history']['count']+1+(1 if drift=='history-extra' else -1 if drift=='history-missing' else 0))
                     if 'FROM model_deployments' in query and drift=='observation':return '0'
                     if 'count(*)' in query:return '1'
                     self.fail('unexpected fixture SQL')

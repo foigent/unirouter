@@ -687,3 +687,20 @@ The installed deliverable remains the same complete signed v2 package. Local
 reuse does not implement differential client downloads or prove a reduction in
 Target transfer size. No new trust root, signing key, resource, package
 visibility, scheduler or long-term ledger is introduced.
+
+
+### Same-package preparation continuation (1.15.4 source candidate)
+
+The shipped bootstrap now allows an explicit repeat of `prepare` with the same
+pinned bootstrap and owner-private asset stage after an interrupted download.
+It validates every complete cached asset, accepts a partial append only through
+an exact HTTP 206 range response, and checks the complete asset size/hash before
+signature verification or payload execution. No automatic retry, global cache,
+owner change, corrupt-complete-file replacement or incomplete-extraction resume
+is introduced. Completed preparation remains read-only on reuse. All original
+signature, trust, expiry, archive, payload and installer checks remain required.
+
+This changes same-package transport recovery. The release still contains its
+complete signed source/notice material set; local material selection during
+assembly does not implement cross-version client-download reuse. Publication and
+native Linux acceptance of this source candidate are separate required steps.

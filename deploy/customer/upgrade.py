@@ -415,9 +415,20 @@ class Installation:
         source = install.strict_json(raw)
         require(hashlib.sha256(raw).hexdigest() == witness["source_state_sha256"]
                 and source.get("installation_id") == self.state["installation_id"]
-                and source.get("directory") == str(self.directory)
-                and source.get("package_sha256") == witness["source"]["package_sha256"],
+                and source.get("directory") == str(self.directory),
                 "Retained original installation state changed")
+        if source.get("package_sha256") != witness["source"]["package_sha256"]:
+            # Native upgrades could precede the host upgrade owner. Their fresh
+            # installer snapshot keeps its original resume package identity.
+            require(source.get("format") == "unirouter.install-state.v1"
+                    and "current_release" not in source and "upgrade" not in source,
+                    "Retained source release identity changed")
+            original = install.regular(self.directory / "release.tar.gz")
+            mode = original.stat()
+            require(mode.st_uid == os.geteuid() and stat.S_IMODE(mode.st_mode) == 0o600,
+                    "Retained original installer package must remain private and operator-owned")
+            require(install.digest(original) == source.get("package_sha256"),
+                    "Retained original installer package changed")
         return raw
 
     def claim(self, source, candidate, details=None):

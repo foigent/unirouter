@@ -135,7 +135,7 @@ class Acceptance:
         require(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", self.version), "invalid version")
         self.source_contract = source_contract(repo)
         self.schema = self.source_contract.schema
-        self.release_sequence = {RETAINED_SCHEMA:1, OBSERVATION_SCHEMA:2, CURRENT_SCHEMA:3}[self.schema]
+        self.release_sequence = {RETAINED_SCHEMA:16, OBSERVATION_SCHEMA:17, CURRENT_SCHEMA:21}[self.schema]
         self.result.update(commit=self.commit, tree=self.tree, version=self.version)
         self.release = root / "release"
         self.release.mkdir(mode=0o700)
@@ -749,10 +749,102 @@ os.kill(parent, signal.SIGKILL)
         require(old.version == ("1.15.0" if observation else "1.14.2") and old.schema == (OBSERVATION_SCHEMA if observation else RETAINED_SCHEMA), "retained source identity changed")
         old.verifier, old.keygen, old.ring, old.other_ring = self.verifier, self.keygen, self.ring, self.other_ring
         require(shutil.disk_usage(root).free >= 8 << 30, "insufficient space before retained fixture builds")
-        old.prepare_release(self.root / "test.private")
+        old.fixture_private = self.root / "test.private"
+        old.prepare_release(old.fixture_private)
         self.result["retained_m128_source" if observation else "retained_source"] = {"commit": old.commit, "tree": old.tree, "version": old.version,
             "schema": old.schema, "package_sha256": old.result["test_package_sha256"]}
         return old
+
+    def structural_installer_origin(self, old, directory, project, sequence):
+        """Construct only the historical host-input shape; never DB history.
+
+        The DB was really installed at16. The frozen16-to17 owner and current
+        owner still perform all native effects; this does not claim13-to16 ran.
+        """
+        self.phase = "prepare declared structural installer origin"
+        require(old.schema == RETAINED_SCHEMA and self.schema == OBSERVATION_SCHEMA
+            and 0 < sequence < old.release_sequence < self.release_sequence,
+            "structural origin needs the exact retained schema transition")
+        state_path = directory / "install-state.json"
+        original = state_path.read_bytes()
+        state = json.loads(original)
+        native_package = directory / "release.tar.gz"
+        native_sha = sha(native_package)
+        require(state.get("format") == "unirouter.install-state.v1"
+            and state.get("directory") == str(directory) and state.get("project") == project
+            and state.get("package_sha256") == native_sha == sha(old.release / "release.tar.gz")
+            and "current_release" not in state and "upgrade" not in state
+            and state.get("pending") is None and state.get("done", [])[-1:] == ["start-console"],
+            "structural origin requires the exact completed fresh installer")
+        query = """SELECT jsonb_build_object(
+ 'release',(SELECT to_jsonb(s) FROM release_state s WHERE singleton=true),
+ 'history',(SELECT jsonb_agg(to_jsonb(h) ORDER BY release_sequence) FROM release_history h),
+ 'ledger',(SELECT jsonb_agg(version ORDER BY version) FROM schema_migrations))::text"""
+        authority = old.sql(directory, project, query)
+        observed = json.loads(authority)
+        require(observed["release"]["release_sequence"] == old.release_sequence
+            and observed["release"]["package_sha256"] == native_sha
+            and len(observed["history"]) == 1
+            and observed["history"][0]["package_sha256"] == native_sha,
+            "structural origin cannot replace native release authority")
+        evidence = directory / "evidence/structural-installer-origin"
+        evidence.mkdir(mode=0o700)
+        private_write(evidence / "original-native-install-state.json", original)
+        retained = directory / "releases" / (native_sha + ".tar.gz")
+        retained.parent.mkdir(mode=0o700, exist_ok=True)
+        def retain(source, destination):
+            with source.open("rb") as incoming, destination.open("xb") as output:
+                os.fchmod(output.fileno(), 0o600)
+                shutil.copyfileobj(incoming, output)
+            require(sha(source) == sha(destination), "structural fixture copy changed")
+        retain(native_package, retained)
+        origin = copy.copy(old)
+        origin.root = self.root / "structural-origin"
+        origin.root.mkdir(mode=0o700)
+        origin.logs = origin.root / "logs"; origin.logs.mkdir(mode=0o700)
+        origin.release = origin.root / "release"; origin.release.mkdir(mode=0o700)
+        origin.result, origin.release_sequence = {"checks": []}, sequence
+        shutil.copytree(old.release / "payload", origin.release / "payload")
+        origin.pack_release(self.fixture_private)
+        origin_sha = sha(origin.release / "release.tar.gz")
+        require(origin_sha != native_sha and files(origin.release / "payload") == files(old.release / "payload")
+            and origin.images == old.images, "structural origin changed payload or runtime images")
+        declaration = {"classification": "STRUCTURAL_HISTORICAL_INSTALLER_IDENTITY",
+            "origin_sequence": sequence, "actual_native_initial_sequence": old.release_sequence,
+            "origin_package_sha256": origin_sha, "native_source_package_sha256": native_sha,
+            "original_native_state_sha256": hashlib.sha256(original).hexdigest(),
+            "native_origin_to_source_upgrade_claimed": False, "native_history_modified": False,
+            "additional_image_builds": 0, "original_snapshot_and_package_retained": True}
+        private_write(evidence / "declaration.json", json.dumps(declaration, sort_keys=True).encode())
+        self.result["structural_origin"] = dict(declaration, constructed=False)
+        replacement = directory / ".structural-origin-package"
+        retain(origin.release / "release.tar.gz", replacement)
+        replacement.replace(native_package)
+        snapshot = dict(state, package_sha256=origin_sha)
+        replacement = directory / ".structural-origin-state"
+        private_write(replacement, json.dumps(snapshot, sort_keys=True, separators=(",", ":")).encode())
+        replacement.replace(state_path)
+        require(json.loads(state_path.read_bytes()) == snapshot
+            and old.sql(directory, project, query) == authority
+            and (evidence / "original-native-install-state.json").read_bytes() == original
+            and sha(retained) == native_sha, "structural origin changed native authority or original inputs")
+        self.structural_source = (directory, retained)
+        self.structural_origin_paths = [evidence, retained, native_package]
+        self.result["structural_origin"]["constructed"] = True
+
+    def verify_structural_origin_witness(self, source_state, release_sequence):
+        """Validate the observed frozen owner's embedded witness without effects."""
+        legacy = json.loads(source_state)["upgrade"]
+        raw = base64.b64decode(legacy["source_state_bytes"], validate=True)
+        origin = self.result["structural_origin"]
+        require("source_state_path" not in legacy and json.loads(raw) == legacy["source_state"]
+            and hashlib.sha256(raw).hexdigest() == legacy["source_state_sha256"]
+            and json.loads(raw)["package_sha256"] == origin["origin_package_sha256"]
+            and legacy["source"]["package_sha256"] == origin["native_source_package_sha256"]
+            and legacy["source"]["release_sequence"] == origin["actual_native_initial_sequence"]
+            and legacy["candidate"]["release_sequence"] == release_sequence,
+            "actual frozen owner did not retain the distinct embedded installer origin")
+        origin["actual_completed_legacy_witness_observed"] = True
 
     def historical_data(self, old, directory, project):
         """Nonempty synthetic money/history and native-bound body, never a model call."""
@@ -968,6 +1060,9 @@ raise SystemExit("expected startup-hold checkpoint was not reached")
         command = [sys.executable, "-I", "-B", self.release / "payload/deploy/upgrade.py", action,
             "--directory", directory, "--release", self.release, "--verifier", self.verifier,
             "--public-keys", self.ring]
+        source = getattr(self, "structural_source", None)
+        if source is not None and source[0] == directory:
+            command += ["--source-package", source[1]]
         if edge:
             command += ["--layout", "ur_edge_pair", "--edge-directory", edge]
         if history:
@@ -1178,7 +1273,7 @@ raise SystemExit("expected cold-pair interruption was not reached")
             compose += ["-f", directory / "runtime/upgrade-image.json"]
         self.run("release exact completed case containers and network", compose + ["down"])
 
-    def qualify_upgrade(self, old, layout, *, retain=False, existing=None, instance_name=None):
+    def qualify_upgrade(self, old, layout, *, retain=False, existing=None, instance_name=None, origin_sequence=None):
         # Independent installations must not share a recently used host port.
         # The original installer's real collision check remains unchanged.
         self.loopback_port = old.loopback_port = FIXTURE_PORTS[layout]
@@ -1202,6 +1297,12 @@ raise SystemExit("expected cold-pair interruption was not reached")
             raise
         if not existing:
             body, name, rendered = self.historical_data(old, directory, project)
+        if origin_sequence is not None:
+            require(not existing, "structural origin must precede the first frozen host claim")
+            self.structural_installer_origin(old, directory, project, origin_sequence)
+        elif existing and hasattr(old, "structural_origin_paths"):
+            self.structural_origin_paths = old.structural_origin_paths
+            self.result["structural_origin"] = dict(old.result["structural_origin"])
         same_schema = old.schema == self.schema
         preserve_previous = existing is not None or same_schema
         if old.schema != CURRENT_SCHEMA and (not retain or existing):
@@ -1222,6 +1323,10 @@ raise SystemExit("expected cold-pair interruption was not reached")
         protected_rows = self.protected_upgrade_rows(directory, project, old.release_sequence,old.schema)
         protected_files = self.protected_upgrade_files(directory, body, edge)
         source_state = (directory / "install-state.json").read_bytes()
+        origin_paths = getattr(self, "structural_origin_paths", None)
+        origin_files = self.recovery_module().private_inventory(origin_paths) if origin_paths else None
+        if existing and old.schema == OBSERVATION_SCHEMA and origin_paths:
+            self.verify_structural_origin_witness(source_state, old.release_sequence)
         source_ledger = tuple(json.loads(self.sql(directory, project,
             "SELECT jsonb_agg(version ORDER BY version) FROM schema_migrations")))
         # Freeze existing operation/release originals independently of the new
@@ -1299,11 +1404,13 @@ raise SystemExit("expected cold-pair interruption was not reached")
         require(login.get("organization_role") == "platform_admin", "retained chosen password does not work after upgrade")
         require(self.sql(directory, project, "SELECT count(*) FROM transactions WHERE request_id='synthetic-linux-history'") == "1"
             and self.sql(directory, project, "SELECT count(*) FROM audit_logs WHERE action='bootstrap.first_customer'") == "1"
-            and self.sql(directory, project, "SELECT count(*) FROM release_history") == str(self.release_sequence
-                if existing else 2), "retained business or release history differs")
+            and self.sql(directory, project, "SELECT count(*) FROM release_history") == str(protected_rows["release_history"]["count"] + 1),
+                "retained business or release history differs")
         require(self.protected_upgrade_rows(directory, project, old.release_sequence,old.schema) == protected_rows and
             self.protected_upgrade_files(directory, body, edge) == protected_files,
             "post-upgrade login changed original protected facts")
+        require(not origin_paths or self.recovery_module().private_inventory(origin_paths) == origin_files,
+            "structural origin package or original native snapshot/package changed during real upgrade")
         if edge:
             self.edge_ready(edge)
         self.result.setdefault("finite_upgrades", []).append({"layout": "ur_edge_pair" if edge else "community_single",
@@ -1364,7 +1471,14 @@ raise SystemExit("expected cold-pair interruption was not reached")
         m128 = self.retained_release(observation=True)
         # This is an actual completed ordinary M127 -> retained M128 upgrade,
         # not a freshly fabricated M128 database or re-execution of rescue19.
-        retained = m128.qualify_upgrade(old,"single",retain=True,instance_name="m128-origin")
+        try:
+            retained = m128.qualify_upgrade(old,"single",retain=True,instance_name="m128-origin",origin_sequence=13)
+        except Failed:
+            self.phase = m128.phase
+            raise
+        finally:
+            if "structural_origin" in m128.result:
+                self.result["structural_origin"] = dict(m128.result["structural_origin"])
         current = self.qualify_upgrade(m128,"single",existing=retained,retain=True)
         following = self.same_schema_release()
         try:

@@ -168,6 +168,69 @@ class UpgradeBoundaryTests(unittest.TestCase):
         with self.assertRaisesRegex(I.M.InstallError, "upgrade witness"):
             self.installer.installer.load_state()
 
+    def origin_snapshot(self, external, changes=None):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        home = Path(temporary.name).resolve()
+        original = home / "release.tar.gz"
+        M.install.private_file(original, b"synthetic original install package" * 65536)
+        snapshot = {"format": "unirouter.install-state.v1", "directory": str(home),
+                    "installation_id": "synthetic-installation", "package_sha256": M.install.digest(original)}
+        snapshot.update(changes or {})
+        raw = M.canonical(snapshot)
+        installation = M.Installation.__new__(M.Installation)
+        installation.directory, installation.state = home, {"installation_id": "synthetic-installation"}
+        witness = {"source": {"package_sha256": "f" * 64}, "source_state_sha256": hashlib.sha256(raw).hexdigest()}
+        if external:
+            operation = "ucu_" + "a" * 32
+            folder = M.operation_evidence(home, operation, create=True)
+            M.install.private_file(folder / "source-install-state.json", raw)
+            witness.update(operation_id=operation, source_state_path=str((folder / "source-install-state.json").relative_to(home)))
+        else:
+            witness.update(source_state_bytes=base64.b64encode(raw).decode(), source_state=copy.deepcopy(snapshot))
+        return installation, witness, original, raw
+
+    def test_distinct_origin_snapshot_streams_large_original_without_writes(self):
+        for external in (False, True):
+            with self.subTest(external=external):
+                installation, witness, original, raw = self.origin_snapshot(external)
+                self.assertGreater(original.stat().st_size, 1 << 20)
+                before = M.recovery.filemeta(original), M.install.digest(original)
+                read_bytes = Path.read_bytes
+                def metadata_only(path):
+                    if path == original: self.fail("large original package loaded as metadata")
+                    return read_bytes(path)
+                with patch.object(Path, "read_bytes", metadata_only):
+                    self.assertEqual(raw, installation.source_snapshot(witness))
+                self.assertEqual(before, (M.recovery.filemeta(original), M.install.digest(original)))
+
+    def test_distinct_origin_snapshot_refuses_identity_or_original_package_changes(self):
+        changes = {"format": {"format": "other"}, "installation": {"installation_id": "other"},
+                   "directory": {"directory": "/other"}, "current_release": {"current_release": {}},
+                   "upgrade": {"upgrade": {}}}
+        for external in (False, True):
+            for fault in (*changes, "raw_digest", "representation", "missing", "changed", "symlink", "directory_file", "mode", "owner"):
+                with self.subTest(external=external, fault=fault):
+                    installation, witness, original, _ = self.origin_snapshot(external, changes.get(fault))
+                    if fault == "raw_digest": witness["source_state_sha256"] = "0" * 64
+                    elif fault == "representation": witness["source_state"] = {}
+                    elif fault == "missing": original.unlink()
+                    elif fault == "changed": original.write_bytes(b"changed original package")
+                    elif fault == "symlink":
+                        retained = original.with_suffix(".retained")
+                        original.rename(retained); original.symlink_to(retained)
+                    elif fault == "directory_file": original.unlink(); original.mkdir(mode=0o700)
+                    elif fault == "mode": original.chmod(0o644)
+                    stat_path = Path.stat
+                    def observed_stat(path, *args, **kwargs):
+                        observed = stat_path(path, *args, **kwargs)
+                        if fault == "owner" and path == original:
+                            fields = list(observed); fields[4] += 1
+                            return M.os.stat_result(fields)
+                        return observed
+                    with patch.object(Path, "stat", observed_stat):
+                        with self.assertRaises(M.install.InstallError): installation.source_snapshot(witness)
+
     def test_identical_image_override_is_confirmed_without_rewriting(self):
         # Directly cover the permitted owner input where only package metadata
         # changes. Configuration already equals the requested exact bytes.
@@ -278,7 +341,7 @@ class UpgradeBoundaryTests(unittest.TestCase):
             with self.assertRaisesRegex(M.install.InstallError, "archive changed"):
                 M.restore_and_verify_paired_files(evidence, transport.run)
 
-    def running_fixture(self, count, source_sequence=10):
+    def running_fixture(self, count, source_sequence=10, origin_sequence=None):
         fixture = I.InstallerTests(methodName="test_check_is_read_only")
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
@@ -323,7 +386,26 @@ class UpgradeBoundaryTests(unittest.TestCase):
                 member = tarfile.TarInfo(name); member.size = len(raw)
                 archive.addfile(member, io.BytesIO(raw))
         old_sha = I.M.digest(source_package)
-        fixture.installer.state["package_sha256"] = old_sha
+        origin_sha = old_sha
+        if origin_sequence is not None:
+            # Actual legacy hosts retained the fresh13 installer while native
+            # releases advanced to16 before the first host-owned upgrade.
+            retained_source = fixture.directory / "releases" / (old_sha + ".tar.gz")
+            retained_source.parent.mkdir(mode=0o700)
+            shutil.copyfile(source_package, retained_source)
+            retained_source.chmod(0o600)
+            origin_manifest = dict(source_manifest, release_sequence=origin_sequence,
+                                   version="1.14.0", commit="c" * 40)
+            with tarfile.open(source_package, "w:gz") as archive:
+                for name, raw in (("manifest.json", M.canonical(origin_manifest)), (I.M.DESCRIPTOR, descriptor)):
+                    member = tarfile.TarInfo(name); member.size = len(raw)
+                    archive.addfile(member, io.BytesIO(raw))
+            source_package.chmod(0o600)
+            origin_sha = I.M.digest(source_package)
+            source_package = retained_source
+            fixture.installer.state["done"] = ["pull-" + name for name in I.M.SERVICES] + [
+                "start-databases", "fresh-plan", "fresh-apply", "record-release", "rotate-administrator", "start-console"]
+        fixture.installer.state["package_sha256"] = origin_sha
         fixture.installer.state["image_ids"] = images
         I.M.private_file(fixture.directory / "runtime/runtime-image.json", M.canonical({"services": {"backend": {"environment": {"RUNTIME_IMAGE_DIGEST": images["backend"]}}}}))
         fixture.installer.state["files"]["runtime/runtime-image.json"] = I.M.digest(fixture.directory / "runtime/runtime-image.json")
@@ -697,8 +779,8 @@ class WholeUpgradeTests(unittest.TestCase):
             return target
         return operation, state, calls, bind_content, objects, token, raw
 
-    def host(self, count, source_sequence=10):
-        operation, state, calls = self.running_fixture(count, source_sequence)
+    def host(self, count, source_sequence=10, origin_sequence=None):
+        operation, state, calls = self.running_fixture(count, source_sequence, origin_sequence)
         base_run = operation.run
         archive = OfflineTar()
         raw_ingress = b"synthetic ingress\n"
@@ -713,6 +795,9 @@ class WholeUpgradeTests(unittest.TestCase):
         old_artifact = state.metadata["generations"][0]["artifact_digest"]
         state.metadata["manifests"] = [{"artifact_digest": old_artifact, "manifest_digest": "f" * 64}]
         state.metadata["history"] = [dict(state.metadata["release"])]
+        if origin_sequence is not None:
+            state.metadata["history"].insert(0, dict(state.metadata["release"], release_sequence=origin_sequence,
+                version="1.14.0", commit="c" * 40, package_sha256=M.install.digest(operation.directory / "release.tar.gz")))
         state.coverage = [{"coverage_epoch": 1, "ended_at": None, "state": "certified", "reason": "initial_certification"}]
         state.streams, state.objects = [], []
         state.business = [{"id": 1, "value": "synthetic preserved history"}]
@@ -1278,8 +1363,8 @@ class WholeUpgradeTests(unittest.TestCase):
                     if pending: self.assertEqual(original, path.read_bytes())
                     self.assertEqual(before, (state.native_calls, state.hop, (state.business, state.models, state.setups, state.sessions)))
 
-    def completed17(self, count=1):
-        operation, state, calls, bind = self.host(count, source_sequence=16)
+    def completed17(self, count=1, origin_sequence=None):
+        operation, state, calls, bind = self.host(count, source_sequence=16, origin_sequence=origin_sequence)
         with patch.object(M.shutil, "disk_usage", return_value=SimpleNamespace(free=32 << 30)):
             self.assertEqual("completed", operation.execute()["state"])
         # This current-head synthetic application tests historical witness shape
@@ -1293,10 +1378,10 @@ class WholeUpgradeTests(unittest.TestCase):
         state.models[0].update(upstream_release_observation={"synthetic":"existing declared upstream version"}, upstream_observation_revision=7)
         return operation, state, calls, bind
 
-    def legacy128_completed17(self, count=1):
+    def legacy128_completed17(self, count=1, origin_sequence=None):
         # Construct an explicit historical simulator input, not a claim that
         # today's M129 owner created a historical M128 application artifact.
-        old,state,calls,bind=self.completed17(count)
+        old,state,calls,bind=self.completed17(count, origin_sequence)
         manifest=copy.deepcopy(old.release.manifest);manifest["target_schema"]=M.OBSERVATION_SCHEMA
         package=old.directory/"synthetic-historical-m128-17.tar.gz"
         with tarfile.open(package,"w:gz") as archive:
@@ -1315,6 +1400,86 @@ class WholeUpgradeTests(unittest.TestCase):
         old.witness["candidate"]["package_sha256"]=sha
         M.install.save_state(old.directory,old.state)
         return old,state,calls,bind
+
+    def test_distinct_origin_first_external_snapshot_resumes_without_rewriting_source(self):
+        for count in (1, 2):
+            with self.subTest(writers=count):
+                operation, state, calls, bind = self.host(count, source_sequence=16, origin_sequence=13)
+                initial = (operation.directory / "install-state.json").read_bytes()
+                snapshot = json.loads(initial)
+                origin = operation.directory / "release.tar.gz"
+                self.assertEqual(M.install.digest(origin), snapshot["package_sha256"])
+                self.assertNotEqual(snapshot["package_sha256"], M.install.digest(operation.source_package))
+                self.assertNotIn("current_release", snapshot)
+                self.assertNotIn("upgrade", snapshot)
+                before = {str(p): p.read_bytes() for p in operation.directory.rglob("*") if p.is_file()}
+                with patch.object(M.shutil, "disk_usage", return_value=SimpleNamespace(free=32 << 30)):
+                    self.assertEqual(0, operation.check()["writes"])
+                    self.assertEqual(before, {str(p): p.read_bytes() for p in operation.directory.rglob("*") if p.is_file()})
+                    def stop(point):
+                        if point == "claimed": raise Interrupted(point)
+                    operation.test_checkpoint = stop
+                    with self.assertRaises(Interrupted): operation.execute()
+                    self.assertEqual(initial, operation.source_snapshot(operation.witness))
+                    self.assertEqual("completed", self.reopen(operation, bind).execute(resume=True)["state"])
+                self.assertEqual(initial, operation.source_snapshot(operation.witness))
+                self.assertEqual(snapshot["package_sha256"], M.install.digest(origin))
+
+    def test_distinct_origin_completed_legacy_m128_then_external_successors(self):
+        # Synthetic host flow with the actual13-installer/16-native/17-completed
+        # identity shape; native M128 artifact/restore acceptance stays separate.
+        for count in (1, 2):
+            with self.subTest(writers=count):
+                old, state, calls, bind = self.legacy128_completed17(count, origin_sequence=13)
+                raw = old.source_snapshot(old.state["upgrade"])
+                snapshot = json.loads(raw)
+                self.assertNotIn("current_release", snapshot)
+                self.assertNotIn("upgrade", snapshot)
+                self.assertNotEqual(snapshot["package_sha256"], old.state["upgrade"]["source"]["package_sha256"])
+                self.assertEqual(snapshot["package_sha256"], M.install.digest(old.directory / "release.tar.gz"))
+                preserved = copy.deepcopy((state.business, state.models, state.setups, state.sessions))
+                operation = old
+                for sequence in (20, 21):
+                    original = (operation.directory / "install-state.json").read_bytes()
+                    operation = self.next_candidate(operation, state, bind, sequence)
+                    before = {str(p): p.read_bytes() for p in operation.directory.rglob("*") if p.is_file()}
+                    migrations = state.native_calls.count(["migrate", "up"])
+                    with patch.object(M.shutil, "disk_usage", return_value=SimpleNamespace(free=32 << 30)):
+                        checked = operation.check()
+                        self.assertEqual(0, checked["writes"])
+                        self.assertEqual(17 if sequence == 20 else 20, checked["source"]["release_sequence"])
+                        self.assertEqual(before, {str(p): p.read_bytes() for p in operation.directory.rglob("*") if p.is_file()})
+                        if sequence == 20:
+                            def stop(point):
+                                if point == "effect:cold-pair": raise Interrupted(point)
+                            operation.test_checkpoint = stop
+                            with self.assertRaises(Interrupted): operation.execute()
+                            operation = self.reopen(operation, bind)
+                            self.assertEqual("completed", operation.execute(resume=True)["state"])
+                        else:
+                            self.assertEqual("completed", operation.execute()["state"])
+                    self.assertEqual(original, operation.source_snapshot(operation.witness))
+                    self.assertIn("source_state_path", operation.witness)
+                    self.assertEqual(migrations + (sequence == 20), state.native_calls.count(["migrate", "up"]))
+                    self.assertEqual(preserved, (state.business, state.models, state.setups, state.sessions))
+                    self.assertEqual([M.SOURCE_SCHEMA, M.OBSERVATION_SCHEMA, M.TARGET_SCHEMA], state.metadata["ledger"])
+
+    def test_distinct_origin_does_not_admit_wrong_native_source_or_predecessor(self):
+        for fault in ("native_source", "candidate", "current_release", "pending", "incomplete"):
+            with self.subTest(fault=fault):
+                old, state, calls, bind = self.legacy128_completed17(origin_sequence=13)
+                operation = self.next_candidate(old, state, bind, 20)
+                if fault == "native_source": state.metadata["release"]["package_sha256"] = "0" * 64
+                elif fault == "candidate": old.state["upgrade"]["candidate"]["commit"] = "0" * 40
+                elif fault == "current_release": old.state["current_release"]["package_sha256"] = "0" * 64
+                elif fault == "pending": old.state["upgrade"]["pending"] = "cold-pair"
+                else: old.state["upgrade"]["state"] = "preparing"
+                M.install.save_state(old.directory, old.state)
+                before = (old.directory / "install-state.json").read_bytes()
+                start = len(calls)
+                with self.assertRaises(M.install.InstallError): self.reopen(operation, bind).check()
+                self.assertEqual(before, (old.directory / "install-state.json").read_bytes())
+                self.assertFalse(any("acquire candidate" in label or "gracefully stop" in label for label, _ in calls[start:]))
 
     def test_completed_source_checks_keep_receiving_writer_and_refuse_unaccounted_history(self):
         for legacy in (True, False):

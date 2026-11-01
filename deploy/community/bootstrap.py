@@ -5,6 +5,8 @@ Obtain this script, the bootstrap JSON and its SHA-256 through the reviewed,
 commit-pinned release instructions. This candidate has no official download URL.
 """
 import argparse
+import contextlib
+import fcntl
 import gzip
 import hashlib
 import json
@@ -80,7 +82,7 @@ class HTTPSRedirects(urllib.request.HTTPRedirectHandler):
 
 
 def open_regular(path, private=False):
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     try:
         info = os.fstat(fd)
         require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1, "A regular, unlinked file is required.")
@@ -172,30 +174,101 @@ class Bootstrap:
 
 
 def download(asset, destination):
-    opener = urllib.request.build_opener(HTTPSRedirects())
-    request = urllib.request.Request(https_url(asset["url"]), headers={"Accept-Encoding": "identity"})
-    with opener.open(request, timeout=30) as response:
-        https_url(response.geturl())
-        require(response.status == 200 and response.headers.get("Content-Encoding", "identity") == "identity",
-                "Asset download did not return an unencoded complete response.")
-        length = response.headers.get("Content-Length")
-        require(length is None or (length.isdecimal() and int(length) == asset["size"]),
-                "Asset response length does not match its pinned size.")
-        fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-        with os.fdopen(fd, "wb") as stream:
-            count, digest = 0, hashlib.sha256()
-            while True:
-                chunk = response.read(min(1024 * 1024, asset["size"] - count + 1))
-                if not chunk:
-                    break
-                count += len(chunk)
-                require(count <= asset["size"], "Asset download exceeds its pinned size.")
+    protected_directory(destination.parent, exists=True)
+    fd, offset, digest = None, 0, hashlib.sha256()
+    try:
+        if os.path.lexists(destination):
+            fd = os.open(destination, os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK)
+            original = os.fstat(fd)
+            require(stat.S_ISREG(original.st_mode) and original.st_nlink == 1
+                    and original.st_uid == os.geteuid() and not original.st_mode & 0o022,
+                    "Partial assets must be private, owned regular files without links.")
+            offset = original.st_size
+            require(0 <= offset <= asset["size"], "Retained asset exceeds its pinned size.")
+            remaining = offset
+            while remaining:
+                chunk = os.read(fd, min(1024 * 1024, remaining))
+                require(chunk, "Retained asset changed while being checked.")
                 digest.update(chunk)
-                stream.write(chunk)
-            require(count == asset["size"] and digest.hexdigest() == asset["sha256"],
-                    "Asset download is truncated or has the wrong SHA-256.")
-            stream.flush()
-            os.fsync(stream.fileno())
+                remaining -= len(chunk)
+            require(unchanged_download(destination, fd, original), "Retained asset changed while being checked.")
+            if offset == asset["size"]:
+                require(digest.hexdigest() == asset["sha256"], "Retained complete asset has the wrong SHA-256.")
+                return
+        headers = {"Accept-Encoding": "identity"}
+        if offset:
+            headers["Range"] = "bytes=" + str(offset) + "-"
+        opener = urllib.request.build_opener(HTTPSRedirects())
+        request = urllib.request.Request(https_url(asset["url"]), headers=headers)
+        with opener.open(request, timeout=30) as response:
+            https_url(response.geturl())
+            encoding = single_header(response.headers, "Content-Encoding")
+            require(encoding is None or encoding.strip().lower() == "identity",
+                    "Encoded asset responses cannot be used.")
+            length = single_header(response.headers, "Content-Length")
+            require(length is None or (re.fullmatch(r"[0-9]+", length)
+                    and int(length) == asset["size"] - offset), "Asset response length does not match its pinned size.")
+            content_range = single_header(response.headers, "Content-Range")
+            if offset:
+                expected = "bytes " + str(offset) + "-" + str(asset["size"] - 1) + "/" + str(asset["size"])
+                require(response.status == 206 and content_range == expected,
+                        "Asset server did not honor the exact requested range; no bytes were appended.")
+            else:
+                require(response.status == 200 and content_range is None,
+                        "Asset download did not return an unencoded complete response.")
+            if fd is None:
+                fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            else:
+                require(unchanged_download(destination, fd, original), "Partial asset changed before continuation.")
+            with os.fdopen(fd, "wb") as stream:
+                fd = None
+                stream.seek(offset)
+                count = offset
+                try:
+                    while True:
+                        chunk = response.read(min(1024 * 1024, asset["size"] - count + 1))
+                        if not chunk:
+                            break
+                        count += len(chunk)
+                        require(count <= asset["size"], "Asset download exceeds its pinned size.")
+                        stream.write(chunk)
+                        digest.update(chunk)
+                finally:
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                require(count == asset["size"] and digest.hexdigest() == asset["sha256"],
+                        "Asset download is truncated or has the wrong SHA-256.")
+                require(os.path.samestat(os.fstat(stream.fileno()), destination.lstat())
+                        and os.fstat(stream.fileno()).st_size == count, "Asset changed during continuation.")
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+
+def single_header(headers, name):
+    values = headers.get_all(name, []) if hasattr(headers, "get_all") else ([headers[name]] if name in headers else [])
+    require(len(values) <= 1, "Duplicate asset response headers are not accepted.")
+    return values[0] if values else None
+
+
+def unchanged_download(path, fd, original):
+    keys = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+    current, named = os.fstat(fd), path.lstat()
+    return all(getattr(original, key) == getattr(current, key) == getattr(named, key) for key in keys)
+
+
+@contextlib.contextmanager
+def preparation_lock(directory):
+    fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        require(os.path.samestat(os.fstat(fd), directory.lstat()), "Preparation directory changed.")
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise BootstrapError("Another prepare command owns this directory; no second download was started.") from None
+        yield
+    finally:
+        os.close(fd)
 
 
 def payload_path(value):
@@ -380,23 +453,50 @@ def validate_payload(directory, files, receipt=None):
 
 def prepare(bootstrap, directory, fetch=download, verify=verifier_output):
     bootstrap.host_check()
-    protected_directory(directory, exists=False)
-    directory.mkdir(mode=0o700)
-    write_new(directory / "bootstrap.json", bootstrap.raw)
-    for name, (filename, _) in ASSETS.items():
-        fetch(bootstrap.assets[name], directory / filename)
-        require(file_identity(directory / filename) == (bootstrap.assets[name]["size"], bootstrap.assets[name]["sha256"]),
-                "Downloaded asset does not match its pinned identity.")
-    os.chmod(directory / "uniroute-upgrade", 0o700)
-    files, receipt = verify_release(bootstrap, directory, verify)
-    extracted_manifest, extracted_files = scan_archive(directory / "release.tar.gz", destination=directory)
-    require(extracted_files == files and hashlib.sha256(extracted_manifest).hexdigest() == receipt["manifest_sha256"],
-            "Archive changed during preparation.")
-    require(file_identity(directory / "release.tar.gz") ==
-            (bootstrap.assets["package"]["size"], bootstrap.assets["package"]["sha256"]), "Package changed during preparation.")
-    validate_payload(directory, files)
-    write_new(directory / RECEIPT, (json.dumps(receipt, sort_keys=True) + "\n").encode())
-    return receipt
+    exists = os.path.lexists(directory)
+    protected_directory(directory, exists=exists)
+    if not exists:
+        directory.mkdir(mode=0o700)
+    with preparation_lock(directory):
+        if exists:
+            require(os.path.lexists(directory / "bootstrap.json"),
+                    "Existing directory has no original trusted bootstrap; it cannot be adopted.")
+            require(read_bounded(directory / "bootstrap.json", MAX_BOOTSTRAP, True) == bootstrap.raw,
+                    "Retained bootstrap differs from the trusted input.")
+            if os.path.lexists(directory / RECEIPT):
+                return check_prepared(bootstrap, directory, verify)
+            allowed = {"bootstrap.json"} | {filename for filename, _ in ASSETS.values()}
+            require(all(item.name in allowed for item in directory.iterdir()),
+                    "Only interrupted asset downloads can continue; keep other preparation remnants unchanged.")
+        else:
+            write_new(directory / "bootstrap.json", bootstrap.raw)
+        complete = set()
+        # Check every existing asset before any request, including later assets.
+        for name, (filename, _) in ASSETS.items():
+            target, asset = directory / filename, bootstrap.assets[name]
+            if os.path.lexists(target):
+                with open_regular(target, True) as stream:
+                    size = os.fstat(stream.fileno()).st_size
+                require(size <= asset["size"], "Retained asset exceeds its pinned size.")
+                if size == asset["size"]:
+                    require(file_identity(target) == (asset["size"], asset["sha256"]),
+                            "Retained complete asset has the wrong SHA-256.")
+                    complete.add(name)
+        for name, (filename, _) in ASSETS.items():
+            if name not in complete:
+                fetch(bootstrap.assets[name], directory / filename)
+            require(file_identity(directory / filename) == (bootstrap.assets[name]["size"], bootstrap.assets[name]["sha256"]),
+                    "Downloaded asset does not match its pinned identity.")
+        os.chmod(directory / "uniroute-upgrade", 0o700)
+        files, receipt = verify_release(bootstrap, directory, verify)
+        extracted_manifest, extracted_files = scan_archive(directory / "release.tar.gz", destination=directory)
+        require(extracted_files == files and hashlib.sha256(extracted_manifest).hexdigest() == receipt["manifest_sha256"],
+                "Archive changed during preparation.")
+        require(file_identity(directory / "release.tar.gz") ==
+                (bootstrap.assets["package"]["size"], bootstrap.assets["package"]["sha256"]), "Package changed during preparation.")
+        validate_payload(directory, files)
+        write_new(directory / RECEIPT, (json.dumps(receipt, sort_keys=True) + "\n").encode())
+        return receipt
 
 
 def check_prepared(bootstrap, directory, verify=verifier_output):
@@ -404,7 +504,7 @@ def check_prepared(bootstrap, directory, verify=verifier_output):
     protected_directory(directory, exists=True)
     require(read_bounded(directory / "bootstrap.json", MAX_BOOTSTRAP, True) == bootstrap.raw,
             "Retained bootstrap differs from the trusted input.")
-    require((directory / RECEIPT).is_file(), "Partial preparation cannot be resumed or installed.")
+    require((directory / RECEIPT).is_file(), "Preparation is incomplete; only prepare can continue interrupted asset downloads.")
     files, receipt = verify_release(bootstrap, directory, verify)
     validate_payload(directory, files, receipt)
     return receipt
@@ -440,7 +540,8 @@ def main(argv=None):
     parser.add_argument("action", choices=("prepare", "check", "install", "resume", *UPGRADE_ACTIONS))
     parser.add_argument("--bootstrap", type=Path, required=True, help="independently obtained, pinned bootstrap JSON")
     parser.add_argument("--bootstrap-sha256", required=True, help="SHA-256 from the independent trusted release instructions")
-    parser.add_argument("--directory", type=Path, required=True, help="new private prepared-release directory; retain for resume")
+    parser.add_argument("--directory", type=Path, required=True,
+                        help="private prepared-release directory; rerun prepare here after an asset-download interruption")
     parser.add_argument("--install-directory", type=Path, default=Path("/opt/unirouter"))
     parser.add_argument("--name", default="unirouter")
     parser.add_argument("--port", type=int, default=3000)

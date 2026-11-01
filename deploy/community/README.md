@@ -102,10 +102,14 @@ payload files 0600, and only the hash-verified verifier is executable (0700).
 
 On reuse, the bootstrap/asset hashes, signature, expiry and all payload files
 are checked again. `prepared.json` indicates completed preparation; it is not
-an independent trust authority. Failed downloads/preparation retain a partial
-directory. The tool will not overwrite it, reset it or call it resumable.
-Preserve files for diagnosis. No automatic deletion, server cleanup or upgrade
-of an existing installation is included.
+an independent trust authority. Repeat `prepare` with the same pinned bootstrap
+and private directory to continue a partial asset-download stage. Complete
+assets are checked before reuse; a partial asset requires a matching HTTP 206
+range response and passes the full expected size/hash before execution. There
+is no automatic retry. Changed bootstrap inputs, corrupt complete assets,
+foreign-owned files and incomplete extraction refuse reuse and remain available
+for diagnosis. This cache covers the same complete package, not stable materials
+shared by different releases. No automatic deletion or server cleanup is added.
 
 Offline tests cover transport/redirect refusal and archive attacks. A Go test
 uses the real verifier and synthetic signed packages, including expired/wrong
