@@ -29,6 +29,8 @@ SCHEMA = "000127_xinsight_communication_policy"
 WORKFLOW = "foigent/unirouter/.github/workflows/community-release-acceptance.yml@refs/heads/main"
 RELEASE_KEYS = {"release_sequence", "created_at", "expires_at", "tag", "bootstrap_url",
                 "bootstrap_size", "bootstrap_sha256", "package_size", "package_sha256"}
+UPGRADE_SOURCE = '.github/release-inputs/community-upgrade-source.json'
+PREDECESSOR_DIRECTORY = '.community-retained-source'
 
 
 class Stop(Exception):
@@ -440,6 +442,89 @@ def reference_sources(repo, config):
                 "Fixed existing consumer/helper source changed before preparation.")
 
 
+def git_read(repo, *args):
+    env = {k: os.environ[k] for k in ('PATH', 'LANG', 'LC_ALL') if k in os.environ}
+    result = subprocess.run(['git', '-c', 'safe.directory=' + str(repo), '-C', str(repo), *args],
+                            env=env, capture_output=True)
+    require(result.returncode == 0, 'Reviewed fixture Git identity is unavailable.')
+    return result.stdout
+
+
+def source_bytes(repo, relative, maximum):
+    path = repo / relative
+    require(not Path(relative).is_absolute() and '..' not in Path(relative).parts,
+            'Unexpected fixture source path.')
+    for part in (path, *path.parents):
+        if part == repo.parent:
+            break
+        require(not part.is_symlink(), 'Symlink fixture source is forbidden.')
+    require(path.is_file() and path.stat().st_size <= maximum, 'Unexpected fixture source file.')
+    return path.read_bytes()
+
+
+def validate_upgrade_source(record, candidate):
+    stage_module().validate_record(record, 'consumer')
+    old = record['inputs']['config']
+    validate(old, ready=True, stage_record=record)
+    a, b = old['immutable'], candidate['immutable']
+    sequence = old['release']['release_sequence']
+    require(a['product']['schema'] == b['product']['schema'] ==
+            '000129_upstream_observation_restore_namespace', 'Public upgrade fixture needs the same M129 ledger.')
+    require(all(a[k] == b[k] for k in ('key_id', 'public_ring', 'raw_public_fingerprint')),
+            'Public upgrade fixture signing authority differs.')
+    require(a['product']['commit'] != b['product']['commit']
+            and old['release']['package_sha256'] != candidate['release']['package_sha256']
+            and b['min_current_sequence'] <= sequence <= b['max_current_sequence']
+            and candidate['release']['release_sequence'] > sequence,
+            'Public upgrade fixture predecessor is outside the exact candidate window.')
+    return old
+
+
+def upgrade_source_record(repo, candidate):
+    # Ordinary reviewed test data, read from the exact workflow checkout. No
+    # mutable latest-release lookup or new stage/dispatch authority is involved.
+    raw = git_read(repo, 'show', 'HEAD:' + UPGRADE_SOURCE)
+    require(len(raw) <= 32 * 1024 and source_bytes(repo, UPGRADE_SOURCE, 32 * 1024) == raw,
+            'Installed-source fixture differs from the reviewed Git object.')
+    record = strict_json(raw)
+    validate_upgrade_source(record, candidate)
+    return record
+
+
+def predecessor_checkout(repo, record):
+    old = repo / PREDECESSOR_DIRECTORY
+    require(old.is_dir() and not old.is_symlink() and old.resolve() == repo.resolve() / PREDECESSOR_DIRECTORY
+            and (old / '.git').is_dir() and not (old / '.git').is_symlink(),
+            'Installed-source checkout is not the fixed isolated directory.')
+    product = record['product']
+    require(git_read(old, 'rev-parse', 'HEAD', 'HEAD^{tree}').decode().splitlines() ==
+            [product['commit'], product['tree']], 'Installed-source commit/tree differs.')
+    config = record['inputs']['config']
+    # native_first_use_checks also imports its original assertion module. Bind
+    # all old executable imports before constructing either old fixture class.
+    for relative, maximum in (('.github/tests/community-installer.py', 256 * 1024),
+                              ('.github/tests/community-release-acceptance.py', 128 * 1024),
+                              ('.github/tests/community-stage-record.py', 128 * 1024),
+                              ('deploy/community/bootstrap.py', 128 * 1024)):
+        require(source_bytes(old, relative, maximum) == git_read(old, 'show', 'HEAD:' + relative),
+                'Installed-source executable differs from its exact tree.')
+    reference_sources(old, config)
+    return old
+
+
+def same_public_ring(candidate, predecessor, fixed):
+    raw = source_bytes(candidate.parent, candidate.name, 1024)
+    require(raw == source_bytes(predecessor.parent, predecessor.name, 1024)
+            and len(raw) == fixed['public_ring']['size']
+            and hashlib.sha256(raw).hexdigest() == fixed['public_ring']['sha256'],
+            'Actual installed/candidate public-ring bytes differ.')
+    ring = strict_json(raw)
+    require(set(ring) == {fixed['key_id']}, 'Actual public-ring key identity differs.')
+    key = base64.b64decode(ring[fixed['key_id']], validate=True)
+    require(len(key) == 32 and hashlib.sha256(key).hexdigest() == fixed['raw_public_fingerprint'],
+            'Actual public-key fingerprint differs.')
+
+
 @contextlib.contextmanager
 def clean_environment(env):
     old = dict(os.environ)
@@ -452,7 +537,7 @@ def clean_environment(env):
         os.environ.update(old)
 
 
-def make_acceptance(repo, root, config, context, *, stage_record=None):
+def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_source=None):
     fixed = config["immutable"]
     base = load_module(repo / ".github/tests/community-installer.py",
                        fixed["native_acceptance_helper_sha256"], "accepted_native_installer")
@@ -494,7 +579,7 @@ def make_acceptance(repo, root, config, context, *, stage_record=None):
         def bootstrap_command(self, action, directory, project):
             return [sys.executable, "-I", "-B", self.bootstrap_script, action, "--bootstrap", self.bootstrap_file,
                     "--bootstrap-sha256", self.bootstrap_sha, "--directory", self.release,
-                    "--install-directory", directory, "--name", project, "--port", "13000"]
+                    "--install-directory", directory, "--name", project, "--port", str(self.loopback_port)]
 
         def prepare(self):
             r = config["release"]
@@ -660,6 +745,124 @@ def make_acceptance(repo, root, config, context, *, stage_record=None):
                 'protected_release_and_rotation_preserved':True,'provider_calls':0}
             self.passed("native restart selects the customer default project and preserves original admin and release history")
 
+        def installed_public_upgrade(self):
+            """One real signed pair; all maintenance belongs to the shipped owner."""
+            old_repo, record = upgrade_source
+            old_config = record['inputs']['config']
+            old_root = self.root / 'installed-predecessor'
+            old_root.mkdir(mode=0o700)
+            old = make_acceptance(old_repo, old_root, old_config, context, stage_record=record)
+            old.loopback_port = self.loopback_port = base.FIXTURE_PORTS['single']
+            self.phase = 'prepare exact original signed predecessor'
+            old.preflight()
+            old.prepare()
+            same_public_ring(self.ring, old.ring, fixed)
+            self.directory = old.directory = old.instances / 'preserved'
+            self.project = old.project = 'ur-signed-upgrade-' + self.suffix
+            directory, project = self.directory, self.project
+            old.run('install original public predecessor without rebuild', old.command('install', directory, project))
+            old.installed_checks(directory, project)
+            old.native_first_use_checks(directory, project, restart=False)
+            org = old.result['first_customer']['organization_id']
+            require(type(org) is int and org > 1, 'Original native customer is missing.')
+            project_id = int(old.sql(directory, project, "INSERT INTO projects(org_id,name,slug,status,budget_period) "
+                "VALUES(" + str(org) + ",'Synthetic retained default','default','active','none') RETURNING id"))
+            require(project_id > 0, 'Original synthetic financial project is missing.')
+            old.sql(directory, project, "BEGIN; UPDATE wallets SET balance_micros=1234567 WHERE org_id=" + str(org) +
+                "; INSERT INTO transactions(request_id,org_id,project_id,type,status,amount_micros,balance_after_micros,note) "
+                "VALUES('synthetic-linux-history'," + str(org) + ',' + str(project_id) +
+                ",'topup','completed',1234567,1234567,'Synthetic preservation fixture'); COMMIT;")
+            rendered = strict_json(old.run('read original content configuration', old.compose(directory, project) +
+                                          ['config', '--format', 'json']))
+            environment = rendered['services']['backend']['environment']
+            require(all(environment.get(k) in ('', None) for k in ('SOURCE_CONTENT_STORAGE_ROOT',
+                    'SOURCE_CONTENT_STORAGE_IDENTITY', 'SOURCE_CONTENT_STORAGE_TOKEN_FILE'))
+                    and old.sql(directory, project, 'SELECT count(*) FROM execution_content_objects') == '0'
+                    and old.sql(directory, project, 'SELECT count(*) FROM execution_content_streams') == '0',
+                    'Public default-content fixture is not explicitly empty.')
+            self.wait_business_startup()
+            self.source_contract = base.source_contract(repo)
+            self.observe_migration_owner()
+            protected = self.protected_upgrade_rows(directory, project, old.release_sequence, old.schema)
+            require(all(protected[t]['count'] > 0 for t in
+                        ('users', 'orgs', 'projects', 'wallets', 'transactions', 'audit_logs', 'release_history')),
+                    'Original signed fixture lacks nonempty preserved facts.')
+            retained_files = lambda: self.protected_upgrade_files(directory, None, None, body_absent=True)
+            original_files = retained_files()
+            original_state = (directory / 'install-state.json').read_bytes()
+            original_evidence = self.recovery_module().private_inventory([directory / 'evidence'])
+            snapshot = lambda: (base.files(directory), self.inventory(),
+                                self.upgrade_fingerprint(directory, project, running=True))
+            before = snapshot()
+            checked = strict_json(self.run('check exact public upgrade without effects',
+                                           self.upgrade_command('check-upgrade', directory)))
+            status = strict_json(self.run('read original public upgrade status',
+                                          self.upgrade_command('upgrade-status', directory)))
+            require(checked['writes'] == 0 and status['state'] == 'not_started'
+                    and checked['source']['package_sha256'] == old_config['release']['package_sha256']
+                    and checked['candidate']['package_sha256'] == config['release']['package_sha256']
+                    and before == snapshot(), 'Public upgrade check/status changed source or package identity.')
+            self.run_native_upgrade(directory, None, None)
+            before_resume = snapshot()
+            self.run('read completed exact public upgrade resume', self.upgrade_command('resume-upgrade', directory))
+            require(before_resume == snapshot(), 'Completed public upgrade resume changed state.')
+            witness = strict_json((directory / 'install-state.json').read_bytes())['upgrade']
+            backup = directory / 'upgrades' / witness['operation_id'] / 'backup'
+            pair = strict_json((backup / 'receipt.json').read_bytes())
+            ledger = tuple(strict_json(self.sql(directory, project,
+                'SELECT jsonb_agg(version ORDER BY version) FROM schema_migrations')))
+            audit = [strict_json(line) for line in self.migration_audit.read_text().splitlines()]
+            require(witness['state'] == 'completed' and witness['pending'] is None
+                    and witness['candidate'] == checked['candidate']
+                    and witness['source']['package_sha256'] == checked['source']['package_sha256']
+                    and witness['receipts']['migrate']['mode'] == 'same_schema'
+                    and ledger == tuple(witness['source_ledger']) == self.source_contract.ledger
+                    and witness['receipts']['migrate']['ledger_sha256'] == hashlib.sha256(
+                        json.dumps(list(ledger), sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+                    and self.upgrade_fingerprint(directory, project)['schema_migrations'] == before[2]['schema_migrations']
+                    and audit and sum(row['native_owner_calls'] for row in audit) > 0
+                    and all(row['migration_owner_calls'] == 0 for row in audit),
+                    'Exact public upgrade identity/ledger/no-migration proof differs.')
+            require(pair['verification_database'] != 'uniroute'
+                    and base.sha(backup / 'database.dump') == pair['dump_sha256']
+                    and self.upgrade_fingerprint(directory, project, pair['verification_database']) == pair['restored_tables']
+                    and self.protected_upgrade_rows(directory, project, old.release_sequence, old.schema) == protected
+                    and retained_files() == original_files
+                    and self.recovery_module().private_inventory([directory / 'evidence']) == original_evidence
+                    and (directory / witness['source_state_path']).read_bytes() == original_state,
+                    'Independent restored database or original signed source facts differ.')
+            require(base.sha(backup / 'receipt.json') == witness['receipts']['cold-pair']['receipt_sha256']
+                    and base.sha(backup / 'paired-files.tar') == pair['files']['archive_sha256']
+                    and self.recovery_module().private_inventory([Path(p) for p in pair['roots']],
+                        backup / 'restore-files') == pair['files']['files'], 'Actual restored file-pair identity differs.')
+            self.recovery_module().verify_archive(backup / 'paired-files.tar', pair['files']['files'])
+            require(all(witness['receipts']['stop-' + role]['clean_exit'] and
+                        witness['receipts']['stop-' + role]['old_processes_gone'] for role in ('backend', 'frontend')),
+                    'Original public process exits are unproved.')
+            self.request(self.loopback_url + '/health/ready')
+            fixture_admin_login(FIRST_USE_TEST_INPUT, loopback_port=self.loopback_port)
+            actual_release = strict_json(self.sql(directory, project,
+                "SELECT jsonb_build_object('release_sequence',release_sequence,'version',version,'commit',commit,"
+                "'package_sha256',package_sha256,'schema',target_schema) FROM release_state"))
+            require(actual_release == {'release_sequence': self.release_sequence, 'version': self.version,
+                    'commit': self.commit, 'package_sha256': config['release']['package_sha256'], 'schema': self.schema},
+                    'Actual installed candidate release differs.')
+            require(self.protected_upgrade_rows(directory, project, old.release_sequence, old.schema) == protected
+                    and retained_files() == original_files
+                    and self.sql(directory, project, 'SELECT count(*) FROM release_history') ==
+                    str(protected['release_history']['count'] + 1), 'Original login or release history differs.')
+            self.result['installed_public_upgrade'] = {
+                'source': {**old_config['immutable']['product'], 'release_sequence': old.release_sequence,
+                           'package_sha256': old_config['release']['package_sha256']},
+                'candidate': {**fixed['product'], 'release_sequence': self.release_sequence,
+                              'package_sha256': config['release']['package_sha256']},
+                'same_actual_public_ring': True, 'read_only_no_effects': True, 'nonempty_financial_history_preserved': True,
+                'original_accounts_configuration_and_evidence_preserved': True, 'independent_database_and_files_restore': True,
+                'explicitly_empty_original_content': True, 'complete_ledger_unchanged': True, 'migration_owner_calls': 0,
+                'physical_exits_proved': True, 'completed_resume_no_effects': True, 'original_password_usable': True,
+                'builds': 0, 'signatures_generated': 0, 'provider_calls': 0}
+            self.passed('exact installed public signed predecessor upgrades with preserved facts and independent restore')
+
         def execute(self):
             self.preflight()
             self.prepare()
@@ -670,6 +873,11 @@ def make_acceptance(repo, root, config, context, *, stage_record=None):
             self.installed_checks(self.directory, self.project)
             self.chosen_password_checks(self.directory, self.project)
             self.first_customer_checks(self.directory, self.project)
+            if upgrade_source is not None:
+                # Both signed releases declare the same subnet. Release only
+                # this completed run-owned case; retain volumes and evidence.
+                self.release_completed_case(self.directory, self.project)
+                self.installed_public_upgrade()
             self.result["status"] = "passed"
             self.result.pop("installer_stop", None)
 
@@ -681,10 +889,13 @@ def execute(config, repo, stage_record=None):
     validate(config, ready=True, stage_record=stage_record)
     context = native_guard(repo)  # All invalid inputs/context stop before creating any destination.
     reference_sources(repo, config)
+    predecessor = upgrade_source_record(repo, config)
+    old_repo = predecessor_checkout(repo, predecessor)  # Before mkdir, import or network.
     os.umask(0o077)
     root = Path(tempfile.mkdtemp(prefix="ur-formal-community-consumer-", dir="/var/tmp")).resolve()
     root.chmod(0o700)
-    fixture = make_acceptance(repo, root, config, context, stage_record=stage_record)
+    fixture = make_acceptance(repo, root, config, context, stage_record=stage_record,
+                              upgrade_source=(old_repo, predecessor))
     try:
         with clean_environment(fixture.env):
             fixture.execute()
@@ -715,11 +926,15 @@ def main(argv=None):
             require(args.action != 'execute', 'Execution requires an exact current consumer stage record.')
             config = load_config(repo)  # Retained read-only audit of the historical signed input.
         missing = validate(config, ready=args.action != "describe", stage_record=stage_record)
-        if stage_record is not None: reference_sources(repo, config)
+        predecessor = None
+        if stage_record is not None:
+            reference_sources(repo, config)
+            predecessor = upgrade_source_record(repo, config)
         if args.action == "describe":
             print(json.dumps({"source": config["immutable"]["product"]["commit"], "payload_entries": len(config["immutable"]["artifacts"]),
                               "ready": config["state"] == "ready" and not missing,
-                              "missing_decisions": missing, "network_Docker_or_output_operations": 0}))
+                              "missing_decisions": missing, "network_Docker_or_output_operations": 0,
+                              'upgrade_source': predecessor['product'] if predecessor is not None else None}))
             return 0
         if args.action == "validate":
             print("Actual public input shape accepted; no network, Docker or destination operation.")

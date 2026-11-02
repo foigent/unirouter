@@ -51,6 +51,26 @@ jobs:
       - name: Refuse incomplete real release inputs before any consumer effect
         run: python3 -I -B .github/tests/community-release-acceptance.py validate --stage-dispatch
 
+      - name: Describe the exact reviewed installed source
+        id: upgrade_source
+        shell: bash
+        run: |
+          python3 -I -B - <<'PY'
+          import json, os, subprocess
+          result = subprocess.run(['python3', '-I', '-B', '.github/tests/community-release-acceptance.py',
+                                   'describe', '--stage-dispatch'], capture_output=True, check=True, text=True)
+          source = json.loads(result.stdout)['upgrade_source']
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('commit=' + source['commit'] + '\n')
+          PY
+
+      - name: Check out the original installed source without rebuilding it
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.upgrade_source.outputs.commit }}
+          path: .community-retained-source
+          persist-credentials: false
+
       - name: Set up supported Python
         uses: actions/setup-python@v7
         with:

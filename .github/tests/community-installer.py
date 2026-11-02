@@ -389,9 +389,14 @@ class Acceptance:
             "same-schema package must retain exact payload/images and have a new signed identity")
         # Observe real child launches without replacing the shipped CLI or any
         # effect. Only two integer counts are retained, never argv/env/output.
-        following.migration_audit = following.root / "migration-owner-audit.jsonl"
-        following.migration_observer = following.root / "observe-migration-owner.py"
-        private_write(following.migration_observer, b'''import json,os,runpy,sys
+        following.observe_migration_owner()
+        return following
+
+    def observe_migration_owner(self):
+        """Observe the shipped owner without replacing any native operation."""
+        self.migration_audit = self.root / "migration-owner-audit.jsonl"
+        self.migration_observer = self.root / "observe-migration-owner.py"
+        private_write(self.migration_observer, b'''import json,os,runpy,sys
 report,program,*args=sys.argv[1:]
 counts={"native_owner_calls":0,"migration_owner_calls":0}
 def observe(event,values):
@@ -408,7 +413,6 @@ finally:
     fd=os.open(report,os.O_WRONLY|os.O_APPEND|os.O_CREAT|os.O_NOFOLLOW,0o600)
     with os.fdopen(fd,"a") as stream: stream.write(json.dumps(counts)+"\\n")
 ''')
-        return following
 
     def bootstrap_command(self, action, directory, project):
         return [sys.executable, "-I", "-B", self.repo / "deploy/community/bootstrap.py", action,
@@ -1095,9 +1099,12 @@ raise SystemExit("expected startup-hold checkpoint was not reached")
         return {table: rows[table] for table in ("users", "orgs", "projects", "wallets", "transactions",
             "project_members", "audit_logs", "release_history", "execution_content_objects", "execution_content_streams", *(("model_deployments",) if source_schema >= OBSERVATION_SCHEMA else ())) }
 
-    def protected_upgrade_files(self, directory, body, edge):
+    def protected_upgrade_files(self, directory, body, edge, *, body_absent=False):
+        require((body is None) == body_absent, "Body inventory needs an explicit absence declaration")
         roots = [directory / "runtime", directory / "admin-password", directory / "release.tar.gz",
-                 directory / "evidence/install.json", body]
+                 directory / "evidence/install.json"]
+        if body is not None:
+            roots.append(body)
         if edge:
             roots.append(edge)
         inventory = self.recovery_module().private_inventory(roots)

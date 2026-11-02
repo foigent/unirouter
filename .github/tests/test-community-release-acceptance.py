@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Offline checks for fixed and incomplete v2/never inputs. No network or Docker."""
 import contextlib
+import base64
 import copy
 import datetime as dt
 import importlib.util
+import hashlib
 import io
 import json
 import os
@@ -19,6 +21,184 @@ ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('consumer', ROOT / '.github/tests/community-release-acceptance.py')
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
+
+
+class PublicPredecessorTests(unittest.TestCase):
+    def setUp(self):
+        self.old = json.loads((ROOT / m.UPGRADE_SOURCE).read_bytes())
+        self.current = copy.deepcopy(self.old)
+        self.current['product'].update(commit='b' * 40, tree='c' * 40, version='1.15.5')
+        c = self.current['inputs']['config']
+        c['immutable']['product'] = {k: self.current['product'][k] for k in ('commit', 'tree', 'version', 'schema')}
+        c['immutable'].update(max_current_sequence=21, historical_sequence_reserved_through=21,
+            native_acceptance_helper_sha256=m.sha(ROOT / '.github/tests/community-installer.py'))
+        c['immutable']['bootstrap_script']['url'] = ('https://raw.githubusercontent.com/foigent/unirouter/' +
+                                                   self.current['product']['commit'] + '/deploy/community/bootstrap.py')
+        c['release'].update(release_sequence=22, tag='v1.15.5-preview.22', package_sha256='d' * 64)
+        c['release']['bootstrap_url'] = m.asset_url(c['release'], 'community-bootstrap.json')
+        self.candidate = c  # Synthetic future metadata, never dispatched or signed.
+
+    def git(self, root, *args):
+        return subprocess.check_output(['git', '-c', 'user.name=Offline fixture',
+            '-c', 'user.email=fixture@localhost', '-c', 'commit.gpgsign=false',
+            '-c', 'core.hooksPath=/dev/null', '-C', str(root), *args], stderr=subprocess.DEVNULL)
+
+    def commit_files(self, root):
+        self.git(root, 'init', '-q')
+        self.git(root, 'add', '.')
+        self.git(root, 'commit', '-qm', 'Synthetic offline fixture')
+
+    def test_exact_accepted_source_and_existing_closed_parsers(self):
+        self.assertEqual(m.validate(self.candidate, ready=True, stage_record=self.current), [])
+        self.assertEqual(m.validate_upgrade_source(self.old, self.candidate), self.old['inputs']['config'])
+        self.assertEqual(self.old['inputs']['config']['release']['package_sha256'],
+                         'afb997a369aa9da413068e45e022aa4ab9227e123d32f611a8c48c8b15a2fe2b')
+        for field, value in [('key_id', 'other'), ('raw_public_fingerprint', 'f' * 64),
+                             ('public_ring', {'size': 83, 'sha256': 'f' * 64}),
+                             ('max_current_sequence', 20), ('min_current_sequence', 22)]:
+            with self.subTest(field=field):
+                candidate = copy.deepcopy(self.candidate); candidate['immutable'][field] = value
+                with self.assertRaises(m.Stop): m.validate_upgrade_source(self.old, candidate)
+        candidate = copy.deepcopy(self.candidate); candidate['release']['release_sequence'] = 21
+        with self.assertRaises(m.Stop): m.validate_upgrade_source(self.old, candidate)
+        broken = copy.deepcopy(self.old); broken['inputs']['config']['immutable']['public_ring']['sha256'] = 'f' * 64
+        with self.assertRaisesRegex(Exception, 'stage_consumer_trust'):
+            m.validate_upgrade_source(broken, self.candidate)
+
+    def test_fixture_is_bound_to_actual_git_blob_and_refuses_dirty_or_symlink_data(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve(); path = root / m.UPGRADE_SOURCE
+            path.parent.mkdir(parents=True); raw = (ROOT / m.UPGRADE_SOURCE).read_bytes(); path.write_bytes(raw)
+            self.commit_files(root)
+            self.assertEqual(m.upgrade_source_record(root, self.candidate), self.old)
+            path.write_bytes(raw + b' ')
+            with self.assertRaises(m.Stop): m.upgrade_source_record(root, self.candidate)
+            path.unlink(); target = root / 'same-public-data.json'; target.write_bytes(raw); path.symlink_to(target)
+            with self.assertRaises(m.Stop): m.upgrade_source_record(root, self.candidate)
+
+    def test_original_checkout_checks_commit_tree_and_every_executable_before_import(self):
+        for fault in (None, 'commit', 'tree', 'helper', 'assertions', 'bootstrap', 'symlink', 'directory'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp).resolve(); old = root / m.PREDECESSOR_DIRECTORY; old.mkdir()
+                names = ('.github/tests/community-installer.py', '.github/tests/community-release-acceptance.py',
+                         '.github/tests/community-stage-record.py', 'deploy/community/bootstrap.py')
+                for name in names:
+                    f = old / name; f.parent.mkdir(parents=True, exist_ok=True); f.write_bytes(b'# Not executed: offline fixture\n')
+                self.commit_files(old)
+                record = copy.deepcopy(self.old)
+                commit, tree = self.git(old, 'rev-parse', 'HEAD', 'HEAD^{tree}').decode().splitlines()
+                record['product'].update(commit=commit, tree=tree)
+                fixed = record['inputs']['config']['immutable']
+                fixed['native_acceptance_helper_sha256'] = m.sha(old / names[0])
+                fixed['bootstrap_script']['sha256'] = m.sha(old / names[3])
+                if fault in ('commit', 'tree'): record['product'][fault] = 'f' * 40
+                if fault in ('helper', 'assertions', 'bootstrap'):
+                    index = {'helper': 0, 'assertions': 1, 'bootstrap': 3}[fault]
+                    (old / names[index]).write_bytes(b'# Dirty executable\n')
+                if fault == 'symlink':
+                    f = old / names[0]; original = f.read_bytes(); f.unlink()
+                    target = root / 'same-helper.py'; target.write_bytes(original); f.symlink_to(target)
+                if fault == 'directory':
+                    moved = root / 'other'; old.rename(moved); old.symlink_to(moved, target_is_directory=True)
+                with mock.patch.object(m, 'load_module', side_effect=AssertionError('must not import')):
+                    if fault:
+                        with self.assertRaises(m.Stop): m.predecessor_checkout(root, record)
+                    else:
+                        self.assertEqual(m.predecessor_checkout(root, record), old)
+
+    def test_actual_ring_bytes_and_raw_fingerprint_not_only_key_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve(); a, b = root / 'a.json', root / 'b.json'
+            key = b'k' * 32; raw = json.dumps({'fixture': base64.b64encode(key).decode()}).encode()
+            fixed = {'key_id': 'fixture', 'public_ring': {'size': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()},
+                     'raw_public_fingerprint': hashlib.sha256(key).hexdigest()}
+            a.write_bytes(raw); b.write_bytes(raw); m.same_public_ring(a, b, fixed)
+            b.write_bytes(raw + b'\n')
+            with self.assertRaises(m.Stop): m.same_public_ring(a, b, fixed)
+            b.write_bytes(raw); fixed['raw_public_fingerprint'] = 'f' * 64
+            with self.assertRaises(m.Stop): m.same_public_ring(a, b, fixed)
+
+    def test_bad_source_is_rejected_before_destination_import_or_external_effect(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve(); path = root / m.UPGRADE_SOURCE; path.parent.mkdir(parents=True)
+            path.write_bytes((ROOT / m.UPGRADE_SOURCE).read_bytes()); self.commit_files(root)
+            path.write_text('{}')  # Dirty data must fail before even looking for a checkout.
+            with mock.patch.object(m, 'native_guard', return_value={}), mock.patch.object(m, 'reference_sources'), \
+                 mock.patch.object(m.tempfile, 'mkdtemp') as mkdir, mock.patch.object(m, 'make_acceptance') as make, \
+                 mock.patch.object(m.urllib.request.OpenerDirector, 'open') as network:
+                with self.assertRaisesRegex(m.Stop, 'Installed-source fixture differs'):
+                    m.execute(self.candidate, root, self.current)
+                mkdir.assert_not_called(); make.assert_not_called(); network.assert_not_called()
+
+    def test_public_bootstrap_and_native_install_keep_the_selected_port(self):
+        spec = importlib.util.spec_from_file_location('actual_shared_fixture', ROOT / '.github/tests/community-installer.py')
+        native = importlib.util.module_from_spec(spec); spec.loader.exec_module(native)
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(m.shutil, 'which', return_value='/fixture/docker'):
+            root = Path(tmp).resolve()
+            def loader(path, digest, name):
+                return native if name == 'accepted_native_installer' else types.SimpleNamespace()
+            with mock.patch.object(m, 'load_module', side_effect=loader):
+                instance = m.make_acceptance(ROOT, root, self.old['inputs']['config'], {})
+            instance.loopback_port = 13001
+            for command in (instance.bootstrap_command('prepare', root / 'install', 'fixture'),
+                            instance.command('install', root / 'install', 'fixture')):
+                self.assertEqual(command[command.index('--port') + 1], '13001')
+
+    def test_public_upgrade_refuses_check_mutation_or_wrong_identity_before_native_write(self):
+        # Exercise the actual new case through its first native-write boundary.
+        # Services/downloads are synthetic here; file inventory is real. The
+        # positive signed upgrade remains a later disposable Linux acceptance.
+        for fault in (None, 'check-write', 'source-package', 'writes-flag'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp, \
+                 mock.patch.object(m.shutil, 'which', return_value='/fixture/docker'):
+                root = Path(tmp).resolve()
+                instance = m.make_acceptance(ROOT, root, self.candidate, {},
+                    upgrade_source=(root / 'old-source', self.old))
+                old_root = root / 'installed-predecessor'
+                directory = old_root / 'instances/preserved'
+                def prepare():
+                    (directory / 'runtime').mkdir(parents=True)
+                    (directory / 'evidence').mkdir()
+                    for name in ('admin-password', 'release.tar.gz', 'install-state.json',
+                                 'runtime/.env', 'evidence/install.json'):
+                        (directory / name).write_bytes(b'public synthetic fixture bytes')
+                old = types.SimpleNamespace(instances=old_root / 'instances', ring=old_root / 'ring',
+                    preflight=lambda: None, prepare=prepare, command=lambda *a: [],
+                    installed_checks=lambda *a: None, native_first_use_checks=lambda *a, **kw: None,
+                    result={'first_customer': {'organization_id': 2}}, release_sequence=21,
+                    schema='000129_upstream_observation_restore_namespace', compose=lambda *a: [])
+                old.run = lambda label, argv: (json.dumps({'services': {'backend': {'environment': {}}}})
+                                              if label == 'read original content configuration' else '')
+                old.sql = lambda _d, _p, q: ('2' if q.startswith('INSERT INTO projects') else
+                                            '0' if q.startswith('SELECT count(*)') else '')
+                recovery = m.load_module(ROOT / 'deploy/customer/recovery.py',
+                    m.sha(ROOT / 'deploy/customer/recovery.py'), 'actual_inventory_for_public_case')
+                instance.recovery_module = lambda: recovery
+                instance.wait_business_startup = lambda: None
+                instance.inventory = lambda: {'containers': []}
+                instance.upgrade_fingerprint = lambda *a, **kw: {'schema_migrations': {'count': 129, 'sha256': 'stable'}}
+                instance.protected_upgrade_rows = lambda *a: {name: {'count': 1} for name in
+                    ('users', 'orgs', 'projects', 'wallets', 'transactions', 'audit_logs', 'release_history')}
+                def command(label, argv):
+                    if label == 'check exact public upgrade without effects':
+                        if fault == 'check-write': (directory / 'unexpected-write').write_text('must be detected')
+                        return json.dumps({'writes': 1 if fault == 'writes-flag' else 0,
+                            'source': {'package_sha256': 'f' * 64 if fault == 'source-package' else
+                                       self.old['inputs']['config']['release']['package_sha256']},
+                            'candidate': {'package_sha256': self.candidate['release']['package_sha256']}})
+                    self.assertEqual(label, 'read original public upgrade status')
+                    return '{"state":"not_started"}'
+                instance.run = command
+                instance.run_native_upgrade = mock.Mock(side_effect=RuntimeError('native write boundary reached'))
+                with mock.patch.object(m, 'make_acceptance', return_value=old), mock.patch.object(m, 'same_public_ring'):
+                    if fault:
+                        with self.assertRaisesRegex(m.Stop, 'Public upgrade check/status changed'):
+                            instance.installed_public_upgrade()
+                        instance.run_native_upgrade.assert_not_called()
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, 'native write boundary reached'):
+                            instance.installed_public_upgrade()
+                        instance.run_native_upgrade.assert_called_once_with(directory, None, None)
 
 class ConsumerTests(unittest.TestCase):
     def setUp(self):
@@ -428,7 +608,8 @@ class FirstCustomerTests(unittest.TestCase):
                 if status != 200: response.read.assert_not_called()
         opener=mock.Mock();opener.open.side_effect=m.urllib.error.HTTPError(
             'http://127.0.0.1:13000/',302,secret,{},None)
-        with mock.patch.object(m.urllib.request,'build_opener',return_value=opener):
+        with contextlib.closing(opener.open.side_effect), \
+             mock.patch.object(m.urllib.request,'build_opener',return_value=opener):
             with self.assertRaises(m.Stop) as error:
                 m.first_customer_request(secret,self.intent,dry_run=False,expected_status=201)
             self.assertNotIn(secret,str(error.exception))
