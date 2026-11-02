@@ -1,5 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
-import { loadOnboardingProfiles, type ModelExecutionProfile } from '../modelExecutionProfiles';
+import { loadOnboardingProfiles, modelExecutionProfileApi, type ModelExecutionProfile } from '../modelExecutionProfiles';
+
+const request = vi.hoisted(() => vi.fn());
+vi.mock('../transport', () => ({ request }));
+
+it('keeps exact model and optional customer scope on product catalogue reads', () => {
+  modelExecutionProfileApi.forStableModel(17, 2);
+  expect(request).toHaveBeenLastCalledWith('/model-execution-profiles?public_model_id=17&org_id=2');
+  modelExecutionProfileApi.forStableModel(17);
+  expect(request).toHaveBeenLastCalledWith('/model-execution-profiles?public_model_id=17');
+});
 
 const profile = (n: number) => ({ id: `fixture.${n}`, version: '1.0.0', current: false,
   profile_definition_digest: n.toString(16).padStart(64, '0'), product_lineage_id: `fixture/${n}` }) as ModelExecutionProfile;

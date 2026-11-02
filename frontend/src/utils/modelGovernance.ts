@@ -23,6 +23,7 @@ export type TabKey = 'registry' | 'aliases' | 'sets' | 'assignments' | 'optimiza
 
 export interface ModelRegistryItem {
   id: number;
+  org_id?: number;
   model_name: string;
   display_name?: string;
   provider_family?: string;

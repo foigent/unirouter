@@ -3927,6 +3927,11 @@ paths:
           schema: { type: integer, format: int64, minimum: 1 }
           description: Exact customer-owned stable product whose published data revisions are requested.
         - in: query
+          name: org_id
+          required: false
+          schema: { type: integer, format: int64, minimum: 1 }
+          description: Optional explicit customer scope for public_model_id. Must match the actor's resolved customer authority; it does not grant cross-customer access.
+        - in: query
           name: source
           schema: { type: string, enum: [published] }
           description: Read published candidate Definitions; never selects or activates a current revision.

@@ -136,21 +136,41 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
     }
   }, [registryApprovedOnly, registryLifecycle, registryPage, registryPageSize, registrySearch, targetOrgID]);
 
+  const editedRegistryRecord = registrySheet?.mode === 'edit' ? registrySheet.record : undefined;
   const loadExecutionProfiles = useCallback(async () => {
     const version = ++executionProfilesRequestVersion.current;
     setExecutionProfilesLoading(true);
     setExecutionProfilesError('');
+    setExecutionProfiles([]);
     try {
-      const response = await modelExecutionProfileApi.list();
+      const record = editedRegistryRecord;
+      if (record?.org_id && targetOrgID && record.org_id !== targetOrgID) throw new Error('model customer changed');
+      const [response, product] = await Promise.all([
+        modelExecutionProfileApi.list(),
+        record ? modelExecutionProfileApi.forStableModel(record.id, targetOrgID || record.org_id) : undefined,
+      ]);
       if (version !== executionProfilesRequestVersion.current) return;
-      const profiles = Array.isArray(response?.data) ? response.data.map(profile => ({
+      const catalog = Array.isArray(response?.data) ? [...response.data] : [];
+      if (record?.execution_profile_id && record.execution_profile_version) {
+        const retainedKey = `${record.execution_profile_id}@${record.execution_profile_version}`;
+        // Compiled bootstrap semantics win for historical compiled addresses.
+        // Published entries only preserve this exact binding, never add new choices.
+        if (!catalog.some(profile => modelExecutionProfileKey(profile) === retainedKey)) {
+          const retained = product?.data?.filter(profile => modelExecutionProfileKey(profile) === retainedKey) || [];
+          if (retained.length !== 1 || !/^[a-f0-9]{64}$/.test(retained[0].profile_definition_digest || '') || !retained[0].product_lineage_id) {
+            throw new Error('retained product Profile unavailable');
+          }
+          catalog.push(retained[0]);
+        }
+      }
+      const profiles = catalog.map(profile => ({
         ...profile,
         provider_capabilities: Array.isArray(profile.provider_capabilities) ? profile.provider_capabilities : [],
         capabilities: Array.isArray(profile.capabilities) ? profile.capabilities : [],
         always_required_capabilities: Array.isArray(profile.always_required_capabilities) ? profile.always_required_capabilities : [],
         aliases: Array.isArray(profile.aliases) ? profile.aliases : [],
         evidence_refs: Array.isArray(profile.evidence_refs) ? profile.evidence_refs : [],
-      })) as ModelExecutionProfile[] : [];
+      })) as ModelExecutionProfile[];
       if (profiles.length === 0) throw new Error('empty execution profile catalog');
       setExecutionProfiles(profiles);
     } catch {
@@ -161,7 +181,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
     } finally {
       if (version === executionProfilesRequestVersion.current) setExecutionProfilesLoading(false);
     }
-  }, []);
+  }, [editedRegistryRecord, targetOrgID]);
 
   const loadAliases = useCallback(async (page = aliasPage, pageSize = aliasPageSize) => {
     const version = ++aliasRequestVersion.current;
@@ -271,12 +291,16 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
     if (!customerContextReady) return;
     if (activeTab === 'registry') {
       loadRegistry();
-      loadExecutionProfiles();
     }
     if (activeTab === 'aliases') loadAliases();
     if (activeTab === 'sets') loadModelSets();
     if (activeTab === 'assignments') loadAssignmentBase();
-  }, [activeTab, customerContextReady, loadAliases, loadAssignmentBase, loadExecutionProfiles, loadModelSets, loadRegistry]);
+  }, [activeTab, customerContextReady, loadAliases, loadAssignmentBase, loadModelSets, loadRegistry]);
+
+  useEffect(() => {
+    if (customerContextReady && activeTab === 'registry') loadExecutionProfiles();
+    return () => { executionProfilesRequestVersion.current += 1; };
+  }, [activeTab, customerContextReady, loadExecutionProfiles]);
 
   useEffect(() => {
     if (activeTab === 'assignments' && selectedProjectId) {
@@ -336,6 +360,8 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
     setSelectedExecutionProfileKey(record.execution_profile_id && record.execution_profile_version
       ? `${record.execution_profile_id}@${record.execution_profile_version}`
       : 'unverified.chat@1.0.0');
+    setExecutionProfilesLoading(true);
+    setExecutionProfiles([]);
     setRegistrySheet({ mode: 'edit', record });
   };
 
@@ -385,6 +411,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
 	};
 
   const handleRegistrySubmit = async (values: Record<string, any>) => {
+    if (executionProfilesLoading || executionProfilesError || executionProfiles.length === 0) return;
     const parsedContextLength = parseExactTokenCount(values.context_length);
     if (!parsedContextLength.ok) {
       Toast.error(t("模型上下文窗口上限必须是 0..2147483647 的整数 Token、十进制整数 K/M，或留空"));

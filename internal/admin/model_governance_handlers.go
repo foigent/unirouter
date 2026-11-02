@@ -479,7 +479,27 @@ func (h *Handler) UpdateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		selectedProfileID = *req.ExecutionProfileID
 		selectedProfileVersion = *req.ExecutionProfileVersion
 	}
-	profile, err := resolveModelExecutionProfile(beforeAuditState.ModelName, selectedProfileID, selectedProfileVersion)
+	selectedProfileID = strings.TrimSpace(selectedProfileID)
+	selectedProfileVersion = strings.TrimSpace(selectedProfileVersion)
+	var profile modelprofile.Profile
+	if strings.TrimSpace(selectedProfileID) == beforeAuditState.ExecutionProfileID &&
+		strings.TrimSpace(selectedProfileVersion) == beforeAuditState.ExecutionProfileVersion {
+		// Metadata edits retain this product's immutable authoring bootstrap.
+		// A data-first binding is not necessarily present in the compiled catalog.
+		// The model row is already locked; never select a current or latest revision.
+		lineage := ""
+		if _, compiled := modelprofile.Lookup(selectedProfileID, selectedProfileVersion); !compiled {
+			if err := tx.QueryRow(r.Context(), `SELECT COALESCE(to_jsonb(model_registry)->>'product_lineage_id','')
+FROM model_registry WHERE id=$1 AND org_id=$2`, id, beforeAuditState.OrgID).Scan(&lineage); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
+				return
+			}
+		}
+		profile, err = modelprofile.ResolveAuthoringBootstrap(r.Context(), tx,
+			beforeAuditState.ExecutionProfileID, beforeAuditState.ExecutionProfileVersion, lineage)
+	} else {
+		profile, err = resolveModelExecutionProfile(beforeAuditState.ModelName, selectedProfileID, selectedProfileVersion)
+	}
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error(), "code": "invalid_model_execution_profile"})
 		return

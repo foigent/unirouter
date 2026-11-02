@@ -93,7 +93,7 @@ export type ProfileCatalogSource = 'compiled' | 'published';
 
 export const modelExecutionProfileApi = {
   list: () => request<ModelExecutionProfileCatalog>('/model-execution-profiles'),
-  forStableModel: (id: number) => request<ModelExecutionProfileCatalog>(`/model-execution-profiles?public_model_id=${id}`),
+  forStableModel: (id: number, orgID?: number) => request<ModelExecutionProfileCatalog>(`/model-execution-profiles?public_model_id=${id}${orgID ? `&org_id=${orgID}` : ''}`),
   published: (page: number) => request<ModelExecutionProfileCatalog>(`/model-execution-profiles?source=published&page=${page}&page_size=100`),
 };
 

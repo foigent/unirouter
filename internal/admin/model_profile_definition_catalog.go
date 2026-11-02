@@ -112,7 +112,7 @@ func (h *Handler) listProductProfileDefinitions(w http.ResponseWriter, r *http.R
 		writeCanonicalApplicationError(w, errCanonicalApplicationInvalid)
 		return
 	}
-	org, err := resolveActorOrganization(r.Context(), 0)
+	org, err := resolveRequestOrganization(r)
 	if err != nil {
 		writeOrganizationScopeError(w, err)
 		return
