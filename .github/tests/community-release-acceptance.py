@@ -595,6 +595,21 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
                            "release_sequence": self.release_sequence, "provider_calls": 0, "builds": 0,
                            "signatures_generated": 0, "persistent_Target_acceptance": False, **context}
 
+        def run(self, label, args, **kwargs):
+            diagnosing = self.result.get('status') == 'failed'
+            primary = ({'installer_stop': self.result['installer_stop']}
+                       if diagnosing and 'installer_stop' in self.result else {})
+            if not diagnosing:
+                self.result.pop('installer_stop', None)
+            try:
+                return super().run(label, args, **kwargs)
+            finally:
+                if diagnosing:
+                    self.result.pop('installer_stop', None)
+                    self.result.update(primary)
+                elif kwargs.get('ok', True) is False:
+                    self.result.pop('installer_stop', None)
+
         def bootstrap_command(self, action, directory, project):
             return [sys.executable, "-I", "-B", self.bootstrap_script, action, "--bootstrap", self.bootstrap_file,
                     "--bootstrap-sha256", self.bootstrap_sha, "--directory", self.release,
@@ -692,7 +707,7 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
                 require(container["Image"] == state["image_ids"][name], "running image mismatch")
                 require(container["State"]["Running"], "installed service is not running")
                 for binds in (container["HostConfig"].get("PortBindings") or {}).values():
-                    require(name == "frontend" and all(b["HostIp"] == "127.0.0.1" and b["HostPort"] == "13000" for b in binds), "non-loopback or unexpected published service")
+                    require(name == "frontend" and all(b["HostIp"] == "127.0.0.1" and b["HostPort"] == str(self.loopback_port) for b in binds), "non-loopback or unexpected published service")
                 if name in ("backend", "frontend", "postgres", "redis"):
                     require(container["State"].get("Health", {}).get("Status") == "healthy", "service health failed")
             return {"target": actual, "plan_sha256": sha(directory / "evidence/install.json"),
@@ -717,8 +732,8 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
             after = self.first_customer_state(directory, project)
             password_choice_delta(before, after)
             require(retained() == original_files, "Native password choice changed original installer files.")
-            fixture_admin_login(generated, expected_status=401)
-            fixture_admin_login(FIRST_USE_TEST_INPUT)
+            fixture_admin_login(generated, expected_status=401, loopback_port=self.loopback_port)
+            fixture_admin_login(FIRST_USE_TEST_INPUT, loopback_port=self.loopback_port)
             self.chosen_fixture_input = FIRST_USE_TEST_INPUT
             self.result["caller_selected_password"] = {"initial_installer_rotations": 1, "final_rotations": 2,
                 "auth_epoch_advanced_once": True, "generated_old_input_refused": True,
@@ -729,24 +744,24 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
             self.phase = "first-customer normal authenticated preview"
             password = self.chosen_fixture_input
             def login():
-                value = strict_json(self.request('http://127.0.0.1:13000/api/v1/auth/login',
+                value = strict_json(self.request(self.loopback_url + '/api/v1/auth/login',
                     data=json.dumps({'username':'admin','password':password}).encode()))
                 require(value.get('organization_role') == 'platform_admin' and value.get('token'),
                         "Original fixture administrator cannot log in.")
                 return value['token']
             token, intent = login(), uuid.uuid4().hex
             before = self.first_customer_state(directory, project)
-            preview = first_customer_request(token, intent, dry_run=True, expected_status=200)
+            preview = first_customer_request(token, intent, dry_run=True, expected_status=200, loopback_port=self.loopback_port)
             first_customer_preview(preview, before, expected_rotations=2)
             require(immutable_digest(before) == immutable_digest(self.first_customer_state(directory, project)),
                     "First-customer preview changed seed or protected metadata.")
             self.passed("real first-customer preview is read-only and names exact empty-seed IDs")
             self.phase = "first-customer exact commit and known-success replay"
-            created = first_customer_request(token, intent, dry_run=False, expected_status=201)
+            created = first_customer_request(token, intent, dry_run=False, expected_status=201, loopback_port=self.loopback_port)
             customer_id = first_customer_result(created, idempotent=False)
             after = self.first_customer_state(directory, project)
             first_customer_transition(before, after, customer_id, intent)
-            replay = first_customer_request(token, intent, dry_run=False, expected_status=200)
+            replay = first_customer_request(token, intent, dry_run=False, expected_status=200, loopback_port=self.loopback_port)
             first_customer_result(replay, idempotent=True, customer_id=customer_id)
             require(immutable_digest(after) == immutable_digest(self.first_customer_state(directory, project)),
                     "Known-success first-customer replay created duplicate state.")
@@ -754,7 +769,7 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
             self.run("stop only the synthetic fixture backend", self.compose(directory, project) + ['stop','-t','30','backend'])
             self.run("restart fixture backend with native bounded health wait", self.compose(directory, project) +
                      ['up','-d','--no-deps','--wait','--wait-timeout','120','--pull','never','--no-build','backend'])
-            self.request('http://127.0.0.1:13000/health/ready')
+            self.request(self.loopback_url + '/health/ready')
             login()  # The same original password must still work after bootstrap/restart.
             restarted = self.first_customer_state(directory, project)
             first_customer_transition(before, restarted, customer_id, intent, restarted=True)
@@ -771,37 +786,45 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
             old_root = self.root / 'installed-predecessor'
             old_root.mkdir(mode=0o700)
             old = make_acceptance(old_repo, old_root, old_config, context, stage_record=record)
-            # The completed fresh case has released this port. Formal facts
-            # retain the same fixed port contract for both signed packages.
-            old.loopback_port = self.loopback_port = base.FIXTURE_PORTS['fresh']
+            # Retain the native fixture's independent-installation port intent;
+            # a completed fresh case can still leave a recently used host port.
+            old.loopback_port = self.loopback_port = base.FIXTURE_PORTS['single']
             self.result.pop('installer_stop', None)
             self.phase = 'prepare exact original signed predecessor'
-            old.preflight()
-            old.prepare()
-            same_public_ring(self.ring, old.ring, fixed)
-            self.directory = old.directory = old.instances / 'preserved'
-            self.project = old.project = 'ur-signed-upgrade-' + self.suffix
-            directory, project = self.directory, self.project
-            old.run('install original public predecessor without rebuild', old.command('install', directory, project))
-            old.installed_checks(directory, project)
-            old.native_first_use_checks(directory, project, restart=False)
-            org = old.result['first_customer']['organization_id']
-            require(type(org) is int and org > 1, 'Original native customer is missing.')
-            project_id = int(old.sql(directory, project, "INSERT INTO projects(org_id,name,slug,status,budget_period) "
-                "VALUES(" + str(org) + ",'Synthetic retained default','default','active','none') RETURNING id"))
-            require(project_id > 0, 'Original synthetic financial project is missing.')
-            old.sql(directory, project, "BEGIN; UPDATE wallets SET balance_micros=1234567 WHERE org_id=" + str(org) +
-                "; INSERT INTO transactions(request_id,org_id,project_id,type,status,amount_micros,balance_after_micros,note) "
-                "VALUES('synthetic-linux-history'," + str(org) + ',' + str(project_id) +
-                ",'topup','completed',1234567,1234567,'Synthetic preservation fixture'); COMMIT;")
-            rendered = strict_json(old.run('read original content configuration', old.compose(directory, project) +
-                                          ['config', '--format', 'json']))
-            environment = rendered['services']['backend']['environment']
-            require(all(environment.get(k) in ('', None) for k in ('SOURCE_CONTENT_STORAGE_ROOT',
-                    'SOURCE_CONTENT_STORAGE_IDENTITY', 'SOURCE_CONTENT_STORAGE_TOKEN_FILE'))
-                    and old.sql(directory, project, 'SELECT count(*) FROM execution_content_objects') == '0'
-                    and old.sql(directory, project, 'SELECT count(*) FROM execution_content_streams') == '0',
-                    'Public default-content fixture is not explicitly empty.')
+            try:
+                old.preflight()
+                old.prepare()
+                same_public_ring(self.ring, old.ring, fixed)
+                self.directory = old.directory = old.instances / 'preserved'
+                self.project = old.project = 'ur-signed-upgrade-' + self.suffix
+                directory, project = self.directory, self.project
+                old.run('install original public predecessor without rebuild', old.command('install', directory, project))
+                old.installed_checks(directory, project)
+                old.native_first_use_checks(directory, project, restart=False)
+                org = old.result['first_customer']['organization_id']
+                require(type(org) is int and org > 1, 'Original native customer is missing.')
+                project_id = int(old.sql(directory, project, "INSERT INTO projects(org_id,name,slug,status,budget_period) "
+                    "VALUES(" + str(org) + ",'Synthetic retained default','default','active','none') RETURNING id"))
+                require(project_id > 0, 'Original synthetic financial project is missing.')
+                old.sql(directory, project, "BEGIN; UPDATE wallets SET balance_micros=1234567 WHERE org_id=" + str(org) +
+                    "; INSERT INTO transactions(request_id,org_id,project_id,type,status,amount_micros,balance_after_micros,note) "
+                    "VALUES('synthetic-linux-history'," + str(org) + ',' + str(project_id) +
+                    ",'topup','completed',1234567,1234567,'Synthetic preservation fixture'); COMMIT;")
+                rendered = strict_json(old.run('read original content configuration', old.compose(directory, project) +
+                                              ['config', '--format', 'json']))
+                environment = rendered['services']['backend']['environment']
+                require(all(environment.get(k) in ('', None) for k in ('SOURCE_CONTENT_STORAGE_ROOT',
+                        'SOURCE_CONTENT_STORAGE_IDENTITY', 'SOURCE_CONTENT_STORAGE_TOKEN_FILE'))
+                        and old.sql(directory, project, 'SELECT count(*) FROM execution_content_objects') == '0'
+                        and old.sql(directory, project, 'SELECT count(*) FROM execution_content_streams') == '0',
+                        'Public default-content fixture is not explicitly empty.')
+            except BaseException:
+                # The retained module has its own Failed type. Preserve only
+                # its authored phase/stop; the outer report still redacts errors.
+                self.phase = old.phase
+                if 'installer_stop' in old.result:
+                    self.result['installer_stop'] = old.result['installer_stop']
+                raise
             self.wait_business_startup()
             self.source_contract = base.source_contract(repo)
             self.observe_migration_owner()
