@@ -171,6 +171,137 @@ class PublicPredecessorTests(unittest.TestCase):
                             instance.command('install', root / 'install', 'fixture')):
                 self.assertEqual(command[command.index('--port') + 1], '13001')
 
+    def formal_facts_fixture(self, root, factory=None):
+        spec = importlib.util.spec_from_file_location('formal_port_fixture', ROOT / '.github/tests/community-installer.py')
+        native = importlib.util.module_from_spec(spec); spec.loader.exec_module(native)
+        with mock.patch.object(m, 'load_module', side_effect=lambda path, digest, name:
+                               native if name == 'accepted_native_installer' else types.SimpleNamespace()), \
+             mock.patch.object(m.shutil, 'which', return_value='/fixture/docker'):
+            old = (factory or m.make_acceptance)(ROOT, root, self.old['inputs']['config'], {})
+        directory = old.instances / 'preserved'
+        (directory / 'evidence').mkdir(parents=True)
+        old.image_ids = {role: 'sha256:' + str(i) * 64
+                         for i, role in enumerate(sorted(old.images), 1)}
+        state = {'image_ids': old.image_ids, 'files': {}, 'installation_id': 'synthetic-original'}
+        plan = {'target': {'database': 'synthetic-original-db'}}
+        (directory / 'install-state.json').write_text(json.dumps(state))
+        (directory / 'evidence/install.json').write_text(json.dumps(plan))
+        old.target = lambda *args: plan['target']
+        release = {'sequence': old.release_sequence, 'version': old.version, 'commit': old.commit,
+                   'package': old.config['release']['package_sha256'], 'schema': old.schema}
+        def sql(_directory, _project, query):
+            if query.startswith('SELECT version FROM'): return old.schema
+            if query.startswith('SELECT obj_description'):
+                return 'native record\n' + json.dumps({'state': 'completed', 'plan': plan})
+            if query.startswith('SELECT count(*) FROM audit_logs'): return '1'
+            return json.dumps(release)
+        old.sql = sql
+        port, address = ['13000'], ['127.0.0.1']
+        def run(label, argv):
+            if label == 'install original public predecessor without rebuild':
+                port[0] = argv[argv.index('--port') + 1]
+                return ''
+            if label == 'read installed containers':
+                return '\n'.join(old.image_ids)
+            self.assertEqual(label, 'inspect installed containers')
+            return json.dumps([{'Config': {'Labels': {'com.docker.compose.service': role}},
+                'Image': image, 'State': {'Running': True, 'Health': {'Status': 'healthy'}},
+                'HostConfig': {'PortBindings': {'80/tcp': [{'HostIp': address[0], 'HostPort': port[0]}]}
+                               if role == 'frontend' else {}}}
+                for role, image in old.image_ids.items()])
+        old.run = run
+        return old, directory, port, address
+
+    def test_formal_facts_rejects_wrong_port_and_public_bind_without_relaxing_guard(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            old, directory, port, address = self.formal_facts_fixture(Path(tmp).resolve())
+            self.assertEqual(old.facts(directory, 'fixture')['installation_id'], 'synthetic-original')
+            port[0] = '13001'
+            with self.assertRaisesRegex(m.Stop, 'non-loopback or unexpected published service'):
+                old.facts(directory, 'fixture')
+            port[0], address[0] = '13000', '0.0.0.0'
+            with self.assertRaisesRegex(m.Stop, 'non-loopback or unexpected published service'):
+                old.facts(directory, 'fixture')
+
+    def test_signed_pair_installs_predecessor_on_its_formal_port_and_clears_prior_negative(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            native = importlib.util.spec_from_file_location('signed_pair_fixture', ROOT / '.github/tests/community-installer.py')
+            base = importlib.util.module_from_spec(native); native.loader.exec_module(base)
+            with mock.patch.object(m, 'load_module', side_effect=lambda path, digest, name:
+                                   base if name == 'accepted_native_installer' else types.SimpleNamespace()), \
+                 mock.patch.object(m.shutil, 'which', return_value='/fixture/docker'):
+                current = m.make_acceptance(ROOT, root, self.candidate, {},
+                                            upgrade_source=(root / 'old-source', self.old))
+            factory, observed = m.make_acceptance, {}
+            def predecessor(_repo, old_root, _config, _context, **kwargs):
+                old, directory, port, _ = self.formal_facts_fixture(old_root, factory)
+                old.preflight = old.prepare = lambda: None
+                def checked(_directory, project):
+                    old.facts(_directory, project)
+                    self.assertEqual(old.loopback_port, 13000)
+                    raise RuntimeError('passed actual predecessor facts; stop before private first-use or upgrade')
+                old.installed_checks = checked
+                observed['port'] = port
+                return old
+            current.result['installer_stop'] = 'Earlier expected wrong-project refusal'
+            with mock.patch.object(m, 'make_acceptance', side_effect=predecessor), \
+                 mock.patch.object(m, 'same_public_ring'):
+                with self.assertRaisesRegex(RuntimeError, 'passed actual predecessor facts'):
+                    current.installed_public_upgrade()
+            self.assertEqual(observed['port'][0], '13000')
+            self.assertNotIn('installer_stop', current.result)
+
+    def test_shipped_resume_still_refuses_project_socket_package_and_changed_daemon(self):
+        spec = importlib.util.spec_from_file_location('unchanged_shipped_installer', ROOT / 'deploy/customer/install.py')
+        installer = importlib.util.module_from_spec(spec); spec.loader.exec_module(installer)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve(); directory = root / 'original'; directory.mkdir(mode=0o700)
+            package = directory / 'release.tar.gz'; package.write_bytes(b'public synthetic package')
+            package.chmod(0o600)
+            digest = hashlib.sha256(package.read_bytes()).hexdigest()
+            state = {'format': 'unirouter.install-state.v1', 'directory': str(directory),
+                     'project': 'original', 'port': 13000, 'docker_socket': '/fixture/docker.sock',
+                     'package_sha256': digest, 'daemon': 'original-daemon', 'files': {}}
+            path = directory / 'install-state.json'; path.write_text(json.dumps(state)); path.chmod(0o600)
+            release = types.SimpleNamespace(package=package, directory=root, sha=digest)
+            original = installer.Installer(release, directory, 'original', 13000, Path('/fixture/docker.sock'))
+            original.load_state()
+            for field, value in [('project', 'other'), ('docker_socket', '/fixture/other.sock'),
+                                 ('package_sha256', 'f' * 64)]:
+                changed = dict(state, **{field: value}); path.write_text(json.dumps(changed))
+                with self.subTest(field=field), self.assertRaisesRegex(installer.InstallError, 'Resume identity differs'):
+                    original.load_state()
+            path.write_text(json.dumps(state)); original.load_state()
+            original.inventory = lambda: []
+            def command(argv, label, input=None):
+                return (json.dumps({'OSType': 'linux', 'ID': 'changed-daemon', 'SecurityOptions': []})
+                        if label == 'local Docker daemon prerequisite' else 'Compose v2')
+            original.command = command
+            with mock.patch.object(installer.platform, 'system', return_value='Linux'), \
+                 mock.patch.object(installer.os, 'geteuid', return_value=0):
+                with self.assertRaisesRegex(installer.InstallError, 'selected Docker daemon changed'):
+                    original.check(resume=True)
+
+    def test_actual_report_keeps_authored_guard_reason_and_redacts_arbitrary_errors(self):
+        for error in (m.Stop('non-loopback or unexpected published service'),
+                      RuntimeError('synthetic private child output must stay redacted')):
+            with self.subTest(error=type(error).__name__), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp).resolve()
+                instance = types.SimpleNamespace(env={}, phase='predecessor facts',
+                    result={'status': 'running', 'checks': []},
+                    execute=mock.Mock(side_effect=error), failure_facts=mock.Mock())
+                with mock.patch.object(m, 'validate'), mock.patch.object(m, 'native_guard', return_value={}), \
+                     mock.patch.object(m, 'reference_sources'), mock.patch.object(m, 'upgrade_source_record', return_value=None), \
+                     mock.patch.object(m.tempfile, 'mkdtemp', return_value=str(root)), \
+                     mock.patch.object(m, 'make_acceptance', return_value=instance), \
+                     mock.patch.object(m, 'clean_environment', side_effect=lambda env: contextlib.nullcontext()), \
+                     contextlib.redirect_stdout(io.StringIO()) as output:
+                    self.assertEqual(m.execute(self.candidate, ROOT, self.current), 1)
+                report = json.loads(output.getvalue())
+                self.assertEqual(report['error'], str(error) if isinstance(error, m.Stop) else 'consumer_check_failed_redacted')
+                self.assertNotIn('synthetic private child output', output.getvalue())
+
     def test_public_upgrade_refuses_check_mutation_or_wrong_identity_before_native_write(self):
         # Exercise the actual new case through its first native-write boundary.
         # Services/downloads are synthetic here; file inventory is real. The
