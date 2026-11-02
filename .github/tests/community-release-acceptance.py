@@ -123,22 +123,37 @@ def fixture_admin_login(password, *, expected_status=200, loopback_port=13000):
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoFirstCustomerRedirect())
     try:
         with opener.open(request, timeout=20) as response:
-            require(expected_status == response.status == 200, "Unexpected fixture login status.")
+            status = response.status
+            require(type(status) is int and 100 <= status <= 599,
+                    "Fixture administrator login failed: invalid HTTP status.")
+            require(expected_status == status == 200,
+                    "Fixture administrator login failed: HTTP " + str(status) + ".")
             raw = response.read(FIRST_CUSTOMER_LIMIT + 1)
             require(len(raw) <= FIRST_CUSTOMER_LIMIT, "Fixture login response exceeded its bound.")
             value = strict_json(raw)
+            require(isinstance(value, dict), "Fixture administrator login failed: invalid JSON response.")
             require(value.get("organization_role") == "platform_admin" and
                     isinstance(value.get("token"), str) and value["token"], "Chosen fixture input did not authenticate.")
             return value
     except urllib.error.HTTPError as error:
         code = error.code
         error.close()
-        require(expected_status == code == 401, "Fixture administrator login failed.")
+        require(type(code) is int and 100 <= code <= 599,
+                "Fixture administrator login failed: invalid HTTP status.")
+        require(expected_status == code == 401,
+                "Fixture administrator login failed: HTTP " + str(code) + ".")
         return None
+    except urllib.error.URLError as error:
+        category = "timeout" if isinstance(error.reason, TimeoutError) else "transport error"
+        raise Stop("Fixture administrator login failed: " + category + ".") from None
+    except TimeoutError:
+        raise Stop("Fixture administrator login failed: timeout.") from None
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise Stop("Fixture administrator login failed: invalid JSON response.") from None
     except Stop:
         raise
     except Exception:
-        raise Stop("Fixture administrator login failed.") from None
+        raise Stop("Fixture administrator login failed: response processing error.") from None
 
 
 class NoFirstCustomerRedirect(urllib.request.HTTPRedirectHandler):
@@ -884,7 +899,9 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
             require(all(witness['receipts']['stop-' + role]['clean_exit'] and
                         witness['receipts']['stop-' + role]['old_processes_gone'] for role in ('backend', 'frontend')),
                     'Original public process exits are unproved.')
+            self.phase = 'verify public upgrade readiness'
             self.request(self.loopback_url + '/health/ready')
+            self.phase = 'verify original administrator after public upgrade'
             fixture_admin_login(FIRST_USE_TEST_INPUT, loopback_port=self.loopback_port)
             actual_release = strict_json(self.sql(directory, project,
                 "SELECT jsonb_build_object('release_sequence',release_sequence,'version',version,'commit',commit,"

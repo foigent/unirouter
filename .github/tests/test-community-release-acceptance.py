@@ -487,6 +487,109 @@ class PublicPredecessorTests(unittest.TestCase):
                         self.assertEqual(instance.phase, 'read completed exact public upgrade resume' if fault == 'resume'
                                          else 'current native upgrade')
 
+    def test_actual_post_upgrade_checks_report_their_own_phase_and_safe_login_status(self):
+        # Run the real signed-pair method and report boundary. Native services
+        # are doubled; package/state/receipt files and their hashes are real.
+        native_path = ROOT / '.github/tests/community-installer.py'
+        native = m.load_module(native_path, m.sha(native_path), 'post_upgrade_report_fixture')
+        ledger = native.source_contract(ROOT).ledger
+        for fault in ('readiness', 'login'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp, \
+                 mock.patch.object(m.shutil, 'which', return_value='/fixture/docker'):
+                root = Path(tmp).resolve()
+                instance = m.make_acceptance(ROOT, root, self.candidate, {},
+                    upgrade_source=(root / 'old-source', self.old))
+                directory = root / 'installed-predecessor/instances/preserved'
+                old = types.SimpleNamespace(instances=directory.parent, ring=root / 'ring',
+                    result={'first_customer': {'organization_id': 2}}, release_sequence=21,
+                    schema=instance.schema, preflight=lambda: None, installed_checks=lambda *a: None,
+                    native_first_use_checks=lambda *a, **kw: None, command=lambda *a: [], compose=lambda *a: [])
+                def prepare():
+                    (directory / 'evidence').mkdir(parents=True)
+                    (directory / 'install-state.json').write_bytes(b'original synthetic state')
+                old.prepare = prepare
+                old.run = lambda label, argv: json.dumps({'services': {'backend': {'environment': {}}}})
+                old.sql = lambda _d, _p, q: '2' if q.startswith('INSERT INTO projects') else '0'
+                protected = {name: {'count': 1} for name in
+                    ('users', 'orgs', 'projects', 'wallets', 'transactions', 'audit_logs', 'release_history')}
+                fingerprint = {'schema_migrations': {'count': len(ledger), 'sha256': 'synthetic-stable'}}
+                instance.wait_business_startup = lambda: None
+                instance.migration_audit = root / 'synthetic-migration-audit.jsonl'
+                instance.observe_migration_owner = lambda: instance.migration_audit.write_text(
+                    '{"native_owner_calls":1,"migration_owner_calls":0}\n')
+                instance.inventory = lambda: {}
+                instance.upgrade_fingerprint = lambda *a, **kw: fingerprint
+                instance.protected_upgrade_rows = lambda *a: protected
+                instance.protected_upgrade_files = lambda *a, **kw: {}
+                recovery = types.SimpleNamespace(private_inventory=lambda *a: {}, verify_archive=mock.Mock())
+                instance.recovery_module = lambda: recovery
+                checked = {'writes': 0,
+                    'source': {'package_sha256': self.old['inputs']['config']['release']['package_sha256']},
+                    'candidate': {'package_sha256': self.candidate['release']['package_sha256']}}
+                def run(label, argv):
+                    instance.phase = label
+                    return json.dumps(checked if label.startswith('check exact') else
+                        {'state': 'not_started'} if label == 'read original public upgrade status' else {})
+                instance.run = run
+                instance.sql = lambda *a: json.dumps(ledger)
+                def upgrade(*args):
+                    backup = directory / 'upgrades/synthetic-operation/backup'
+                    backup.mkdir(parents=True)
+                    for name in ('database.dump', 'paired-files.tar'):
+                        (backup / name).write_bytes(b'synthetic restored fixture')
+                    pair = {'verification_database': 'synthetic_restore', 'restored_tables': fingerprint,
+                        'dump_sha256': m.sha(backup / 'database.dump'), 'roots': [],
+                        'files': {'archive_sha256': m.sha(backup / 'paired-files.tar'), 'files': {}}}
+                    (backup / 'receipt.json').write_text(json.dumps(pair))
+                    (directory / 'original-state.json').write_bytes((directory / 'install-state.json').read_bytes())
+                    witness = {'state': 'completed', 'pending': None, 'source_ledger': list(ledger),
+                        'candidate': checked['candidate'], 'source': checked['source'],
+                        'operation_id': 'synthetic-operation', 'source_state_path': 'original-state.json',
+                        'receipts': {'migrate': {'mode': 'same_schema', 'ledger_sha256': hashlib.sha256(
+                            json.dumps(list(ledger), sort_keys=True, separators=(',', ':')).encode()).hexdigest()},
+                            'cold-pair': {'receipt_sha256': m.sha(backup / 'receipt.json')},
+                            **{'stop-' + role: {'clean_exit': True, 'old_processes_gone': True}
+                               for role in ('backend', 'frontend')}}}
+                    (directory / 'install-state.json').write_text(json.dumps({'upgrade': witness}))
+                instance.run_native_upgrade = mock.Mock(side_effect=upgrade)
+                def ready(url):
+                    self.assertEqual(url, 'http://127.0.0.1:13001/health/ready')
+                    if fault == 'readiness': raise m.Stop('Synthetic readiness refusal.')
+                    return b'{}'
+                instance.request = mock.Mock(side_effect=ready)
+                instance.execute = instance.installed_public_upgrade
+                instance.failure_facts = mock.Mock()
+                opener = mock.Mock()
+                error_body = mock.Mock(wraps=io.BytesIO(b'SYNTHETIC-PRIVATE-REPORT-MARKER'))
+                opener.open.side_effect = m.urllib.error.HTTPError('http://127.0.0.1:13001/private',
+                    503, 'SYNTHETIC-PRIVATE-REPORT-MARKER', {}, error_body)
+                # The first factory call is the report owner; the next is its
+                # actual retained-predecessor call. No method body is replaced.
+                with mock.patch.object(m, 'validate'), mock.patch.object(m, 'native_guard', return_value={}), \
+                     mock.patch.object(m, 'reference_sources'), mock.patch.object(m, 'upgrade_source_record', return_value=None), \
+                     mock.patch.object(m.tempfile, 'mkdtemp', return_value=str(root)), \
+                     mock.patch.object(m, 'make_acceptance', side_effect=[instance, old]), \
+                     mock.patch.object(m, 'same_public_ring'), \
+                     mock.patch.object(m, 'clean_environment', side_effect=lambda env: contextlib.nullcontext()), \
+                     mock.patch.object(m.urllib.request, 'build_opener', return_value=opener), \
+                     contextlib.redirect_stdout(io.StringIO()) as output, \
+                     contextlib.redirect_stderr(io.StringIO()) as stderr:
+                    self.assertEqual(m.execute(self.candidate, ROOT, self.current), 1)
+                report = json.loads(output.getvalue())
+                self.assertEqual(report['status'], 'failed')
+                self.assertEqual(report['phase'], 'verify public upgrade readiness' if fault == 'readiness'
+                                 else 'verify original administrator after public upgrade')
+                self.assertEqual(report['error'], 'Synthetic readiness refusal.' if fault == 'readiness'
+                                 else 'Fixture administrator login failed: HTTP 503.')
+                self.assertNotIn('installed_public_upgrade', report)
+                self.assertNotIn('SYNTHETIC-PRIVATE-REPORT-MARKER', output.getvalue() + stderr.getvalue())
+                instance.run_native_upgrade.assert_called_once()
+                recovery.verify_archive.assert_called_once()
+                self.assertEqual(opener.open.call_count, 0 if fault == 'readiness' else 1)
+                error_body.read.assert_not_called()
+                if fault == 'login': error_body.close.assert_called_once()
+
+
 class ConsumerTests(unittest.TestCase):
     def setUp(self):
         self.config = m.load_config(ROOT)
@@ -996,6 +1099,43 @@ class FirstCustomerTests(unittest.TestCase):
             with mock.patch.object(m.urllib.request,'build_opener') as build:
                 with self.assertRaises(m.Stop):m.fixture_admin_login(value)
                 build.assert_not_called()
+
+    def test_login_retains_only_safe_HTTP_status_and_closes_error_without_reading(self):
+        marker = 'SYNTHETIC-PRIVATE-HTTP-MARKER'
+        for status in (302, 401, 403, 429, 500, 502, 503, True, 99, 600, marker):
+            body = mock.Mock(wraps=io.BytesIO(marker.encode()))
+            opener = mock.Mock()
+            opener.open.side_effect = m.urllib.error.HTTPError('http://127.0.0.1:13001/' + marker,
+                status, marker, {'X-Synthetic': marker}, body)
+            with self.subTest(status=status), \
+                 mock.patch.object(m.urllib.request, 'build_opener', return_value=opener):
+                with self.assertRaises(m.Stop) as error:
+                    m.fixture_admin_login(m.FIRST_USE_TEST_INPUT, loopback_port=13001)
+                suffix = 'HTTP ' + str(status) if type(status) is int and 100 <= status <= 599 else 'invalid HTTP status'
+                self.assertEqual(str(error.exception), 'Fixture administrator login failed: ' + suffix + '.')
+                self.assertNotIn(marker, str(error.exception))
+                self.assertEqual(opener.open.call_count, 1)
+                body.read.assert_not_called(); body.close.assert_called_once()
+
+    def test_login_classifies_transport_and_JSON_without_exception_or_response_text(self):
+        marker = 'SYNTHETIC-PRIVATE-TRANSPORT-MARKER'
+        for error, label in ((m.urllib.error.URLError(ConnectionRefusedError(marker)), 'transport error'),
+                             (m.urllib.error.URLError(TimeoutError(marker)), 'timeout'),
+                             (TimeoutError(marker), 'timeout'), (RuntimeError(marker), 'response processing error')):
+            opener = mock.Mock(); opener.open.side_effect = error
+            with self.subTest(label=label), mock.patch.object(m.urllib.request, 'build_opener', return_value=opener):
+                with self.assertRaises(m.Stop) as stopped: m.fixture_admin_login(m.FIRST_USE_TEST_INPUT)
+                self.assertEqual(str(stopped.exception), 'Fixture administrator login failed: ' + label + '.')
+                self.assertEqual(opener.open.call_count, 1)
+        for body in (b'not-json', b'\xff', b'[]', b'null'):
+            response, opener = self.response_fixture(body)
+            with self.subTest(body=body), mock.patch.object(m.urllib.request, 'build_opener', return_value=opener):
+                with self.assertRaises(m.Stop) as stopped: m.fixture_admin_login(m.FIRST_USE_TEST_INPUT)
+                self.assertEqual(str(stopped.exception), 'Fixture administrator login failed: invalid JSON response.')
+        response, opener = self.response_fixture(b'{"token":"first","token":"second"}')
+        with mock.patch.object(m.urllib.request, 'build_opener', return_value=opener):
+            with self.assertRaisesRegex(m.Stop, 'Duplicate JSON metadata field'):
+                m.fixture_admin_login(m.FIRST_USE_TEST_INPUT)
 
 
 if __name__=='__main__':unittest.main()
