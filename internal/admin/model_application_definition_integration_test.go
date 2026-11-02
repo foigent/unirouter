@@ -430,6 +430,7 @@ SELECT (SELECT COUNT(*) FROM runtime_change_releases WHERE public_model_id=$1),
 	require.NotEmpty(t, pin.SelectorDigest)
 	if dataFirst {
 		verifyFirstDataGateway(t, h, actorRequest, sealedReceipt.Release, candidate.Application, d, stream)
+		assertPublishedRegistryMetadataWithRelease(t, pool, h, actorRequest, candidate.Application.PublicModel.ID)
 	}
 	replayedRelease, _ := serveCanonicalDeploymentReleaseAuthoring(t, h, actorRequest, authorBody, "data-http-author", http.StatusOK)
 	require.True(t, replayedRelease.IdempotencyReplay)

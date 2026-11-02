@@ -5,6 +5,7 @@ import ModelGovernancePage, { comparableModelIdentity, formatModelSetItems, pars
 
 const mockGetModelRegistry = vi.fn();
 const mockGetModelExecutionProfiles = vi.fn();
+const mockGetProductExecutionProfiles = vi.fn();
 const mockCreateModelRegistry = vi.fn();
 const mockUpdateModelRegistry = vi.fn();
 const mockGetModelAliases = vi.fn();
@@ -48,6 +49,7 @@ vi.mock('../../api/client', () => ({
 vi.mock('../../api/modelExecutionProfiles', () => ({
   modelExecutionProfileApi: {
     list: (...args: any[]) => mockGetModelExecutionProfiles(...args),
+    forStableModel: (...args: any[]) => mockGetProductExecutionProfiles(...args),
   },
 }));
 
@@ -167,6 +169,7 @@ const PROJECTS = {
 function setupMocks() {
   mockGetModelRegistry.mockResolvedValue(REGISTRY);
   mockGetModelExecutionProfiles.mockResolvedValue(EXECUTION_PROFILES);
+  mockGetProductExecutionProfiles.mockResolvedValue({ data: [] });
   mockCreateModelRegistry.mockResolvedValue({ id: 3 });
   mockUpdateModelRegistry.mockResolvedValue({ success: true });
   mockGetModelAliases.mockResolvedValue(ALIASES);
@@ -447,6 +450,85 @@ describe('ModelGovernancePage', () => {
     expect(await screen.findByText('自定义 / 未验证模型')).toBeTruthy();
     expect(screen.getByText('UniRouter 已验证：尚无本地一致性能力')).toBeTruthy();
     expect(screen.getByText('每次调用必须证明：无')).toBeTruthy();
+  });
+
+  it('retains only the exact product published Profile and submits the original limits with the two catalog changes', async () => {
+    const published = { ...EXECUTION_PROFILES.data[1], id: 'deepseek.v4.1-flash.api', version: '1.1.0',
+      current: false, label: 'Published Flash', profile_definition_digest: 'a'.repeat(64), product_lineage_id: 'deepseek/deepseek-flash' };
+    mockGetProductExecutionProfiles.mockResolvedValue({ data: [published, { ...published, version: '1.2.0', label: 'Other published revision' }] });
+    mockGetModelRegistry.mockResolvedValue({ data: [{ ...REGISTRY.data[0], org_id: 2, model_name: 'deepseek-flash',
+      lifecycle: 'staging', approved_catalog: false, context_length: 1_000_000, output_limit: 384_000,
+      execution_profile_id: published.id, execution_profile_version: published.version }], total: 1 });
+    render(<ModelGovernancePage />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑模型' }));
+    expect(await screen.findByText('Published Flash')).toBeTruthy();
+    expect(mockGetProductExecutionProfiles).toHaveBeenCalledWith(1, 2);
+    fireEvent.click(screen.getByRole('combobox', { name: '版本化执行 Profile' }));
+    expect(screen.queryByText(/Other published revision/)).toBeNull();
+    fireEvent.keyDown(screen.getByRole('combobox', { name: '版本化执行 Profile' }), { key: 'Escape' });
+    fireEvent.click(screen.getByRole('combobox', { name: '模型生命周期' }));
+    fireEvent.click(await screen.findByText('GA'));
+    fireEvent.click(screen.getByRole('combobox', { name: '开发者目录可见' }));
+    fireEvent.click(await screen.findByText('加入开发者目录'));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(mockUpdateModelRegistry).toHaveBeenCalledWith(1, expect.objectContaining({
+      lifecycle: 'ga', approved_catalog: true, context_length: 1_000_000, output_limit: 384_000,
+      execution_profile_id: published.id, execution_profile_version: published.version,
+    })));
+  });
+
+  it.each(['failure', 'missing binding', 'bad digest'])('blocks published edit on %s without falling back to another Profile', async kind => {
+    const record = { ...REGISTRY.data[0], org_id: 2, execution_profile_id: 'published.only.api', execution_profile_version: '1.0.0' };
+    mockGetModelRegistry.mockResolvedValue({ data: [record], total: 1 });
+    if (kind === 'failure') mockGetProductExecutionProfiles.mockRejectedValue(new Error('offline'));
+    else mockGetProductExecutionProfiles.mockResolvedValue({ data: kind === 'missing binding' ? [] : [{
+      ...EXECUTION_PROFILES.data[1], id: record.execution_profile_id, version: record.execution_profile_version,
+      profile_definition_digest: 'bad', product_lineage_id: 'fixture/product',
+    }] });
+    render(<ModelGovernancePage />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑模型' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '保存' })).toBeDisabled());
+    expect(await screen.findByText('模型执行 Profile 加载失败')).toBeTruthy();
+    expect(mockUpdateModelRegistry).not.toHaveBeenCalled();
+  });
+
+  it('ignores a late product catalogue after closing the edit and reopening another model', async () => {
+    const pending = deferred<any>();
+    const record = { ...REGISTRY.data[0], org_id: 2, execution_profile_id: 'late.profile', execution_profile_version: '1.0.0' };
+    mockGetModelRegistry.mockResolvedValue({ data: [record, { ...record, id: 2, model_name: 'second-model',
+      execution_profile_id: 'unverified.chat', execution_profile_version: '1.0.0' }], total: 2 });
+    mockGetProductExecutionProfiles.mockReturnValueOnce(pending.promise).mockResolvedValue({ data: [] });
+    render(<ModelGovernancePage />);
+    fireEvent.click((await screen.findAllByRole('button', { name: '编辑模型' }))[0]);
+    expect(screen.getByRole('button', { name: '保存' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await waitFor(() => expect(mockGetModelExecutionProfiles).toHaveBeenCalledTimes(3));
+    fireEvent.click((await screen.findAllByRole('button', { name: '编辑模型' }))[1]);
+    expect(await screen.findByText('自定义 / 未验证模型')).toBeTruthy();
+    await act(async () => { pending.resolve({ data: [{ ...EXECUTION_PROFILES.data[1], id: 'late.profile', version: '1.0.0',
+      label: 'Stale published Profile', profile_definition_digest: 'a'.repeat(64), product_lineage_id: 'fixture/product' }] }); });
+    expect(screen.queryByText('Stale published Profile')).toBeNull();
+    expect(mockGetProductExecutionProfiles).toHaveBeenLastCalledWith(2, 2);
+    expect(mockUpdateModelRegistry).not.toHaveBeenCalled();
+  });
+
+  it('blocks an old product edit and ignores its late catalogue after the customer changes', async () => {
+    const pending = deferred<any>();
+    const record = { ...REGISTRY.data[0], org_id: 2, execution_profile_id: 'late.profile', execution_profile_version: '1.0.0' };
+    auth.user = { id: 1, org_id: 1, role: 'platform_admin', organization_role: 'platform_admin',
+      customer_context: { state: 'ready', org_id: 2 } };
+    mockGetModelRegistry.mockResolvedValue({ data: [record], total: 1 });
+    mockGetProductExecutionProfiles.mockReturnValueOnce(pending.promise);
+    const { rerender } = render(<ModelGovernancePage />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑模型' }));
+    auth.user = { ...auth.user, customer_context: { state: 'ready', org_id: 3 } };
+    rerender(<ModelGovernancePage />);
+    expect(await screen.findByText('模型执行 Profile 加载失败')).toBeTruthy();
+    await act(async () => { pending.resolve({ data: [{ ...EXECUTION_PROFILES.data[1], id: 'late.profile', version: '1.0.0',
+      label: 'Wrong-customer late Profile', profile_definition_digest: 'a'.repeat(64), product_lineage_id: 'fixture/product' }] }); });
+    expect(screen.getByRole('button', { name: '保存' })).toBeDisabled();
+    expect(screen.queryByText('Wrong-customer late Profile')).toBeNull();
+    expect(mockUpdateModelRegistry).not.toHaveBeenCalled();
   });
 
   it('loads model set items from the model set table', async () => {

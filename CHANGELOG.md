@@ -4,6 +4,13 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.15.5] - 2026-11-02
+
+### Fixed
+
+- Retain an existing product's exact published execution Profile when editing model catalogue metadata. Resolve its immutable definition and recorded lineage in the existing locked transaction, preserving compiled bootstrap precedence, deployment identity restrictions, limits and atomic audit failure handling.
+- Load the exact model/customer Profile for catalogue editing, preserving only its retained published binding alongside existing compiled choices. Reject unavailable or stale catalogue results instead of substituting another Profile; keep normal customer scope on the existing product catalogue read.
+
 ## [1.15.4] - 2026-11-01
 
 ### Fixed

@@ -887,6 +887,11 @@ class InstallerFixtureContract(unittest.TestCase):
             self.assertEqual(before,work.protected_upgrade_files(directory,body,None))
             (directory/'runtime/.env').chmod(0o644)
             self.assertNotEqual(before,work.protected_upgrade_files(directory,body,None))
+            with self.assertRaises(fixture.Failed): work.protected_upgrade_files(directory,None,None)
+            with self.assertRaises(fixture.Failed): work.protected_upgrade_files(directory,body,None,body_absent=True)
+            absent=work.protected_upgrade_files(directory,None,None,body_absent=True)
+            self.assertNotIn(str(body).lstrip('/'),absent)
+            self.assertIn(str(directory/'runtime/.env').lstrip('/'),absent)
 
     def test_driver_never_starts_outside_its_disposable_runner(self):
         with patch.object(fixture.sys,'argv',['fixture','--expected-commit','a'*40,'--report','/not-created']), \
