@@ -215,11 +215,27 @@ class PublicPredecessorTests(unittest.TestCase):
     def test_formal_facts_rejects_wrong_port_and_public_bind_without_relaxing_guard(self):
         with tempfile.TemporaryDirectory() as tmp:
             old, directory, port, address = self.formal_facts_fixture(Path(tmp).resolve())
-            self.assertEqual(old.facts(directory, 'fixture')['installation_id'], 'synthetic-original')
-            port[0] = '13001'
+            for declared in (13000, 13001):
+                old.loopback_port, port[0] = declared, str(declared)
+                self.assertEqual(old.facts(directory, 'fixture')['installation_id'], 'synthetic-original')
+                port[0] = str(13001 if declared == 13000 else 13000)
+                with self.assertRaisesRegex(m.Stop, 'non-loopback or unexpected published service'):
+                    old.facts(directory, 'fixture')
+            old.loopback_port = 13000
+            port[0], address[0] = '13000', '0.0.0.0'
             with self.assertRaisesRegex(m.Stop, 'non-loopback or unexpected published service'):
                 old.facts(directory, 'fixture')
-            port[0], address[0] = '13000', '0.0.0.0'
+            address[0] = '127.0.0.1'
+            inspect = old.run
+            def publish_backend(label, argv):
+                raw = inspect(label, argv)
+                if label == 'inspect installed containers':
+                    items = json.loads(raw)
+                    next(x for x in items if x['Config']['Labels']['com.docker.compose.service'] == 'backend')[
+                        'HostConfig']['PortBindings'] = {'8080/tcp': [{'HostIp': address[0], 'HostPort': port[0]}]}
+                    return json.dumps(items)
+                return raw
+            old.run = publish_backend
             with self.assertRaisesRegex(m.Stop, 'non-loopback or unexpected published service'):
                 old.facts(directory, 'fixture')
 
@@ -239,9 +255,12 @@ class PublicPredecessorTests(unittest.TestCase):
                 old.preflight = old.prepare = lambda: None
                 def checked(_directory, project):
                     old.facts(_directory, project)
-                    self.assertEqual(old.loopback_port, 13000)
+                    self.assertEqual(old.loopback_port, 13001)
+                def first_use(*args, **kwargs):
+                    self.assertEqual(old.loopback_port, 13001)
                     raise RuntimeError('passed actual predecessor facts; stop before private first-use or upgrade')
                 old.installed_checks = checked
+                old.native_first_use_checks = first_use
                 observed['port'] = port
                 return old
             current.result['installer_stop'] = 'Earlier expected wrong-project refusal'
@@ -249,8 +268,105 @@ class PublicPredecessorTests(unittest.TestCase):
                  mock.patch.object(m, 'same_public_ring'):
                 with self.assertRaisesRegex(RuntimeError, 'passed actual predecessor facts'):
                     current.installed_public_upgrade()
-            self.assertEqual(observed['port'][0], '13000')
+            self.assertEqual(observed['port'][0], '13001')
+            self.assertEqual(current.loopback_port, 13001)
             self.assertNotIn('installer_stop', current.result)
+
+    def test_nested_original_failure_keeps_its_phase_and_only_authored_stop(self):
+        for step in ('preflight', 'prepare', 'install', 'installed_checks', 'native_first_use_checks', 'seed'):
+            with self.subTest(step=step), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp).resolve()
+                # Actual old/native imports have distinct exception classes.
+                failure = type('SeparatelyImportedFailure', (Exception,), {})
+                old = types.SimpleNamespace(instances=root / 'old-instances', ring=root / 'ring',
+                    phase='original ' + step, result={'first_customer': {'organization_id': 2}},
+                    preflight=lambda: None, prepare=lambda: None, command=lambda *a: [],
+                    run=lambda *a: '', installed_checks=lambda *a: None,
+                    native_first_use_checks=lambda *a, **kw: None, sql=lambda *a: '')
+                def stop(*args, **kwargs):
+                    if step == 'install':
+                        old.result['installer_stop'] = 'Installation stopped: The selected loopback port is already in use'
+                    raise failure('synthetic private child output must stay redacted')
+                setattr(old, 'run' if step == 'install' else 'sql' if step == 'seed' else step, stop)
+                # Recreate only the formal wrapper: all external effects are mocked.
+                with mock.patch.object(m.shutil, 'which', return_value='/fixture/docker'):
+                    paired_root = root / 'paired'; paired_root.mkdir()
+                    current = m.make_acceptance(ROOT, paired_root, self.candidate, {},
+                        upgrade_source=(root / 'old-source', self.old))
+                current.result['installer_stop'] = 'Earlier expected refusal'
+                with mock.patch.object(m, 'make_acceptance', return_value=old), mock.patch.object(m, 'same_public_ring'):
+                    with self.assertRaises(failure): current.installed_public_upgrade()
+                self.assertEqual(current.phase, old.phase)
+                if step == 'install':
+                    self.assertEqual(current.result['installer_stop'], old.result['installer_stop'])
+                else:
+                    self.assertNotIn('installer_stop', current.result)
+
+    def test_formal_commands_discard_expected_refusals_and_keep_unexpected_native_stop(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            instance = self.formal_facts_fixture(Path(tmp).resolve())[0]
+            del instance.run
+            parent = type(instance).__mro__[1]
+            failure = parent.run.__globals__['Failed']
+            def native(owner, label, argv, **kwargs):
+                self.assertNotIn('installer_stop', owner.result)
+                owner.result['installer_stop'] = 'Installation stopped: authored native reason'
+                if kwargs.get('ok', True): raise failure('private child text')
+                return 1, ''
+            instance.result['installer_stop'] = 'stale previous reason'
+            with mock.patch.object(parent, 'run', new=native):
+                self.assertEqual(instance.run('expected refusal', [], ok=False), (1, ''))
+                self.assertNotIn('installer_stop', instance.result)
+                with self.assertRaises(failure): instance.run('unexpected native stop', [])
+                self.assertEqual(instance.result['installer_stop'], 'Installation stopped: authored native reason')
+
+    def test_failure_diagnostics_preserve_primary_stop_on_success_and_failure(self):
+        for failed in (False, True):
+            for primary in (None, 'Installation stopped: original primary reason'):
+                with self.subTest(failed=failed, primary=primary), tempfile.TemporaryDirectory() as tmp:
+                    instance, directory, _, _ = self.formal_facts_fixture(Path(tmp).resolve())
+                    del instance.run
+                    instance.directory, instance.project, instance.phase = directory, 'synthetic', 'original failure'
+                    instance.result['status'] = 'failed'
+                    if primary is not None: instance.result['installer_stop'] = primary
+                    parent = type(instance).__mro__[1]
+                    failure = parent.run.__globals__['Failed']
+                    def diagnostic(owner, label, argv, **kwargs):
+                        owner.phase = label
+                        owner.result['installer_stop'] = 'Installation stopped: diagnostic secondary reason'
+                        if failed: raise failure('private diagnostic text')
+                        return ''
+                    with mock.patch.object(parent, 'run', new=diagnostic): instance.failure_facts()
+                    self.assertEqual(instance.phase, 'original failure')
+                    self.assertEqual(instance.result.get('installer_stop'), primary)
+                    if primary is None: self.assertNotIn('installer_stop', instance.result)
+                    self.assertEqual(bool(instance.result.get('failure_diagnostics_incomplete')), failed)
+
+    def test_formal_password_customer_and_restart_HTTP_use_declared_port(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            instance, directory, _, _ = self.formal_facts_fixture(Path(tmp).resolve())
+            instance.loopback_port = 13001
+            (directory / 'admin-password').write_text('public synthetic initial input')
+            (directory / 'runtime').mkdir()
+            state = {'admin': {'org_id': 1}, 'projects': [{'id': 2}]}
+            instance.first_customer_state = mock.Mock(return_value=state)
+            instance.run = mock.Mock(return_value='')
+            instance.request = mock.Mock(return_value=b'{"organization_role":"platform_admin","token":"public-synthetic-token"}')
+            with mock.patch.object(m, 'password_choice_delta'), \
+                 mock.patch.object(m, 'fixture_admin_login') as login, \
+                 mock.patch.object(m, 'first_customer_request', return_value={}) as customer, \
+                 mock.patch.object(m, 'first_customer_preview'), \
+                 mock.patch.object(m, 'first_customer_result', return_value=2), \
+                 mock.patch.object(m, 'first_customer_transition'):
+                instance.chosen_password_checks(directory, 'synthetic')
+                instance.first_customer_checks(directory, 'synthetic')
+            self.assertEqual(len(login.call_args_list), 2)
+            self.assertTrue(all(c.kwargs.get('loopback_port') == 13001 for c in login.call_args_list))
+            self.assertEqual(len(customer.call_args_list), 3)
+            self.assertTrue(all(c.kwargs.get('loopback_port') == 13001 for c in customer.call_args_list))
+            self.assertEqual([c.args[0] for c in instance.request.call_args_list], [
+                'http://127.0.0.1:13001/api/v1/auth/login', 'http://127.0.0.1:13001/health/ready',
+                'http://127.0.0.1:13001/api/v1/auth/login'])
 
     def test_shipped_resume_still_refuses_project_socket_package_and_changed_daemon(self):
         spec = importlib.util.spec_from_file_location('unchanged_shipped_installer', ROOT / 'deploy/customer/install.py')
@@ -306,7 +422,7 @@ class PublicPredecessorTests(unittest.TestCase):
         # Exercise the actual new case through its first native-write boundary.
         # Services/downloads are synthetic here; file inventory is real. The
         # positive signed upgrade remains a later disposable Linux acceptance.
-        for fault in (None, 'check-write', 'source-package', 'writes-flag'):
+        for fault in (None, 'check-write', 'source-package', 'writes-flag', 'resume'):
             with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp, \
                  mock.patch.object(m.shutil, 'which', return_value='/fixture/docker'):
                 root = Path(tmp).resolve()
@@ -338,25 +454,38 @@ class PublicPredecessorTests(unittest.TestCase):
                 instance.protected_upgrade_rows = lambda *a: {name: {'count': 1} for name in
                     ('users', 'orgs', 'projects', 'wallets', 'transactions', 'audit_logs', 'release_history')}
                 def command(label, argv):
+                    self.assertEqual(instance.loopback_port, 13001)
+                    instance.phase = label
                     if label == 'check exact public upgrade without effects':
                         if fault == 'check-write': (directory / 'unexpected-write').write_text('must be detected')
                         return json.dumps({'writes': 1 if fault == 'writes-flag' else 0,
                             'source': {'package_sha256': 'f' * 64 if fault == 'source-package' else
                                        self.old['inputs']['config']['release']['package_sha256']},
                             'candidate': {'package_sha256': self.candidate['release']['package_sha256']}})
+                    if label == 'read completed exact public upgrade resume':
+                        raise RuntimeError('native resume boundary reached')
                     self.assertEqual(label, 'read original public upgrade status')
                     return '{"state":"not_started"}'
                 instance.run = command
-                instance.run_native_upgrade = mock.Mock(side_effect=RuntimeError('native write boundary reached'))
+                def upgrade(*args):
+                    self.assertEqual(instance.loopback_port, 13001)
+                    self.assertEqual(old.loopback_port, 13001)
+                    instance.phase = 'current native upgrade'
+                    if fault != 'resume': raise RuntimeError('native write boundary reached')
+                instance.run_native_upgrade = mock.Mock(side_effect=upgrade)
                 with mock.patch.object(m, 'make_acceptance', return_value=old), mock.patch.object(m, 'same_public_ring'):
-                    if fault:
+                    if fault not in (None, 'resume'):
                         with self.assertRaisesRegex(m.Stop, 'Public upgrade check/status changed'):
                             instance.installed_public_upgrade()
                         instance.run_native_upgrade.assert_not_called()
+                        self.assertEqual(instance.phase, 'read original public upgrade status')
                     else:
-                        with self.assertRaisesRegex(RuntimeError, 'native write boundary reached'):
+                        with self.assertRaisesRegex(RuntimeError, 'native resume boundary reached' if fault == 'resume'
+                                                    else 'native write boundary reached'):
                             instance.installed_public_upgrade()
                         instance.run_native_upgrade.assert_called_once_with(directory, None, None)
+                        self.assertEqual(instance.phase, 'read completed exact public upgrade resume' if fault == 'resume'
+                                         else 'current native upgrade')
 
 class ConsumerTests(unittest.TestCase):
     def setUp(self):
