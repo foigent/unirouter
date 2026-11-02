@@ -1,18 +1,16 @@
 # 在 Linux 服务器上安装
 
-**已有 M127 或 M128 服务器需要升级？** 使用[保留数据的升级手册](../ops/COMMUNITY-UPGRADE.md)，不要把新安装命令用于现有目录。
+**已有 M127、M128 或 M129 服务器需要升级？** 使用[保留数据的升级手册](../ops/COMMUNITY-UPGRADE.md)，不要把新安装命令用于现有目录。
 
 明确无到期限制的安装包使用签名格式 `unirouter.upgrade-manifest.v2` 和 `expires_at: "never"`（UR 1.14.0 起支持）。独立校验程序和后端都必须支持 v2，后端的 `upgrade record-applied` 也不例外。旧 v1 包仍遵守原到期时间；更换包不能恢复绑定原包哈希的安装计划。检查、安装、恢复仍验证原包的签名、哈希、创建时间、平台、数据库版本和发布序号。无到期限制不等于允许回滚、跳过信任检查或延长所有者的签名授权。这一策略本身不代表公开下载可用或已完成部署。
 
 [English](install-linux.md) · [配置模型与第一次请求（英文）](getting-started.md)
 
-**Linux amd64 预览版：v1.15.4-preview.21，源码
-`d71a9d14affc6b12a08fa2ee5aa501400120fc86`，M129，发布序号21。**
-实际签名和全部26项材料已核验。签名声明前态序号0至20、最低schema为M127；现有M127／M128实例使用升级手册。
-发布附件和两个UR镜像已公开。[正式Linux验收](https://github.com/foigent/unirouter/actions/runs/41303722595)已通过完整公开包下载与验签、六镜像匿名拉取、M129安装、登录、首次客户初始化及中断恢复。
-[源码 PR488](https://github.com/foigent/unirouter/pull/488)另已通过[临时 Linux 安装与普通升级测试](https://github.com/foigent/unirouter/actions/runs/41278582188)，覆盖 M127／M128→M129 和后续 M129→M129，使用合成数据和临时信任。
-本版还修正保留的初次安装快照与后续升级身份的兼容判断，并支持同一固定完整包的下载中断续传；源码 Linux 测试覆盖初始序号13快照、后续16／17身份及普通升级。
-这些结果不代表某台现有服务器已升级或已完成真实模型／UR→XI验收；升级前仍须运行原机检查。见[发布状态](release-readiness.md)。
+**Linux amd64 预览版：v1.15.5-preview.22，源码
+`717c899d9f03cf101b89fc4a9d7fe5a14ccf71d1`，M129，发布序号22。**
+实际签名和全部26项材料已核验。签名声明前态序号0至21、最低schema为M127；现有M127／M128／M129实例使用升级手册。
+六份发布附件和两个UR镜像已公开。[正式Linux验收](https://github.com/foigent/unirouter/actions/runs/41531690263)的第1次运行已通过全部13项检查：准确签名包下载、六镜像匿名拉取、M129新安装、登录、首次客户初始化、中断恢复，以及真实签名1.15.4→1.15.5升级后的原管理员密码、非空财务历史保留和独立数据库／文件恢复。没有构建镜像、生成签名或调用模型。
+[源码PR490](https://github.com/foigent/unirouter/pull/490)另已通过[临时Linux安装与普通升级测试](https://github.com/foigent/unirouter/actions/runs/41427712980)，使用合成数据和临时信任。这些安装结果不代表你的现有服务器已升级，或已验证真实模型／UR→XI行为；维护前仍须运行原机检查。见[发布状态](release-readiness.md)。
 本入口用于新实例。保留旧尝试，使用未占用的路径与项目；恢复不能更换绑定的包摘要。
 历史版本与失败候选保留，序号14不可安装或复用。只克隆仓库不会获得签名附件。
 
@@ -39,17 +37,17 @@ Docker 的准备方法见[官方 Linux 安装说明](https://docs.docker.com/com
 ## 下载并安装本预览版
 
 先通过已认证的官方仓库获取本说明，阅读
-[预览版发布页面](https://github.com/foigent/unirouter/releases/tag/v1.15.4-preview.21)，再运行下载的代码。
+[预览版发布页面](https://github.com/foigent/unirouter/releases/tag/v1.15.5-preview.22)，再运行下载的代码。
 脚本固定到产品源码提交，JSON 固定校验程序、公钥和签名包。与下载放在一起的摘要不能
 单独建立信任；本入口不更换已有公钥，也不需要把签名私钥放到服务器。
 
 | 下载文件 | 字节 | SHA-256 |
 | --- | ---: | --- |
-| 源码 d71a9d14 中的 `bootstrap.py` | 30,618 | `ca6788a538fe94c431f3811435f9088e4274f854d5411054abe3b8ec1c4c268c` |
-| `community-bootstrap.json` | 1,130 | `e9797a832abe9141a03a06a20716edf1f5691d82e65aff04409d0cf5da2227bd` |
+| 源码 717c899d 中的 `bootstrap.py` | 30,618 | `ca6788a538fe94c431f3811435f9088e4274f854d5411054abe3b8ec1c4c268c` |
+| `community-bootstrap.json` | 1,130 | `cc24ea940af455cc3c35aaa88cfb692034a59add945c9864de3524bb66c4d417` |
 | `uniroute-upgrade-linux-amd64` | 4,117,964 | `d767e64f2db31f97c886c53e14fe30b948794933aef28137db982442a2a0b02f` |
 | `public-keys.json` | 83 | `96c91635460ddfb2a14aa1ea97d8445951730e9eb04a33cbdf4320141e61d63d` |
-| `unirouter-1.15.4-linux-amd64.tar.gz` | 130,052,374 | `afb997a369aa9da413068e45e022aa4ab9227e123d32f611a8c48c8b15a2fe2b` |
+| `unirouter-1.15.5-linux-amd64.tar.gz` | 130,052,679 | `46ebdf5d987603aed1989a83f7e7d6a2148214b7f301b80a91413c3964e83e91` |
 
 先用 `sudo -i` 进入 root shell，再执行下方代码块。
 下载目录、准备目录和运行目录必须尚未使用；保留它们用于恢复。下载或摘要校验失败时，
@@ -58,21 +56,21 @@ Docker 的准备方法见[官方 Linux 安装说明](https://docs.docker.com/com
 ```sh
 set -eu
 umask 077
-mkdir -m 700 /opt/unirouter-downloads-1.15.4
-cd /opt/unirouter-downloads-1.15.4
+mkdir -m 700 /opt/unirouter-downloads-1.15.5
+cd /opt/unirouter-downloads-1.15.5
 curl --fail --location --proto '=https' --proto-redir '=https' \
   --output bootstrap.py \
-  https://raw.githubusercontent.com/foigent/unirouter/d71a9d14affc6b12a08fa2ee5aa501400120fc86/deploy/community/bootstrap.py
+  https://raw.githubusercontent.com/foigent/unirouter/717c899d9f03cf101b89fc4a9d7fe5a14ccf71d1/deploy/community/bootstrap.py
 curl --fail --location --proto '=https' --proto-redir '=https' \
   --output community-bootstrap.json \
-  https://github.com/foigent/unirouter/releases/download/v1.15.4-preview.21/community-bootstrap.json
+  https://github.com/foigent/unirouter/releases/download/v1.15.5-preview.22/community-bootstrap.json
 printf '%s  %s\n' \
   ca6788a538fe94c431f3811435f9088e4274f854d5411054abe3b8ec1c4c268c bootstrap.py \
-  e9797a832abe9141a03a06a20716edf1f5691d82e65aff04409d0cf5da2227bd community-bootstrap.json \
+  cc24ea940af455cc3c35aaa88cfb692034a59add945c9864de3524bb66c4d417 community-bootstrap.json \
   | sha256sum --check --status
 python3 -I -B bootstrap.py install \
   --bootstrap community-bootstrap.json \
-  --bootstrap-sha256 e9797a832abe9141a03a06a20716edf1f5691d82e65aff04409d0cf5da2227bd \
+  --bootstrap-sha256 cc24ea940af455cc3c35aaa88cfb692034a59add945c9864de3524bb66c4d417 \
   --directory /opt/unirouter-release
 ```
 
@@ -89,10 +87,10 @@ Compose 项目为 `unirouter`，管理端口为本机3000。如希望先检查�
 详见[安装中断怎么办](#安装中断怎么办)。
 
 发布附件还包含
-[`unirouter-retained-images-source-notices.tar.gz`](https://github.com/foigent/unirouter/releases/download/v1.15.4-preview.21/unirouter-retained-images-source-notices.tar.gz)
+[`unirouter-retained-images-source-notices.tar.gz`](https://github.com/foigent/unirouter/releases/download/v1.15.5-preview.22/unirouter-retained-images-source-notices.tar.gz)
 及 `SHA256SUMS`。该未改动的历史说明包保留1.12／1.13镜像与共享材料的对应关系；
 1.14.0材料保留在[Preview 13](https://github.com/foigent/unirouter/releases/tag/v1.14.0-preview.13)。
-本次签名包包含1.15.4的源码处置说明、组件声明和所需源码材料。第三方许可仍分别适用。
+本次签名包包含1.15.5的源码处置说明、组件声明和所需源码材料。第三方许可仍分别适用。
 
 ## 直接使用已准备发布目录时的检查与安装
 
