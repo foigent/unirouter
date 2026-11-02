@@ -771,7 +771,10 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
             old_root = self.root / 'installed-predecessor'
             old_root.mkdir(mode=0o700)
             old = make_acceptance(old_repo, old_root, old_config, context, stage_record=record)
-            old.loopback_port = self.loopback_port = base.FIXTURE_PORTS['single']
+            # The completed fresh case has released this port. Formal facts
+            # retain the same fixed port contract for both signed packages.
+            old.loopback_port = self.loopback_port = base.FIXTURE_PORTS['fresh']
+            self.result.pop('installer_stop', None)
             self.phase = 'prepare exact original signed predecessor'
             old.preflight()
             old.prepare()
@@ -918,8 +921,9 @@ def execute(config, repo, stage_record=None):
     try:
         with clean_environment(fixture.env):
             fixture.execute()
-    except BaseException:
-        fixture.result.update(status="failed", phase=fixture.phase, error="consumer_check_failed_redacted")
+    except BaseException as error:
+        fixture.result.update(status="failed", phase=fixture.phase,
+                              error=str(error) if isinstance(error, Stop) else "consumer_check_failed_redacted")
         with clean_environment(fixture.env):
             fixture.failure_facts()
     # The runner lifecycle owns these exact temporary resources. No broad cleanup,
