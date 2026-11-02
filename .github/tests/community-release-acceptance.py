@@ -480,15 +480,34 @@ def validate_upgrade_source(record, candidate):
     return old
 
 
-def upgrade_source_record(repo, candidate):
-    # Ordinary reviewed test data, read from the exact workflow checkout. No
-    # mutable latest-release lookup or new stage/dispatch authority is involved.
-    raw = git_read(repo, 'show', 'HEAD:' + UPGRADE_SOURCE)
-    require(len(raw) <= 32 * 1024 and source_bytes(repo, UPGRADE_SOURCE, 32 * 1024) == raw,
-            'Installed-source fixture differs from the reviewed Git object.')
+def select_upgrade_source(raw, candidate):
+    """Pure input qualification, never checkout authentication or execution authority."""
+    require(type(raw) is bytes and 0 < len(raw) <= 32 * 1024, 'Installed-source fixture is outside its bound.')
     record = strict_json(raw)
+    stage_module().validate_record(record, 'consumer')
+    old = record['inputs']['config']
+    validate(old, ready=True, stage_record=record)
+    # Retained earlier consumer records still validate through their original
+    # contract. A newer product cannot silently skip its installed-source case
+    # by declaring an insufficient sequence/window. No per-version code list.
+    version = lambda c: tuple(int(v) for v in c['immutable']['product']['version'].split('.'))
+    if version(candidate) < version(old):
+        return None
+    if (candidate['immutable']['product'] == old['immutable']['product']
+            and candidate['release']['release_sequence'] == old['release']['release_sequence']
+            and candidate['release']['package_sha256'] == old['release']['package_sha256']):
+        return None
     validate_upgrade_source(record, candidate)
     return record
+
+
+def upgrade_source_record(repo, candidate):
+    # Authentication stays at the execution boundary, before destination,
+    # import or network effects; cheap validate/describe never start Git.
+    raw = source_bytes(repo, UPGRADE_SOURCE, 32 * 1024)
+    require(raw == git_read(repo, 'show', 'HEAD:' + UPGRADE_SOURCE),
+            'Installed-source fixture differs from the reviewed Git object.')
+    return select_upgrade_source(raw, candidate)
 
 
 def predecessor_checkout(repo, record):
@@ -890,12 +909,12 @@ def execute(config, repo, stage_record=None):
     context = native_guard(repo)  # All invalid inputs/context stop before creating any destination.
     reference_sources(repo, config)
     predecessor = upgrade_source_record(repo, config)
-    old_repo = predecessor_checkout(repo, predecessor)  # Before mkdir, import or network.
+    old_repo = predecessor_checkout(repo, predecessor) if predecessor is not None else None
     os.umask(0o077)
     root = Path(tempfile.mkdtemp(prefix="ur-formal-community-consumer-", dir="/var/tmp")).resolve()
     root.chmod(0o700)
     fixture = make_acceptance(repo, root, config, context, stage_record=stage_record,
-                              upgrade_source=(old_repo, predecessor))
+                              upgrade_source=(old_repo, predecessor) if predecessor is not None else None)
     try:
         with clean_environment(fixture.env):
             fixture.execute()
@@ -929,7 +948,7 @@ def main(argv=None):
         predecessor = None
         if stage_record is not None:
             reference_sources(repo, config)
-            predecessor = upgrade_source_record(repo, config)
+            predecessor = select_upgrade_source(source_bytes(repo, UPGRADE_SOURCE, 32 * 1024), config)
         if args.action == "describe":
             print(json.dumps({"source": config["immutable"]["product"]["commit"], "payload_entries": len(config["immutable"]["artifacts"]),
                               "ready": config["state"] == "ready" and not missing,

@@ -76,6 +76,33 @@ class PublicPredecessorTests(unittest.TestCase):
             path.unlink(); target = root / 'same-public-data.json'; target.write_bytes(raw); path.symlink_to(target)
             with self.assertRaises(m.Stop): m.upgrade_source_record(root, self.candidate)
 
+    def test_current_entry_preflight_stays_process_network_and_destination_free(self):
+        stages = m.stage_module()
+        for action in ('validate', 'describe'):
+            with self.subTest(action=action), mock.patch.object(m, 'stage_module', return_value=stages), \
+                 mock.patch.object(stages, 'read_dispatch', return_value=(None, self.current, None)), \
+                 mock.patch.object(m.subprocess, 'run', side_effect=AssertionError('process forbidden')), \
+                 mock.patch.object(m.tempfile, 'mkdtemp', side_effect=AssertionError('destination forbidden')), \
+                 mock.patch.object(m.urllib.request, 'urlopen', side_effect=AssertionError('network forbidden')), \
+                 contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(m.main([action, '--stage-dispatch']), 0)
+                if action == 'describe':
+                    self.assertEqual(json.loads(output.getvalue())['upgrade_source'], self.old['product'])
+        bad = copy.deepcopy(self.current)
+        bad['inputs']['config']['immutable'].update(max_current_sequence=20, historical_sequence_reserved_through=20)
+        release = bad['inputs']['config']['release']
+        release.update(release_sequence=21, tag='v1.15.5-preview.21')
+        release['bootstrap_url'] = m.asset_url(release, 'community-bootstrap.json')
+        self.assertEqual(m.validate(bad['inputs']['config'], ready=True, stage_record=bad), [])
+        with mock.patch.object(m, 'stage_module', return_value=stages), \
+             mock.patch.object(stages, 'read_dispatch', return_value=(None, bad, None)), \
+             mock.patch.object(m.subprocess, 'run', side_effect=AssertionError('process forbidden')), \
+             mock.patch.object(m.tempfile, 'mkdtemp', side_effect=AssertionError('destination forbidden')), \
+             mock.patch.object(m.urllib.request, 'urlopen', side_effect=AssertionError('network forbidden')), \
+             contextlib.redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(m.main(['validate', '--stage-dispatch']), 1)
+            self.assertIn('predecessor is outside', error.getvalue())
+
     def test_original_checkout_checks_commit_tree_and_every_executable_before_import(self):
         for fault in (None, 'commit', 'tree', 'helper', 'assertions', 'bootstrap', 'symlink', 'directory'):
             with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp:

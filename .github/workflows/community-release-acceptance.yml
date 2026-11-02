@@ -61,10 +61,11 @@ jobs:
                                    'describe', '--stage-dispatch'], capture_output=True, check=True, text=True)
           source = json.loads(result.stdout)['upgrade_source']
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write('commit=' + source['commit'] + '\n')
+              output.write('commit=' + (source['commit'] if source is not None else '') + '\n')
           PY
 
       - name: Check out the original installed source without rebuilding it
+        if: steps.upgrade_source.outputs.commit != ''
         uses: actions/checkout@v7
         with:
           ref: ${{ steps.upgrade_source.outputs.commit }}
