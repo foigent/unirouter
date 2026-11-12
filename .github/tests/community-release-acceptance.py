@@ -8,6 +8,7 @@ import argparse
 import base64
 import contextlib
 import datetime as dt
+import filecmp
 import hashlib
 import importlib.util
 import json
@@ -31,6 +32,7 @@ RELEASE_KEYS = {"release_sequence", "created_at", "expires_at", "tag", "bootstra
                 "bootstrap_size", "bootstrap_sha256", "package_size", "package_sha256"}
 UPGRADE_SOURCE = '.github/release-inputs/community-upgrade-source.json'
 PREDECESSOR_DIRECTORY = '.community-retained-source'
+REQUIRED_DELTA_VERSION = '1.15.6'
 
 
 class Stop(Exception):
@@ -407,6 +409,12 @@ def bootstrap_binding(config, value):
     for role, (name, identity) in expected.items():
         require(value["assets"][role] == dict(identity, url=asset_url(r, name)),
                 "Public download/trust identity differs.")
+    require(f["product"]["version"] != REQUIRED_DELTA_VERSION or "delta" in value,
+            "The 1.15.6 public bootstrap must include its exact predecessor delta.")
+    if "delta" in value:
+        delta_name = "unirouter-" + f["product"]["version"] + "-linux-amd64.delta.tar.gz"
+        require(value["delta"]["asset"]["url"] == asset_url(r, delta_name),
+                "Public delta URL differs from the exact preview asset.")
 
 
 def manifest_binding(config, manifest):
@@ -516,19 +524,28 @@ def select_upgrade_source(raw, candidate):
     return record
 
 
-def upgrade_source_record(repo, candidate):
+def checked_upgrade_source_bytes(repo):
     # Authentication stays at the execution boundary, before destination,
     # import or network effects; cheap validate/describe never start Git.
     raw = source_bytes(repo, UPGRADE_SOURCE, 32 * 1024)
     require(raw == git_read(repo, 'show', 'HEAD:' + UPGRADE_SOURCE),
             'Installed-source fixture differs from the reviewed Git object.')
-    return select_upgrade_source(raw, candidate)
+    return raw
+
+
+def upgrade_source_record(repo, candidate):
+    return select_upgrade_source(checked_upgrade_source_bytes(repo), candidate)
 
 
 def predecessor_checkout(repo, record):
     old = repo / PREDECESSOR_DIRECTORY
-    require(old.is_dir() and not old.is_symlink() and old.resolve() == repo.resolve() / PREDECESSOR_DIRECTORY
-            and (old / '.git').is_dir() and not (old / '.git').is_symlink(),
+    require(old.resolve() == repo.resolve() / PREDECESSOR_DIRECTORY,
+            'Installed-source checkout is not the fixed isolated directory.')
+    return verify_predecessor_checkout(old, record)
+
+
+def verify_predecessor_checkout(old, record):
+    require(old.is_dir() and old == old.resolve() and (old / '.git').is_dir() and not (old / '.git').is_symlink(),
             'Installed-source checkout is not the fixed isolated directory.')
     product = record['product']
     require(git_read(old, 'rev-parse', 'HEAD', 'HEAD^{tree}').decode().splitlines() ==
@@ -571,6 +588,26 @@ def clean_environment(env):
         os.environ.update(old)
 
 
+def seed_default_upgrade_history(old, directory, project):
+    org = old.result['first_customer']['organization_id']
+    require(type(org) is int and org > 1, 'Original native customer is missing.')
+    project_id = int(old.sql(directory, project, "INSERT INTO projects(org_id,name,slug,status,budget_period) "
+        "VALUES(" + str(org) + ",'Synthetic retained default','default','active','none') RETURNING id"))
+    require(project_id > 0, 'Original synthetic financial project is missing.')
+    old.sql(directory, project, "BEGIN; UPDATE wallets SET balance_micros=1234567 WHERE org_id=" + str(org) +
+        "; INSERT INTO transactions(request_id,org_id,project_id,type,status,amount_micros,balance_after_micros,note) "
+        "VALUES('synthetic-linux-history'," + str(org) + ',' + str(project_id) +
+        ",'topup','completed',1234567,1234567,'Synthetic preservation fixture'); COMMIT;")
+    rendered = strict_json(old.run('read original content configuration', old.compose(directory, project) +
+                                  ['config', '--format', 'json']))
+    environment = rendered['services']['backend']['environment']
+    require(all(environment.get(k) in ('', None) for k in ('SOURCE_CONTENT_STORAGE_ROOT',
+            'SOURCE_CONTENT_STORAGE_IDENTITY', 'SOURCE_CONTENT_STORAGE_TOKEN_FILE'))
+            and old.sql(directory, project, 'SELECT count(*) FROM execution_content_objects') == '0'
+            and old.sql(directory, project, 'SELECT count(*) FROM execution_content_streams') == '0',
+            'Public default-content fixture is not explicitly empty.')
+
+
 def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_source=None):
     fixed = config["immutable"]
     base = load_module(repo / ".github/tests/community-installer.py",
@@ -599,6 +636,7 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
             self.verifier, self.ring = self.release / "uniroute-upgrade", self.release / "public-keys.json"
             self.bootstrap_file, self.bootstrap_script = root / "bootstrap.json", root / "bootstrap.py"
             self.bootstrap_sha = config["release"]["bootstrap_sha256"]
+            self.upgrade_anchor = None
             self.commit, self.tree, self.version = [fixed["product"][k] for k in ("commit", "tree", "version")]
             self.schema = target_schema(config)
             self.release_sequence = config["release"]["release_sequence"]
@@ -636,6 +674,8 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
                                 "sha256": r["bootstrap_sha256"]}, self.bootstrap_file)
             anchor = bootstrap.Bootstrap(self.bootstrap_file.read_bytes(), r["bootstrap_sha256"])
             bootstrap_binding(config, anchor.value)
+            if "delta" in anchor.value:
+                self.upgrade_anchor = anchor
             bootstrap.download(fixed["bootstrap_script"], self.bootstrap_script)
             self.run("prepare real owner-signed public release", self.bootstrap_command("prepare", root / "unused-install", "unused"))
             with tarfile.open(self.release / "release.tar.gz", "r:gz") as archive:
@@ -794,6 +834,45 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
                 'protected_release_and_rotation_preserved':True,'provider_calls':0}
             self.passed("native restart selects the customer default project and preserves original admin and release history")
 
+        def prepare_public_upgrade_delta(self, directory, old, old_config):
+            self.phase = "reconstruct owner-signed target from installed public predecessor"
+            anchor = self.upgrade_anchor
+            delta = anchor.delta
+            expected = old_config["release"]
+            require(delta["basis"] == {"size": expected["package_size"], "sha256": expected["package_sha256"]},
+                    "Public delta basis differs from the accepted installed predecessor.")
+            prepared = self.root / "prepared-upgrade-delta"
+            full = self.release / "release.tar.gz"
+            assets = {anchor.assets[role]["url"]: role for role in ("verifier", "public_keys")}
+            assets[delta["asset"]["url"]] = "delta"
+            transferred = {}
+
+            def fetch(asset, target):
+                role = assets.get(asset["url"])
+                require(role is not None and role not in transferred,
+                        "Public delta preparation requested an unexpected or duplicate asset.")
+                bootstrap.download(asset, target)
+                transferred[role] = target.stat().st_size
+
+            try:
+                bootstrap.prepare(anchor, prepared, fetch=fetch, source_package=directory / "release.tar.gz",
+                                  source_verifier=old.verifier)
+            except bootstrap.BootstrapError as exc:
+                raise Stop("Public delta preparation failed native verification.") from exc
+            require({"public_keys", "delta"} <= transferred.keys()
+                    and filecmp.cmp(full, prepared / "release.tar.gz", shallow=False),
+                    "Public delta did not reconstruct the exact verified full target.")
+            self.release, self.verifier, self.ring = prepared, prepared / "uniroute-upgrade", prepared / "public-keys.json"
+            self.result["public_upgrade_delta"] = {
+                "signing_key": fixed["key_id"], "source": delta["basis"],
+                "target": {"size": config["release"]["package_size"], "sha256": config["release"]["package_sha256"]},
+                "delta": {key: delta["asset"][key] for key in ("size", "sha256")},
+                "https_asset_body_bytes": transferred, "verifier_reused": "verifier" not in transferred,
+                "bootstrap_json_bytes": self.bootstrap_file.stat().st_size,
+                "bootstrap_script_bytes": self.bootstrap_script.stat().st_size, "full_package_requests": 0,
+                "byte_identical": True}
+            self.passed("public delta reconstructs the exact owner-signed target from the installed original package")
+
         def installed_public_upgrade(self):
             """One real signed pair; all maintenance belongs to the shipped owner."""
             old_repo, record = upgrade_source
@@ -816,23 +895,7 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
                 old.run('install original public predecessor without rebuild', old.command('install', directory, project))
                 old.installed_checks(directory, project)
                 old.native_first_use_checks(directory, project, restart=False)
-                org = old.result['first_customer']['organization_id']
-                require(type(org) is int and org > 1, 'Original native customer is missing.')
-                project_id = int(old.sql(directory, project, "INSERT INTO projects(org_id,name,slug,status,budget_period) "
-                    "VALUES(" + str(org) + ",'Synthetic retained default','default','active','none') RETURNING id"))
-                require(project_id > 0, 'Original synthetic financial project is missing.')
-                old.sql(directory, project, "BEGIN; UPDATE wallets SET balance_micros=1234567 WHERE org_id=" + str(org) +
-                    "; INSERT INTO transactions(request_id,org_id,project_id,type,status,amount_micros,balance_after_micros,note) "
-                    "VALUES('synthetic-linux-history'," + str(org) + ',' + str(project_id) +
-                    ",'topup','completed',1234567,1234567,'Synthetic preservation fixture'); COMMIT;")
-                rendered = strict_json(old.run('read original content configuration', old.compose(directory, project) +
-                                              ['config', '--format', 'json']))
-                environment = rendered['services']['backend']['environment']
-                require(all(environment.get(k) in ('', None) for k in ('SOURCE_CONTENT_STORAGE_ROOT',
-                        'SOURCE_CONTENT_STORAGE_IDENTITY', 'SOURCE_CONTENT_STORAGE_TOKEN_FILE'))
-                        and old.sql(directory, project, 'SELECT count(*) FROM execution_content_objects') == '0'
-                        and old.sql(directory, project, 'SELECT count(*) FROM execution_content_streams') == '0',
-                        'Public default-content fixture is not explicitly empty.')
+                seed_default_upgrade_history(old, directory, project)
             except BaseException:
                 # The retained module has its own Failed type. Preserve only
                 # its authored phase/stop; the outer report still redacts errors.
@@ -840,6 +903,8 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
                 if 'installer_stop' in old.result:
                     self.result['installer_stop'] = old.result['installer_stop']
                 raise
+            if self.upgrade_anchor is not None:
+                self.prepare_public_upgrade_delta(directory, old, old_config)
             self.wait_business_startup()
             self.source_contract = base.source_contract(repo)
             self.observe_migration_owner()
@@ -926,6 +991,8 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
             self.passed('exact installed public signed predecessor upgrades with preserved facts and independent restore')
 
         def execute(self):
+            require(self.version != REQUIRED_DELTA_VERSION or upgrade_source is not None,
+                    "The 1.15.6 formal consumer requires its exact public predecessor.")
             self.preflight()
             self.prepare()
             self.project = "ur-formal-" + self.suffix
@@ -940,6 +1007,9 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
                 # this completed run-owned case; retain volumes and evidence.
                 self.release_completed_case(self.directory, self.project)
                 self.installed_public_upgrade()
+            require(self.version != REQUIRED_DELTA_VERSION
+                    or self.result.get("public_upgrade_delta", {}).get("byte_identical") is True,
+                    "The 1.15.6 formal consumer did not verify its exact predecessor delta.")
             self.result["status"] = "passed"
             self.result.pop("installer_stop", None)
 

@@ -27,13 +27,15 @@ func main() {
 
 func run(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: uniroute-upgrade <pack|verify>")
+		return fmt.Errorf("usage: uniroute-upgrade <pack|verify|create-delta|materialize-delta>")
 	}
 	switch args[0] {
 	case "pack":
 		return runPack(args[1:], stdout)
 	case "verify":
 		return runVerify(args[1:], stdout)
+	case "create-delta", "materialize-delta":
+		return runDelta(args[0], args[1:], stdout)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}

@@ -4,6 +4,14 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.15.6] - 2026-11-12
+
+### Fixed
+
+- Allow a fresh, authenticated X-Insight recovery ticket to replace an expired, undelivered UniRouter recovery for the same connection. Retain the previous operation and reject a changed credential or connection scope.
+- Explain how to continue an accepted recovery when automatic communication is off.
+- Prepare supported upgrades from an exact retained signed package by downloading only changed archive members and reconstructing the original signed release before verification.
+
 ## [1.15.5] - 2026-11-02
 
 ### Fixed

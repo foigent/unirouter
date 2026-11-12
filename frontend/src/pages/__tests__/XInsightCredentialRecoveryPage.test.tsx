@@ -1,5 +1,6 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import XInsightCredentialRecoveryPage from '../XInsightCredentialRecoveryPage';
 import { xInsightSetupApi } from '../../api/xInsightSetup';
 import { useAuthStore } from '../../store/auth';
@@ -23,30 +24,51 @@ beforeEach(() => {
   useAuthStore.setState({ user: { id: 19, username: 'technical-admin', role: 'platform_admin', org_id: 1 },
     token: 'synthetic', isAuthenticated: true });
   window.history.replaceState(null, '', `/connectors/x-insight/recover${fragment}`);
+  vi.mocked(xInsightSetupApi.recoveryScope).mockResolvedValue({
+    schema_version: 'unirouter.xinsight.credential-recovery-scope.v1',
+    installation_id: installation, org_id: 42,
+  });
+  vi.mocked(xInsightSetupApi.recoveryPreview).mockResolvedValue({
+    schema_version: 'unirouter.xinsight.credential-recovery-preview.v1',
+    installation_id: installation, deployment_id: `xid_${'D'.repeat(22)}`,
+    project_id: 'project.original', final_event_scope: ['model.request.completed'],
+    source_binding_sha256: `sha256:${'a'.repeat(64)}`,
+    xinsight_origin: 'https://xi.example', unirouter_origin: 'https://ur.example',
+    recovery_id: recovery, expires_at: '2030-01-01T00:00:00Z',
+    credential: { state: 'expired_recovery_required', current_token_sha256: '', current_expires_at: '' },
+  });
 });
 afterEach(() => { window.history.replaceState(null, '', '/'); });
 
 describe('original organization recovery handoff', () => {
   it('uses the server-authorized business organization instead of the platform actor technical org', async () => {
-    vi.mocked(xInsightSetupApi.recoveryScope).mockResolvedValue({
-      schema_version: 'unirouter.xinsight.credential-recovery-scope.v1',
-      installation_id: installation, org_id: 42,
-    });
-    vi.mocked(xInsightSetupApi.recoveryPreview).mockResolvedValue({
-      schema_version: 'unirouter.xinsight.credential-recovery-preview.v1',
-      installation_id: installation, deployment_id: `xid_${'D'.repeat(22)}`,
-      project_id: 'project.original', final_event_scope: ['model.request.completed'],
-      source_binding_sha256: `sha256:${'a'.repeat(64)}`,
-      xinsight_origin: 'https://xi.example', unirouter_origin: 'https://ur.example',
-      recovery_id: recovery, expires_at: '2030-01-01T00:00:00Z',
-      credential: { state: 'expired_recovery_required', current_token_sha256: '', current_expires_at: '' },
-    });
     render(<XInsightCredentialRecoveryPage />);
     await screen.findByText('原 X-Insight 连接（沿用原授权范围）');
     expect(xInsightSetupApi.recoveryScope).toHaveBeenCalledWith(installation);
     expect(xInsightSetupApi.recoveryPreview).toHaveBeenCalledWith(42, installation, ticket);
     expect(xInsightSetupApi.recoveryPreview).not.toHaveBeenCalledWith(1, installation, ticket);
     expect(window.location.hash).toBe('');
+  });
+
+  it('shows manual continuation after acceptance even when local status is unavailable', async () => {
+    vi.mocked(xInsightSetupApi.recoveryConfirm).mockResolvedValue({
+      schema_version: 'unirouter.xinsight.credential-recovery-accepted.v1',
+      installation_id: installation, operation_id: `xcr_${'E'.repeat(22)}`, state: 'pending',
+    });
+    vi.mocked(xInsightSetupApi.status).mockRejectedValueOnce(new Error('status unavailable'));
+    render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <XInsightCredentialRecoveryPage />
+    </MemoryRouter>);
+    fireEvent.click(await screen.findByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: '确认恢复原连接' }));
+
+    await screen.findByText(/恢复请求已保存。若自动通讯已关闭.*执行一次/);
+    await screen.findByText('当前连接状态不可读，请稍后重试。');
+    expect(screen.getByRole('link', { name: '打开 X-Insight 集成管理' })).toHaveAttribute('href', '/integrations?tab=xinsight');
+    expect(xInsightSetupApi.recoveryConfirm).toHaveBeenCalledTimes(1);
+    expect(xInsightSetupApi.recoveryConfirm).toHaveBeenCalledWith(42, installation, ticket);
+    expect(xInsightSetupApi.status).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/后台正在使用原连接|恢复尚未确认/)).not.toBeInTheDocument();
   });
 
   it('does not send a recovery ticket when local installation scope is denied', async () => {

@@ -27,14 +27,17 @@ class PublicPredecessorTests(unittest.TestCase):
     def setUp(self):
         self.old = json.loads((ROOT / m.UPGRADE_SOURCE).read_bytes())
         self.current = copy.deepcopy(self.old)
-        self.current['product'].update(commit='b' * 40, tree='c' * 40, version='1.15.5')
+        self.current['product'].update(commit='b' * 40, tree='c' * 40, version='1.15.6')
         c = self.current['inputs']['config']
         c['immutable']['product'] = {k: self.current['product'][k] for k in ('commit', 'tree', 'version', 'schema')}
-        c['immutable'].update(max_current_sequence=21, historical_sequence_reserved_through=21,
+        c['immutable'].update(max_current_sequence=22, historical_sequence_reserved_through=22,
             native_acceptance_helper_sha256=m.sha(ROOT / '.github/tests/community-installer.py'))
-        c['immutable']['bootstrap_script']['url'] = ('https://raw.githubusercontent.com/foigent/unirouter/' +
-                                                   self.current['product']['commit'] + '/deploy/community/bootstrap.py')
-        c['release'].update(release_sequence=22, tag='v1.15.5-preview.22', package_sha256='d' * 64)
+        bootstrap = ROOT / 'deploy/community/bootstrap.py'
+        c['immutable']['bootstrap_script'] = {
+            'url': ('https://raw.githubusercontent.com/foigent/unirouter/' +
+                    self.current['product']['commit'] + '/deploy/community/bootstrap.py'),
+            'sha256': m.sha(bootstrap), 'size': bootstrap.stat().st_size}
+        c['release'].update(release_sequence=23, tag='v1.15.6-preview.23', package_sha256='d' * 64)
         c['release']['bootstrap_url'] = m.asset_url(c['release'], 'community-bootstrap.json')
         self.candidate = c  # Synthetic future metadata, never dispatched or signed.
 
@@ -52,14 +55,14 @@ class PublicPredecessorTests(unittest.TestCase):
         self.assertEqual(m.validate(self.candidate, ready=True, stage_record=self.current), [])
         self.assertEqual(m.validate_upgrade_source(self.old, self.candidate), self.old['inputs']['config'])
         self.assertEqual(self.old['inputs']['config']['release']['package_sha256'],
-                         'afb997a369aa9da413068e45e022aa4ab9227e123d32f611a8c48c8b15a2fe2b')
+                         '46ebdf5d987603aed1989a83f7e7d6a2148214b7f301b80a91413c3964e83e91')
         for field, value in [('key_id', 'other'), ('raw_public_fingerprint', 'f' * 64),
                              ('public_ring', {'size': 83, 'sha256': 'f' * 64}),
-                             ('max_current_sequence', 20), ('min_current_sequence', 22)]:
+                             ('max_current_sequence', 21), ('min_current_sequence', 23)]:
             with self.subTest(field=field):
                 candidate = copy.deepcopy(self.candidate); candidate['immutable'][field] = value
                 with self.assertRaises(m.Stop): m.validate_upgrade_source(self.old, candidate)
-        candidate = copy.deepcopy(self.candidate); candidate['release']['release_sequence'] = 21
+        candidate = copy.deepcopy(self.candidate); candidate['release']['release_sequence'] = 22
         with self.assertRaises(m.Stop): m.validate_upgrade_source(self.old, candidate)
         broken = copy.deepcopy(self.old); broken['inputs']['config']['immutable']['public_ring']['sha256'] = 'f' * 64
         with self.assertRaisesRegex(Exception, 'stage_consumer_trust'):
@@ -89,9 +92,9 @@ class PublicPredecessorTests(unittest.TestCase):
                 if action == 'describe':
                     self.assertEqual(json.loads(output.getvalue())['upgrade_source'], self.old['product'])
         bad = copy.deepcopy(self.current)
-        bad['inputs']['config']['immutable'].update(max_current_sequence=20, historical_sequence_reserved_through=20)
+        bad['inputs']['config']['immutable'].update(max_current_sequence=21, historical_sequence_reserved_through=21)
         release = bad['inputs']['config']['release']
-        release.update(release_sequence=21, tag='v1.15.5-preview.21')
+        release.update(release_sequence=22, tag='v1.15.6-preview.22')
         release['bootstrap_url'] = m.asset_url(release, 'community-bootstrap.json')
         self.assertEqual(m.validate(bad['inputs']['config'], ready=True, stage_record=bad), [])
         with mock.patch.object(m, 'stage_module', return_value=stages), \
@@ -170,6 +173,98 @@ class PublicPredecessorTests(unittest.TestCase):
             for command in (instance.bootstrap_command('prepare', root / 'install', 'fixture'),
                             instance.command('install', root / 'install', 'fixture')):
                 self.assertEqual(command[command.index('--port') + 1], '13001')
+
+    def test_delta_only_uses_the_installed_basis_and_exact_reconstructed_target(self):
+        old_config = self.old['inputs']['config']
+        for fault in (None, 'basis', 'full-request', 'different-target'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp, \
+                 mock.patch.object(m.shutil, 'which', return_value='/fixture/docker'):
+                root = Path(tmp).resolve()
+                source = root / 'original' / 'release.tar.gz'
+                old = types.SimpleNamespace(verifier=root / 'original-verifier')
+                basis = {'size': old_config['release']['package_size'],
+                         'sha256': 'f' * 64 if fault == 'basis' else old_config['release']['package_sha256']}
+                assets = {role: {'url': role} for role in ('package', 'verifier', 'public_keys')}
+                delta = {'basis': basis, 'asset': {'url': 'delta', 'size': 5,
+                                                  'sha256': hashlib.sha256(b'delta').hexdigest()}}
+
+                def prepare(anchor, stage, *, fetch, source_package, source_verifier):
+                    self.assertEqual((source_package, source_verifier), (source, old.verifier))
+                    stage.mkdir()
+                    if fault == 'full-request':
+                        fetch(anchor.assets['package'], stage / 'release.tar.gz')
+                    fetch(anchor.assets['public_keys'], stage / 'public-keys.json')
+                    fetch(anchor.delta['asset'], stage / 'delta.tar.gz')
+                    (stage / 'release.tar.gz').write_bytes(b'different' if fault == 'different-target' else b'target')
+
+                module = types.SimpleNamespace(BootstrapError=ValueError, prepare=mock.Mock(side_effect=prepare),
+                                               download=lambda asset, path: path.write_bytes(asset['url'].encode()))
+                load_module = m.load_module
+                with mock.patch.object(m, 'load_module', side_effect=lambda path, digest, name:
+                        module if name == 'accepted_product_bootstrap' else load_module(path, digest, name)):
+                    instance = m.make_acceptance(ROOT, root, self.candidate, {})
+                instance.upgrade_anchor = types.SimpleNamespace(assets=assets, delta=delta)
+                instance.bootstrap_file.write_bytes(b'metadata')
+                instance.bootstrap_script.write_bytes(b'script')
+                original = instance.release
+                original.mkdir()
+                (original / 'release.tar.gz').write_bytes(b'target')
+                if fault:
+                    with self.assertRaises(m.Stop):
+                        instance.prepare_public_upgrade_delta(source.parent, old, old_config)
+                    self.assertEqual(instance.release, original)
+                    if fault == 'basis':
+                        module.prepare.assert_not_called()
+                else:
+                    instance.prepare_public_upgrade_delta(source.parent, old, old_config)
+                    self.assertEqual(instance.release, root / 'prepared-upgrade-delta')
+                    proof = instance.result['public_upgrade_delta']
+                    self.assertEqual(proof['https_asset_body_bytes'], {'public_keys': 11, 'delta': 5})
+                    self.assertEqual(proof['full_package_requests'], 0)
+                    self.assertTrue(proof['verifier_reused'])
+
+    def test_current_public_bootstrap_requires_delta_and_legacy_predecessor_loads(self):
+        for config in (self.old['inputs']['config'], self.candidate):
+            fixed, release = config['immutable'], config['release']
+            product = fixed['product']
+            name = 'unirouter-' + product['version'] + '-linux-amd64'
+            value = {'release': {'version': product['version'], 'commit': product['commit'],
+                       'release_sequence': release['release_sequence'], 'key_id': fixed['key_id'],
+                       'target_schema': product['schema']},
+                     'assets': {'verifier': dict(fixed['verifier'], url=m.asset_url(release, 'uniroute-upgrade-linux-amd64')),
+                       'public_keys': dict(fixed['public_ring'], url=m.asset_url(release, 'public-keys.json')),
+                       'package': {'url': m.asset_url(release, name + '.tar.gz'),
+                                   'size': release['package_size'], 'sha256': release['package_sha256']}}}
+            if config is self.candidate:
+                with self.assertRaisesRegex(m.Stop, 'must include its exact predecessor delta'):
+                    m.bootstrap_binding(config, value)
+                value['delta'] = {'asset': {'url': m.asset_url(release, name + '.delta.tar.gz')}}
+            m.bootstrap_binding(config, value)
+
+    def test_current_formal_execution_requires_predecessor_and_verified_delta_result(self):
+        for fault in (None, 'missing-predecessor', 'missing-result'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp, \
+                 mock.patch.object(m.shutil, 'which', return_value='/fixture/docker'):
+                root = Path(tmp).resolve()
+                source = None if fault == 'missing-predecessor' else (root / 'old-source', self.old)
+                instance = m.make_acceptance(ROOT, root, self.candidate, {}, upgrade_source=source)
+                for step in ('preflight', 'prepare', 'negative_checks', 'interrupt_after_plan', 'installed_checks',
+                             'chosen_password_checks', 'first_customer_checks', 'release_completed_case'):
+                    setattr(instance, step, mock.Mock())
+                def installed():
+                    if fault != 'missing-result':
+                        instance.result['public_upgrade_delta'] = {'byte_identical': True}
+                instance.installed_public_upgrade = mock.Mock(side_effect=installed)
+                if fault:
+                    with self.assertRaisesRegex(m.Stop, 'exact public predecessor|did not verify its exact predecessor delta'):
+                        instance.execute()
+                    self.assertNotEqual(instance.result['status'], 'passed')
+                    if fault == 'missing-predecessor':
+                        instance.preflight.assert_not_called()
+                else:
+                    instance.execute()
+                    self.assertEqual(instance.result['status'], 'passed')
+                    instance.installed_public_upgrade.assert_called_once()
 
     def formal_facts_fixture(self, root, factory=None):
         spec = importlib.util.spec_from_file_location('formal_port_fixture', ROOT / '.github/tests/community-installer.py')
@@ -439,7 +534,7 @@ class PublicPredecessorTests(unittest.TestCase):
                 old = types.SimpleNamespace(instances=old_root / 'instances', ring=old_root / 'ring',
                     preflight=lambda: None, prepare=prepare, command=lambda *a: [],
                     installed_checks=lambda *a: None, native_first_use_checks=lambda *a, **kw: None,
-                    result={'first_customer': {'organization_id': 2}}, release_sequence=21,
+                    result={'first_customer': {'organization_id': 2}}, release_sequence=22,
                     schema='000129_upstream_observation_restore_namespace', compose=lambda *a: [])
                 old.run = lambda label, argv: (json.dumps({'services': {'backend': {'environment': {}}}})
                                               if label == 'read original content configuration' else '')
@@ -501,7 +596,7 @@ class PublicPredecessorTests(unittest.TestCase):
                     upgrade_source=(root / 'old-source', self.old))
                 directory = root / 'installed-predecessor/instances/preserved'
                 old = types.SimpleNamespace(instances=directory.parent, ring=root / 'ring',
-                    result={'first_customer': {'organization_id': 2}}, release_sequence=21,
+                    result={'first_customer': {'organization_id': 2}}, release_sequence=22,
                     schema=instance.schema, preflight=lambda: None, installed_checks=lambda *a: None,
                     native_first_use_checks=lambda *a, **kw: None, command=lambda *a: [], compose=lambda *a: [])
                 def prepare():

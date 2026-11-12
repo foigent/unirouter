@@ -47,13 +47,14 @@ func TestXInsightCredentialRecoveryConfirmPostgresIntegration(t *testing.T) {
 		ExpiresAt: time.Now().UTC().Add(15 * time.Minute).Truncate(time.Microsecond).Format(time.RFC3339Nano),
 	}
 	require.NoError(t, resolution.Validate(time.Now().UTC()))
+	peerStatus := http.StatusOK
 	f.handler.xInsightSetup.client.Transport = recoveryResolveTransport(func(request *http.Request) (*http.Response, error) {
 		require.Equal(t, http.MethodPost, request.Method)
 		require.Equal(t, f.peer.URL+"/api/v1/connector-control/credential-recoveries/resolve", request.URL.String())
 		require.Empty(t, request.Header.Get("Authorization"))
 		body, err := json.Marshal(resolution)
 		require.NoError(t, err)
-		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(string(body)))}, nil
+		return &http.Response{StatusCode: peerStatus, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(string(body)))}, nil
 	})
 	ticket := "xirt_" + strings.Repeat("A", 43)
 	input := map[string]any{"recovery_ticket": ticket}
@@ -98,4 +99,31 @@ func TestXInsightCredentialRecoveryConfirmPostgresIntegration(t *testing.T) {
 	operations, audits = counts()
 	require.Equal(t, beforeOperations, operations)
 	require.Equal(t, beforeAudits, audits)
+
+	resolution.InstallationID = cp2bInstallationID
+	resolution.RecoveryID = "xrr_" + strings.Repeat("B", 22)
+	nextInput := map[string]any{"recovery_ticket": "xirt_" + strings.Repeat("B", 43)}
+	for _, status := range []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusServiceUnavailable} {
+		peerStatus = status
+		unknown := f.human(t, "recovery-peer-unresolved", nextInput, f.handler.ConfirmXInsightCredentialRecovery)
+		require.Equal(t, http.StatusConflict, unknown.Code)
+		operations, audits = counts()
+		require.Equal(t, beforeOperations, operations)
+		require.Equal(t, beforeAudits, audits)
+	}
+	peerStatus = http.StatusOK
+	reissued := f.human(t, "recovery-reissued-ticket", nextInput, f.handler.ConfirmXInsightCredentialRecovery)
+	require.Equal(t, http.StatusAccepted, reissued.Code, reissued.Body.String())
+	var replacement struct {
+		OperationID string `json:"operation_id"`
+		State       string `json:"state"`
+	}
+	require.NoError(t, json.Unmarshal(reissued.Body.Bytes(), &replacement))
+	require.NotEqual(t, accepted.OperationID, replacement.OperationID)
+	require.Equal(t, "pending", replacement.State)
+	require.NoError(t, f.pool.QueryRow(ctx, `SELECT state FROM xinsight_connector_credential_operations WHERE operation_id=$1`, accepted.OperationID).Scan(&operationState))
+	require.Equal(t, "superseded", operationState)
+	operations, audits = counts()
+	require.Equal(t, beforeOperations+1, operations)
+	require.Equal(t, beforeAudits+1, audits)
 }

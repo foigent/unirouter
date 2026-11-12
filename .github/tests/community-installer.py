@@ -11,6 +11,7 @@ import base64
 import copy
 from collections import namedtuple
 from datetime import datetime, timedelta, timezone
+import filecmp
 import hashlib
 import importlib.util
 import ipaddress
@@ -36,7 +37,7 @@ RETAINED_SCHEMA = "000127_xinsight_communication_policy"
 OBSERVATION_COMMIT = "4eb32b5514d47aa91610fc66ef561368d6a18900"
 OBSERVATION_SCHEMA = "000128_upstream_release_observation"
 CURRENT_SCHEMA = "000129_upstream_observation_restore_namespace"
-FIXTURE_PORTS = {"fresh": 13000, "single": 13001, "edge": 13002}
+FIXTURE_PORTS = {"fresh": 13000, "single": 13001, "edge": 13002, "predecessor": 13003}
 SourceContract = namedtuple("SourceContract", "schema ledger supported_heads")
 # Match the accepted installation descriptor, not build-stage pull labels or floating tags.
 DEPENDENCIES = {
@@ -239,32 +240,37 @@ class Acceptance:
             raise Failed("loopback registry unavailable")
         self.prepare_release(private)
 
-    def prepare_release(self, private):
-        """One package/image path for the two exact source identities and trust."""
+    def build_test_backend(self):
         public = base64.urlsafe_b64encode(self.ring.read_bytes()).decode().rstrip("=")
         backend = "localhost:15000/unirouter/backend:" + self.commit
-        frontend = "localhost:15000/unirouter/frontend:" + self.commit
         self.run("build exact release-mode backend", [self.docker, "build", "--build-arg", "RUNTIME_VERSION=" + self.version,
                  "--build-arg", "RUNTIME_COMMIT=" + self.commit, "--build-arg", "RUNTIME_TREE=" + self.tree,
                  "--build-arg", "UNIROUTER_RELEASE_TRUST_MODE=release", "--build-arg",
                  "UNIROUTER_UPGRADE_TRUST_BUNDLE_B64=" + public, "-t", backend, "."])
+        return backend
+
+    def observe_fixture_image(self, service, reference):
+        if service in ("backend", "frontend"):
+            require(reference.startswith("localhost:15000/"), "external registry push refused")
+            self.run("round-trip test " + service + " through loopback registry", [self.docker, "push", reference])
+        self.run("pull " + service, [self.docker, "pull", reference])
+        image = json.loads(self.run("inspect " + service, [self.docker, "image", "inspect", reference]))[0]
+        require(image["Os"] == "linux" and image["Architecture"] == "amd64", "image platform mismatch")
+        expected_repo = reference.split("@", 1)[0] if "@" in reference else reference.rsplit(":", 1)[0]
+        digests = [v for v in image.get("RepoDigests", []) if v.split("@", 1)[0] == expected_repo]
+        require(len(digests) == 1, "ambiguous image digest for " + service)
+        self.images[service] = digests[0]
+        self.image_ids[service] = image["Id"]
+        return dict(role=service, **{k: image[k] for k in ("Id", "Os", "Architecture", "RepoDigests")})
+
+    def prepare_release(self, private):
+        """One package/image path for the two exact source identities and trust."""
+        backend = self.build_test_backend()
+        frontend = "localhost:15000/unirouter/frontend:" + self.commit
         self.run("build exact frontend", [self.docker, "build", "--build-arg", "VITE_DEPLOY_ENV=production",
                  "--build-arg", "VITE_APP_VERSION=" + self.version, "-t", frontend, "frontend"])
-        native_observations = []
-        for service, reference in {"backend": backend, "frontend": frontend, **DEPENDENCIES}.items():
-            if service in ("backend", "frontend"):
-                require(reference.startswith("localhost:15000/"), "external registry push refused")
-                self.run("round-trip test " + service + " through loopback registry", [self.docker, "push", reference])
-            self.run("pull " + service, [self.docker, "pull", reference])
-            image = json.loads(self.run("inspect " + service, [self.docker, "image", "inspect", reference]))[0]
-            require(image["Os"] == "linux" and image["Architecture"] == "amd64", "image platform mismatch")
-            expected_repo = reference.split("@", 1)[0] if "@" in reference else reference.rsplit(":", 1)[0]
-            digests = [v for v in image.get("RepoDigests", []) if v.split("@", 1)[0] == expected_repo]
-            require(len(digests) == 1, "ambiguous image digest for " + service)
-            self.images[service] = digests[0]
-            self.image_ids[service] = image["Id"]
-            native_observations.append(dict(role=service, **{k:image[k] for k in
-                ("Id", "Os", "Architecture", "RepoDigests")}))
+        native_observations = [self.observe_fixture_image(service, reference)
+                               for service, reference in {"backend": backend, "frontend": frontend, **DEPENDENCIES}.items()]
         deploy = self.release / "payload/deploy"
         deploy.mkdir(parents=True)
         names = ["install.py", "docker-compose.yml", ".env.example", "preflight.sh"]
@@ -335,6 +341,9 @@ class Acceptance:
                 "--max-current-sequence", str(self.release_sequence - 1),
                 "--min-current-schema", RETAINED_SCHEMA, "--target-schema", self.schema,
                 "--out", self.release / "release.tar.gz"]
+        provenance = self.release / "payload/provenance/build-provenance.json"
+        if provenance.is_file():
+            args.extend(["--provenance-sha256", sha(provenance)])
         for path in payload:
             args.extend(["--artifact", str(path.relative_to(self.release)) + "=" + str(path)])
         self.run("pack synthetic signed release", args)
@@ -356,24 +365,22 @@ class Acceptance:
         self.bootstrap_file = self.root / "bootstrap.json"
         private_write(self.bootstrap_file, json.dumps(bootstrap_value).encode())
         self.bootstrap_sha = sha(self.bootstrap_file)
-        spec = importlib.util.spec_from_file_location("community_bootstrap", self.repo / "deploy/community/bootstrap.py")
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
         def fixture_fetch(asset, target):
             private_write(target, sources[asset["url"].rsplit("/", 1)[-1]].read_bytes())
         prepared = self.root / "prepared-release"
-        prepare_bootstrap_fixture(module, self.bootstrap_file.read_bytes(), self.bootstrap_sha, prepared, fixture_fetch)
+        prepare_bootstrap_fixture(self.bootstrap_module(), self.bootstrap_file.read_bytes(), self.bootstrap_sha,
+                                  prepared, fixture_fetch)
         self.release = prepared
         self.result["bootstrap_sha256"] = self.bootstrap_sha
         self.result["bootstrap_transport"] = "local fixture; no public-download claim"
         self.passed("pinned synthetic bootstrap prepares the exact signed installer")
 
-    def same_schema_release(self):
-        """Only a higher synthetic package sequence; reuse exact candidate images."""
+    def same_schema_release(self, *, sequence=None):
+        """Repack the same candidate payload under a higher synthetic sequence."""
         require(self.schema == CURRENT_SCHEMA, "same-schema fixture needs the completed current candidate")
         self.phase = "prepare higher-sequence same-schema fixture"
         following = copy.copy(self)
-        following.root = self.root / "same-schema"
+        following.root = self.root / ("same-schema" if sequence is None else "predecessor-delta-target")
         following.root.mkdir(mode=0o700)
         following.logs = following.root / "logs"
         following.logs.mkdir(mode=0o700)
@@ -381,7 +388,8 @@ class Acceptance:
         following.release = following.root / "release"
         following.release.mkdir(mode=0o700)
         shutil.copytree(self.release / "payload", following.release / "payload")
-        following.release_sequence = self.release_sequence + 1
+        following.release_sequence = self.release_sequence + 1 if sequence is None else sequence
+        require(following.release_sequence > self.release_sequence, "candidate sequence must increase")
         following.pack_release(self.root / "test.private")
         require(files(following.release / "payload") == files(self.release / "payload")
             and following.images == self.images and following.image_ids == self.image_ids
@@ -391,6 +399,123 @@ class Acceptance:
         # effect. Only two integer counts are retained, never argv/env/output.
         following.observe_migration_owner()
         return following
+
+    def bootstrap_module(self):
+        spec = importlib.util.spec_from_file_location("community_bootstrap", self.repo / "deploy/community/bootstrap.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def prepare_installed_delta(self, old, basis):
+        self.phase = "reconstruct candidate test package from the installed 1.15.5 archive"
+        full = self.release / "release.tar.gz"
+        sidecar = self.root / "fixture.delta.tar.gz"
+        proof = json.loads(self.run(self.phase, [self.verifier, "create-delta", "--basis", basis,
+            "--target", full, "--public-keys", self.ring, "--current-schema", old.schema, "--out", sidecar]))
+        require(proof["basis"]["sha256"] == old.result["test_package_sha256"],
+                "delta basis differs from the installed 1.15.5 test fixture")
+        value = json.loads(self.bootstrap_file.read_bytes())
+        value.update(schema_version="unirouter.community-bootstrap.v2", delta={
+            "basis": proof["basis"], "asset": dict(proof["delta"], url="https://example.invalid/delta")})
+        raw = json.dumps(value).encode()
+        module = self.bootstrap_module()
+        prepared = self.root / "prepared-upgrade-delta"
+        fetched = []
+
+        def fixture_fetch(asset, target):
+            role = asset["url"].rsplit("/", 1)[-1]
+            require(role in ("public_keys", "delta"), "unexpected synthetic delta asset request")
+            if role == "delta":
+                # The shipped bootstrap owns the empty mode marker.
+                with sidecar.open("rb") as source, target.open("r+b") as marker:
+                    shutil.copyfileobj(source, marker)
+            else:
+                private_write(target, self.ring.read_bytes())
+            fetched.append(role)
+
+        try:
+            anchor = module.Bootstrap(raw, hashlib.sha256(raw).hexdigest())
+            module.prepare(anchor, prepared, fetch=fixture_fetch, source_package=basis,
+                           source_verifier=old.release / "uniroute-upgrade")
+        except module.BootstrapError as exc:
+            raise Failed("native synthetic delta preparation failed") from exc
+        require(fetched == ["public_keys", "delta"] and filecmp.cmp(full, prepared / "release.tar.gz", shallow=False),
+                "synthetic delta did not reconstruct the full target with only the required transfers")
+        self.release, self.verifier, self.ring = prepared, prepared / "uniroute-upgrade", prepared / "public-keys.json"
+        self.passed("native delta reconstructs the exact temporary-key signed upgrade package")
+        return {"signing_key": "installer-native-test", "transport": "local fixture",
+                "source": {"version": old.version, "commit": old.commit, "schema": old.schema,
+                           "release_sequence": old.release_sequence, "package": proof["basis"]},
+                "target": {"version": self.version, "commit": self.commit, "schema": self.schema,
+                           "release_sequence": self.release_sequence, "package": proof["target"]},
+                "delta": proof["delta"], "full_package_requests": 0, "byte_identical": True}
+
+    def qualify_accepted_predecessor_delta(self):
+        """Verify the public predecessor, then re-sign its payload for test trust."""
+        first = self.formal_consumer_module()
+        self.phase = "verify pinned public 1.15.5 predecessor"
+        try:
+            record = first.strict_json(first.checked_upgrade_source_bytes(self.repo))
+            first.stage_module().validate_record(record, "consumer")
+            config = record["inputs"]["config"]
+            first.validate(config, ready=True, stage_record=record)
+            product = record["product"]
+            require(product["version"] == "1.15.5" and product["schema"] == CURRENT_SCHEMA
+                    and config["release"]["release_sequence"] == 22, "unexpected public delta rehearsal predecessor")
+            source = self.checkout_fixture_source("predecessor-1155", product["commit"])
+            first.verify_predecessor_checkout(source, record)
+            public_root = self.root / "predecessor-owner-signed"
+            public_root.mkdir(mode=0o700)
+            public = first.make_acceptance(source, public_root, config, {}, stage_record=record)
+            public.loopback_port = FIXTURE_PORTS["predecessor"]
+            with first.clean_environment(public.env):
+                public.prepare()
+        except Failed:
+            raise
+        except first.Stop as exc:
+            raise Failed(str(exc)) from None
+        except Exception as exc:
+            raise Failed("owner-signed 1.15.5 package or image verification failed") from exc
+        require(public.result["real_owner_signed_public_package_verified"]
+                and public.result["package_sha256"] == config["release"]["package_sha256"]
+                and sha(public.ring) != sha(self.ring), "public predecessor identity or test trust separation differs")
+        rehearsal = {"owner_signed_predecessor": {
+            "product": product, "release_sequence": config["release"]["release_sequence"],
+            "package_sha256": config["release"]["package_sha256"], "key_id": config["immutable"]["key_id"],
+            "images": public.images, "image_ids": public.image_ids}}
+        self.result["exact_predecessor_rehearsal"] = rehearsal
+        self.phase = "prepare the exact 1.15.5 payload with disposable signing trust"
+        old_root = self.root / "predecessor-test-signed"
+        old_root.mkdir(mode=0o700)
+        old = Acceptance(source, old_root, product["commit"])
+        old.release_sequence = config["release"]["release_sequence"]
+        old.verifier, old.ring = self.verifier, self.ring
+        old.images, old.image_ids = dict(public.images), dict(public.image_ids)
+        old.observe_fixture_image("backend", old.build_test_backend())
+        owner_payload = public.release / "payload"
+        test_payload = old.release / "payload"
+        shutil.copytree(owner_payload, test_payload)
+        descriptor = test_payload / "install.json"
+        descriptor.write_text(json.dumps(dict(json.loads(descriptor.read_bytes()), images=old.images)) + "\n")
+        original, mirrored = files(owner_payload), files(test_payload)
+        require(original.keys() == mirrored.keys()
+                and {p for p in original if original[p] != mirrored[p]} == {"install.json"}
+                and old.images == dict(public.images, backend=old.images["backend"]),
+                "test predecessor changed payload beyond the test backend reference")
+        old.pack_release(self.root / "test.private")
+        rehearsal["test_predecessor"] = {"images": old.images, "image_ids": old.image_ids,
+            "package_sha256": old.result["test_package_sha256"], "payload_changed_paths": ["install.json"],
+            "local_backend_builds": 1}
+        target = self.same_schema_release(sequence=old.release_sequence + 1)
+        try:
+            target.qualify_upgrade(old, "single", instance_name="predecessor-delta")
+        except Failed:
+            self.phase = target.phase
+            if "installer_stop" in target.result:
+                self.result["installer_stop"] = target.result["installer_stop"]
+            raise
+        rehearsal.update(delta=target.result["predecessor_delta"], upgrade=target.result["finite_upgrades"][0])
+        self.result["checks"].extend(target.result["checks"])
 
     def observe_migration_owner(self):
         """Observe the shipped owner without replacing any native operation."""
@@ -651,13 +776,15 @@ os.kill(parent, signal.SIGKILL)
         finally:
             self.phase = previous_phase
 
-    def native_first_use_checks(self, directory, project, *, restart=True):
-        # These pure assertions are shared with the later real-public-package
-        # consumer. This synthetic fixture never consumes its pending config.
+    def formal_consumer_module(self):
         spec = importlib.util.spec_from_file_location("first_use_assertions",
             Path(__file__).with_name("community-release-acceptance.py"))
         first = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(first)
+        return first
+
+    def native_first_use_checks(self, directory, project, *, restart=True):
+        first = self.formal_consumer_module()
         try:
             snapshot = lambda: first.strict_json(self.sql(directory, project, first.FIRST_CUSTOMER_STATE_SQL))
             retained = lambda: (sha(directory / "admin-password"), sha(directory / "install-state.json"),
@@ -739,14 +866,18 @@ os.kill(parent, signal.SIGKILL)
         self.result["session_refusals"] = {"logged_out": True, "server_expired": True, "expired_fixture_session_removed": True}
         self.passed("normal logged-out, server-expired and cleaned sessions cannot bootstrap a customer")
 
+    def checkout_fixture_source(self, label, commit):
+        source = self.root / (label + "-source")
+        git = ["git", "-c", "safe.directory=" + str(self.repo)]
+        self.run("clone " + label + " source", git + ["clone", "--shared", "--no-checkout", self.repo, source])
+        self.run("select " + label + " source", ["git", "-C", source, "checkout", "--detach", commit])
+        return source
+
     def retained_release(self, *, observation=False):
         """Build the retained predecessor once, using this fixture's same trust."""
         label = "retained-m128" if observation else "retained"
         commit = OBSERVATION_COMMIT if observation else RETAINED_COMMIT
-        source = self.root / (label + "-source")
-        git = ["git", "-c", "safe.directory=" + str(self.repo)]
-        self.run("clone retained M127 source", git + ["clone", "--shared", "--no-checkout", self.repo, source])
-        self.run("select retained M127 source", ["git", "-C", source, "checkout", "--detach", commit])
+        source = self.checkout_fixture_source(label, commit)
         root = self.root / (label + "-fixture")
         root.mkdir(mode=0o700)
         old = Acceptance(source, root, commit)
@@ -1283,7 +1414,9 @@ raise SystemExit("expected cold-pair interruption was not reached")
     def qualify_upgrade(self, old, layout, *, retain=False, existing=None, instance_name=None, origin_sequence=None):
         # Independent installations must not share a recently used host port.
         # The original installer's real collision check remains unchanged.
-        self.loopback_port = old.loopback_port = FIXTURE_PORTS[layout]
+        same_schema = old.schema == self.schema
+        fresh_m129 = existing is None and same_schema and self.schema == CURRENT_SCHEMA
+        self.loopback_port = old.loopback_port = FIXTURE_PORTS["predecessor" if fresh_m129 else layout]
         case = instance_name or layout
         project = "ur-upgrade-" + case + "-" + self.suffix
         directory = old.instances / case
@@ -1294,7 +1427,8 @@ raise SystemExit("expected cold-pair interruption was not reached")
         self.result.pop("installer_stop", None)
         try:
             if not existing:
-                old.run("install exact retained M127 predecessor", old.command("install", directory, project))
+                label = "install exact test-signed 1.15.5 predecessor" if fresh_m129 else "install exact retained M127 predecessor"
+                old.run(label, old.command("install", directory, project))
                 old.installed_checks(directory, project)
                 old.native_first_use_checks(directory, project, restart=False)
         except Failed:
@@ -1302,7 +1436,15 @@ raise SystemExit("expected cold-pair interruption was not reached")
             if "installer_stop" in old.result:
                 self.result["installer_stop"] = old.result["installer_stop"]
             raise
-        if not existing:
+        if fresh_m129:
+            body, name, rendered = None, None, None
+            first = self.formal_consumer_module()
+            try:
+                first.seed_default_upgrade_history(old, directory, project)
+            except first.Stop as exc:
+                raise Failed(str(exc)) from None
+            self.result["predecessor_delta"] = self.prepare_installed_delta(old, directory / "release.tar.gz")
+        elif not existing:
             body, name, rendered = self.historical_data(old, directory, project)
         if origin_sequence is not None:
             require(not existing, "structural origin must precede the first frozen host claim")
@@ -1310,7 +1452,6 @@ raise SystemExit("expected cold-pair interruption was not reached")
         elif existing and hasattr(old, "structural_origin_paths"):
             self.structural_origin_paths = old.structural_origin_paths
             self.result["structural_origin"] = dict(old.result["structural_origin"])
-        same_schema = old.schema == self.schema
         preserve_previous = existing is not None or same_schema
         if old.schema != CURRENT_SCHEMA and (not retain or existing):
             self.seed_native_pair(old, directory, project, rendered)
@@ -1320,7 +1461,7 @@ raise SystemExit("expected cold-pair interruption was not reached")
         # A completed preceding upgrade already retired its old generations.
         # Leave its current receiver for the ordinary owner to withdraw/stop;
         # it is not a new historical exit awaiting import.
-        history = None if existing is not None else self.historical_observations(old, directory, project, edge)
+        history = None if existing is not None or fresh_m129 else self.historical_observations(old, directory, project, edge)
         # Let the native outbox finish its bounded synthetic login/pairing work
         # before a no-write comparison; heartbeat timing alone is projected out.
         deadline = time.monotonic() + 60
@@ -1328,9 +1469,11 @@ raise SystemExit("expected cold-pair interruption was not reached")
             require(time.monotonic() < deadline, "retained synthetic outbox did not drain")
             time.sleep(1)
         protected_rows = self.protected_upgrade_rows(directory, project, old.release_sequence,old.schema)
-        protected_files = self.protected_upgrade_files(directory, body, edge)
+        def protected_file_facts():
+            return self.protected_upgrade_files(directory, body, edge, body_absent=fresh_m129)
+        protected_files = protected_file_facts()
         source_state = (directory / "install-state.json").read_bytes()
-        origin_paths = getattr(self, "structural_origin_paths", None)
+        origin_paths = getattr(self, "structural_origin_paths", None) if not fresh_m129 else None
         origin_files = self.recovery_module().private_inventory(origin_paths) if origin_paths else None
         if existing and old.schema == OBSERVATION_SCHEMA and origin_paths:
             self.verify_structural_origin_witness(source_state, old.release_sequence)
@@ -1342,9 +1485,11 @@ raise SystemExit("expected cold-pair interruption was not reached")
             original_roots = [directory / "evidence"] + [path for name in ("upgrades", "releases")
                 if (directory / name).exists() for path in (directory / name).iterdir()]
             original_history = self.recovery_module().private_inventory(original_roots)
-        require(all(protected_rows[table]["count"] > 0 for table in
-            ("users", "orgs", "projects", "wallets", "transactions", "audit_logs", "release_history", "execution_content_objects")),
-            "source preservation projection lacks nonempty account/business/financial/body facts")
+        nonempty = ("users", "orgs", "projects", "wallets", "transactions", "audit_logs", "release_history")
+        if not fresh_m129:
+            nonempty += ("execution_content_objects",)
+        require(all(protected_rows[table]["count"] > 0 for table in nonempty),
+                "source preservation projection lacks required nonempty facts")
         before = files(directory), self.inventory(), self.upgrade_fingerprint(directory, project, running=True)
         if history is not None:
             code, output = self.run("refuse original history without its observations", self.upgrade_command("check-upgrade", directory, edge), ok=False)
@@ -1361,7 +1506,7 @@ raise SystemExit("expected cold-pair interruption was not reached")
                 "native finite upgrade preflight differs")
         require(before == (files(directory), self.inventory(), self.upgrade_fingerprint(directory, project, running=True)),
                 "read-only upgrade check/status changed source state")
-        require(self.protected_upgrade_files(directory, body, edge) == protected_files,
+        require(protected_file_facts() == protected_files,
                 "read-only upgrade check/status changed protected body or configuration")
         # execute() already verifies the same candidate's real timers in
         # M127 -> M129 single. M128 restore/data and M129 same-schema use the
@@ -1381,7 +1526,7 @@ raise SystemExit("expected cold-pair interruption was not reached")
         witness = state["upgrade"]
         require(witness["state"] == "completed" and witness["pending"] is None, "finite upgrade remains incomplete")
         require(self.protected_upgrade_rows(directory, project, old.release_sequence,old.schema) == protected_rows and
-            self.protected_upgrade_files(directory, body, edge) == protected_files,
+            protected_file_facts() == protected_files,
             "independent original account/financial/audit/configuration projection changed")
         require(tuple(json.loads(self.sql(directory, project, "SELECT jsonb_agg(version ORDER BY version) FROM schema_migrations")))
                 == self.source_contract.ledger, "upgraded complete ledger differs from candidate")
@@ -1393,11 +1538,18 @@ raise SystemExit("expected cold-pair interruption was not reached")
         require(pair["verification_database"] != "uniroute"
             and self.upgrade_fingerprint(directory, project, pair["verification_database"]) == pair["restored_tables"],
             "physically separate restored database differs from original receipt")
-        require(all(pair["tables"][table]["count"] > 0 for table in
-            ("orgs", "projects", "users", "wallets", "transactions", "audit_logs", "release_history", "execution_content_objects")),
-            "preservation fixture lacks nonempty business/financial/account/body history")
-        require(sha(body / "objects" / name) == name and sha(backup / "restore-files" / str(body / "objects" / name).lstrip("/")) == name,
-                "restored nonempty body bytes differ")
+        require(all(pair["tables"][table]["count"] > 0 for table in nonempty),
+                "paired backup lacks required nonempty history")
+        if fresh_m129:
+            require(pair["tables"]["execution_content_objects"]["count"] == 0
+                    and pair["tables"]["execution_content_streams"]["count"] == 0
+                    and self.recovery_module().private_inventory([Path(p) for p in pair["roots"]],
+                        backup / "restore-files") == pair["files"]["files"],
+                    "restored default-content fixture files or empty content differ")
+        else:
+            require(sha(body / "objects" / name) == name
+                    and sha(backup / "restore-files" / str(body / "objects" / name).lstrip("/")) == name,
+                    "restored nonempty body bytes differ")
         roles = ("backend", "backend-canary") if edge else ("backend",)
         require(all(witness["receipts"]["stop-" + role]["clean_exit"] and
                     witness["receipts"]["stop-" + role]["old_processes_gone"] for role in (*roles, "frontend", *(("edge",) if edge else ()))),
@@ -1414,7 +1566,7 @@ raise SystemExit("expected cold-pair interruption was not reached")
             and self.sql(directory, project, "SELECT count(*) FROM release_history") == str(protected_rows["release_history"]["count"] + 1),
                 "retained business or release history differs")
         require(self.protected_upgrade_rows(directory, project, old.release_sequence,old.schema) == protected_rows and
-            self.protected_upgrade_files(directory, body, edge) == protected_files,
+            protected_file_facts() == protected_files,
             "post-upgrade login changed original protected facts")
         require(not origin_paths or self.recovery_module().private_inventory(origin_paths) == origin_files,
             "structural origin package or original native snapshot/package changed during real upgrade")
@@ -1424,13 +1576,16 @@ raise SystemExit("expected cold-pair interruption was not reached")
             "source_schema": old.schema, "target_schema": self.schema, "writers": len(roles),
             "full_table_count": len(pair["tables"]), "nonempty_history_preserved": True,
             "independent_original_row_and_configuration_equality": True,
-            "independent_database_and_body_restore": True, "read_only_no_effects": True,
+            "independent_database_and_body_restore": not fresh_m129, "read_only_no_effects": True,
             "physical_exits_proved": True, "completed_resume": True, "known_checkpoint_resume": bool(edge),
             "new_historical_input": history is not None,
             "historical_kind": ("native_replacement" if edge else "process_exit") if history is not None else None,
             "history_without_evidence_refused": True if history is not None else None,
             "original_operation_evidence_unchanged": True if preserve_previous else None,
             "unknown_outcome_refused": bool(edge), "provider_calls": 0})
+        if fresh_m129:
+            self.result["finite_upgrades"][-1].update(independent_database_and_files_restore=True,
+                                                    explicitly_empty_original_content=True)
         if same_schema:
             migration = witness["receipts"]["migrate"]
             audit = [json.loads(line) for line in self.migration_audit.read_text().splitlines()]
@@ -1495,6 +1650,8 @@ raise SystemExit("expected cold-pair interruption was not reached")
             raise
         self.result["finite_upgrades"].extend(following.result["finite_upgrades"])
         self.result["checks"].extend(following.result["checks"])
+        if self.version == self.formal_consumer_module().REQUIRED_DELTA_VERSION:
+            self.qualify_accepted_predecessor_delta()
         self.result["status"] = "passed"
         self.result.pop("installer_stop", None)
         # All resources belong to this disposable runner; no broad prune/cleanup.

@@ -51,6 +51,40 @@ There is deliberately no populated sample identity that looks installable.
 Allocate real release coordinates only after reviewing the actual history,
 approved signing key, source and artifacts.
 
+A release offering an upgrade delta uses `unirouter.community-bootstrap.v2`.
+It preserves all v1 fields and adds one `delta` object. Its `basis` is the
+exact retained package's `size` and `sha256`. Its `asset` uses the normal
+HTTPS `url`, `size` and `sha256` fields. Publish these identities in the same
+independently pinned bootstrap. The sidecar has a 32 MiB compressed limit.
+It carries the original signed target metadata and changed TAR members.
+
+## Prepare an upgrade using a retained package
+
+Use the source package named by the installed release history. Select delta
+preparation explicitly by adding `--source-package /absolute/current.tar.gz`
+to the ordinary `prepare` command. To reuse a retained verifier that matches
+the new bootstrap's exact identity, also pass
+`--source-verifier /absolute/previous-preparation/uniroute-upgrade`. When the
+verifier changes, preparation downloads the pinned target binary. The same
+prepared full package then works with the existing `check-upgrade` and
+`upgrade` commands, with their original source package and admission checks.
+
+After a transfer interruption, repeat the same `prepare` command in the
+same private directory. It resumes only the same pinned asset with an exact
+HTTP 206 response. For an absent or incorrect basis, unusable delta, or a
+server that cannot continue it, keep the original directory for inspection.
+To prepare the full release, use a new private directory and omit both
+source options. Fresh installation uses the ordinary full package.
+
+Maintainers run `uniroute-upgrade create-delta --basis OLD --target NEW
+--public-keys RING --current-schema SCHEMA --out DELTA` against the two exact
+signed archives. The native tool verifies both archives, derives the
+member inventory, and proves the round trip reproduces the target SHA-256
+and size before producing the sidecar. It prints the identities used in the
+bootstrap. Use the release's locked Go toolchain, retain all full-package
+license materials, and qualify reconstruction with the shipped verifier.
+Docker pulls remain part of the existing installer or upgrader.
+
 ## Actions
 
 All preparation and installation commands should run as the **same root user**
@@ -108,8 +142,10 @@ assets are checked before reuse; a partial asset requires a matching HTTP 206
 range response and passes the full expected size/hash before execution. There
 is no automatic retry. Changed bootstrap inputs, corrupt complete assets,
 foreign-owned files and incomplete extraction refuse reuse and remain available
-for diagnosis. This cache covers the same complete package, not stable materials
-shared by different releases. No automatic deletion or server cleanup is added.
+for diagnosis. Resume stays bound to the same pinned asset. For cross-version
+upgrades, bootstrap v2 reuses matching members from a verified complete
+predecessor archive. Partial downloads cannot be combined across versions.
+No automatic deletion or server cleanup is added.
 
 Offline tests cover transport/redirect refusal and archive attacks. A Go test
 uses the real verifier and synthetic signed packages, including expired/wrong

@@ -102,12 +102,71 @@ class BootstrapTests(unittest.TestCase):
     def prepare(self, anchor=None):
         return b.prepare(anchor or self.bootstrap(), self.output, self.fetch, self.verify)
 
+    def delta_inputs(self):
+        old = self.root / "previous.tar.gz"
+        old.write_bytes(b"exact retained signed package")
+        old.chmod(0o600)
+        self.assets["delta"] = b"synthetic transport sidecar"
+        def attach_delta(value):
+            asset = value["assets"].pop("delta")
+            value["schema_version"] = "unirouter.community-bootstrap.v2"
+            value["delta"] = {
+                "basis": {"size": old.stat().st_size, "sha256": sha(old.read_bytes())},
+                "asset": asset,
+            }
+        return self.bootstrap(attach_delta), old
+
+    def reconstruct_fixture(self, anchor, directory, basis):
+        self.assertEqual(basis, self.root / "previous.tar.gz")
+        self.assertEqual((directory / "delta.tar.gz").read_bytes(), self.assets["delta"])
+        b.write_new(directory / "release.tar.gz", self.assets["package"])
+
+    def test_delta_prepare_reuses_matching_verifier_and_never_requests_full(self):
+        anchor, old = self.delta_inputs()
+        verifier = self.root / "retained-verifier"
+        verifier.write_bytes(self.assets["verifier"])
+        verifier.chmod(0o700)
+        with self.http_transport() as requests, mock.patch.object(b, "restore_delta", self.reconstruct_fixture):
+            b.prepare(anchor, self.output, verify=self.verify, source_package=old, source_verifier=verifier)
+        self.assertEqual([r["name"] for r in requests], ["public_keys", "delta"])
+        self.assertEqual((self.output / "release.tar.gz").read_bytes(), self.assets["package"])
+
+    def test_delta_transfer_reuses_partial_and_refuses_ignored_range(self):
+        anchor, old = self.delta_inputs()
+        with self.http_transport(interrupt_once=True, interrupted_asset="delta") as requests:
+            with self.assertRaises(b.BootstrapError):
+                b.prepare(anchor, self.output, verify=self.verify, source_package=old)
+        partial = (self.output / "delta.tar.gz").read_bytes()
+        self.assertEqual([r["name"] for r in requests], ["verifier", "public_keys", "delta"])
+        self.assertGreater(len(partial), 0)
+        with self.http_transport(mode="ignored-range") as requests:
+            with self.assertRaises(b.BootstrapError):
+                b.prepare(anchor, self.output, verify=self.verify, source_package=old)
+        self.assertEqual([r["name"] for r in requests], ["delta"])
+        self.assertEqual((self.output / "delta.tar.gz").read_bytes(), partial)
+        with self.http_transport() as requests, mock.patch.object(b, "restore_delta", self.reconstruct_fixture):
+            with self.assertRaises(b.BootstrapError):
+                b.prepare(anchor, self.output, verify=self.verify)
+            b.prepare(anchor, self.output, verify=self.verify, source_package=old)
+        self.assertEqual([r["name"] for r in requests], ["delta"])
+        self.assertEqual(requests[0]["range"], f"bytes={len(partial)}-")
+
+    def test_delta_wrong_basis_stops_before_network_and_full_remains_explicit(self):
+        anchor, old = self.delta_inputs()
+        old.write_bytes(b"wrong retained package")
+        with self.http_transport() as requests:
+            with self.assertRaises(b.BootstrapError):
+                b.prepare(anchor, self.output, verify=self.verify, source_package=old)
+            self.assertFalse(requests)
+            b.prepare(anchor, self.output, verify=self.verify)
+        self.assertEqual([r["name"] for r in requests], ["verifier", "public_keys", "package"])
+
     def snapshot(self):
         return {str(p.relative_to(self.root)):(p.lstat().st_mode, p.read_bytes() if p.is_file() and not p.is_symlink() else None)
                 for p in self.root.rglob("*")}
 
     @contextlib.contextmanager
-    def http_transport(self, mode="normal", interrupt_once=False):
+    def http_transport(self, mode="normal", interrupt_once=False, interrupted_asset="package"):
         """Real HTTP body/headers; only routing and reported HTTPS URL are adapted.
 
         This tests transfer semantics/bytes without creating TLS credentials.
@@ -140,7 +199,7 @@ class BootstrapTests(unittest.TestCase):
                 if mode == "encoded":
                     self.send_header("Content-Encoding", "gzip")
                 self.end_headers()
-                if interrupt_once and name == "package" and not any(r["name"] == name for r in records):
+                if interrupt_once and name == interrupted_asset and not any(r["name"] == name for r in records):
                     body = body[:len(body)//3]
                 record = {"name":name, "range":requested, "body_bytes_written":0}
                 records.append(record)
