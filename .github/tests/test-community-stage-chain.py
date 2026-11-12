@@ -278,6 +278,49 @@ class StageChainTests(unittest.TestCase):
                 self.assertIn('GITHUB_WORKFLOW_SHA="$GITHUB_WORKFLOW_SHA"',text)
                 self.assertIn('GITHUB_EVENT_PATH="$GITHUB_EVENT_PATH"',text)
 
+    def test_full_pack_rehearsal_has_an_independent_read_only_retry(self):
+        rehearsal = module('full_pack_context', 'community-full-pack-rehearsal.py')
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary)
+            world = P.World(path)
+            world.source = F.producer('1.15.6', rehearsal.PRODUCT, schema=rehearsal.SCHEMA)
+            world.tag = f'source-{rehearsal.PRODUCT}-run-{world.parent_run}-linux-amd64'
+            world.prepare_chain()
+            record = world.record
+            body = M.canonical(record)
+            env = self.native_env(path, record, 'publisher')
+            with patch.object(rehearsal, 'PUBLISHER_RECORD', M.sha(body)):
+                self.assertEqual((body, record), rehearsal.read_rehearsal_context(M, P.H, env))
+                self.assertEqual(body, M.read_dispatch('publisher', env)[0])
+                retry = dict(env, GITHUB_RUN_ATTEMPT='2')
+                self.assertEqual((body, record), rehearsal.read_rehearsal_context(M, P.H, retry))
+                with self.assertRaises(M.Stop):
+                    M.read_dispatch('publisher', retry)
+                for field, value in (
+                    ('GITHUB_ACTOR_ID', '1'), ('GITHUB_REF', 'refs/heads/elsewhere'),
+                    ('GITHUB_WORKFLOW_REF', f'{M.REPOSITORY}/.github/workflows/ci.yml@refs/heads/main'),
+                    ('STAGE_RECORD_SHA256', '0' * 64),
+                ):
+                    with self.subTest(field=field), self.assertRaises((AssertionError, RuntimeError, M.Stop)):
+                        rehearsal.read_rehearsal_context(M, P.H, {**retry, field: value})
+                other = copy.deepcopy(record)
+                other['predecessor']['run_id'] += 1
+                other['inputs']['tag'] = f"source-{rehearsal.PRODUCT}-run-{other['predecessor']['run_id']}-linux-amd64"
+                with self.assertRaises(AssertionError):
+                    rehearsal.read_rehearsal_context(M, P.H, self.native_env(path, other, 'publisher'))
+
+        workflow = (ROOT / '.github/workflows' / M.WORKFLOWS['publisher']).read_text()
+        publisher, verify = workflow.split('\n  rehearse-full-materials:\n')
+        self.assertIn('github.run_attempt == 1', publisher)
+        self.assertIn('--execute-approved-public-stage', publisher)
+        self.assertIn('needs: publish-public', verify)
+        self.assertIn("needs.publish-public.result == 'success'", verify)
+        self.assertIn('PUBLISHER_RECEIPT: ${{ needs.publish-public.outputs.publisher_receipt }}', verify)
+        self.assertIn(f'ref: {rehearsal.PRODUCT}', verify)
+        self.assertIn('permissions:\n      contents: write\n    runs-on:', verify)
+        self.assertNotIn('packages:', verify)
+        self.assertNotIn('--execute-approved-public-stage', verify)
+
     def test_offline_handoff_commands_are_exclusive_and_use_existing_receipts(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp);world,publisher,result,bindings,_,record=self.setup_chain(path)

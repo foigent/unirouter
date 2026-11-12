@@ -34,6 +34,9 @@ jobs:
     if: github.repository == 'foigent/unirouter' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && github.actor_id == '252312344'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      product_commit: ${{ steps.publisher_stage.outputs.product_commit }}
+      publisher_receipt: ${{ steps.publish.outputs.receipt }}
     env:
       STAGE_RECORD_B64: ${{ inputs.stage_record_b64 }}
       STAGE_RECORD_SHA256: ${{ inputs.stage_record_sha256 }}
@@ -46,9 +49,56 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Validate exact publisher stage before token or downloads
-        run: python3 -I -B .github/tests/community-stage-record.py validate --stage publisher --dispatch
+        id: publisher_stage
+        run: python3 -I -B .github/tests/community-stage-record.py validate --stage publisher --dispatch --github-output
       - name: Upload exact accepted image bytes to existing public packages
+        id: publish
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 -I -B .github/tests/community-image-publisher.py --execute-approved-public-stage
+        run: |
+          set -euo pipefail
+          umask 077
+          python3 -I -B .github/tests/community-image-publisher.py --execute-approved-public-stage \
+            | tee "$RUNNER_TEMP/ur-publisher-receipt.json"
+          receipt=$(jq -ce . "$RUNNER_TEMP/ur-publisher-receipt.json")
+          printf 'receipt=%s\n' "$receipt" >> "$GITHUB_OUTPUT"
+
+  rehearse-full-materials:
+    needs: publish-public
+    if: needs.publish-public.result == 'success' && needs.publish-public.outputs.product_commit == '564a6d189341d5ad05cccd8b3bdbf5bc4ce66a49' && github.repository == 'foigent/unirouter' && github.ref == 'refs/heads/main' && github.actor_id == '252312344'
+    # The runner only reads the producer draft. The draft API requires push access.
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      STAGE_RECORD_B64: ${{ inputs.stage_record_b64 }}
+      STAGE_RECORD_SHA256: ${{ inputs.stage_record_sha256 }}
+      EXPECTED_WORKFLOW_COMMIT: ${{ inputs.expected_workflow_commit }}
+      ADMISSION_SHA256: ${{ inputs.admission_sha256 }}
+    steps:
+      - name: Check out the exact reviewed rehearsal program
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Check out the exact 1.15.6 product for full material rehearsal
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 564a6d189341d5ad05cccd8b3bdbf5bc4ce66a49
+          path: .community-formal-product
+          persist-credentials: false
+      - name: Set up the existing native test key generator toolchain
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: '1.25.12'
+          cache: false
+      - name: Rehearse the complete package and delta on Linux with test trust
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GOTOOLCHAIN: local
+          GOPROXY: 'off'
+          PUBLISHER_RECEIPT: ${{ needs.publish-public.outputs.publisher_receipt }}
+        run: |
+          python3 -I -B .github/tests/community-full-pack-rehearsal.py --source .community-formal-product
