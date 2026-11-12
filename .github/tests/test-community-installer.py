@@ -557,10 +557,16 @@ class InstallerFixtureContract(unittest.TestCase):
                 with patch.object(fixture.subprocess,'run',side_effect=AssertionError('must remain source-only')):
                     with self.assertRaises(fixture.Failed): fixture.source_contract(root)
 
-    def exercise_release_preparation(self, repo, schema, version, commit, *, same_schema=False):
+    def exercise_release_preparation(self, repo, schema, version, commit, *, same_schema=False, with_provenance=False):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp); work=object.__new__(fixture.Acceptance)
             work.repo,work.root,work.release=repo,root,root/'release';work.release.mkdir()
+            provenance_path = 'payload/provenance/build-provenance.json'
+            provenance_bytes = b'{"fixture":"preserved owner payload"}\n'
+            if with_provenance:
+                path = work.release / provenance_path
+                path.parent.mkdir(parents=True)
+                path.write_bytes(provenance_bytes)
             work.commit,work.tree,work.version=commit,'b'*40,version
             work.schema,work.release_sequence=schema,{fixture.RETAINED_SCHEMA:1,fixture.OBSERVATION_SCHEMA:2,fixture.CURRENT_SCHEMA:3}[schema]
             work.verifier,work.ring=root/'verifier',root/'ring.json'
@@ -576,6 +582,12 @@ class InstallerFixtureContract(unittest.TestCase):
                 if label=='pack synthetic signed release':
                     expected=json.loads(Path(args[args.index('--expected-artifacts')+1]).read_bytes())
                     paths={row['path']:row for row in expected}
+                    if with_provenance:
+                        expected_sha = hashlib.sha256(provenance_bytes).hexdigest()
+                        self.assertEqual(paths[provenance_path]['sha256'], expected_sha)
+                        self.assertEqual(args[args.index('--provenance-sha256')+1], expected_sha)
+                    else:
+                        self.assertNotIn('--provenance-sha256', args)
                     for name in (('upgrade.py','recovery.py','install.py') if schema in (fixture.OBSERVATION_SCHEMA,fixture.CURRENT_SCHEMA) else ('install.py',)):
                         p='payload/deploy/'+name;self.assertIn(p,paths)
                         self.assertEqual(paths[p]['sha256'],fixture.sha(repo/'deploy/customer'/name))
@@ -634,7 +646,10 @@ class InstallerFixtureContract(unittest.TestCase):
             self.assertIn('UNIROUTER_UPGRADE_TRUST_BUNDLE_B64=e30',backend)
 
     def test_actual_release_preparation_carries_full_payload_and_native_presign_inventory(self):
-        self.exercise_release_preparation(ROOT,fixture.CURRENT_SCHEMA,'1.15.0','a'*40)
+        for with_provenance in (False, True):
+            with self.subTest(with_provenance=with_provenance):
+                self.exercise_release_preparation(ROOT,fixture.CURRENT_SCHEMA,'1.15.0','a'*40,
+                                                  with_provenance=with_provenance)
 
     def test_same_schema_repack_reuses_exact_images_payload_key_and_native_command_observer(self):
         self.exercise_release_preparation(ROOT,fixture.CURRENT_SCHEMA,'1.15.2','a'*40,same_schema=True)

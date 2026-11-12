@@ -341,6 +341,9 @@ class Acceptance:
                 "--max-current-sequence", str(self.release_sequence - 1),
                 "--min-current-schema", RETAINED_SCHEMA, "--target-schema", self.schema,
                 "--out", self.release / "release.tar.gz"]
+        provenance = self.release / "payload/provenance/build-provenance.json"
+        if provenance.is_file():
+            args.extend(["--provenance-sha256", sha(provenance)])
         for path in payload:
             args.extend(["--artifact", str(path.relative_to(self.release)) + "=" + str(path)])
         self.run("pack synthetic signed release", args)
