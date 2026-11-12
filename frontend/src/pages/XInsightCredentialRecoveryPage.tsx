@@ -2,6 +2,7 @@ import '../i18n/integrations';
 import { formatDateTime } from '../utils/formatDate';
 import { translate as t, useI18n, labelFor, translateLabel } from '../i18n';
 import { useEffect, useLayoutEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Button, Banner, Spin, Typography } from '@douyinfe/semi-ui';
 import { xInsightSetupApi, type CredentialRecoveryPreview, type CredentialRecoveryAccepted, type SetupStatus } from '../api/xInsightSetup';
 import { useAuthStore } from '../store/auth';
@@ -68,8 +69,7 @@ export default function XInsightCredentialRecoveryPage() {
       const value = await xInsightSetupApi.recoveryConfirm(org, installation, ticket);
       if (value.installation_id !== installation || value.state !== 'pending') throw new Error(t("恢复回执不一致"));
       setAccepted(value);
-      const next = await xInsightSetupApi.status(org, installation);
-      setStatus(next);
+      await refresh();
     } catch {
       setError('恢复尚未确认。请先重新读取状态；若仍未接续，可用同一页面重试原票据。');
     } finally { setBusy(false); }
@@ -104,7 +104,13 @@ export default function XInsightCredentialRecoveryPage() {
         <label><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />  {t("我已核对这是原连接和原范围，确认恢复其控制凭据。")}</label>
         <Button theme="solid" disabled={!confirmed || busy} loading={busy} onClick={() => { void confirm(); }}>{t("确认恢复原连接")}</Button>
       </>}
-      {accepted && <p role="status">{t("本端确认已持久保存。后台正在使用原连接接续控制凭据；请读取最新状态。")}</p>}
+      {accepted && <p role="status">
+        {t("恢复请求已保存。")}
+        {status?.credential?.state !== 'healthy' && <>
+          {t("若自动通讯已关闭，请在票据到期前打开 X-Insight 集成管理，选择原项目并点击「执行一次」。")}{' '}
+          <Link to="/integrations?tab=xinsight">{t("打开 X-Insight 集成管理")}</Link>
+        </>}
+      </p>}
       {(accepted || error) && <Button onClick={() => { void refresh(); }}>{t("读取连接状态")}</Button>}
       {status?.credential && <p role="status">{t("当前控制凭据：")}{labelFor(credentialLabel, status.credential.state) || t("暂不可用")}{t("。数据新鲜度和正文读取需另按实际接收核对。")}</p>}
     </>}

@@ -67,16 +67,20 @@ func (journal *PostgresPhaseJournal) PrepareRecoveryTx(ctx context.Context, tx p
 	if binding.controlTokenExpiresAt.Valid && binding.controlTokenExpiresAt.Time.After(journal.now().UTC()) && resolution.PreviousTokenSHA256 == binding.controlTokenSHA256 {
 		return "", ErrConflict
 	}
+	pending, pendingErr := journal.readPendingCredential(ctx, tx, id)
+	if err := resolution.Validate(journal.now().UTC()); err != nil {
+		return "", err
+	}
 	var oldPending *preparedCredentialOperation
-	if pending, e := journal.readPendingCredential(ctx, tx, id); e == nil {
+	if pendingErr == nil {
 		if pending.request.Kind == "recover" && pending.request.RecoveryID != nil && *pending.request.RecoveryID == resolution.RecoveryID &&
 			pending.request.RecoveryTicket != nil && *pending.request.RecoveryTicket == ticket &&
 			pending.request.PreviousTokenSHA256 == resolution.PreviousTokenSHA256 {
 			return pending.request.OperationID, nil
 		}
 		oldPending = &pending
-	} else if e != pgx.ErrNoRows {
-		return "", e
+	} else if pendingErr != pgx.ErrNoRows {
+		return "", pendingErr
 	}
 	previous := ""
 	if resolution.PreviousTokenSHA256 == binding.controlTokenSHA256 {
@@ -112,7 +116,21 @@ func (journal *PostgresPhaseJournal) PrepareRecoveryTx(ctx context.Context, tx p
 				}
 			}
 		} else if resolution.PreviousTokenSHA256 != hashBytes([]byte(oldPending.replacement)) {
-			return "", ErrConflict
+			// XI issues only one live recovery ticket under the same lock as
+			// credential preparation. A different live ticket against the same
+			// expired current with no XI predecessor fences out the old ticket:
+			// an accepted replacement would be prepared or have moved current.
+			old := oldPending.request
+			if oldPending.state != "pending" || oldPending.receipt != nil || old.Kind != "recover" ||
+				*old.RecoveryID == resolution.RecoveryID || *old.RecoveryTicket == ticket ||
+				!binding.controlTokenExpiresAt.Valid || old.PreviousTokenSHA256 != binding.controlTokenSHA256 ||
+				resolution.PreviousTokenSHA256 != binding.controlTokenSHA256 ||
+				old.DeploymentID != resolution.DeploymentID || old.ProjectID != resolution.ProjectID ||
+				old.FinalEventScope[0] != resolution.FinalEventScope[0] ||
+				old.SourceBindingSHA256 != resolution.SourceBindingSHA256 ||
+				old.XInsightOrigin != resolution.XInsightOrigin || old.UniRouterOrigin != resolution.UniRouterOrigin {
+				return "", ErrConflict
+			}
 		}
 		supersededID = oldPending.request.OperationID
 		if tag, e := tx.Exec(ctx, `UPDATE xinsight_connector_credential_operations SET state='superseded',updated_at=$2 WHERE operation_id=$1 AND state IN ('pending','committed')`, oldPending.request.OperationID, journal.now().UTC()); e != nil || tag.RowsAffected() != 1 {

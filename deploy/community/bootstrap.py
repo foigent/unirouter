@@ -18,6 +18,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -26,6 +27,8 @@ MAX_BOOTSTRAP = 32 * 1024
 MAX_MANIFEST = 128 * 1024
 MAX_SIGNATURE = 16 * 1024
 MAX_PAYLOAD = 512 * 1024 * 1024
+MAX_DELTA = 32 * 1024 * 1024
+DELTA_FILE = "delta.tar.gz"
 MAX_TAR_PADDING = 10240
 ASSETS = {"verifier": ("uniroute-upgrade", 32 * 1024 * 1024),
           "public_keys": ("public-keys.json", 64 * 1024),
@@ -120,7 +123,7 @@ def write_new(path, raw):
         os.fsync(stream.fileno())
 
 
-def protected_directory(path, *, exists):
+def protected_directory(path, *, exists, private=True):
     require(path.is_absolute() and path == path.resolve(), "Use an absolute path without symlinks.")
     require(os.path.lexists(path) == exists, "Preparation needs a new directory; reuse needs a completed directory.")
     for index, item in enumerate([path, *path.parents]):
@@ -131,9 +134,14 @@ def protected_directory(path, *, exists):
                 "Directory ancestry can be replaced by another user.")
         require(not info.st_mode & 0o022 or (info.st_uid == 0 and info.st_mode & stat.S_ISVTX),
                 "Directory ancestry allows other writers without root-owned sticky protection.")
-        if index == 0:
+        if index == 0 and private:
             require(info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o700,
                     "Reuse requires the same owner and a private 0700 directory; no automatic chown is performed.")
+
+
+def validate_asset_identity(asset, maximum):
+    require(type(asset["size"]) is int and 0 < asset["size"] <= maximum
+            and valid_digest(asset["sha256"]), "Invalid bounded asset identity.")
 
 
 class Bootstrap:
@@ -142,8 +150,11 @@ class Bootstrap:
                 "Bootstrap SHA-256 does not match the independently trusted value.")
         require(0 < len(raw) <= MAX_BOOTSTRAP, "Bootstrap exceeds its size limit.")
         value = strict_json(raw)
-        exact_keys(value, ("schema_version", "platform", "release", "assets"))
-        require(value["schema_version"] == "unirouter.community-bootstrap.v1", "Unsupported bootstrap schema.")
+        require(isinstance(value, dict), "Unexpected bootstrap metadata.")
+        schema = value.get("schema_version")
+        require(schema in ("unirouter.community-bootstrap.v1", "unirouter.community-bootstrap.v2"), "Unsupported bootstrap schema.")
+        delta = schema == "unirouter.community-bootstrap.v2"
+        exact_keys(value, ("schema_version", "platform", "release", "assets") + (("delta",) if delta else ()))
         exact_keys(value["platform"], ("os", "arch"))
         require(value["platform"] == {"os": "linux", "arch": "amd64"},
                 "This online preview supports Linux amd64 only.")
@@ -163,8 +174,18 @@ class Bootstrap:
             asset = value["assets"][name]
             exact_keys(asset, ("url", "size", "sha256"))
             https_url(asset["url"])
-            require(type(asset["size"]) is int and 0 < asset["size"] <= maximum
-                    and valid_digest(asset["sha256"]), "Invalid bounded asset identity.")
+            validate_asset_identity(asset, maximum)
+        self.delta = value.get("delta")
+        if delta:
+            exact_keys(self.delta, ("basis", "asset"))
+            basis, sidecar = self.delta["basis"], self.delta["asset"]
+            exact_keys(basis, ("size", "sha256"))
+            exact_keys(sidecar, ("url", "size", "sha256"))
+            validate_asset_identity(basis, MAX_PAYLOAD)
+            validate_asset_identity(sidecar, MAX_DELTA)
+            https_url(sidecar["url"])
+            require(basis["sha256"] != value["assets"]["package"]["sha256"]
+                    and sidecar["size"] < value["assets"]["package"]["size"], "Invalid delta transport identities.")
         self.raw, self.sha, self.value = raw, expected_sha256, value
         self.release, self.assets = release, value["assets"]
 
@@ -430,8 +451,12 @@ def verify_release(bootstrap, directory, verify=verifier_output):
     return files, receipt
 
 
-def validate_payload(directory, files, receipt=None):
+def validate_payload(directory, files, receipt=None, delta_asset=None):
     allowed = set(files) | {filename for filename, _ in ASSETS.values()} | {"bootstrap.json", RECEIPT}
+    if os.path.lexists(directory / DELTA_FILE):
+        require(delta_asset is not None and file_identity(directory / DELTA_FILE) ==
+                (delta_asset["size"], delta_asset["sha256"]), "Retained delta differs from its pinned identity.")
+        allowed.add(DELTA_FILE)
     allowed_dirs = {str(parent) for name in allowed for parent in PurePosixPath(name).parents if str(parent) != "."}
     for parent, directories, filenames in os.walk(directory, followlinks=False):
         for name in directories:
@@ -451,11 +476,59 @@ def validate_payload(directory, files, receipt=None):
                 "Preparation did not finish or its completion receipt differs.")
 
 
-def prepare(bootstrap, directory, fetch=download, verify=verifier_output):
+def require_delta_basis(bootstrap, path):
+    require(bootstrap.delta is not None, "This bootstrap has no delta. Use a new directory for full preparation.")
+    require(path.is_absolute() and path == path.resolve(), "Use the absolute retained package path without symlinks.")
+    try:
+        protected_directory(path.parent, exists=True, private=False)
+        actual = file_identity(path)
+    except FileNotFoundError:
+        raise BootstrapError("The retained basis package is missing. Recover it or prepare the full package in a new directory.") from None
+    expected = bootstrap.delta["basis"]
+    require(actual == (expected["size"], expected["sha256"]),
+            "Retained basis differs from the pinned package. Use the exact basis or prepare the full package in a new directory.")
+
+
+def reuse_verifier(asset, source, destination):
+    if source is None or os.path.lexists(destination):
+        return False
+    require(source.is_absolute() and source == source.resolve(), "Use the absolute retained verifier path without symlinks.")
+    try:
+        protected_directory(source.parent, exists=True, private=False)
+        with open_regular(source, True) as stream:
+            if os.fstat(stream.fileno()).st_size == asset["size"]:
+                raw = stream.read(asset["size"] + 1)
+                if len(raw) == asset["size"] and hashlib.sha256(raw).hexdigest() == asset["sha256"]:
+                    write_new(destination, raw)
+                    print("Retained verifier matches the pinned target verifier; reused its exact bytes.")
+                    return True
+    except FileNotFoundError:
+        pass
+    print("Retained verifier is missing or differs; downloading the pinned target verifier.")
+    return False
+
+
+def restore_delta(bootstrap, directory, source_package):
+    package = bootstrap.assets["package"]
+    args = [directory / "uniroute-upgrade", "materialize-delta", "--basis", source_package,
+            "--basis-sha256", bootstrap.delta["basis"]["sha256"], "--delta", directory / DELTA_FILE,
+            "--delta-sha256", bootstrap.delta["asset"]["sha256"], "--target-sha256", package["sha256"],
+            "--target-size", package["size"], "--public-keys", directory / "public-keys.json",
+            "--current-schema", SCHEMA, "--out", directory / "release.tar.gz"]
+    result = subprocess.run([str(a) for a in args], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            env=child_environment(), check=False)
+    require(result.returncode == 0, "Delta reconstruction failed. Retain this directory and use a new directory for explicit full preparation.")
+
+
+def prepare(bootstrap, directory, fetch=download, verify=verifier_output, *, source_package=None, source_verifier=None):
     bootstrap.host_check()
     exists = os.path.lexists(directory)
     protected_directory(directory, exists=exists)
+    use_delta = source_package is not None
+    require(source_verifier is None or use_delta, "Retained verifier reuse requires explicit delta preparation.")
     if not exists:
+        if use_delta:
+            require_delta_basis(bootstrap, source_package)
         directory.mkdir(mode=0o700)
     with preparation_lock(directory):
         if exists:
@@ -465,12 +538,19 @@ def prepare(bootstrap, directory, fetch=download, verify=verifier_output):
                     "Retained bootstrap differs from the trusted input.")
             if os.path.lexists(directory / RECEIPT):
                 return check_prepared(bootstrap, directory, verify)
-            allowed = {"bootstrap.json"} | {filename for filename, _ in ASSETS.values()}
+            allowed = {"bootstrap.json", DELTA_FILE} | {filename for filename, _ in ASSETS.values()}
             require(all(item.name in allowed for item in directory.iterdir()),
                     "Only interrupted asset downloads can continue; keep other preparation remnants unchanged.")
+            require(os.path.lexists(directory / DELTA_FILE) == use_delta,
+                    "Resume with the original full or delta mode; use a new directory to change mode.")
+            if use_delta:
+                require_delta_basis(bootstrap, source_package)
         else:
+            if use_delta:
+                write_new(directory / DELTA_FILE, b"")
             write_new(directory / "bootstrap.json", bootstrap.raw)
         complete = set()
+        delta_asset = bootstrap.delta["asset"] if use_delta else None
         # Check every existing asset before any request, including later assets.
         for name, (filename, _) in ASSETS.items():
             target, asset = directory / filename, bootstrap.assets[name]
@@ -478,23 +558,36 @@ def prepare(bootstrap, directory, fetch=download, verify=verifier_output):
                 with open_regular(target, True) as stream:
                     size = os.fstat(stream.fileno()).st_size
                 require(size <= asset["size"], "Retained asset exceeds its pinned size.")
+                require(not (use_delta and name == "package") or size == asset["size"],
+                        "A reconstructed package must be complete. Use a new preparation directory.")
                 if size == asset["size"]:
                     require(file_identity(target) == (asset["size"], asset["sha256"]),
                             "Retained complete asset has the wrong SHA-256.")
                     complete.add(name)
+        if use_delta and reuse_verifier(bootstrap.assets["verifier"], source_verifier, directory / "uniroute-upgrade"):
+            complete.add("verifier")
         for name, (filename, _) in ASSETS.items():
-            if name not in complete:
-                fetch(bootstrap.assets[name], directory / filename)
+            if name in complete or (use_delta and name == "package"):
+                continue
+            fetch(bootstrap.assets[name], directory / filename)
             require(file_identity(directory / filename) == (bootstrap.assets[name]["size"], bootstrap.assets[name]["sha256"]),
                     "Downloaded asset does not match its pinned identity.")
         os.chmod(directory / "uniroute-upgrade", 0o700)
+        if use_delta and "package" not in complete:
+            try:
+                fetch(delta_asset, directory / DELTA_FILE)
+            except urllib.error.HTTPError:
+                raise BootstrapError("The pinned delta is unavailable. Retain this directory and use a new directory for explicit full preparation.") from None
+            require(file_identity(directory / DELTA_FILE) == (delta_asset["size"], delta_asset["sha256"]),
+                    "Downloaded delta does not match its pinned identity.")
+            restore_delta(bootstrap, directory, source_package)
         files, receipt = verify_release(bootstrap, directory, verify)
         extracted_manifest, extracted_files = scan_archive(directory / "release.tar.gz", destination=directory)
         require(extracted_files == files and hashlib.sha256(extracted_manifest).hexdigest() == receipt["manifest_sha256"],
                 "Archive changed during preparation.")
         require(file_identity(directory / "release.tar.gz") ==
                 (bootstrap.assets["package"]["size"], bootstrap.assets["package"]["sha256"]), "Package changed during preparation.")
-        validate_payload(directory, files)
+        validate_payload(directory, files, delta_asset=delta_asset)
         write_new(directory / RECEIPT, (json.dumps(receipt, sort_keys=True) + "\n").encode())
         return receipt
 
@@ -506,7 +599,7 @@ def check_prepared(bootstrap, directory, verify=verifier_output):
             "Retained bootstrap differs from the trusted input.")
     require((directory / RECEIPT).is_file(), "Preparation is incomplete; only prepare can continue interrupted asset downloads.")
     files, receipt = verify_release(bootstrap, directory, verify)
-    validate_payload(directory, files, receipt)
+    validate_payload(directory, files, receipt, bootstrap.delta["asset"] if bootstrap.delta else None)
     return receipt
 
 
@@ -547,6 +640,7 @@ def main(argv=None):
     parser.add_argument("--port", type=int, default=3000)
     parser.add_argument("--docker-socket", type=Path, default=Path("/var/run/docker.sock"))
     parser.add_argument("--source-package", type=Path, help="retained exact currently installed signed full package")
+    parser.add_argument("--source-verifier", type=Path, help="optional retained verifier for explicit delta preparation")
     parser.add_argument("--layout", choices=("community_single", "ur_edge_pair"), default="community_single")
     parser.add_argument("--edge-directory", type=Path, help="original named UR edge configuration directory")
     parser.add_argument("--historical-exits", type=Path, help="private original observations for known historical M127 exits")
@@ -556,7 +650,12 @@ def main(argv=None):
         require(sys.version_info >= (3, 10), "Python 3.10 or later is required.")
         require(args.action == "prepare" or os.geteuid() == 0, "Run prepare and installation as the same root user.")
         bootstrap = Bootstrap(read_bounded(args.bootstrap, MAX_BOOTSTRAP), args.bootstrap_sha256)
-        if args.action == "prepare" or (args.action == "install" and not os.path.lexists(args.directory)):
+        require(args.source_verifier is None or args.action == "prepare", "Source verifier is only used by prepare.")
+        require(args.source_package is None or args.action in ("prepare", *UPGRADE_ACTIONS),
+                "Source package is only used by prepare or upgrade actions.")
+        if args.action == "prepare":
+            prepare(bootstrap, args.directory, source_package=args.source_package, source_verifier=args.source_verifier)
+        elif args.action == "install" and not os.path.lexists(args.directory):
             prepare(bootstrap, args.directory)
         else:
             check_prepared(bootstrap, args.directory)

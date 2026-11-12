@@ -18,10 +18,14 @@ UR 管理员 API：
 | --- | --- | --- |
 | 定位原组织 | `GET /api/v2/xinsight/setups/{installation_id}/credential-recovery-scope` | 不含票据；200 仅在当前及原 setup 管理员仍有原范围权限时返回原 `org_id`，否则统一 404；不外发 XI 请求。 |
 | 预览原范围 | `POST /api/v2/organizations/{org_id}/xinsight/setups/{installation_id}/credential-recovery/preview` | JSON `{"recovery_ticket":"…"}`；200 返回原范围、票据期限和本地 `credential` 状态，不保存恢复操作。 |
-| 确认恢复 | `POST /api/v2/organizations/{org_id}/xinsight/setups/{installation_id}/credential-recovery` | 同一 JSON；202 表示恢复请求及新 bearer **已加密持久保存，等待后台接续**，不表示 XI 已确认、业务 Poll 已恢复或数据已加载。 |
+| 确认恢复 | `POST /api/v2/organizations/{org_id}/xinsight/setups/{installation_id}/credential-recovery` | 同一 JSON；202 表示恢复请求及新 bearer **已加密持久保存，等待接续**，不表示 XI 已确认、业务 Poll 已恢复或数据已加载。 |
 | 读取状态 | `GET /api/v2/organizations/{org_id}/xinsight/setups/{installation_id}` | `credential` 区分 `rotation_due`、`rotation_pending`、`committed_unpromoted`、`expired_recovery_required`、`healthy`、`revoked`；XI receiving、正文读取仍另看实际证据。 |
 
-两种断线前驱均保持原连接：XI 已确认轮换而 UR 尚未晋升时，恢复票据绑定 XI 当前的新摘要，UR 从原 pending 密文证明准确持有；若 XI 的 prepared replacement 和旧 current 均过期，票据绑定仍为 XI current 的旧摘要，准确标识待取代的 prepared operation。恢复写入先把被取代操作标为 superseded，再保存新操作；XI 的恢复确认及 UR 晋升必须逐步完成。票据过期、原管理员失权、原 origin 或范围不符、准确旧 secret 缺失，以及撤销状态均拒绝恢复。不要用新安装、清库、SQL 改有效期或通用 service identity 替代。
+自动通讯关闭时，确认成功后请在票据到期前返回「集成管理 → X-Insight」，选择原项目并点击「执行一次」。确认回执表示本端已保存请求，最终状态以两端同一操作的凭据回执为准。
+
+旧票据已过期且 XI 从未接受该恢复时，可从 XI 为原连接签发新票据。UR 仅凭原 XI 的有效解析结果、未变的过期现行凭据及本地无对端回执的旧恢复操作判定接替，事务内保留旧操作。已到达 XI 的操作仍走其原有的显式接替或提交接续路径。
+
+已经到达 XI 的两种前态均保持原连接：XI 已确认轮换而 UR 尚未晋升时，恢复票据绑定 XI 当前的新摘要，UR 从原 pending 密文证明准确持有；若 XI 的 prepared replacement 和旧 current 均过期，票据绑定仍为 XI current 的旧摘要，准确标识待取代的 prepared operation。恢复写入先把被取代操作标为 superseded，再保存新操作；XI 的恢复确认及 UR 晋升必须逐步完成。票据过期、原管理员失权、原 origin 或范围不符、准确旧 secret 缺失，以及撤销状态均拒绝恢复。不要用新安装、清库、SQL 改有效期或通用 service identity 替代。
 
 本地已有回执且其中的 replacement 期限已过时，状态直接为 `expired_recovery_required`，包括 prepared 与 committed-but-unpromoted；原 pending 身份仍保留供准确恢复。若根本未收到回执，即使旧 current 已过期，UR 也不能凭本地事实断言 XI 是否已接收替代凭据，仍显示 `rotation_pending` 和原 operation，等待准确查询或管理员按原连接恢复流程核对，不伪报健康或猜测对端结果。
 

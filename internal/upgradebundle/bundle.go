@@ -207,7 +207,23 @@ func Pack(w io.Writer, manifest Manifest, privateKey ed25519.PrivateKey, sources
 	if err != nil {
 		return err
 	}
-	createdAt, _ := time.Parse(time.RFC3339, manifest.CreatedAt)
+	return writeSignedBundle(w, archiveMetadata{manifest, manifestBytes, signatureBytes}, manifest.Artifacts,
+		func(artifact Artifact) (io.ReadCloser, error) {
+			source, ok := byPath[artifact.Path]
+			if !ok {
+				return nil, fmt.Errorf("missing source for %s", artifact.Path)
+			}
+			return os.Open(source.FilePath)
+		})
+}
+
+type archiveMetadata struct {
+	manifest                 Manifest
+	manifestBytes, signature []byte
+}
+
+func writeSignedBundle(w io.Writer, metadata archiveMetadata, artifacts []Artifact, open func(Artifact) (io.ReadCloser, error)) error {
+	createdAt, _ := time.Parse(time.RFC3339, metadata.manifest.CreatedAt)
 	gz := gzip.NewWriter(w)
 	gz.Name = ""
 	gz.Comment = ""
@@ -219,20 +235,16 @@ func Pack(w io.Writer, manifest Manifest, privateKey ed25519.PrivateKey, sources
 		_ = gz.Close()
 		return cause
 	}
-	if err := writeTarBytes(tw, manifestPath, manifestBytes, createdAt); err != nil {
+	if err := writeTarBytes(tw, manifestPath, metadata.manifestBytes, createdAt); err != nil {
 		return closeWithError(err)
 	}
-	if err := writeTarBytes(tw, signaturePath, signatureBytes, createdAt); err != nil {
+	if err := writeTarBytes(tw, signaturePath, metadata.signature, createdAt); err != nil {
 		return closeWithError(err)
 	}
-	for _, artifact := range manifest.Artifacts {
-		source, ok := byPath[artifact.Path]
-		if !ok {
-			return closeWithError(fmt.Errorf("missing source for %s", artifact.Path))
-		}
-		file, err := os.Open(source.FilePath)
+	for _, artifact := range artifacts {
+		file, err := open(artifact)
 		if err != nil {
-			return closeWithError(fmt.Errorf("open artifact %s: %w", source.FilePath, err))
+			return closeWithError(fmt.Errorf("open artifact %s: %w", artifact.Path, err))
 		}
 		header := &tar.Header{Name: artifact.Path, Mode: 0o644, Size: artifact.Size, ModTime: createdAt, Typeflag: tar.TypeReg, Format: tar.FormatUSTAR}
 		if err := tw.WriteHeader(header); err != nil {
@@ -260,6 +272,10 @@ func Pack(w io.Writer, manifest Manifest, privateKey ed25519.PrivateKey, sources
 }
 
 func Verify(r io.Reader, options VerifyOptions) (Verification, error) {
+	return verifyArchive(r, options, 0)
+}
+
+func verifyArchive(r io.Reader, options VerifyOptions, expandedLimit int64) (Verification, error) {
 	if options.Now.IsZero() {
 		options.Now = time.Now()
 	}
@@ -273,56 +289,18 @@ func Verify(r io.Reader, options VerifyOptions) (Verification, error) {
 		return Verification{}, fmt.Errorf("open upgrade gzip: %w", err)
 	}
 	gz.Multistream(false)
-	tr := tar.NewReader(gz)
-	manifestHeader, err := tr.Next()
-	if err != nil {
-		return Verification{}, fmt.Errorf("read manifest entry: %w", err)
+	var expanded io.Reader = gz
+	var bounded *io.LimitedReader
+	if expandedLimit > 0 {
+		bounded = &io.LimitedReader{R: gz, N: expandedLimit + 1}
+		expanded = bounded
 	}
-	if err := validateMetadataHeader(manifestHeader, manifestPath, maxManifestBytes); err != nil {
-		return Verification{}, err
-	}
-	manifestBytes, err := readExactEntry(tr, manifestHeader.Size, maxManifestBytes)
-	if err != nil {
-		return Verification{}, err
-	}
-	manifest, err := decodeManifest(manifestBytes)
+	tr := tar.NewReader(expanded)
+	metadata, err := readSignedMetadata(tr, options)
 	if err != nil {
 		return Verification{}, err
 	}
-	signatureHeader, err := tr.Next()
-	if err != nil {
-		return Verification{}, fmt.Errorf("read signature entry: %w", err)
-	}
-	if err := validateMetadataHeader(signatureHeader, signaturePath, maxSignatureBytes); err != nil {
-		return Verification{}, err
-	}
-	signatureBytes, err := readExactEntry(tr, signatureHeader.Size, maxSignatureBytes)
-	if err != nil {
-		return Verification{}, err
-	}
-	signature, err := decodeSignature(signatureBytes)
-	if err != nil {
-		return Verification{}, err
-	}
-	if signature.SchemaVersion != SignatureSchemaVersion || signature.Algorithm != SignatureAlgorithm || signature.KeyID != manifest.KeyID {
-		return Verification{}, fmt.Errorf("upgrade signature metadata does not match the manifest")
-	}
-	publicKey, ok := options.PublicKeys[manifest.KeyID]
-	if !ok || len(publicKey) != ed25519.PublicKeySize {
-		return Verification{}, fmt.Errorf("upgrade signing key %q is not trusted", manifest.KeyID)
-	}
-	decodedSignature, err := base64.StdEncoding.DecodeString(signature.Value)
-	if err != nil || len(decodedSignature) != ed25519.SignatureSize {
-		return Verification{}, fmt.Errorf("upgrade signature is not a valid Ed25519 signature")
-	}
-	if !ed25519.Verify(publicKey, manifestBytes, decodedSignature) {
-		return Verification{}, fmt.Errorf("upgrade manifest signature verification failed")
-	}
-	// Only trusted metadata may drive platform, expiry, sequence or schema
-	// decisions. Structural parsing above is deliberately non-authoritative.
-	if err := validatePreflight(manifest, options); err != nil {
-		return Verification{}, err
-	}
+	manifest := metadata.manifest
 
 	expected := make(map[string]Artifact, len(manifest.Artifacts))
 	for _, artifact := range manifest.Artifacts {
@@ -379,8 +357,11 @@ func Verify(r io.Reader, options VerifyOptions) (Verification, error) {
 			return Verification{}, fmt.Errorf("declared upgrade payload %q is missing", artifactPath)
 		}
 	}
-	if _, err := io.Copy(io.Discard, gz); err != nil {
+	if _, err := io.Copy(io.Discard, expanded); err != nil {
 		return Verification{}, fmt.Errorf("finish upgrade gzip verification: %w", err)
+	}
+	if bounded != nil && bounded.N == 0 {
+		return Verification{}, fmt.Errorf("upgrade archive exceeds the expanded community limit")
 	}
 	if err := gz.Close(); err != nil {
 		return Verification{}, fmt.Errorf("close upgrade gzip: %w", err)
@@ -392,6 +373,60 @@ func Verify(r io.Reader, options VerifyOptions) (Verification, error) {
 		return Verification{}, fmt.Errorf("inspect upgrade bundle trailer: %w", err)
 	}
 	return Verification{Manifest: manifest, BundleSHA256: hex.EncodeToString(packageHash.Sum(nil)), PayloadBytes: payloadBytes}, nil
+}
+
+func readSignedMetadata(tr *tar.Reader, options VerifyOptions) (archiveMetadata, error) {
+	manifestHeader, err := tr.Next()
+	if err != nil {
+		return archiveMetadata{}, fmt.Errorf("read manifest entry: %w", err)
+	}
+	if err := validateMetadataHeader(manifestHeader, manifestPath, maxManifestBytes); err != nil {
+		return archiveMetadata{}, err
+	}
+	manifestBytes, err := readExactEntry(tr, manifestHeader.Size, maxManifestBytes)
+	if err != nil {
+		return archiveMetadata{}, err
+	}
+	manifest, err := decodeManifest(manifestBytes)
+	if err != nil {
+		return archiveMetadata{}, err
+	}
+	signatureHeader, err := tr.Next()
+	if err != nil {
+		return archiveMetadata{}, fmt.Errorf("read signature entry: %w", err)
+	}
+	if err := validateMetadataHeader(signatureHeader, signaturePath, maxSignatureBytes); err != nil {
+		return archiveMetadata{}, err
+	}
+	signatureBytes, err := readExactEntry(tr, signatureHeader.Size, maxSignatureBytes)
+	if err != nil {
+		return archiveMetadata{}, err
+	}
+	signature, err := decodeSignature(signatureBytes)
+	if err != nil {
+		return archiveMetadata{}, err
+	}
+	if signature.SchemaVersion != SignatureSchemaVersion || signature.Algorithm != SignatureAlgorithm || signature.KeyID != manifest.KeyID {
+		return archiveMetadata{}, fmt.Errorf("upgrade signature metadata does not match the manifest")
+	}
+	publicKey, ok := options.PublicKeys[manifest.KeyID]
+	if !ok || len(publicKey) != ed25519.PublicKeySize {
+		return archiveMetadata{}, fmt.Errorf("upgrade signing key %q is not trusted", manifest.KeyID)
+	}
+	decodedSignature, err := base64.StdEncoding.DecodeString(signature.Value)
+	if err != nil || len(decodedSignature) != ed25519.SignatureSize {
+		return archiveMetadata{}, fmt.Errorf("upgrade signature is not a valid Ed25519 signature")
+	}
+	if !ed25519.Verify(publicKey, manifestBytes, decodedSignature) {
+		return archiveMetadata{}, fmt.Errorf("upgrade manifest signature verification failed")
+	}
+	// Only trusted metadata may drive platform, expiry, sequence or schema
+	// decisions. Structural parsing above is deliberately non-authoritative.
+	if err := validatePreflight(manifest, options); err != nil {
+		return archiveMetadata{}, err
+	}
+
+	return archiveMetadata{manifest, manifestBytes, signatureBytes}, nil
 }
 
 func ValidateManifest(manifest Manifest) error {

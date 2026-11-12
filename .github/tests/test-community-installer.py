@@ -178,7 +178,7 @@ class InstallerFixtureContract(unittest.TestCase):
                 self.assertEqual(kwargs['env']['REQUIRE_TEST_DATABASE'],'1')
 
     def test_independent_cases_use_one_explicit_port_for_commands_and_HTTP(self):
-        self.assertEqual(fixture.FIXTURE_PORTS, {'fresh':13000,'single':13001,'edge':13002})
+        self.assertEqual(fixture.FIXTURE_PORTS, {'fresh':13000,'single':13001,'edge':13002,'predecessor':13003})
         work=object.__new__(fixture.Acceptance)
         for name in ('repo','release','verifier','ring','bootstrap_file'):
             setattr(work,name,Path('/fixture')/name)
@@ -240,10 +240,11 @@ class InstallerFixtureContract(unittest.TestCase):
                     self.assertTrue(set(args).isdisjoint({'-v','--volumes','--rmi','--remove-orphans'}))
 
     def test_execute_releases_only_verified_cases_in_fresh_single_edge_order(self):
-        for failure in (None,'fresh','single','m127-to-m128','m128','same-schema'):
+        for failure in (None,'fresh','single','m127-to-m128','m128','same-schema','predecessor-delta'):
             with self.subTest(failure=failure):
                 work=object.__new__(fixture.Acceptance);work.docker='/fixture/docker'
                 work.instances=Path('/fixture/instances');work.suffix='synthetic';work.schema=fixture.CURRENT_SCHEMA
+                work.version='1.15.6'
                 work.result={'checks':[],'finite_upgrades':[]}
                 events=[];downs=[]
                 def verify(label):
@@ -286,9 +287,11 @@ class InstallerFixtureContract(unittest.TestCase):
                     following.qualify_upgrade=upgrade
                     return following
                 work.same_schema_release=same_schema
+                work.qualify_accepted_predecessor_delta=lambda:verify('predecessor-delta')
                 if failure:
                     with self.assertRaisesRegex(fixture.Failed,'preserve failed case'):work.execute()
-                    self.assertEqual(len(downs),{'fresh':0,'single':1,'m127-to-m128':4,'m128':4,'same-schema':4}[failure])
+                    self.assertEqual(len(downs),{'fresh':0,'single':1,'m127-to-m128':4,'m128':4,'same-schema':4,
+                        'predecessor-delta':5}[failure])
                     self.assertNotEqual(work.result.get('status'),'passed')
                     if failure in ('m127-to-m128','m128','same-schema'):
                         self.assertEqual(work.result['structural_origin']['classification'],'STRUCTURAL_HISTORICAL_INSTALLER_IDENTITY')
@@ -297,7 +300,7 @@ class InstallerFixtureContract(unittest.TestCase):
                     work.execute()
                     self.assertEqual(events,['fresh','down:ur-native-synthetic','prepare:retained','single','down:ur-single',
                         'edge','down:ur-edge-edge','down:ur-edge','prepare:m128','m127-to-m128','m128',
-                        'repack:same-images','same-schema','down:ur-single'])
+                        'repack:same-images','same-schema','down:ur-single','predecessor-delta'])
                     self.assertEqual(work.result['status'],'passed')
                     self.assertEqual(work.result['finite_upgrades'],[{'mode':'same_schema'}])
                     self.assertIn('/fixture/retained/single/runtime/upgrade-image.json',downs[1])
@@ -308,7 +311,8 @@ class InstallerFixtureContract(unittest.TestCase):
         for layout,authored in (('single',None),('edge','Installation stopped: The signed release subnet overlaps an existing Docker network')):
             with self.subTest(layout=layout,authored=authored):
                 work=object.__new__(fixture.Acceptance);work.suffix='synthetic';work.result={'installer_stop':'stale earlier negative'}
-                old=SimpleNamespace(instances=Path('/fixture/retained'),result={},phase='before')
+                work.schema=fixture.CURRENT_SCHEMA
+                old=SimpleNamespace(instances=Path('/fixture/retained'),result={},phase='before',schema=fixture.RETAINED_SCHEMA)
                 old.command=lambda *args:['not-executed']
                 def fail(label,args):
                     old.phase=label
@@ -322,6 +326,57 @@ class InstallerFixtureContract(unittest.TestCase):
                 self.assertEqual(work.loopback_port,fixture.FIXTURE_PORTS[layout])
                 self.assertEqual(old.loopback_port,work.loopback_port)
                 self.assertEqual(work.result.get('installer_stop'),authored)
+
+    def test_exact_predecessor_rehearsal_checks_owner_before_repacking_only_backend(self):
+        for owner_verified in (False, True):
+            with self.subTest(owner_verified=owner_verified), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp).resolve()
+                work = object.__new__(fixture.Acceptance)
+                work.root, work.repo, work.result = root, ROOT, {'checks': []}
+                work.verifier = root / 'verifier'
+                work.ring = root / 'test-ring'; work.ring.write_bytes(b'disposable public fixture')
+                first = work.formal_consumer_module()
+                record = json.loads((ROOT / first.UPGRADE_SOURCE).read_bytes())
+                package_sha = record['inputs']['config']['release']['package_sha256']
+                owner = SimpleNamespace(release=root / 'owner', ring=root / 'owner-ring', env={},
+                    result={'real_owner_signed_public_package_verified': owner_verified, 'package_sha256': package_sha},
+                    images={'backend': 'owner-backend', 'frontend': 'owner-frontend'},
+                    image_ids={'backend': 'owner-backend-id', 'frontend': 'owner-frontend-id'}, prepare=MagicMock())
+                owner.ring.write_bytes(b'accepted owner public fixture')
+                (owner.release / 'payload').mkdir(parents=True)
+                (owner.release / 'payload/install.json').write_text(json.dumps(
+                    {'schema_version': 'unirouter.install.v1', 'images': owner.images}))
+                (owner.release / 'payload/preserved').write_bytes(b'original owner payload')
+                old = SimpleNamespace(release=root / 'test-release', result={'test_package_sha256': 'test-package'},
+                                      build_test_backend=lambda: 'test-backend', pack_release=MagicMock())
+                old.release.mkdir()
+                def observe(role, ref):
+                    self.assertEqual((role, ref), ('backend', 'test-backend'))
+                    old.images[role], old.image_ids[role] = ref, 'test-backend-id'
+                old.observe_fixture_image = observe
+                target = SimpleNamespace(qualify_upgrade=MagicMock(),
+                    result={'predecessor_delta': {'byte_identical': True}, 'finite_upgrades': [{}], 'checks': []})
+                work.same_schema_release = MagicMock(return_value=target)
+                work.checkout_fixture_source = MagicMock(return_value=root / 'source')
+                work.formal_consumer_module = lambda: first
+                with patch.object(first, 'verify_predecessor_checkout') as checked, \
+                     patch.object(first, 'make_acceptance', return_value=owner), \
+                     patch.object(fixture, 'Acceptance', return_value=old):
+                    if not owner_verified:
+                        with self.assertRaisesRegex(fixture.Failed, 'public predecessor identity'):
+                            work.qualify_accepted_predecessor_delta()
+                        old.pack_release.assert_not_called()
+                        continue
+                    work.qualify_accepted_predecessor_delta()
+                checked.assert_called_once_with(root / 'source', record)
+                work.same_schema_release.assert_called_once_with(sequence=23)
+                target.qualify_upgrade.assert_called_once_with(old, 'single', instance_name='predecessor-delta')
+                self.assertEqual((old.release / 'payload/preserved').read_bytes(), b'original owner payload')
+                proof = work.result['exact_predecessor_rehearsal']
+                self.assertEqual(proof['owner_signed_predecessor']['package_sha256'], package_sha)
+                self.assertEqual(proof['test_predecessor']['payload_changed_paths'], ['install.json'])
+                self.assertEqual(proof['test_predecessor']['images'],
+                                 {'backend': 'test-backend', 'frontend': 'owner-frontend'})
 
     def test_native_json_stdout_stays_separate_from_retained_startup_diagnostics(self):
         with tempfile.TemporaryDirectory() as tmp:
