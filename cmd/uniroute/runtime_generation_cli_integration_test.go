@@ -53,16 +53,56 @@ func TestRuntimeGenerationCLIExpandedLedgerLifecycleIntegration(t *testing.T) {
 			require.Equal(t, head, actualHead, "each CLI case must run on its named actual schema")
 			cfg := &config.Config{DB_DSN: pool.Config().ConnString(), DBMaxConnections: 3, MigrationsDir: dir}
 			if head != schemaauthority.LatestSupportedMigration {
-				cfg.RuntimeEnvironment = "test"
-				_, err := invokeGenerationCLI(t, cfg, "inspect", nil)
-				if head == schemaauthority.XInsightCommunicationHead || head == schemaauthority.UpstreamReleaseObservationHead {
-					require.NoError(t, err, "only exact M127/M128 predecessor maintenance reads remain available")
-				} else {
-					require.ErrorContains(t, err, "outside this artifact")
+				const receiptID = "exact-predecessor-fixture"
+				wire := []byte("retained nonempty ingress intent")
+				if head == schemaauthority.UpstreamObservationRestoreHead {
+					_, err := pool.Exec(t.Context(), `
+						INSERT INTO runtime_ingress_changes(change_id, expected_config_digest,
+							desired_config_digest, desired_config_bytes, membership_before, membership_after, status)
+						VALUES ($1, $2, $3, $4, '[]', '[]', 'pending')
+					`, receiptID, strings.Repeat("0", 64), fmt.Sprintf("%x", sha256.Sum256(wire)), wire)
+					require.NoError(t, err)
 				}
-				var afterHead string
-				require.NoError(t, pool.QueryRow(t.Context(), `SELECT max(version) FROM schema_migrations`).Scan(&afterHead))
-				require.Equal(t, head, afterHead, "control read/refusal must not migrate")
+				snapshot := func() []string {
+					t.Helper()
+					var state []string
+					for _, table := range []string{"schema_migrations", "runtime_ingress_changes", "runtime_generations"} {
+						var exists bool
+						require.NoError(t, pool.QueryRow(t.Context(), `SELECT to_regclass($1) IS NOT NULL`, table).Scan(&exists))
+						if !exists {
+							state = append(state, "absent")
+							continue
+						}
+						var rows string
+						query := fmt.Sprintf("SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)), '[]')::text FROM %s t", table)
+						require.NoError(t, pool.QueryRow(t.Context(), query).Scan(&rows))
+						state = append(state, rows)
+					}
+					return state
+				}
+				before := snapshot()
+				for _, environment := range []string{"test", "development", "production"} {
+					cfg.RuntimeEnvironment = environment
+					_, err := invokeGenerationCLI(t, cfg, "inspect", nil)
+					if head == schemaauthority.UpstreamObservationRestoreHead && environment != "production" {
+						require.NoError(t, err, "M130 may inspect the exact corrected M129 predecessor in an isolated environment")
+					} else {
+						require.ErrorContains(t, err, "outside this artifact")
+					}
+				}
+				cfg.RuntimeEnvironment = "test"
+				for _, action := range []string{"read", "prepare", "complete", "stop-check", "stop-apply"} {
+					input := map[string]any{}
+					switch action {
+					case "read", "complete":
+						input["change_id"] = receiptID
+					case "stop-check", "stop-apply":
+						input["expected_environment"] = cfg.RuntimeEnvironment
+					}
+					_, err := invokeGenerationCLI(t, cfg, action, input)
+					require.ErrorContains(t, err, "outside this artifact", action)
+				}
+				require.Equal(t, before, snapshot(), "control read/refusal must preserve ledger and runtime rows")
 				return
 			}
 			ledger, err := schemaauthority.ExpectedLedger(dir)
