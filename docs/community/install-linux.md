@@ -6,10 +6,9 @@ Explicitly non-expiring packages use signed `unirouter.upgrade-manifest.v2` with
 
 [简体中文](install-linux.zh-CN.md) · [First model request](getting-started.md)
 
-**Linux amd64 preview: v1.15.6-preview.23, source
-`564a6d189341d5ad05cccd8b3bdbf5bc4ce66a49`, M129, release sequence 23.**
-The signed package declares predecessors 0–22 and minimum schema M127. [Formal Linux acceptance](https://github.com/foigent/unirouter/actions/runs/43284803235) verified six public image pulls, fresh installation, login, first-customer initialization, and interrupted-install recovery. The real signed 1.15.5→1.15.6 differential upgrade reconstructed the exact target package, preserved the administrator password and nonempty financial history, and independently restored the database and file pair.
-[Source PR #490](https://github.com/foigent/unirouter/pull/490) separately passed [disposable Linux installation and ordinary-upgrade cases](https://github.com/foigent/unirouter/actions/runs/41427712980), using synthetic data and temporary trust. These installation results do not establish an upgrade of your existing server or real Provider/UR→XI behavior. Run the original-host checks before maintenance. See [release status](release-readiness.md).
+**Linux amd64 preview: v1.15.7-preview.24, source
+`e48bd73097e0d20a49395782cde1562741f8e78b`, M130, release sequence 24.**
+The [formal Linux acceptance](https://github.com/foigent/unirouter/actions/runs/43619096141) verified the public signed package, six anonymous image pulls, fresh installation, login, first-customer initialization and interrupted-install recovery. The signed 1.15.6 → 1.15.7 upgrade used the 136,840-byte delta, preserved the original administrator password and nonempty financial history, appended M130 and independently restored the database and file pair. For your existing server, run the [original-host checks](../ops/COMMUNITY-UPGRADE.md) before maintenance. See [release status](release-readiness.md).
 This entry installs a new instance. Retain prior attempts and use unused paths and a new project; resume cannot switch package hashes. Historical versions and failed candidates remain preserved; sequence 14 is not installable or reused. Cloning the repository does not supply signed release assets.
 
 The installer prepares PostgreSQL, Redis, UniRouter and its monitoring services,
@@ -43,19 +42,19 @@ PostgreSQL and Redis have no published host ports.
 ## Download and install this preview
 
 Obtain this guide through the authenticated official repository and review the
-[preview release](https://github.com/foigent/unirouter/releases/tag/v1.15.6-preview.23)
-before executing downloaded code. The release attaches the bootstrap script for the exact product source;
+[preview release](https://github.com/foigent/unirouter/releases/tag/v1.15.7-preview.24)
+before executing downloaded code. The bootstrap script comes from the exact product source;
 the JSON pins the verifier, public ring and signed package. A checksum beside
 an untrusted download does not independently establish trust. This entry does
 not replace an existing public ring or require a private signing key.
 
 | Download | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `pinned-bootstrap.py` at source 564a6d1 | 36,908 | `b1132321305d8f14abfc717b3c9fdf13e81fe152b4cedfaf9b7e2ded7209f63c` |
-| `community-bootstrap.json` | 1,535 | `8c4c3dfd7cd85754cce6d527548163fa70b9260f76675bdc5b3f249026332b8d` |
+| `bootstrap.py` at source e48bd73 | 37,351 | `eacc05da48c18658559264d476cae6e21fe7a7e6de6dfbf9a433b28bbc3b07a9` |
+| `community-bootstrap.json` | 1,524 | `35a28a03b8117f3fb2882c60f3e83fc7fa08857170292ba7ab5f1c2eb8e039bf` |
 | `uniroute-upgrade-linux-amd64` | 4,192,747 | `75fba0a3c244bd83533cbe6ccd8585fef73617e944ce8ea536293cc488c15e59` |
 | `public-keys.json` | 83 | `96c91635460ddfb2a14aa1ea97d8445951730e9eb04a33cbdf4320141e61d63d` |
-| `unirouter-1.15.6-linux-amd64.tar.gz` | 130,054,145 | `8b6eac5d69cefd53c203389a36f45a3df8783da1508733dab00b9f0d4bd4cff5` |
+| `unirouter-1.15.7-linux-amd64.tar.gz` | 130,056,614 | `e7e2dfca5fce168b06b4e2db87efcfba4b04baea124a1a7eab9b814a6ed0cee8` |
 
 Open a root shell with `sudo -i`, then run
 the block below. It requires unused download, preparation and runtime paths;
@@ -65,21 +64,21 @@ the installer executes.
 ```sh
 set -eu
 umask 077
-mkdir -m 700 /opt/unirouter-downloads-1.15.6
-cd /opt/unirouter-downloads-1.15.6
+mkdir -m 700 /opt/unirouter-downloads-1.15.7
+cd /opt/unirouter-downloads-1.15.7
 curl --fail --location --proto '=https' --proto-redir '=https' \
   --output bootstrap.py \
-  https://github.com/foigent/unirouter/releases/download/v1.15.6-preview.23/pinned-bootstrap.py
+  https://raw.githubusercontent.com/foigent/unirouter/e48bd73097e0d20a49395782cde1562741f8e78b/deploy/community/bootstrap.py
 curl --fail --location --proto '=https' --proto-redir '=https' \
   --output community-bootstrap.json \
-  https://github.com/foigent/unirouter/releases/download/v1.15.6-preview.23/community-bootstrap.json
+  https://github.com/foigent/unirouter/releases/download/v1.15.7-preview.24/community-bootstrap.json
 printf '%s  %s\n' \
-  b1132321305d8f14abfc717b3c9fdf13e81fe152b4cedfaf9b7e2ded7209f63c bootstrap.py \
-  8c4c3dfd7cd85754cce6d527548163fa70b9260f76675bdc5b3f249026332b8d community-bootstrap.json \
+  eacc05da48c18658559264d476cae6e21fe7a7e6de6dfbf9a433b28bbc3b07a9 bootstrap.py \
+  35a28a03b8117f3fb2882c60f3e83fc7fa08857170292ba7ab5f1c2eb8e039bf community-bootstrap.json \
   | sha256sum --check --status
 python3 -I -B bootstrap.py install \
   --bootstrap community-bootstrap.json \
-  --bootstrap-sha256 8c4c3dfd7cd85754cce6d527548163fa70b9260f76675bdc5b3f249026332b8d \
+  --bootstrap-sha256 35a28a03b8117f3fb2882c60f3e83fc7fa08857170292ba7ab5f1c2eb8e039bf \
   --directory /opt/unirouter-release
 ```
 
@@ -104,7 +103,7 @@ For historical image notices, use the previous release’s
 companion. This historical companion retains the 1.12/1.13
 image mappings and shared-material references. Retained 1.14.0 materials remain
 in [Preview 13](https://github.com/foigent/unirouter/releases/tag/v1.14.0-preview.13).
-The current signed package contains 1.15.6 source-disposition, component notices
+The current signed package contains 1.15.7 source-disposition, component notices
 and required source materials. Third-party terms remain applicable.
 
 ## Check, then install a directly prepared package
