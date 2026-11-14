@@ -19,8 +19,8 @@ func TestLegacyRetirementStillRejectsProductionBeforeDatabase(t *testing.T) {
 	input.ExpectedEnvironment = "test"
 	require.NoError(t, input.validate())
 	input.ExpectedSchemaHead = schemaauthority.UpstreamReleaseObservationHead
-	// This is a valid generic historical identity, but never the finite
-	// production-capable community predecessor.
+	// The Community owner must refuse a mismatched maintenance schema before
+	// using the database transaction.
 	_, err = CheckCommunityMaintenanceRetirementTx(context.Background(), nil, input, schemaauthority.XInsightCommunicationHead, false)
-	require.ErrorContains(t, err, "verified exact M127, M128 or M129 predecessor")
+	require.EqualError(t, err, "community retirement requires a verified supported maintenance schema")
 }

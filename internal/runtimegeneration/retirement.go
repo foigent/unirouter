@@ -211,8 +211,8 @@ func applyRetirementTx(ctx context.Context, tx pgx.Tx, r RetirementInput, result
 
 // CheckCommunityMaintenanceRetirementTx and ApplyCommunityMaintenanceRetirementTx are
 // transaction participants of the signed community upgrade owner. That owner
-// verifies the installed package, configured trust ring and finite M127/M128/M129 -> M129
-// candidate under its release/migration locks before calling these functions.
+// verifies the installed package, configured trust ring and exact maintenance
+// transition under its release/migration locks before calling these functions.
 // They do not commit, grant serving authority or widen legacy stop commands.
 func CheckCommunityMaintenanceRetirementTx(ctx context.Context, tx pgx.Tx, r RetirementInput, sourceHead string, forUpdate bool) (RetirementResult, error) {
 	if err := r.validateIdentity(); err != nil {
