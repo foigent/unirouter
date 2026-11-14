@@ -13,8 +13,10 @@ def producer(version="1.15.0", commit="a" * 40, *, schema="000128_upstream_relea
     subject = {"repository": "foigent/unirouter", "commit": commit, "tree": "b" * 40, "version": version, "schema": schema}
     files = copy.deepcopy(legacy["source_files"])
     files["migrations/000128_upstream_release_observation.up.sql"] = {"bytes": 100, "sha256": "c" * 64}
-    if schema == "000129_upstream_observation_restore_namespace":
+    if schema in ("000129_upstream_observation_restore_namespace", "000130_upgrade_admission_recovery"):
         files["migrations/000129_upstream_observation_restore_namespace.up.sql"] = {"bytes": 100, "sha256": "e" * 64}
+    if schema == "000130_upgrade_admission_recovery":
+        files["migrations/000130_upgrade_admission_recovery.up.sql"] = {"bytes": 100, "sha256": "f" * 64}
     return {"schema_version": "unirouter.community-stage.v1", "stage": "producer", "product": subject, "predecessor": None,
             "inputs": {"source_inventory": {"tracked_files": 3000, "tracked_regular_bytes": 50000000, "files": files},
                        "images": legacy["images"], "notices": {"bytes": 335927, "sha256": "d" * 64,

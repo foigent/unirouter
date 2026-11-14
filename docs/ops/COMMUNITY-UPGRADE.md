@@ -1,6 +1,16 @@
 # Community upgrade: retained installations and exact schema transitions
 
-Current signed entry on 2026-11-03: [1.15.5 / sequence 22](https://github.com/foigent/unirouter/releases/tag/v1.15.5-preview.22) targets M129, with declared predecessors 0–21 and minimum schema M127. [Formal public-package consumer](https://github.com/foigent/unirouter/actions/runs/41531690263), attempt 1, passed fresh installation and the actual public signed 1.15.4/sequence21→1.15.5/sequence22 upgrade, including the original administrator password, nonempty preserved history, independent database/file restore and unchanged complete M129 ledger with no migration-owner call. [Current synthetic Linux qualification](https://github.com/foigent/unirouter/actions/runs/41523856232) separately passed M127→M129, M128→M129 and later M129→M129 cases using temporary trust. Existing-server maintenance still requires the original-host admission, cold pair and independent restore below; neither test establishes your deployment or real Provider/UR→XI behavior. The [historical 1.15.4 guide](https://github.com/foigent/unirouter/blob/717c899d9f03cf101b89fc4a9d7fe5a14ccf71d1/docs/ops/COMMUNITY-UPGRADE.md) remains available.
+The current signed entry is [UR 1.15.6, release sequence 23](https://github.com/foigent/unirouter/releases/tag/v1.15.6-preview.23), with target M129, predecessors 0–22 and minimum schema M127. The [formal public package consumer](https://github.com/foigent/unirouter/actions/runs/43284803235) used the actual signed 1.15.5 predecessor. It reconstructed the signed 1.15.6 package with the published delta, preserved the original administrator password and nonempty financial history, and verified an independent database and file restore. The complete M129 ledger stayed identical. Follow the original-host admission, cold pair and independent restore checks below.
+
+The M130 source candidate adds recovery for one interrupted admission during
+its own signed single-host upgrade. Use the same `resume-upgrade` entry and
+retain its host evidence. If an exact candidate writer has exited before
+admission completed, the owner drains the exact receivers and remaining
+writers, waits for the original leases to expire and verifies an empty ingress
+receipt before restarting them. An applied result takes its existing resume
+path. Uncertain process identity, unexpected restart or changed database facts
+require inspection. Install M130 through a healthy predecessor with drained
+writers. An unresolved M129 admission cannot use this path.
 
 Historical signed entry on 2026-11-01: [1.15.4 / sequence 21](https://github.com/foigent/unirouter/releases/tag/v1.15.4-preview.21) targets M129. [Source PR #488](https://github.com/foigent/unirouter/pull/488) passed [disposable Linux qualification](https://github.com/foigent/unirouter/actions/runs/41278582188) for exact M127 → M129, M128 → M129 and later M129 → M129 ordinary upgrades. [Formal public-package consumer](https://github.com/foigent/unirouter/actions/runs/41303722595) separately passed fresh M129 installation and recovery. The 1.15.4 source qualification also covers retained initial-bootstrap inventory recognition and later native 16/17 release identities. Same-package download continuation retains the original trust and digest bindings. M129 corrects the persisted M128 observation validator's namespace for native PostgreSQL restore. Existing-server maintenance still requires the original-host admission, cold pair and independent restore below; these results do not establish its deployment.
 

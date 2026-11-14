@@ -27,7 +27,7 @@ import (
 const communityMaintenanceSchema = "unirouter.community-maintenance.v1"
 
 func communitySourceHead(head string) bool {
-	return head == schemaauthority.XInsightCommunicationHead || head == schemaauthority.UpstreamReleaseObservationHead || head == schemaauthority.UpstreamObservationRestoreHead
+	return head == schemaauthority.XInsightCommunicationHead || head == schemaauthority.UpstreamReleaseObservationHead || head == schemaauthority.UpstreamObservationRestoreHead || head == schemaauthority.UpgradeAdmissionRecoveryHead
 }
 
 // This is a binding document, never a reusable approval. In particular, it
@@ -153,11 +153,25 @@ func verifyCommunityMaintenancePackages(in communityMaintenanceInput, cfg *confi
 	m := candidate.Manifest
 	if candidate.BundleSHA256 != in.ExpectedCandidatePackageSHA256 || communityManifestSHA256(m) != in.ExpectedCandidateManifestSHA256 ||
 		m.KeyID != state.TrustedKeyID ||
-		!communitySourceHead(m.MinCurrentSchema) || m.TargetSchema != schemaauthority.UpstreamObservationRestoreHead ||
+		!communitySourceHead(m.MinCurrentSchema) || m.TargetSchema != schemaauthority.UpstreamObservationRestoreHead && m.TargetSchema != schemaauthority.UpgradeAdmissionRecoveryHead ||
 		m.Version != cfg.RuntimeVersion || m.Commit != cfg.RuntimeCommit {
-		return zero, "", fmt.Errorf("candidate must bind this installed key and a supported exact M129 target")
+		return zero, "", fmt.Errorf("candidate must bind this installed key and a supported exact maintenance target")
 	}
 	return candidate, ringSHA, nil
+}
+
+func lockCommunityMaintenance(ctx context.Context, tx pgx.Tx) error {
+	if err := migrate.LockMaintenanceTx(ctx, tx); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('unirouter.release_state',0))`); err != nil {
+		return err
+	}
+	if err := schemaauthority.LockExecutionCompatibility(ctx, tx); err != nil {
+		return err
+	}
+	_, err := tx.Exec(ctx, `LOCK TABLE schema_migrations IN SHARE MODE`)
+	return err
 }
 
 func runCommunityMaintenance(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, in communityMaintenanceInput, apply bool) (communityMaintenanceResult, error) {
@@ -178,16 +192,7 @@ func runCommunityMaintenance(ctx context.Context, pool *pgxpool.Pool, cfg *confi
 	}
 	defer tx.Rollback(context.Background())
 	if apply {
-		if err = migrate.LockMaintenanceTx(ctx, tx); err != nil {
-			return result, err
-		}
-		if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('unirouter.release_state',0))`); err != nil {
-			return result, err
-		}
-		if err = schemaauthority.LockExecutionCompatibility(ctx, tx); err != nil {
-			return result, err
-		}
-		if _, err = tx.Exec(ctx, `LOCK TABLE schema_migrations IN SHARE MODE`); err != nil {
+		if err := lockCommunityMaintenance(ctx, tx); err != nil {
 			return result, err
 		}
 	}
@@ -199,10 +204,11 @@ func runCommunityMaintenance(ctx context.Context, pool *pgxpool.Pool, cfg *confi
 	if err != nil {
 		return result, err
 	}
-	if len(artifact) < 3 || artifact[len(artifact)-1] != schemaauthority.UpstreamObservationRestoreHead || artifact[len(artifact)-2] != schemaauthority.UpstreamReleaseObservationHead || artifact[len(artifact)-3] != schemaauthority.XInsightCommunicationHead ||
-		!(slices.Equal(snapshot.Ledger, artifact[:len(artifact)-2]) || slices.Equal(snapshot.Ledger, artifact[:len(artifact)-1]) || slices.Equal(snapshot.Ledger, artifact)) || snapshot.Record == nil || snapshot.Record.State != "completed" ||
+	if len(artifact) < 3 || (artifact[len(artifact)-1] != schemaauthority.UpstreamObservationRestoreHead && artifact[len(artifact)-1] != schemaauthority.UpgradeAdmissionRecoveryHead) ||
+		len(snapshot.Ledger) == 0 || !communitySourceHead(snapshot.Ledger[len(snapshot.Ledger)-1]) ||
+		len(snapshot.Ledger) > len(artifact) || !slices.Equal(snapshot.Ledger, artifact[:len(snapshot.Ledger)]) || snapshot.Record == nil || snapshot.Record.State != "completed" ||
 		snapshot.Record.Plan.InstallationID != in.InstallationID || snapshot.Record.Plan.Digest != in.InstallationPlanDigest {
-		return result, fmt.Errorf("community maintenance requires the exact complete M127, M128 or M129 installation")
+		return result, fmt.Errorf("community maintenance requires the exact completed installation on a supported maintenance ledger")
 	}
 	var systemID, database string
 	var databaseOID int64
@@ -222,7 +228,7 @@ func runCommunityMaintenance(ctx context.Context, pool *pgxpool.Pool, cfg *confi
 			return result, err
 		}
 	}
-	if sourceHead == schemaauthority.UpstreamObservationRestoreHead {
+	if sourceHead == schemaauthority.UpstreamObservationRestoreHead || sourceHead == schemaauthority.UpgradeAdmissionRecoveryHead {
 		if err := upstreamrelease.CheckNamespace(ctx, tx); err != nil {
 			return result, err
 		}

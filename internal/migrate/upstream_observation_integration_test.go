@@ -57,7 +57,7 @@ func TestUpstreamObservationCorrectedFreshSchemaIntegration(t *testing.T) {
 	ctx := t.Context()
 	var head string
 	require.NoError(t, pool.QueryRow(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&head))
-	require.Equal(t, schemaauthority.UpstreamObservationRestoreHead, head)
+	require.Equal(t, schemaauthority.UpgradeAdmissionRecoveryHead, head)
 	require.NoError(t, upstreamrelease.CheckNamespace(ctx, pool))
 	_, err := runtimegeneration.ReadBudgetCoverage(ctx, pool)
 	require.NoError(t, err)
@@ -152,6 +152,42 @@ func TestUpstreamObservationM128DownRetainsDeclarationsAndEvidenceIntegration(t 
 			var exists bool
 			require.NoError(t, pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name='model_deployments' AND column_name='upstream_release_observation')`).Scan(&exists))
 			require.True(t, exists)
+		})
+	}
+}
+
+func TestAdmissionRecoveryRequiresCompletedDrainedM129(t *testing.T) {
+	for _, pending := range []bool{false, true} {
+		t.Run(fmt.Sprintf("pending-%t", pending), func(t *testing.T) {
+			pool := testutil.SetupMigratedThroughTestDB(t, schemaauthority.UpstreamObservationRestoreHead)
+			ctx := t.Context()
+			dir := testutil.MigrationsDir(t)
+			before, err := runtimegeneration.ReadBudgetCoverage(ctx, pool)
+			require.NoError(t, err)
+			wire := []byte("isolated M129 controlled ingress")
+			digest := fmt.Sprintf("%x", sha256.Sum256(wire))
+			plan := runtimegeneration.IngressPlan{ChangeID: "actual-m129-maintenance-head", ExpectedConfigDigest: digest,
+				DesiredConfigBytes: wire, DesiredConfigDigest: digest, Before: []runtimegeneration.Identity{}, After: []runtimegeneration.Identity{}}
+			_, err = runtimegeneration.PrepareIngress(ctx, pool, plan)
+			require.NoError(t, err)
+			if !pending {
+				_, err = runtimegeneration.CompleteIngress(ctx, pool, plan.ChangeID, digest, true, json.RawMessage(`{"synthetic_exit":true}`))
+				require.NoError(t, err)
+			}
+			require.Error(t, migrate.RunRuntime(ctx, pool, dir), "a runtime must not apply the maintenance schema")
+			err = migrate.RunExistingThrough(ctx, pool, dir, schemaauthority.UpgradeAdmissionRecoveryHead)
+			if pending {
+				require.ErrorContains(t, err, "M130 requires exact M129")
+				var present bool
+				require.NoError(t, pool.QueryRow(ctx, `SELECT to_regprocedure('require_runtime_admission_withdrawal()') IS NOT NULL`).Scan(&present))
+				require.False(t, present, "refusal must not install the new guard")
+			} else {
+				require.NoError(t, err)
+				after, err := runtimegeneration.ReadBudgetCoverage(ctx, pool)
+				require.NoError(t, err)
+				require.Equal(t, before, after)
+				require.NoError(t, upstreamrelease.CheckNamespace(ctx, pool))
+			}
 		})
 	}
 }

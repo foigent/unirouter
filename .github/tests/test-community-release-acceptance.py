@@ -27,17 +27,17 @@ class PublicPredecessorTests(unittest.TestCase):
     def setUp(self):
         self.old = json.loads((ROOT / m.UPGRADE_SOURCE).read_bytes())
         self.current = copy.deepcopy(self.old)
-        self.current['product'].update(commit='b' * 40, tree='c' * 40, version='1.15.6')
+        self.current['product'].update(commit='b' * 40, tree='c' * 40, version='1.15.7', schema=m.ADMISSION_SCHEMA)
         c = self.current['inputs']['config']
         c['immutable']['product'] = {k: self.current['product'][k] for k in ('commit', 'tree', 'version', 'schema')}
-        c['immutable'].update(max_current_sequence=22, historical_sequence_reserved_through=22,
+        c['immutable'].update(max_current_sequence=23, historical_sequence_reserved_through=23,
             native_acceptance_helper_sha256=m.sha(ROOT / '.github/tests/community-installer.py'))
         bootstrap = ROOT / 'deploy/community/bootstrap.py'
         c['immutable']['bootstrap_script'] = {
             'url': ('https://raw.githubusercontent.com/foigent/unirouter/' +
                     self.current['product']['commit'] + '/deploy/community/bootstrap.py'),
             'sha256': m.sha(bootstrap), 'size': bootstrap.stat().st_size}
-        c['release'].update(release_sequence=23, tag='v1.15.6-preview.23', package_sha256='d' * 64)
+        c['release'].update(release_sequence=24, tag='v1.15.7-preview.24', package_sha256='d' * 64)
         c['release']['bootstrap_url'] = m.asset_url(c['release'], 'community-bootstrap.json')
         self.candidate = c  # Synthetic future metadata, never dispatched or signed.
 
@@ -55,14 +55,14 @@ class PublicPredecessorTests(unittest.TestCase):
         self.assertEqual(m.validate(self.candidate, ready=True, stage_record=self.current), [])
         self.assertEqual(m.validate_upgrade_source(self.old, self.candidate), self.old['inputs']['config'])
         self.assertEqual(self.old['inputs']['config']['release']['package_sha256'],
-                         '46ebdf5d987603aed1989a83f7e7d6a2148214b7f301b80a91413c3964e83e91')
+                         '8b6eac5d69cefd53c203389a36f45a3df8783da1508733dab00b9f0d4bd4cff5')
         for field, value in [('key_id', 'other'), ('raw_public_fingerprint', 'f' * 64),
                              ('public_ring', {'size': 83, 'sha256': 'f' * 64}),
-                             ('max_current_sequence', 21), ('min_current_sequence', 23)]:
+                             ('max_current_sequence', 22), ('min_current_sequence', 24), ('min_current_schema', m.ADMISSION_SCHEMA)]:
             with self.subTest(field=field):
                 candidate = copy.deepcopy(self.candidate); candidate['immutable'][field] = value
                 with self.assertRaises(m.Stop): m.validate_upgrade_source(self.old, candidate)
-        candidate = copy.deepcopy(self.candidate); candidate['release']['release_sequence'] = 22
+        candidate = copy.deepcopy(self.candidate); candidate['release']['release_sequence'] = 23
         with self.assertRaises(m.Stop): m.validate_upgrade_source(self.old, candidate)
         broken = copy.deepcopy(self.old); broken['inputs']['config']['immutable']['public_ring']['sha256'] = 'f' * 64
         with self.assertRaisesRegex(Exception, 'stage_consumer_trust'):
@@ -92,9 +92,9 @@ class PublicPredecessorTests(unittest.TestCase):
                 if action == 'describe':
                     self.assertEqual(json.loads(output.getvalue())['upgrade_source'], self.old['product'])
         bad = copy.deepcopy(self.current)
-        bad['inputs']['config']['immutable'].update(max_current_sequence=21, historical_sequence_reserved_through=21)
+        bad['inputs']['config']['immutable'].update(max_current_sequence=22, historical_sequence_reserved_through=22)
         release = bad['inputs']['config']['release']
-        release.update(release_sequence=22, tag='v1.15.6-preview.22')
+        release.update(release_sequence=23, tag='v1.15.7-preview.23')
         release['bootstrap_url'] = m.asset_url(release, 'community-bootstrap.json')
         self.assertEqual(m.validate(bad['inputs']['config'], ready=True, stage_record=bad), [])
         with mock.patch.object(m, 'stage_module', return_value=stages), \
@@ -235,7 +235,7 @@ class PublicPredecessorTests(unittest.TestCase):
                        'public_keys': dict(fixed['public_ring'], url=m.asset_url(release, 'public-keys.json')),
                        'package': {'url': m.asset_url(release, name + '.tar.gz'),
                                    'size': release['package_size'], 'sha256': release['package_sha256']}}}
-            if config is self.candidate:
+            if fixed['product']['version'] in m.REQUIRED_DELTA_VERSIONS:
                 with self.assertRaisesRegex(m.Stop, 'must include its exact predecessor delta'):
                     m.bootstrap_binding(config, value)
                 value['delta'] = {'asset': {'url': m.asset_url(release, name + '.delta.tar.gz')}}
@@ -534,7 +534,7 @@ class PublicPredecessorTests(unittest.TestCase):
                 old = types.SimpleNamespace(instances=old_root / 'instances', ring=old_root / 'ring',
                     preflight=lambda: None, prepare=prepare, command=lambda *a: [],
                     installed_checks=lambda *a: None, native_first_use_checks=lambda *a, **kw: None,
-                    result={'first_customer': {'organization_id': 2}}, release_sequence=22,
+                    result={'first_customer': {'organization_id': 2}}, release_sequence=23,
                     schema='000129_upstream_observation_restore_namespace', compose=lambda *a: [])
                 old.run = lambda label, argv: (json.dumps({'services': {'backend': {'environment': {}}}})
                                               if label == 'read original content configuration' else '')
@@ -545,6 +545,11 @@ class PublicPredecessorTests(unittest.TestCase):
                 instance.recovery_module = lambda: recovery
                 instance.wait_business_startup = lambda: None
                 instance.inventory = lambda: {'containers': []}
+                native = m.load_module(ROOT / '.github/tests/community-installer.py',
+                                       m.sha(ROOT / '.github/tests/community-installer.py'), 'public_source_fixture')
+                source_ledger = native.source_contract(ROOT).ledger[:-1]
+                old.source_contract = native.SourceContract(m.RESTORE_SCHEMA, source_ledger, ())
+                instance.sql = lambda *a: json.dumps(source_ledger)
                 instance.upgrade_fingerprint = lambda *a, **kw: {'schema_migrations': {'count': 129, 'sha256': 'stable'}}
                 instance.protected_upgrade_rows = lambda *a: {name: {'count': 1} for name in
                     ('users', 'orgs', 'projects', 'wallets', 'transactions', 'audit_logs', 'release_history')}
@@ -596,8 +601,8 @@ class PublicPredecessorTests(unittest.TestCase):
                     upgrade_source=(root / 'old-source', self.old))
                 directory = root / 'installed-predecessor/instances/preserved'
                 old = types.SimpleNamespace(instances=directory.parent, ring=root / 'ring',
-                    result={'first_customer': {'organization_id': 2}}, release_sequence=22,
-                    schema=instance.schema, preflight=lambda: None, installed_checks=lambda *a: None,
+                    result={'first_customer': {'organization_id': 2}}, release_sequence=23,
+                    schema=m.RESTORE_SCHEMA, preflight=lambda: None, installed_checks=lambda *a: None,
                     native_first_use_checks=lambda *a, **kw: None, command=lambda *a: [], compose=lambda *a: [])
                 def prepare():
                     (directory / 'evidence').mkdir(parents=True)
@@ -611,7 +616,7 @@ class PublicPredecessorTests(unittest.TestCase):
                 instance.wait_business_startup = lambda: None
                 instance.migration_audit = root / 'synthetic-migration-audit.jsonl'
                 instance.observe_migration_owner = lambda: instance.migration_audit.write_text(
-                    '{"native_owner_calls":1,"migration_owner_calls":0}\n')
+                    '{"native_owner_calls":1,"migration_owner_calls":1}\n')
                 instance.inventory = lambda: {}
                 instance.upgrade_fingerprint = lambda *a, **kw: fingerprint
                 instance.protected_upgrade_rows = lambda *a: protected
@@ -626,7 +631,9 @@ class PublicPredecessorTests(unittest.TestCase):
                     return json.dumps(checked if label.startswith('check exact') else
                         {'state': 'not_started'} if label == 'read original public upgrade status' else {})
                 instance.run = run
-                instance.sql = lambda *a: json.dumps(ledger)
+                source_ledger = ledger[:-1]
+                old.source_contract = native.SourceContract(m.RESTORE_SCHEMA, source_ledger, ())
+                instance.sql = lambda *a: json.dumps(ledger if instance.run_native_upgrade.called else source_ledger)
                 def upgrade(*args):
                     backup = directory / 'upgrades/synthetic-operation/backup'
                     backup.mkdir(parents=True)
@@ -637,10 +644,10 @@ class PublicPredecessorTests(unittest.TestCase):
                         'files': {'archive_sha256': m.sha(backup / 'paired-files.tar'), 'files': {}}}
                     (backup / 'receipt.json').write_text(json.dumps(pair))
                     (directory / 'original-state.json').write_bytes((directory / 'install-state.json').read_bytes())
-                    witness = {'state': 'completed', 'pending': None, 'source_ledger': list(ledger),
+                    witness = {'state': 'completed', 'pending': None, 'source_ledger': list(source_ledger),
                         'candidate': checked['candidate'], 'source': checked['source'],
                         'operation_id': 'synthetic-operation', 'source_state_path': 'original-state.json',
-                        'receipts': {'migrate': {'mode': 'same_schema', 'ledger_sha256': hashlib.sha256(
+                        'receipts': {'migrate': {'ledger_sha256': hashlib.sha256(
                             json.dumps(list(ledger), sort_keys=True, separators=(',', ':')).encode()).hexdigest()},
                             'cold-pair': {'receipt_sha256': m.sha(backup / 'receipt.json')},
                             **{'stop-' + role: {'clean_exit': True, 'old_processes_gone': True}

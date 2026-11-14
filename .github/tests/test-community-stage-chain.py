@@ -283,13 +283,21 @@ class StageChainTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary)
             world = P.World(path)
-            world.source = F.producer('1.15.6', rehearsal.PRODUCT, schema=rehearsal.SCHEMA)
-            world.tag = f'source-{rehearsal.PRODUCT}-run-{world.parent_run}-linux-amd64'
+            product = 'd' * 40
+            world.source = F.producer(rehearsal.TARGET_VERSION, product, schema=rehearsal.TARGET_SCHEMA)
+            world.tag = f'source-{product}-run-{world.parent_run}-linux-amd64'
             world.prepare_chain()
-            record = world.record
+            record = copy.deepcopy(world.record)
+            record['predecessor']['program_commit'] = product
             body = M.canonical(record)
             env = self.native_env(path, record, 'publisher')
-            with patch.object(rehearsal, 'PUBLISHER_RECORD', M.sha(body)):
+            for name in ("GITHUB_SHA", "GITHUB_WORKFLOW_SHA", "EXPECTED_WORKFLOW_COMMIT"):
+                env[name] = product
+            event_path = Path(env['GITHUB_EVENT_PATH'])
+            event = M.strict_json(event_path.read_bytes())
+            event['inputs']['expected_workflow_commit'] = product
+            event_path.write_bytes(M.canonical(event))
+            with self.subTest(product=product):
                 self.assertEqual((body, record), rehearsal.read_rehearsal_context(M, P.H, env))
                 self.assertEqual(body, M.read_dispatch('publisher', env)[0])
                 retry = dict(env, GITHUB_RUN_ATTEMPT='2')
@@ -304,10 +312,16 @@ class StageChainTests(unittest.TestCase):
                     with self.subTest(field=field), self.assertRaises((AssertionError, RuntimeError, M.Stop)):
                         rehearsal.read_rehearsal_context(M, P.H, {**retry, field: value})
                 other = copy.deepcopy(record)
-                other['predecessor']['run_id'] += 1
-                other['inputs']['tag'] = f"source-{rehearsal.PRODUCT}-run-{other['predecessor']['run_id']}-linux-amd64"
+                other['product']['version'] = '1.15.6'
+                other_env = self.native_env(path, other, 'publisher')
+                for name in ("GITHUB_SHA", "GITHUB_WORKFLOW_SHA", "EXPECTED_WORKFLOW_COMMIT"):
+                    other_env[name] = product
+                event_path = Path(other_env['GITHUB_EVENT_PATH'])
+                event = M.strict_json(event_path.read_bytes())
+                event['inputs']['expected_workflow_commit'] = product
+                event_path.write_bytes(M.canonical(event))
                 with self.assertRaises(AssertionError):
-                    rehearsal.read_rehearsal_context(M, P.H, self.native_env(path, other, 'publisher'))
+                    rehearsal.read_rehearsal_context(M, P.H, other_env)
 
         workflow = (ROOT / '.github/workflows' / M.WORKFLOWS['publisher']).read_text()
         publisher, verify = workflow.split('\n  rehearse-full-materials:\n')
@@ -316,7 +330,7 @@ class StageChainTests(unittest.TestCase):
         self.assertIn('needs: publish-public', verify)
         self.assertIn("needs.publish-public.result == 'success'", verify)
         self.assertIn('PUBLISHER_RECEIPT: ${{ needs.publish-public.outputs.publisher_receipt }}', verify)
-        self.assertIn(f'ref: {rehearsal.PRODUCT}', verify)
+        self.assertIn('ref: ${{ needs.publish-public.outputs.product_commit }}', verify)
         self.assertIn('permissions:\n      contents: write\n    runs-on:', verify)
         self.assertNotIn('packages:', verify)
         self.assertNotIn('--execute-approved-public-stage', verify)

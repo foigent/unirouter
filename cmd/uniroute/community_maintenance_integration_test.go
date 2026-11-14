@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -174,7 +175,7 @@ func TestCommunityMaintenanceM128SameSchemaAndHistoricalOriginIntegration(t *tes
 	require.JSONEq(t, string(want), string(raw))
 	require.Equal(t, observation.Revision, revision)
 	originalRows := communityAllTableFingerprints(t, pool, false)
-	require.NoError(t, migrate.RunExisting(t.Context(), pool, f.cfg.MigrationsDir))
+	require.NoError(t, migrate.RunExistingThrough(t.Context(), pool, f.cfg.MigrationsDir, schemaauthority.UpstreamObservationRestoreHead))
 	correctedRows := communityAllTableFingerprints(t, pool, false)
 	for name, row := range originalRows {
 		if name != "schema_migrations" {
@@ -184,7 +185,7 @@ func TestCommunityMaintenanceM128SameSchemaAndHistoricalOriginIntegration(t *tes
 	require.NoError(t, upstreamrelease.CheckNamespace(t.Context(), pool))
 	verifyCorrectedObservationInputs(t, pool, observation)
 	// Re-entry executes no additional migration or function rewrite.
-	require.NoError(t, migrate.RunExisting(t.Context(), pool, f.cfg.MigrationsDir))
+	require.NoError(t, migrate.RunExistingThrough(t.Context(), pool, f.cfg.MigrationsDir, schemaauthority.UpstreamObservationRestoreHead))
 	require.Equal(t, correctedRows, communityAllTableFingerprints(t, pool, false))
 	// Native recording advances the exact signed candidate after the genuine
 	// correction; original M127 installation and M128 history remain intact.
@@ -204,8 +205,9 @@ func TestCommunityMaintenanceM128SameSchemaAndHistoricalOriginIntegration(t *tes
 	t.Logf("corrected standard restore evidence: %s", correctedRoot)
 	correctedClone := restoreFreshBackup(t, pool, correctedRoot)
 	_, err = checkFreshInstall(t.Context(), correctedClone, snapshot.Record.Plan, ledger)
-	require.NoError(t, err)
-	_, err = verifyRuntimeAuthority(t.Context(), correctedClone, ledger)
+	require.ErrorContains(t, err, schemaauthority.UpgradeAdmissionRecoveryHead, "the M130 binary refuses to start on an unchanged historical M129 restore")
+	m129 := ledger[:slices.Index(ledger, schemaauthority.UpstreamObservationRestoreHead)+1]
+	_, err = verifyRuntimeAuthority(t.Context(), correctedClone, m129)
 	require.NoError(t, err)
 	var correctedRaw []byte
 	var correctedRevision int64
@@ -240,7 +242,7 @@ func TestCommunityMaintenanceM128SameSchemaAndHistoricalOriginIntegration(t *tes
 	checked, err = runCommunityMaintenance(t.Context(), pool, &cfg, follow, false)
 	require.NoError(t, err)
 	require.Equal(t, "eligible", checked.Status)
-	require.NoError(t, migrate.RunExisting(t.Context(), pool, f.cfg.MigrationsDir))
+	require.NoError(t, migrate.RunExistingThrough(t.Context(), pool, f.cfg.MigrationsDir, schemaauthority.UpstreamObservationRestoreHead))
 	require.Equal(t, unchangedRows, communityAllTableFingerprints(t, pool, false), "same-schema application executes zero SQL migrations and native check writes nothing")
 }
 
@@ -274,7 +276,7 @@ func maintenanceDatabaseFixture(t *testing.T) (*pgxpool.Pool, maintenancePackage
 	ctx := t.Context()
 	ledger, err := schemaauthority.ExpectedLedger(f.cfg.MigrationsDir)
 	require.NoError(t, err)
-	ledger = ledger[:len(ledger)-2]
+	ledger = ledger[:slices.Index(ledger, schemaauthority.XInsightCommunicationHead)+1]
 	target, err := installstate.ReadTarget(ctx, pool, "production")
 	require.NoError(t, err)
 	// This is an explicitly synthetic retained completion envelope for the
@@ -309,7 +311,7 @@ func maintenanceDatabaseFixture(t *testing.T) (*pgxpool.Pool, maintenancePackage
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, `UPDATE release_state SET release_sequence=$1,version=$2,commit=$3,package_sha256=$4,trusted_key_id=$5,target_schema=$6,manifest=$7`, f.state.ReleaseSequence, f.state.Version, f.state.Commit, f.state.PackageSHA256, f.state.TrustedKeyID, f.state.TargetSchema, manifest)
 	require.NoError(t, err)
-	support := runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads()[:len(schemaauthority.SupportedSchemaHeads())-1])
+	support := runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads()[:slices.Index(schemaauthority.SupportedSchemaHeads(), schemaauthority.UpstreamReleaseObservationHead)+1])
 	supportWire, err := support.CanonicalBytes()
 	require.NoError(t, err)
 	supportDigest, err := support.Digest()
@@ -440,7 +442,7 @@ func TestCommunityMaintenanceExactProductionSourceAndAtomicRetirementIntegration
 	_, err = checkFreshInstall(ctx, restored, snapshot.Record.Plan, mustCurrentCommunityLedger(t))
 	require.ErrorContains(t, err, "ledger", "historical restore verification never grants M128 fresh-start authority on M127")
 	allOriginalTables := communityAllTableFingerprints(t, pool, false)
-	require.NoError(t, migrate.RunExisting(ctx, pool, f.cfg.MigrationsDir))
+	require.NoError(t, migrate.RunExistingThrough(ctx, pool, f.cfg.MigrationsDir, schemaauthority.UpstreamObservationRestoreHead))
 	require.Equal(t, allOriginalTables, communityAllTableFingerprints(t, pool, true), "all original public rows survive the exact M128 additions")
 	var head string
 	require.NoError(t, pool.QueryRow(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&head))
@@ -613,8 +615,8 @@ VALUES($1,'five-history-unresolved','synthetic-attempt',101,201,301,1,1,'/v1/cha
 				require.Len(t, result.Retirements, 5)
 				ledger, e := schemaauthority.ExpectedLedger(f.cfg.MigrationsDir)
 				require.NoError(t, e)
-				ledger = ledger[:len(ledger)-1]
-				support := runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads()[:len(schemaauthority.SupportedSchemaHeads())-1])
+				ledger = ledger[:slices.Index(ledger, schemaauthority.XInsightCommunicationHead)+1]
+				support := runtimegeneration.CurrentManifest(schemaauthority.SupportedSchemaHeads()[:slices.Index(schemaauthority.SupportedSchemaHeads(), schemaauthority.UpstreamReleaseObservationHead)+1])
 				for _, r := range f.input.Retirements {
 					identity := runtimegeneration.Identity{Instance: r.InstanceID, Artifact: r.ArtifactDigest}
 					_, _, e = runtimegeneration.Renew(ctx, pool, identity, support, ledger, false)
@@ -838,7 +840,7 @@ func TestM129MigrationRejectsUnknownValidatorIntegration(t *testing.T) {
 			}
 			require.NoError(t, err)
 			before := communityAllTableFingerprints(t, pool, false)
-			err = migrate.RunExisting(t.Context(), pool, f.cfg.MigrationsDir)
+			err = migrate.RunExistingThrough(t.Context(), pool, f.cfg.MigrationsDir, schemaauthority.UpstreamObservationRestoreHead)
 			require.Error(t, err)
 			require.Equal(t, before, communityAllTableFingerprints(t, pool, false), "rejected migration is atomic")
 			var revision int64

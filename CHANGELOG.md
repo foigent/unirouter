@@ -4,6 +4,14 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.15.7] - 2026-11-14
+
+### Fixed
+
+- Recover a signed single-host upgrade when a candidate process exits during ingress admission. Preserve the original admission and verify receiver withdrawal before admitting replacement processes.
+- Resume an interrupted native migration from an exact committed ledger prefix after rechecking the cold backup and restore. Parse native lease expiries consistently on supported Python versions.
+- Reconstruct the signed M130 package from the retained M129 predecessor and its verified delta.
+
 ## [1.15.6] - 2026-11-12
 
 ### Fixed

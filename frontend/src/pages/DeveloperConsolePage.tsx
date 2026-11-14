@@ -100,7 +100,8 @@ interface CallLog {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
-  cost_micros: string;
+  cost_micros?: string;
+  pricing_version?: string;
   status_code: number;
   latency_ms: number;
   ttft_ms?: number;
@@ -117,7 +118,7 @@ interface UsageAnalyticsRow {
   success_requests: number;
   failed_requests: number;
   total_tokens: number;
-  cost_micros: string;
+  cost_micros?: string;
   avg_latency_ms: number;
   estimated_ratio: number;
 }
@@ -127,7 +128,7 @@ interface UsageAnalyticsSummary {
   success_requests: number;
   failed_requests: number;
   total_tokens: number;
-  cost_micros: string;
+  cost_micros?: string;
   avg_latency_ms: number;
   estimated_ratio: number;
 }
@@ -140,6 +141,38 @@ function compactNumber(value: number) {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
   return String(value);
+}
+
+function isUnpricedObservation(pricingVersion?: string) {
+  // The gateway exposes the immutable quote version in logs and response metadata.
+  return typeof pricingVersion === 'string' && /^uo1_[0-9a-f]{64}$/.test(pricingVersion);
+}
+
+function readChargeMicros(value: unknown) {
+  if (typeof value !== 'string' && typeof value !== 'bigint') return undefined;
+  try {
+    return parseMicros(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function RecordedCharge({ micros, pricingVersion, strong, labeled }: {
+  micros?: string | bigint;
+  pricingVersion?: string;
+  strong?: boolean;
+  labeled?: boolean;
+}) {
+  const amount = readChargeMicros(micros);
+  return (
+    <div className="ur-dev-charge">
+      {labeled && <Text type="tertiary" size="small">{t("已记录扣费")}</Text>}
+      {amount === undefined
+        ? <Text type="tertiary">{t("扣费金额不可用")}</Text>
+        : <MoneyText micros={amount} precision={6} tone="cost" strong={strong} />}
+      {isUnpricedObservation(pricingVersion) && <Text size="small" type="tertiary">{t("未定价 · 成本观察")}</Text>}
+    </div>
+  );
 }
 
 function fallbackCopyText(text: string) {
@@ -212,6 +245,8 @@ export default function DeveloperConsolePage() {
     content: string;
     request_id?: string;
     cost_micros?: string;
+    pricing_version?: string;
+    charge_finality?: string;
     total_tokens?: number;
     latency_ms?: number;
     headers_ms?: number;
@@ -222,6 +257,10 @@ export default function DeveloperConsolePage() {
     doc_url?: string;
     error?: string;
   } | null>(null);
+  const playgroundChargePending = playgroundResult?.charge_finality === 'pending_local_delivery'
+    || playgroundResult?.billing_status === 'delivery_prepared'
+    || playgroundResult?.billing_status === 'settlement_pending_recovery'
+    || playgroundResult?.billing_status === 'cancellation_failed_no_billable_output';
   const projectDataRequestVersion = useRef(0);
 
   const selectedProject = projects.find(project => project.id === selectedProjectId);
@@ -285,7 +324,7 @@ export default function DeveloperConsolePage() {
       return {
         requestCount: usageSummary.total_requests || 0,
         totalTokens: usageSummary.total_tokens || 0,
-        totalCostMicros: usageSummary.cost_micros || '0',
+        totalCostMicros: usageSummary.cost_micros,
         errorRate: usageSummary.total_requests ? (usageSummary.failed_requests || 0) / usageSummary.total_requests * 100 : 0,
         avgLatency: usageSummary.avg_latency_ms || 0,
         sourceLabel: t("我的 Key 聚合"),
@@ -293,7 +332,10 @@ export default function DeveloperConsolePage() {
     }
     const requestCount = logs.length;
     const totalTokens = logs.reduce((sum, log) => sum + (log.total_tokens || 0), 0);
-    const totalCostMicros = logs.reduce((sum, log) => sum + parseMicros(log.cost_micros || '0'), 0n);
+    const totalCostMicros = logs.reduce<bigint | undefined>((sum, log) => {
+      const amount = readChargeMicros(log.cost_micros);
+      return sum === undefined || amount === undefined ? undefined : sum + amount;
+    }, 0n);
     const failed = logs.filter(log => log.status_code >= 400 || log.status_code === 0).length;
     const avgLatency = logs.length
       ? logs.reduce((sum, log) => sum + (log.latency_ms || 0), 0) / logs.length
@@ -610,6 +652,9 @@ export default function DeveloperConsolePage() {
           content: content || '(empty stream)',
           request_id: finalMeta?.request_id,
           cost_micros: finalMeta?.cost?.charged_cost_micros,
+          pricing_version: finalMeta?.provider_prompt_cache?.pricing_version,
+          charge_finality: finalMeta?.cost?.charge_finality,
+          billing_status: finalMeta?.billing_status,
           total_tokens: finalMeta?.usage?.total_tokens,
           latency_ms: elapsed(),
           headers_ms: headersMS,
@@ -650,6 +695,9 @@ export default function DeveloperConsolePage() {
           : responseMessage.content || t("(空文本响应)"),
         request_id: uniroute?.request_id || payload?.id,
         cost_micros: uniroute?.cost?.charged_cost_micros,
+        pricing_version: uniroute?.provider_prompt_cache?.pricing_version,
+        charge_finality: uniroute?.cost?.charge_finality,
+        billing_status: uniroute?.billing_status,
         total_tokens: payload?.usage?.total_tokens,
         latency_ms: elapsed(),
         headers_ms: headersMS,
@@ -727,7 +775,7 @@ export default function DeveloperConsolePage() {
     { title: t("模型"), key: 'model', render: (_: unknown, record: CallLog) => record.requested_model || record.model },
     { title: t("状态"), dataIndex: 'status_code', key: 'status_code', render: (value: number) => <StatusTag status={value}>{value}</StatusTag> },
     { title: 'Token', dataIndex: 'total_tokens', key: 'total_tokens', render: (value: number) => compactNumber(value || 0) },
-    { title: t("费用"), dataIndex: 'cost_micros', key: 'cost_micros', render: (value: string) => <MoneyText micros={value || '0'} precision={6} tone="cost" /> },
+    { title: t("已记录扣费"), key: 'cost_micros', render: (_: unknown, record: CallLog) => <RecordedCharge micros={record.cost_micros} pricingVersion={record.pricing_version} /> },
     { title: t("延迟"), dataIndex: 'latency_ms', key: 'latency_ms', render: (value: number) => `${value || 0}ms` },
   ];
 
@@ -736,7 +784,7 @@ export default function DeveloperConsolePage() {
     { title: t("请求数"), dataIndex: 'total_requests', key: 'total_requests', render: (value: number) => compactNumber(value || 0) },
     { title: t("成功 / 失败"), key: 'status_mix', render: (_: unknown, row: UsageAnalyticsRow) => `${row.success_requests || 0} / ${row.failed_requests || 0}` },
     { title: 'Token', dataIndex: 'total_tokens', key: 'total_tokens', render: (value: number) => compactNumber(value || 0) },
-    { title: t("费用"), dataIndex: 'cost_micros', key: 'cost_micros', render: (value: string) => <MoneyText micros={value || '0'} precision={6} tone="cost" /> },
+    { title: t("已记录扣费"), key: 'cost_micros', render: (_: unknown, record: UsageAnalyticsRow) => <RecordedCharge micros={record.cost_micros} /> },
     { title: t("平均延迟"), dataIndex: 'avg_latency_ms', key: 'avg_latency_ms', render: (value: number) => `${Math.round(value || 0)}ms` },
   ];
 
@@ -883,11 +931,12 @@ export default function DeveloperConsolePage() {
         <div className="ur-kpi-grid">
           <MetricTile label={t("请求数")} value={compactNumber(usageSnapshot.requestCount)} icon={<IconFile />} tone="blue" meta={usageSnapshot.sourceLabel} />
           <MetricTile label="Token" value={compactNumber(usageSnapshot.totalTokens)} icon={<IconServer />} tone="violet" meta={usageSnapshot.sourceLabel} />
-          <MetricTile label={t("费用")} value={<MoneyText micros={usageSnapshot.totalCostMicros} precision={6} strong tone="cost" />} icon={<IconCoinMoney />} tone="green" meta={usageSnapshot.sourceLabel} />
+          <MetricTile label={t("已记录扣费")} value={<RecordedCharge micros={usageSnapshot.totalCostMicros} strong />} icon={<IconCoinMoney />} tone="green" meta={usageSnapshot.sourceLabel} />
           <MetricTile label={t("错误率")} value={`${usageSnapshot.errorRate.toFixed(1)}%`} icon={<IconAlertTriangle />} tone={usageSnapshot.errorRate > 5 ? 'red' : 'amber'} meta={t("平均延迟 {v0}ms", { v0: String(usageSnapshot.avgLatency.toFixed(0)) })} />
         </div>
 
         <Surface title={t("我的模型用量")} description={t("按当前账号名下 API Key 聚合当前项目的模型用量和费用；历史未归属 Owner 的调用不会被计入。")}>
+          <Text type="tertiary" size="small">{t("扣费来自 UniRouter 的请求记录；供应商费用以供应商账单为准。")}</Text>
           {usageLoadError ? (
             <EmptyState
               title={t("个人用量加载失败")}
@@ -1087,10 +1136,19 @@ export default function DeveloperConsolePage() {
                         {playgroundResult.error && playgroundResult.status > 0 && <Text>HTTP {playgroundResult.status}</Text>}
                         {playgroundResult.request_id && <Text code>{playgroundResult.request_id}</Text>}
                         {playgroundResult.total_tokens !== undefined && <StatusTag status="tokens">{playgroundResult.total_tokens} tokens</StatusTag>}
-                        {playgroundResult.cost_micros !== undefined && <MoneyText micros={playgroundResult.cost_micros} precision={6} tone="cost" />}
+                        {!playgroundResult.error && (
+                          playgroundChargePending
+                            ? <>
+                                <Text type="tertiary">{t("扣费待确认")}</Text>
+                                {isUnpricedObservation(playgroundResult.pricing_version) && <Text size="small" type="tertiary">{t("未定价 · 成本观察")}</Text>}
+                              </>
+                            : <RecordedCharge micros={playgroundResult.cost_micros} pricingVersion={playgroundResult.pricing_version} labeled />
+                        )}
                         {playgroundResult.latency_ms !== undefined && <Text type="tertiary">{t("客户端完整耗时")} {playgroundResult.latency_ms}ms</Text>}
                         {playgroundResult.headers_ms !== undefined && <Text type="tertiary">{t("响应头耗时")} {playgroundResult.headers_ms}ms</Text>}
-                        {playgroundResult.billing_status && <Text type="tertiary">billing_status：{playgroundResult.billing_status}</Text>}
+                        {playgroundResult.billing_status === 'settled_partial_stream'
+                          && <Text type="tertiary">{t("流式响应部分交付")}</Text>}
+                        {playgroundResult.error && playgroundResult.billing_status && <Text type="tertiary">billing_status：{playgroundResult.billing_status}</Text>}
                       </div>
                       {playgroundResult.error ? (
                         <div className="ur-playground-error">
@@ -1188,7 +1246,7 @@ export default function DeveloperConsolePage() {
                 <div><Text type="tertiary">{t("供应商")}</Text><strong>{lookupResult.provider || '-'}</strong></div>
                 <div><Text type="tertiary">{t("通道")}</Text><strong>{lookupResult.channel || '-'}</strong></div>
                 <div><Text type="tertiary">Token</Text><strong>{compactNumber(lookupResult.total_tokens || 0)}</strong></div>
-                <div><Text type="tertiary">{t("费用")}</Text><MoneyText micros={lookupResult.cost_micros || '0'} precision={6} strong tone="cost" /></div>
+                <div><Text type="tertiary">{t("已记录扣费")}</Text><RecordedCharge micros={lookupResult.cost_micros} pricingVersion={lookupResult.pricing_version} strong /></div>
                 <div><Text type="tertiary">{t("延迟")}</Text><strong>{lookupResult.latency_ms || 0}ms</strong></div>
                 {lookupResult.upstream_error && (
                   <div className="ur-dev-lookup-wide">

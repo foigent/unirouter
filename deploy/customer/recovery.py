@@ -147,6 +147,6 @@ def quiet(sql, database):
     'reserved',(SELECT count(*) FROM execution_content_policies WHERE reserved_bytes<>0),'expired_ready',(SELECT count(*) FROM execution_content_objects WHERE state='ready' AND expires_at<=clock_timestamp()),
     'pending_capture',(SELECT count(*) FROM latest WHERE convert_from(document,'UTF8')::jsonb#>>'{capture,completeness}'='pending'),
     'active_generations',(SELECT count(*) FROM runtime_generations WHERE state<>'stopped' OR ingress_state<>'absent'),
-    'pending_ingress',(SELECT count(*) FROM runtime_ingress_changes WHERE status<>'applied')); COMMIT;"""
+    'pending_ingress',(SELECT count(*) FROM runtime_ingress_changes WHERE status IN ('pending','ambiguous'))); COMMIT;"""
     result = json.loads(sql(database, q)); need(not any(result.values()), 'final quiescence predicates not all zero')
     return result

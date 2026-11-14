@@ -295,13 +295,13 @@ restoration instruction. This source template does not itself sign or release it
 
 - Repository path: `scripts/source-budget-restore-rebase.sql`
 - Signed payload path: `payload/scripts/source-budget-restore-rebase.sql`
-- SHA-256: `e8ddfaf2fecc7c584a206d544e77ae396e7a7e993fe4d25803838abf1ecfee63`
-- Bytes: `16520`
+- SHA-256: `8eff80f5e60a75c5d15f1b11dcd71d9bfc52ccd9cd4cf9c13780ab17378de696`
+- Bytes: `16955`
 
 After every supported SQL restore, while all database readers/writers are still
 stopped, run this helper with `psql -v ON_ERROR_STOP=1 -f` before restart. It retains
 the former D coverage epoch and records the database restore boundary. With the
-exact M119, M120, M121, M122, M123, M124, M125, M126, M127, M128 or M129 schema it also changes each C recovery epoch in the same transaction,
+exact M119, M120, M121, M122, M123, M124, M125, M126, M127, M128, M129 or M130 schema it also changes each C recovery epoch in the same transaction,
 invalidating old C cursors and in-flight grants. It does not change money,
 credentials, source identity, A/B cursors, C registration, manifests or object
 allocation epochs. Any helper failure

@@ -209,8 +209,11 @@ func checkFreshInstallAtSource(ctx context.Context, pool *pgxpool.Pool, p instal
 			return s, fmt.Errorf("completed origin is not a prefix of this artifact")
 		}
 		if completedSource != "" {
-			if completedSource != schemaauthority.UpstreamReleaseObservationHead || len(artifact) < 2 || artifact[len(artifact)-1] != schemaauthority.UpstreamObservationRestoreHead || artifact[len(artifact)-2] != completedSource ||
-				schemaauthority.VerifyLedger(artifact, artifact) != nil || !slices.Equal(s.Ledger, artifact[:len(artifact)-1]) || !freshPrefix(p.Artifact.Ledger, s.Ledger) {
+			original := slices.Index(artifact, schemaauthority.UpstreamReleaseObservationHead)
+			if completedSource != schemaauthority.UpstreamReleaseObservationHead || original < 0 || original+1 >= len(artifact) ||
+				artifact[original+1] != schemaauthority.UpstreamObservationRestoreHead ||
+				schemaauthority.VerifyLedger(artifact, artifact) != nil || !slices.Equal(s.Ledger, artifact[:original+1]) ||
+				!freshPrefix(p.Artifact.Ledger, s.Ledger) {
 				return s, fmt.Errorf("completed-source check requires the exact full corrected M128 predecessor")
 			}
 			if err := upstreamrelease.CheckNamespace(ctx, tx); err != nil {
@@ -306,7 +309,7 @@ func executeFreshInstallObserved(ctx context.Context, owner *migrate.FreshOwner,
 			return err
 		}
 	}
-	for _, version := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.XInsightPolicyExpandHead, schemaauthority.XInsightAdoptionExpandHead, schemaauthority.XInsightCredentialExpandHead, schemaauthority.CommercialLicenseRetirementHead, schemaauthority.XInsightCommunicationHead, schemaauthority.UpstreamReleaseObservationHead, schemaauthority.UpstreamObservationRestoreHead} {
+	for _, version := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.XInsightPolicyExpandHead, schemaauthority.XInsightAdoptionExpandHead, schemaauthority.XInsightCredentialExpandHead, schemaauthority.CommercialLicenseRetirementHead, schemaauthority.XInsightCommunicationHead, schemaauthority.UpstreamReleaseObservationHead, schemaauthority.UpstreamObservationRestoreHead, schemaauthority.UpgradeAdmissionRecoveryHead} {
 		s, err := owner.Snapshot(ctx)
 		if err != nil {
 			return err
@@ -324,7 +327,7 @@ func executeFreshInstallObserved(ctx context.Context, owner *migrate.FreshOwner,
 				return nil
 			}
 		}
-		if version == schemaauthority.ContentCaptureExpandHead || version == schemaauthority.ContentReclaimExpandHead || version == schemaauthority.PreDispatchExpandHead || (version == schemaauthority.ScopedContentExpandHead || (version == schemaauthority.XInsightPolicyExpandHead || (version == schemaauthority.XInsightAdoptionExpandHead || version == schemaauthority.XInsightCredentialExpandHead || version == schemaauthority.CommercialLicenseRetirementHead || version == schemaauthority.XInsightCommunicationHead || version == schemaauthority.UpstreamReleaseObservationHead || version == schemaauthority.UpstreamObservationRestoreHead))) {
+		if version == schemaauthority.ContentCaptureExpandHead || version == schemaauthority.ContentReclaimExpandHead || version == schemaauthority.PreDispatchExpandHead || (version == schemaauthority.ScopedContentExpandHead || (version == schemaauthority.XInsightPolicyExpandHead || (version == schemaauthority.XInsightAdoptionExpandHead || version == schemaauthority.XInsightCredentialExpandHead || version == schemaauthority.CommercialLicenseRetirementHead || version == schemaauthority.XInsightCommunicationHead || version == schemaauthority.UpstreamReleaseObservationHead || version == schemaauthority.UpstreamObservationRestoreHead || version == schemaauthority.UpgradeAdmissionRecoveryHead))) {
 			final = func(ctx context.Context, tx pgx.Tx) error {
 				if version == p.Artifact.Ledger[len(p.Artifact.Ledger)-1] {
 					return verifyFreshCompletion(ctx, tx, p.Artifact.Ledger)
@@ -510,7 +513,7 @@ func verifyFreshCompletion(ctx context.Context, q interface {
 	if err := schemaauthority.VerifyLedger(artifact, actual); err != nil {
 		return err
 	}
-	if len(actual) > 0 && actual[len(actual)-1] == schemaauthority.UpstreamObservationRestoreHead {
+	if len(actual) > 0 && (actual[len(actual)-1] == schemaauthority.UpstreamObservationRestoreHead || actual[len(actual)-1] == schemaauthority.UpgradeAdmissionRecoveryHead) {
 		if err := upstreamrelease.CheckNamespace(ctx, q); err != nil {
 			return err
 		}

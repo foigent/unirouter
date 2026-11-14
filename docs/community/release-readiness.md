@@ -2,9 +2,13 @@
 
 Status on **2026-11-03: Preview22 is signed and public, and its exact signed installation and retained-predecessor upgrade passed formal Linux acceptance**. English is the primary community language; Chinese entry points and contributions are welcome.
 
-## Current public preview — 1.15.5 / M129
+## Current public preview — 1.15.6 / M129
 
-The [English Linux guide](install-linux.md) and [Chinese companion](install-linux.zh-CN.md) bind [v1.15.5-preview.22](https://github.com/foigent/unirouter/releases/tag/v1.15.5-preview.22). Product source is `717c899d9f03cf101b89fc4a9d7fe5a14ccf71d1`, release sequence 22, with 26 signed payloads and `expires_at: never`. The package is 130,052,679 bytes, SHA-256 `46ebdf5d987603aed1989a83f7e7d6a2148214b7f301b80a91413c3964e83e91`. Its declared predecessor range is 0–21 with minimum schema M127; actual native source bindings still apply. The original public ring and independent trust process are unchanged. The bootstrap JSON is pinned separately by SHA-256 `cc24ea940af455cc3c35aaa88cfb692034a59add945c9864de3524bb66c4d417`.
+The English [Linux installation guide](install-linux.md) and its [Chinese companion](install-linux.zh-CN.md) use the [signed release v1.15.6-preview.23](https://github.com/foigent/unirouter/releases/tag/v1.15.6-preview.23), source `564a6d189341d5ad05cccd8b3bdbf5bc4ce66a49`. The published package is 130,054,145 bytes, SHA-256 `8b6eac5d69cefd53c203389a36f45a3df8783da1508733dab00b9f0d4bd4cff5`. A real Ubuntu consumer verified the published package, six public images, fresh installation, login and first-customer initialization. It reconstructed the signed target from the actual 1.15.5 package through the 86,852-byte differential download. It preserved the administrator and financial history and independently restored the database and file pair. [Formal Linux consumer](https://github.com/foigent/unirouter/actions/runs/43284803235).
+
+## Historical public preview — 1.15.5 / M129
+
+The historical [English Linux guide](https://github.com/foigent/unirouter/blob/c2e39bbfb459cd6355bede921e0097b2c71c2a7f/docs/community/install-linux.md) and [Chinese companion](https://github.com/foigent/unirouter/blob/c2e39bbfb459cd6355bede921e0097b2c71c2a7f/docs/community/install-linux.zh-CN.md) bind [v1.15.5-preview.22](https://github.com/foigent/unirouter/releases/tag/v1.15.5-preview.22). Product source is `717c899d9f03cf101b89fc4a9d7fe5a14ccf71d1`, release sequence 22, with 26 signed payloads and `expires_at: never`. The package is 130,052,679 bytes, SHA-256 `46ebdf5d987603aed1989a83f7e7d6a2148214b7f301b80a91413c3964e83e91`. Its declared predecessor range is 0–21 with minimum schema M127; actual native source bindings still apply. The original public ring and independent trust process are unchanged. The bootstrap JSON is pinned separately by SHA-256 `cc24ea940af455cc3c35aaa88cfb692034a59add945c9864de3524bb66c4d417`.
 
 [Source PR #490](https://github.com/foigent/unirouter/pull/490), [candidate Linux tests](https://github.com/foigent/unirouter/actions/runs/41427712980) and [exact-main protocol validation](https://github.com/foigent/unirouter/actions/runs/41437525776) passed. These cases use synthetic data and temporary trust. Accepted [producer 41440066799](https://github.com/foigent/unirouter/actions/runs/41440066799) and [publisher 41451936327](https://github.com/foigent/unirouter/actions/runs/41451936327) bind the unchanged public application images and signed publication chain.
 
@@ -200,31 +204,13 @@ qualifier/action inputs and read-only token permissions. No private App secret
 is referenced by either workflow. Existing required checks and branch protection
 remain unchanged. Existing App secret revocation is outside this batch.
 
-## Public two-product walkthrough — pending
+## Verified existing UR and XI installation
 
-The [existing integration entry](getting-started.md#optional-x-insight-integration)
-links UniRouter's setup API, credential lifecycle and recorded combinations.
-The earlier Target observations retain their specific versions and scope;
-UniRouter 1.11.0 installation/protocol CI does not establish a new joint result.
-Public installation/invitation/reader guidance and an exact synthetic
-execution-to-review acceptance remain necessary for a
-newcomer to reproduce the complete path using public sources.
+The [integration entry](getting-started.md#optional-x-insight-integration) links [X-Insight FPV24](https://github.com/foigent/x-insight/releases/tag/v0.2.0-dev.fpv24). UR 1.15.6 and XI FPV24 were verified on existing installations after upgrading and recovering the original connection. Owner and restricted reader could match the original project records. Scope denials, synchronization and later control-credential rotation were checked separately.
 
-## Remaining public-distribution work
+A guided first use from two fresh public installations, through receipt matching in XI, would extend that coverage. The project still needs a complete anonymous checkout and source build of the current exact revision from empty dependency caches. The earlier external fork and the signed package consumer cover their own paths.
 
-Publish the six exact preview assets and qualify anonymous source/material
-downloads, then make the two fully mapped image packages public and verify all
-six retained versions. Complete the final consumer/documentation binding PR and
-required protected checks, then execute the existing bounded real public-package
-consumer once. Until those actual results exist, do not advertise a completed
-one-command public installation or a supported production release.
-
-The product has no npm installer; its Linux bootstrap uses Python and an
-already-installed Docker Engine/Compose. The adopted public ring, real signature
-and fixed source/NOTICE materials need no recreation. Existing ECS changes,
-provider calls and the full two-product newcomer walkthrough retain their own
-target and evidence boundaries. Older distribution notes below are historical,
-not an instruction to repeat the settled key decision or old signing operation.
+The Linux bootstrap uses Python and an installed Docker Engine/Compose. Use the current signed preview and its guides above.
 
 <details>
 <summary>Historical preparation record (superseded by the current status above)</summary>

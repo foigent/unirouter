@@ -38,8 +38,8 @@ integration availability are tracked independently; see
 Use UniRouter independently to control and inspect model execution. Use
 X-Insight independently to associate evidence from its supported sources and
 review findings; combine the products when UniRouter facts are useful to that
-investigation. X-Insight source publication is preparing; public materials are
-linked from the [Foigent overview](https://github.com/foigent).
+investigation. [X-Insight source](https://github.com/foigent/x-insight) and the
+[signed FPV24 preview](https://github.com/foigent/x-insight/releases/tag/v0.2.0-dev.fpv24) are public.
 
 [Event Connector Spec](https://github.com/foigent/event-connector-spec) supplies
 shared protocol contracts. [Integration Control](https://github.com/foigent/integration-control)
@@ -61,20 +61,8 @@ outcome verification are already available.
 
 [Getting started](getting-started.md#optional-x-insight-integration) points to the
 existing setup API, connection-credential lifecycle and configuration sources.
-The lifecycle runbook applies to an already established connection; it is not a
-new-install procedure. X-Insight's own installation, invitation and reader-access
-instructions must accompany the public joint walkthrough when its source is
-published.
-
-The current UniRouter 1.11.0 installation and protocol results are recorded in
-[release readiness](release-readiness.md). They use synthetic installation data
-and separate conformance checks; they do not qualify a new UniRouter/X-Insight
-pair. The earlier [2026-10-07 Target record](../ops/CURRENT-STATUS.md) binds
-UniRouter 1.9.3/M125 with X-Insight FPV16/schema45 for original-connection recovery,
-authorized source-stream reception and the original reviewer's scoped content
-readback. It made no new model request and retains those limits; it does not
-establish a public installation-to-execution-to-review walkthrough or Production
-acceptance for the newer source.
+The lifecycle runbook applies to an already established connection. The
+[signed Linux consumer](https://github.com/foigent/unirouter/actions/runs/43284803235) verified fresh UR 1.15.6 installation and differential upgrade. Separate original-host acceptance verified recovery, scoped reading and credential rotation for UR 1.15.6 with XI FPV24. [Release readiness](release-readiness.md) records the remaining public first-use coverage.
 
 Preserve the original source and request identifiers, units, currencies and
 recorded provenance across that boundary. Model execution permission and
