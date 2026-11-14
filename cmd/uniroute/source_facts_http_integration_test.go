@@ -62,6 +62,9 @@ func TestJ1ContentAuthenticatedPullIntegration(t *testing.T) {
 
 func sourceChatAndEmbeddingsAuthHistoryAndReplay(t *testing.T, observations bool, contentEnabled ...bool) {
 	content := len(contentEnabled) == 1 && contentEnabled[0]
+	scope, scopeErr := p3ProducerScopeFromEnv(os.Getenv)
+	p3Require(t, scopeErr == nil, "approved portable producer scope")
+	p3Require(t, !scope.portable || p3ProducerInvocationMatches(t.Name(), observations, content), "portable P3 exact observation entry")
 	operations := []string{"chat", "chat_stream", "chat_stream_interrupted", "chat_stream_cancel", "embeddings", "chat_cache"}
 	if observations {
 		operations = append(operations, "chat_stream_tools", "chat_stream_write_failure", "chat_stream_flush_failure", "chat_fallback", "embeddings_fallback")
