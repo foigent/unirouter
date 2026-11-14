@@ -376,12 +376,12 @@ class Acceptance:
         self.result["bootstrap_transport"] = "local fixture; no public-download claim"
         self.passed("pinned synthetic bootstrap prepares the exact signed installer")
 
-    def same_schema_release(self, *, sequence=None):
+    def same_schema_release(self):
         """Repack the same candidate payload under a higher synthetic sequence."""
         require(self.schema == CURRENT_SCHEMA, "same-schema fixture needs the completed current candidate")
         self.phase = "prepare higher-sequence same-schema fixture"
         following = copy.copy(self)
-        following.root = self.root / ("same-schema" if sequence is None else "predecessor-delta-target")
+        following.root = self.root / "same-schema"
         following.root.mkdir(mode=0o700)
         following.logs = following.root / "logs"
         following.logs.mkdir(mode=0o700)
@@ -389,8 +389,7 @@ class Acceptance:
         following.release = following.root / "release"
         following.release.mkdir(mode=0o700)
         shutil.copytree(self.release / "payload", following.release / "payload")
-        following.release_sequence = self.release_sequence + 1 if sequence is None else sequence
-        require(following.release_sequence > self.release_sequence, "candidate sequence must increase")
+        following.release_sequence = self.release_sequence + 1
         following.pack_release(self.root / "test.private")
         require(files(following.release / "payload") == files(self.release / "payload")
             and following.images == self.images and following.image_ids == self.image_ids
@@ -467,6 +466,8 @@ class Acceptance:
                         ("1.15.5", 22, "1.15.6", RESTORE_SCHEMA),
                         ("1.15.6", 23, "1.15.7", CURRENT_SCHEMA)),
                     "unexpected public delta rehearsal predecessor")
+            require(self.release_sequence == sequence + 1,
+                    "prepared candidate must immediately follow the pinned predecessor")
             source = self.checkout_fixture_source("public-predecessor", product["commit"])
             first.verify_predecessor_checkout(source, record)
             public_root = self.root / "predecessor-owner-signed"
@@ -511,16 +512,8 @@ class Acceptance:
         rehearsal["test_predecessor"] = {"images": old.images, "image_ids": old.image_ids,
             "package_sha256": old.result["test_package_sha256"], "payload_changed_paths": ["install.json"],
             "local_backend_builds": 1}
-        target = self.same_schema_release(sequence=old.release_sequence + 1)
-        try:
-            target.qualify_upgrade(old, "single", instance_name="predecessor-delta", public_predecessor=True)
-        except Failed:
-            self.phase = target.phase
-            if "installer_stop" in target.result:
-                self.result["installer_stop"] = target.result["installer_stop"]
-            raise
-        rehearsal.update(delta=target.result["predecessor_delta"], upgrade=target.result["finite_upgrades"][0])
-        self.result["checks"].extend(target.result["checks"])
+        self.qualify_upgrade(old, "single", instance_name="predecessor-delta", public_predecessor=True)
+        rehearsal.update(delta=self.result["predecessor_delta"], upgrade=self.result["finite_upgrades"][-1])
 
     def observe_migration_owner(self):
         """Observe the shipped owner without replacing any native operation."""

@@ -328,12 +328,14 @@ class InstallerFixtureContract(unittest.TestCase):
                 self.assertEqual(work.result.get('installer_stop'),authored)
 
     def test_exact_predecessor_rehearsal_checks_owner_before_repacking_only_backend(self):
-        for owner_verified in (False, True):
-            with self.subTest(owner_verified=owner_verified), tempfile.TemporaryDirectory() as tmp:
+        for owner_verified, sequence in ((False, 24), (True, 25), (True, 24)):
+            with self.subTest(owner_verified=owner_verified, sequence=sequence), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp).resolve()
                 work = object.__new__(fixture.Acceptance)
                 work.root, work.repo, work.result = root, ROOT, {'checks': []}
                 work.version, work.schema = "1.15.7", fixture.CURRENT_SCHEMA
+                work.release_sequence = sequence
+                work.release = root / 'prepared-original-candidate'
                 work.verifier = root / 'verifier'
                 work.ring = root / 'test-ring'; work.ring.write_bytes(b'disposable public fixture')
                 first = work.formal_consumer_module()
@@ -355,30 +357,36 @@ class InstallerFixtureContract(unittest.TestCase):
                     self.assertEqual((role, ref), ('backend', 'test-backend'))
                     old.images[role], old.image_ids[role] = ref, 'test-backend-id'
                 old.observe_fixture_image = observe
-                target = SimpleNamespace(qualify_upgrade=MagicMock(),
-                    result={'predecessor_delta': {'byte_identical': True}, 'finite_upgrades': [{}], 'checks': []})
-                work.same_schema_release = MagicMock(return_value=target)
+                def upgrade(old, layout, *, instance_name, public_predecessor):
+                    self.assertEqual((work.release_sequence, old.release_sequence), (24, 23))
+                    self.assertEqual(work.release, root / 'prepared-original-candidate')
+                    work.result['predecessor_delta'] = {'byte_identical': True}
+                    work.result.setdefault('finite_upgrades', []).append({'exact_predecessor': True})
+                work.qualify_upgrade = MagicMock(side_effect=upgrade)
                 work.checkout_fixture_source = MagicMock(return_value=root / 'source')
                 work.formal_consumer_module = lambda: first
                 with patch.object(first, 'checked_upgrade_source_bytes', return_value=(ROOT / first.UPGRADE_SOURCE).read_bytes()), \
                      patch.object(first, 'verify_predecessor_checkout') as checked, \
                      patch.object(first, 'make_acceptance', return_value=owner), \
                      patch.object(fixture, 'Acceptance', return_value=old):
-                    if not owner_verified:
-                        with self.assertRaisesRegex(fixture.Failed, 'public predecessor identity'):
+                    if not owner_verified or sequence != 24:
+                        reason = 'public predecessor identity' if not owner_verified else 'immediately follow'
+                        with self.assertRaisesRegex(fixture.Failed, reason):
                             work.qualify_accepted_predecessor_delta()
                         old.pack_release.assert_not_called()
+                        work.qualify_upgrade.assert_not_called()
                         continue
                     work.qualify_accepted_predecessor_delta()
                 checked.assert_called_once_with(root / 'source', record)
-                work.same_schema_release.assert_called_once_with(sequence=24)
-                target.qualify_upgrade.assert_called_once_with(old, 'single', instance_name='predecessor-delta', public_predecessor=True)
+                work.qualify_upgrade.assert_called_once_with(old, 'single', instance_name='predecessor-delta', public_predecessor=True)
                 self.assertEqual((old.release / 'payload/preserved').read_bytes(), b'original owner payload')
                 proof = work.result['exact_predecessor_rehearsal']
                 self.assertEqual(proof['owner_signed_predecessor']['package_sha256'], package_sha)
                 self.assertEqual(proof['test_predecessor']['payload_changed_paths'], ['install.json'])
                 self.assertEqual(proof['test_predecessor']['images'],
                                  {'backend': 'test-backend', 'frontend': 'owner-frontend'})
+                self.assertEqual(proof['delta'], {'byte_identical': True})
+                self.assertEqual(proof['upgrade'], {'exact_predecessor': True})
 
     def test_native_json_stdout_stays_separate_from_retained_startup_diagnostics(self):
         with tempfile.TemporaryDirectory() as tmp:
