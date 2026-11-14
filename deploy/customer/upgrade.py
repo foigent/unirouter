@@ -1343,12 +1343,17 @@ class Upgrade(Installation):
         require(self.witness.get("target_ledger", expected) == expected, "Frozen target ledger changed")
         return expected
 
+    def _is_pending_migration_prefix(self, ledger):
+        target = self._target_ledger()
+        return (self.witness["pending"] == "migrate"
+                and len(self.witness["source_ledger"]) < len(ledger) < len(target)
+                and ledger == target[:len(ledger)])
+
     def _preserved(self, recorded=False, migration_prefix=False):
         pair = self._pair()
         metadata = self.native_metadata()
         if migration_prefix:
-            require(self.witness["pending"] == "migrate" and self.witness["source_ledger"][-1] == SOURCE_SCHEMA
-                    and metadata["ledger"] == self.witness["source_ledger"] + [OBSERVATION_SCHEMA],
+            require(self._is_pending_migration_prefix(metadata["ledger"]),
                     "Only the exact known pending native migration prefix may continue")
         else:
             require(metadata["ledger"] == self._target_ledger(), "Exact target ledger is required")
@@ -1395,8 +1400,7 @@ class Upgrade(Installation):
         metadata = self.native_metadata()
         if self.witness["source_ledger"][-1] != TARGET_SCHEMA and metadata["ledger"] == self.witness["source_ledger"]:
             return _NOT_STARTED
-        source = self.witness["source_ledger"]
-        if len(source) < len(metadata["ledger"]) < len(self._target_ledger()) and metadata["ledger"] == self._target_ledger()[:len(metadata["ledger"])]:
+        if self._is_pending_migration_prefix(metadata["ledger"]):
             # The existing native migration owner commits each exact SQL once.
             # Re-enter only this known interrupted suffix after full cold/data
             # proof; this is not a replay of an unknown external effect.
@@ -1694,7 +1698,7 @@ class Upgrade(Installation):
             before = sorted(previous["writers"].values(), key=lambda p: p["instance_id"])
             require(set(rows) == {p["instance_id"] for p in before}, "Unexpected candidate writer prevents recovery")
             now = datetime.datetime.now(datetime.timezone.utc)
-            if any(datetime.datetime.fromisoformat(row["lease_expires_at"]) > now for row in rows.values()):
+            if any(_native_lease_expiry(row["lease_expires_at"]) > now for row in rows.values()):
                 raise install.InstallError("Exact candidate processes are stopped; resume after their native leases expire")
             original = retained_installation(metadata)["plan"]
             departure = []

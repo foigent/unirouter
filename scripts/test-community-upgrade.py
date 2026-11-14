@@ -1033,10 +1033,6 @@ class WholeUpgradeTests(unittest.TestCase):
                     expanding = state.metadata["ledger"][-1] == M.SOURCE_SCHEMA
                     if expanding:
                         for row in state.models: row.update(upstream_release_observation=None, upstream_observation_revision=0)
-                    if state.failure == "migrate-after-observation":
-                        state.metadata["ledger"].append(M.OBSERVATION_SCHEMA)
-                        state.failure = None
-                        raise Interrupted("native migration committed M128, M129 not started")
                     state.metadata["ledger"] = M.transition_ledger(state.metadata["ledger"])
                     return ""
                 if argv == ["runtime-generation", "inspect"]: return "{}"
@@ -1691,16 +1687,64 @@ class WholeUpgradeTests(unittest.TestCase):
                     for name, raw in orphans.items(): self.assertEqual(raw, Path(name).read_bytes())
                 self.assertEqual(1, state.native_calls.count(["migrate","up"]), "only the original M127 expansion migrates")
 
+    def interrupted_native_migration(self, source_head, partial_head):
+        if source_head == M.SOURCE_SCHEMA:
+            operation, state, _, bind = self.host(1)
+        else:
+            old, state, _, bind = self.legacy128_completed17()
+            operation = self.next_candidate(old, state, bind, 20)
+        def interrupt(point):
+            if point == "started:migrate":
+                raise Interrupted(point)
+        operation.test_checkpoint = interrupt
+        with self.assertRaisesRegex(Interrupted, "started:migrate"):
+            operation.execute()
+        self.assertEqual("migrate", operation.witness["pending"])
+        target = operation.witness["target_ledger"]
+        state.metadata["ledger"] = target[:target.index(partial_head) + 1]
+        if source_head == M.SOURCE_SCHEMA:
+            for row in state.models:
+                row.update(upstream_release_observation=None, upstream_observation_revision=0)
+        return operation, state, bind
+
     def test_known_native_migration_prefix_continues_with_full_cold_proof(self):
-        operation,state,_,bind=self.host(1)
-        state.failure="migrate-after-observation"
-        with patch.object(M.shutil,"disk_usage",return_value=SimpleNamespace(free=32<<30)):
-            with self.assertRaises(Interrupted):operation.execute()
-            self.assertEqual([M.SOURCE_SCHEMA,M.OBSERVATION_SCHEMA],state.metadata["ledger"])
-            self.assertEqual("migrate",operation.witness["pending"])
-            self.assertEqual("completed",self.reopen(operation,bind).execute(resume=True)["state"])
-        self.assertEqual([M.SOURCE_SCHEMA,M.OBSERVATION_SCHEMA,M.RESTORE_SCHEMA,M.TARGET_SCHEMA],state.metadata["ledger"])
-        self.assertEqual(2,state.native_calls.count(["migrate","up"]))
+        for source, partial in ((M.SOURCE_SCHEMA, M.OBSERVATION_SCHEMA),
+                                (M.SOURCE_SCHEMA, M.RESTORE_SCHEMA),
+                                (M.OBSERVATION_SCHEMA, M.RESTORE_SCHEMA)):
+            with self.subTest(source=source, partial=partial), patch.object(
+                M.shutil, "disk_usage", return_value=SimpleNamespace(free=32 << 30)
+            ):
+                operation, state, bind = self.interrupted_native_migration(source, partial)
+                prior = copy.deepcopy((state.business, state.models, state.setups, state.sessions))
+                restored = copy.deepcopy(state.clones)
+                original_calls = state.native_calls.count(["migrate", "up"])
+                self.assertEqual("completed", self.reopen(operation, bind).execute(resume=True)["state"])
+                self.assertEqual(operation.witness["target_ledger"], state.metadata["ledger"])
+                self.assertEqual(original_calls + 1, state.native_calls.count(["migrate", "up"]))
+                self.assertEqual(prior, (state.business, state.models, state.setups, state.sessions))
+                self.assertEqual(restored, state.clones)
+
+    def test_unexpected_migration_prefix_or_cold_pair_drift_refuses_before_migrate(self):
+        for fault in ("missing", "out-of-order", "unknown", "financial-history", "restore"):
+            with self.subTest(fault=fault), patch.object(
+                M.shutil, "disk_usage", return_value=SimpleNamespace(free=32 << 30)
+            ):
+                operation, state, bind = self.interrupted_native_migration(M.SOURCE_SCHEMA, M.RESTORE_SCHEMA)
+                if fault == "missing":
+                    state.metadata["ledger"].remove(M.OBSERVATION_SCHEMA)
+                elif fault == "out-of-order":
+                    state.metadata["ledger"][-2:] = [M.RESTORE_SCHEMA, M.OBSERVATION_SCHEMA]
+                elif fault == "unknown":
+                    state.metadata["ledger"][-1] = "000129_unknown_migration"
+                elif fault == "financial-history":
+                    state.business[0]["value"] = "unexpected source write"
+                else:
+                    state.clones[operation.witness["verification_database"]]["business"][0]["value"] = "changed restore"
+                calls = state.native_calls.count(["migrate", "up"])
+                with self.assertRaises(M.install.InstallError):
+                    self.reopen(operation, bind).execute(resume=True)
+                self.assertEqual(calls, state.native_calls.count(["migrate", "up"]))
+                self.assertEqual("migrate", self.reopen(operation, bind).witness["pending"])
 
     def test_same_schema_mutation_or_missing_cold_proof_refuses_without_migration(self):
         for fault in ("observation", "schema_row", "expired_session", "cold_restore"):

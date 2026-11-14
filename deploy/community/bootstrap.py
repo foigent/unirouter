@@ -509,12 +509,18 @@ def reuse_verifier(asset, source, destination):
 
 
 def restore_delta(bootstrap, directory, source_package):
+    # Prepare has already checked the pinned basis bytes. The native verifier
+    # authenticates the basis again before using its schema to admit the target.
+    manifest_raw, _ = scan_archive(source_package)
+    basis_schema = strict_json(manifest_raw).get("target_schema")
+    require(isinstance(basis_schema, str) and re.fullmatch(r"[0-9]{6}[A-Za-z0-9_.-]{0,122}", basis_schema),
+            "The retained basis package has an invalid schema.")
     package = bootstrap.assets["package"]
     args = [directory / "uniroute-upgrade", "materialize-delta", "--basis", source_package,
             "--basis-sha256", bootstrap.delta["basis"]["sha256"], "--delta", directory / DELTA_FILE,
             "--delta-sha256", bootstrap.delta["asset"]["sha256"], "--target-sha256", package["sha256"],
             "--target-size", package["size"], "--public-keys", directory / "public-keys.json",
-            "--current-schema", SCHEMA, "--out", directory / "release.tar.gz"]
+            "--current-schema", basis_schema, "--out", directory / "release.tar.gz"]
     result = subprocess.run([str(a) for a in args], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             env=child_environment(), check=False)
     require(result.returncode == 0, "Delta reconstruction failed. Retain this directory and use a new directory for explicit full preparation.")

@@ -102,9 +102,9 @@ class BootstrapTests(unittest.TestCase):
     def prepare(self, anchor=None):
         return b.prepare(anchor or self.bootstrap(), self.output, self.fetch, self.verify)
 
-    def delta_inputs(self):
+    def delta_inputs(self, basis_bytes=b"exact retained signed package"):
         old = self.root / "previous.tar.gz"
-        old.write_bytes(b"exact retained signed package")
+        old.write_bytes(basis_bytes)
         old.chmod(0o600)
         self.assets["delta"] = b"synthetic transport sidecar"
         def attach_delta(value):
@@ -120,6 +120,24 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual(basis, self.root / "previous.tar.gz")
         self.assertEqual((directory / "delta.tar.gz").read_bytes(), self.assets["delta"])
         b.write_new(directory / "release.tar.gz", self.assets["package"])
+
+    def test_delta_uses_basis_schema_and_refuses_invalid_manifest_before_verifier(self):
+        for schema in ("000129_upstream_observation_restore_namespace", b.SCHEMA, "--bad", None):
+            with self.subTest(schema=schema):
+                manifest = dict(self.manifest, target_schema=schema, commit="b" * 40)
+                anchor, old = self.delta_inputs(basis_bytes=archive_bytes(manifest, self.payload))
+                package = self.output / "release.tar.gz"
+                with mock.patch.object(b.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as native:
+                    if schema in ("--bad", None):
+                        with self.assertRaisesRegex(b.BootstrapError, "invalid schema"):
+                            b.restore_delta(anchor, self.output, old)
+                        native.assert_not_called()
+                    else:
+                        b.restore_delta(anchor, self.output, old)
+                        args = native.call_args.args[0]
+                        self.assertEqual(schema, args[args.index("--current-schema") + 1])
+                        self.assertEqual(anchor.delta["basis"]["sha256"], args[args.index("--basis-sha256") + 1])
+                        self.assertEqual(str(package), args[args.index("--out") + 1])
 
     def test_delta_prepare_reuses_matching_verifier_and_never_requests_full(self):
         anchor, old = self.delta_inputs()

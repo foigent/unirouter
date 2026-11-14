@@ -9,6 +9,8 @@ those build identities do not replace the product version.
 ### Fixed
 
 - Recover a signed single-host upgrade when a candidate process exits during ingress admission. Preserve the original admission and verify receiver withdrawal before admitting replacement processes.
+- Resume an interrupted native migration from an exact committed ledger prefix after rechecking the cold backup and restore. Parse native lease expiries consistently on supported Python versions.
+- Reconstruct the signed M130 package from the retained M129 predecessor and its verified delta.
 
 ## [1.15.6] - 2026-11-12
 

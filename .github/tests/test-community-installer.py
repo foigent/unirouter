@@ -333,6 +333,7 @@ class InstallerFixtureContract(unittest.TestCase):
                 root = Path(tmp).resolve()
                 work = object.__new__(fixture.Acceptance)
                 work.root, work.repo, work.result = root, ROOT, {'checks': []}
+                work.version, work.schema = "1.15.7", fixture.CURRENT_SCHEMA
                 work.verifier = root / 'verifier'
                 work.ring = root / 'test-ring'; work.ring.write_bytes(b'disposable public fixture')
                 first = work.formal_consumer_module()
@@ -359,7 +360,8 @@ class InstallerFixtureContract(unittest.TestCase):
                 work.same_schema_release = MagicMock(return_value=target)
                 work.checkout_fixture_source = MagicMock(return_value=root / 'source')
                 work.formal_consumer_module = lambda: first
-                with patch.object(first, 'verify_predecessor_checkout') as checked, \
+                with patch.object(first, 'checked_upgrade_source_bytes', return_value=(ROOT / first.UPGRADE_SOURCE).read_bytes()), \
+                     patch.object(first, 'verify_predecessor_checkout') as checked, \
                      patch.object(first, 'make_acceptance', return_value=owner), \
                      patch.object(fixture, 'Acceptance', return_value=old):
                     if not owner_verified:
@@ -369,8 +371,8 @@ class InstallerFixtureContract(unittest.TestCase):
                         continue
                     work.qualify_accepted_predecessor_delta()
                 checked.assert_called_once_with(root / 'source', record)
-                work.same_schema_release.assert_called_once_with(sequence=23)
-                target.qualify_upgrade.assert_called_once_with(old, 'single', instance_name='predecessor-delta')
+                work.same_schema_release.assert_called_once_with(sequence=24)
+                target.qualify_upgrade.assert_called_once_with(old, 'single', instance_name='predecessor-delta', public_predecessor=True)
                 self.assertEqual((old.release / 'payload/preserved').read_bytes(), b'original owner payload')
                 proof = work.result['exact_predecessor_rehearsal']
                 self.assertEqual(proof['owner_signed_predecessor']['package_sha256'], package_sha)

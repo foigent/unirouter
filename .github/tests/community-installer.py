@@ -408,13 +408,13 @@ class Acceptance:
         return module
 
     def prepare_installed_delta(self, old, basis):
-        self.phase = "reconstruct candidate test package from the installed 1.15.5 archive"
+        self.phase = "reconstruct candidate test package from the installed predecessor archive"
         full = self.release / "release.tar.gz"
         sidecar = self.root / "fixture.delta.tar.gz"
         proof = json.loads(self.run(self.phase, [self.verifier, "create-delta", "--basis", basis,
             "--target", full, "--public-keys", self.ring, "--current-schema", old.schema, "--out", sidecar]))
         require(proof["basis"]["sha256"] == old.result["test_package_sha256"],
-                "delta basis differs from the installed 1.15.5 test fixture")
+                "delta basis differs from the installed predecessor fixture")
         value = json.loads(self.bootstrap_file.read_bytes())
         value.update(schema_version="unirouter.community-bootstrap.v2", delta={
             "basis": proof["basis"], "asset": dict(proof["delta"], url="https://example.invalid/delta")})
@@ -454,16 +454,20 @@ class Acceptance:
     def qualify_accepted_predecessor_delta(self):
         """Verify the public predecessor, then re-sign its payload for test trust."""
         first = self.formal_consumer_module()
-        self.phase = "verify pinned public 1.15.5 predecessor"
+        self.phase = "verify pinned public predecessor"
         try:
             record = first.strict_json(first.checked_upgrade_source_bytes(self.repo))
             first.stage_module().validate_record(record, "consumer")
             config = record["inputs"]["config"]
             first.validate(config, ready=True, stage_record=record)
             product = record["product"]
-            require(product["version"] == "1.15.5" and product["schema"] == RESTORE_SCHEMA
-                    and config["release"]["release_sequence"] == 22, "unexpected public delta rehearsal predecessor")
-            source = self.checkout_fixture_source("predecessor-1155", product["commit"])
+            sequence = config["release"]["release_sequence"]
+            require(product["schema"] == RESTORE_SCHEMA
+                    and (product["version"], sequence, self.version, self.schema) in (
+                        ("1.15.5", 22, "1.15.6", RESTORE_SCHEMA),
+                        ("1.15.6", 23, "1.15.7", CURRENT_SCHEMA)),
+                    "unexpected public delta rehearsal predecessor")
+            source = self.checkout_fixture_source("public-predecessor", product["commit"])
             first.verify_predecessor_checkout(source, record)
             public_root = self.root / "predecessor-owner-signed"
             public_root.mkdir(mode=0o700)
@@ -476,7 +480,7 @@ class Acceptance:
         except first.Stop as exc:
             raise Failed(str(exc)) from None
         except Exception as exc:
-            raise Failed("owner-signed 1.15.5 package or image verification failed") from exc
+            raise Failed("owner-signed predecessor package or image verification failed") from exc
         require(public.result["real_owner_signed_public_package_verified"]
                 and public.result["package_sha256"] == config["release"]["package_sha256"]
                 and sha(public.ring) != sha(self.ring), "public predecessor identity or test trust separation differs")
@@ -485,7 +489,7 @@ class Acceptance:
             "package_sha256": config["release"]["package_sha256"], "key_id": config["immutable"]["key_id"],
             "images": public.images, "image_ids": public.image_ids}}
         self.result["exact_predecessor_rehearsal"] = rehearsal
-        self.phase = "prepare the exact 1.15.5 payload with disposable signing trust"
+        self.phase = "prepare the exact predecessor payload with disposable signing trust"
         old_root = self.root / "predecessor-test-signed"
         old_root.mkdir(mode=0o700)
         old = Acceptance(source, old_root, product["commit"])
@@ -509,7 +513,7 @@ class Acceptance:
             "local_backend_builds": 1}
         target = self.same_schema_release(sequence=old.release_sequence + 1)
         try:
-            target.qualify_upgrade(old, "single", instance_name="predecessor-delta")
+            target.qualify_upgrade(old, "single", instance_name="predecessor-delta", public_predecessor=True)
         except Failed:
             self.phase = target.phase
             if "installer_stop" in target.result:
@@ -1458,12 +1462,14 @@ raise SystemExit("expected cold-pair interruption was not reached")
             compose += ["-f", directory / "runtime/upgrade-image.json"]
         self.run("release exact completed case containers and network", compose + ["down"])
 
-    def qualify_upgrade(self, old, layout, *, retain=False, existing=None, instance_name=None, origin_sequence=None):
+    def qualify_upgrade(self, old, layout, *, retain=False, existing=None, instance_name=None, origin_sequence=None,
+                        public_predecessor=False):
         # Independent installations must not share a recently used host port.
         # The original installer's real collision check remains unchanged.
         same_schema = old.schema == self.schema
-        fresh_m129 = existing is None and same_schema and self.schema == CURRENT_SCHEMA
-        self.loopback_port = old.loopback_port = FIXTURE_PORTS["predecessor" if fresh_m129 else layout]
+        require(not public_predecessor or (existing is None and layout == "single" and old.schema == RESTORE_SCHEMA),
+                "public predecessor fixture needs its exact fresh, single-writer installation")
+        self.loopback_port = old.loopback_port = FIXTURE_PORTS["predecessor" if public_predecessor else layout]
         case = instance_name or layout
         project = "ur-upgrade-" + case + "-" + self.suffix
         directory = old.instances / case
@@ -1474,7 +1480,7 @@ raise SystemExit("expected cold-pair interruption was not reached")
         self.result.pop("installer_stop", None)
         try:
             if not existing:
-                label = "install exact test-signed 1.15.5 predecessor" if fresh_m129 else "install exact retained M127 predecessor"
+                label = "install exact test-signed public predecessor" if public_predecessor else "install exact retained M127 predecessor"
                 old.run(label, old.command("install", directory, project))
                 old.installed_checks(directory, project)
                 old.native_first_use_checks(directory, project, restart=False)
@@ -1483,7 +1489,7 @@ raise SystemExit("expected cold-pair interruption was not reached")
             if "installer_stop" in old.result:
                 self.result["installer_stop"] = old.result["installer_stop"]
             raise
-        if fresh_m129:
+        if public_predecessor:
             body, name, rendered = None, None, None
             first = self.formal_consumer_module()
             try:
@@ -1499,8 +1505,8 @@ raise SystemExit("expected cold-pair interruption was not reached")
         elif existing and hasattr(old, "structural_origin_paths"):
             self.structural_origin_paths = old.structural_origin_paths
             self.result["structural_origin"] = dict(old.result["structural_origin"])
-        preserve_previous = existing is not None or same_schema
-        if old.schema != CURRENT_SCHEMA and (not retain or existing):
+        preserve_previous = existing is not None or same_schema or public_predecessor
+        if old.schema != CURRENT_SCHEMA and not public_predecessor and (not retain or existing):
             self.seed_native_pair(old, directory, project, rendered)
         if old.schema == OBSERVATION_SCHEMA:
             self.seed_native_observation(old,directory,project)
@@ -1508,7 +1514,7 @@ raise SystemExit("expected cold-pair interruption was not reached")
         # A completed preceding upgrade already retired its old generations.
         # Leave its current receiver for the ordinary owner to withdraw/stop;
         # it is not a new historical exit awaiting import.
-        history = None if existing is not None or fresh_m129 else self.historical_observations(old, directory, project, edge)
+        history = None if existing is not None or public_predecessor else self.historical_observations(old, directory, project, edge)
         # Let the native outbox finish its bounded synthetic login/pairing work
         # before a no-write comparison; heartbeat timing alone is projected out.
         deadline = time.monotonic() + 60
@@ -1517,10 +1523,10 @@ raise SystemExit("expected cold-pair interruption was not reached")
             time.sleep(1)
         protected_rows = self.protected_upgrade_rows(directory, project, old.release_sequence,old.schema)
         def protected_file_facts():
-            return self.protected_upgrade_files(directory, body, edge, body_absent=fresh_m129)
+            return self.protected_upgrade_files(directory, body, edge, body_absent=public_predecessor)
         protected_files = protected_file_facts()
         source_state = (directory / "install-state.json").read_bytes()
-        origin_paths = getattr(self, "structural_origin_paths", None) if not fresh_m129 else None
+        origin_paths = getattr(self, "structural_origin_paths", None) if not public_predecessor else None
         origin_files = self.recovery_module().private_inventory(origin_paths) if origin_paths else None
         if existing and old.schema == OBSERVATION_SCHEMA and origin_paths:
             self.verify_structural_origin_witness(source_state, old.release_sequence)
@@ -1533,7 +1539,7 @@ raise SystemExit("expected cold-pair interruption was not reached")
                 if (directory / name).exists() for path in (directory / name).iterdir()]
             original_history = self.recovery_module().private_inventory(original_roots)
         nonempty = ("users", "orgs", "projects", "wallets", "transactions", "audit_logs", "release_history")
-        if not fresh_m129:
+        if not public_predecessor:
             nonempty += ("execution_content_objects",)
         require(all(protected_rows[table]["count"] > 0 for table in nonempty),
                 "source preservation projection lacks required nonempty facts")
@@ -1587,7 +1593,7 @@ raise SystemExit("expected cold-pair interruption was not reached")
             "physically separate restored database differs from original receipt")
         require(all(pair["tables"][table]["count"] > 0 for table in nonempty),
                 "paired backup lacks required nonempty history")
-        if fresh_m129:
+        if public_predecessor:
             require(pair["tables"]["execution_content_objects"]["count"] == 0
                     and pair["tables"]["execution_content_streams"]["count"] == 0
                     and self.recovery_module().private_inventory([Path(p) for p in pair["roots"]],
@@ -1623,14 +1629,14 @@ raise SystemExit("expected cold-pair interruption was not reached")
             "source_schema": old.schema, "target_schema": self.schema, "writers": len(roles),
             "full_table_count": len(pair["tables"]), "nonempty_history_preserved": True,
             "independent_original_row_and_configuration_equality": True,
-            "independent_database_and_body_restore": not fresh_m129, "read_only_no_effects": True,
+            "independent_database_and_body_restore": not public_predecessor, "read_only_no_effects": True,
             "physical_exits_proved": True, "completed_resume": True, "known_checkpoint_resume": bool(edge),
             "new_historical_input": history is not None,
             "historical_kind": ("native_replacement" if edge else "process_exit") if history is not None else None,
             "history_without_evidence_refused": True if history is not None else None,
             "original_operation_evidence_unchanged": True if preserve_previous else None,
             "unknown_outcome_refused": bool(edge), "provider_calls": 0})
-        if fresh_m129:
+        if public_predecessor:
             self.result["finite_upgrades"][-1].update(independent_database_and_files_restore=True,
                                                     explicitly_empty_original_content=True)
         if same_schema:
@@ -1697,7 +1703,7 @@ raise SystemExit("expected cold-pair interruption was not reached")
             raise
         self.result["finite_upgrades"].extend(following.result["finite_upgrades"])
         self.result["checks"].extend(following.result["checks"])
-        if self.version == self.formal_consumer_module().REQUIRED_DELTA_VERSION:
+        if self.version in self.formal_consumer_module().REQUIRED_DELTA_VERSIONS:
             self.qualify_accepted_predecessor_delta()
         self.result["status"] = "passed"
         self.result.pop("installer_stop", None)

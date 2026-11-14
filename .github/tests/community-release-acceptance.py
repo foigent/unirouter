@@ -32,7 +32,9 @@ RELEASE_KEYS = {"release_sequence", "created_at", "expires_at", "tag", "bootstra
                 "bootstrap_size", "bootstrap_sha256", "package_size", "package_sha256"}
 UPGRADE_SOURCE = '.github/release-inputs/community-upgrade-source.json'
 PREDECESSOR_DIRECTORY = '.community-retained-source'
-REQUIRED_DELTA_VERSION = '1.15.6'
+REQUIRED_DELTA_VERSIONS = frozenset({'1.15.6', '1.15.7'})
+RESTORE_SCHEMA = '000129_upstream_observation_restore_namespace'
+ADMISSION_SCHEMA = '000130_upgrade_admission_recovery'
 
 
 class Stop(Exception):
@@ -410,8 +412,8 @@ def bootstrap_binding(config, value):
     for role, (name, identity) in expected.items():
         require(value["assets"][role] == dict(identity, url=asset_url(r, name)),
                 "Public download/trust identity differs.")
-    require(f["product"]["version"] != REQUIRED_DELTA_VERSION or "delta" in value,
-            "The 1.15.6 public bootstrap must include its exact predecessor delta.")
+    require(f["product"]["version"] not in REQUIRED_DELTA_VERSIONS or "delta" in value,
+            "The public bootstrap must include its exact predecessor delta.")
     if "delta" in value:
         delta_name = "unirouter-" + f["product"]["version"] + "-linux-amd64.delta.tar.gz"
         require(value["delta"]["asset"]["url"] == asset_url(r, delta_name),
@@ -492,8 +494,10 @@ def validate_upgrade_source(record, candidate):
     validate(old, ready=True, stage_record=record)
     a, b = old['immutable'], candidate['immutable']
     sequence = old['release']['release_sequence']
-    require(a['product']['schema'] == b['product']['schema'] ==
-            '000129_upstream_observation_restore_namespace', 'Public upgrade fixture needs the same M129 ledger.')
+    source_schema, target = a['product']['schema'], b['product']['schema']
+    require((source_schema, target) in ((RESTORE_SCHEMA, RESTORE_SCHEMA),
+            (RESTORE_SCHEMA, ADMISSION_SCHEMA), (ADMISSION_SCHEMA, ADMISSION_SCHEMA))
+            and b['min_current_schema'] <= source_schema, 'Unsupported exact public upgrade fixture schemas.')
     require(all(a[k] == b[k] for k in ('key_id', 'public_ring', 'raw_public_fingerprint')),
             'Public upgrade fixture signing authority differs.')
     require(a['product']['commit'] != b['product']['commit']
@@ -640,6 +644,7 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
             self.upgrade_anchor = None
             self.commit, self.tree, self.version = [fixed["product"][k] for k in ("commit", "tree", "version")]
             self.schema = target_schema(config)
+            self.source_contract = base.source_contract(repo)
             self.release_sequence = config["release"]["release_sequence"]
             self.suffix = uuid.uuid4().hex[:10]
             self.images, self.image_ids = fixed["images"], {}
@@ -907,7 +912,16 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
             if self.upgrade_anchor is not None:
                 self.prepare_public_upgrade_delta(directory, old, old_config)
             self.wait_business_startup()
-            self.source_contract = base.source_contract(repo)
+            source_contract = old.source_contract
+            ledger_query = 'SELECT jsonb_agg(version ORDER BY version) FROM schema_migrations'
+            source_ledger = tuple(strict_json(self.sql(directory, project, ledger_query)))
+            require(source_contract.schema == old.schema and source_ledger == source_contract.ledger,
+                    'Installed public source ledger differs from its exact source.')
+            same_schema = old.schema == self.schema
+            expected_ledger = source_ledger if same_schema else source_ledger + (ADMISSION_SCHEMA,)
+            require(expected_ledger == self.source_contract.ledger and (same_schema or
+                    (old.schema, self.schema) == (RESTORE_SCHEMA, ADMISSION_SCHEMA)),
+                    'Unsupported public schema transition.')
             self.observe_migration_owner()
             protected = self.protected_upgrade_rows(directory, project, old.release_sequence, old.schema)
             require(all(protected[t]['count'] > 0 for t in
@@ -935,20 +949,23 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
             witness = strict_json((directory / 'install-state.json').read_bytes())['upgrade']
             backup = directory / 'upgrades' / witness['operation_id'] / 'backup'
             pair = strict_json((backup / 'receipt.json').read_bytes())
-            ledger = tuple(strict_json(self.sql(directory, project,
-                'SELECT jsonb_agg(version ORDER BY version) FROM schema_migrations')))
+            ledger = tuple(strict_json(self.sql(directory, project, ledger_query)))
             audit = [strict_json(line) for line in self.migration_audit.read_text().splitlines()]
+            migration_calls = sum(row['migration_owner_calls'] for row in audit)
+            old_schema_rows = {} if same_schema else {
+                'schema_migrations': ('to_jsonb(t)', " WHERE version <> '" + ADMISSION_SCHEMA + "'")}
             require(witness['state'] == 'completed' and witness['pending'] is None
                     and witness['candidate'] == checked['candidate']
                     and witness['source']['package_sha256'] == checked['source']['package_sha256']
-                    and witness['receipts']['migrate']['mode'] == 'same_schema'
-                    and ledger == tuple(witness['source_ledger']) == self.source_contract.ledger
+                    and witness['receipts']['migrate'].get('mode') == ('same_schema' if same_schema else None)
+                    and ledger == expected_ledger and tuple(witness['source_ledger']) == source_ledger
                     and witness['receipts']['migrate']['ledger_sha256'] == hashlib.sha256(
                         json.dumps(list(ledger), sort_keys=True, separators=(',', ':')).encode()).hexdigest()
-                    and self.upgrade_fingerprint(directory, project)['schema_migrations'] == before[2]['schema_migrations']
+                    and self.upgrade_fingerprint(directory, project, projections=old_schema_rows)['schema_migrations']
+                    == before[2]['schema_migrations']
                     and audit and sum(row['native_owner_calls'] for row in audit) > 0
-                    and all(row['migration_owner_calls'] == 0 for row in audit),
-                    'Exact public upgrade identity/ledger/no-migration proof differs.')
+                    and migration_calls == (0 if same_schema else 1),
+                    'Exact public upgrade identity, ledger or migration-owner proof differs.')
             require(pair['verification_database'] != 'uniroute'
                     and base.sha(backup / 'database.dump') == pair['dump_sha256']
                     and self.upgrade_fingerprint(directory, project, pair['verification_database']) == pair['restored_tables']
@@ -986,14 +1003,15 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
                               'package_sha256': config['release']['package_sha256']},
                 'same_actual_public_ring': True, 'read_only_no_effects': True, 'nonempty_financial_history_preserved': True,
                 'original_accounts_configuration_and_evidence_preserved': True, 'independent_database_and_files_restore': True,
-                'explicitly_empty_original_content': True, 'complete_ledger_unchanged': True, 'migration_owner_calls': 0,
+                'explicitly_empty_original_content': True, 'complete_ledger_unchanged': same_schema,
+                'appended_migrations': list(ledger[len(source_ledger):]), 'migration_owner_calls': migration_calls,
                 'physical_exits_proved': True, 'completed_resume_no_effects': True, 'original_password_usable': True,
                 'builds': 0, 'signatures_generated': 0, 'provider_calls': 0}
             self.passed('exact installed public signed predecessor upgrades with preserved facts and independent restore')
 
         def execute(self):
-            require(self.version != REQUIRED_DELTA_VERSION or upgrade_source is not None,
-                    "The 1.15.6 formal consumer requires its exact public predecessor.")
+            require(self.version not in REQUIRED_DELTA_VERSIONS or upgrade_source is not None,
+                    "The formal consumer requires its exact public predecessor.")
             self.preflight()
             self.prepare()
             self.project = "ur-formal-" + self.suffix
@@ -1008,9 +1026,9 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
                 # this completed run-owned case; retain volumes and evidence.
                 self.release_completed_case(self.directory, self.project)
                 self.installed_public_upgrade()
-            require(self.version != REQUIRED_DELTA_VERSION
+            require(self.version not in REQUIRED_DELTA_VERSIONS
                     or self.result.get("public_upgrade_delta", {}).get("byte_identical") is True,
-                    "The 1.15.6 formal consumer did not verify its exact predecessor delta.")
+                    "The formal consumer did not verify its exact predecessor delta.")
             self.result["status"] = "passed"
             self.result.pop("installer_stop", None)
 
