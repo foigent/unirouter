@@ -1,8 +1,8 @@
 # Community upgrade: retained installations and exact schema transitions
 
-The current signed entry is [UR 1.15.6, release sequence 23](https://github.com/foigent/unirouter/releases/tag/v1.15.6-preview.23), with target M129, predecessors 0–22 and minimum schema M127. The [formal public package consumer](https://github.com/foigent/unirouter/actions/runs/43284803235) used the actual signed 1.15.5 predecessor. It reconstructed the signed 1.15.6 package with the published delta, preserved the original administrator password and nonempty financial history, and verified an independent database and file restore. The complete M129 ledger stayed identical. Follow the original-host admission, cold pair and independent restore checks below.
+The current signed entry is [UR 1.15.7, release sequence 24](https://github.com/foigent/unirouter/releases/tag/v1.15.7-preview.24), with target M130. The [formal public package consumer](https://github.com/foigent/unirouter/actions/runs/43619096141) used the actual signed 1.15.6 predecessor on M129. It reconstructed the signed target with the 136,840-byte delta, preserved the original administrator password and nonempty financial history, appended M130 as the only missing migration, and verified an independent database and file restore. Follow the original-host admission, cold pair and independent restore checks below.
 
-The M130 source candidate adds recovery for one interrupted admission during
+The M130 upgrade adds recovery for one interrupted admission during
 its own signed single-host upgrade. Use the same `resume-upgrade` entry and
 retain its host evidence. If an exact candidate writer has exited before
 admission completed, the owner drains the exact receivers and remaining

@@ -1,10 +1,16 @@
 # Open-source release readiness
 
-Status on **2026-11-03: Preview22 is signed and public, and its exact signed installation and retained-predecessor upgrade passed formal Linux acceptance**. English is the primary community language; Chinese entry points and contributions are welcome.
+English is the primary community language. Chinese entry points and contributions are welcome.
 
-## Current public preview — 1.15.6 / M129
+## Current public preview — 1.15.7 / M130
 
-The English [Linux installation guide](install-linux.md) and its [Chinese companion](install-linux.zh-CN.md) use the [signed release v1.15.6-preview.23](https://github.com/foigent/unirouter/releases/tag/v1.15.6-preview.23), source `564a6d189341d5ad05cccd8b3bdbf5bc4ce66a49`. The published package is 130,054,145 bytes, SHA-256 `8b6eac5d69cefd53c203389a36f45a3df8783da1508733dab00b9f0d4bd4cff5`. A real Ubuntu consumer verified the published package, six public images, fresh installation, login and first-customer initialization. It reconstructed the signed target from the actual 1.15.5 package through the 86,852-byte differential download. It preserved the administrator and financial history and independently restored the database and file pair. [Formal Linux consumer](https://github.com/foigent/unirouter/actions/runs/43284803235).
+The [signed Linux amd64 preview](https://github.com/foigent/unirouter/releases/tag/v1.15.7-preview.24) is release sequence 24 from source `e48bd73097e0d20a49395782cde1562741f8e78b`. The full package is 130,056,614 bytes, SHA-256 `e7e2dfca5fce168b06b4e2db87efcfba4b04baea124a1a7eab9b814a6ed0cee8`. Start with the [English installation guide](install-linux.md) or the [Chinese guide](install-linux.zh-CN.md).
+
+The [formal Ubuntu consumer](https://github.com/foigent/unirouter/actions/runs/43619096141) verified all six image pulls anonymously, installed the real signed package and verified login, first-customer initialization and interrupted-install recovery. It reconstructed the new package from the actual signed 1.15.6 predecessor with a 136,840-byte delta and a retained verifier. The original password and nonempty financial history were preserved. M130 was the only migration appended, and an independent database and file restore passed.
+
+## Historical public preview — 1.15.6 / M129
+
+The previous preview used the [signed release v1.15.6-preview.23](https://github.com/foigent/unirouter/releases/tag/v1.15.6-preview.23), source `564a6d189341d5ad05cccd8b3bdbf5bc4ce66a49`. The published package is 130,054,145 bytes, SHA-256 `8b6eac5d69cefd53c203389a36f45a3df8783da1508733dab00b9f0d4bd4cff5`. A real Ubuntu consumer verified the published package, six public images, fresh installation, login and first-customer initialization. It reconstructed the signed target from the actual 1.15.5 package through the 86,852-byte differential download. It preserved the administrator and financial history and independently restored the database and file pair. [Formal Linux consumer](https://github.com/foigent/unirouter/actions/runs/43284803235).
 
 ## Historical public preview — 1.15.5 / M129
 

@@ -1,8 +1,8 @@
 # Linux community installer
 
-The current public preview is [UniRouter 1.15.6, release sequence 23](https://github.com/foigent/unirouter/releases/tag/v1.15.6-preview.23) on M129. Use the [English installation guide](../community/install-linux.md) or the [Chinese installation guide](../community/install-linux.zh-CN.md). For an existing installation, follow the [Community upgrade runbook](COMMUNITY-UPGRADE.md) with the exact retained signed predecessor.
+The current public preview is [UniRouter 1.15.7, release sequence 24](https://github.com/foigent/unirouter/releases/tag/v1.15.7-preview.24) on M130. Use the [English installation guide](../community/install-linux.md) or the [Chinese installation guide](../community/install-linux.zh-CN.md). For an existing installation, follow the [Community upgrade runbook](COMMUNITY-UPGRADE.md) with the exact retained signed predecessor.
 
-UniRouter 1.15.7 is the M130 candidate for the next preview. It includes recovery for an interrupted ingress admission and the M129 cold-restore correction. Candidate checks use disposable Linux and temporary signing trust. The current public installation instructions remain tied to the signed preview above until the M130 package is signed, published and verified.
+The [formal Linux consumer](https://github.com/foigent/unirouter/actions/runs/43619096141) verified fresh installation and the signed 1.15.6 → 1.15.7 upgrade, including interrupted installation, the original password and financial history, and an independent database and file restore.
 
 ## Historical delivery
 
