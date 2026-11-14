@@ -1,21 +1,14 @@
-# Linux community installer candidate
+# Linux community installer
 
-The current local correction candidate uses M129 for fresh installations and
-supports [finite retained-source and same-schema upgrades](COMMUNITY-UPGRADE.md).
-The upgrade entry, its recovery module and the existing restore-rebase SQL stay
-in the same signed full package. No new release version or sequence is allocated
-by this local work; Linux/Docker, signed-artifact and Target acceptance remain
-separate from local test results.
+The current public preview is [UniRouter 1.15.6, release sequence 23](https://github.com/foigent/unirouter/releases/tag/v1.15.6-preview.23) on M129. Use the [English installation guide](../community/install-linux.md) or the [Chinese installation guide](../community/install-linux.zh-CN.md). For an existing installation, follow the [Community upgrade runbook](COMMUNITY-UPGRADE.md) with the exact retained signed predecessor.
 
-Historical delivery: 1.13.0 requires the M127 maintenance/fresh-install contract. See
-[connection communication controls](XINSIGHT-COMMUNICATION.md) for manual defaults, migration and recovery. Earlier M126 candidate notes below remain historical.
+UniRouter 1.15.7 is the M130 candidate for the next preview. It includes recovery for an interrupted ingress admission and the M129 cold-restore correction. Candidate checks use disposable Linux and temporary signing trust. The current public installation instructions remain tied to the signed preview above until the M130 package is signed, published and verified.
 
-Status: the accepted 1.10.0 source candidate `71b5a4ee72d649d08e1137e68edb8b4d866f0987`
-passed disposable Linux amd64 installation and was merged. See the
-[final native result](#accepted-native-result) and
-[public distribution preparation](#public-installer-distribution-preparation--2026-10-11).
-Public package distribution remains pending. This work has not published a
-package, registry image or npm package, or installed to an existing Target.
+## Historical delivery
+
+The 1.13.0 source delivery required the M127 maintenance and fresh-install contract. See [connection communication controls](XINSIGHT-COMMUNICATION.md) for the manual defaults, migration and recovery. The M126 notes below document that earlier candidate.
+
+The 1.10.0 source candidate `71b5a4ee72d649d08e1137e68edb8b4d866f0987` passed [disposable Linux amd64 installation](#accepted-native-result) and was merged. [Public distribution preparation on 2026-10-11](#public-installer-distribution-preparation--2026-10-11) documents the state before the public package and images were available.
 
 The owner selected Linux servers, including ECS, for the first simplified
 installation. Existing ECS onboarding/model evidence remains valid for its
