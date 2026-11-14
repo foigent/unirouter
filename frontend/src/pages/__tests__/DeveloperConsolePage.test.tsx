@@ -5,6 +5,7 @@ import { useLocation } from 'react-router-dom';
 import { MemoryRouter } from '../../test/MemoryRouter';
 import DeveloperConsolePage from '../DeveloperConsolePage';
 import { useAuthStore } from '../../store/auth';
+import { setLocale } from '../../i18n';
 import type { LicenseAccess } from '../../navigation';
 import { pasteValue } from '../../test/user';
 
@@ -57,6 +58,7 @@ const LOGS = {
   ],
   total: 1,
 };
+const UNPRICED_VERSION = `uo1_${'a'.repeat(64)}`;
 
 const USAGE_ANALYTICS = {
   summary: {
@@ -175,7 +177,90 @@ async function chooseWorkbenchControl(user: ReturnType<typeof userEvent.setup>, 
 describe('DeveloperConsolePage', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    setLocale('zh-CN');
     setupMocks();
+  });
+
+  it('localizes missing TPM and keeps an unpriced request separate from the charge aggregate', async () => {
+    setLocale('en-US');
+    const unpriced = { ...LOGS.data[0], cost_micros: '0', pricing_version: UNPRICED_VERSION };
+    const invalidVersion = { ...unpriced, id: 32, request_id: 'req-invalid-version', pricing_version: 'uo1_incomplete' };
+    const configured = { ...invalidVersion, id: 33, request_id: 'req-configured-zero', pricing_version: 'configured-version' };
+    const malformedAmount = { ...configured, id: 34, request_id: 'req-malformed-charge', cost_micros: 'bad' };
+    mockGetLogs.mockImplementation((_page, _size, filters) => Promise.resolve({
+      data: filters?.request_id ? [unpriced] : [unpriced, invalidVersion, configured, malformedAmount], total: 4,
+    }));
+    mockGetLogDetail.mockResolvedValue(unpriced);
+    mockGetUsageAnalytics.mockResolvedValue({
+      ...USAGE_ANALYTICS,
+      summary: { ...USAGE_ANALYTICS.summary, cost_micros: '0' },
+      data: [{ ...USAGE_ANALYTICS.data[0], cost_micros: '0' }],
+    });
+
+    renderPage();
+    expect(await screen.findByText('RPM 60 / RPS 10 / TPM Not configured')).toBeVisible();
+    const recent = screen.getByText('Recent calls').closest('section')!;
+    expect(within(recent).getAllByText('¥0.000000')).toHaveLength(3);
+    expect(within(recent).getAllByText('Unpriced · Cost observation')).toHaveLength(1);
+    expect(within(recent).getByText('Charge amount unavailable')).toBeVisible();
+    const myUsage = screen.getByText('My model usage').closest('section')!;
+    expect(within(myUsage).getByText('Recorded charges')).toBeVisible();
+    expect(within(myUsage).getByText('¥0.000000')).toBeVisible();
+    expect(within(myUsage).queryByText('Unpriced · Cost observation')).toBeNull();
+
+    const lookup = screen.getByText('Find a request').closest('section')!;
+    fireEvent.change(within(lookup).getByPlaceholderText('req-...'), { target: { value: unpriced.request_id } });
+    await userEvent.click(within(lookup).getByRole('button', { name: /Query$/ }));
+    expect(await within(lookup).findByText('Unpriced · Cost observation')).toBeVisible();
+  });
+
+  it('shows the recent-call total as unavailable when a charge amount is blank', async () => {
+    mockGetUsageAnalytics.mockRejectedValue(new Error('summary unavailable'));
+    mockGetLogs.mockResolvedValue({
+      data: [...LOGS.data, { ...LOGS.data[0], id: 32, request_id: 'req-blank-charge', cost_micros: ' ' }],
+      total: 2,
+    });
+
+    renderPage();
+    await screen.findByText('个人用量加载失败');
+    const metrics = screen.getByText('已记录扣费', { selector: '.ur-metric-label' }).closest<HTMLElement>('.ur-metric')!;
+    expect(within(metrics).getByText('扣费金额不可用')).toBeVisible();
+    expect(within(metrics).queryByText('¥0.030000')).toBeNull();
+  });
+
+  it.each([
+    ['pending_local_delivery', undefined, UNPRICED_VERSION, '0', '扣费待确认', true],
+    [undefined, 'delivery_prepared', undefined, '0', '扣费待确认', false],
+    [undefined, 'settlement_pending_recovery', undefined, '0', '扣费待确认', false],
+    [undefined, 'cancellation_failed_no_billable_output', undefined, '0', '扣费待确认', false],
+    [undefined, undefined, 'uo1_short', '0', '¥0.000000', false],
+    [undefined, 'settled', UNPRICED_VERSION, '0', '¥0.000000', true],
+    [undefined, 'settled', undefined, '1200', '¥0.001200', false],
+    [undefined, 'settled_partial_stream', undefined, '90071992547409931234', '¥90071992547409.931234', false],
+    [undefined, undefined, undefined, undefined, '扣费金额不可用', false],
+    [undefined, undefined, undefined, '1.25', '扣费金额不可用', false],
+  ])('represents debugger charges from response evidence (%s, %s, %s, %s)', async (finality, billingStatus, version, micros, expected, unpriced) => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: 'synthetic result' }, finish_reason: 'stop' }],
+      _uniroute: {
+        cost: { charge_finality: finality, charged_cost_micros: micros },
+        billing_status: billingStatus,
+        provider_prompt_cache: { pricing_version: version },
+      },
+    })));
+    try {
+      renderPage();
+      await screen.findByText('Company Chat');
+      fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
+      fireEvent.click(screen.getByRole('button', { name: /运行$/ }));
+      const result = (await screen.findByText('synthetic result')).closest('.ur-playground-result')!;
+      expect(within(result as HTMLElement).getByText(expected)).toBeVisible();
+      expect(Boolean(within(result as HTMLElement).queryByText('未定价 · 成本观察'))).toBe(unpriced);
+      if (expected === '扣费待确认') expect(within(result as HTMLElement).queryByText('¥0.000000')).toBeNull();
+      if (billingStatus === 'settled_partial_stream') expect(within(result as HTMLElement).getByText('流式响应部分交付')).toBeVisible();
+    } finally {
+      fetchMock.mockRestore();
+    }
   });
 
   it('sends explicit bounded text parameters only when selected in the UI', async () => {
@@ -296,14 +381,27 @@ describe('DeveloperConsolePage', () => {
     }
   });
 
-  it('shows terminal usage and finish reason from a streaming response', async () => {
+  it.each([
+    ['settled', '1200', '¥0.001200'],
+    ['settlement_pending_recovery', '0', '扣费待确认'],
+  ])('shows usage from a %s stream without fabricating a charge', async (billingStatus, micros, expected) => {
     const encoder = new TextEncoder();
     const body = new ReadableStream({
       start(controller) {
         controller.enqueue(encoder.encode([
           'data: {"choices":[{"delta":{"content":"STREAM"},"finish_reason":null}]}',
           'data: {"choices":[{"delta":{"content":"_OK"},"finish_reason":"stop"}]}',
-          'data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":3,"total_tokens":13},"_uniroute":{"request_id":"op-stream-ui","cost":{"charged_cost_micros":"0"},"usage_source":"upstream"}}',
+          `data: ${JSON.stringify({
+            choices: [],
+            usage: { prompt_tokens: 10, completion_tokens: 3, total_tokens: 13 },
+            _uniroute: {
+              request_id: 'op-stream-ui',
+              cost: { charged_cost_micros: micros },
+              provider_prompt_cache: { pricing_version: billingStatus === 'settled' ? 'configured-version' : UNPRICED_VERSION },
+              billing_status: billingStatus,
+              usage_source: 'upstream',
+            },
+          })}`,
           'data: [DONE]',
           '',
         ].join('\n')));
@@ -323,7 +421,14 @@ describe('DeveloperConsolePage', () => {
       await chooseWorkbenchControl(userEvent.setup(), mode!, /^流式$/);
       await userEvent.click(screen.getByRole('button', { name: /运行$/ }));
 
-      await screen.findByText('STREAM_OK');
+      const result = (await screen.findByText('STREAM_OK')).closest<HTMLElement>('.ur-playground-result')!;
+      expect(within(result).getByText(expected)).toBeVisible();
+      if (billingStatus === 'settled') {
+        expect(within(result).queryByText('未定价 · 成本观察')).toBeNull();
+      } else {
+        expect(within(result).getByText('未定价 · 成本观察')).toBeVisible();
+        expect(within(result).queryByText('¥0.000000')).toBeNull();
+      }
       expect(screen.getByText('finish_reason：stop')).toBeTruthy();
       expect(screen.getByText('13 tokens')).toBeTruthy();
       expect(screen.getByText(/"prompt_tokens": 10/)).toBeTruthy();
@@ -365,6 +470,7 @@ describe('DeveloperConsolePage', () => {
       expect(screen.getByText('HTTP 200')).toBeTruthy();
       expect(screen.getByText('op-stream-limit')).toBeTruthy();
       expect(screen.getByText('billing_status：settled_partial_stream')).toBeTruthy();
+      expect(screen.getByText('流式响应部分交付')).toBeVisible();
       expect(screen.getByText(/stream_error\.output_limit_exceeded/)).toBeTruthy();
       expect(screen.queryByText('(empty stream)')).toBeNull();
     } finally {

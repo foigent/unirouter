@@ -368,7 +368,7 @@ func normalSetupRow(t *testing.T, f normalSetupFixture) (string, string) {
 }
 
 // Every committed original row stays in this comparison. Only the known M128
-// schema row/new columns are projected away, as in the shipped upgrade owner.
+// suffix rows and known observation columns are projected away, as in the shipped upgrade owner.
 func normalSetupOriginalTables(t *testing.T, f normalSetupFixture) map[string]string {
 	t.Helper()
 	var names []string
@@ -380,7 +380,7 @@ func normalSetupOriginalTables(t *testing.T, f normalSetupFixture) map[string]st
 			expr += "-'upstream_release_observation'-'upstream_observation_revision'"
 		}
 		if name == "schema_migrations" {
-			where = " WHERE version NOT IN ('" + schemaauthority.UpstreamReleaseObservationHead + "','" + schemaauthority.UpstreamObservationRestoreHead + "')"
+			where = " WHERE version NOT IN ('" + schemaauthority.UpstreamReleaseObservationHead + "','" + schemaauthority.UpstreamObservationRestoreHead + "','" + schemaauthority.UpgradeAdmissionRecoveryHead + "')"
 		}
 		var raw string
 		require.NoError(t, f.pool.QueryRow(t.Context(), `SELECT COALESCE(jsonb_agg(`+expr+` ORDER BY (`+expr+`)::text),'[]')::text FROM `+pgx.Identifier{name}.Sanitize()+` t`+where).Scan(&raw))

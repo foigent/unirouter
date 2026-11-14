@@ -123,7 +123,14 @@ func readRetirement(ctx context.Context, q retirementReader, r RetirementInput, 
 			return result, fmt.Errorf("retiring generation remains an ingress receiver")
 		}
 	}
-	var unresolved int64
+	if err := verifyRetirementAttempts(ctx, q, r.InstanceID, &result.AttemptCount); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+func verifyRetirementAttempts(ctx context.Context, q retirementReader, instance string, attempts *int64) error {
+	var count, unresolved int64
 	if err := q.QueryRow(ctx, `SELECT count(*)::bigint,
 	 count(*) FILTER (WHERE (
 	   (a.state='settled' AND a.financial_resolved_at IS NOT NULL AND f.status='settled') OR
@@ -131,13 +138,16 @@ func readRetirement(ctx context.Context, q retirementReader, r RetirementInput, 
 	 ) IS NOT TRUE)::bigint
 	 FROM billing_provider_attempts a LEFT JOIN freeze_idempotency f
 	 ON f.org_id=a.org_id AND f.request_id=a.request_id
-	 WHERE a.runtime_instance_id=$1`, r.InstanceID).Scan(&result.AttemptCount, &unresolved); err != nil {
-		return result, err
+	 WHERE a.runtime_instance_id=$1`, instance).Scan(&count, &unresolved); err != nil {
+		return err
 	}
 	if unresolved != 0 {
-		return result, fmt.Errorf("historical generation has unresolved financial attempts")
+		return fmt.Errorf("historical generation has unresolved financial attempts")
 	}
-	return result, nil
+	if attempts != nil {
+		*attempts = count
+	}
+	return nil
 }
 
 // CheckRetirement performs no writes. Apply repeats every predicate under the
@@ -208,9 +218,9 @@ func CheckCommunityMaintenanceRetirementTx(ctx context.Context, tx pgx.Tx, r Ret
 	if err := r.validateIdentity(); err != nil {
 		return RetirementResult{}, err
 	}
-	if (sourceHead != schemaauthority.XInsightCommunicationHead && sourceHead != schemaauthority.UpstreamReleaseObservationHead && sourceHead != schemaauthority.UpstreamObservationRestoreHead) ||
+	if (sourceHead != schemaauthority.XInsightCommunicationHead && sourceHead != schemaauthority.UpstreamReleaseObservationHead && sourceHead != schemaauthority.UpstreamObservationRestoreHead && sourceHead != schemaauthority.UpgradeAdmissionRecoveryHead) ||
 		r.ExpectedSchemaHead != sourceHead || (r.ExpectedEnvironment != "production" && r.ExpectedEnvironment != "development" && r.ExpectedEnvironment != "test") {
-		return RetirementResult{}, fmt.Errorf("community retirement requires the verified exact M127, M128 or M129 predecessor")
+		return RetirementResult{}, fmt.Errorf("community retirement requires a verified supported maintenance schema")
 	}
 	return readRetirement(ctx, tx, r, forUpdate)
 }

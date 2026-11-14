@@ -36,7 +36,8 @@ RETAINED_COMMIT = "d92abe0a5bd4b997893ba6043a213d1a98108883"
 RETAINED_SCHEMA = "000127_xinsight_communication_policy"
 OBSERVATION_COMMIT = "4eb32b5514d47aa91610fc66ef561368d6a18900"
 OBSERVATION_SCHEMA = "000128_upstream_release_observation"
-CURRENT_SCHEMA = "000129_upstream_observation_restore_namespace"
+RESTORE_SCHEMA = "000129_upstream_observation_restore_namespace"
+CURRENT_SCHEMA = "000130_upgrade_admission_recovery"
 FIXTURE_PORTS = {"fresh": 13000, "single": 13001, "edge": 13002, "predecessor": 13003}
 SourceContract = namedtuple("SourceContract", "schema ledger supported_heads")
 # Match the accepted installation descriptor, not build-stage pull labels or floating tags.
@@ -91,7 +92,7 @@ def source_contract(repo):
             heads.append(ast.literal_eval(assignments[0]))
         except (ValueError, TypeError):
             raise Failed("shipped schema metadata must be literal") from None
-    require(heads[0] == heads[1] and heads[0] in (RETAINED_SCHEMA, OBSERVATION_SCHEMA, CURRENT_SCHEMA),
+    require(heads[0] == heads[1] and heads[0] in (RETAINED_SCHEMA, OBSERVATION_SCHEMA, RESTORE_SCHEMA, CURRENT_SCHEMA),
             "shipped installer/bootstrap schema disagreement or unsupported fixture source")
     text = (repo / "internal/schemaauthority/version.go").read_text()
     constants = dict(re.findall(r'^const ([A-Za-z]+) = "([a-z0-9_]+)"$', text, re.M))
@@ -136,7 +137,7 @@ class Acceptance:
         require(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", self.version), "invalid version")
         self.source_contract = source_contract(repo)
         self.schema = self.source_contract.schema
-        self.release_sequence = {RETAINED_SCHEMA:16, OBSERVATION_SCHEMA:17, CURRENT_SCHEMA:21}[self.schema]
+        self.release_sequence = {RETAINED_SCHEMA:16, OBSERVATION_SCHEMA:17, RESTORE_SCHEMA:21, CURRENT_SCHEMA:24}[self.schema]
         self.result.update(commit=self.commit, tree=self.tree, version=self.version)
         self.release = root / "release"
         self.release.mkdir(mode=0o700)
@@ -274,7 +275,7 @@ class Acceptance:
         deploy = self.release / "payload/deploy"
         deploy.mkdir(parents=True)
         names = ["install.py", "docker-compose.yml", ".env.example", "preflight.sh"]
-        if self.schema in (OBSERVATION_SCHEMA,CURRENT_SCHEMA):
+        if self.schema in (OBSERVATION_SCHEMA,RESTORE_SCHEMA,CURRENT_SCHEMA):
             names += ["upgrade.py", "recovery.py"]
         for name in names:
             shutil.copyfile(self.repo / "deploy/customer" / name, deploy / name)
@@ -302,7 +303,7 @@ class Acceptance:
             require(count == 1, "retained fixture backend declaration differs")
             (deploy / "docker-compose.yml").write_text(compose)
             self.result["historical_fixture_config"] = "native body binding; signed synthetic operator configuration before first start"
-        if self.schema in (OBSERVATION_SCHEMA,CURRENT_SCHEMA):
+        if self.schema in (OBSERVATION_SCHEMA,RESTORE_SCHEMA,CURRENT_SCHEMA):
             scripts = self.release / "payload/scripts"
             scripts.mkdir()
             shutil.copyfile(self.repo / "scripts/source-budget-restore-rebase.sql",
@@ -460,7 +461,7 @@ class Acceptance:
             config = record["inputs"]["config"]
             first.validate(config, ready=True, stage_record=record)
             product = record["product"]
-            require(product["version"] == "1.15.5" and product["schema"] == CURRENT_SCHEMA
+            require(product["version"] == "1.15.5" and product["schema"] == RESTORE_SCHEMA
                     and config["release"]["release_sequence"] == 22, "unexpected public delta rehearsal predecessor")
             source = self.checkout_fixture_source("predecessor-1155", product["commit"])
             first.verify_predecessor_checkout(source, record)
@@ -1106,6 +1107,21 @@ raise SystemExit("expected startup-hold checkpoint was not reached")
                 "held process or status changed full protected rows/body/configuration")
         pause("done:start-receivers")
         prefix = json.loads((directory / "install-state.json").read_bytes())["upgrade"]["receipts"]
+        self.recover_stopped_admission_writer(directory, project, None, history)
+        completed = json.loads((directory / "install-state.json").read_bytes())["upgrade"]
+        original_tail = completed["admission_recovery"]["original_steps"]
+        require(all((original_tail.get(key) if key in original_tail else completed["receipts"].get(key)) == value
+                    for key, value in prefix.items()),
+                "resume repeated or lost an already accepted upgrade prefix")
+
+    def recover_stopped_admission_writer(self, directory, project, edge, history):
+        """Exercise the signed host owner with an actual stopped candidate process."""
+        state = json.loads((directory / "install-state.json").read_bytes())
+        witness = state["upgrade"]
+        original = witness["admission"]
+        require(witness["pending"] is None and "start-receivers" in witness["done"]
+                and "admit-receivers" not in witness["done"], "expected native admission checkpoint")
+        row = witness["admission_runtime"]["backend"]
         self.request(self.loopback_url + "/health/ready")
         try:
             self.request(self.loopback_url + "/api/v1/auth/oidc/config")
@@ -1114,10 +1130,36 @@ raise SystemExit("expected startup-hold checkpoint was not reached")
             error.close()
         else:
             raise Failed("receiver accepted ordinary HTTP before native admission")
-        self.run("resume normal upgrade after held receiver", self.upgrade_command("resume-upgrade", directory, history=history))
+        self.run("stop actual candidate writer after ingress prepare",
+                 [self.docker, "stop", row["container_id"]])
+        require(all(not Path("/proc", pid).exists() for pid in row["processes"]),
+                "original candidate process exit is not proved")
+        resume = self.upgrade_command("resume-upgrade", directory, edge, history=history)
+        code, output = self.run("withdraw stopped candidate admission", resume, ok=False)
+        if code != 0:
+            require("Exact candidate processes are stopped; resume after their native leases expire" in output,
+                    "native recovery stopped outside the known lease boundary")
+            delay = float(self.sql(directory, project, "SELECT greatest(0,coalesce(max(extract(epoch FROM "
+                "lease_expires_at-clock_timestamp())),0)) FROM runtime_generations WHERE state<>'stopped'"))
+            require(0 <= delay <= 45, "native candidate lease is outside its supported bound")
+            if delay:
+                time.sleep(delay + 0.05)
+            self.run("resume verified candidate withdrawal after lease expiry", resume)
         completed = json.loads((directory / "install-state.json").read_bytes())["upgrade"]
-        require(all(completed["receipts"][key] == value for key, value in prefix.items()),
-                "resume repeated an already accepted upgrade prefix")
+        require(completed["state"] == "completed" and
+                completed["admission_recovery"]["plan"] == original and
+                completed["admission"]["predecessor_id"] == original["change_id"] + "-withdrawn",
+                "recovered exact admission and replacement chain differ")
+        statuses = json.loads(self.sql(directory, project, "SELECT jsonb_object_agg(change_id,status) FROM runtime_ingress_changes"))
+        require(statuses[original["change_id"]] == "cancelled"
+                and statuses[completed["admission"]["predecessor_id"]] == "applied"
+                and statuses[completed["admission"]["change_id"]] == "applied",
+                "native recovery history is incomplete")
+        require(self.sql(directory, project, "SELECT count(*) FROM runtime_generations "
+                "WHERE state='stopped' AND ingress_state='absent' AND instance_id='" + row["instance_id"] + "'") == "1",
+                "failed writer was not retired")
+        self.result.setdefault("admission_recovery", []).append({"layout": "ur_edge_pair" if edge else "community_single",
+            "physical_writer_exit": True, "original_receipt_retained": True, "replacement_admission": True})
 
     def wait_business_startup(self):
         deadline = time.monotonic() + 20
@@ -1279,13 +1321,13 @@ raise SystemExit("expected startup-hold checkpoint was not reached")
         if not hook.exists():
             private_write(hook, b'''import importlib.util,sys
 from pathlib import Path
-program,directory,release,verifier,ring,edge,history=map(Path,sys.argv[1:])
+program,directory,release,verifier,ring,edge,history=map(Path,sys.argv[1:8])
 spec=importlib.util.spec_from_file_location("shipped_upgrade",program)
 owner=importlib.util.module_from_spec(spec); spec.loader.exec_module(owner)
 operation=owner.Upgrade(directory,release,verifier,ring,layout="ur_edge_pair",edge_directory=edge,historical_exits=history)
 class Interrupted(Exception): pass
 def checkpoint(point):
-    if point=="effect:cold-pair": raise Interrupted()
+    if point==sys.argv[8]: raise Interrupted()
 operation.test_checkpoint=checkpoint
 try: operation.execute(resume=operation.continuing)
 except Interrupted: sys.exit(73)
@@ -1294,12 +1336,14 @@ except owner.install.InstallError as error:
     raise
 raise SystemExit("expected cold-pair interruption was not reached")
 ''')
-        code, _ = self.run("interrupt real upgrade after independently restored cold pair", [sys.executable, "-I", "-B",
-            hook, self.release / "payload/deploy/upgrade.py", directory, self.release, self.verifier, self.ring, edge, history], ok=False)
+        checkpoint_argv = [sys.executable, "-I", "-B", hook, self.release / "payload/deploy/upgrade.py",
+                           directory, self.release, self.verifier, self.ring, edge, history]
+        code, _ = self.run("interrupt real upgrade after independently restored cold pair",
+                           checkpoint_argv + ["effect:cold-pair"], ok=False)
         if code == 74:
             self.wait_stopped_leases(directory)
-            code, _ = self.run("continue known lease boundary to real cold-pair interruption", [sys.executable, "-I", "-B",
-                hook, self.release / "payload/deploy/upgrade.py", directory, self.release, self.verifier, self.ring, edge, history], ok=False)
+            code, _ = self.run("continue known lease boundary to real cold-pair interruption",
+                               checkpoint_argv + ["effect:cold-pair"], ok=False)
         state = json.loads((directory / "install-state.json").read_bytes())
         witness = state["upgrade"]
         require(code == 73 and witness["pending"] == "cold-pair", "real cold-pair checkpoint was not reached")
@@ -1317,7 +1361,10 @@ raise SystemExit("expected cold-pair interruption was not reached")
                 "unknown outcome refusal mutated source or retained evidence")
         require(sha(retained) == original and not receipt.exists(), "unknown outcome evidence changed")
         retained.rename(receipt)  # Recover the exact task-owned receipt, never fabricate or overwrite it.
-        self.run("resume real independently proved cold pair", self.upgrade_command("resume-upgrade", directory, edge, history=history))
+        code, _ = self.run("resume the proved cold pair and pause at actual edge admission",
+                           checkpoint_argv + ["done:start-receivers"], ok=False)
+        require(code == 73, "edge admission checkpoint was not reached")
+        self.recover_stopped_admission_writer(directory, state["project"], edge, history)
 
     def historical_observations(self, old, directory, project, edge):
         """Real native stop/restart or replacement, before the upgrade claim."""
@@ -1511,7 +1558,7 @@ raise SystemExit("expected cold-pair interruption was not reached")
         # execute() already verifies the same candidate's real timers in
         # M127 -> M129 single. M128 restore/data and M129 same-schema use the
         # ordinary owner, without another wait for the unchanged candidate.
-        if retain or (not edge and old.schema in (OBSERVATION_SCHEMA, CURRENT_SCHEMA)):
+        if retain or (not edge and old.schema in (OBSERVATION_SCHEMA, RESTORE_SCHEMA, CURRENT_SCHEMA)):
             self.run_native_upgrade(directory,edge,history)
         elif edge:
             self.interrupt_upgrade(directory, edge, history)
@@ -1605,7 +1652,7 @@ raise SystemExit("expected cold-pair interruption was not reached")
                 migration_owner_calls=0, original_operation_evidence_unchanged=True)
         if old.schema == OBSERVATION_SCHEMA:
             delta=pair.get("ddl_compatibility_delta")
-            require(type(delta) is dict and delta["status"]=="applied" and delta["correction_migration"]==CURRENT_SCHEMA
+            require(type(delta) is dict and delta["status"]=="applied" and delta["correction_migration"]==RESTORE_SCHEMA
                 and pair["source_metadata"]["ledger"][-1]==OBSERVATION_SCHEMA,
                 "legacy M128 cold-pair must declare only its canonical namespace compatibility correction")
             require(self.sql(directory,project,"SELECT count(*) FROM model_deployments WHERE upstream_release_observation IS NOT NULL AND upstream_observation_revision>0")=="1",
@@ -1626,7 +1673,7 @@ raise SystemExit("expected cold-pair interruption was not reached")
         self.installed_checks(directory, project)
         self.native_first_use_checks(directory, project)
         self.release_completed_case(directory, project)
-        require(self.schema == CURRENT_SCHEMA, "current Linux qualification requires the M129 candidate")
+        require(self.schema == CURRENT_SCHEMA, "current Linux qualification requires the current maintenance candidate")
         old = self.retained_release()
         for layout in ("single", "edge"):
             self.qualify_upgrade(old, layout)

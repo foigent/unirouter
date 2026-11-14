@@ -1308,7 +1308,8 @@ body {
   font-weight: 600;
 }
 
-.ur-dev-model-name {
+.ur-dev-model-name,
+.ur-dev-charge {
   display: grid;
   gap: 5px;
   min-width: 0;
@@ -2999,14 +3000,32 @@ body {
   .ur-latency-surface .ur-surface-body {
     min-height: auto;
   }
+  .ur-login-page {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 16px;
+  }
+  .ur-login-page .ur-login-language {
+    position: static;
+    align-self: flex-end;
+  }
   .ur-login-shell {
     min-height: auto;
   }
   .ur-login-showcase {
-    min-height: 430px;
+    padding: 16px 24px;
+  }
+  .ur-login-showcase::after,
+  .ur-login-preview {
+    display: none;
   }
   .ur-login-panel {
-    padding: 28px;
+    padding: 24px;
+  }
+  .ur-login-brand {
+    margin-bottom: 16px;
   }
   .ur-explorer {
     min-height: auto;

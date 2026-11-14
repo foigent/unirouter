@@ -50,6 +50,19 @@ func runUpgradeCLI(ctx context.Context, args []string, cfg *config.Config) error
 		return runUpgradeRecordApplied(ctx, args[1:], cfg, postgres.Pool)
 	case "restore-compat-check", "restore-compat-apply":
 		return runRestoreCompatibilityCLI(ctx, args[1:], cfg, postgres.Pool, args[0] == "restore-compat-apply")
+	case "admission-withdraw-check", "admission-withdraw-apply":
+		if len(args) != 1 {
+			return fmt.Errorf("admission withdrawal accepts its bounded input only on stdin")
+		}
+		var input communityAdmissionRecoveryInput
+		if err := readBoundedCLIJSON(os.Stdin, 64<<10, &input); err != nil {
+			return err
+		}
+		result, err := runCommunityAdmissionRecovery(ctx, postgres.Pool, cfg, input, args[0] == "admission-withdraw-apply")
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(result)
 	case "maintenance-check", "maintenance-retire":
 		if len(args) != 1 {
 			return fmt.Errorf("community maintenance accepts its bounded input only on stdin")

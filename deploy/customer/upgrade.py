@@ -35,7 +35,9 @@ require = install.require
 SCHEMA = "unirouter.community-upgrade.v1"
 SOURCE_SCHEMA = "000127_xinsight_communication_policy"
 OBSERVATION_SCHEMA = "000128_upstream_release_observation"
+RESTORE_SCHEMA = "000129_upstream_observation_restore_namespace"
 TARGET_SCHEMA = install.SCHEMA
+MAINTENANCE_SCHEMAS = (SOURCE_SCHEMA, OBSERVATION_SCHEMA, RESTORE_SCHEMA, TARGET_SCHEMA)
 _NOT_STARTED = object()
 _NATIVE_MIGRATION_CONTINUATION = object()
 _HistoricalExit = namedtuple("_HistoricalExit", "generation observation")
@@ -51,10 +53,10 @@ def transition_ledger(source):
     # The source binary proves its full ledger; the native candidate repeats
     # exact artifact/prefix equality under maintenance locks before retirement.
     require(isinstance(source, list) and source and all(isinstance(v, str) and v for v in source)
-            and source == sorted(set(source)) and source[-1] in (SOURCE_SCHEMA, OBSERVATION_SCHEMA, TARGET_SCHEMA),
+            and source == sorted(set(source)) and source[-1] in MAINTENANCE_SCHEMAS,
             "Unsupported complete source ledger")
     # This is a finite append-only contract, not numeric head compatibility.
-    suffix = {SOURCE_SCHEMA: [OBSERVATION_SCHEMA, TARGET_SCHEMA], OBSERVATION_SCHEMA: [TARGET_SCHEMA], TARGET_SCHEMA: []}
+    suffix = {head: list(MAINTENANCE_SCHEMAS[i+1:]) for i, head in enumerate(MAINTENANCE_SCHEMAS)}
     return source + suffix[source[-1]]
 
 
@@ -356,6 +358,7 @@ class Installation:
                 "state": "not_started" if witness is None else witness.get("state", "pending"),
                 "pending": None if witness is None else witness.get("pending"),
                 "completed_steps": [] if witness is None else witness.get("done", []),
+                "admission_withdrawal": (witness or {}).get("admission_recovery", {}).get("receipt"),
                 "source": None if witness is None else witness.get("source"),
                 "candidate": None if witness is None else witness.get("candidate")}
 
@@ -472,7 +475,7 @@ def retained_installation(metadata):
     origin = original.get("plan", {}).get("artifact", {}).get("ledger")
     require(original.get("state") == "completed" and isinstance(origin, list) and origin
             and origin == sorted(set(origin)) and metadata["ledger"][:len(origin)] == origin
-            and head in (SOURCE_SCHEMA, OBSERVATION_SCHEMA, TARGET_SCHEMA),
+            and head in MAINTENANCE_SCHEMAS,
             "Community maintenance requires the exact completed source origin")
     return original
 
@@ -687,10 +690,12 @@ class Upgrade(Installation):
             self._step("cold-pair", self._backup, self._backup_result)
             self._step("migrate", self._migrate, self._migration_result)
             self._step("configure-images", self._configure_images, self._configured_images)
-            self._step("start-writers", self._start_writers, self._new_writers)
+            if self.witness.get("admission_runtime"):
+                self._reconcile_admission_exit()
+            self._step("start-writers", self._start_writers, self._writers_start_result)
             self._step("record-release", self._record_release, self._recorded_release)
             self._step("prepare-admission", self._prepare_admission, self._admission_prepared)
-            self._step("start-receivers", self._start_receivers, self._receivers_started)
+            self._step("start-receivers", self._start_receivers, self._reconcile_receivers_started)
             self._step("admit-receivers", self._admit, self._admitted)
             self._verify_completed()
             self.witness["state"] = "completed"
@@ -1226,7 +1231,7 @@ class Upgrade(Installation):
                     and compatibility.get("source_package_sha256") == self.witness["source"]["package_sha256"]
                     and compatibility.get("clone_database") == clone and compatibility.get("clone_database_oid") == document["clone_database_oid"]
                     and compatibility.get("dump_sha256") == document["dump_sha256"]
-                    and compatibility.get("correction_migration") == TARGET_SCHEMA and compatibility.get("correction_sha256") == correction_sha
+                    and compatibility.get("correction_migration") == RESTORE_SCHEMA and compatibility.get("correction_sha256") == correction_sha
                     and compatibility.get("restored_definition", {}).get("config") == ["search_path=pg_catalog, public"],
                     "Independent restore correction receipt differs from its bound source and signed DDL")
             self._write_owned(backup / "restore-compatibility-receipt.json", canonical(compatibility))
@@ -1349,6 +1354,9 @@ class Upgrade(Installation):
             require(metadata["ledger"] == self._target_ledger(), "Exact target ledger is required")
         original = pair["source_metadata"]
         new_instances = {row["instance_id"] for row in self.witness["receipts"].get("start-writers", {}).get("writers", {}).values()}
+        recovery_state = self.witness.get("admission_recovery")
+        if recovery_state:
+            new_instances.update(value["instance_id"] for value in recovery_state["writers"].values())
         require({row["instance_id"] for row in metadata["generations"]} == {row["instance_id"] for row in original["generations"]} | new_instances,
                 "Unknown runtime generation appeared after the cold pair")
         allowed_manifests = {row["artifact_digest"] for row in original["manifests"]} | {self.witness["candidate_image"]["id"]}
@@ -1358,6 +1366,9 @@ class Upgrade(Installation):
         require({row["release_sequence"] for row in metadata["history"]} == history, "Unknown release history appeared")
         ingress = {row["change_id"] for row in original["ingress"]}
         if self.witness.get("admission"): ingress.add(self.witness["admission"]["change_id"])
+        if recovery_state:
+            cancelled_id = recovery_state["plan"]["change_id"]
+            ingress.update((cancelled_id, cancelled_id + "-withdrawn"))
         require({row["change_id"] for row in metadata["ingress"]}.issubset(ingress), "Unknown ingress transition appeared")
         projections = {
             "runtime_generations": ("to_jsonb(t)", " WHERE instance_id IN " + self._in(row["instance_id"] for row in original["generations"])),
@@ -1384,7 +1395,8 @@ class Upgrade(Installation):
         metadata = self.native_metadata()
         if self.witness["source_ledger"][-1] != TARGET_SCHEMA and metadata["ledger"] == self.witness["source_ledger"]:
             return _NOT_STARTED
-        if self.witness["source_ledger"][-1] == SOURCE_SCHEMA and metadata["ledger"] == self.witness["source_ledger"] + [OBSERVATION_SCHEMA]:
+        source = self.witness["source_ledger"]
+        if len(source) < len(metadata["ledger"]) < len(self._target_ledger()) and metadata["ledger"] == self._target_ledger()[:len(metadata["ledger"])]:
             # The existing native migration owner commits each exact SQL once.
             # Re-enter only this known interrupted suffix after full cold/data
             # proof; this is not a replay of an unknown external effect.
@@ -1517,9 +1529,14 @@ class Upgrade(Installation):
         return {"writers": found}
 
     def _start_writers(self):
-        require(all(self._stopped(role) == self.witness["receipts"]["stop-" + role] for role in self.roles),
-                "Original writer no longer matches its proved exit")
-        self._preserved()
+        recovered = self.witness.get("admission_recovery")
+        if recovered:
+            require(all(self._admission_exit(p, restart_disabled=True) for p in recovered["writers"].values()),
+                    "Withdrawn candidate writer changed before restart")
+        else:
+            require(all(self._stopped(role) == self.witness["receipts"]["stop-" + role] for role in self.roles),
+                    "Original writer no longer matches its proved exit")
+        self._preserved(recorded=bool(recovered))
         self.command(self.compose + ["up", "-d", "--wait", "--force-recreate", "--no-deps", "--pull", "never", "--no-build", *self.roles], "start exact candidate writers")
         result = self._new_writers()
         require(isinstance(result, dict), "Candidate writer startup is unconfirmed")
@@ -1554,7 +1571,18 @@ class Upgrade(Installation):
                 "desired_config_digest": hashlib.sha256(raw).hexdigest(), "desired_config_bytes": base64.b64encode(raw).decode(),
                 "membership_before": [], "membership_after": sorted(({"instance": row["instance_id"], "artifact_digest": row["artifact_digest"]}
                     for row in new["writers"].values()), key=lambda row: row["instance"])}
+        if self.witness.get("admission_recovery"):
+            recovered = self.witness["admission_recovery"]
+            plan.update(change_id=self.witness["operation_id"] + "-admit-" + recovered["attempt"],
+                        predecessor_id=recovered["input"]["admission"]["change_id"] + "-withdrawn")
         require(self.witness.get("admission") in (None, plan), "Admission input changed")
+        # This snapshot precedes the native intent. Recreating a process cannot
+        # overwrite the last positive evidence for its predecessor.
+        if self.witness.get("admission_runtime") is None:
+            self.witness["admission_runtime"] = {
+                role: self._admission_process(role, value["container_id"], value["instance_id"])
+                for role, value in new["writers"].items()
+            }
         self.witness["admission"] = plan
         self._save()
         self._carrier(True, ["runtime-generation", "prepare"], plan)
@@ -1570,9 +1598,172 @@ class Upgrade(Installation):
         if not rows:
             return _NOT_STARTED
         row = rows[0]
-        require(row["status"] in ("pending", "applied") and row["membership_after"] == plan["membership_after"]
+        require(row["status"] in ("pending", "ambiguous", "applied") and row["membership_after"] == plan["membership_after"]
                 and row["desired_config_digest"] == plan["desired_config_digest"], "Native admission plan differs")
         return {"change_id": plan["change_id"]}
+
+    def _admission_process(self, role, resource_id, instance=None):
+        row = self.inspect(resource_id)
+        require(row["Id"] == resource_id and row["State"]["Running"], "Admission process changed before proof")
+        if role in self.roles:
+            require(not (row.get("HostConfig", {}).get("PortBindings") or {})
+                    and row.get("HostConfig", {}).get("NetworkMode") != "host",
+                    "Recovery requires no direct writer ingress")
+        pid, started = row["State"]["Pid"], row["State"].get("StartedAt")
+        processes = self._process_proof(resource_id)
+        require(pid > 0 and started and str(pid) in processes, "Exact admission process start is required")
+        return {"container_id": resource_id, "image": row["Image"], "mounts": row.get("Mounts", []),
+                "processes": processes, "pid": pid, "started_at": started,
+                "restart_count": row.get("RestartCount", 0),
+                "restart_policy": row.get("HostConfig", {}).get("RestartPolicy", {}).get("Name", "no"),
+                "instance_id": instance}
+
+    def _admission_exit(self, proof, restart_disabled=False):
+        row = self.inspect(proof["container_id"])
+        state = row["State"]
+        if restart_disabled:
+            require(row.get("HostConfig", {}).get("RestartPolicy", {}).get("Name") == "no",
+                    "Admission resource restart is not disabled")
+        require(row["Id"] == proof["container_id"] and row["Image"] == proof["image"]
+                and same_mounts(row.get("Mounts", []), proof["mounts"])
+                and state["StartedAt"] == proof["started_at"] and row.get("RestartCount", 0) == proof["restart_count"]
+                and not state.get("Restarting")
+                and not state.get("Paused"), "Admission process was replaced or its restart state is unknown")
+        if state["Running"]:
+            require(state["Pid"] == proof["pid"] and
+                    self._process_start(proof["pid"]) == proof["processes"].get(str(proof["pid"])),
+                    "Admission process was replaced")
+            return False
+        require(state.get("Pid") == 0 and state.get("FinishedAt")
+                and all(self._process_start(int(pid)) != token for pid, token in proof["processes"].items()),
+                "Admission process exit is unconfirmed")
+        return True
+
+    def _reconcile_admission_exit(self):
+        witness = self.witness
+        previous = witness.get("admission_recovery")
+        if previous and previous.get("reprepared"):
+            # Recovery is deliberately bounded to one automatic withdrawal.
+            # A second failure retains the new identity for operator inspection.
+            return
+        if previous is None:
+            plan = witness.get("admission")
+            require(plan is not None, "Admission process evidence has no retained plan")
+            rows = [r for r in self.native_metadata()["ingress"] if r["change_id"] == plan["change_id"]]
+            if not rows or rows[0]["status"] == "applied":
+                return
+            require(len(rows) == 1 and rows[0]["status"] in ("pending", "ambiguous")
+                    and rows[0]["membership_after"] == plan["membership_after"]
+                    and rows[0]["desired_config_digest"] == plan["desired_config_digest"],
+                    "Pending admission did not match the signed operation")
+            exits = [self._admission_exit(p) for p in witness["admission_runtime"].values()]
+            if not any(exits):
+                return
+            # The pending startup gate closed business HTTP and workers before
+            # the frontend could listen. Recheck preserved facts anyway.
+            self._preserved(recorded=True)
+            previous = {"plan": plan, "attempt": uuid.uuid4().hex,
+                        "writers": witness["admission_runtime"], "receivers": {}, "stops_started": [], "input": None}
+            witness["admission_recovery"] = previous
+            self._save()
+        if previous["input"] is None:
+            plan = previous["plan"]
+            rows = [r for r in self.native_metadata()["ingress"] if r["change_id"] == plan["change_id"]]
+            require(len(rows) == 1 and rows[0]["status"] in ("pending", "ambiguous"),
+                    "Admission may already have completed; read native status before another action")
+            # Exclude a foreign receiver. An unrecorded start has an unknown
+            # physical outcome and must stay fenced for operator inspection.
+            receivers = witness.get("admission_receivers", {})
+            for role in (("edge", "frontend") if self.edge_compose else ("frontend",)):
+                if role not in receivers:
+                    original = self.inspect(self.containers[role]["Id"])
+                    require(not original["State"]["Running"] and not original["State"].get("Restarting"),
+                            "Unrecorded ingress start prevents recovery")
+                    resource_name = "uniroute-nginx" if role == "edge" else self.state["project"] + "-frontend-1"
+                    exact = self.inspect(resource_name)
+                    require(exact["Id"] == original["Id"] and not exact["State"]["Running"],
+                            "Unrecorded candidate receiver prevents recovery")
+                    continue
+                proof = receivers[role]
+                previous["receivers"][role] = proof
+                self._close_admission_resource(proof, previous["stops_started"])
+            for proof in previous["writers"].values():
+                self._close_admission_resource(proof, previous["stops_started"])
+            metadata = self._preserved(recorded=True)
+            rows = {r["instance_id"]: r for r in metadata["generations"] if r["state"] != "stopped"}
+            before = sorted(previous["writers"].values(), key=lambda p: p["instance_id"])
+            require(set(rows) == {p["instance_id"] for p in before}, "Unexpected candidate writer prevents recovery")
+            now = datetime.datetime.now(datetime.timezone.utc)
+            if any(datetime.datetime.fromisoformat(row["lease_expires_at"]) > now for row in rows.values()):
+                raise install.InstallError("Exact candidate processes are stopped; resume after their native leases expire")
+            original = retained_installation(metadata)["plan"]
+            departure = []
+            for proof in before:
+                row = rows[proof["instance_id"]]
+                departure.append({"instance_id": row["instance_id"], "artifact_digest": row["artifact_digest"],
+                    "manifest_digest": row["manifest_digest"], "compatibility_epoch": row["compatibility_epoch"],
+                    "expected_schema_head": TARGET_SCHEMA, "expected_revision": row["revision"],
+                    "expected_ingress_head": plan["change_id"] + "-withdrawn",
+                    "expected_environment": original["target"]["environment"],
+                    "expected_database_system_id": metadata["system_id"],
+                    "host_proof_sha256": "sha256:" + hashlib.sha256(canonical(proof)).hexdigest()})
+            previous["input"] = {"installation_id": original["installation_id"],
+                "installation_plan_digest": original["digest"], "database_system_id": metadata["system_id"],
+                "database": metadata["database"], "database_oid": metadata["database_oid"],
+                "release_sequence": witness["candidate"]["release_sequence"],
+                "package_sha256": witness["candidate"]["package_sha256"],
+                "trusted_ring_sha256": witness["retirement_input"]["expected_trusted_ring_sha256"],
+                "admission": {"change_id": plan["change_id"], "configuration_sha256": plan["desired_config_digest"],
+                    "host_proof_sha256": hashlib.sha256(canonical({"writers": previous["writers"],
+                        "receivers": previous["receivers"]})).hexdigest(), "departed": departure}}
+            self._save()
+        document = previous["input"]
+        expected = document["admission"]["change_id"] + "-withdrawn"
+        result = install.strict_json(self._carrier(True, ["upgrade", "admission-withdraw-check"], document))
+        require(result.get("change_id") == expected and result.get("status") in ("eligible", "applied"),
+                "Admission withdrawal has no exact native receipt")
+        if result["status"] == "eligible":
+            for proof in [*previous["receivers"].values(), *previous["writers"].values()]:
+                require(self._admission_exit(proof, restart_disabled=True), "An ingress or writer process restarted before withdrawal")
+            result = install.strict_json(self._carrier(True, ["upgrade", "admission-withdraw-apply"], document))
+        require(result == {"change_id": expected, "status": "applied"}, "Admission withdrawal remains unconfirmed")
+        previous["receipt"] = result
+        # Keep the original intent, proofs and receipts while re-entering the
+        # existing admission tail. Do not replay release recording or migration.
+        previous["original_steps"] = {
+            key: witness["receipts"].pop(key)
+            for key in ("start-writers", "prepare-admission", "start-receivers")
+            if key in witness["receipts"]
+        }
+        for key in previous["original_steps"]:
+            witness["done"].remove(key)
+        witness["pending"] = None
+        for key in ("admission", "admission_runtime", "admission_receivers"):
+            witness.pop(key, None)
+        previous["reprepared"] = True
+        self._save()
+
+    def _close_admission_resource(self, proof, stops_started):
+        # A Docker manual stop suppresses unless-stopped auto-restart. Require
+        # the same container and the captured process-start set after stopping.
+        exited = self._admission_exit(proof)
+        row = self.inspect(proof["container_id"])
+        if row.get("HostConfig", {}).get("RestartPolicy", {}).get("Name") != "no":
+            self.command(self.docker + ["update", "--restart=no", proof["container_id"]], "suppress restart of exact admission resource")
+            exited = self._admission_exit(proof, restart_disabled=True)
+        if not exited:
+            require(proof["container_id"] not in stops_started, "Admission stop result is unconfirmed")
+            stops_started.append(proof["container_id"])
+            self._save()
+            self.command(self.docker + ["stop", proof["container_id"]], "drain exact admission resource")
+        require(self._admission_exit(proof, restart_disabled=True), "Admission resource did not stop")
+
+    def _writers_start_result(self):
+        recovered = self.witness.get("admission_recovery")
+        if recovered and all(self.inspect(self.state["project"] + "-" + role + "-1")["Id"] == proof["container_id"]
+                             and self._admission_exit(proof, restart_disabled=True) for role, proof in recovered["writers"].items()):
+            return _NOT_STARTED
+        return self._new_writers()
 
     def _receivers_started(self):
         front = self.inspect(self.state["project"] + "-frontend-1")
@@ -1580,7 +1771,13 @@ class Upgrade(Installation):
             require(not front["State"]["Running"], "An old frontend was restarted")
             return _NOT_STARTED
         require(front["Image"] == self.witness["frontend_image"]["id"] and same_mounts(front.get("Mounts", []), self.containers["frontend"].get("Mounts", [])), "Candidate frontend image or mounts differ")
-        if not front["State"]["Running"] or front["State"].get("Health", {}).get("Status") != "healthy":
+        if not front["State"]["Running"]:
+            recovered = self.witness.get("admission_recovery") or {}
+            previous = recovered.get("receivers", {}).get("frontend")
+            if previous and front["Id"] == previous["container_id"] and self._admission_exit(previous):
+                return _NOT_STARTED
+            return None
+        if front["State"].get("Health", {}).get("Status") != "healthy":
             return None
         if self.edge_compose:
             edge = self.inspect("uniroute-nginx")
@@ -1592,8 +1789,13 @@ class Upgrade(Installation):
         return {"frontend_container": front["Id"], "frontend_image": front["Image"], "edge": bool(self.edge_compose)}
 
     def _start_receivers(self):
-        require(self._stopped("frontend") == self.witness["receipts"]["stop-frontend"],
-                "Original frontend no longer matches its proved exit")
+        recovered = self.witness.get("admission_recovery")
+        if recovered and recovered["receivers"].get("frontend"):
+            require(self._admission_exit(recovered["receivers"]["frontend"], restart_disabled=True),
+                    "Withdrawn candidate frontend changed before restart")
+        else:
+            require(self._stopped("frontend") == self.witness["receipts"]["stop-frontend"],
+                    "Original frontend no longer matches its proved exit")
         self._preserved(recorded=True)
         self._verify_original_configuration()
         require(isinstance(self._new_writers(), dict), "Exact new writers are required before receiver start")
@@ -1603,23 +1805,48 @@ class Upgrade(Installation):
         require(isinstance(self._admission_prepared(), dict), "Prepare native membership before starting any receiver")
         self.command(self.compose + ["up", "-d", "--wait", "--force-recreate", "--no-deps", "--pull", "never", "--no-build", "frontend"], "start exact candidate frontend")
         if self.edge_compose:
+            edge_proof = (recovered or {}).get("receivers", {}).get("edge")
+            if edge_proof:
+                require(self._admission_exit(edge_proof), "Withdrawn edge changed before restart")
+                policy = edge_proof["restart_policy"]
+                require(policy in ("no", "unless-stopped", "always"), "Unsupported retained edge restart policy")
+                self.command(self.docker + ["update", "--restart=" + policy, edge_proof["container_id"]],
+                             "restore retained named edge restart policy")
             self.command(self.edge_compose + ["start", "nginx"], "start retained named edge")
         result = self._receivers_started()
         require(isinstance(result, dict), "New receiver startup is unconfirmed")
+        self._record_admission_receivers(result)
         return result
+
+    def _reconcile_receivers_started(self):
+        result = self._receivers_started()
+        if isinstance(result, dict) and not self.witness.get("admission_receivers"):
+            self._record_admission_receivers(result)
+        return result
+
+    def _record_admission_receivers(self, result):
+        receipts = {"frontend": self._admission_process("frontend", result["frontend_container"])}
+        if self.edge_compose:
+            receipts["edge"] = self._admission_process("edge", self.containers["edge"]["Id"])
+        self.witness["admission_receivers"] = receipts
+        self._save()
 
     def _admitted(self):
         plan = self.witness.get("admission")
         if plan is None:
             return _NOT_STARTED
         rows = [row for row in self.native_metadata()["ingress"] if row["change_id"] == plan["change_id"]]
-        if not rows or rows[0]["status"] == "pending":
+        if not rows or rows[0]["status"] in ("pending", "ambiguous"):
             return _NOT_STARTED
         require(rows[0]["status"] == "applied" and rows[0]["membership_after"] == plan["membership_after"], "Native admission is unresolved or differs")
         return {"change_id": plan["change_id"]}
 
     def _admit(self):
         require(isinstance(self._receivers_started(), dict), "New receiver readback is required")
+        current = self._new_writers()
+        require(isinstance(current, dict) and all(value["instance_id"] == self.witness["admission_runtime"][role]["instance_id"]
+                and not self._admission_exit(self.witness["admission_runtime"][role]) for role, value in current["writers"].items()),
+                "Candidate writer changed before native admission")
         self._carrier(True, ["runtime-generation", "complete"], {"change_id": self.witness["admission"]["change_id"],
             "observed_digest": self.witness["admission"]["desired_config_digest"], "old_workers_gone": True,
             "observation": {"candidate_receivers_verified": True}})
@@ -1722,7 +1949,7 @@ class Upgrade(Installation):
         manifest = self.release.manifest
         if previous and not self.continuing:
             self.previous_completed(self.source, {"package_sha256": self.release.sha})
-        require(manifest["min_current_schema"] in (SOURCE_SCHEMA, OBSERVATION_SCHEMA, TARGET_SCHEMA)
+        require(manifest["min_current_schema"] in MAINTENANCE_SCHEMAS
                 and manifest["min_current_schema"] <= source_head(self.metadata) and manifest["target_schema"] == TARGET_SCHEMA
                 and manifest["min_current_sequence"] <= self.source["release_sequence"] <= manifest["max_current_sequence"]
                 and manifest["release_sequence"] > self.source["release_sequence"],

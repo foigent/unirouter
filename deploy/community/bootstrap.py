@@ -22,7 +22,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-SCHEMA = "000129_upstream_observation_restore_namespace"
+SCHEMA = "000130_upgrade_admission_recovery"
 MAX_BOOTSTRAP = 32 * 1024
 MAX_MANIFEST = 128 * 1024
 MAX_SIGNATURE = 16 * 1024

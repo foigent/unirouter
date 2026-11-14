@@ -148,6 +148,9 @@ func PreRetirementLedger(t *testing.T) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(ledger) > 0 && ledger[len(ledger)-1] == schemaauthority.UpgradeAdmissionRecoveryHead {
+		ledger = ledger[:len(ledger)-1]
+	}
 	if len(ledger) > 0 && ledger[len(ledger)-1] == schemaauthority.UpstreamObservationRestoreHead {
 		ledger = ledger[:len(ledger)-1]
 	}

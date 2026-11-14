@@ -1,3 +1,5 @@
+import { translate as t } from '../i18n';
+
 export interface KeyQuotaLike {
   rpm_limit?: number | null;
   rps_limit?: number | null;
@@ -24,5 +26,5 @@ export function keyTPM(value: KeyQuotaLike) {
 
 export function keyQuotaText(value: KeyQuotaLike) {
   const tpm = keyTPM(value);
-  return `RPM ${keyRPM(value)} / RPS ${keyRPS(value)} / TPM ${tpm ?? '未配置'}`;
+  return `RPM ${keyRPM(value)} / RPS ${keyRPS(value)} / TPM ${tpm ?? t('未配置')}`;
 }

@@ -27,7 +27,8 @@ def carrier_read_ledgers(migrations, historical=False):
     expected=(["000117_execution_observations","000118_source_budget_snapshots"] if historical else
               list(r.BRIDGE_HEADS[r.BRIDGE_HEADS.index(r.XINSIGHT_POLICY_HEAD):]) +
               ["000126_commercial_license_retirement", "000127_xinsight_communication_policy",
-               "000128_upstream_release_observation", "000129_upstream_observation_restore_namespace"])
+               "000128_upstream_release_observation", "000129_upstream_observation_restore_namespace",
+               "000130_upgrade_admission_recovery"])
     if versions[-len(expected):] != expected:
         raise RuntimeError("carrier read fixture requires exact reviewed artifact heads")
     return [("bridge" if historical else "maintenance_predecessor",versions[:-1]),("current",versions)]
@@ -138,19 +139,24 @@ CREATE TABLE runtime_generations(instance_id text, artifact_digest text, compati
                     r.run(["docker","exec","-i",pg,"psql","-U","postgres","-v","ON_ERROR_STOP=1"],data=sql.encode())
                     before=state()
                     assert before=={"ledger":versions,"ingress":0,"manifests":0,"generations":0},before
+                    if label=="maintenance_predecessor":
+                        r.run(["docker","exec","-i",pg,"psql","-U","postgres","-v","ON_ERROR_STOP=1"],data=correction.encode())
                     if label=="current":
+                        # Isolate the current artifact's namespace refusal proof.
+                        r.run(["docker","exec","-i",pg,"psql","-U","postgres","-v","ON_ERROR_STOP=1"],
+                            data=b"ALTER FUNCTION public.valid_upstream_release_observation(jsonb) RESET search_path;")
                         invalid_namespace=namespace()
                         assert all(row["config"] is None for row in invalid_namespace)
                         try:
                             owner.artifact_owner_command("ignored","inspect")
-                            raise AssertionError("M129 must refuse its uncorrected validator namespace")
+                            raise AssertionError("M130 must refuse its uncorrected validator namespace")
                         except RuntimeError as exc:
                             assert str(exc).startswith("Artifact owner refused inspect"),str(exc)
                         assert state()==before and namespace()==invalid_namespace,"refused inspect changed the read fixture"
                         assert r.inspect(name,missing_ok=True) is None
                         r.run(["docker","exec","-i",pg,"psql","-U","postgres","-v","ON_ERROR_STOP=1"],data=correction.encode())
                     namespace_before=namespace()
-                    expected_config=["search_path=pg_catalog, public"] if label=="current" else None
+                    expected_config=["search_path=pg_catalog, public"]
                     assert namespace_before[0]["name"]=="valid_upstream_release_observation"
                     assert namespace_before[0]["config"]==expected_config
                     result=owner.artifact_owner_command("ignored","inspect")

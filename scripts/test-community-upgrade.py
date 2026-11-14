@@ -961,13 +961,24 @@ class WholeUpgradeTests(unittest.TestCase):
                 state.processes.pop(str(row["State"]["Pid"]))
                 row["State"].update(Running=False, Pid=0)
                 return ""
+            if label in ("suppress restart of exact admission resource", "restore retained named edge restart policy"):
+                calls.append((label, list(args)))
+                row = next(row for row in state.resources.values() if row["Id"] == args[-1])
+                row.setdefault("HostConfig", {})["RestartPolicy"] = {"Name":args[-2].split("=")[1]}
+                return ""
+            if label == "drain exact admission resource":
+                calls.append((label, list(args)))
+                row = next(row for row in state.resources.values() if row["Id"] == args[-1])
+                state.processes.pop(str(row["State"]["Pid"]), None)
+                row["State"].update(Running=False, Pid=0, FinishedAt="verified exit")
+                return ""
             if label.startswith("native upgrade owner: "):
                 calls.append((label, list(args)))
                 argv = args[args.index("./uniroute") + 1:]
                 state.native_calls.append(argv)
                 document = json.loads(input) if input else None
                 if argv == ["runtime-generation", "support"]:
-                    return json.dumps({"schema_heads": [M.SOURCE_SCHEMA, M.OBSERVATION_SCHEMA, M.TARGET_SCHEMA]}, separators=(",", ":"))
+                    return json.dumps({"schema_heads": [M.SOURCE_SCHEMA, M.OBSERVATION_SCHEMA, M.RESTORE_SCHEMA, M.TARGET_SCHEMA]}, separators=(",", ":"))
                 if argv == ["runtime-generation", "prepare"]:
                     state.metadata["ingress"].append(dict(document, status="pending"))
                     before = {row["instance"] for row in document["membership_before"]}
@@ -984,6 +995,25 @@ class WholeUpgradeTests(unittest.TestCase):
                         if row["ingress_state"] in ("withdrawing", "pending_join"):
                             row.update(ingress_state="receiving" if row["instance_id"] in after else "absent", revision=row["revision"] + 1)
                     return "{}"
+                if argv in (["upgrade", "admission-withdraw-check"], ["upgrade", "admission-withdraw-apply"]):
+                    admission = document["admission"]
+                    original = next(r for r in state.metadata["ingress"] if r["change_id"] == admission["change_id"])
+                    new_id = original["change_id"] + "-withdrawn"
+                    if original["status"] == "cancelled":
+                        return json.dumps({"change_id": new_id, "status": "applied"})
+                    if argv[1].endswith("check"):
+                        return json.dumps({"change_id": new_id, "status": "eligible"})
+                    original["status"] = "cancelled"
+                    state.metadata["ingress"].append(dict(original, change_id=new_id,
+                        predecessor_id=original["change_id"], status="applied",
+                        membership_before=original["membership_after"], membership_after=[]))
+                    for departure in admission["departed"]:
+                        row = next(r for r in state.metadata["generations"] if r["instance_id"] == departure["instance_id"])
+                        row.update(state="stopped", ingress_state="absent", revision=row["revision"] + 2)
+                    if state.failure == "withdraw-response-lost":
+                        state.failure = None
+                        raise Interrupted("original admission withdrawal committed")
+                    return json.dumps({"change_id": new_id, "status": "applied"})
                 if argv == ["upgrade", "maintenance-check"]: return "{}"
                 if argv == ["upgrade", "maintenance-retire"]:
                     for item in document["retirements"]:
@@ -995,7 +1025,7 @@ class WholeUpgradeTests(unittest.TestCase):
                     correction="ALTER FUNCTION public.valid_upstream_release_observation(jsonb) SET search_path TO pg_catalog, public;"
                     return json.dumps(dict(schema_version=document["schema_version"],status="applied" if argv[1].endswith("apply") else "eligible",
                         source_package_sha256=operation.witness["source"]["package_sha256"],clone_database=document["clone_database"],
-                        clone_database_oid=document["clone_database_oid"],dump_sha256=document["dump_sha256"],correction_migration=M.TARGET_SCHEMA,
+                        clone_database_oid=document["clone_database_oid"],dump_sha256=document["dump_sha256"],correction_migration=M.RESTORE_SCHEMA,
                         correction_sha256=hashlib.sha256(correction.encode()).hexdigest(),source_definition={"body_sha256":"synthetic","config":None},
                         restored_definition={"body_sha256":"synthetic","config":["search_path=pg_catalog, public"]}))
                 if argv[:2] == ["fresh-install", "check"]: return "state=completed"
@@ -1019,6 +1049,8 @@ class WholeUpgradeTests(unittest.TestCase):
                 raise AssertionError("unexpected native finite owner")
             if label == "start exact candidate writers":
                 calls.append((label, list(args)))
+                if state.hop and operation.witness.get("admission_recovery"):
+                    state.next_identity += len(operation.roles)
                 state.hop += 1
                 for index, role in enumerate(operation.roles):
                     name = "fixture-ur-" + role + "-1"; row = state.resources[name]
@@ -1053,6 +1085,7 @@ class WholeUpgradeTests(unittest.TestCase):
                     if "--force-recreate" in args or row["Image"] != new_ids["frontend"]:
                         row.update(Id="new-frontend-"+str(state.hop))
                     row["Image"] = new_ids["frontend"]
+                row["State"]["StartedAt"] = "candidate-receiver-" + str(state.hop)
                 state.processes[str(pid)] = "new-receiver-"+str(state.hop)
                 return ""
             if args and args[0] == "tar": return archive.run(args, label=label, input=input)
@@ -1390,6 +1423,7 @@ class WholeUpgradeTests(unittest.TestCase):
                 wire=(old.release.directory/artifact["path"]).read_bytes();entry=tarfile.TarInfo(artifact["path"]);entry.size=len(wire);archive.addfile(entry,io.BytesIO(wire))
         package.chmod(0o600);sha=M.install.digest(package)
         state.metadata["ledger"].remove(M.TARGET_SCHEMA)
+        state.metadata["ledger"].remove(M.RESTORE_SCHEMA)
         state.metadata["release"].update(target_schema=M.OBSERVATION_SCHEMA,package_sha256=sha)
         for row in state.metadata["history"]:
             if row["release_sequence"]==17:row.update(target_schema=M.OBSERVATION_SCHEMA,package_sha256=sha)
@@ -1400,6 +1434,60 @@ class WholeUpgradeTests(unittest.TestCase):
         old.witness["candidate"]["package_sha256"]=sha
         M.install.save_state(old.directory,old.state)
         return old,state,calls,bind
+
+    def test_lost_writer_admission_withdrawal_preserves_intent_and_recovers_once(self):
+        for count in (1, 2):
+            with self.subTest(writers=count):
+                operation, state, calls, bind = self.host(count)
+                def interrupt(mark):
+                    if mark == "done:start-receivers":
+                        raise Interrupted("receiver started before admission committed")
+                operation.test_checkpoint = interrupt
+                with self.assertRaises(Interrupted):
+                    operation.execute()
+                before = copy.deepcopy(state.business)
+                first = copy.deepcopy(operation.witness["admission"])
+                writer = state.resources["fixture-ur-backend-1"]
+                state.processes.pop(str(writer["State"]["Pid"]))
+                writer["State"].update(Running=False, Pid=0, FinishedAt="candidate exited", ExitCode=1)
+                state.failure = "withdraw-response-lost"
+                with self.assertRaisesRegex(Interrupted, "withdrawal committed"):
+                    self.reopen(operation, bind).execute(resume=True)
+                closed = [call for call in calls if call[0] == "drain exact admission resource"]
+                resumed = self.reopen(operation, bind)
+                result = resumed.execute(resume=True)
+                self.assertEqual("completed", result["state"])
+                self.assertEqual(before, state.business)
+                self.assertEqual(first, resumed.witness["admission_recovery"]["plan"])
+                self.assertEqual("cancelled", next(row["status"] for row in state.metadata["ingress"] if row["change_id"] == first["change_id"]))
+                self.assertEqual(first["change_id"] + "-withdrawn", resumed.witness["admission"]["predecessor_id"])
+                self.assertEqual(1, state.native_calls.count(["upgrade", "admission-withdraw-apply"]))
+                self.assertEqual(1, sum(argv[:2] == ["upgrade", "record-applied"] for argv in state.native_calls))
+                self.assertEqual(closed, [call for call in calls if call[0] == "drain exact admission resource"])
+                after = copy.deepcopy(state.metadata)
+                resumed = self.reopen(resumed, bind)
+                resumed.execute(resume=True)
+                self.assertEqual(after, state.metadata)
+
+    def test_restarted_candidate_is_never_used_to_discharge_the_original_admission(self):
+        operation, state, calls, bind = self.host(1)
+        def interrupt(mark):
+            if mark == "done:start-receivers":
+                raise Interrupted("candidate receipts retained")
+        operation.test_checkpoint = interrupt
+        with self.assertRaises(Interrupted):
+            operation.execute()
+        before = copy.deepcopy(state.metadata)
+        writer = state.resources["fixture-ur-backend-1"]
+        writer["RestartCount"] = 1
+        writer["State"]["StartedAt"] = "same-container-new-process"
+        state.processes[str(writer["State"]["Pid"])] = "new-process-start"
+        with self.assertRaisesRegex(M.install.InstallError, "replaced|restart state"):
+            self.reopen(operation, bind).execute(resume=True)
+        self.assertEqual(before, state.metadata)
+        self.assertFalse(any(call[0] in ("drain exact admission resource", "suppress restart of exact admission resource")
+                             for call in calls))
+        self.assertFalse(any(argv[:2] == ["upgrade", "admission-withdraw-apply"] for argv in state.native_calls))
 
     def test_distinct_origin_first_external_snapshot_resumes_without_rewriting_source(self):
         for count in (1, 2):
@@ -1462,7 +1550,7 @@ class WholeUpgradeTests(unittest.TestCase):
                     self.assertIn("source_state_path", operation.witness)
                     self.assertEqual(migrations + (sequence == 20), state.native_calls.count(["migrate", "up"]))
                     self.assertEqual(preserved, (state.business, state.models, state.setups, state.sessions))
-                    self.assertEqual([M.SOURCE_SCHEMA, M.OBSERVATION_SCHEMA, M.TARGET_SCHEMA], state.metadata["ledger"])
+                    self.assertEqual([M.SOURCE_SCHEMA, M.OBSERVATION_SCHEMA, M.RESTORE_SCHEMA, M.TARGET_SCHEMA], state.metadata["ledger"])
 
     def test_distinct_origin_does_not_admit_wrong_native_source_or_predecessor(self):
         for fault in ("native_source", "candidate", "current_release", "pending", "incomplete"):
@@ -1527,7 +1615,7 @@ class WholeUpgradeTests(unittest.TestCase):
                 self.assertEqual(cloned,state.clones,"completed cold-pair readback does not replay partial restore")
                 self.assertEqual(observation,state.models)
                 self.assertEqual(original,operation.source_snapshot(operation.witness))
-                self.assertEqual([M.SOURCE_SCHEMA,M.OBSERVATION_SCHEMA,M.TARGET_SCHEMA],state.metadata["ledger"])
+                self.assertEqual([M.SOURCE_SCHEMA,M.OBSERVATION_SCHEMA,M.RESTORE_SCHEMA,M.TARGET_SCHEMA],state.metadata["ledger"])
                 self.assertEqual(1,state.native_calls[before:].count(["migrate","up"]))
                 restore_calls=[argv for argv in state.native_calls[before:] if argv[:1]==["upgrade"] and argv[1].startswith("restore-compat-")]
                 self.assertEqual([["upgrade","restore-compat-check"],["upgrade","restore-compat-apply"]],restore_calls)
@@ -1574,7 +1662,7 @@ class WholeUpgradeTests(unittest.TestCase):
                     self.assertNotIn("source_state", operation.witness)
                     self.assertLess(len((operation.directory / "install-state.json").read_bytes()), 1 << 20)
                     self.assertEqual(observation, state.models)
-                    self.assertEqual([M.SOURCE_SCHEMA,M.OBSERVATION_SCHEMA,M.TARGET_SCHEMA], state.metadata["ledger"])
+                    self.assertEqual([M.SOURCE_SCHEMA,M.OBSERVATION_SCHEMA,M.RESTORE_SCHEMA,M.TARGET_SCHEMA], state.metadata["ledger"])
                     self.assertEqual("same_schema", operation.witness["receipts"]["migrate"]["mode"])
                     self.assertNotIn(["migrate","up"], state.native_calls[len(before[0]):])
                     self.assertEqual(old_files, {str(p):p.read_bytes() for p in old_folder.rglob("*") if p.is_file()})
@@ -1611,7 +1699,7 @@ class WholeUpgradeTests(unittest.TestCase):
             self.assertEqual([M.SOURCE_SCHEMA,M.OBSERVATION_SCHEMA],state.metadata["ledger"])
             self.assertEqual("migrate",operation.witness["pending"])
             self.assertEqual("completed",self.reopen(operation,bind).execute(resume=True)["state"])
-        self.assertEqual([M.SOURCE_SCHEMA,M.OBSERVATION_SCHEMA,M.TARGET_SCHEMA],state.metadata["ledger"])
+        self.assertEqual([M.SOURCE_SCHEMA,M.OBSERVATION_SCHEMA,M.RESTORE_SCHEMA,M.TARGET_SCHEMA],state.metadata["ledger"])
         self.assertEqual(2,state.native_calls.count(["migrate","up"]))
 
     def test_same_schema_mutation_or_missing_cold_proof_refuses_without_migration(self):

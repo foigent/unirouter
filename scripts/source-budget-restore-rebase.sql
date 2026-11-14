@@ -22,6 +22,11 @@ BEGIN
     LOCK TABLE schema_migrations IN SHARE MODE;
     SELECT array_agg(version::text ORDER BY version) INTO ledger FROM schema_migrations;
     certified_ledger := ledger;
+    IF ledger[cardinality(ledger)]='000130_upgrade_admission_recovery' THEN
+      IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000129_upstream_observation_restore_namespace' THEN
+        RAISE EXCEPTION 'M130 restore requires the exact M129 predecessor'; END IF;
+      ledger := ledger[1:cardinality(ledger)-1];
+    END IF;
     IF ledger[cardinality(ledger)]='000129_upstream_observation_restore_namespace' THEN
       IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000128_upstream_release_observation' THEN
         RAISE EXCEPTION 'M129 restore requires the exact M128 predecessor'; END IF;
@@ -162,12 +167,13 @@ BEGIN
        AND head IS DISTINCT FROM '000124_xinsight_receiver_adoption'
        AND head IS DISTINCT FROM '000125_xinsight_control_credential_lifecycle'
        AND head IS DISTINCT FROM '000126_commercial_license_retirement' AND head IS DISTINCT FROM '000127_xinsight_communication_policy'
-       AND head IS DISTINCT FROM '000128_upstream_release_observation' AND head IS DISTINCT FROM '000129_upstream_observation_restore_namespace' THEN
+       AND head IS DISTINCT FROM '000128_upstream_release_observation' AND head IS DISTINCT FROM '000129_upstream_observation_restore_namespace'
+       AND head IS DISTINCT FROM '000130_upgrade_admission_recovery' THEN
       IF present<>0 THEN RAISE EXCEPTION 'restored C tables require the exact M119 ledger'; END IF;
       RETURN;
     END IF;
     IF present<>8 THEN RAISE EXCEPTION 'restored C schema is incomplete'; END IF;
-    IF head IN ('000120_unpublished_content_reclamation','000121_gateway_pre_dispatch_terminal','000122_scoped_content_policy','000123_xinsight_policy_delegation','000124_xinsight_receiver_adoption','000125_xinsight_control_credential_lifecycle','000126_commercial_license_retirement','000127_xinsight_communication_policy','000128_upstream_release_observation','000129_upstream_observation_restore_namespace') THEN
+    IF head IN ('000120_unpublished_content_reclamation','000121_gateway_pre_dispatch_terminal','000122_scoped_content_policy','000123_xinsight_policy_delegation','000124_xinsight_receiver_adoption','000125_xinsight_control_credential_lifecycle','000126_commercial_license_retirement','000127_xinsight_communication_policy','000128_upstream_release_observation','000129_upstream_observation_restore_namespace','000130_upgrade_admission_recovery') THEN
       IF NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='execution_content_objects'::regclass AND attname='reclaimed_at' AND NOT attisdropped AND atttypid='timestamptz'::regtype AND NOT attnotnull) THEN
         RAISE EXCEPTION 'restored content reclamation schema mismatch'; END IF;
     ELSIF EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='execution_content_objects'::regclass AND attname='reclaimed_at' AND NOT attisdropped) THEN
