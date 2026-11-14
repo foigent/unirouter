@@ -1263,9 +1263,12 @@ class Upgrade(Installation):
         origin = retained_installation(metadata)["plan"]
         self._write_owned(self.evidence / "source-install-plan.json", canonical(origin))
         completed_check = ["fresh-install", "check", "--plan", "/upgrade/evidence/source-install-plan.json"]
-        if metadata["ledger"][-1] == OBSERVATION_SCHEMA:
+        head = metadata["ledger"][-1]
+        if head == OBSERVATION_SCHEMA:
             completed_check += ["--completed-source-schema", OBSERVATION_SCHEMA]
-        checked = self._carrier(metadata["ledger"][-1] != SOURCE_SCHEMA, completed_check, database=clone)
+        # A cold clone has the original ledger. M128 alone needs the
+        # candidate's explicit check for the corrected restore namespace.
+        checked = self._carrier(head in (OBSERVATION_SCHEMA, TARGET_SCHEMA), completed_check, database=clone)
         require("state=completed" in checked, "Source artifact did not validate the independent restored origin")
         if content["inventory"] is not None:
             restored_root = Path(restored["verification_directory"]) / content["root"].lstrip("/")

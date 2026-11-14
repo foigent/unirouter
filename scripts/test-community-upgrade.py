@@ -15,6 +15,7 @@ import tempfile
 import tarfile
 import unittest
 from unittest.mock import patch
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 def load(name, path):
@@ -1407,29 +1408,68 @@ class WholeUpgradeTests(unittest.TestCase):
         state.models[0].update(upstream_release_observation={"synthetic":"existing declared upstream version"}, upstream_observation_revision=7)
         return operation, state, calls, bind
 
-    def legacy128_completed17(self, count=1, origin_sequence=None):
-        # Construct an explicit historical simulator input, not a claim that
-        # today's M129 owner created a historical M128 application artifact.
+    def legacy128_completed17(self, count=1, origin_sequence=None, *, head=M.OBSERVATION_SCHEMA):
+        # Construct an explicit historical simulator input. The simulator
+        # used to generate the witness runs through the current schema.
         old,state,calls,bind=self.completed17(count, origin_sequence)
-        manifest=copy.deepcopy(old.release.manifest);manifest["target_schema"]=M.OBSERVATION_SCHEMA
-        package=old.directory/"synthetic-historical-m128-17.tar.gz"
+        manifest=copy.deepcopy(old.release.manifest);manifest["target_schema"]=head
+        package=old.directory/"synthetic-historical-predecessor-17.tar.gz"
         with tarfile.open(package,"w:gz") as archive:
             wire=M.canonical(manifest);entry=tarfile.TarInfo("manifest.json");entry.size=len(wire);archive.addfile(entry,io.BytesIO(wire))
             for artifact in manifest["artifacts"]:
                 wire=(old.release.directory/artifact["path"]).read_bytes();entry=tarfile.TarInfo(artifact["path"]);entry.size=len(wire);archive.addfile(entry,io.BytesIO(wire))
         package.chmod(0o600);sha=M.install.digest(package)
         state.metadata["ledger"].remove(M.TARGET_SCHEMA)
-        state.metadata["ledger"].remove(M.RESTORE_SCHEMA)
-        state.metadata["release"].update(target_schema=M.OBSERVATION_SCHEMA,package_sha256=sha)
+        if head == M.OBSERVATION_SCHEMA:
+            state.metadata["ledger"].remove(M.RESTORE_SCHEMA)
+        state.metadata["release"].update(target_schema=head,package_sha256=sha)
         for row in state.metadata["history"]:
-            if row["release_sequence"]==17:row.update(target_schema=M.OBSERVATION_SCHEMA,package_sha256=sha)
+            if row["release_sequence"]==17:row.update(target_schema=head,package_sha256=sha)
         for row in state.metadata["generations"]:
-            if row["schema_head"]==M.TARGET_SCHEMA:row["schema_head"]=M.OBSERVATION_SCHEMA
+            if row["schema_head"]==M.TARGET_SCHEMA:row["schema_head"]=head
         old.state["current_release"].update(package=str(package),package_sha256=sha)
         old.state["package_sha256"]=sha
         old.witness["candidate"]["package_sha256"]=sha
         M.install.save_state(old.directory,old.state)
         return old,state,calls,bind
+
+    def test_cold_restore_checks_with_exact_predecessor_or_corrected_carrier(self):
+        for head, role in ((M.SOURCE_SCHEMA, "source"), (M.OBSERVATION_SCHEMA, "candidate"),
+                           (M.RESTORE_SCHEMA, "source"), (M.TARGET_SCHEMA, "candidate")):
+            with self.subTest(head=head):
+                if head == M.SOURCE_SCHEMA:
+                    operation, state, calls, _ = self.host(1)
+                else:
+                    old, state, calls, bind = (self.completed17() if head == M.TARGET_SCHEMA
+                                                else self.legacy128_completed17(head=head))
+                    operation = self.next_candidate(old, state, bind, 24)
+                before = len(calls)
+                def stop(point):
+                    if point == "done:cold-pair":
+                        raise Interrupted(point)
+                operation.test_checkpoint = stop
+                with patch.object(M.shutil, "disk_usage", return_value=SimpleNamespace(free=32 << 30)):
+                    with self.assertRaisesRegex(Interrupted, "done:cold-pair"):
+                        operation.execute()
+
+                receipt = operation._pair()
+                self.assertEqual(receipt["source_metadata"]["ledger"][-1], head)
+                self.assertEqual(state.metadata["ledger"][-1], head)
+                self.assertNotIn("migrate", operation.witness["done"])
+                [native] = [argv for label, argv in calls[before:]
+                            if label == "native upgrade owner: fresh-install check"]
+                overlay_path = operation.evidence / (role + "-restore-carrier.json")
+                self.assertIn(str(overlay_path), native)
+                overlay = json.loads(overlay_path.read_bytes())["services"]["backend"]
+                self.assertEqual(overlay["image"], operation.witness[role + "_image"]["reference"])
+                self.assertTrue(overlay["read_only"])
+                self.assertEqual(urlsplit(overlay["environment"]["DB_DSN"]).path,
+                                 "/" + receipt["verification_database"])
+                arguments = native[native.index("./uniroute") + 1:]
+                expected = ["fresh-install", "check", "--plan", "/upgrade/evidence/source-install-plan.json"]
+                if head == M.OBSERVATION_SCHEMA:
+                    expected += ["--completed-source-schema", M.OBSERVATION_SCHEMA]
+                self.assertEqual(arguments, expected)
 
     def test_lost_writer_admission_withdrawal_preserves_intent_and_recovers_once(self):
         for count in (1, 2):
