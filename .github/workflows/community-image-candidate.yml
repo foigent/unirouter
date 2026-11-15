@@ -42,13 +42,13 @@ jobs:
           python3 -c 'import time; print("UR_IMAGE_JOB_MONOTONIC=" + str(time.monotonic()))' >> "$GITHUB_ENV"
 
       - name: Check out approved producer code
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Check out separate accepted product source
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           repository: foigent/unirouter
           ref: 9e0240c68a20deebf9bcd0e2cc7b58034d09b696
