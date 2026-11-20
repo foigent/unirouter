@@ -32,7 +32,11 @@ test locally against PostgreSQL 16 and production-configured assets. The 420 off
 34 native fixture tests passed locally. The follow-up corrects the historical
 M129-to-M130 fixture and explicitly recognizes M130-to-M131 in the public
 upgrade consumer. A future formal release still needs its separately accepted
-exact source record and signed package.
+exact source record and signed package. The retained X-Insight setup and
+recovery checks fingerprint all original M127 rows and explicitly check that
+the new M131 pricing tables are empty at migration time. The CLI fixture uses
+the current artifact and its exact M130 predecessor. The fresh-install
+observation check verifies the complete artifact ledger.
 
 Local k6 used the gateway HTTP handlers, isolated PostgreSQL 16 and a mocked
 supplier. With one virtual user, Responses and Messages each settled 200 of
