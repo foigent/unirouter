@@ -10,7 +10,7 @@ const channelsPath = join(sourceRoot, 'api', 'channels.ts');
 const modelEndpointsPath = join(sourceRoot, 'api', 'modelEndpoints.ts');
 const retiredChannelKeysPagePath = join(sourceRoot, 'pages', 'ChannelKeysPage.tsx');
 const dormantConnectionPanelPath = join(sourceRoot, 'components', 'ConnectionModelPanel.tsx');
-const maxLegacyRequests = 152;
+const maxLegacyRequests = 148;
 const retiredRuntimeWriterNames = [
   'create',
   'validate',

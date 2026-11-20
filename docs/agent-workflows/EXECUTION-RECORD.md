@@ -21,11 +21,40 @@ Independent before-code review records the current main port in
 [the Standard mainline review](reviews/standard-pricing-mainline-m131-independent-20261121.md).
 The older candidate and original worktree remain available for audit.
 
-Local checks on the M131 candidate passed on PostgreSQL 16 and the pinned Go
-and Node toolchains. They include the 107-package Go race suite, focused
-PostgreSQL pricing and restore tests, 996 frontend tests and a production
-frontend build. The upgrade script passed 63 tests, the artifact-carrier
-script passed 84 tests, and release metadata passed 24 policy tests.
+Local checks used PostgreSQL 16 and the pinned Go and Node toolchains. The
+initial candidate passed the 107-package Go race suite. The follow-up passed
+the affected admin and CLI suites, the PostgreSQL log tie-order regression
+and the focused gateway and billing recovery cases. The frontend passed 997
+tests and the production build. The 420 offline CI delivery tests and the
+34 native fixture tests passed locally. The follow-up corrects the historical
+M129-to-M130 fixture and explicitly recognizes M130-to-M131 in the public
+upgrade consumer. A future formal release still needs its separately accepted
+exact source record and signed package.
+
+Local k6 used the gateway HTTP handlers, isolated PostgreSQL 16 and a mocked
+supplier. With one virtual user, Responses and Messages each settled 200 of
+200 operations exactly once. At four virtual users, the recorded revision
+run settled 197 of 200 Responses operations and 192 of 200 Messages
+operations. Each remaining operation returned 503 before provider dispatch
+and was cancelled without a debit. The same scenario on base
+`9ae41697` also returned 503, in 1 of 200 Responses and 2 of 200 Messages
+operations; the small samples cannot establish a comparative error rate.
+PostgreSQL recorded serialization conflicts at the provider-attempt
+deployment foreign key while the route health owner updated that deployment.
+
+On 200,000 synthetic logs, the representative PostgreSQL execution plan for
+20 rows at offset 100,000 changed from 81.31 ms to 19.27 ms. Both frozen-rate
+subqueries ran only 20 times each instead of 100,020, and the count remains
+separate. Ordering now uses creation time and ID. The public page-number
+contract remains supported. The Standard price query returned a single
+binding via the primary index with 10,000 synthetic revisions; its one
+EXPLAIN execution was 0.022 ms. These fixture timings are local snapshots.
+
+The existing GLM Publication review produced byte-identical summaries on two
+runs. Model readiness, operation Probe and Release data continue through the
+existing typed APIs. Local evidence does not authorize a paid Probe, a
+Target rollout, a signed release, historic ledger changes or expanding the
+finance read role to project users.
 
 ## UI workspace iteration — local candidate, 2026-10-11
 

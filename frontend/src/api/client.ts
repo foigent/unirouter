@@ -1,3 +1,4 @@
+import { requestLogsApi } from './requestLogs';
 import { apiPath, appendParams, request as typedRequest, requestBlob } from './transport';
 
 export { ApiError } from './transport';
@@ -132,42 +133,7 @@ export const api = {
   adjustWallet: (data: { org_id?: number; delta_cents: number; description: string; client_request_id: string }) =>
     legacyRequest('/wallet/adjust', { method: 'POST', body: JSON.stringify(data) }),
 
-  // Logs (with optional filters)
-  getLogs: (page = 1, pageSize = 20, filters?: {
-    model?: string; provider?: string; status_code?: string;
-    start_time?: string; end_time?: string; request_id?: string; client_request_id?: string;
-    latency_min?: string; latency_max?: string; search?: string;
-    trace_id?: string; workflow_id?: string; agent_id?: string; attempt_id?: string; upstream_request_id?: string;
-    evidence_ref?: string; source_event_hash?: string;
-    org_id?: number; project_id?: number; usage_source?: string;
-  }) => {
-    return legacyRequest(appendParams('/logs', {
-      page,
-      page_size: pageSize,
-      model: filters?.model,
-      provider: filters?.provider,
-      status_code: filters?.status_code,
-      start_time: filters?.start_time,
-      end_time: filters?.end_time,
-      request_id: filters?.request_id,
-      client_request_id: filters?.client_request_id,
-      trace_id: filters?.trace_id,
-      workflow_id: filters?.workflow_id,
-      agent_id: filters?.agent_id,
-      attempt_id: filters?.attempt_id,
-      upstream_request_id: filters?.upstream_request_id,
-      evidence_ref: filters?.evidence_ref,
-      source_event_hash: filters?.source_event_hash,
-      latency_min: filters?.latency_min,
-      latency_max: filters?.latency_max,
-      search: filters?.search,
-      org_id: filters?.org_id,
-      project_id: filters?.project_id,
-      usage_source: filters?.usage_source,
-    }));
-  },
-  getLogDetail: (id: number, orgId?: number) => legacyRequest(appendParams(`/logs/${id}`, { org_id: orgId })),
-  getLogTrace: (id: number, orgId?: number) => legacyRequest(appendParams(`/logs/${id}/trace`, { org_id: orgId })),
+  ...requestLogsApi,
 
   // PRD5 Data Exchange Control (platform admin only)
   getDataExchangeItems: (page = 1, pageSize = 20, status?: string) =>

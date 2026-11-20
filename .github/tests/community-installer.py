@@ -1555,9 +1555,8 @@ raise SystemExit("expected cold-pair interruption was not reached")
                 "read-only upgrade check/status changed source state")
         require(protected_file_facts() == protected_files,
                 "read-only upgrade check/status changed protected body or configuration")
-        # execute() already verifies the same candidate's real timers in
-        # M127 -> M129 single. M128 restore/data and M129 same-schema use the
-        # ordinary owner, without another wait for the unchanged candidate.
+        # execute() verifies the candidate's real timers on the single-writer
+        # M127 upgrade. Later sources use the ordinary owner.
         if retain or (not edge and old.schema in (OBSERVATION_SCHEMA, RESTORE_SCHEMA, ADMISSION_SCHEMA, CURRENT_SCHEMA)):
             self.run_native_upgrade(directory,edge,history)
         elif edge:

@@ -12,6 +12,8 @@ those build identities do not replace the product version.
   quote lookup, and a read-only list of authorization overruns.
 - Apply frozen cache rates to weekly Rate Cards and return the public protocol
   error when a stream fails before committing its HTTP response.
+- Resolve frozen log prices only for the selected page, order simultaneous logs
+  by ID, and discard late Request ID lookup responses after a project switch.
 - Install Standard pricing through the explicit M130-to-M131 maintenance
   transition or the existing fresh-install owner.
 

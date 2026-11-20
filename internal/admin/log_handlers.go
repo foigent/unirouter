@@ -195,8 +195,13 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Apply scope and pagination before looking up frozen rates. Otherwise
+	// skipped rows on deep pages can each trigger both rate lookups.
 	selectQuery := fmt.Sprintf(
-		`SELECT id, COALESCE(project_id, 0), request_id,
+		`WITH log_page AS MATERIALIZED (
+		    SELECT id FROM call_logs%s ORDER BY created_at DESC, id DESC LIMIT $%d OFFSET $%d
+		 )
+		 SELECT id, COALESCE(project_id, 0), request_id,
 		        COALESCE(client_request_id, ''), COALESCE(workflow_id, ''), COALESCE(agent_id, ''), COALESCE(attempt_id, ''),
 		        model, provider, channel, prompt_tokens,
 		        CASE WHEN cache_usage_schema = '' AND uncached_prompt_tokens = 0 THEN prompt_tokens ELSE uncached_prompt_tokens END,
@@ -221,7 +226,8 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 		        effective_cache_creation_price_micros_per_million, effective_output_price_micros_per_million,
 		        cache_read_cost_micros, cache_creation_cost_micros,
 		        is_stream, ip_address, requested_model, created_at
-		 FROM call_logs%s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`,
+		 FROM call_logs WHERE id IN (SELECT id FROM log_page)
+		 ORDER BY created_at DESC, id DESC`,
 		whereClause, argIdx, argIdx+1)
 	args = append(args, pageSize, offset)
 

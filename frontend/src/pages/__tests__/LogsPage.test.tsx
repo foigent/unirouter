@@ -9,11 +9,15 @@ const mockGetModelNames = vi.fn();
 const mockGetLogTrace = vi.fn();
 const mockGetOrganizations = vi.fn();
 const auth = vi.hoisted(() => ({ user: null as any }));
+vi.mock('../../api/requestLogs', () => ({
+  requestLogsApi: {
+    getLogs: (...args: any[]) => mockGetLogs(...args),
+    getLogTrace: (...args: any[]) => mockGetLogTrace(...args),
+  },
+}));
 vi.mock('../../api/client', () => ({
   api: {
-    getLogs: (...args: any[]) => mockGetLogs(...args),
     getModelNames: (...args: any[]) => mockGetModelNames(...args),
-    getLogTrace: (...args: any[]) => mockGetLogTrace(...args),
     getOrganizations: (...args: any[]) => mockGetOrganizations(...args),
   },
 }));
