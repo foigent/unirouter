@@ -3389,10 +3389,27 @@ paths:
         - { name: upstream_request_id, in: query, schema: { type: string }, description: Exact provider request ID }
       responses:
         "200":
-          $ref: "#/components/responses/JSON"
+          description: Tenant-scoped result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CallLogList" }
 
   /api/v1/logs/{id}:
-    get: *operation_get_by_id
+    get:
+      tags: [Admin]
+      summary: Get one accessible call log
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { name: org_id, in: query, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: Tenant-scoped result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CallLogDetail" }
+        "404": { $ref: "#/components/responses/Error" }
 
   /api/v1/logs/{id}/trace:
     get:
@@ -3408,7 +3425,10 @@ paths:
             type: integer
       responses:
         "200":
-          $ref: "#/components/responses/JSON"
+          description: Tenant-scoped result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CallLogTrace" }
 
   /api/v1/data-exchange/items:
     get: *operation_list
@@ -4586,6 +4606,154 @@ paths:
       post: [platform_admin, billing_admin]
     description: Activates an approved supplier-cost Rate Card only when all four Token request meters are explicit CNY micro absolute rates, every supported non-Token request meter uses an exact amount/unit rational, every configured UTC weekday/minute band preserves the same priced meter set with no overlap or gap on any day, the candidate is effective now, and provider_list evidence is not stale. Request quotes select the unique weekday/time band at priced_at and bind the complete schedule, selected band and component hashes into the pricing-version content hash; Billing Freeze persists that exact quote version and its required unit rates. If one same-model/same-layer active card conflicts, callers must provide its exact supersedes_rate_card_ref and expected_superseded_version; the transaction appends a retired version for that ref and an active version for the candidate, rolling both back on any failure. A declaration is rejected when no replacement is necessary, and multiple conflicts fail closed. Historical active versions remain available to validate immutable request snapshots. Activation alone does not change process configuration.
     post: *operation_create
+
+  /api/v1/enterprise-finance/customer-price-tables:
+    post:
+      tags: [Admin]
+      summary: Create an exact customer price table draft
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CustomerPriceTableDraft" }
+      responses:
+        "201":
+          description: Success
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerPriceTable" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v1/enterprise-finance/customer-price-tables/{table_ref}/{version}:
+    get:
+      tags: [Admin]
+      summary: Read an exact customer price table version
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: table_ref, in: path, required: true, schema: { type: string } }
+        - { name: version, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { name: org_id, in: query, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerPriceTable" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v1/enterprise-finance/customer-price-tables/{table_ref}/{version}/approve:
+    post:
+      tags: [Admin]
+      summary: Approve a customer price table draft independently
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: table_ref, in: path, required: true, schema: { type: string } }
+        - { name: version, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CustomerPriceApproval" }
+      responses:
+        "204":
+          description: Success
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v1/enterprise-finance/customer-price-bindings:
+    get:
+      tags: [Admin]
+      summary: Read the current organization or project price binding
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: org_id, in: query, schema: { type: integer, format: int64 } }
+        - { name: project_id, in: query, schema: { type: integer, format: int64, minimum: 0 } }
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerPriceBinding" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [Admin]
+      summary: Advance the exact customer price binding revision
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CustomerPriceBindingRequest" }
+      responses:
+        "201":
+          description: Success
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerPriceBinding" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v1/enterprise-finance/customer-charge-quotes/{request_ref}:
+    get:
+      tags: [Admin]
+      summary: Read the frozen customer quote and settlement status
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: request_ref, in: path, required: true, schema: { type: string } }
+        - { name: org_id, in: query, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerChargeQuoteRead" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v1/enterprise-finance/customer-charge-quote-overruns:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, billing_admin]
+    get:
+      tags: [Admin]
+      summary: List Standard customer quote overruns awaiting financial review
+      description: Organization-scoped list ordered by first provider-cost pending time and Request ID. Provide both cursor parameters together.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: org_id, in: query, schema: { type: integer, format: int64 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 50 } }
+        - { name: after_provider_cost_pending_at, in: query, schema: { type: string, format: date-time } }
+        - { name: after_request_id, in: query, schema: { type: string, maxLength: 64 } }
+      responses:
+        "200":
+          description: Confirmed provider-final usage held for exceeding the customer quote
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerChargeQuoteOverrunPage" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
 
   /api/v1/enterprise-finance/pricing-snapshots/{request_ref}:
     x-unirouter-rbac:
@@ -9848,6 +10016,249 @@ components:
           minimum: 0.001
           maximum: 99.999
           multipleOf: 0.001
+    CustomerPriceTableDraft:
+      type: object
+      required: [table_ref, version, effective_from, entries]
+      properties:
+        org_id: { type: integer, format: int64 }
+        table_ref: { type: string, maxLength: 160 }
+        version: { type: integer, format: int64, minimum: 1 }
+        effective_from: { type: string, format: date-time }
+        effective_to: { type: string, format: date-time }
+        entries:
+          type: array
+          minItems: 1
+          maxItems: 256
+          items: { $ref: "#/components/schemas/CustomerPriceEntry" }
+
+    CustomerPriceTable:
+      allOf:
+        - $ref: "#/components/schemas/CustomerPriceTableDraft"
+        - type: object
+          properties:
+            created_by: { type: string }
+            approved_by: { type: string }
+            approved_at: { type: string, format: date-time }
+
+    CustomerPriceEntry:
+      type: object
+      required: [public_model, operation, components]
+      properties:
+        public_model: { type: string }
+        operation: { type: string, enum: [openai.chat_completions.v1, openai.embeddings.v1, openai.responses.v1, anthropic.messages.v1] }
+        components:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: object
+            required: [meter, unit_quantity, amount]
+            properties:
+              meter: { type: string, enum: [input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens] }
+              unit_quantity: { type: string, enum: ['1000000'] }
+              amount:
+                type: object
+                required: [value_minor, currency, scale]
+                properties:
+                  value_minor: { type: string }
+                  currency: { type: string, enum: [CNY] }
+                  scale: { type: integer, enum: [1000000] }
+
+    CustomerPriceApproval:
+      type: object
+      properties:
+        org_id: { type: integer, format: int64 }
+
+    CustomerPriceBindingRequest:
+      type: object
+      required: [table_ref, table_version, expected_revision]
+      properties:
+        org_id: { type: integer, format: int64 }
+        project_id: { type: integer, format: int64, minimum: 0, description: Zero identifies the organization scope }
+        table_ref: { type: string }
+        table_version: { type: integer, format: int64, minimum: 1 }
+        expected_revision: { type: integer, format: int64, minimum: 0 }
+
+    CustomerPriceBinding:
+      type: object
+      required: [org_id, project_id, table_ref, table_version, revision]
+      properties:
+        org_id: { type: integer, format: int64 }
+        project_id: { type: integer, format: int64, minimum: 0 }
+        table_ref: { type: string }
+        table_version: { type: integer, format: int64, minimum: 1 }
+        revision: { type: integer, format: int64, minimum: 1 }
+
+    CustomerChargeQuoteOverrunPage:
+      type: object
+      required: [data]
+      properties:
+        next:
+          type: object
+          required: [provider_cost_pending_at, request_id]
+          properties:
+            provider_cost_pending_at: { type: string, format: date-time }
+            request_id: { type: string }
+        data:
+          type: array
+          items:
+            type: object
+            required: [request_id, project_id, provider_cost_pending_at, wallet_authorized_cost_micros, calculated_customer_cost_micros, charged_customer_cost_micros, uncovered_customer_cost_micros, uncached_input_tokens, cache_read_tokens, cache_creation_tokens, output_tokens]
+            properties:
+              request_id: { type: string }
+              project_id: { type: integer, format: int64 }
+              provider_cost_pending_at: { type: string, format: date-time, description: First provider cost pending time }
+              wallet_authorized_cost_micros: { type: string }
+              calculated_customer_cost_micros: { type: string }
+              charged_customer_cost_micros: { type: string }
+              uncovered_customer_cost_micros: { type: string }
+              uncached_input_tokens: { type: integer, format: int64 }
+              cache_read_tokens: { type: integer, format: int64 }
+              cache_creation_tokens: { type: integer, format: int64 }
+              output_tokens: { type: integer, format: int64 }
+
+    CustomerChargeQuoteRead:
+      type: object
+      required: [quote, wallet_authorized_cost_micros, charged_customer_cost_micros, settlement_status, settlement_pending_reason]
+      properties:
+        quote:
+          type: object
+          required: [contract_version, customer_charge_quote_id, request_id, pricing_version, priced_at, selection, currency, quoted_customer_cost_micros, maximum_authorized_customer_cost_micros]
+          properties:
+            contract_version: { type: string, enum: [unirouter.customer-charge-quote.v1] }
+            customer_charge_quote_id: { type: string }
+            request_id: { type: string }
+            pricing_version: { type: string }
+            priced_at: { type: string, format: date-time }
+            selection:
+              type: object
+              required: [binding, rate, tier, effective_from]
+              properties:
+                binding: { $ref: "#/components/schemas/CustomerPriceBinding" }
+                rate: { $ref: "#/components/schemas/CustomerPriceEntry" }
+                tier: { type: string, enum: [standard] }
+                effective_from: { type: string, format: date-time }
+                effective_to: { type: string, format: date-time }
+            currency: { type: string, enum: [CNY] }
+            quoted_customer_cost_micros: { type: string }
+            maximum_authorized_customer_cost_micros: { type: string }
+        wallet_authorized_cost_micros: { type: string }
+        charged_customer_cost_micros: { type: string }
+        settlement_status: { type: string }
+        settlement_pending_reason: { type: string }
+
+    CallLogList:
+      type: object
+      required: [data, total, org_id]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/CallLog" }
+        total: { type: integer }
+        org_id: { type: integer, format: int64 }
+
+    CallLog:
+      type: object
+      required: [id, project_id, request_id, model, status_code, cost_micros, currency, amount_scale, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        project_id: { type: integer, format: int64 }
+        request_id: { type: string }
+        client_request_id: { type: string }
+        workflow_id: { type: string }
+        agent_id: { type: string }
+        attempt_id: { type: string }
+        model: { type: string }
+        requested_model: { type: string }
+        provider: { type: string }
+        channel: { type: string }
+        upstream_error: { type: string }
+        usage_source: { type: string }
+        cache_usage_schema: { type: string }
+        cache_usage_status: { type: string }
+        pricing_version: { type: string }
+        prompt_tokens: { type: integer }
+        uncached_prompt_tokens: { type: integer }
+        cache_read_tokens: { type: integer }
+        cache_creation_tokens: { type: integer }
+        completion_tokens: { type: integer }
+        total_tokens: { type: integer }
+        status_code: { type: integer }
+        latency_ms: { type: integer }
+        ttft_ms: { type: integer }
+        upstream_status_code: { type: integer, nullable: true }
+        cache_read_ratio: { type: number }
+        cache_creation_ratio: { type: number }
+        cost_micros: { type: string }
+        effective_input_price_micros_per_million: { type: string }
+        effective_cache_read_price_micros_per_million: { type: string }
+        effective_cache_creation_price_micros_per_million: { type: string }
+        effective_output_price_micros_per_million: { type: string }
+        cache_read_cost_micros: { type: string }
+        cache_creation_cost_micros: { type: string }
+        currency: { type: string, enum: [CNY] }
+        amount_scale: { type: integer, enum: [1000000] }
+        is_stream: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    CallLogDetail:
+      allOf:
+        - $ref: "#/components/schemas/CallLog"
+        - type: object
+          required: [org_id, ip_address]
+          properties:
+            org_id: { type: integer, format: int64 }
+            ip_address: { type: string }
+
+    CallLogTrace:
+      type: object
+      required: [request_id, events]
+      properties:
+        request_id: { type: string }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/CallLogTraceEvent" }
+
+    CallLogTraceEvent:
+      type: object
+      required: [id, event_type, stage, severity, metadata, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        event_type: { type: string }
+        stage: { type: string }
+        severity: { type: string }
+        model: { type: string }
+        requested_model: { type: string }
+        provider: { type: string }
+        channel: { type: string }
+        schema_version: { type: string }
+        source_component: { type: string }
+        capture_mode: { type: string }
+        client_request_id: { type: string }
+        workflow_id: { type: string }
+        agent_id: { type: string }
+        attempt_id: { type: string }
+        payload_capture_mode: { type: string }
+        status_code: { type: integer, nullable: true }
+        latency_ms: { type: integer }
+        metadata: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+        trace_id: { type: string, nullable: true }
+        span_id: { type: string, nullable: true }
+        parent_span_id: { type: string, nullable: true }
+        capture_gap: { type: string, nullable: true }
+        evidence_ref: { type: string, nullable: true }
+        upstream_request_id: { type: string, nullable: true }
+        decision_kind: { type: string, nullable: true }
+        decision_result: { type: string, nullable: true }
+        decision_reason: { type: string, nullable: true }
+        actor_type: { type: string, nullable: true }
+        actor_ref: { type: string, nullable: true }
+        on_behalf_of: { type: string, nullable: true }
+        session_id: { type: string, nullable: true }
+        payload_ref: { type: string, nullable: true }
+        source_event_hash: { type: string, nullable: true }
+
     WalletResponse:
       type: object
       required: [id, org_id, org_name, exists, balance_micros, granted_balance_micros, frozen_micros, total_spent_micros, threshold_micros, currency, amount_scale, auto_freeze, low_balance_threshold_cents, is_admin, can_top_up, can_adjust, can_export_transactions, can_select_org, created_at, updated_at]

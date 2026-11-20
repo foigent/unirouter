@@ -159,6 +159,13 @@ func (suite *publicGatewayPGSuite) newRouteWithExecutionProfile(
 	executionProfile publicGatewayPGExecutionProfile,
 ) *publicGatewayPGFixture {
 	t.Helper()
+	fixture := suite.stageRoute(t, label, operation, executionProfile, nil)
+	suite.activateRoutes(t, fixture)
+	return fixture
+}
+
+func (suite *publicGatewayPGSuite) stageRoute(t *testing.T, label string, operation modeloperation.ID, executionProfile publicGatewayPGExecutionProfile, existing *publicGatewayPGFixture) *publicGatewayPGFixture {
+	t.Helper()
 	require.NotNil(t, suite)
 	require.NotNil(t, suite.pool)
 
@@ -205,28 +212,33 @@ func (suite *publicGatewayPGSuite) newRouteWithExecutionProfile(
 	}
 
 	ctx := t.Context()
-	_, err = suite.pool.Exec(ctx, `
+	if existing == nil {
+		_, err = suite.pool.Exec(ctx, `
 INSERT INTO model_prices(model_name,provider,input_price_cents,output_price_cents)
 VALUES ($1,$2,2,10)`, fixture.model, fixture.provider)
-	require.NoError(t, err)
-	if executionProfile.id == "" {
-		executionProfile.id = modelprofile.UnverifiedProfileID
-		executionProfile.version = modelprofile.UnverifiedProfileVersion
-	}
-	if executionProfile.context <= 0 {
-		executionProfile.context = 128000
-	}
-	if executionProfile.output <= 0 {
-		executionProfile.output = 8192
-	}
-	require.NoError(t, suite.pool.QueryRow(ctx, `
+		require.NoError(t, err)
+		if executionProfile.id == "" {
+			executionProfile.id = modelprofile.UnverifiedProfileID
+			executionProfile.version = modelprofile.UnverifiedProfileVersion
+		}
+		if executionProfile.context <= 0 {
+			executionProfile.context = 128000
+		}
+		if executionProfile.output <= 0 {
+			executionProfile.output = 8192
+		}
+		require.NoError(t, suite.pool.QueryRow(ctx, `
 INSERT INTO model_registry(
     org_id,model_name,display_name,provider_family,lifecycle,approved_catalog,
     context_length,output_limit,execution_profile_id,execution_profile_version)
 VALUES ($1,$2,$2,$3,'ga',TRUE,$4,$5,$6,$7) RETURNING id`,
-		suite.orgID, fixture.model, fixture.provider, executionProfile.context,
-		executionProfile.output, executionProfile.id, executionProfile.version,
-	).Scan(&fixture.publicModelID))
+			suite.orgID, fixture.model, fixture.provider, executionProfile.context,
+			executionProfile.output, executionProfile.id, executionProfile.version,
+		).Scan(&fixture.publicModelID))
+	} else {
+		require.Equal(t, existing.operation, operation)
+		fixture.model, fixture.publicModelID = existing.model, existing.publicModelID
+	}
 	require.NoError(t, suite.pool.QueryRow(ctx, `
 INSERT INTO provider_connections(
     name,provider,base_url,adapter_type,adapter_config,admin_state,config_revision)
@@ -327,28 +339,35 @@ VALUES ($1,$2,$3,'enabled','production_approved','integration:exact-profile',NOW
 		PublicPath: identity.PublicPath, ExecutorContractVersion: identity.ExecutorContractVersion,
 		Admission: routingpolicy.AdmissionAllow,
 	}
-	sealed := integrationfixture.AuthorSealedDeploymentRelease(t, suite.pool, suite.manager, integrationfixture.AtomicRelease{
-		PublicModelID: fixture.publicModelID,
-		CustomerOrgID: suite.orgID,
-		ActorUserID:   suite.userID,
-		ActorOrgID:    suite.orgID,
-		Selections: []runtimechange.DeploymentReleaseSelection{{
-			DeploymentID: fixture.deploymentID,
-			OperationID:  string(operation),
-		}},
-		Reason: "M77 public gateway execution authority fixture",
-	})
-	active := integrationfixture.ActivateInitialDeploymentRelease(t, suite.manager, integrationfixture.AtomicRelease{
-		PublicModelID: fixture.publicModelID,
-		CustomerOrgID: suite.orgID,
-		ActorUserID:   suite.userID,
-		ActorOrgID:    suite.orgID,
-	}, sealed)
-	require.Len(t, active.Candidate.DeploymentRoutes, 1)
-	fixture.activeBindingID = active.Candidate.DeploymentRoutes[0].PublicExecutionBindingID
-	require.Positive(t, fixture.activeBindingID)
-	fixture.route = active.Candidate.DeploymentRoutes[0]
 	return fixture
+}
+
+func (suite *publicGatewayPGSuite) activateRoutes(t *testing.T, fixtures ...*publicGatewayPGFixture) {
+	t.Helper()
+	modelID := fixtures[0].publicModelID
+	selections := make([]runtimechange.DeploymentReleaseSelection, 0, len(fixtures))
+	for _, fixture := range fixtures {
+		require.Equal(t, modelID, fixture.publicModelID)
+		selections = append(selections, runtimechange.DeploymentReleaseSelection{
+			DeploymentID: fixture.deploymentID, OperationID: string(fixture.operation),
+		})
+	}
+	request := integrationfixture.AtomicRelease{
+		PublicModelID: modelID, CustomerOrgID: suite.orgID,
+		ActorUserID: suite.userID, ActorOrgID: suite.orgID,
+		Selections: selections, Reason: "M77 public gateway execution authority fixture",
+	}
+	sealed := integrationfixture.AuthorSealedDeploymentRelease(t, suite.pool, suite.manager, request)
+	active := integrationfixture.ActivateInitialDeploymentRelease(t, suite.manager, request, sealed)
+	require.Len(t, active.Candidate.DeploymentRoutes, len(fixtures))
+	for _, fixture := range fixtures {
+		for _, route := range active.Candidate.DeploymentRoutes {
+			if route.DeploymentID == fixture.deploymentID {
+				fixture.activeBindingID, fixture.route = route.PublicExecutionBindingID, route
+			}
+		}
+		require.Positive(t, fixture.activeBindingID)
+	}
 }
 
 func (fixture *publicGatewayPGFixture) insertCurrentProbe(

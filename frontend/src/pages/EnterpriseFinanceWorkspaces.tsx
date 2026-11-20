@@ -1,7 +1,7 @@
 import '../i18n/finance';
 import type { MessageKey } from '../i18n/catalog';
 import { translate as t, useI18n, labelFor, localizeOptions, translateLabel } from '../i18n';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Banner, Button, Input, Modal, Select, Space, Table, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconRefresh, IconSearch } from '@douyinfe/semi-icons';
 import {
@@ -10,6 +10,10 @@ import {
   type BudgetPosition,
   type BudgetRecord,
   type CostCenter,
+  type CustomerChargeQuoteOverrun,
+  type CustomerChargeQuoteOverrunCursor,
+  type CustomerChargeQuoteOverrunPage,
+  type CustomerChargeQuoteRead,
   type ExactAmount,
   type FiscalPeriod,
   type JournalRecord,
@@ -21,6 +25,7 @@ import {
   type RequestPricingAuthority,
 } from '../api/enterpriseFinance';
 import RateCardPriceBandsEditor from '../components/RateCardPriceBandsEditor';
+import CustomerStandardPricingWorkspace from './CustomerStandardPricingWorkspace';
 import { EmptyState, MetricTile, StatusTag, Surface, formatMoney } from '../ui';
 import { formatDateTime } from '../utils/formatDate';
 import { useAuthStore } from '../store/auth';
@@ -519,10 +524,127 @@ export function EnterpriseBudgetWorkspace({ orgId, canManage }: { orgId?: number
   );
 }
 
+const customerSettlementLabels: Record<string, MessageKey> = {
+  frozen: '已冻结',
+  settlement_pending: '待核对',
+  settled: '已结算',
+  cancelled: '已取消',
+};
+
+function CustomerChargeQuoteLookup({ orgId }: { orgId?: number }) {
+  const [requestId, setRequestId] = useState('');
+  const [receipt, setReceipt] = useState<CustomerChargeQuoteRead | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const lookupVersion = useRef(0);
+
+  const lookup = async (id = requestId) => {
+    const ref = id.trim();
+    if (!ref) return;
+    const version = ++lookupVersion.current;
+    setLoading(true);
+    setReceipt(null);
+    setError('');
+    try {
+      const result = await enterpriseFinanceApi.getCustomerChargeQuote(ref, orgId);
+      if (version === lookupVersion.current) setReceipt(result);
+    } catch (lookupError) {
+      if (version === lookupVersion.current) setError(errorMessage(t("客户报价查询失败"), lookupError));
+    } finally {
+      if (version === lookupVersion.current) setLoading(false);
+    }
+  };
+
+  return (
+    <Surface title={t("Standard 客户报价回执")}>
+      <Space style={{ marginBottom: 16 }}>
+        <Input
+          aria-label={t("客户报价 Request ID")}
+          placeholder={t("输入 Request ID")}
+          maxLength={64}
+          value={requestId}
+          onChange={value => {
+            lookupVersion.current++;
+            setRequestId(value);
+            setReceipt(null);
+            setError('');
+            setLoading(false);
+          }}
+          onEnterPress={() => lookup()}
+        />
+        <Button icon={<IconSearch aria-hidden />} loading={loading} disabled={!requestId.trim()} onClick={() => lookup()}>
+          {t("查询客户报价")}
+        </Button>
+      </Space>
+      {error && <Banner type="danger" closeIcon={null} description={error} />}
+      {receipt && (
+        <Space vertical align="start" style={{ display: 'flex' }}>
+          <Typography.Text>
+            {receipt.quote.request_id} · {receipt.quote.selection.binding.table_ref} v{receipt.quote.selection.binding.table_version} · {formatDateTime(receipt.quote.priced_at)}
+          </Typography.Text>
+          <div className="ur-kpi-grid">
+            <MetricTile label={t("请求报价")} value={formatMoney(receipt.quote.quoted_customer_cost_micros)} tone="blue" />
+            <MetricTile label={t("钱包授权上限")} value={formatMoney(receipt.wallet_authorized_cost_micros)} tone="slate" />
+            <MetricTile label={t("已扣客户金额")} value={formatMoney(receipt.charged_customer_cost_micros)} tone="green" />
+            <MetricTile label={t("结算状态")} value={customerSettlementLabels[receipt.settlement_status] ? t(customerSettlementLabels[receipt.settlement_status]) : receipt.settlement_status} tone="violet" />
+          </div>
+          {receipt.settlement_pending_reason === 'customer_authorization_exceeded'
+            ? <Banner type="warning" closeIcon={null} description={t("上游确认用量超过客户授权，等待人工核对。")} />
+            : receipt.settlement_pending_reason && <Typography.Text type="secondary">{receipt.settlement_pending_reason}</Typography.Text>}
+          <Typography.Text code>{receipt.quote.pricing_version}</Typography.Text>
+        </Space>
+      )}
+      <CustomerChargeQuoteOverruns orgId={orgId} onLookup={id => { setRequestId(id); void lookup(id); }} />
+    </Surface>
+  );
+}
+
+function CustomerChargeQuoteOverruns({ orgId, onLookup }: { orgId?: number; onLookup: (id: string) => void }) {
+  const [page, setPage] = useState<CustomerChargeQuoteOverrunPage | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = async (after?: CustomerChargeQuoteOverrunCursor) => {
+    setLoading(true);
+    setError('');
+    try {
+      setPage(await enterpriseFinanceApi.getCustomerChargeQuoteOverruns(orgId, after));
+    } catch (loadError) {
+      setError(errorMessage(t("待核对报价加载失败"), loadError));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const columns = [
+    { title: 'Request ID', dataIndex: 'request_id', render: (id: string) => <Button theme="borderless" onClick={() => onLookup(id)}>{id}</Button> },
+    { title: t("项目 ID"), dataIndex: 'project_id' },
+    { title: t("授权上限"), dataIndex: 'wallet_authorized_cost_micros', render: (amount: string) => formatMoney(amount) },
+    { title: t("计算应收"), dataIndex: 'calculated_customer_cost_micros', render: (amount: string) => formatMoney(amount) },
+    { title: t("已扣"), dataIndex: 'charged_customer_cost_micros', render: (amount: string) => formatMoney(amount) },
+    { title: t("超额差异"), dataIndex: 'uncovered_customer_cost_micros', render: (amount: string) => formatMoney(amount) },
+    { title: t("确认用量（未缓存 / 缓存读 / 缓存写 / 输出）"), key: 'usage', render: (_: unknown, row: CustomerChargeQuoteOverrun) =>
+      [row.uncached_input_tokens, row.cache_read_tokens, row.cache_creation_tokens, row.output_tokens].join(' / ') },
+    { title: t("首次成本待处理时间"), dataIndex: 'provider_cost_pending_at', render: (value: string) => formatDateTime(value) },
+  ];
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <Space style={{ marginBottom: 12 }}>
+        <Button onClick={() => load()} disabled={loading}>{page ? t("返回待核对首页") : t("加载超额待核对")}</Button>
+        {page?.next && <Button onClick={() => load(page.next)} disabled={loading}>{t("下一页")}</Button>}
+      </Space>
+      {error && <Banner type="danger" closeIcon={null} description={error} />}
+      {page && <Table columns={columns} dataSource={page.data} rowKey="request_id" pagination={false} loading={loading} scroll={{ x: 1100 }} />}
+    </div>
+  );
+}
+
 export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: number; canManage: boolean }) {
   useI18n();
   const [cards, setCards] = useState<RateCardRecord[]>([]);
   const [authority, setAuthority] = useState<RequestPricingAuthority | null>(null);
+  const standardPricing = authority?.current_mode === 'customer_standard_v1';
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<{key: MessageKey; detail: string} | null>(null);
   const [requestRef, setRequestRef] = useState('');
@@ -806,9 +928,11 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
   return (
     <div className="ur-finance-workspace">
       {authority && <Banner
-        type={authority?.strict_active ? 'success' : 'warning'}
+        type={standardPricing || authority.strict_active ? 'success' : 'warning'}
         closeIcon={null}
-        description={authority?.strict_active
+        description={standardPricing
+          ? t("当前按已审核且显式绑定的 CNY 客户价表报价。")
+          : authority.strict_active
           ? t("当前已启用 Rate Card 严格模式：合同价优先于目录价；缺失或同优先级多供应商冲突时拒绝计价，绝不回退到旧 model_prices。账单有效价和内部费率不参与请求供应成本预测。")
           : t("当前仍是旧价格兼容模式，用于避免现有部署升级后停流。请先生成或导入草稿、独立复核并激活，再用逐模型预检确认完整性；随后由运维显式切换 REQUEST_PRICING_AUTHORITY=rate_card。")}
         style={{ marginBottom: 16 }}
@@ -829,15 +953,15 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
         <MetricTile label={t("待复核")} value={loading || error ? '—' : cards.filter(item => item.card.state === 'draft').length} tone="amber" />
         <MetricTile
           label={t("请求定价权威")}
-          value={!authority ? t("未确认") : authority.strict_active ? t("Rate Card 严格模式") : t("旧价格兼容模式")}
-          tone={authority?.strict_active ? 'green' : 'amber'}
-          meta={authority?.strict_active ? t("无 legacy 回退；逐模型失败关闭") : t("升级过渡；完成逐模型预检后再切换")}
+          value={!authority ? t("未确认") : standardPricing ? t("Standard 客户价表") : authority.strict_active ? t("Rate Card 严格模式") : t("旧价格兼容模式")}
+          tone={standardPricing || authority?.strict_active ? 'green' : 'amber'}
+          meta={standardPricing ? t("缺少有效绑定时拒绝报价") : authority?.strict_active ? t("无 legacy 回退；逐模型失败关闭") : t("升级过渡；完成逐模型预检后再切换")}
         />
         <MetricTile label={t("来源证据")} value={authority?.source_evidence_count ?? '—'} tone="violet" meta={t("过期 {v0}", { v0: String(authority?.stale_source_count || 0) })} />
       </div>
       <Surface title={t("版本化 Rate Card")} actions={(
         <Space>
-          {canManage && !authority?.strict_active ? <Button size="small" onClick={() => setBootstrapConfirmVisible(true)}>{t("从旧价格生成草稿")}</Button> : null}
+          {canManage && !standardPricing && !authority?.strict_active ? <Button size="small" onClick={() => setBootstrapConfirmVisible(true)}>{t("从旧价格生成草稿")}</Button> : null}
           {canManage ? <Button size="small" onClick={() => setImportVisible(true)}>{t("导入官方价格草稿")}</Button> : null}
           {canManage ? <Button size="small" type="primary" onClick={() => setCreateVisible(true)}>{t("新建 Rate Card")}</Button> : null}
           <Button size="small" icon={<IconRefresh />} onClick={load}>{t("刷新")}</Button>
@@ -887,6 +1011,8 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
           ) : null}
         </Space>
       </Surface>
+      {orgId && <CustomerStandardPricingWorkspace key={`price-tables-${orgId}`} orgId={orgId} canManage={canManage} />}
+      <CustomerChargeQuoteLookup key={`quote-lookup-${orgId ?? 'current'}`} orgId={orgId} />
       <Surface title={t("请求计价证据")} description={t("按操作 ID 查询已持久化的不可变计价快照；此页面不能创建或重算快照。")}>
         <Space style={{ marginBottom: 16 }}>
           <Input aria-label={t("操作 ID")} value={requestRef} onChange={setRequestRef} placeholder={t("输入操作 ID（Request ID）")} style={{ width: 320 }} />

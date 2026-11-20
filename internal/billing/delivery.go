@@ -99,6 +99,18 @@ func (b *Billing) PrepareNonStreamDelivery(ctx context.Context, request SettleRe
 	if err := persistReservationMeterEvidenceTx(ctx, tx, req.RequestID, req.OrgID, req.MeterUsage, breakdown.NonTokenCostMicros); err != nil {
 		return nil, err
 	}
+	overrun, err := customerQuoteOverrun(ctx, tx, record, req, calculatedCost)
+	if err != nil {
+		return nil, err
+	}
+	if overrun > 0 {
+		if err := b.holdCustomerAuthorizationOverrun(ctx, tx, record, req, calculatedCost, overrun, breakdown); err != nil {
+			return nil, err
+		}
+		result := prepareDeliveryResult(record, calculatedCost, 0, false)
+		result.ErrorCode = customerAuthorizationExceeded
+		return result, nil
+	}
 	additionalTopUp := int64(0)
 	newFrozenAmount := record.FrozenAmountMicros
 	newReservedBalance := record.ReservedBalanceMicros
@@ -127,7 +139,7 @@ func (b *Billing) PrepareNonStreamDelivery(ctx context.Context, request SettleRe
 			return nil, lockErr
 		}
 		if availableCash < additionalTopUp {
-			if err := persistFundingPendingTx(ctx, tx, b.outbox, record, req, calculatedCost, additionalTopUp, breakdown); err != nil {
+			if err := persistFundingPendingTx(ctx, tx, b.outbox, record, req, calculatedCost, additionalTopUp, breakdown, "insufficient_topup"); err != nil {
 				return nil, err
 			}
 			if err := markProviderAttemptFundingPendingTx(ctx, tx, req, calculatedCost); err != nil {
@@ -499,7 +511,7 @@ func recordDeliveryObservedTx(ctx context.Context, tx pgx.Tx, event DeliveryEven
 	// A terminal delivery receipt may be appended after settlement so the
 	// gateway can report whether its final protocol frame was accepted. Never
 	// regress an already terminal provider attempt while recording that fact.
-	if record.Status == "settled" || record.Status == "cancelled" {
+	if record.Status == "settled" || record.Status == "cancelled" || record.SettlementPendingReason == customerAuthorizationExceeded {
 		return nil
 	}
 	if event.Outcome == DeliveryOutcomeWriteFailed &&

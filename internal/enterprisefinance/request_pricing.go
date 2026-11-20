@@ -376,12 +376,67 @@ func requestQuoteComponents(rateComponents []RateComponent) ([]RequestPriceCompo
 	return components, nil
 }
 
-// ResolveRequestPriceQuote loads latest Rate Card versions and applies the
-// fail-closed pure resolver above.
+// requestPriceModelWhitespace matches strings.TrimSpace for stored model refs.
+const requestPriceModelWhitespace = "\t\n\v\f\r \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000"
+
+// ResolveRequestPriceQuote reads candidate cards and exact components from one
+// statement snapshot before applying the same selection and pricing rules.
 func (s *PostgresStore) ResolveRequestPriceQuote(ctx context.Context, orgID int64, modelRef string, pricedAt time.Time) (RequestPriceQuote, error) {
-	records, err := s.ListLatestRateCards(ctx, orgID)
+	modelRef = strings.TrimSpace(modelRef)
+	if orgID <= 0 || modelRef == "" || !validTime(pricedAt) {
+		return RequestPriceQuote{}, invalid("request_price_identity")
+	}
+	// The newer-version check is independent of eligibility. A draft, retired,
+	// or remapped successor must continue to suppress earlier versions.
+	rows, err := s.db.Query(ctx, `
+		SELECT v.rate_card_ref, v.version, v.provider_ref, v.model_ref,
+		       v.layer, v.state, v.effective_from, v.effective_to,
+		       v.source_evidence_ref, v.created_by, v.approved_by, v.daily_price_bands,
+		       COALESCE(components.rates, '[]'::jsonb)
+		FROM enterprise_finance_rate_card_versions v
+		LEFT JOIN LATERAL (
+		    SELECT jsonb_agg(jsonb_build_object(
+		        'meter', c.meter, 'unit_quantity', c.unit_quantity::text,
+		        'amount', jsonb_build_object('value_minor', c.amount_minor::text,
+		                                     'currency', c.currency, 'scale', c.amount_scale)
+		    ) ORDER BY c.meter) AS rates
+		    FROM enterprise_finance_rate_components c
+		    WHERE c.rate_card_version_id = v.id
+		) components ON true
+		WHERE v.org_id = $1 AND btrim(v.model_ref, $3) = $2
+		  AND v.state = 'active' AND v.layer IN ('supplier_contracted', 'provider_list')
+		  AND NOT EXISTS (
+		      SELECT 1 FROM enterprise_finance_rate_card_versions newer
+		      WHERE newer.org_id = v.org_id AND newer.rate_card_ref = v.rate_card_ref
+		        AND newer.version > v.version
+		  )`, orgID, modelRef, requestPriceModelWhitespace)
 	if err != nil {
-		return RequestPriceQuote{}, err
+		return RequestPriceQuote{}, fmt.Errorf("query request pricing candidates: %w", err)
+	}
+	defer rows.Close()
+
+	var records []RateCardRecord
+	for rows.Next() {
+		card := RateCard{ContractVersion: ContractVersion, OrgID: orgID}
+		var dailyPriceBands, components []byte
+		if err := rows.Scan(
+			&card.RateCardRef, &card.Version, &card.ProviderRef, &card.ModelRef,
+			&card.Layer, &card.State, &card.EffectiveFrom, &card.EffectiveTo,
+			&card.SourceEvidenceRef, &card.CreatedBy, &card.ApprovedBy, &dailyPriceBands, &components,
+		); err != nil {
+			return RequestPriceQuote{}, fmt.Errorf("scan request pricing candidate: %w", err)
+		}
+		card.DailyPriceBands, err = unmarshalDailyPriceBands(dailyPriceBands)
+		if err != nil {
+			return RequestPriceQuote{}, err
+		}
+		if err := json.Unmarshal(components, &card.Components); err != nil {
+			return RequestPriceQuote{}, fmt.Errorf("decode request pricing components: %w", err)
+		}
+		records = append(records, normalizeRateCardRecord(RateCardRecord{Card: card}))
+	}
+	if err := rows.Err(); err != nil {
+		return RequestPriceQuote{}, fmt.Errorf("iterate request pricing candidates: %w", err)
 	}
 	return ResolveRequestPriceQuote(records, orgID, modelRef, pricedAt)
 }

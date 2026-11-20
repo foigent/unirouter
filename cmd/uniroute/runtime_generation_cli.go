@@ -85,6 +85,9 @@ func runRuntimeGenerationCLI(ctx context.Context, args []string, cfg *config.Con
 		if !maintenancePredecessorControlAllowed(ledger, actual, cfg.RuntimeEnvironment, "inspect", nil) {
 			return schemaErr
 		}
+		if schemaauthority.HasUpgradeAdmissionRecovery(ledger[len(ledger)-1]) && args[0] != "inspect" {
+			return schemaErr
+		}
 		after := plan.After
 		if args[0] == "complete" {
 			retained, _, readErr := runtimegeneration.ReadIngress(ctx, postgres.Pool, complete.ChangeID)
@@ -98,10 +101,10 @@ func runRuntimeGenerationCLI(ctx context.Context, args []string, cfg *config.Con
 		}
 	}
 	head := actual[len(actual)-1]
-	if head != schemaauthority.CapabilityExpandHead && head != schemaauthority.StreamCounterExpandHead && head != schemaauthority.SourceFactsExpandHead && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead && head != schemaauthority.ScopedContentExpandHead && head != schemaauthority.XInsightPolicyExpandHead && (head != schemaauthority.XInsightAdoptionExpandHead && head != schemaauthority.XInsightCredentialExpandHead && head != schemaauthority.CommercialLicenseRetirementHead && head != schemaauthority.XInsightCommunicationHead && head != schemaauthority.UpstreamReleaseObservationHead && head != schemaauthority.UpstreamObservationRestoreHead && head != schemaauthority.UpgradeAdmissionRecoveryHead) {
+	if head != schemaauthority.CapabilityExpandHead && head != schemaauthority.StreamCounterExpandHead && head != schemaauthority.SourceFactsExpandHead && head != schemaauthority.ObservationExpandHead && head != schemaauthority.BudgetSnapshotExpandHead && head != schemaauthority.ContentCaptureExpandHead && head != schemaauthority.ContentReclaimExpandHead && head != schemaauthority.PreDispatchExpandHead && head != schemaauthority.ScopedContentExpandHead && head != schemaauthority.XInsightPolicyExpandHead && (head != schemaauthority.XInsightAdoptionExpandHead && head != schemaauthority.XInsightCredentialExpandHead && head != schemaauthority.CommercialLicenseRetirementHead && head != schemaauthority.XInsightCommunicationHead && head != schemaauthority.UpstreamReleaseObservationHead && head != schemaauthority.UpstreamObservationRestoreHead && !schemaauthority.HasUpgradeAdmissionRecovery(head)) {
 		return fmt.Errorf("runtime generation owner requires the exact expanded schema")
 	}
-	if head == schemaauthority.UpstreamObservationRestoreHead || head == schemaauthority.UpgradeAdmissionRecoveryHead {
+	if head == schemaauthority.UpstreamObservationRestoreHead || schemaauthority.HasUpgradeAdmissionRecovery(head) {
 		if err := upstreamrelease.CheckNamespace(ctx, postgres.Pool); err != nil {
 			return err
 		}
@@ -162,9 +165,11 @@ func maintenancePredecessorControlAllowed(artifact, actual []string, environment
 	last, prior := artifact[len(artifact)-1], artifact[len(artifact)-2]
 	// The existing isolated carrier proves the corrected M129 predecessor
 	// without acquiring any write authority through the new M130 artifact.
-	if last == schemaauthority.UpgradeAdmissionRecoveryHead {
+	if schemaauthority.HasUpgradeAdmissionRecovery(last) {
 		_, err := schemaauthority.RuntimeLedgers(artifact)
-		return err == nil && prior == schemaauthority.UpstreamObservationRestoreHead &&
+		exactPredecessor := last == schemaauthority.UpgradeAdmissionRecoveryHead && prior == schemaauthority.UpstreamObservationRestoreHead ||
+			last == schemaauthority.CustomerStandardPricingHead && prior == schemaauthority.UpgradeAdmissionRecoveryHead
+		return err == nil && exactPredecessor &&
 			command == "inspect" && slices.Equal(actual, artifact[:len(artifact)-1])
 	}
 	if !((last == schemaauthority.CommercialLicenseRetirementHead && prior == schemaauthority.XInsightCredentialExpandHead) || (last == schemaauthority.XInsightCommunicationHead && prior == schemaauthority.CommercialLicenseRetirementHead) || (last == schemaauthority.UpstreamReleaseObservationHead && prior == schemaauthority.XInsightCommunicationHead) || (last == schemaauthority.UpstreamObservationRestoreHead && prior == schemaauthority.UpstreamReleaseObservationHead)) {

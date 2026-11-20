@@ -230,6 +230,9 @@ func writePublicNonStreamError(w http.ResponseWriter, r *http.Request, requestID
 	case errors.Is(err, errPublicNonStreamHealthFailed):
 		code = "server_error.execution_state_unavailable"
 		message = "Public model execution state is temporarily unavailable"
+	case errors.Is(err, errPublicCustomerPriceUnavailable):
+		code = "billing_error.billing_contract_unavailable"
+		message = "No approved customer price for this request"
 	case errors.Is(err, errPublicNonStreamBillingFailed):
 		code = "server_error.billing_unavailable"
 		message = "Billing state is temporarily unavailable"

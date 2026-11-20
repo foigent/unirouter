@@ -60,7 +60,9 @@ func (b *Billing) HoldNonStreamOutput(ctx context.Context, request SettleRequest
 	if err != nil {
 		return fmt.Errorf("lock output hold attempt: %w", err)
 	}
-	if record.Status == "settlement_pending" && record.SettlementPendingReason == reason && attempt.State == ProviderAttemptStateOutputWithheld {
+	if record.Status == "settlement_pending" && (record.SettlementPendingReason == reason ||
+		(record.SettlementPendingReason == customerAuthorizationExceeded && customerQuotePricing(record.PricingVersion))) &&
+		attempt.State == ProviderAttemptStateOutputWithheld {
 		if !settlementUsageMatches(record, req) {
 			return ErrSettlementUsageConflict
 		}
@@ -72,6 +74,16 @@ func (b *Billing) HoldNonStreamOutput(ctx context.Context, request SettleRequest
 	calculatedCost, breakdown, err := calculateReservationCost(record, req)
 	if err != nil {
 		return err
+	}
+	var uncovered int64
+	if req.UsageAuthority == metering.UsageAuthorityProviderReported && req.UsageFinality == metering.UsageFinalityFinal {
+		uncovered, err = customerQuoteOverrun(ctx, tx, record, req, calculatedCost)
+		if err != nil {
+			return err
+		}
+		if uncovered > 0 {
+			reason = customerAuthorizationExceeded
+		}
 	}
 	if err := persistReservationMeterEvidenceTx(ctx, tx, req.RequestID, req.OrgID, req.MeterUsage, breakdown.NonTokenCostMicros); err != nil {
 		return err
@@ -87,7 +99,7 @@ func (b *Billing) HoldNonStreamOutput(ctx context.Context, request SettleRequest
 		    cache_usage_schema=$15, cache_usage_status=$16,
 		    calculated_cost_micros=$17, uncached_input_cost_micros=$18,
 		    cache_read_cost_micros=$19, cache_creation_cost_micros=$20,
-		    output_cost_micros=$21, settlement_payload_ready_at=NOW(),
+		    output_cost_micros=$21, settlement_payload_ready_at=NOW(), uncovered_cost_micros=$22,
 		    settlement_claimed_until=NULL, settlement_next_attempt_at=NULL,
 		    settlement_last_error='', updated_at=NOW()
 		WHERE request_id=$1 AND org_id=$2 AND status='frozen'`,
@@ -96,7 +108,7 @@ func (b *Billing) HoldNonStreamOutput(ctx context.Context, request SettleRequest
 		req.UsageAuthority, req.UsagePurpose, req.UsageFinality, req.UsageContractVersion,
 		req.UsageEstimateVersion, req.CacheUsageSchema, req.CacheUsageStatus, calculatedCost,
 		breakdown.UncachedInputCostMicros, breakdown.CacheReadCostMicros,
-		breakdown.CacheCreationCostMicros, breakdown.OutputCostMicros,
+		breakdown.CacheCreationCostMicros, breakdown.OutputCostMicros, uncovered,
 	); err != nil {
 		return fmt.Errorf("persist output hold: %w", err)
 	}

@@ -83,7 +83,7 @@ func (h *Handler) GetModelReadiness(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "Model readiness unavailable", "reason": "canonical_projection_unavailable"})
 			return
 		}
-		billingState, billingErr := h.inspectBillingReadiness(r.Context(), orgID, response.Scope.ResolvedModel)
+		billingState, billingErr := h.inspectBillingReadiness(r.Context(), orgID, response.Scope.ProjectID, response.Scope.ResolvedModel, operation.ID)
 		h.readinessPlatformAxes(r, orgID, &response, applications, billingState, billingErr)
 		response.Summary = modelreadiness.Summarize(response.PlatformModel, response.ProjectCaller)
 		response.Summary.CurrentProjectCallerCallable = modelreadiness.Fact{
@@ -143,7 +143,7 @@ func (h *Handler) GetModelReadiness(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "Model readiness unavailable", "reason": "canonical_projection_unavailable"})
 		return
 	}
-	billingState, billingErr := h.inspectBillingReadiness(r.Context(), orgID, response.Scope.ResolvedModel)
+	billingState, billingErr := h.inspectBillingReadiness(r.Context(), orgID, response.Scope.ProjectID, response.Scope.ResolvedModel, operation.ID)
 	h.readinessPlatformAxes(r, orgID, &response, applications, billingState, billingErr)
 	h.readinessWalletAxis(&response, billingState, billingErr)
 	h.readinessCallerAxes(r, orgID, projectID, caller, applicationRef, &response)
@@ -449,9 +449,14 @@ func canonicalReadinessRouteReason(err error) string {
 	}
 }
 
-func (h *Handler) inspectBillingReadiness(ctx context.Context, orgID int64, model string) (billing.AdmissionReadiness, error) {
+func (h *Handler) inspectBillingReadiness(ctx context.Context, orgID, projectID int64, model string, operation modeloperation.ID) (billing.AdmissionReadiness, error) {
 	if h == nil || h.billingReadiness == nil {
 		return billing.AdmissionReadiness{}, errors.New("billing readiness unavailable")
+	}
+	if scoped, ok := h.billingReadiness.(interface {
+		InspectScopedAdmissionReadiness(context.Context, int64, int64, string, modeloperation.ID) (billing.AdmissionReadiness, error)
+	}); ok {
+		return scoped.InspectScopedAdmissionReadiness(ctx, orgID, projectID, model, operation)
 	}
 	return h.billingReadiness.InspectAdmissionReadiness(ctx, orgID, model)
 }
@@ -461,6 +466,14 @@ func (h *Handler) readinessPriceAuthorityAxis(r *http.Request, model string, sta
 		return modelreadiness.Unavailable("request_pricing_authority_unavailable")
 	}
 	mode := string(state.PricingAuthority)
+	if state.PricingAuthority == billing.RequestPricingAuthorityCustomerStandard {
+		evidence := modelreadiness.Evidence("configured", state.PriceConfigured, "request_pricing_mode", mode)
+		if state.PriceConfigured {
+			evidence["pricing_version"] = state.PricingVersion
+			return modelreadiness.Ready("customer_price_binding_resolved", evidence)
+		}
+		return modelreadiness.Blocked("customer_price_binding_missing", evidence, "", "billing_admin")
+	}
 	if state.PriceConfigured {
 		evidence := modelreadiness.Evidence(
 			"configured", true,

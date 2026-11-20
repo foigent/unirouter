@@ -344,8 +344,8 @@ func runOnConnection(ctx context.Context, conn *pgxpool.Conn, dir string, option
 	}
 	if options.runtimeBridge {
 		for _, version := range pending {
-			if version == schemaauthority.CommercialLicenseRetirementHead || version == schemaauthority.XInsightCommunicationHead || (version == schemaauthority.UpstreamReleaseObservationHead || version == schemaauthority.UpstreamObservationRestoreHead || version == schemaauthority.UpgradeAdmissionRecoveryHead) {
-				return fmt.Errorf("M126/M127/M128/M129/M130 require explicit maintenance migration; ordinary startup does not apply them")
+			if version == schemaauthority.CommercialLicenseRetirementHead || version == schemaauthority.XInsightCommunicationHead || version == schemaauthority.UpstreamReleaseObservationHead || version == schemaauthority.UpstreamObservationRestoreHead || schemaauthority.HasUpgradeAdmissionRecovery(version) {
+				return fmt.Errorf("%s requires explicit maintenance migration; ordinary startup does not apply it", version)
 			}
 		}
 		options.scopeSet = true
@@ -380,6 +380,14 @@ func runOnConnection(ctx context.Context, conn *pgxpool.Conn, dir string, option
 	}
 	plannedVersions := append([]string(nil), appliedVersions...)
 	for _, version := range allowed {
+		if version == schemaauthority.CustomerStandardPricingHead {
+			if (!options.maintenance && !(options.fresh != nil && options.freshExpand == version)) || len(plannedVersions) == 0 || plannedVersions[len(plannedVersions)-1] != schemaauthority.UpgradeAdmissionRecoveryHead {
+				return fmt.Errorf("M131 requires exact M130 and an explicit maintenance/fresh owner")
+			}
+			if err := validateExactLedgerPrefix(plannedVersions, artifactVersions, schemaauthority.UpgradeAdmissionRecoveryHead); err != nil {
+				return fmt.Errorf("M131 requires the complete exact M130 ledger: %w", err)
+			}
+		}
 		if version == schemaauthority.UpgradeAdmissionRecoveryHead {
 			if (!options.maintenance && !(options.fresh != nil && options.freshExpand == version)) || len(plannedVersions) == 0 || plannedVersions[len(plannedVersions)-1] != schemaauthority.UpstreamObservationRestoreHead {
 				return fmt.Errorf("M130 requires exact M129 and an explicit maintenance/fresh owner")
@@ -720,6 +728,9 @@ func migrationTransactionBody(sqlContent string) string {
 }
 
 func validateCommercialRetirement(applied, artifact []string, maintenance, fresh bool) error {
+	if len(artifact) > 0 && artifact[len(artifact)-1] == schemaauthority.CustomerStandardPricingHead {
+		artifact = artifact[:len(artifact)-1]
+	}
 	if len(artifact) > 0 && artifact[len(artifact)-1] == schemaauthority.UpgradeAdmissionRecoveryHead {
 		artifact = artifact[:len(artifact)-1]
 	}

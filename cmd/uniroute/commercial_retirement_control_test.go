@@ -67,6 +67,9 @@ func TestCorrectedObservationMaintenanceCarrierKeepsFiniteWithdrawalBoundary(t *
 func TestAdmissionRecoveryCarrierOnlyInspectsExactM129InTest(t *testing.T) {
 	artifact, err := schemaauthority.ExpectedLedger("../../migrations")
 	require.NoError(t, err)
+	require.Equal(t, schemaauthority.CustomerStandardPricingHead, artifact[len(artifact)-1])
+	artifact = artifact[:len(artifact)-1]
+	require.Equal(t, schemaauthority.UpgradeAdmissionRecoveryHead, artifact[len(artifact)-1])
 	prior := artifact[:len(artifact)-1]
 	require.True(t, maintenancePredecessorControlAllowed(artifact, prior, "test", "inspect", nil))
 	require.False(t, maintenancePredecessorControlAllowed(artifact, prior, "production", "inspect", nil))
@@ -74,4 +77,14 @@ func TestAdmissionRecoveryCarrierOnlyInspectsExactM129InTest(t *testing.T) {
 	for _, command := range []string{"prepare", "complete", "read", "stop-check", "stop-apply"} {
 		require.False(t, maintenancePredecessorControlAllowed(artifact, prior, "test", command, []runtimegeneration.Identity{}))
 	}
+}
+
+func TestCustomerPricingCarrierOnlyInspectsExactM130InTest(t *testing.T) {
+	artifact, err := schemaauthority.ExpectedLedger("../../migrations")
+	require.NoError(t, err)
+	prior := artifact[:len(artifact)-1]
+	require.True(t, maintenancePredecessorControlAllowed(artifact, prior, "test", "inspect", nil))
+	require.False(t, maintenancePredecessorControlAllowed(artifact, prior, "production", "inspect", nil))
+	require.False(t, maintenancePredecessorControlAllowed(artifact, prior[:len(prior)-1], "test", "inspect", nil))
+	require.False(t, maintenancePredecessorControlAllowed(artifact, prior, "test", "prepare", nil))
 }

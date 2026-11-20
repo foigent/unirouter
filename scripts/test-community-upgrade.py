@@ -55,6 +55,10 @@ class OfflineTar:
 
 
 class UpgradeBoundaryTests(unittest.TestCase):
+    def test_customer_pricing_retains_exact_admission_predecessor(self):
+        self.assertEqual(M.transition_ledger([M.ADMISSION_SCHEMA]), [M.ADMISSION_SCHEMA, M.TARGET_SCHEMA])
+        self.assertEqual(M.transition_ledger([M.RESTORE_SCHEMA]), [M.RESTORE_SCHEMA, M.ADMISSION_SCHEMA, M.TARGET_SCHEMA])
+
     def test_native_lease_expiry_preserves_postgres_precision_and_offsets(self):
         for digits in range(7):
             fraction = "1" * digits
@@ -832,7 +836,8 @@ class WholeUpgradeTests(unittest.TestCase):
             return state.clones[db]
         def tables(db):
             data = database(db); meta = data["metadata"]
-            return {"business_history": data["business"], "model_deployments": data["models"], "xinsight_connector_installations": data["setups"], "admin_sessions":data["sessions"],
+            pricing = dict.fromkeys(M.CUSTOMER_PRICING_TABLES, []) if M.CUSTOMER_PRICING_SCHEMA in meta["ledger"] else {}
+            return {**pricing, "business_history": data["business"], "model_deployments": data["models"], "xinsight_connector_installations": data["setups"], "admin_sessions":data["sessions"],
                 "schema_migrations": [{"version": value} for value in meta["ledger"]],
                 "runtime_generations": meta["generations"], "runtime_support_manifests": meta["manifests"],
                 "runtime_ingress_changes": meta["ingress"], "release_state": [meta["release"]], "release_history": meta["history"],
@@ -979,7 +984,7 @@ class WholeUpgradeTests(unittest.TestCase):
                 state.native_calls.append(argv)
                 document = json.loads(input) if input else None
                 if argv == ["runtime-generation", "support"]:
-                    return json.dumps({"schema_heads": [M.SOURCE_SCHEMA, M.OBSERVATION_SCHEMA, M.RESTORE_SCHEMA, M.TARGET_SCHEMA]}, separators=(",", ":"))
+                    return json.dumps({"schema_heads": list(M.MAINTENANCE_SCHEMAS)}, separators=(",", ":"))
                 if argv == ["runtime-generation", "prepare"]:
                     state.metadata["ingress"].append(dict(document, status="pending"))
                     before = {row["instance"] for row in document["membership_before"]}
@@ -1419,9 +1424,8 @@ class WholeUpgradeTests(unittest.TestCase):
             for artifact in manifest["artifacts"]:
                 wire=(old.release.directory/artifact["path"]).read_bytes();entry=tarfile.TarInfo(artifact["path"]);entry.size=len(wire);archive.addfile(entry,io.BytesIO(wire))
         package.chmod(0o600);sha=M.install.digest(package)
-        state.metadata["ledger"].remove(M.TARGET_SCHEMA)
-        if head == M.OBSERVATION_SCHEMA:
-            state.metadata["ledger"].remove(M.RESTORE_SCHEMA)
+        end = state.metadata["ledger"].index(head) + 1
+        state.metadata["ledger"] = state.metadata["ledger"][:end]
         state.metadata["release"].update(target_schema=head,package_sha256=sha)
         for row in state.metadata["history"]:
             if row["release_sequence"]==17:row.update(target_schema=head,package_sha256=sha)
@@ -1586,7 +1590,7 @@ class WholeUpgradeTests(unittest.TestCase):
                     self.assertIn("source_state_path", operation.witness)
                     self.assertEqual(migrations + (sequence == 20), state.native_calls.count(["migrate", "up"]))
                     self.assertEqual(preserved, (state.business, state.models, state.setups, state.sessions))
-                    self.assertEqual([M.SOURCE_SCHEMA, M.OBSERVATION_SCHEMA, M.RESTORE_SCHEMA, M.TARGET_SCHEMA], state.metadata["ledger"])
+                    self.assertEqual(list(M.MAINTENANCE_SCHEMAS), state.metadata["ledger"])
 
     def test_distinct_origin_does_not_admit_wrong_native_source_or_predecessor(self):
         for fault in ("native_source", "candidate", "current_release", "pending", "incomplete"):
@@ -1651,7 +1655,7 @@ class WholeUpgradeTests(unittest.TestCase):
                 self.assertEqual(cloned,state.clones,"completed cold-pair readback does not replay partial restore")
                 self.assertEqual(observation,state.models)
                 self.assertEqual(original,operation.source_snapshot(operation.witness))
-                self.assertEqual([M.SOURCE_SCHEMA,M.OBSERVATION_SCHEMA,M.RESTORE_SCHEMA,M.TARGET_SCHEMA],state.metadata["ledger"])
+                self.assertEqual(list(M.MAINTENANCE_SCHEMAS),state.metadata["ledger"])
                 self.assertEqual(1,state.native_calls[before:].count(["migrate","up"]))
                 restore_calls=[argv for argv in state.native_calls[before:] if argv[:1]==["upgrade"] and argv[1].startswith("restore-compat-")]
                 self.assertEqual([["upgrade","restore-compat-check"],["upgrade","restore-compat-apply"]],restore_calls)
@@ -1698,7 +1702,7 @@ class WholeUpgradeTests(unittest.TestCase):
                     self.assertNotIn("source_state", operation.witness)
                     self.assertLess(len((operation.directory / "install-state.json").read_bytes()), 1 << 20)
                     self.assertEqual(observation, state.models)
-                    self.assertEqual([M.SOURCE_SCHEMA,M.OBSERVATION_SCHEMA,M.RESTORE_SCHEMA,M.TARGET_SCHEMA], state.metadata["ledger"])
+                    self.assertEqual(list(M.MAINTENANCE_SCHEMAS), state.metadata["ledger"])
                     self.assertEqual("same_schema", operation.witness["receipts"]["migrate"]["mode"])
                     self.assertNotIn(["migrate","up"], state.native_calls[len(before[0]):])
                     self.assertEqual(old_files, {str(p):p.read_bytes() for p in old_folder.rglob("*") if p.is_file()})

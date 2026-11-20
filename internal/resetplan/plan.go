@@ -86,6 +86,7 @@ var (
 		"billing_reservation_grant_allocations", "call_logs", "channel_model_probes", "channel_keys", "channels",
 		"completed_execution_feed_connections", "completed_execution_feed_items",
 		"completed_execution_feed_states", "delivery_attempt_quarantine",
+		"customer_charge_quote_receipts", "customer_price_binding_versions", "customer_price_table_versions",
 		"distributed_limit_policies", "enterprise_directory_account_snapshots",
 		"enterprise_directory_iam_actions", "enterprise_directory_person_snapshots",
 		"enterprise_directory_snapshots", "enterprise_directory_sources",
@@ -136,6 +137,9 @@ var (
 		"freeze_idempotency_observation_receipt_fk",
 	}
 	resetDeleteTriggers = []TriggerRef{
+		{Table: "customer_charge_quote_receipts", Name: "customer_charge_quote_evidence_immutable"},
+		{Table: "customer_price_binding_versions", Name: "customer_price_binding_evidence_immutable"},
+		{Table: "customer_price_table_versions", Name: "customer_price_table_evidence_immutable"},
 		{Table: "access_grant_revisions", Name: "access_grant_revisions_append_only"},
 		{Table: "access_operations", Name: "access_operations_append_only"},
 		{Table: "billing_provider_attempts", Name: "billing_provider_attempts_micro_ledger_evidence"},

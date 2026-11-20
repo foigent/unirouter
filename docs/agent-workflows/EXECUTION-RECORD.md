@@ -1,5 +1,32 @@
 # Current Execution Record
 
+## 2026-11-21 — Standard pricing on current main
+
+The earlier 1.2.36/M106 working-tree evidence is bound to `ac53699d`. GitHub
+main was `9ae41697dac1e376f2efb87177dd63ab2bec6b7d` at 1.15.7/M130 when
+this batch began. Main already uses M106 for a separate MiniMax qualification.
+The source candidate uses 1.15.8/M131 and retains main's runtime shutdown,
+request-log ordering, source reservation, stream counter and upgrade admission
+contracts.
+
+User-approved Standard pricing still requires an explicit approved CNY binding.
+Provider-final amounts above the frozen customer authorization remain pending
+without automatic debit and without generic refund, substitution or subsidy.
+The M131 migration requires the exact M130 ledger, stopped writers and empty
+ingress. The accepted M130 admission recovery history and M118 budget proof
+continue through their existing owners. Existing historical migrations are
+preserved.
+
+Independent before-code review records the current main port in
+[the Standard mainline review](reviews/standard-pricing-mainline-m131-independent-20261121.md).
+The older candidate and original worktree remain available for audit.
+
+Local checks on the M131 candidate passed on PostgreSQL 16 and the pinned Go
+and Node toolchains. They include the 107-package Go race suite, focused
+PostgreSQL pricing and restore tests, 996 frontend tests and a production
+frontend build. The upgrade script passed 63 tests, the artifact-carrier
+script passed 84 tests, and release metadata passed 24 policy tests.
+
 ## UI workspace iteration — local candidate, 2026-10-11
 
 The owner accepted the design and requested formal implementation. An isolated

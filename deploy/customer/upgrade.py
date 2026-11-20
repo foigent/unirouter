@@ -36,8 +36,11 @@ SCHEMA = "unirouter.community-upgrade.v1"
 SOURCE_SCHEMA = "000127_xinsight_communication_policy"
 OBSERVATION_SCHEMA = "000128_upstream_release_observation"
 RESTORE_SCHEMA = "000129_upstream_observation_restore_namespace"
+ADMISSION_SCHEMA = "000130_upgrade_admission_recovery"
+CUSTOMER_PRICING_SCHEMA = "000131_customer_standard_pricing"
 TARGET_SCHEMA = install.SCHEMA
-MAINTENANCE_SCHEMAS = (SOURCE_SCHEMA, OBSERVATION_SCHEMA, RESTORE_SCHEMA, TARGET_SCHEMA)
+MAINTENANCE_SCHEMAS = (SOURCE_SCHEMA, OBSERVATION_SCHEMA, RESTORE_SCHEMA, ADMISSION_SCHEMA, TARGET_SCHEMA)
+CUSTOMER_PRICING_TABLES = ("customer_price_table_versions", "customer_price_binding_versions", "customer_charge_quote_receipts")
 _NOT_STARTED = object()
 _NATIVE_MIGRATION_CONTINUATION = object()
 _HistoricalExit = namedtuple("_HistoricalExit", "generation observation")
@@ -1391,6 +1394,11 @@ class Upgrade(Installation):
             projections["schema_migrations"] = ("to_jsonb(t)", " WHERE version NOT IN " + self._in(added))
         actual = recovery.table_fingerprints(lambda db, query: self.sql(query, db), self.env["POSTGRES_DB"], projections=projections)
         expected = dict(pair["tables"])
+        if CUSTOMER_PRICING_SCHEMA in added:
+            for table in CUSTOMER_PRICING_TABLES:
+                require(table not in expected and actual.get(table, {}).get("count") == 0,
+                        "New pricing evidence must be empty before admission")
+                actual.pop(table)
         if recorded:
             require(isinstance(self._recorded_release(), dict), "Exact target release record is required")
             actual.pop("release_state"); expected.pop("release_state")

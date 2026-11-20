@@ -706,3 +706,30 @@ func openAPIHasOperation(spec string, route routeSpec) bool {
 	methodLine := "\n    " + strings.ToLower(route.Method) + ":"
 	return strings.Contains(block, methodLine)
 }
+
+func TestPublicResponsesDocumentationMatchesOpenAPIStreaming(t *testing.T) {
+	spec, err := os.ReadFile("../../docs/tech-ref/05-openapi-spec.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, responses, found := strings.Cut(string(spec), "  /v1/responses:\n")
+	if !found {
+		t.Fatal("Responses operation is missing from OpenAPI")
+	}
+	responses, _, _ = strings.Cut(responses, "  /v1/messages:\n")
+	streaming := strings.Contains(responses, "text/event-stream:")
+	for _, docs := range []struct{ path, entry string }{
+		{"main.go", "<code>/v1/responses</code>"},
+		{"../../frontend/src/pages/ApiDocsPage.tsx", "['POST', '/v1/responses',"},
+	} {
+		source, err := os.ReadFile(docs.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, entry, found := strings.Cut(string(source), docs.entry)
+		entry, _, _ = strings.Cut(entry, "\n")
+		if !found || strings.Contains(entry, "SSE") != streaming {
+			t.Errorf("%s Responses description disagrees with the OpenAPI stream media type", docs.path)
+		}
+	}
+}

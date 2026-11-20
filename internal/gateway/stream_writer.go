@@ -12,10 +12,12 @@ import (
 // outside the same critical section can race a heartbeat write even when the
 // byte write itself was locked.
 type sseStreamWriter struct {
-	mu           sync.Mutex
-	writer       http.ResponseWriter
-	controller   *http.ResponseController
-	writeTimeout time.Duration
+	mu               sync.Mutex
+	writer           http.ResponseWriter
+	controller       *http.ResponseController
+	writeTimeout     time.Duration
+	beforeFirstWrite func()
+	started          bool
 }
 
 func newSSEStreamWriter(writer http.ResponseWriter, writeTimeout time.Duration) *sseStreamWriter {
@@ -44,6 +46,13 @@ func (writer *sseStreamWriter) WriteAndFlushCount(format string, args ...any) (i
 			return 0, fmt.Errorf("set stream write deadline: %w", err)
 		}
 	}
+	if !writer.started {
+		if writer.beforeFirstWrite != nil {
+			writer.beforeFirstWrite()
+		}
+		// The underlying Write can commit headers even if it accepts no payload.
+		writer.started = true
+	}
 	written, err := fmt.Fprintf(writer.writer, format, args...)
 	if err != nil {
 		return written, fmt.Errorf("write stream event: %w", err)
@@ -52,4 +61,10 @@ func (writer *sseStreamWriter) WriteAndFlushCount(format string, args ...any) (i
 		return written, fmt.Errorf("flush stream event: %w", err)
 	}
 	return written, nil
+}
+
+func (writer *sseStreamWriter) hasStarted() bool {
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	return writer.started
 }

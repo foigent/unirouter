@@ -3,6 +3,64 @@ import { appendParams, request } from './transport';
 export type ExactAmount = { value_minor: string; currency: string; scale: number };
 export type EnterpriseScope = { kind: string; ref: string };
 
+export type CustomerChargeQuoteRead = {
+  quote: {
+    request_id: string;
+    pricing_version: string;
+    currency: 'CNY';
+    priced_at: string;
+    selection: {
+      tier: 'standard';
+      binding: { project_id: number; table_ref: string; table_version: number };
+    };
+    quoted_customer_cost_micros: string;
+    maximum_authorized_customer_cost_micros: string;
+  };
+  wallet_authorized_cost_micros: string;
+  charged_customer_cost_micros: string;
+  settlement_status: string;
+  settlement_pending_reason: string;
+};
+
+export type CustomerPriceEntry = { public_model: string; operation: string; components: RateComponent[] };
+export type CustomerPriceTableDraft = {
+  table_ref: string;
+  version: number;
+  effective_from: string;
+  effective_to?: string;
+  entries: CustomerPriceEntry[];
+};
+export type CustomerPriceTable = CustomerPriceTableDraft & {
+  org_id: number;
+  created_by: string;
+  approved_by?: string;
+  approved_at?: string;
+};
+export type CustomerPriceBinding = {
+  org_id: number;
+  project_id: number;
+  table_ref: string;
+  table_version: number;
+  revision: number;
+};
+
+export type CustomerChargeQuoteOverrunCursor = { provider_cost_pending_at: string; request_id: string };
+export type CustomerChargeQuoteOverrun = CustomerChargeQuoteOverrunCursor & {
+  project_id: number;
+  wallet_authorized_cost_micros: string;
+  calculated_customer_cost_micros: string;
+  charged_customer_cost_micros: string;
+  uncovered_customer_cost_micros: string;
+  uncached_input_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
+  output_tokens: number;
+};
+export type CustomerChargeQuoteOverrunPage = {
+  data: CustomerChargeQuoteOverrun[];
+  next?: CustomerChargeQuoteOverrunCursor;
+};
+
 export type RateComponent = {
   meter: string;
   unit_quantity: string;
@@ -119,7 +177,7 @@ export type RequestPricingAuthority = {
   active_on_import: boolean;
   legacy_compatibility: string;
   public_source_failure: string;
-  current_mode: 'legacy' | 'rate_card';
+  current_mode: 'legacy' | 'rate_card' | 'customer_standard_v1';
   strict_active: boolean;
 };
 
@@ -279,6 +337,29 @@ export const enterpriseFinanceApi = {
     request<RateCardRecord>(`/enterprise-finance/rate-cards/${encodeURIComponent(rateCardRef)}/activate`, { method: 'POST', body: JSON.stringify(data) }),
   getPricingSnapshot: (requestRef: string, orgId?: number) =>
     request<PricingSnapshotResult>(appendParams(`/enterprise-finance/pricing-snapshots/${encodeURIComponent(requestRef)}`, { org_id: orgId })),
+  getCustomerChargeQuote: (requestRef: string, orgId?: number) =>
+    request<CustomerChargeQuoteRead>(appendParams(`/enterprise-finance/customer-charge-quotes/${encodeURIComponent(requestRef)}`, { org_id: orgId })),
+  createCustomerPriceTable: (orgId: number, draft: CustomerPriceTableDraft) =>
+    request<CustomerPriceTable>('/enterprise-finance/customer-price-tables', {
+      method: 'POST', body: JSON.stringify({ ...draft, org_id: orgId }),
+    }),
+  getCustomerPriceTable: (orgId: number, tableRef: string, version: number) =>
+    request<CustomerPriceTable>(appendParams(`/enterprise-finance/customer-price-tables/${encodeURIComponent(tableRef)}/${version}`, { org_id: orgId })),
+  approveCustomerPriceTable: (orgId: number, tableRef: string, version: number) =>
+    request<void>(`/enterprise-finance/customer-price-tables/${encodeURIComponent(tableRef)}/${version}/approve`, {
+      method: 'POST', body: JSON.stringify({ org_id: orgId }),
+    }),
+  getCustomerPriceBinding: (orgId: number, projectId: number) =>
+    request<CustomerPriceBinding>(appendParams('/enterprise-finance/customer-price-bindings', { org_id: orgId, project_id: projectId })),
+  bindCustomerPriceTable: (orgId: number, projectId: number, table: CustomerPriceTable, expectedRevision: number) =>
+    request<CustomerPriceBinding>('/enterprise-finance/customer-price-bindings', {
+      method: 'POST',
+      body: JSON.stringify({ org_id: orgId, project_id: projectId, table_ref: table.table_ref, table_version: table.version, expected_revision: expectedRevision }),
+    }),
+  getCustomerChargeQuoteOverruns: (orgId?: number, after?: CustomerChargeQuoteOverrunCursor) =>
+    request<CustomerChargeQuoteOverrunPage>(appendParams('/enterprise-finance/customer-charge-quote-overruns', {
+      org_id: orgId, after_provider_cost_pending_at: after?.provider_cost_pending_at, after_request_id: after?.request_id,
+    })),
   getAllocationRuns: (periodRef: string, orgId?: number) =>
     request<ListResponse<AllocationRun>>(appendParams('/enterprise-finance/allocation-runs', { period_ref: periodRef, org_id: orgId })),
   getAllocationSummary: (periodRef: string, orgId?: number) =>

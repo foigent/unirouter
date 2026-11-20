@@ -12,16 +12,17 @@ import (
 type RequestPricingAuthority string
 
 const (
-	RequestPricingAuthorityLegacy   RequestPricingAuthority = "legacy"
-	RequestPricingAuthorityRateCard RequestPricingAuthority = "rate_card"
+	RequestPricingAuthorityLegacy           RequestPricingAuthority = "legacy"
+	RequestPricingAuthorityRateCard         RequestPricingAuthority = "rate_card"
+	RequestPricingAuthorityCustomerStandard RequestPricingAuthority = "customer_standard_v1"
 )
 
 func ValidateRequestPricingAuthority(authority RequestPricingAuthority) error {
 	switch authority {
-	case RequestPricingAuthorityLegacy, RequestPricingAuthorityRateCard:
+	case RequestPricingAuthorityLegacy, RequestPricingAuthorityRateCard, RequestPricingAuthorityCustomerStandard:
 		return nil
 	default:
-		return fmt.Errorf("request pricing authority must be legacy or rate_card")
+		return fmt.Errorf("request pricing authority must be legacy, rate_card, or customer_standard_v1")
 	}
 }
 

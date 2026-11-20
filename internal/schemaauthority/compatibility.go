@@ -12,6 +12,12 @@ func RuntimeLedgers(artifact []string) ([][]string, error) {
 		return nil, err
 	}
 	end := len(artifact)
+	if end >= 19 && artifact[end-1] == CustomerStandardPricingHead && artifact[end-2] == UpgradeAdmissionRecoveryHead {
+		if _, err := RuntimeLedgers(artifact[:end-1]); err != nil {
+			return nil, err
+		}
+		return [][]string{slices.Clone(artifact)}, nil
+	}
 	if end >= 18 && artifact[end-1] == UpgradeAdmissionRecoveryHead && artifact[end-2] == UpstreamObservationRestoreHead {
 		if _, err := RuntimeLedgers(artifact[:end-1]); err != nil {
 			return nil, err

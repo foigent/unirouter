@@ -902,6 +902,23 @@ func TestPublicNonStreamOrchestratorExactM77FenceRejectsStaticRouteDriftBeforeSe
 	}
 }
 
+func TestPublicNonStreamOrchestratorHealthActionsWithoutTransition(t *testing.T) {
+	var events []string
+	orchestrator := &publicNonStreamOrchestrator{coordinator: &publicRuntimeCoordinator{events: &events}}
+	decision := modelexecution.Decision{Status: modelexecution.Applied}
+	if err := orchestrator.applyTerminalHealth(t.Context(), decision, PublicNonStreamHealthNone); err != nil {
+		t.Fatalf("explicit no-op action: %v", err)
+	}
+	for _, action := range []PublicNonStreamHealthAction{"", "unknown"} {
+		if err := orchestrator.applyTerminalHealth(t.Context(), decision, action); !errors.Is(err, errPublicNonStreamHealthFailed) {
+			t.Fatalf("unsupported health action %q: %v", action, err)
+		}
+	}
+	if len(events) != 0 {
+		t.Fatalf("unexpected health writes: %v", events)
+	}
+}
+
 func TestPublicNonStreamOrchestratorHealthNonAppliedRetainsLiabilityAndStopsDelivery(t *testing.T) {
 	events := []string{}
 	fixture := newPublicRuntimeFixture(t, &events, 1)

@@ -89,6 +89,71 @@ func TestRateCardAuthoritySettlementUsesFrozenExplicitCacheRates(t *testing.T) {
 	require.Equal(t, int64(100_000), settled.ActualCostMicros)
 }
 
+func TestV1PricingAuthorityWeeklyCacheRatesSurvivePendingRecovery(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := t.Context()
+	orgID := insertRateAuthorityOrg(t, ctx, pool, "weekly-pending")
+	const model = "rate-authority-weekly-model"
+	const requestID = "rate-authority-weekly-pending"
+	components := requestRateComponents(40_000_000, 200_000_000)
+	components[2].Amount.ValueMinor = "0"
+	card := enterprisefinance.RateCard{
+		RateCardRef: "contract-weekly", OrgID: orgID, ProviderRef: "provider-a", ModelRef: model,
+		Layer: enterprisefinance.RateSupplierContract, EffectiveFrom: time.Now().UTC().Add(-time.Hour).Truncate(time.Microsecond),
+		Components: components,
+		DailyPriceBands: []enterprisefinance.DailyPriceBand{
+			{BandRef: "weekend", WeekdaysUTC: []int{0, 6}, EndMinuteUTC: 1440, Components: components},
+			{BandRef: "weekday", WeekdaysUTC: []int{1, 2, 3, 4, 5}, EndMinuteUTC: 1440, Components: components},
+		},
+	}
+	active := activateRequestRateCard(t, ctx, pool, card, enterprisefinance.RateCardActivationOptions{})
+	service := NewBilling(pool, nil).WithMode(BillingModeCostObservation).
+		WithRequestPricingAuthority(RequestPricingAuthorityRateCard)
+	freeze, err := service.Freeze(ctx, FreezeRequest{
+		RequestID: requestID, OrgID: orgID, Model: model, EstimatedTokens: 1000, SafetyFactor: "1",
+	})
+	require.NoError(t, err)
+	require.Regexp(t, `^rcq4_[a-f0-9]{64}$`, freeze.PricingVersion)
+	usage := SettleRequest{
+		RequestID: requestID, OrgID: orgID, PromptTokens: 3500, UncachedPromptTokens: 1000,
+		CacheReadTokens: 2000, CacheCreationTokens: 500, CompletionTokens: 100, UsageSource: "upstream",
+		CacheUsageSchema: "anthropic.prompt_cache.v1", CacheUsageStatus: "cache_read_write_reported",
+	}
+	require.NoError(t, service.MarkBillableOutput(ctx, requestID, orgID))
+	require.NoError(t, service.PersistSettlementUsage(ctx, usage))
+	// Simulate a durable pending calculation saved before rcq4 recognition.
+	_, err = pool.Exec(ctx, `UPDATE freeze_idempotency
+		SET calculated_cost_micros=160000,cache_read_cost_micros=80000 WHERE org_id=$1 AND request_id=$2`, orgID, requestID)
+	require.NoError(t, err)
+	card.EffectiveFrom = time.Now().UTC().Add(-time.Second).Truncate(time.Microsecond)
+	card.RateCardRef = "contract-weekly-successor"
+	card.Components = requestRateComponents(80_000_000, 300_000_000)
+	card.DailyPriceBands = nil
+	activateRequestRateCard(t, ctx, pool, card, enterprisefinance.RateCardActivationOptions{
+		SupersedesRateCardRef: active.Card.RateCardRef, ExpectedSupersededVersion: active.Card.Version,
+	})
+	next, err := service.Freeze(ctx, FreezeRequest{
+		RequestID: requestID + "-successor", OrgID: orgID, Model: model, EstimatedTokens: 1000, SafetyFactor: "1",
+	})
+	require.NoError(t, err)
+	require.Regexp(t, `^rcq2_[a-f0-9]{64}$`, next.PricingVersion)
+
+	recovery, err := service.RecoverPendingSettlements(ctx, 10)
+	require.NoError(t, err)
+	require.Equal(t, SettlementRecoveryResult{Claimed: 1, Settled: 1}, recovery)
+	settled, err := service.Settle(ctx, usage)
+	require.NoError(t, err)
+	require.True(t, settled.Success)
+	require.Equal(t, freeze.PricingVersion, settled.PricingVersion)
+	require.Zero(t, settled.CacheReadCostMicros)
+	require.Equal(t, int64(20_000), settled.CacheCreationCostMicros)
+	require.Equal(t, int64(80_000), settled.ActualCostMicros)
+	require.Positive(t, settled.ObservationReceiptID)
+	recovery, err = service.RecoverPendingSettlements(ctx, 10)
+	require.NoError(t, err)
+	require.Equal(t, SettlementRecoveryResult{}, recovery)
+}
+
 func TestRateCardAuthorityDoesNotFallbackToLegacyModelPrice(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
@@ -142,19 +207,25 @@ func insertRateAuthorityOrg(t *testing.T, ctx context.Context, pool *pgxpool.Poo
 
 func createActiveRequestRateCard(t *testing.T, ctx context.Context, pool *pgxpool.Pool, orgID int64, ref, provider, model string, input, output int64) enterprisefinance.RateCardRecord {
 	t.Helper()
-	store, err := enterprisefinance.NewPostgresStore(pool)
-	require.NoError(t, err)
-	card := enterprisefinance.RateCard{
+	return activateRequestRateCard(t, ctx, pool, enterprisefinance.RateCard{
 		RateCardRef: ref, OrgID: orgID, ProviderRef: provider, ModelRef: model,
 		Layer:         enterprisefinance.RateSupplierContract,
 		EffectiveFrom: time.Now().UTC().Add(-time.Hour).Truncate(time.Microsecond),
 		Components:    requestRateComponents(input, output),
-	}
+	}, enterprisefinance.RateCardActivationOptions{})
+}
+
+func activateRequestRateCard(
+	t *testing.T, ctx context.Context, pool *pgxpool.Pool, card enterprisefinance.RateCard, options enterprisefinance.RateCardActivationOptions,
+) enterprisefinance.RateCardRecord {
+	t.Helper()
+	store, err := enterprisefinance.NewPostgresStore(pool)
+	require.NoError(t, err)
 	draft, err := store.CreateRateCardDraft(ctx, card, "user:101")
 	require.NoError(t, err)
-	approved, err := store.ApproveRateCard(ctx, orgID, ref, draft.Card.Version, "user:102")
+	approved, err := store.ApproveRateCard(ctx, card.OrgID, card.RateCardRef, draft.Card.Version, "user:102")
 	require.NoError(t, err)
-	active, err := store.ActivateRateCard(ctx, orgID, ref, approved.Card.Version, "user:102", time.Now().UTC().Truncate(time.Microsecond))
+	active, err := store.ActivateRateCardWithSupersede(ctx, card.OrgID, card.RateCardRef, approved.Card.Version, options, "user:102", time.Now().UTC().Truncate(time.Microsecond))
 	require.NoError(t, err)
 	return active
 }
