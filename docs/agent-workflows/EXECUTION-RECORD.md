@@ -36,7 +36,10 @@ exact source record and signed package. The retained X-Insight setup and
 recovery checks fingerprint all original M127 rows and explicitly check that
 the new M131 pricing tables are empty at migration time. The CLI fixture uses
 the current artifact and its exact M130 predecessor. The fresh-install
-observation check verifies the complete artifact ledger.
+observation check verifies the complete artifact ledger. The hosted
+backend job pins the PG16 client tools to match the PG16 service. On a local
+PG16 database, the exact restore tests failed with PG18 tools because the
+dump injected `transaction_timeout`; both tests passed with PG16 tools.
 
 Local k6 used the gateway HTTP handlers, isolated PostgreSQL 16 and a mocked
 supplier. With one virtual user, Responses and Messages each settled 200 of
