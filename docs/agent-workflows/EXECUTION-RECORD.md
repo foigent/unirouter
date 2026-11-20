@@ -24,8 +24,11 @@ The older candidate and original worktree remain available for audit.
 Local checks used PostgreSQL 16 and the pinned Go and Node toolchains. The
 initial candidate passed the 107-package Go race suite. The follow-up passed
 the affected admin and CLI suites, the PostgreSQL log tie-order regression
-and the focused gateway and billing recovery cases. The frontend passed 997
-tests and the production build. The 420 offline CI delivery tests and the
+and the focused gateway and billing recovery cases. The frontend passed 999
+tests and the production build. CI exposed a collision between the finance
+and monitoring catalogs in a shared browser session. The corrected label
+passed both lazy-load orders and the same real Chromium overview navigation
+test locally against PostgreSQL 16 and production-configured assets. The 420 offline CI delivery tests and the
 34 native fixture tests passed locally. The follow-up corrects the historical
 M129-to-M130 fixture and explicitly recognizes M130-to-M131 in the public
 upgrade consumer. A future formal release still needs its separately accepted

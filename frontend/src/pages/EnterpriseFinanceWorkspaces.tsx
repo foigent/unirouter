@@ -586,7 +586,7 @@ function CustomerChargeQuoteLookup({ orgId }: { orgId?: number }) {
             <MetricTile label={t("请求报价")} value={formatMoney(receipt.quote.quoted_customer_cost_micros)} tone="blue" />
             <MetricTile label={t("钱包授权上限")} value={formatMoney(receipt.wallet_authorized_cost_micros)} tone="slate" />
             <MetricTile label={t("已扣客户金额")} value={formatMoney(receipt.charged_customer_cost_micros)} tone="green" />
-            <MetricTile label={t("结算状态")} value={customerSettlementLabels[receipt.settlement_status] ? t(customerSettlementLabels[receipt.settlement_status]) : receipt.settlement_status} tone="violet" />
+            <MetricTile label={t("客户结算状态")} value={customerSettlementLabels[receipt.settlement_status] ? t(customerSettlementLabels[receipt.settlement_status]) : receipt.settlement_status} tone="violet" />
           </div>
           {receipt.settlement_pending_reason === 'customer_authorization_exceeded'
             ? <Banner type="warning" closeIcon={null} description={t("上游确认用量超过客户授权，等待人工核对。")} />

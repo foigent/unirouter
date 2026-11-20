@@ -33,7 +33,7 @@ export const financeMessages = {
   "请求报价": "Quoted amount",
   "钱包授权上限": "Wallet authorization cap",
   "已扣客户金额": "Charged amount",
-  "结算状态": "Settlement status",
+  "客户结算状态": "Customer settlement status",
   "上游确认用量超过客户授权，等待人工核对。": "Confirmed provider usage exceeded the customer authorization and awaits review.",
   "项目 ID": "Project ID",
   "授权上限": "Authorization cap",
