@@ -30,7 +30,7 @@ func verifyRuntimeAuthority(ctx context.Context, pool *pgxpool.Pool, artifact []
 	if err != nil {
 		return nil, err
 	}
-	if actual[len(actual)-1] == schemaauthority.UpstreamObservationRestoreHead || actual[len(actual)-1] == schemaauthority.UpgradeAdmissionRecoveryHead {
+	if actual[len(actual)-1] == schemaauthority.UpstreamObservationRestoreHead || schemaauthority.HasUpgradeAdmissionRecovery(actual[len(actual)-1]) {
 		if err := upstreamrelease.CheckNamespace(ctx, tx); err != nil {
 			return nil, err
 		}

@@ -55,6 +55,17 @@ describe('page-scoped UI catalogs', () => {
     expect(translate('更新时间')).toBe('Updated');
     expect(translate('读取失败')).toBe('Unavailable');
   });
+  it.each(['monitoring-first', 'finance-first'] as const)('loads monitoring and finance in one session: %s', async order => {
+    localStorage.setItem('unirouter.ui.locale', 'en-US');
+    const { translate } = await import('./index');
+    const monitoring = () => import('./monitoring');
+    const finance = () => import('./finance');
+    if (order === 'monitoring-first') { await monitoring(); await finance(); }
+    else { await finance(); await monitoring(); }
+    expect(translate('结算状态')).toBe('Settlement');
+    expect(translate('客户结算状态')).toBe('Customer settlement status');
+  });
+
   it.each(['models-first', 'integrations-first'] as const)('loads the real model and integration domains without a collision: %s', async order => {
     localStorage.setItem('unirouter.ui.locale', 'en-US');
     const { translate } = await import('./index');

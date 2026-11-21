@@ -37,7 +37,8 @@ RETAINED_SCHEMA = "000127_xinsight_communication_policy"
 OBSERVATION_COMMIT = "4eb32b5514d47aa91610fc66ef561368d6a18900"
 OBSERVATION_SCHEMA = "000128_upstream_release_observation"
 RESTORE_SCHEMA = "000129_upstream_observation_restore_namespace"
-CURRENT_SCHEMA = "000130_upgrade_admission_recovery"
+ADMISSION_SCHEMA = "000130_upgrade_admission_recovery"
+CURRENT_SCHEMA = "000131_customer_standard_pricing"
 FIXTURE_PORTS = {"fresh": 13000, "single": 13001, "edge": 13002, "predecessor": 13003}
 SourceContract = namedtuple("SourceContract", "schema ledger supported_heads")
 # Match the accepted installation descriptor, not build-stage pull labels or floating tags.
@@ -92,7 +93,7 @@ def source_contract(repo):
             heads.append(ast.literal_eval(assignments[0]))
         except (ValueError, TypeError):
             raise Failed("shipped schema metadata must be literal") from None
-    require(heads[0] == heads[1] and heads[0] in (RETAINED_SCHEMA, OBSERVATION_SCHEMA, RESTORE_SCHEMA, CURRENT_SCHEMA),
+    require(heads[0] == heads[1] and heads[0] in (RETAINED_SCHEMA, OBSERVATION_SCHEMA, RESTORE_SCHEMA, ADMISSION_SCHEMA, CURRENT_SCHEMA),
             "shipped installer/bootstrap schema disagreement or unsupported fixture source")
     text = (repo / "internal/schemaauthority/version.go").read_text()
     constants = dict(re.findall(r'^const ([A-Za-z]+) = "([a-z0-9_]+)"$', text, re.M))
@@ -137,7 +138,7 @@ class Acceptance:
         require(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", self.version), "invalid version")
         self.source_contract = source_contract(repo)
         self.schema = self.source_contract.schema
-        self.release_sequence = {RETAINED_SCHEMA:16, OBSERVATION_SCHEMA:17, RESTORE_SCHEMA:21, CURRENT_SCHEMA:24}[self.schema]
+        self.release_sequence = {RETAINED_SCHEMA:16, OBSERVATION_SCHEMA:17, RESTORE_SCHEMA:21, ADMISSION_SCHEMA:24, CURRENT_SCHEMA:25}[self.schema]
         self.result.update(commit=self.commit, tree=self.tree, version=self.version)
         self.release = root / "release"
         self.release.mkdir(mode=0o700)
@@ -275,7 +276,7 @@ class Acceptance:
         deploy = self.release / "payload/deploy"
         deploy.mkdir(parents=True)
         names = ["install.py", "docker-compose.yml", ".env.example", "preflight.sh"]
-        if self.schema in (OBSERVATION_SCHEMA,RESTORE_SCHEMA,CURRENT_SCHEMA):
+        if self.schema in (OBSERVATION_SCHEMA,RESTORE_SCHEMA,ADMISSION_SCHEMA,CURRENT_SCHEMA):
             names += ["upgrade.py", "recovery.py"]
         for name in names:
             shutil.copyfile(self.repo / "deploy/customer" / name, deploy / name)
@@ -303,7 +304,7 @@ class Acceptance:
             require(count == 1, "retained fixture backend declaration differs")
             (deploy / "docker-compose.yml").write_text(compose)
             self.result["historical_fixture_config"] = "native body binding; signed synthetic operator configuration before first start"
-        if self.schema in (OBSERVATION_SCHEMA,RESTORE_SCHEMA,CURRENT_SCHEMA):
+        if self.schema in (OBSERVATION_SCHEMA,RESTORE_SCHEMA,ADMISSION_SCHEMA,CURRENT_SCHEMA):
             scripts = self.release / "payload/scripts"
             scripts.mkdir()
             shutil.copyfile(self.repo / "scripts/source-budget-restore-rebase.sql",
@@ -464,7 +465,7 @@ class Acceptance:
             require(product["schema"] == RESTORE_SCHEMA
                     and (product["version"], sequence, self.version, self.schema) in (
                         ("1.15.5", 22, "1.15.6", RESTORE_SCHEMA),
-                        ("1.15.6", 23, "1.15.7", CURRENT_SCHEMA)),
+                        ("1.15.6", 23, "1.15.7", ADMISSION_SCHEMA)),
                     "unexpected public delta rehearsal predecessor")
             require(self.release_sequence == sequence + 1,
                     "prepared candidate must immediately follow the pinned predecessor")
@@ -1554,10 +1555,9 @@ raise SystemExit("expected cold-pair interruption was not reached")
                 "read-only upgrade check/status changed source state")
         require(protected_file_facts() == protected_files,
                 "read-only upgrade check/status changed protected body or configuration")
-        # execute() already verifies the same candidate's real timers in
-        # M127 -> M129 single. M128 restore/data and M129 same-schema use the
-        # ordinary owner, without another wait for the unchanged candidate.
-        if retain or (not edge and old.schema in (OBSERVATION_SCHEMA, RESTORE_SCHEMA, CURRENT_SCHEMA)):
+        # execute() verifies the candidate's real timers on the single-writer
+        # M127 upgrade. Later sources use the ordinary owner.
+        if retain or (not edge and old.schema in (OBSERVATION_SCHEMA, RESTORE_SCHEMA, ADMISSION_SCHEMA, CURRENT_SCHEMA)):
             self.run_native_upgrade(directory,edge,history)
         elif edge:
             self.interrupt_upgrade(directory, edge, history)

@@ -20,7 +20,7 @@ func TestCommercialRetirementCLIWithdrawalIntegration(t *testing.T) {
 	dir := testutil.MigrationsDir(t)
 	artifact, err := schemaauthority.ExpectedLedger(dir)
 	require.NoError(t, err)
-	for _, head := range []string{schemaauthority.UpstreamObservationRestoreHead, schemaauthority.UpgradeAdmissionRecoveryHead} {
+	for _, head := range []string{schemaauthority.UpgradeAdmissionRecoveryHead, schemaauthority.CustomerStandardPricingHead} {
 		t.Run(head, func(t *testing.T) {
 			testRetirementCLIWithdrawal(t, dir, artifact, head)
 		})
@@ -54,7 +54,7 @@ func testRetirementCLIWithdrawal(t *testing.T, dir string, artifact []string, he
 	omittedMembership := withdrawal
 	omittedMembership.After = nil
 	completion := map[string]any{"change_id": withdrawal.ChangeID, "observed_digest": withdrawal.DesiredConfigDigest, "old_workers_gone": false, "observation": map[string]bool{"synthetic": true}}
-	if head == schemaauthority.UpstreamObservationRestoreHead {
+	if head != artifact[len(artifact)-1] {
 		// Exercise a real empty withdrawal and an existing change ID so the
 		// refusals reach the current CLI schema boundary.
 		for _, denied := range []runtimegeneration.IngressPlan{initial, omittedMembership, withdrawal} {

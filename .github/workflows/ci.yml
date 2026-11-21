@@ -141,7 +141,8 @@ jobs:
     if: >-
       always() && needs.changes.outputs.delivery_preflight_failed != 'true' &&
       (needs.changes.result != 'success' || needs.changes.outputs.backend == 'true')
-    runs-on: ubuntu-latest
+    # The restore fixtures require PostgreSQL 16 clients for the PostgreSQL 16 service.
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-backend
@@ -344,6 +345,18 @@ jobs:
         # This lane includes TestCanonicalDeploymentLifecycleHTTPApplicationIntegration.
         # Avoid rerunning the ordinary admin unit suite already covered above.
         run: go test -tags=integration -race ./internal/admin -run 'Integration$' -count=1 -timeout=20m
+
+      - name: Select PostgreSQL 16 clients for restore fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          client_dir=/usr/lib/postgresql/16/bin
+          for tool in pg_dump pg_restore psql; do
+            version="$("$client_dir/$tool" --version)"
+            printf '%s\n' "$version"
+            [[ "$version" =~ PostgreSQL\)\ 16\. ]]
+          done
+          printf '%s\n' "$client_dir" >> "$GITHUB_PATH"
 
       - name: Run consolidated backend integration and feature gates
         env:

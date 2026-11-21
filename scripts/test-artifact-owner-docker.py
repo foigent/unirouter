@@ -28,7 +28,7 @@ def carrier_read_ledgers(migrations, historical=False):
               list(r.BRIDGE_HEADS[r.BRIDGE_HEADS.index(r.XINSIGHT_POLICY_HEAD):]) +
               ["000126_commercial_license_retirement", "000127_xinsight_communication_policy",
                "000128_upstream_release_observation", "000129_upstream_observation_restore_namespace",
-               "000130_upgrade_admission_recovery"])
+               "000130_upgrade_admission_recovery", "000131_customer_standard_pricing"])
     if versions[-len(expected):] != expected:
         raise RuntimeError("carrier read fixture requires exact reviewed artifact heads")
     return [("bridge" if historical else "maintenance_predecessor",versions[:-1]),("current",versions)]

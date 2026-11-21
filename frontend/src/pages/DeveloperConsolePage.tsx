@@ -17,6 +17,7 @@ import {
   IconServer,
 } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
+import { requestLogsApi, type RequestLog as CallLog } from '../api/requestLogs';
 import { useAuthStore } from '../store/auth';
 import {
   authzContextForUser,
@@ -87,29 +88,6 @@ interface CatalogModel {
   pricing_model_name?: string;
   migration_recommendation?: string;
   aliases?: string | string[];
-}
-
-interface CallLog {
-  id: number;
-  project_id: number;
-  request_id: string;
-  model: string;
-  requested_model?: string;
-  provider: string;
-  channel: string;
-  prompt_tokens: number;
-  completion_tokens: number;
-  total_tokens: number;
-  cost_micros?: string;
-  pricing_version?: string;
-  status_code: number;
-  latency_ms: number;
-  ttft_ms?: number;
-  upstream_status_code?: number;
-  upstream_error?: string;
-  usage_source?: string;
-  is_stream?: boolean;
-  created_at: string;
 }
 
 interface UsageAnalyticsRow {
@@ -262,6 +240,7 @@ export default function DeveloperConsolePage() {
     || playgroundResult?.billing_status === 'settlement_pending_recovery'
     || playgroundResult?.billing_status === 'cancellation_failed_no_billable_output';
   const projectDataRequestVersion = useRef(0);
+  const lookupRequestVersion = useRef(0);
 
   const selectedProject = projects.find(project => project.id === selectedProjectId);
   const selectedProjectMembershipRole = canonicalProjectMembershipRole(selectedProject?.current_user_membership_role);
@@ -408,7 +387,7 @@ export default function DeveloperConsolePage() {
             routable_only: true,
           }))
           : Promise.resolve([] as CatalogModel[]),
-        api.getLogs(1, 20, { project_id: projectId }),
+        requestLogsApi.getLogs(1, 20, { project_id: projectId }),
         api.getUsageAnalytics({ project_id: projectId, scope: 'my', group_by: 'alias' }).catch((err: any) => {
           usageFailure = { detail: err?.message || '' };
           return null;
@@ -417,7 +396,7 @@ export default function DeveloperConsolePage() {
       if (projectDataRequestVersion.current !== requestVersion) return;
       setKeys(keyItems);
       setModels(modelItems);
-      setLogs((logData?.data || []) as CallLog[]);
+      setLogs(logData?.data ?? []);
       setUsageSummary((usageData?.summary || null) as UsageAnalyticsSummary | null);
       setUsageByModel((usageData?.data || []) as UsageAnalyticsRow[]);
       setUsageLoadError(usageFailure);
@@ -434,6 +413,8 @@ export default function DeveloperConsolePage() {
     const nextProjectId = Number(value);
     if (!Number.isFinite(nextProjectId) || nextProjectId === selectedProjectId) return;
     projectDataRequestVersion.current += 1;
+    lookupRequestVersion.current += 1;
+    setLookupLoading(false);
     clearProjectData();
     setProjectDataError('');
     setUsageLoadError(null);
@@ -453,6 +434,11 @@ export default function DeveloperConsolePage() {
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
   useEffect(() => { loadProjectData(); }, [loadProjectData]);
+  useEffect(() => {
+    setLookupResult(null);
+    setLookupLoading(false);
+    return () => { lookupRequestVersion.current += 1; };
+  }, [selectedProjectId]);
   useEffect(() => {
     if (!playgroundModel && modelOptions[0]) setPlaygroundModel(modelOptions[0]);
   }, [modelOptions, playgroundModel]);
@@ -529,21 +515,25 @@ export default function DeveloperConsolePage() {
   const handleLookup = async () => {
     const requestID = lookupRequestId.trim();
     if (!selectedProjectId || !requestID) return;
+    const requestVersion = ++lookupRequestVersion.current;
     setLookupLoading(true);
     setLookupResult(null);
     try {
-      const list = await api.getLogs(1, 1, { project_id: selectedProjectId, request_id: requestID });
-      const first = list?.data?.[0] as CallLog | undefined;
+      const list = await requestLogsApi.getLogs(1, 1, { project_id: selectedProjectId, request_id: requestID });
+      if (requestVersion !== lookupRequestVersion.current) return;
+      const first = list?.data?.[0];
       if (!first) {
         Toast.warning(t("未找到该 Request ID"));
         return;
       }
-      const detail = await api.getLogDetail(first.id);
-      setLookupResult(detail as CallLog);
-    } catch (err: any) {
-      Toast.error(t("查询失败{v0}", { v0: String(err?.message ? `：${err.message}` : '') }));
+      const detail = await requestLogsApi.getLogDetail(first.id);
+      if (requestVersion === lookupRequestVersion.current) setLookupResult(detail);
+    } catch (err) {
+      if (requestVersion === lookupRequestVersion.current) {
+        Toast.error(t("查询失败{v0}", { v0: err instanceof Error ? `：${err.message}` : '' }));
+      }
     } finally {
-      setLookupLoading(false);
+      if (requestVersion === lookupRequestVersion.current) setLookupLoading(false);
     }
   };
 

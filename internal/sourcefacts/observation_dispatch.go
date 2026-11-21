@@ -27,8 +27,8 @@ func (s *Service) observation(org, project int64, request, profile, subjectKind,
 
 // MaterializeDispatchTx is called by the existing coordinator after its final
 // route claim. The three frozen records prove registration, never network I/O.
-// Their durable outbox insert shares that transaction; source publication occurs
-// later in the original worker, without changing Authorize's RR snapshot.
+// Their durable outbox insert shares that transaction. The existing worker
+// publishes the records after commit.
 func (s *Service) MaterializeDispatchTx(ctx context.Context, tx pgx.Tx, plan modelrouting.Plan, route modelrouting.Route, start billing.ProviderAttemptStart, evidenceHash string, at time.Time) error {
 	if !s.ObservationsEnabled() {
 		return nil

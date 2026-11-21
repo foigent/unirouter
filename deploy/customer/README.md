@@ -295,8 +295,8 @@ restoration instruction. This source template does not itself sign or release it
 
 - Repository path: `scripts/source-budget-restore-rebase.sql`
 - Signed payload path: `payload/scripts/source-budget-restore-rebase.sql`
-- SHA-256: `8eff80f5e60a75c5d15f1b11dcd71d9bfc52ccd9cd4cf9c13780ab17378de696`
-- Bytes: `16955`
+- SHA-256: `dbdfd9d1955fa6b0d8f9bebdce5f2499fcda0cd0b4e51030197018159613cac9`
+- Bytes: `17374`
 
 After every supported SQL restore, while all database readers/writers are still
 stopped, run this helper with `psql -v ON_ERROR_STOP=1 -f` before restart. It retains

@@ -40,6 +40,10 @@ type ModelExecutionCoordinator interface {
 	Authorize(context.Context, modelrouting.Plan, modelrouting.Route, modelexecution.AttemptIdentity) (modelexecution.Decision, error)
 	RenewLease(context.Context, modelexecution.Decision) (modelexecution.HealthResult, error)
 	ReleaseUndispatched(context.Context, modelexecution.Decision) (modelexecution.HealthResult, error)
+	providerAttemptHealthWriter
+}
+
+type providerAttemptHealthWriter interface {
 	MarkSuccess(context.Context, modelexecution.Decision) (modelexecution.HealthResult, error)
 	MarkProviderFailure(context.Context, modelexecution.Decision) (modelexecution.HealthResult, error)
 	MarkCredentialAuthFailure(context.Context, modelexecution.Decision) (modelexecution.HealthResult, error)
@@ -786,13 +790,13 @@ const (
 func (action executionHealthAction) String() string {
 	switch action {
 	case executionHealthSuccess:
-		return "success"
+		return string(PublicNonStreamHealthSuccess)
 	case executionHealthProviderFailure:
-		return "provider_failure"
+		return string(PublicNonStreamHealthProviderFailure)
 	case executionHealthCredentialAuthFailure:
-		return "credential_auth_failure"
+		return string(PublicNonStreamHealthCredentialAuthFailure)
 	case executionHealthCredentialRateLimited:
-		return "credential_rate_limited"
+		return string(PublicNonStreamHealthCredentialRateLimited)
 	default:
 		return "unknown"
 	}
@@ -864,22 +868,7 @@ func (relay *Relay) applyRouteHealth(ctx context.Context, _ *RouteResult, action
 	if !ok || relay.modelExecution == nil || relay.modelExecution.coordinator == nil {
 		return fmt.Errorf("model execution health authority is unavailable")
 	}
-	var (
-		result modelexecution.HealthResult
-		err    error
-	)
-	switch action {
-	case executionHealthSuccess:
-		result, err = relay.modelExecution.coordinator.MarkSuccess(ctx, decision)
-	case executionHealthProviderFailure:
-		result, err = relay.modelExecution.coordinator.MarkProviderFailure(ctx, decision)
-	case executionHealthCredentialAuthFailure:
-		result, err = relay.modelExecution.coordinator.MarkCredentialAuthFailure(ctx, decision)
-	case executionHealthCredentialRateLimited:
-		result, err = relay.modelExecution.coordinator.MarkCredentialRateLimited(ctx, decision)
-	default:
-		return fmt.Errorf("unsupported route health action")
-	}
+	result, err := applyProviderAttemptHealth(ctx, relay.modelExecution.coordinator, decision, PublicNonStreamHealthAction(action.String()))
 	if err != nil {
 		return err
 	}
@@ -887,6 +876,25 @@ func (relay *Relay) applyRouteHealth(ctx context.Context, _ *RouteResult, action
 		return fmt.Errorf("model execution health transition: %s", result.Status)
 	}
 	return nil
+}
+
+var errUnsupportedRouteHealthAction = errors.New("unsupported route health action")
+
+func applyProviderAttemptHealth(
+	ctx context.Context, writer providerAttemptHealthWriter, decision modelexecution.Decision, action PublicNonStreamHealthAction,
+) (modelexecution.HealthResult, error) {
+	switch action {
+	case PublicNonStreamHealthSuccess:
+		return writer.MarkSuccess(ctx, decision)
+	case PublicNonStreamHealthProviderFailure:
+		return writer.MarkProviderFailure(ctx, decision)
+	case PublicNonStreamHealthCredentialAuthFailure:
+		return writer.MarkCredentialAuthFailure(ctx, decision)
+	case PublicNonStreamHealthCredentialRateLimited:
+		return writer.MarkCredentialRateLimited(ctx, decision)
+	default:
+		return modelexecution.HealthResult{}, errUnsupportedRouteHealthAction
+	}
 }
 
 // maintainExecutionLease keeps an Applied half-open decision alive while the

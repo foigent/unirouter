@@ -21,8 +21,13 @@ const XInsightCommunicationHead = "000127_xinsight_communication_policy"
 const UpstreamReleaseObservationHead = "000128_upstream_release_observation"
 const UpstreamObservationRestoreHead = "000129_upstream_observation_restore_namespace"
 const UpgradeAdmissionRecoveryHead = "000130_upgrade_admission_recovery"
-const LatestSupportedMigration = UpgradeAdmissionRecoveryHead
+const CustomerStandardPricingHead = "000131_customer_standard_pricing"
+const LatestSupportedMigration = CustomerStandardPricingHead
 
 func SupportedSchemaHeads() []string {
-	return []string{LegacyCapabilityHead, CapabilityExpandHead, StreamCounterExpandHead, SourceFactsExpandHead, ObservationExpandHead, BudgetSnapshotExpandHead, ContentCaptureExpandHead, ContentReclaimExpandHead, PreDispatchExpandHead, ScopedContentExpandHead, XInsightPolicyExpandHead, XInsightAdoptionExpandHead, XInsightCredentialExpandHead, CommercialLicenseRetirementHead, XInsightCommunicationHead, UpstreamReleaseObservationHead, UpstreamObservationRestoreHead, UpgradeAdmissionRecoveryHead}
+	return []string{LegacyCapabilityHead, CapabilityExpandHead, StreamCounterExpandHead, SourceFactsExpandHead, ObservationExpandHead, BudgetSnapshotExpandHead, ContentCaptureExpandHead, ContentReclaimExpandHead, PreDispatchExpandHead, ScopedContentExpandHead, XInsightPolicyExpandHead, XInsightAdoptionExpandHead, XInsightCredentialExpandHead, CommercialLicenseRetirementHead, XInsightCommunicationHead, UpstreamReleaseObservationHead, UpstreamObservationRestoreHead, UpgradeAdmissionRecoveryHead, CustomerStandardPricingHead}
+}
+
+func HasUpgradeAdmissionRecovery(head string) bool {
+	return head == UpgradeAdmissionRecoveryHead || head == CustomerStandardPricingHead
 }

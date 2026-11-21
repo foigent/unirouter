@@ -4,6 +4,21 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.15.8] - 2026-11-21
+
+- Add opt-in Standard customer price tables, bindings and frozen CNY quotes.
+  Confirmed usage above the authorized amount is held for manual review.
+- Add customer price-table draft, approval and binding controls, a scoped
+  quote lookup, and a read-only list of authorization overruns.
+- Apply frozen cache rates to weekly Rate Cards and return the public protocol
+  error when a stream fails before committing its HTTP response.
+- Resolve frozen log prices only for the selected page, order simultaneous logs
+  by ID, and discard late Request ID lookup responses after a project switch.
+- Keep concurrent healthy Responses and Messages dispatch eligible while
+  ordinary health updates commit on the same route.
+- Install Standard pricing through the explicit M130-to-M131 maintenance
+  transition or the existing fresh-install owner.
+
 ## [1.15.7] - 2026-11-14
 
 ### Fixed

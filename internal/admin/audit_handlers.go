@@ -509,7 +509,8 @@ func (h *Handler) cleanupOldData(ctx context.Context, retentionDays, traceRetent
 	result, err = h.db.Exec(ctx,
 		`DELETE FROM freeze_idempotency
 		 WHERE created_at < NOW() - INTERVAL '30 days'
-		   AND status NOT IN ('frozen', 'settlement_pending')`,
+		   AND status NOT IN ('frozen', 'settlement_pending')
+		   AND left(pricing_version, 5) <> 'ccq1_'`,
 	)
 	if err != nil {
 		return fmt.Errorf("cleanup freeze_idempotency: %w", err)

@@ -18,6 +18,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	internaldb "github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/metering"
+	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/outbox"
 )
@@ -32,6 +33,8 @@ type FreezeRequest struct {
 	CredentialRef            string
 	AccessGrantID            int64
 	Model                    string
+	ModelOperation           modeloperation.ID
+	ProcessingTier           string
 	EstimatedTokens          int
 	EstimatedInputTokens     int
 	ReservedCompletionTokens int
@@ -135,6 +138,7 @@ type priceQuote struct {
 	RateCardLayer                      string
 	ProviderRef                        string
 	UnitRates                          []UnitRate
+	customerQuote                      *customerQuoteReceipt
 }
 
 type reservationRecord struct {
@@ -291,6 +295,8 @@ func (b *Billing) queryPriceQuoteForOrg(ctx context.Context, orgID int64, model 
 		return quote, err
 	case RequestPricingAuthorityRateCard:
 		return b.queryRateCardPriceQuote(ctx, orgID, model, time.Now().UTC())
+	case RequestPricingAuthorityCustomerStandard:
+		return priceQuote{}, ErrModelPriceNotConfigured
 	default:
 		return priceQuote{}, fmt.Errorf("invalid request pricing authority %q", b.requestPricingAuthority)
 	}
@@ -505,7 +511,19 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	// Resolve the effective price before acquiring a transaction connection. A
 	// one-connection pool must not deadlock by trying to query through the pool
 	// while its only connection is already held by tx.
-	quote, err := b.queryPriceQuoteForOrg(ctx, req.OrgID, req.Model)
+	var quote priceQuote
+	var err error
+	if b.requestPricingAuthority == RequestPricingAuthorityCustomerStandard {
+		if req.APIKeyID <= 0 {
+			return &FreezeResult{Success: false, ErrorCode: "billing_contract_unavailable"}, nil
+		}
+		quote, err = b.queryCustomerChargeQuote(ctx, req)
+		if errors.Is(err, ErrModelPriceNotConfigured) {
+			return &FreezeResult{Success: false, ErrorCode: "billing_contract_unavailable"}, nil
+		}
+	} else {
+		quote, err = b.queryPriceQuoteForOrg(ctx, req.OrgID, req.Model)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("quote freeze price: %w", err)
 	}
@@ -561,6 +579,11 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 		}
 		if nullableString(existingExecutionSnapshotHash) != req.ExecutionSnapshotHash {
 			return &FreezeResult{Success: false, ErrorCode: "request_identity_conflict", ErrorDetail: "model execution Plan snapshot changed"}, nil
+		}
+		if matches, err := customerQuoteMatchesRequest(ctx, tx, req, existing.PricingVersion); err != nil {
+			return nil, err
+		} else if !matches {
+			return &FreezeResult{Success: false, ErrorCode: "request_identity_conflict", ErrorDetail: "customer quote scope or selector changed"}, nil
 		}
 		if existing.Status == "frozen" {
 			return &FreezeResult{
@@ -747,6 +770,11 @@ func (b *Billing) replayFreeze(ctx context.Context, req FreezeRequest) (*FreezeR
 	if nullableString(executionSnapshotHash) != req.ExecutionSnapshotHash {
 		return &FreezeResult{Success: false, ErrorCode: "request_identity_conflict", ErrorDetail: "model execution Plan snapshot changed"}, true, nil
 	}
+	if matches, err := customerQuoteMatchesRequest(ctx, b.db, req, record.PricingVersion); err != nil {
+		return nil, true, err
+	} else if !matches {
+		return &FreezeResult{Success: false, ErrorCode: "request_identity_conflict", ErrorDetail: "customer quote scope or selector changed"}, true, nil
+	}
 	if record.Status == "frozen" {
 		return &FreezeResult{
 			AmountMicros: record.FrozenAmountMicros, CalculatedCostMicros: record.AdmissionCalculatedCostMicros,
@@ -806,6 +834,11 @@ func (b *Billing) insertFreezeReservationTx(
 	)
 	if err != nil {
 		return err
+	}
+	if quote.customerQuote != nil {
+		if err := insertCustomerQuoteReceipt(ctx, tx, *quote.customerQuote, admissionCalculatedCost, frozenAmount); err != nil {
+			return err
+		}
 	}
 	return b.materializeSourceReservation(ctx, tx, req, quote, mode)
 }
@@ -1172,6 +1205,12 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 	if err := requireSettlementCounterVersionTx(ctx, tx, req); err != nil {
 		return nil, err
 	}
+	if record.SettlementPendingReason == customerAuthorizationExceeded {
+		return &SettleResult{
+			ActualCostMicros: record.CalculatedCostMicros, UncoveredCostMicros: record.UncoveredCostMicros,
+			PricingVersion: record.PricingVersion, BillingMode: record.BillingMode, ErrorCode: customerAuthorizationExceeded,
+		}, nil
+	}
 
 	switch record.Status {
 	case "settled":
@@ -1242,6 +1281,19 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 	if err := persistReservationMeterEvidenceTx(ctx, tx, req.RequestID, req.OrgID, req.MeterUsage, costBreakdown.NonTokenCostMicros); err != nil {
 		return nil, err
 	}
+	overrun, err := customerQuoteOverrun(ctx, tx, record, req, calculatedCost)
+	if err != nil {
+		return nil, err
+	}
+	if overrun > 0 {
+		if err := b.holdCustomerAuthorizationOverrun(ctx, tx, record, req, calculatedCost, overrun, costBreakdown); err != nil {
+			return nil, err
+		}
+		return &SettleResult{
+			ActualCostMicros: calculatedCost, UncoveredCostMicros: overrun,
+			PricingVersion: record.PricingVersion, BillingMode: record.BillingMode, ErrorCode: customerAuthorizationExceeded,
+		}, nil
+	}
 	if record.BillingMode == BillingModeCostObservation {
 		return b.settleObservationTx(ctx, tx, record, req, calculatedCost, costBreakdown)
 	}
@@ -1270,7 +1322,7 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		return nil, err
 	}
 	if availableCash < additionalTopUpAmount {
-		if err := persistFundingPendingTx(ctx, tx, b.outbox, record, req, calculatedCost, additionalTopUpAmount, costBreakdown); err != nil {
+		if err := persistFundingPendingTx(ctx, tx, b.outbox, record, req, calculatedCost, additionalTopUpAmount, costBreakdown, "insufficient_topup"); err != nil {
 			return nil, err
 		}
 		if err := markProviderAttemptFundingPendingTx(ctx, tx, req, calculatedCost); err != nil {
@@ -1692,12 +1744,13 @@ func persistFundingPendingTx(
 	calculatedCost int64,
 	shortfall int64,
 	costBreakdown reservationCostBreakdown,
+	reason string,
 ) error {
 	result, err := tx.Exec(ctx,
 		`UPDATE freeze_idempotency
 		 SET status = 'settlement_pending',
 		     provider_cost_pending_at = COALESCE(provider_cost_pending_at, NOW()),
-		     settlement_pending_reason = 'insufficient_topup',
+		     settlement_pending_reason = $22::text,
 		     prompt_tokens = $3,
 		     uncached_prompt_tokens = $4,
 		     cache_read_tokens = $5,
@@ -1722,7 +1775,9 @@ func persistFundingPendingTx(
 		     settlement_payload_ready_at = COALESCE(settlement_payload_ready_at, NOW()),
 		     settlement_claimed_until = NULL,
 		     settlement_next_attempt_at = NULL,
-		     settlement_last_error = 'insufficient prepaid balance for automatic top-up',
+		     settlement_last_error = CASE WHEN $22::text='customer_authorization_exceeded'
+		         THEN 'provider-final usage exceeds the authorized customer quote'
+		         ELSE 'insufficient prepaid balance for automatic top-up' END,
 		     updated_at = NOW()
 		 WHERE request_id = $1 AND org_id = $2
 		   AND status IN ('frozen', 'settlement_pending')`,
@@ -1734,7 +1789,7 @@ func persistFundingPendingTx(
 		req.CacheUsageSchema, req.CacheUsageStatus,
 		calculatedCost, shortfall,
 		costBreakdown.UncachedInputCostMicros, costBreakdown.CacheReadCostMicros,
-		costBreakdown.CacheCreationCostMicros, costBreakdown.OutputCostMicros,
+		costBreakdown.CacheCreationCostMicros, costBreakdown.OutputCostMicros, reason,
 	)
 	if err != nil {
 		return fmt.Errorf("persist funding-pending settlement: %w", err)
@@ -1830,8 +1885,8 @@ func calculateReservationCost(record reservationRecord, req SettleRequest) (int6
 }
 
 func pricingVersionHasExplicitCacheRates(version string) bool {
-	return strings.HasPrefix(version, "pv2_") || strings.HasPrefix(version, "pv3_") ||
-		strings.HasPrefix(version, "rcq2_") || strings.HasPrefix(version, "rcq3_")
+	return customerQuotePricing(version) || strings.HasPrefix(version, "pv2_") || strings.HasPrefix(version, "pv3_") ||
+		strings.HasPrefix(version, "rcq2_") || strings.HasPrefix(version, "rcq3_") || strings.HasPrefix(version, "rcq4_")
 }
 
 func settleResultFromRecord(record reservationRecord) *SettleResult {

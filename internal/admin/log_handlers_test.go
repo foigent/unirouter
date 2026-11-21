@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/testutil"
@@ -263,5 +264,46 @@ func TestSanitizeTraceResponseMetadata(t *testing.T) {
 		if _, ok := metadata[key]; ok {
 			t.Fatalf("metadata leaked or kept unsupported field %s: %#v", key, metadata)
 		}
+	}
+}
+
+func TestListLogsTiedTimestampsKeepStablePages(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := t.Context()
+	var orgID, otherOrgID int64
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs(name) VALUES ('log-page-org') RETURNING id`).Scan(&orgID))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs(name) VALUES ('log-page-other') RETURNING id`).Scan(&otherOrgID))
+	at := time.Now().UTC()
+	for _, id := range []string{"first", "second", "third"} {
+		_, err := pool.Exec(ctx, `INSERT INTO call_logs (org_id,request_id,created_at) VALUES ($1,$2,$3)`, orgID, id, at)
+		require.NoError(t, err)
+	}
+	_, err := pool.Exec(ctx, `INSERT INTO call_logs (org_id,request_id,created_at) VALUES ($1,'outside-org',$2)`, otherOrgID, at)
+	require.NoError(t, err)
+	handler := &Handler{db: pool}
+	for _, item := range []struct {
+		path     string
+		requests []string
+	}{
+		{"/logs?page=1&page_size=2", []string{"third", "second"}},
+		{"/logs?page=2&page_size=2", []string{"first"}},
+	} {
+		request := withTestActor(httptest.NewRequest(http.MethodGet, item.path, nil), 1, orgID, auth.RoleBillingAdmin)
+		response := httptest.NewRecorder()
+		handler.ListLogs(response, request)
+		require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+		var result struct {
+			Data []struct {
+				RequestID string `json:"request_id"`
+			} `json:"data"`
+			Total int `json:"total"`
+		}
+		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &result))
+		require.Equal(t, 3, result.Total)
+		requestIDs := make([]string, 0, len(result.Data))
+		for _, row := range result.Data {
+			requestIDs = append(requestIDs, row.RequestID)
+		}
+		require.Equal(t, item.requests, requestIDs)
 	}
 }

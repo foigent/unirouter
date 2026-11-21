@@ -183,7 +183,7 @@ func (c *Coordinator) applyHealthOnce(ctx context.Context, request healthRequest
 	// dependency is locked and validated before the atomic fence/projection
 	// commit. Read Committed lets a waiter validate the latest locked tuple,
 	// instead of retrying a stale snapshot after an ordinary concurrent success.
-	// Dispatch authorization keeps its separate Repeatable Read contract.
+	// Dispatch authorization selects its transaction isolation independently.
 	tx, err := c.database.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted, AccessMode: pgx.ReadWrite})
 	if err != nil {
 		return HealthResult{}, transactionRetryFor(err), fmt.Errorf("%w: begin health transition: %v", ErrUnavailable, err)

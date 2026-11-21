@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/enterprisefinance"
+	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/money"
 )
 
@@ -34,6 +35,11 @@ type AdmissionReadiness struct {
 // expired-grant reconciliation. It intentionally does not claim that a future
 // request of unknown size will fit the balance.
 func (b *Billing) InspectAdmissionReadiness(ctx context.Context, orgID int64, model string) (AdmissionReadiness, error) {
+	return b.InspectScopedAdmissionReadiness(ctx, orgID, 0, model, "")
+}
+
+// InspectScopedAdmissionReadiness includes the Standard price scope and operation when supplied.
+func (b *Billing) InspectScopedAdmissionReadiness(ctx context.Context, orgID, projectID int64, model string, operation modeloperation.ID) (AdmissionReadiness, error) {
 	if b == nil {
 		return AdmissionReadiness{}, fmt.Errorf("billing readiness database is unavailable")
 	}
@@ -57,7 +63,15 @@ func (b *Billing) InspectAdmissionReadiness(ctx context.Context, orgID int64, mo
 		return result, err
 	}
 
-	quote, err := b.queryPriceQuoteForOrg(ctx, orgID, model)
+	var quote priceQuote
+	var err error
+	if b.requestPricingAuthority == RequestPricingAuthorityCustomerStandard {
+		quote, err = b.queryCustomerChargeQuote(ctx, FreezeRequest{
+			OrgID: orgID, ProjectID: projectID, Model: model, ModelOperation: operation,
+		})
+	} else {
+		quote, err = b.queryPriceQuoteForOrg(ctx, orgID, model)
+	}
 	if err != nil {
 		if !errors.Is(err, ErrModelPriceNotConfigured) {
 			return result, err

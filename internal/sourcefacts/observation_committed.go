@@ -89,7 +89,7 @@ func (s *Service) CaptureCommitted(ctx context.Context, event billing.CommittedO
 			return errors.New("unknown original provider result")
 		}
 	} else if event.Kind == "output_hold" {
-		if state != event.Outcome || reservationState != "settlement_pending" || !oneOf(state, billing.ProviderAttemptStateOutputWithheld, "delivery_failed") || !oneOf(pendingReason, billing.OutputHoldReasonGuardrailWithheld, billing.OutputHoldReasonResponseTooLarge, billing.OutputHoldReasonProviderResponseUnusable, billing.OutputHoldReasonProviderAttemptUnresolved) {
+		if state != event.Outcome || reservationState != "settlement_pending" || !oneOf(state, billing.ProviderAttemptStateOutputWithheld, "delivery_failed") || !oneOf(pendingReason, billing.OutputHoldReasonGuardrailWithheld, billing.OutputHoldReasonResponseTooLarge, billing.OutputHoldReasonProviderResponseUnusable, billing.OutputHoldReasonProviderAttemptUnresolved, billing.OutputHoldReasonCustomerAuthorizationExceeded) {
 			return errors.New("original output hold advanced before observation")
 		}
 		kind, provider, financial, retry = "output_held", "response_received", "pending", false

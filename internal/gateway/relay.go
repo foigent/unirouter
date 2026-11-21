@@ -1102,6 +1102,8 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		OrgID:                    orgID,
 		ProjectID:                middleware.GetProjectIDFromContext(ctx),
 		Model:                    req.Model,
+		ModelOperation:           modeloperation.IDChatCompletions,
+		ProcessingTier:           string(executionBatch.profileEvidence.ProcessingTierEffective),
 		EstimatedTokens:          estimatedTokens,
 		EstimatedInputTokens:     estimatedInputTokens,
 		ReservedCompletionTokens: reservedCompletionTokens,
@@ -1131,6 +1133,8 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		switch freezeResult.ErrorCode {
+		case "billing_contract_unavailable":
+			writeError(w, http.StatusServiceUnavailable, "billing_error", "billing_error.billing_contract_unavailable", "No approved customer price for this request")
 		case "insufficient_balance":
 			writeError(w, http.StatusPaymentRequired, "billing_error", "billing_error.insufficient_balance", "Insufficient balance")
 		case "already_frozen":
@@ -3642,6 +3646,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		OrgID:                    orgID,
 		ProjectID:                middleware.GetProjectIDFromContext(ctx),
 		Model:                    req.Model,
+		ModelOperation:           modeloperation.IDEmbeddings,
 		EstimatedTokens:          inputTokens,
 		EstimatedInputTokens:     inputTokens,
 		ReservedCompletionTokens: 0,
@@ -3669,7 +3674,9 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		if writeLimitPolicyRuntimeRejection(w, freezeResult.ErrorCode) {
 			return
 		}
-		if freezeResult.ErrorCode == "insufficient_balance" {
+		if freezeResult.ErrorCode == "billing_contract_unavailable" {
+			writeError(w, http.StatusServiceUnavailable, "billing_error", "billing_error.billing_contract_unavailable", "No approved customer price for this request")
+		} else if freezeResult.ErrorCode == "insufficient_balance" {
 			writeError(w, http.StatusPaymentRequired, "billing_error", "billing_error.insufficient_balance", "Insufficient balance")
 		} else {
 			writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", freezeResult.ErrorCode)

@@ -109,6 +109,9 @@ func (b *Billing) collectProviderReconciliation(ctx context.Context, req Provide
 	if err != nil {
 		return nil, fmt.Errorf("lock collect reservation: %w", err)
 	}
+	if record.SettlementPendingReason == customerAuthorizationExceeded {
+		return nil, fmt.Errorf("%w: customer quote overrun requires separate authorization", ErrProviderReconciliationUnsafe)
+	}
 	if record.BillingMode == BillingModeCostObservation {
 		return nil, fmt.Errorf("%w: financial collection is unavailable in cost_observation mode", ErrProviderReconciliationUnsafe)
 	}
@@ -172,6 +175,9 @@ func (b *Billing) releaseProviderReconciliation(ctx context.Context, req Provide
 	record, err := reservationForUpdate(ctx, tx, req.RequestID, req.OrgID)
 	if err != nil {
 		return nil, fmt.Errorf("lock release reservation: %w", err)
+	}
+	if record.SettlementPendingReason == customerAuthorizationExceeded {
+		return nil, fmt.Errorf("%w: customer quote overrun requires separate authorization", ErrProviderReconciliationUnsafe)
 	}
 	if record.BillingMode == BillingModeCostObservation {
 		return b.releaseObservationProviderReconciliationTx(ctx, tx, record, req)

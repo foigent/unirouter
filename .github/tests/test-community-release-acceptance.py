@@ -41,6 +41,12 @@ class PublicPredecessorTests(unittest.TestCase):
         c['release']['bootstrap_url'] = m.asset_url(c['release'], 'community-bootstrap.json')
         self.candidate = c  # Synthetic future metadata, never dispatched or signed.
 
+    def test_pricing_transition_requires_exact_admission_predecessor_or_same_schema(self):
+        self.assertTrue(m.supported_public_schema_transition(m.ADMISSION_SCHEMA, m.PRICING_SCHEMA))
+        self.assertTrue(m.supported_public_schema_transition(m.PRICING_SCHEMA, m.PRICING_SCHEMA))
+        self.assertFalse(m.supported_public_schema_transition(m.RESTORE_SCHEMA, m.PRICING_SCHEMA))
+        self.assertFalse(m.supported_public_schema_transition(m.PRICING_SCHEMA, m.ADMISSION_SCHEMA))
+
     def git(self, root, *args):
         return subprocess.check_output(['git', '-c', 'user.name=Offline fixture',
             '-c', 'user.email=fixture@localhost', '-c', 'commit.gpgsign=false',
@@ -547,7 +553,11 @@ class PublicPredecessorTests(unittest.TestCase):
                 instance.inventory = lambda: {'containers': []}
                 native = m.load_module(ROOT / '.github/tests/community-installer.py',
                                        m.sha(ROOT / '.github/tests/community-installer.py'), 'public_source_fixture')
-                source_ledger = native.source_contract(ROOT).ledger[:-1]
+                # This case deliberately uses the original M129 → M130 public pair.
+                ledger = native.source_contract(ROOT).ledger
+                target_ledger = ledger[:ledger.index(m.ADMISSION_SCHEMA) + 1]
+                instance.source_contract = native.SourceContract(m.ADMISSION_SCHEMA, target_ledger, ())
+                source_ledger = instance.source_contract.ledger[:-1]
                 old.source_contract = native.SourceContract(m.RESTORE_SCHEMA, source_ledger, ())
                 instance.sql = lambda *a: json.dumps(source_ledger)
                 instance.upgrade_fingerprint = lambda *a, **kw: {'schema_migrations': {'count': 129, 'sha256': 'stable'}}
@@ -592,13 +602,16 @@ class PublicPredecessorTests(unittest.TestCase):
         # are doubled; package/state/receipt files and their hashes are real.
         native_path = ROOT / '.github/tests/community-installer.py'
         native = m.load_module(native_path, m.sha(native_path), 'post_upgrade_report_fixture')
-        ledger = native.source_contract(ROOT).ledger
+        # Preserve the M130 contract for the historical synthetic public pair.
+        current = native.source_contract(ROOT).ledger
+        ledger = current[:current.index(m.ADMISSION_SCHEMA) + 1]
         for fault in ('readiness', 'login'):
             with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp, \
                  mock.patch.object(m.shutil, 'which', return_value='/fixture/docker'):
                 root = Path(tmp).resolve()
                 instance = m.make_acceptance(ROOT, root, self.candidate, {},
                     upgrade_source=(root / 'old-source', self.old))
+                instance.source_contract = native.SourceContract(m.ADMISSION_SCHEMA, ledger, ())
                 directory = root / 'installed-predecessor/instances/preserved'
                 old = types.SimpleNamespace(instances=directory.parent, ring=root / 'ring',
                     result={'first_customer': {'organization_id': 2}}, release_sequence=23,

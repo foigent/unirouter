@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Typography, Table, Tag, Input, Select, Button, Space, Descriptions, Tooltip, Toast } from '@douyinfe/semi-ui';
 import { IconSearch, IconRefresh, IconCopy } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
+import { requestLogsApi, type RequestLog as Log, type RequestLogFilters as LogFilters, type RequestTraceEvent as TraceEvent } from '../api/requestLogs';
 import { formatDateTime } from '../utils/formatDate';
 import { isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
@@ -12,105 +13,6 @@ import { usageSourceLabel, usageSourceOptions } from '../utils/displayLabels';
 import { translate as t, translateLabel, useI18n } from '../i18n';
 
 const { Title, Text } = Typography;
-
-interface Log {
-  id: number;
-  request_id: string;
-  client_request_id?: string;
-  workflow_id?: string;
-  agent_id?: string;
-  attempt_id?: string;
-  model: string;
-  provider: string;
-  channel: string;
-  status_code: number;
-  latency_ms: number;
-  ttft_ms: number;
-  prompt_tokens: number;
-  uncached_prompt_tokens?: number;
-  cache_read_tokens?: number;
-  cache_creation_tokens?: number;
-  completion_tokens: number;
-  total_tokens: number;
-  cost_micros: string;
-  is_stream: boolean;
-  ip_address: string;
-  requested_model: string;
-  upstream_status_code: number | null;
-  upstream_error: string;
-  usage_source: string;
-  cache_usage_schema?: string;
-  cache_usage_status?: string;
-  pricing_version?: string;
-  cache_read_ratio?: number;
-  cache_creation_ratio?: number;
-  effective_input_price_micros_per_million?: string;
-  effective_cache_read_price_micros_per_million?: string;
-  effective_cache_creation_price_micros_per_million?: string;
-  effective_output_price_micros_per_million?: string;
-  cache_read_cost_micros?: string;
-  cache_creation_cost_micros?: string;
-  created_at: string;
-}
-
-interface LogFilters {
-  model?: string;
-  provider?: string;
-  status_code?: string;
-  usage_source?: string;
-  start_time?: string;
-  end_time?: string;
-  request_id?: string;
-  client_request_id?: string;
-  trace_id?: string;
-  workflow_id?: string;
-  agent_id?: string;
-  attempt_id?: string;
-  upstream_request_id?: string;
-  evidence_ref?: string;
-  source_event_hash?: string;
-  latency_min?: string;
-  latency_max?: string;
-  search?: string;
-}
-
-interface TraceEvent {
-  id: number;
-  event_type: string;
-  stage: string;
-  severity: 'info' | 'warning' | 'error';
-  model: string;
-  requested_model: string;
-  provider: string;
-  channel: string;
-  status_code: number | null;
-  latency_ms: number;
-  metadata: Record<string, unknown>;
-  created_at: string;
-  trace_id?: string | null;
-  span_id?: string | null;
-  parent_span_id?: string | null;
-  schema_version?: string | null;
-  source_component?: string | null;
-  capture_mode?: string | null;
-  capture_gap?: string | null;
-  evidence_ref?: string | null;
-  upstream_request_id?: string | null;
-  decision_kind?: string | null;
-  decision_result?: string | null;
-  decision_reason?: string | null;
-  actor_type?: string | null;
-  actor_ref?: string | null;
-  on_behalf_of?: string | null;
-  session_id?: string | null;
-  client_request_id?: string | null;
-  workflow_id?: string | null;
-  agent_id?: string | null;
-  attempt_id?: string | null;
-  payload_capture_mode?: string | null;
-  payload_ref?: string | null;
-  source_event_hash?: string | null;
-}
 
 type ReceiptTab = 'decision' | 'attempts' | 'policy' | 'cost' | 'provenance';
 
@@ -361,8 +263,8 @@ export default function LogsPage() {
     setTraceEvents([]);
     setTraceLoading(true);
     setTraceError(null);
-    (targetOrgID ? api.getLogTrace(record.id, targetOrgID) : api.getLogTrace(record.id))
-      .then((data: any) => {
+    (targetOrgID ? requestLogsApi.getLogTrace(record.id, targetOrgID) : requestLogsApi.getLogTrace(record.id))
+      .then(data => {
         if (requestSequence !== traceRequestRef.current) return;
         setTraceEvents(Array.isArray(data?.events) ? data.events : []);
       })
@@ -393,11 +295,11 @@ export default function LogsPage() {
     setTraceError(null);
     try {
       const currentPage = p ?? page;
-      const data = await api.getLogs(currentPage, pageSize, targetOrgID ? { ...filters, org_id: targetOrgID } : filters);
+      const data = await requestLogsApi.getLogs(currentPage, pageSize, targetOrgID ? { ...filters, org_id: targetOrgID } : filters);
       if (requestSequence !== listRequestRef.current) return;
-      const nextLogs = Array.isArray(data.data) ? data.data : [];
+      const nextLogs = Array.isArray(data?.data) ? data.data : [];
       setLogs(nextLogs);
-      setTotal(data.total || 0);
+      setTotal(data?.total ?? 0);
       const nextSelected = nextLogs.find((log: Log) => log.id === selectedLogIDRef.current) || nextLogs[0] || null;
       if (nextSelected) {
         selectLog(nextSelected);

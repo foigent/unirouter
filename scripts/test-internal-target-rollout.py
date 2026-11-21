@@ -1285,8 +1285,8 @@ class ArtifactOwnerReadFixtureTests(unittest.TestCase):
         bridge,current=self.load_carrier().carrier_read_ledgers(migrations)
         self.assertEqual(bridge[0],"maintenance_predecessor")
         self.assertEqual(current[0],"current")
-        self.assertEqual(bridge[1][-1],"000129_upstream_observation_restore_namespace")
-        self.assertEqual(current[1][-1],"000130_upgrade_admission_recovery")
+        self.assertEqual(bridge[1][-1],"000130_upgrade_admission_recovery")
+        self.assertEqual(current[1][-1],"000131_customer_standard_pricing")
         self.assertEqual(current[1],sorted(p.name[:-7] for p in migrations.glob("*.up.sql")))
         self.assertEqual(bridge[1],current[1][:-1])
 
@@ -1295,13 +1295,13 @@ class ArtifactOwnerReadFixtureTests(unittest.TestCase):
         original=sorted(p.name for p in migrations.glob("*.up.sql"))
         for missing in ("000126_commercial_license_retirement", "000127_xinsight_communication_policy",
                         "000128_upstream_release_observation", "000129_upstream_observation_restore_namespace",
-                        "000130_upgrade_admission_recovery", None):
+                        "000130_upgrade_admission_recovery", "000131_customer_standard_pricing", None):
             with self.subTest(missing=missing), tempfile.TemporaryDirectory(prefix="ur-carrier-current-") as root:
                 for name in original:
                     if name != str(missing)+".up.sql":
                         (Path(root)/name).write_text("")
                 if missing is None:
-                    (Path(root)/"000130_unknown_future.up.sql").write_text("")
+                    (Path(root)/"000131_unknown_future.up.sql").write_text("")
                 with self.assertRaisesRegex(RuntimeError,"exact reviewed artifact heads"):
                     self.load_carrier().carrier_read_ledgers(Path(root))
 

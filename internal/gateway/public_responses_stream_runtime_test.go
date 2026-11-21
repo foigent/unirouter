@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -452,6 +453,73 @@ func TestPublicResponsesStreamRuntimeKeepsUnknownLiabilityReserved(t *testing.T)
 	}
 }
 
+func TestPublicResponsesStreamRuntimeHealthFailureBeforeResponse(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		outcome string
+		status  int
+	}{
+		{"unknown transport", billing.ProviderAttemptOutcomeUnknown, 0},
+		{"unusable content type", billing.ProviderAttemptOutcomeResponseUnusable, http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			events := []string{}
+			fixture := newPublicResponsesStreamFixture(t, &events, "", disabledPublicStreamGuard(t))
+			fixture.planner.plan = publicRuntimePlanForProfile(t, 2, "openai.gpt-5.6-sol.responses", "1.3.0")
+			fixture.orchestrator.core.coordinator = &publicRuntimeCoordinator{
+				events: &events, healthErr: errors.New("health store unavailable"),
+			}
+			dispatches := 0
+			fixture.orchestrator.core.doer = publicNonStreamDoerFunc(func(*http.Request) (*http.Response, error) {
+				dispatches++
+				if tc.status == 0 {
+					return nil, errors.New("upstream connection lost")
+				}
+				return &http.Response{
+					StatusCode: tc.status, Header: http.Header{"Content-Type": {"application/json"}},
+					Body: io.NopCloser(strings.NewReader("{}")),
+				}, nil
+			})
+			writer := httptest.NewRecorder()
+			err := fixture.orchestrator.execute(t.Context(), writer, fixture.request)
+			if !errors.Is(err, errPublicNonStreamHealthFailed) || publicResponseWasStarted(err) {
+				t.Fatalf("pre-response health error = %v", err)
+			}
+			writePublicNonStreamError(writer, httptest.NewRequest(http.MethodPost, "/v1/responses", nil), fixture.request.RequestID, err)
+			if writer.Code != http.StatusServiceUnavailable || !strings.Contains(writer.Body.String(), "server_error.execution_state_unavailable") {
+				t.Fatalf("response=%d %s", writer.Code, writer.Body)
+			}
+			if dispatches != 1 || fixture.billing.cancelled != 0 || len(fixture.billing.settled) != 0 ||
+				len(fixture.billing.completions) != 1 || fixture.billing.completions[0].Outcome != tc.outcome ||
+				fixture.billing.completions[0].HTTPStatus != tc.status {
+				t.Fatalf("dispatches=%d, completions=%+v, events=%v", dispatches, fixture.billing.completions, events)
+			}
+		})
+	}
+}
+
+type publicStreamDeadlineFailingWriter struct{ *httptest.ResponseRecorder }
+
+func (publicStreamDeadlineFailingWriter) SetWriteDeadline(time.Time) error {
+	return errors.New("could not set write deadline")
+}
+
+func TestPublicResponsesStreamRuntimeDeadlineFailureBeforeFirstWrite(t *testing.T) {
+	events := []string{}
+	fixture := newPublicResponsesStreamFixture(t, &events, publicResponsesSSE("safe", " answer"), disabledPublicStreamGuard(t))
+	writer := publicStreamDeadlineFailingWriter{httptest.NewRecorder()}
+	err := fixture.orchestrator.execute(t.Context(), writer, fixture.request)
+	if !errors.Is(err, errPublicNonStreamDeliveryFailed) || publicResponseWasStarted(err) ||
+		writer.Body.Len() != 0 || writer.Header().Get("Content-Type") != "" {
+		t.Fatalf("err=%v headers=%v body=%s", err, writer.Header(), writer.Body)
+	}
+	if len(fixture.streamBilling.finishes) != 1 || fixture.streamBilling.finishes[0].state != billing.StreamLeaseStateInterrupted ||
+		len(fixture.billing.deliveries) != 1 || fixture.billing.deliveries[0].Outcome != billing.DeliveryOutcomeInterrupted ||
+		fixture.billing.deliveries[0].HTTPStatus != 0 || fixture.billing.cancelled != 0 || len(fixture.billing.settled) != 0 {
+		t.Fatalf("stream delivery evidence=%+v, events=%v", fixture.billing.deliveries, events)
+	}
+}
+
 func TestPublicResponsesStreamRuntimeTerminalFailureIsInterruptedWithoutSettlement(t *testing.T) {
 	events := []string{}
 	progress := `{"id":"resp_1","object":"response","status":"in_progress","model":"provider-private-model","error":null,"incomplete_details":null,"output":[],"usage":null}`
@@ -488,11 +556,13 @@ func TestPublicResponsesStreamRuntimeInvalidEventAfterBytesIsProviderFailureWith
 		`event: response.web_search_call.in_progress`, `data: {"type":"response.web_search_call.in_progress","sequence_number":1}`, ``,
 	}, "\n") + "\n"
 	fixture := newPublicResponsesStreamFixture(t, &events, sse, disabledPublicStreamGuard(t))
+	fixture.planner.plan = publicRuntimePlanForProfile(t, 2, "openai.gpt-5.6-sol.responses", "1.3.0")
 	writer := &publicRuntimeWriter{events: &events}
 	err := fixture.orchestrator.execute(t.Context(), writer, fixture.request)
 	if !publicResponseWasStarted(err) || len(fixture.streamBilling.persisted) != 0 || len(fixture.billing.settled) != 0 ||
 		len(fixture.billing.completions) != 2 || fixture.billing.completions[0].Outcome != billing.ProviderAttemptOutcomeResponseAccepted || fixture.billing.completions[1].Outcome != billing.ProviderAttemptOutcomeResponseUnusable || fixture.billing.completions[1].HTTPStatus != http.StatusOK ||
-		!strings.Contains(strings.Join(events, ","), "health:provider_failure") {
+		!strings.Contains(strings.Join(events, ","), "health:provider_failure") ||
+		strings.Contains(strings.Join(events, ","), "authorize:2") {
 		t.Fatalf("error=%v events=%s completions=%+v persisted=%d settled=%d",
 			err, strings.Join(events, ","), fixture.billing.completions,
 			len(fixture.streamBilling.persisted), len(fixture.billing.settled))

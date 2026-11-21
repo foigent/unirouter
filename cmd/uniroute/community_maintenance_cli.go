@@ -27,7 +27,7 @@ import (
 const communityMaintenanceSchema = "unirouter.community-maintenance.v1"
 
 func communitySourceHead(head string) bool {
-	return head == schemaauthority.XInsightCommunicationHead || head == schemaauthority.UpstreamReleaseObservationHead || head == schemaauthority.UpstreamObservationRestoreHead || head == schemaauthority.UpgradeAdmissionRecoveryHead
+	return head == schemaauthority.XInsightCommunicationHead || head == schemaauthority.UpstreamReleaseObservationHead || head == schemaauthority.UpstreamObservationRestoreHead || schemaauthority.HasUpgradeAdmissionRecovery(head)
 }
 
 // This is a binding document, never a reusable approval. In particular, it
@@ -153,7 +153,7 @@ func verifyCommunityMaintenancePackages(in communityMaintenanceInput, cfg *confi
 	m := candidate.Manifest
 	if candidate.BundleSHA256 != in.ExpectedCandidatePackageSHA256 || communityManifestSHA256(m) != in.ExpectedCandidateManifestSHA256 ||
 		m.KeyID != state.TrustedKeyID ||
-		!communitySourceHead(m.MinCurrentSchema) || m.TargetSchema != schemaauthority.UpstreamObservationRestoreHead && m.TargetSchema != schemaauthority.UpgradeAdmissionRecoveryHead ||
+		!communitySourceHead(m.MinCurrentSchema) || m.TargetSchema != schemaauthority.UpstreamObservationRestoreHead && !schemaauthority.HasUpgradeAdmissionRecovery(m.TargetSchema) ||
 		m.Version != cfg.RuntimeVersion || m.Commit != cfg.RuntimeCommit {
 		return zero, "", fmt.Errorf("candidate must bind this installed key and a supported exact maintenance target")
 	}
@@ -204,7 +204,7 @@ func runCommunityMaintenance(ctx context.Context, pool *pgxpool.Pool, cfg *confi
 	if err != nil {
 		return result, err
 	}
-	if len(artifact) < 3 || (artifact[len(artifact)-1] != schemaauthority.UpstreamObservationRestoreHead && artifact[len(artifact)-1] != schemaauthority.UpgradeAdmissionRecoveryHead) ||
+	if len(artifact) < 3 || (artifact[len(artifact)-1] != schemaauthority.UpstreamObservationRestoreHead && !schemaauthority.HasUpgradeAdmissionRecovery(artifact[len(artifact)-1])) ||
 		len(snapshot.Ledger) == 0 || !communitySourceHead(snapshot.Ledger[len(snapshot.Ledger)-1]) ||
 		len(snapshot.Ledger) > len(artifact) || !slices.Equal(snapshot.Ledger, artifact[:len(snapshot.Ledger)]) || snapshot.Record == nil || snapshot.Record.State != "completed" ||
 		snapshot.Record.Plan.InstallationID != in.InstallationID || snapshot.Record.Plan.Digest != in.InstallationPlanDigest {
@@ -228,7 +228,7 @@ func runCommunityMaintenance(ctx context.Context, pool *pgxpool.Pool, cfg *confi
 			return result, err
 		}
 	}
-	if sourceHead == schemaauthority.UpstreamObservationRestoreHead || sourceHead == schemaauthority.UpgradeAdmissionRecoveryHead {
+	if sourceHead == schemaauthority.UpstreamObservationRestoreHead || schemaauthority.HasUpgradeAdmissionRecovery(sourceHead) {
 		if err := upstreamrelease.CheckNamespace(ctx, tx); err != nil {
 			return result, err
 		}

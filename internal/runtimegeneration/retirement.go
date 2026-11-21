@@ -218,7 +218,7 @@ func CheckCommunityMaintenanceRetirementTx(ctx context.Context, tx pgx.Tx, r Ret
 	if err := r.validateIdentity(); err != nil {
 		return RetirementResult{}, err
 	}
-	if (sourceHead != schemaauthority.XInsightCommunicationHead && sourceHead != schemaauthority.UpstreamReleaseObservationHead && sourceHead != schemaauthority.UpstreamObservationRestoreHead && sourceHead != schemaauthority.UpgradeAdmissionRecoveryHead) ||
+	if (sourceHead != schemaauthority.XInsightCommunicationHead && sourceHead != schemaauthority.UpstreamReleaseObservationHead && sourceHead != schemaauthority.UpstreamObservationRestoreHead && !schemaauthority.HasUpgradeAdmissionRecovery(sourceHead)) ||
 		r.ExpectedSchemaHead != sourceHead || (r.ExpectedEnvironment != "production" && r.ExpectedEnvironment != "development" && r.ExpectedEnvironment != "test") {
 		return RetirementResult{}, fmt.Errorf("community retirement requires a verified supported maintenance schema")
 	}

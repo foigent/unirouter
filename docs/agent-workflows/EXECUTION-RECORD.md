@@ -1,5 +1,126 @@
 # Current Execution Record
 
+## 2026-11-21 — Standard first-use rehearsal and dispatch 503
+
+Worked in an isolated clone of the Standard M131 candidate
+`60a6e6ffa68457f4e59dfa48a452389fc6de8f06`. The initial four-VU Local run
+recorded 21 non-200 responses across 400 requests. The controlled regression
+interleaves an actual committed `MarkSuccess` with dispatch authorization.
+The unchanged implementation fails at the provider-attempt insert with
+PostgreSQL SQLSTATE 40001. The candidate accepts on the first try and retains
+one durable attempt. A separately injected credential disable blocks dispatch
+and rolls back the staged attempt.
+
+Healthy Responses and Messages authorization now reads committed state
+when it uses canonical Public Execution Evidence V2 without requested
+capabilities or half-open probes. It reads structural public qualification
+after locking the exact mutable authority rows. Other dispatch isolation
+paths and the atomic provider-attempt/source record transaction retain their
+existing behavior. [Independent before-code and closing reviews](reviews/standard-dispatch-503-independent-20261121.md)
+bind the source and evidence.
+
+On PostgreSQL 16 with a mocked provider, the matched four-VU check with exact
+HTTP and per-request ledger assertions produced these observations.
+
+| Path | Baseline requests / 503 | Candidate requests / 503 |
+| --- | ---: | ---: |
+| Responses | 200 / 8 | 400 / 0 |
+| Messages | 200 / 10 | 400 / 0 |
+
+Each settled request had one provider attempt and one settlement entry.
+Each cancelled baseline request had no attempt, settlement entry or debit.
+The full Go race run passed 107 packages. Focused PostgreSQL race integration
+also passed for the coordinator, supplier fallback, stream overruns, provider
+transport ambiguity and source dispatch atomicity and recovery.
+
+Local HTTP first use passed for one fresh synthetic project,
+`standard-v1-first-use`. The test used the regular login, project, explicit
+Responses Grant, credential issuance, finance and gateway handlers in a
+loopback harness with a synthetic route and mocked provider. A request without
+a price binding returned `billing_error.billing_contract_unavailable` before
+upstream dispatch. A finance user submitted a CNY draft, another reviewed and
+approved its exact version, and a project binding authorized a request that
+settled for 14 CNY micros. A repeat with the same idempotency key returned the
+original request ID with HTTP 409. The full request produced one attempt and
+one settlement. The first rehearsal used the legacy shared-key endpoint and
+was declined. A project-default personal Grant also correctly refused the
+Responses operation. The supported first-use sequence uses an explicit Grant
+for the exact model and operation.
+
+The process-wide Standard mode makes the existing development stack unsuitable
+for an in-place pilot. ECS remains a candidate for an additional private
+instance with separate PostgreSQL, Redis, credentials, and mock upstream.
+Target preflight and startup await approval to reuse the development SSH
+credential and run that instance. The shared service, customer traffic, and
+paid providers were not accessed. The follow-up patch is local and has not
+entered CI, an artifact, or a Target.
+
+## 2026-11-21 — Standard pricing on current main
+
+The earlier 1.2.36/M106 working-tree evidence is bound to `ac53699d`. GitHub
+main was `9ae41697dac1e376f2efb87177dd63ab2bec6b7d` at 1.15.7/M130 when
+this batch began. Main already uses M106 for a separate MiniMax qualification.
+The source candidate uses 1.15.8/M131 and retains main's runtime shutdown,
+request-log ordering, source reservation, stream counter and upgrade admission
+contracts.
+
+User-approved Standard pricing still requires an explicit approved CNY binding.
+Provider-final amounts above the frozen customer authorization remain pending
+without automatic debit and without generic refund, substitution or subsidy.
+The M131 migration requires the exact M130 ledger, stopped writers and empty
+ingress. The accepted M130 admission recovery history and M118 budget proof
+continue through their existing owners. Existing historical migrations are
+preserved.
+
+Independent before-code review records the current main port in
+[the Standard mainline review](reviews/standard-pricing-mainline-m131-independent-20261121.md).
+The older candidate and original worktree remain available for audit.
+
+Local checks used PostgreSQL 16 and the pinned Go and Node toolchains. The
+initial candidate passed the 107-package Go race suite. The follow-up passed
+the affected admin and CLI suites, the PostgreSQL log tie-order regression
+and the focused gateway and billing recovery cases. The frontend passed 999
+tests and the production build. CI exposed a collision between the finance
+and monitoring catalogs in a shared browser session. The corrected label
+passed both lazy-load orders and the same real Chromium overview navigation
+test locally against PostgreSQL 16 and production-configured assets. The 420 offline CI delivery tests and the
+34 native fixture tests passed locally. The follow-up corrects the historical
+M129-to-M130 fixture and explicitly recognizes M130-to-M131 in the public
+upgrade consumer. A future formal release still needs its separately accepted
+exact source record and signed package. The retained X-Insight setup and
+recovery checks fingerprint all original M127 rows and explicitly check that
+the new M131 pricing tables are empty at migration time. The CLI fixture uses
+the current artifact and its exact M130 predecessor. The fresh-install
+observation check verifies the complete artifact ledger. The hosted
+backend job pins the PG16 client tools to match the PG16 service. On a local
+PG16 database, the exact restore tests failed with PG18 tools because the
+dump injected `transaction_timeout`; both tests passed with PG16 tools.
+
+Local k6 used the gateway HTTP handlers, isolated PostgreSQL 16 and a mocked
+supplier. With one virtual user, Responses and Messages each settled 200 of
+200 operations exactly once. At four virtual users, the recorded revision
+run settled 197 of 200 Responses operations and 192 of 200 Messages
+operations. Each remaining operation returned 503 before provider dispatch
+and was cancelled without a debit. The same scenario on base
+`9ae41697` also returned 503, in 1 of 200 Responses and 2 of 200 Messages
+operations; the small samples cannot establish a comparative error rate.
+PostgreSQL recorded serialization conflicts at the provider-attempt
+deployment foreign key while the route health owner updated that deployment.
+
+On 200,000 synthetic logs, the representative PostgreSQL execution plan for
+20 rows at offset 100,000 changed from 81.31 ms to 19.27 ms. Both frozen-rate
+subqueries ran only 20 times each instead of 100,020, and the count remains
+separate. Ordering now uses creation time and ID. The public page-number
+contract remains supported. The Standard price query returned a single
+binding via the primary index with 10,000 synthetic revisions; its one
+EXPLAIN execution was 0.022 ms. These fixture timings are local snapshots.
+
+The existing GLM Publication review produced byte-identical summaries on two
+runs. Model readiness, operation Probe and Release data continue through the
+existing typed APIs. Local evidence does not authorize a paid Probe, a
+Target rollout, a signed release, historic ledger changes or expanding the
+finance read role to project users.
+
 ## UI workspace iteration — local candidate, 2026-10-11
 
 The owner accepted the design and requested formal implementation. An isolated

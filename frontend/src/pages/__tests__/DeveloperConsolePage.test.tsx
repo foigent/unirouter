@@ -18,13 +18,17 @@ const mockGetUsageAnalytics = vi.fn();
 const mockCreateKey = vi.fn();
 const mockDisableKey = vi.fn();
 
+vi.mock('../../api/requestLogs', () => ({
+  requestLogsApi: {
+    getLogs: (...args: any[]) => mockGetLogs(...args),
+    getLogDetail: (...args: any[]) => mockGetLogDetail(...args),
+  },
+}));
 vi.mock('../../api/client', () => ({
   api: {
     getProjects: (...args: any[]) => mockGetProjects(...args),
     getKeys: (...args: any[]) => mockGetKeys(...args),
     getModelCatalog: (...args: any[]) => mockGetModelCatalog(...args),
-    getLogs: (...args: any[]) => mockGetLogs(...args),
-    getLogDetail: (...args: any[]) => mockGetLogDetail(...args),
     getUsageAnalytics: (...args: any[]) => mockGetUsageAnalytics(...args),
     createKey: (...args: any[]) => mockCreateKey(...args),
     disableKey: (...args: any[]) => mockDisableKey(...args),
@@ -757,6 +761,35 @@ describe('DeveloperConsolePage', () => {
       expect(mockGetLogDetail).toHaveBeenCalledWith(31);
     });
     expect(screen.queryByText('路由模型')).toBeNull();
+  });
+
+  it('ignores a Request ID response from a project that has already been left', async () => {
+    mockGetProjects.mockResolvedValue({
+      data: [...PROJECTS.data, { ...PROJECTS.data[0], id: 8, name: 'Secondary Project', slug: 'secondary' }],
+      total: 2,
+    });
+    let finishOldLookup: (value: typeof LOGS.data[number]) => void = () => undefined;
+    mockGetLogDetail
+      .mockImplementationOnce(() => new Promise(resolve => { finishOldLookup = resolve; }))
+      .mockResolvedValueOnce({ ...LOGS.data[0], project_id: 8, model: 'secondary-lookup-model' });
+    renderPage();
+    await screen.findByText('req-001');
+
+    fireEvent.change(screen.getByPlaceholderText('req-...'), { target: { value: 'old-request' } });
+    fireEvent.click(screen.getByText('查询'));
+    await waitFor(() => expect(mockGetLogDetail).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getAllByRole('combobox')[0]);
+    const choices = await screen.findAllByText('Secondary Project (secondary)');
+    fireEvent.click(choices[choices.length - 1]);
+    await waitFor(() => expect(mockGetLogs).toHaveBeenCalledWith(1, 20, { project_id: 8 }));
+    fireEvent.change(await screen.findByPlaceholderText('req-...'), { target: { value: 'new-request' } });
+    fireEvent.click(screen.getByText('查询'));
+    expect(await screen.findByText('secondary-lookup-model')).toBeVisible();
+
+    await act(async () => finishOldLookup({ ...LOGS.data[0], model: 'late-original-project-model' }));
+    expect(screen.queryByText('late-original-project-model')).toBeNull();
+    expect(screen.getByText('secondary-lookup-model')).toBeVisible();
   });
 
   it.each([

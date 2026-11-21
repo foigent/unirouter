@@ -48,7 +48,7 @@ func TestBuildHasStableSemanticScopeAndVariableArtifactIdentity(t *testing.T) {
 	if first.Summary.ReviewRequiredCount != 0 || first.Summary.ProtectedCount != len(protectedTables) {
 		t.Fatalf("unexpected classification summary: %+v", first.Summary)
 	}
-	if first.Summary.TableCount != 140 || first.Summary.ResetCandidateCount != 112 ||
+	if first.Summary.TableCount != 143 || first.Summary.ResetCandidateCount != 115 ||
 		first.Summary.ProtectedCount != 26 || first.Summary.ProtectedPartialCount != 1 ||
 		first.Summary.SchemaLedgerCount != 1 {
 		t.Fatalf("reset classification cardinality drifted: %+v", first.Summary)
@@ -94,7 +94,7 @@ func TestBuildChecksSyntheticArtifactLedgerAndRejectsPreviousOrFutureMax(t *test
 	if got := plan.Schema.MigrationVersions[len(plan.Schema.MigrationVersions)-1]; got != schemaauthority.LatestSupportedMigration {
 		t.Fatalf("fixture migration = %q, want %q", got, schemaauthority.LatestSupportedMigration)
 	}
-	if plan.Summary.TableCount != 140 || plan.Summary.ResetCandidateCount != 112 || plan.Summary.ReviewRequiredCount != 0 {
+	if plan.Summary.TableCount != 143 || plan.Summary.ResetCandidateCount != 115 || plan.Summary.ReviewRequiredCount != 0 {
 		t.Fatalf("current schema changed reviewed table classification: %+v", plan.Summary)
 	}
 	if plan.Schema.TriggerCount != len(resetDeleteTriggers)+6 {
@@ -382,7 +382,7 @@ func TestContentTablesPreserveAllAndRefuseResetEvenWhenEmpty(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if plan.Summary.TableCount != 148 || plan.ScopeComplete || plan.Summary.ReviewRequiredCount != len(names) || Validate(plan) == nil {
+			if plan.Summary.TableCount != 151 || plan.ScopeComplete || plan.Summary.ReviewRequiredCount != len(names) || Validate(plan) == nil {
 				t.Fatalf("M119 content scope must refuse apply, including empty tables: %+v", plan.Summary)
 			}
 			for _, entry := range plan.Tables {

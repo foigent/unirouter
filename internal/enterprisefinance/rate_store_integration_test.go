@@ -7,9 +7,85 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
+	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
+
+type ratePriceQueryCounter struct {
+	db.DBQuerier
+	calls int
+}
+
+func (counter *ratePriceQueryCounter) Query(ctx context.Context, statement string, args ...any) (pgx.Rows, error) {
+	counter.calls++
+	return counter.DBQuerier.Query(ctx, statement, args...)
+}
+
+func TestPostgresStoreRequestPriceQuoteMatchesLatestCardAuthority(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	store, err := NewPostgresStore(pool)
+	require.NoError(t, err)
+	org := insertFinanceTestOrg(t, ctx, pool, "quote-model")
+	otherOrg := insertFinanceTestOrg(t, ctx, pool, "quote-other-org")
+	start := time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC)
+	components := []RateComponent{
+		{Meter: MeterInputTokens, UnitQuantity: "1000000", Amount: Amount{ValueMinor: "9007199254740993", Currency: "CNY", Scale: 1_000_000}},
+		{Meter: MeterOutputTokens, UnitQuantity: "1000000", Amount: Amount{ValueMinor: "2", Currency: "CNY", Scale: 1_000_000}},
+		{Meter: MeterCacheReadTokens, UnitQuantity: "1000000", Amount: Amount{ValueMinor: "1", Currency: "CNY", Scale: 1_000_000}},
+		{Meter: MeterCacheCreationTokens, UnitQuantity: "1000000", Amount: Amount{ValueMinor: "3", Currency: "CNY", Scale: 1_000_000}},
+	}
+	insertCard := func(tenant, version int64, ref, model, provider string, state string, rates []RateComponent) {
+		t.Helper()
+		var predecessor *int64
+		if version > 1 {
+			previousVersion := version - 1
+			predecessor = &previousVersion
+		}
+		tx, err := pool.Begin(ctx)
+		require.NoError(t, err)
+		defer tx.Rollback(ctx)
+		_, err = insertRateCardVersion(ctx, tx, RateCard{
+			RateCardRef: ref, OrgID: tenant, Version: version, ProviderRef: provider, ModelRef: model,
+			Layer: RateSupplierContract, State: state, EffectiveFrom: start,
+			SourceEvidenceRef: "evidence:test", CreatedBy: "user:1", ApprovedBy: "user:2", Components: rates,
+		}, "user:2", predecessor, &start)
+		require.NoError(t, err)
+		require.NoError(t, tx.Commit(ctx))
+	}
+	insertCard(org, 1, "rate-target", "target", "provider-a", RateActive, components)
+	_, err = pool.Exec(ctx, `UPDATE enterprise_finance_rate_card_versions
+		SET model_ref=$1 WHERE org_id=$2 AND rate_card_ref='rate-target'`, "\ttarget\u00a0", org)
+	require.NoError(t, err)
+	insertCard(otherOrg, 1, "rate-foreign", "target", "provider-z", RateActive, components)
+	insertCard(org, 1, "rate-remapped", "target", "provider-b", RateActive, components)
+	insertCard(org, 2, "rate-remapped", "other", "provider-b", RateActive, components)
+	insertCard(org, 1, "rate-retired", "target", "provider-c", RateActive, components)
+	insertCard(org, 2, "rate-retired", "target", "provider-c", RateRetired, components)
+	insertCard(org, 1, "rate-incomplete", "incomplete", "provider-c", RateActive, nil)
+
+	records, err := store.ListLatestRateCards(ctx, org)
+	require.NoError(t, err)
+	want, err := ResolveRequestPriceQuote(records, org, "target", start)
+	require.NoError(t, err)
+	counter := &ratePriceQueryCounter{DBQuerier: pool}
+	requestStore, err := NewPostgresStore(counter)
+	require.NoError(t, err)
+	got, err := requestStore.ResolveRequestPriceQuote(ctx, org, " target ", start)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+	require.Equal(t, 1, counter.calls, "quote resolution must use one query")
+	_, err = store.ResolveRequestPriceQuote(ctx, org, "missing", start)
+	require.ErrorIs(t, err, ErrRequestPricingNotReady)
+	_, err = store.ResolveRequestPriceQuote(ctx, org, "incomplete", start)
+	require.Error(t, err)
+
+	insertCard(org, 1, "rate-ambiguous", "target", "provider-d", RateActive, components)
+	_, err = store.ResolveRequestPriceQuote(ctx, org, "target", start)
+	require.ErrorIs(t, err, ErrRequestPricingAmbiguous)
+}
 
 func TestEnterpriseRateCardsActivateWithoutChangingExistingSettlementAndBindImmutablePricing(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)

@@ -9,6 +9,12 @@ import (
 func TestUpstreamObservationExactMaintenanceBoundary(t *testing.T) {
 	artifact, err := ExpectedLedger("../../migrations")
 	require.NoError(t, err)
+	require.Equal(t, CustomerStandardPricingHead, artifact[len(artifact)-1])
+	m130 := artifact[:len(artifact)-1]
+	require.NoError(t, VerifyRuntimeLedger(artifact, artifact))
+	require.Error(t, VerifyRuntimeLedger(artifact, m130))
+	require.Error(t, VerifyRuntimeLedger(m130, artifact))
+	artifact = m130
 	require.Equal(t, UpgradeAdmissionRecoveryHead, artifact[len(artifact)-1])
 	require.Equal(t, UpstreamObservationRestoreHead, artifact[len(artifact)-2])
 	m129 := artifact[:len(artifact)-1]
