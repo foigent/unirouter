@@ -1,5 +1,60 @@
 # Current Execution Record
 
+## 2026-11-21 — Standard first-use rehearsal and dispatch 503
+
+Worked in an isolated clone of the Standard M131 candidate
+`60a6e6ffa68457f4e59dfa48a452389fc6de8f06`. The initial four-VU Local run
+recorded 21 non-200 responses across 400 requests. The controlled regression
+interleaves an actual committed `MarkSuccess` with dispatch authorization.
+The unchanged implementation fails at the provider-attempt insert with
+PostgreSQL SQLSTATE 40001. The candidate accepts on the first try and retains
+one durable attempt. A separately injected credential disable blocks dispatch
+and rolls back the staged attempt.
+
+Healthy Responses and Messages authorization now reads committed state
+when it uses canonical Public Execution Evidence V2 without requested
+capabilities or half-open probes. It reads structural public qualification
+after locking the exact mutable authority rows. Other dispatch isolation
+paths and the atomic provider-attempt/source record transaction retain their
+existing behavior. [Independent before-code and closing reviews](reviews/standard-dispatch-503-independent-20261121.md)
+bind the source and evidence.
+
+On PostgreSQL 16 with a mocked provider, the matched four-VU check with exact
+HTTP and per-request ledger assertions produced these observations.
+
+| Path | Baseline requests / 503 | Candidate requests / 503 |
+| --- | ---: | ---: |
+| Responses | 200 / 8 | 400 / 0 |
+| Messages | 200 / 10 | 400 / 0 |
+
+Each settled request had one provider attempt and one settlement entry.
+Each cancelled baseline request had no attempt, settlement entry or debit.
+The full Go race run passed 107 packages. Focused PostgreSQL race integration
+also passed for the coordinator, supplier fallback, stream overruns, provider
+transport ambiguity and source dispatch atomicity and recovery.
+
+Local HTTP first use passed for one fresh synthetic project,
+`standard-v1-first-use`. The test used the regular login, project, explicit
+Responses Grant, credential issuance, finance and gateway handlers in a
+loopback harness with a synthetic route and mocked provider. A request without
+a price binding returned `billing_error.billing_contract_unavailable` before
+upstream dispatch. A finance user submitted a CNY draft, another reviewed and
+approved its exact version, and a project binding authorized a request that
+settled for 14 CNY micros. A repeat with the same idempotency key returned the
+original request ID with HTTP 409. The full request produced one attempt and
+one settlement. The first rehearsal used the legacy shared-key endpoint and
+was declined. A project-default personal Grant also correctly refused the
+Responses operation. The supported first-use sequence uses an explicit Grant
+for the exact model and operation.
+
+The process-wide Standard mode makes the existing development stack unsuitable
+for an in-place pilot. ECS remains a candidate for an additional private
+instance with separate PostgreSQL, Redis, credentials, and mock upstream.
+Target preflight and startup await approval to reuse the development SSH
+credential and run that instance. The shared service, customer traffic, and
+paid providers were not accessed. The follow-up patch is local and has not
+entered CI, an artifact, or a Target.
+
 ## 2026-11-21 — Standard pricing on current main
 
 The earlier 1.2.36/M106 working-tree evidence is bound to `ac53699d`. GitHub

@@ -76,7 +76,8 @@ func (c *Coordinator) revalidateAndClaim(ctx context.Context, tx pgx.Tx, request
 		result.status = status
 		return result, err
 	}
-	if request.publicEvidence != nil {
+	lockedPublicDispatch := request.usesLockedPublicDispatch()
+	if request.publicEvidence != nil && !lockedPublicDispatch {
 		status, err = revalidatePublicExecutionBinding(ctx, tx, request, runtime)
 		if err != nil || status != Applied {
 			result.status = status
@@ -99,6 +100,14 @@ func (c *Coordinator) revalidateAndClaim(ctx context.Context, tx pgx.Tx, request
 	}
 	if request.evidence.AuthorityMode != executionevidence.ModeCanonical {
 		status, err = c.revalidateLegacy(ctx, tx, request, runtime, dbNow, &claim)
+		if err != nil || status != Applied {
+			result.status = status
+			return result, err
+		}
+	}
+	if lockedPublicDispatch {
+		// Read the qualification view after its mutable authority is locked.
+		status, err = revalidatePublicExecutionBinding(ctx, tx, request, runtime)
 		if err != nil || status != Applied {
 			result.status = status
 			return result, err

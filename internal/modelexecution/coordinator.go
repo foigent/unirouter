@@ -102,8 +102,23 @@ func (c *Coordinator) authorizePublicOnce(
 	return c.authorizeOnce(ctx, request)
 }
 
+// Healthy public dispatch validates the exact locked route rows and its
+// structural qualification before commit. Read Committed lets those locks
+// observe ordinary health writes to the same deployment and credential.
+func (request preparedRequest) usesLockedPublicDispatch() bool {
+	return request.publicEvidence != nil &&
+		request.evidence.AuthorityMode == executionevidence.ModeCanonical &&
+		!request.route.RequiresProbe &&
+		len(request.plan.RequiredCapabilities) == 0 &&
+		len(request.evidence.CapabilityEvidence) == 0
+}
+
 func (c *Coordinator) authorizeOnce(ctx context.Context, request preparedRequest) (Decision, transactionRetry, error) {
-	tx, err := c.database.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadWrite})
+	isolation := pgx.RepeatableRead
+	if request.usesLockedPublicDispatch() {
+		isolation = pgx.ReadCommitted
+	}
+	tx, err := c.database.BeginTx(ctx, pgx.TxOptions{IsoLevel: isolation, AccessMode: pgx.ReadWrite})
 	if err != nil {
 		return Decision{}, transactionRetryFor(err), fmt.Errorf("%w: begin dispatch authority: %v", ErrUnavailable, err)
 	}
