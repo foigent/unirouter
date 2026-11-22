@@ -136,7 +136,7 @@ def read_rehearsal_context(stages, publisher, env):
     assert int(env['GITHUB_RUN_ATTEMPT']) > 0
     assert event['repository']['id'] == stages.REPOSITORY_ID and event['repository']['full_name'] == REPO
     assert event['sender']['id'] == stages.ACTOR_ID and event['inputs'] == inputs
-    assert record['product']['commit'] == expected == record['predecessor']['program_commit']
+    publisher.require_subject_binding(raw, record, expected)
     assert (record['product']['version'], record['product']['schema']) == (TARGET_VERSION, TARGET_SCHEMA)
     return raw, record
 
