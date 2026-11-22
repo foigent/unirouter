@@ -8,8 +8,8 @@ from pathlib import Path
 
 MIB = 1024 * 1024
 KINDS = {
-    "coverage": (8 * MIB, "coverage.out"),
-    "browser": (3 * MIB, "ur-customer-overview-browser"),
+    "coverage": (7 * MIB, "coverage.out"),
+    "browser": (5 * MIB // 2, "ur-customer-overview-browser"),
     "installer": (5 * MIB // 4, "ur-community-native-report.json"),
     "maintenance": (5 * MIB // 4, "ur-maintenance-native-report.json"),
 }

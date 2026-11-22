@@ -107,7 +107,7 @@ describe('LimitPoliciesPage', () => {
     expect(await screen.findByText('4 / 20 policy')).toBeInTheDocument();
 
     await user.click(screen.getByRole('combobox', { name: 'selected' }));
-    await user.click(await screen.findByRole('option', { name: /50/ }));
+    fireEvent.click(await screen.findByRole('option', { name: /50/ }));
 
     expect(await screen.findByText('1 / 50 policy')).toBeInTheDocument();
     expect(mocks.getLimitPolicies.mock.calls).toEqual([[1, 20], [4, 20], [1, 50]]);
