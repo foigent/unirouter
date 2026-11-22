@@ -237,6 +237,19 @@ try {
   await debug.getByPlaceholder('粘贴项目访问凭证').fill('');
   step('explicit_refusal_request_id_visible_no_provider_dispatch');
   if(evidence)await debug.screenshot({path:join(evidence,'request-refusal.png')});
+  const unavailable = await member.evaluate(async ({ key, model }) => {
+    const response = await fetch('/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', 'X-UniRouter-Fixture-Limit-State': 'unavailable' },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: 'synthetic admission diagnosis' }], max_tokens: 16 }),
+    });
+    return { request_id: response.headers.get('x-request-id'), status: response.status, error_code: (await response.json()).error?.code };
+  }, { key, model: f.ready_model });
+  assert.equal(unavailable.status, 503);
+  assert.equal(unavailable.error_code, 'limit_policy.state_unavailable');
+  assert.match(unavailable.request_id, /^op_/);
+  result.admission_unavailable = unavailable;
+  step('admission_unavailable_retains_browser_request_id_for_sql_no_dispatch_check');
   assert.deepEqual(result.external_requests,[]);assert.deepEqual(result.page_errors,[]);
   result.status='passed';
 } catch(error) {

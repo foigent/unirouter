@@ -18,12 +18,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/admin"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
+	"github.com/uniroute/unirouter/internal/enterprisefinance"
 	"github.com/uniroute/unirouter/internal/licensing"
+	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/outbox"
 	"github.com/uniroute/unirouter/internal/sourcefacts"
 	"github.com/uniroute/unirouter/internal/testutil"
@@ -45,6 +49,7 @@ func TestSourceBudgetManagementBrowserE2E(t *testing.T) {
 		_, err = pool.Exec(ctx, `INSERT INTO users(org_id,username,password_hash,organization_role,role,status,auth_provider) VALUES($1,$2,$3,$4,$4,'active','local')`, org, "source-browser-"+role, string(hash), role)
 		require.NoError(t, err)
 	}
+	standardReceipts := prepareBrowserStandardReceipts(t, pool, org, project)
 	events, err := outbox.New(pool, outbox.DefaultOptions())
 	require.NoError(t, err)
 	financial := billing.NewBilling(pool, nil)
@@ -56,6 +61,7 @@ func TestSourceBudgetManagementBrowserE2E(t *testing.T) {
 	handler.SetOutbox(events)
 	handler.SetSourceFactsController(source)
 	handler.SetBillingReadinessProvider(financial)
+	handler.SetRequestPricingAuthority(string(billing.RequestPricingAuthorityCustomerStandard))
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	licenseRuntime := licensing.NewRuntime(licensing.NewCommercialVerifier(map[string]ed25519.PublicKey{"source-browser": publicKey}, nil, 30, "source-browser"))
@@ -110,7 +116,7 @@ func TestSourceBudgetManagementBrowserE2E(t *testing.T) {
 	slices.Sort(profiles)
 	registration := sourcefacts.Registration{SchemaVersion: sourcefacts.RegistrationVersion, TokenFormat: auth.ReceiverFeedTokenFormat, VerifierScheme: auth.ReceiverFeedVerifierScheme, KeyPrefix: token[:auth.ReceiverFeedCredentialPrefixLength], VerifierSHA256: verifier, OperationID: hex.EncodeToString(operation[:16]), SourceInstance: source.SourceInstance(), OrgID: strconv.FormatInt(org, 10), ProjectID: strconv.FormatInt(project, 10), Profiles: profiles}
 	require.NoError(t, registration.Validate())
-	fixture, err := json.Marshal(map[string]any{"base_url": server.URL, "password": password, "org_id": org, "project_id": project, "registration": registration, "receiver_token": token})
+	fixture, err := json.Marshal(map[string]any{"base_url": server.URL, "password": password, "org_id": org, "project_id": project, "registration": registration, "receiver_token": token, "standard_receipts": standardReceipts})
 	require.NoError(t, err)
 	command := exec.Command("node", filepath.Join(pr4BrowserRepositoryRoot(t), "frontend", "e2e", "source_budget_management.mjs"))
 	command.Dir = filepath.Join(pr4BrowserRepositoryRoot(t), "frontend")
@@ -123,4 +129,75 @@ func TestSourceBudgetManagementBrowserE2E(t *testing.T) {
 	require.NoError(t, pool.QueryRow(ctx, `SELECT revision,status FROM execution_source_budget_bindings WHERE org_id=$1 AND enterprise_project_scope_ref='browser-synthetic-scope'`, org).Scan(&revision, &bindingStatus))
 	require.EqualValues(t, 3, revision)
 	require.Equal(t, "active", bindingStatus)
+}
+
+// Native Freeze/Settle produce the two PostgreSQL rows the browser looks up.
+// The canonical gateway under Standard is covered by the integration cases
+// in internal/gateway/customer_quote_gateway_integration_test.go.
+func prepareBrowserStandardReceipts(t *testing.T, pool *pgxpool.Pool, org, project int64) []json.RawMessage {
+	t.Helper()
+	ctx := t.Context()
+	testutil.NewTestWalletCents(t, pool, org, 100)
+	var key int64
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO api_keys(org_id,project_id,name,key_prefix,key_hash,status)
+		VALUES ($1,$2,'Browser Standard','ur-browser-quote','synthetic-browser-quote-hash','active') RETURNING id`, org, project).Scan(&key))
+	store, err := enterprisefinance.NewPostgresStore(pool)
+	require.NoError(t, err)
+	const model, table = "browser-standard-model", "browser-standard"
+	var components []enterprisefinance.RateComponent
+	for _, meter := range []string{enterprisefinance.MeterInputTokens, enterprisefinance.MeterOutputTokens, enterprisefinance.MeterCacheReadTokens, enterprisefinance.MeterCacheCreationTokens} {
+		components = append(components, enterprisefinance.RateComponent{
+			Meter: meter, UnitQuantity: "1000000", Amount: enterprisefinance.Amount{ValueMinor: "1000000", Currency: "CNY", Scale: 1_000_000},
+		})
+	}
+	_, err = store.CreateCustomerPriceTable(ctx, enterprisefinance.CustomerPriceTable{
+		OrgID: org, Ref: table, Version: 1, EffectiveFrom: time.Now().UTC().Add(-time.Hour),
+		Entries: []enterprisefinance.CustomerPriceEntry{{PublicModel: model, Operation: modeloperation.IDChatCompletions, Components: components}},
+	}, "user:1")
+	require.NoError(t, err)
+	require.NoError(t, store.ApproveCustomerPriceTable(ctx, org, table, 1, "user:2"))
+	binding, err := store.BindCustomerPriceTable(ctx, enterprisefinance.CustomerPriceBinding{
+		OrgID: org, ProjectID: project, TableRef: table, TableVersion: 1,
+	}, 0, "user:2")
+	require.NoError(t, err)
+	require.EqualValues(t, 1, binding.Revision)
+	standard := billing.NewBilling(pool, nil).WithRequestPricingAuthority(billing.RequestPricingAuthorityCustomerStandard)
+	var receipts []json.RawMessage
+	for _, tc := range []struct {
+		id        string
+		tokens    int
+		charged   int64
+		uncovered int64
+	}{
+		{"op_browser_standard_settled", 7, 7, 0},
+		{"op_browser_standard_overrun", 100, 0, 90},
+	} {
+		quote, err := standard.Freeze(ctx, billing.FreezeRequest{
+			OrgID: org, ProjectID: project, APIKeyID: key, Model: model, ModelOperation: modeloperation.IDChatCompletions,
+			RequestID: tc.id, EstimatedTokens: 10, EstimatedInputTokens: 7, ReservedCompletionTokens: 3, SafetyFactor: "1",
+		})
+		require.NoError(t, err)
+		require.True(t, quote.Success)
+		require.EqualValues(t, 10, quote.AmountMicros)
+		settled, err := standard.Settle(ctx, billing.SettleRequest{
+			OrgID: org, RequestID: tc.id, PromptTokens: tc.tokens, UncachedPromptTokens: tc.tokens,
+			UsageSource: metering.UsageSourceUpstream, UsageAuthority: metering.UsageAuthorityProviderReported,
+			UsagePurpose: metering.UsagePurposeCustomerCharge, UsageFinality: metering.UsageFinalityFinal,
+			UsageContractVersion: metering.UsageContractVersion,
+		})
+		require.NoError(t, err)
+		require.Equal(t, tc.uncovered == 0, settled.Success)
+		require.Equal(t, tc.charged, settled.ChargedCostMicros)
+		require.Equal(t, tc.uncovered, settled.UncoveredCostMicros)
+		require.Zero(t, settled.TopUpAmountMicros)
+		wire, err := store.GetCustomerChargeQuote(ctx, org, tc.id)
+		require.NoError(t, err)
+		receipts = append(receipts, wire)
+	}
+	var spent, debitCount int64
+	require.NoError(t, pool.QueryRow(ctx, `SELECT total_spent_micros,(SELECT count(*) FROM transactions WHERE org_id=$1 AND type='settle')
+		FROM wallets WHERE org_id=$1`, org).Scan(&spent, &debitCount))
+	require.EqualValues(t, 7, spent)
+	require.EqualValues(t, 1, debitCount)
+	return receipts
 }

@@ -386,7 +386,7 @@ describe('ProjectManagementPage', () => {
     const table = currentRow.closest('.ur-table-shell') as HTMLElement;
     const sizeControl = table.querySelector('.semi-page-switch [role="combobox"]') as HTMLElement;
     await user.click(sizeControl);
-    await user.click(await screen.findByRole('option', { name: /50/ }));
+    fireEvent.click(await screen.findByRole('option', { name: /50/ }));
     expect(await detail.findByText('项目成员加载失败')).toBeInTheDocument();
     expect(detail.queryByText('member-4-20-candidate')).not.toBeInTheDocument();
     fireEvent.click(detail.getByRole('button', { name: '重试' }));

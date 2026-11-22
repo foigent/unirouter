@@ -30,6 +30,67 @@ const clickAndResponse = async (locator, endpoint) => {
   assert.equal(result.status(), 200, `POST ${endpoint}`);
   return result.json();
 };
+
+async function verifyStandardPricing() {
+  await page.goto('/model-prices?tab=enterprise');
+  const [settled, overrun] = fixture.standard_receipts;
+  const quotePath = '/api/v1/enterprise-finance/customer-charge-quotes/';
+  const getResponse = endpoint => page.waitForResponse(response =>
+    response.request().method() === 'GET' && new URL(response.url()).pathname === endpoint);
+  for (const labels of [
+    ['Standard 客户报价回执', '客户报价 Request ID', '查询客户报价', '请求报价', '已扣客户金额', '已结算', '加载超额待核对', '待核对'],
+    ['Standard quote receipt', 'Customer quote Request ID', 'Look up customer quote', 'Quoted amount', 'Charged amount', 'Settled', 'Load pending quote overruns', 'Awaiting review'],
+  ]) {
+    const [heading, input, lookup, quoted, charged, settledLabel, list, pendingLabel] = labels;
+    if (heading === 'Standard quote receipt') {
+      await page.getByRole('button', { name: 'English', exact: true }).click();
+      await page.reload();
+    }
+    const scope = page.locator('.ur-surface').filter({ has: page.getByRole('heading', { name: heading, exact: true }) });
+    const amount = (label, money) => scope.locator('.ur-metric')
+      .filter({ has: page.getByText(label, { exact: true }) }).getByText(money, { exact: true });
+    await scope.getByRole('textbox', { name: input }).fill(settled.quote.request_id);
+    const settledResponse = getResponse(quotePath + settled.quote.request_id);
+    await scope.getByRole('button', { name: lookup }).click();
+    const settledRead = await settledResponse;
+    assert.equal(settledRead.status(), 200);
+    assert.deepEqual(await settledRead.json(), settled);
+    assert.equal(settled.settlement_status, 'settled');
+    assert.equal(settled.charged_customer_cost_micros, '7');
+    await waitVisible(amount(quoted, '¥0.000010'));
+    await waitVisible(amount(charged, '¥0.000007'));
+    await waitVisible(scope.getByText(settledLabel, { exact: true }));
+    await waitVisible(scope.getByText(settled.quote.pricing_version, { exact: true }));
+
+    const listResponse = getResponse('/api/v1/enterprise-finance/customer-charge-quote-overruns');
+    await scope.getByRole('button', { name: list }).click();
+    const listRead = await listResponse;
+    assert.equal(listRead.status(), 200);
+    const { data } = await listRead.json();
+    assert.equal(data.length, 1);
+    const row = data[0];
+    assert.equal(row.request_id, overrun.quote.request_id);
+    assert.equal(row.project_id, fixture.project_id);
+    assert.equal(row.wallet_authorized_cost_micros, '10');
+    assert.equal(row.calculated_customer_cost_micros, '100');
+    assert.equal(row.charged_customer_cost_micros, '0');
+    assert.equal(row.uncovered_customer_cost_micros, '90');
+    const overrunResponse = getResponse(quotePath + overrun.quote.request_id);
+    await scope.getByRole('button', { name: overrun.quote.request_id, exact: true }).click();
+    const overrunRead = await overrunResponse;
+    assert.equal(overrunRead.status(), 200);
+    assert.deepEqual(await overrunRead.json(), overrun);
+    assert.equal(overrun.settlement_pending_reason, 'customer_authorization_exceeded');
+    await waitVisible(amount(charged, '¥0.00'));
+    await waitVisible(scope.getByText(pendingLabel, { exact: true }));
+    await waitVisible(scope.getByText(overrun.quote.pricing_version, { exact: true }));
+  }
+  return {
+    settled_id: settled.quote.request_id, overrun_id: overrun.quote.request_id,
+    settled_charged_micros: '7', overrun_charged_micros: '0', overrun_uncovered_micros: '90',
+    overrun_reason: overrun.settlement_pending_reason, locales: ['zh-CN', 'en-US'],
+  };
+}
 try {
   await page.goto('/login');
   assert.equal(await page.locator('html').getAttribute('lang'), 'en-US', 'fresh sign-in defaults to English');
@@ -75,8 +136,9 @@ try {
   journeys.push('pause denies source read; resume restores current authorized read');
   await source.screenshot({ path: path.join(output, 'source-budget-active.png') });
   await fs.writeFile(path.join(output, 'final-ui.txt'), await source.innerText());
+  const standard_pricing = await verifyStandardPricing();
   assert.deepEqual(errors, []);
-  const report = { status: 'passed', journeys, browser_errors: errors, scope: 'built frontend and real local handlers; synthetic identities; no external integration', screenshot: 'source-budget-active.png' };
+  const report = { status: 'passed', journeys, standard_pricing, browser_errors: errors, scope: 'built frontend and real local handlers; synthetic identities; no external integration', screenshot: 'source-budget-active.png' };
   await fs.writeFile(path.join(output, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   console.log(JSON.stringify(report));
 } catch (error) {
