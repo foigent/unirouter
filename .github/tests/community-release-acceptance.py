@@ -32,7 +32,7 @@ RELEASE_KEYS = {"release_sequence", "created_at", "expires_at", "tag", "bootstra
                 "bootstrap_size", "bootstrap_sha256", "package_size", "package_sha256"}
 UPGRADE_SOURCE = '.github/release-inputs/community-upgrade-source.json'
 PREDECESSOR_DIRECTORY = '.community-retained-source'
-REQUIRED_DELTA_VERSIONS = frozenset({'1.15.6', '1.15.7'})
+REQUIRED_DELTA_VERSIONS = frozenset({'1.15.6', '1.15.7', '1.15.8'})
 RESTORE_SCHEMA = '000129_upstream_observation_restore_namespace'
 ADMISSION_SCHEMA = '000130_upgrade_admission_recovery'
 PRICING_SCHEMA = '000131_customer_standard_pricing'
@@ -285,7 +285,7 @@ def asset_url(release, name):
     return "https://github.com/foigent/unirouter/releases/download/" + release["tag"] + "/" + name
 
 
-STAGE_PROGRAM_SHA256 = 'cdfc566fbd8e0d9ec5f076f974bce6ede4d17da1fcb2d5b8366d7a99abe8baa9'
+STAGE_PROGRAM_SHA256 = '5d9eb8e192426f21355e4678212eb2373a78bccc666bdfdc18fefbaf8bcbec77'
 
 
 def stage_module():

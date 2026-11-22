@@ -209,6 +209,35 @@ Model lifecycle deprecation (`staging`, `ga`, `deprecated`, `retired`) remains a
 model-governance concept. It does not automatically deprecate UniRouter API
 routes or product capabilities.
 
+## Frontend interaction conventions
+
+- Use the shared primitives for page structure and feedback. Start with
+  `PageHeader`, `Surface`, `EmptyState` and `PagedTable` in
+  [the UI exports](../../frontend/src/ui/index.ts). Reuse the existing console
+  tokens and layout classes in [index.css](../../frontend/src/index.css).
+- Distinguish initial loading, empty results, failed reads and unavailable
+  scopes. Provide a retry for a recoverable list failure. For server pagination,
+  return to page one when a filter or the page size changes and use the
+  selected size in the request. Render rows, row actions and details for the
+  active query and customer scope. Save a view only when its selected item
+  exists in the current scope's loaded results. Use `PagedTable` for standard
+  lists and reuse the [page-size options](../../frontend/src/utils/pagination.ts).
+  For a custom Semi Table whose size-change handler owns the page reset, set
+  `preventPageChangeOnPageSizeChange` to avoid a second callback. Keep the
+  domain’s filters and row actions in the page.
+- In request and audit lists, reserve the empty message for a successful empty
+  result. A failed read should expose the retry without displaying the empty
+  message alongside it.
+- Use the existing localization, time and money helpers for display. Keep raw
+  identifiers, exact monetary units, original evidence and audit timestamps
+  available where the workflow needs them.
+- Use [copyText](../../frontend/src/utils/clipboard.ts) for explicit copy
+  actions on raw identifiers and values. Keep success and failure feedback in
+  the calling page and surface secure clipboard denial to the user.
+- Verify a component migration through its routed page. Check the interaction
+  that changed and the affected scope or role, including existing pagination,
+  filter and error behavior where applicable.
+
 ## Verification
 
 Governance-only batches should verify:

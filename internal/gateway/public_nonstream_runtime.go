@@ -15,16 +15,19 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
 	"github.com/uniroute/unirouter/internal/executionevidence"
+	"github.com/uniroute/unirouter/internal/logger"
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/modelexecution"
 	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelqualification"
 	"github.com/uniroute/unirouter/internal/modelrouting"
+	"github.com/uniroute/unirouter/internal/policybilling"
 )
 
 var (
@@ -648,6 +651,15 @@ func (orchestrator *publicNonStreamOrchestrator) authorizeAttempt(
 		CredentialRef: request.CredentialRef, AccessGrantID: request.AccessGrantID,
 		RouteSequence: sequence, RouteTotal: total, Endpoint: request.Path,
 	})
+	if err != nil {
+		reason := "authorization_error"
+		var postgresError *pgconn.PgError
+		if errors.As(err, &postgresError) && postgresError != nil && postgresError.Code == "40001" {
+			reason = "postgres_serialization_failure"
+		}
+		logger.New(logger.Fields{Module: "public_execution"}).Warn(
+			"request_id=%q phase=dispatch_authorization reason=%s", request.RequestID, reason)
+	}
 	return attemptID, decision, err
 }
 
@@ -888,6 +900,10 @@ func (orchestrator *publicNonStreamOrchestrator) prepare(
 		return publicExecutionPreparation{}, errPublicCustomerPriceUnavailable
 	}
 	if err != nil || freeze == nil || !freeze.Success {
+		if err == nil && freeze != nil && freeze.ErrorCode == policybilling.ErrorCodeStateUnavailable {
+			logger.New(logger.Fields{Module: "public_execution"}).Warn(
+				"request_id=%q phase=execution_admission reason=limit_policy_state_unavailable", request.RequestID)
+		}
 		return publicExecutionPreparation{}, fmt.Errorf("%w: freeze", errPublicNonStreamBillingFailed)
 	}
 	return publicExecutionPreparation{

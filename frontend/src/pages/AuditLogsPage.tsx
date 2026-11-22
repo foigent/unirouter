@@ -18,6 +18,7 @@ import {
   saveLocalView,
   type SavedView,
 } from '../utils/viewState';
+import { SERVER_PAGE_SIZES } from '../utils/pagination';
 
 const { Text } = Typography;
 
@@ -124,7 +125,7 @@ function readInitialAuditState() {
   return {
     filters,
     page: readPositiveQueryParam(params, 'page') || 1,
-    pageSize: pageSize && [20, 50, 100].includes(pageSize) ? pageSize : 20,
+    pageSize: pageSize && SERVER_PAGE_SIZES.includes(pageSize) ? pageSize : 20,
     auditID: readPositiveQueryParam(params, 'audit_id'),
   };
 }
@@ -340,7 +341,7 @@ export default function AuditLogsPage() {
           <Input aria-label={t("项目 ID 筛选")} prefix={t("项目")} placeholder={t("项目 ID")} value={draftFilters.project_id || ''} onChange={(v) => updateFilter('project_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
           <Input aria-label={t("操作者 ID 筛选")} prefix={t("操作者")} placeholder={t("操作者 ID")} value={draftFilters.actor_id || ''} onChange={(v) => updateFilter('actor_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
           <Input aria-label={t("审计动作筛选")} placeholder={t("动作")} value={draftFilters.action || ''} onChange={(v) => updateFilter('action', v)} onEnterPress={() => commitFilters(draftFilters)} />
-          <Select aria-labelledby="audit-source-filter-label" insetLabel={t("来源")} insetLabelId="audit-source-filter-label" placeholder={t("选择来源")} value={draftFilters.source || undefined} onChange={(v) => updateFilter('source', v as string)} style={{ width: '100%' }} showClear>
+          <Select aria-labelledby="audit-source-filter-label" insetLabel={t("来源")} insetLabelId="audit-source-filter-label" placeholder={t("选择来源")} value={draftFilters.source || undefined} onChange={(v) => updateFilter('source', v as string)} className="ur-form-control-full-width" showClear>
             {localizeOptions(auditSourceOptions).map(option => <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>)}
           </Select>
           <DatePicker
@@ -350,9 +351,8 @@ export default function AuditLogsPage() {
             format="yyyy-MM-dd HH:mm:ss"
             placeholder={[t("开始时间"), t("结束时间")]}
             showClear
-            className="ur-audit-date-range"
+            className="ur-audit-date-range ur-form-control-full-width"
             dropdownClassName="ur-audit-calendar"
-            style={{ width: '100%' }}
             value={draftFilters.start_time && draftFilters.end_time ? [new Date(draftFilters.start_time), new Date(draftFilters.end_time)] : undefined}
             onChange={(value) => {
               const range = Array.isArray(value) ? value : [];
@@ -367,7 +367,7 @@ export default function AuditLogsPage() {
         <details className="ur-advanced-filters">
           <summary>{t('高级筛选')}</summary>
           <div className="ur-audit-filter-grid">
-          <Select aria-label={t("操作者类型筛选")} placeholder={t("操作者类型")} value={draftFilters.actor_kind || undefined} onChange={(v) => updateFilter('actor_kind', v as string)} style={{ width: '100%' }} showClear>
+          <Select aria-label={t("操作者类型筛选")} placeholder={t("操作者类型")} value={draftFilters.actor_kind || undefined} onChange={(v) => updateFilter('actor_kind', v as string)} className="ur-form-control-full-width" showClear>
             <Select.Option value="human">{t("UR 用户")}</Select.Option><Select.Option value="service">{t("服务")}</Select.Option><Select.Option value="system">{t("系统")}</Select.Option>
           </Select>
           <Input aria-label={t("操作者引用筛选")} placeholder={t("操作者引用")} value={draftFilters.actor_ref || ''} onChange={(v) => updateFilter('actor_ref', v)} onEnterPress={() => commitFilters(draftFilters)} />
@@ -473,8 +473,9 @@ export default function AuditLogsPage() {
               pagination={{
                 currentPage: page,
                 pageSize,
-                pageSizeOpts: [20, 50, 100],
+                pageSizeOpts: SERVER_PAGE_SIZES,
                 showSizeChanger: true,
+                preventPageChangeOnPageSizeChange: true,
                 total,
                 onPageChange: changePage,
                 onPageSizeChange: changePageSize,

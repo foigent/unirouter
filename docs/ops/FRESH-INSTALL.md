@@ -1,7 +1,16 @@
 # Fresh single-instance installer
 
-Current 1.13.0 delivery requires the M127 maintenance/fresh-install contract. See
-[connection communication controls](XINSIGHT-COMMUNICATION.md) for manual defaults, migration and recovery. Earlier M126 candidate notes below remain historical.
+For a signed package, start with the [Linux installation guide](../community/install-linux.md)
+and the [release and consumer evidence](../community/release-readiness.md). The
+[community installer contract](COMMUNITY-INSTALLER.md) covers package verification
+and first use. For source work, see the [fresh-install CLI](../../cmd/uniroute/fresh_install_cli.go)
+and [schema authority](../../internal/schemaauthority/version.go).
+
+## Historical release checkpoints
+
+The 1.13.0 delivery required the M127 maintenance/fresh-install contract. See
+[connection communication controls](XINSIGHT-COMMUNICATION.md) for its manual defaults,
+migration and recovery.
 
 For the 1.10.0 candidate, the final owner step is M126 commercial License
 retirement. No commercial License import or public key is required; exact
@@ -18,7 +27,7 @@ This is the bounded installer design and command contract reviewed by the UR
 supervisor, including the ordinary-prefix Plan recovery, actual-writer admission
 and historical-completion amendments. At the original 1.4.1 design checkpoint,
 the candidate was source only; the baseline and worktree below describe that
-historical checkpoint, not the current 1.10.0 validation state above.
+historical checkpoint. The 1.10.0 validation above is a later historical checkpoint.
 
 Accepted product baseline: `59f7712d09653034756b846b15b8d69a16782791`, tree
 `ab09c48939539a10dbb039814489d764c0b53ca5`, version 1.4.0. The retained workflow

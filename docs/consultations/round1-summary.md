@@ -130,7 +130,7 @@
 
 ## 四、Canary 的执行计划（修正版）
 
-基于顾问共识，修正原有 ACTION-PLAN.md：
+基于顾问共识修订了 [2026-06-24 的初始测试计划](https://github.com/foigent/unirouter/blob/9ae41697dac1e376f2efb87177dd63ab2bec6b7d/docs/testing/archive/ACTION-PLAN.md)。
 
 ### 阶段 0: 修复测试基础设施（本周）
 

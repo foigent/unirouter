@@ -462,10 +462,10 @@ class Acceptance:
             first.validate(config, ready=True, stage_record=record)
             product = record["product"]
             sequence = config["release"]["release_sequence"]
-            require(product["schema"] == RESTORE_SCHEMA
-                    and (product["version"], sequence, self.version, self.schema) in (
-                        ("1.15.5", 22, "1.15.6", RESTORE_SCHEMA),
-                        ("1.15.6", 23, "1.15.7", ADMISSION_SCHEMA)),
+            require((product["version"], sequence, product["schema"], self.version, self.schema) in (
+                        ("1.15.5", 22, RESTORE_SCHEMA, "1.15.6", RESTORE_SCHEMA),
+                        ("1.15.6", 23, RESTORE_SCHEMA, "1.15.7", ADMISSION_SCHEMA),
+                        ("1.15.7", 24, ADMISSION_SCHEMA, "1.15.8", CURRENT_SCHEMA)),
                     "unexpected public delta rehearsal predecessor")
             require(self.release_sequence == sequence + 1,
                     "prepared candidate must immediately follow the pinned predecessor")
@@ -1319,10 +1319,12 @@ raise SystemExit("expected startup-hold checkpoint was not reached")
         if not hook.exists():
             private_write(hook, b'''import importlib.util,sys
 from pathlib import Path
-program,directory,release,verifier,ring,edge,history=map(Path,sys.argv[1:8])
+program,directory,release,verifier,ring=map(Path,sys.argv[1:6])
+edge,history=(None if value=="-" else Path(value) for value in sys.argv[6:8])
 spec=importlib.util.spec_from_file_location("shipped_upgrade",program)
 owner=importlib.util.module_from_spec(spec); spec.loader.exec_module(owner)
-operation=owner.Upgrade(directory,release,verifier,ring,layout="ur_edge_pair",edge_directory=edge,historical_exits=history)
+layout="ur_edge_pair" if edge else "community_single"
+operation=owner.Upgrade(directory,release,verifier,ring,layout=layout,edge_directory=edge,historical_exits=history)
 class Interrupted(Exception): pass
 def checkpoint(point):
     if point==sys.argv[8]: raise Interrupted()
@@ -1335,7 +1337,7 @@ except owner.install.InstallError as error:
 raise SystemExit("expected cold-pair interruption was not reached")
 ''')
         checkpoint_argv = [sys.executable, "-I", "-B", hook, self.release / "payload/deploy/upgrade.py",
-                           directory, self.release, self.verifier, self.ring, edge, history]
+                           directory, self.release, self.verifier, self.ring, edge or "-", history or "-"]
         code, _ = self.run("interrupt real upgrade after independently restored cold pair",
                            checkpoint_argv + ["effect:cold-pair"], ok=False)
         if code == 74:
@@ -1359,6 +1361,10 @@ raise SystemExit("expected cold-pair interruption was not reached")
                 "unknown outcome refusal mutated source or retained evidence")
         require(sha(retained) == original and not receipt.exists(), "unknown outcome evidence changed")
         retained.rename(receipt)  # Recover the exact task-owned receipt, never fabricate or overwrite it.
+        if edge is None:
+            self.run("resume the proved single-writer cold pair",
+                     self.upgrade_command("resume-upgrade", directory))
+            return
         code, _ = self.run("resume the proved cold pair and pause at actual edge admission",
                            checkpoint_argv + ["done:start-receivers"], ok=False)
         require(code == 73, "edge admission checkpoint was not reached")
@@ -1461,7 +1467,7 @@ raise SystemExit("expected cold-pair interruption was not reached")
         # Independent installations must not share a recently used host port.
         # The original installer's real collision check remains unchanged.
         same_schema = old.schema == self.schema
-        require(not public_predecessor or (existing is None and layout == "single" and old.schema == RESTORE_SCHEMA),
+        require(not public_predecessor or (existing is None and layout == "single" and old.schema in (RESTORE_SCHEMA, ADMISSION_SCHEMA)),
                 "public predecessor fixture needs its exact fresh, single-writer installation")
         self.loopback_port = old.loopback_port = FIXTURE_PORTS["predecessor" if public_predecessor else layout]
         case = instance_name or layout
@@ -1557,7 +1563,9 @@ raise SystemExit("expected cold-pair interruption was not reached")
                 "read-only upgrade check/status changed protected body or configuration")
         # execute() verifies the candidate's real timers on the single-writer
         # M127 upgrade. Later sources use the ordinary owner.
-        if retain or (not edge and old.schema in (OBSERVATION_SCHEMA, RESTORE_SCHEMA, ADMISSION_SCHEMA, CURRENT_SCHEMA)):
+        if public_predecessor and old.schema == ADMISSION_SCHEMA:
+            self.interrupt_upgrade(directory, edge, history)
+        elif retain or (not edge and old.schema in (OBSERVATION_SCHEMA, RESTORE_SCHEMA, ADMISSION_SCHEMA, CURRENT_SCHEMA)):
             self.run_native_upgrade(directory,edge,history)
         elif edge:
             self.interrupt_upgrade(directory, edge, history)
@@ -1623,12 +1631,12 @@ raise SystemExit("expected cold-pair interruption was not reached")
             "full_table_count": len(pair["tables"]), "nonempty_history_preserved": True,
             "independent_original_row_and_configuration_equality": True,
             "independent_database_and_body_restore": not public_predecessor, "read_only_no_effects": True,
-            "physical_exits_proved": True, "completed_resume": True, "known_checkpoint_resume": bool(edge),
+            "physical_exits_proved": True, "completed_resume": True, "known_checkpoint_resume": bool(edge or (public_predecessor and old.schema == ADMISSION_SCHEMA)),
             "new_historical_input": history is not None,
             "historical_kind": ("native_replacement" if edge else "process_exit") if history is not None else None,
             "history_without_evidence_refused": True if history is not None else None,
             "original_operation_evidence_unchanged": True if preserve_previous else None,
-            "unknown_outcome_refused": bool(edge), "provider_calls": 0})
+            "unknown_outcome_refused": bool(edge or (public_predecessor and old.schema == ADMISSION_SCHEMA)), "provider_calls": 0})
         if public_predecessor:
             self.result["finite_upgrades"][-1].update(independent_database_and_files_restore=True,
                                                     explicitly_empty_original_content=True)

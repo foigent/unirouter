@@ -1,12 +1,12 @@
 import '../i18n/people';
-import { translate as t, translateLabel, localizeOptions, useI18n } from '../i18n';
-import { useEffect, useRef, useState } from 'react';
-import { Button, Table, Modal, Form, Tag, Toast, SideSheet, Typography, Tabs, TabPane, Space } from '@douyinfe/semi-ui';
+import { translate as t, localizeOptions, useI18n } from '../i18n';
+import { useCallback, useEffect, useState } from 'react';
+import { Button, Modal, Form, Tag, Toast, SideSheet, Typography, Tabs, TabPane, Space } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit, IconUserGroup } from '@douyinfe/semi-icons';
 import { api, ApiError } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
 import { organizationRoleLabel, roleTagColor, userManagementOrganizationRoleOptions } from '../utils/displayLabels';
-import { EmptyState, PageHeader, PasswordField, StatusTag, Surface } from '../ui';
+import { EmptyState, PagedTable, PageHeader, PasswordField, StatusTag, Surface } from '../ui';
 import { useAuthStore } from '../store/auth';
 import { canonicalOrganizationRole, isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
@@ -17,6 +17,7 @@ import {
   localPasswordUTF8ByteCount,
 } from '../utils/passwordPolicy';
 import { loadAllPages } from '../utils/loadAllPages';
+import { useServerPage } from '../utils/pagination';
 import { projectDisplayName } from '../utils/projectDisplay';
 
 const apiErrorCode = (error: ApiError) => {
@@ -30,13 +31,6 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
   const currentUser = useAuthStore((state) => state.user);
   const customerContext = resolveCustomerContext(currentUser);
   const customerOrgID = effectiveCustomerOrgID(currentUser);
-  const [users, setUsers] = useState<any[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
-  const requestVersion = useRef(0);
   const [showDrawer, setShowDrawer] = useState(false);
   const [editUser, setEditUser] = useState<any>(null);
   const [formApi, setFormApi] = useState<any>(null);
@@ -47,37 +41,14 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
 	const [accessLoading, setAccessLoading] = useState(false);
 	const [providerScope, setProviderScope] = useState<'local' | 'enterprise'>('local');
 
-  const load = (p = page, size = pageSize, provider: 'local' | 'enterprise' = providerScope) => {
-    const version = ++requestVersion.current;
-    if (!customerOrgID) {
-      setUsers([]);
-      setTotal(0);
-      setLoading(false);
-      setLoadError('');
-      return;
-    }
-    setLoading(true);
-    setLoadError('');
-    setUsers([]);
-    setTotal(0);
-    api.getUsers(p, size, provider)
-      .then((d: any) => {
-        if (version !== requestVersion.current) return;
-        setUsers(d.data || []);
-        setTotal(d.total || 0);
-      })
-      .catch(() => {
-        if (version === requestVersion.current) setLoadError('无法加载用户列表。');
-      })
-      .finally(() => {
-        if (version === requestVersion.current) setLoading(false);
-      });
-  };
-
-	useEffect(() => {
-		setPage(1);
-		load(1, pageSize, providerScope);
-	}, [customerOrgID, providerScope]);
+  const accountScope = customerOrgID
+    ? JSON.stringify([currentUser?.id, organizationRoleForUser(currentUser), customerOrgID, providerScope])
+    : null;
+  const fetchAccounts = useCallback((page: number, pageSize: number) => (
+    api.getUsers(page, pageSize, providerScope)
+  ), [providerScope]);
+  const accountPage = useServerPage<{ data?: any[]; total?: number }>(fetchAccounts, accountScope);
+  const users = accountPage.data?.data ?? [];
   const roleOptions = userManagementOrganizationRoleOptions.filter(option => option.value !== 'platform_admin');
 
   const closeDrawer = () => { setShowDrawer(false); setEditUser(null); formApi?.reset(); };
@@ -141,7 +112,11 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
 		}
       }
       closeDrawer();
-      load(editUser ? page : 1, pageSize, providerScope);
+      if (editUser) {
+        accountPage.reload();
+      } else {
+        accountPage.onPageChange(1);
+      }
     } catch (error) {
       const code = error instanceof ApiError ? apiErrorCode(error) : '';
       if (!editUser && code === 'local_login_id_conflict') {
@@ -171,7 +146,7 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
         try {
           await api.deleteUser(u.id);
           Toast.success(t("账号已离场"));
-          load();
+          accountPage.reload();
         } catch (error) {
           const code = error instanceof ApiError ? apiErrorCode(error) : '';
           if (code === 'active_workload_sponsorship') {
@@ -348,25 +323,24 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
 				? t("本页服务端只查询 auth_provider=local；可创建本地账号并管理本地生命周期。")
 				: t("本页服务端只查询企业身份。OIDC / 企业目录拥有登录来源与外部身份属性；UniRouter 管理已映射账号的组织角色、启停与离场，项目成员关系仍在“项目与成员”中管理。")}
         </Typography.Text>
-        <div className="ur-table-shell">
-          {loading && users.length === 0 ? (
-            <EmptyState title={t("正在加载用户列表")} description={t("正在读取当前客户的账号与身份，请稍候。")} minHeight={220} />
-          ) : <Table
+        {accountPage.loading ? (
+          <EmptyState title={t("正在加载用户列表")} description={t("正在读取当前客户的账号与身份，请稍候。")} minHeight={220} />
+        ) : (
+          <PagedTable
             columns={columns}
             dataSource={users}
-            loading={loading}
             rowKey="id"
-            empty={loadError ? (
-              <EmptyState title={t("用户列表加载失败")} description={translateLabel(loadError)} actions={<Button type="primary" onClick={() => load()}>{t("重新加载用户列表")}</Button>} minHeight={220} />
+            empty={accountPage.failed ? (
+              <EmptyState title={t("用户列表加载失败")} description={t("无法加载用户列表。")} actions={<Button type="primary" onClick={accountPage.reload}>{t("重新加载用户列表")}</Button>} minHeight={220} />
             ) : <EmptyState title={t("暂无用户")} minHeight={220} />}
-            pagination={{
-              currentPage: page, pageSize, total,
-              pageSizeOpts: [20, 50, 100], showSizeChanger: true,
-              onPageChange: (p: number) => { setPage(p); load(p, pageSize, providerScope); },
-              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1, s, providerScope); },
-            }}
-          />}
-        </div>
+            page={accountPage.page}
+            pageSize={accountPage.pageSize}
+            total={accountPage.data?.total ?? 0}
+            showSizeChanger
+            onPageChange={accountPage.onPageChange}
+            onPageSizeChange={accountPage.onPageSizeChange}
+          />
+        )}
       </Surface>
 
       <SideSheet

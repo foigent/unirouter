@@ -86,24 +86,16 @@ jobs:
             --expected-commit "$EXPECTED_COMMIT" \
             --report "$RUNNER_TEMP/ur-community-native-report.json"
 
-      - name: Check acceptance report size
-        id: report_size
+      - name: Freeze complete acceptance report within the ZIP budget
+        id: report_snapshot
         if: always()
-        shell: bash
-        run: |
-          python3 -I -B - <<'PYBOUND'
-          import os
-          from pathlib import Path
-          path = Path(os.environ['RUNNER_TEMP']) / 'ur-community-native-report.json'
-          if path.is_symlink() or (path.exists() and (not path.is_file() or path.stat().st_size > 1024 * 1024)):
-              raise SystemExit('Retain the complete allowlisted report, at most 1 MiB; never truncate it.')
-          PYBOUND
+        run: python3 -I -B .github/tests/action-artifact-snapshot.py installer "$RUNNER_TEMP/ur-community-native-report.json"
 
       - name: Retain only allowlisted acceptance facts
-        if: ${{ always() && steps.report_size.outcome == 'success' }}
+        if: ${{ always() && steps.report_snapshot.outcome == 'success' && steps.report_snapshot.outputs.path != '' }}
         uses: actions/upload-artifact@v7
         with:
           name: community-installer-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/ur-community-native-report.json
-          if-no-files-found: warn
+          path: ${{ steps.report_snapshot.outputs.path }}
+          if-no-files-found: error
           retention-days: 7

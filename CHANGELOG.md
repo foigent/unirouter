@@ -18,6 +18,17 @@ those build identities do not replace the product version.
   ordinary health updates commit on the same route.
 - Install Standard pricing through the explicit M130-to-M131 maintenance
   transition or the existing fresh-install owner.
+- Validate Standard pricing in customer Compose preflight with canonical
+  routing. Record request-scoped admission and dispatch failure causes in
+  backend logs.
+
+### Fixed
+
+- Keep tables that reset pagination on page one after a page-size change, including shared limits, content safety, project budgets, user and project management, request and audit logs, developer access and reconciliation. Use the selected size for the next request.
+- Distinguish unavailable list results from empty results in shared limits, content safety and project budgets. Retry a failed read from the list.
+- Start filtered request logs on page one. Hide previous rows and details when a new query or customer scope is loading. Show a retry when the list is unavailable and reserve the empty state for successful reads.
+- Preserve project-member candidate searches across pagination and retries. Enable model-scope saves after loading the organization's model sets and the selected project's assignments.
+- Save project workspace views only for a loaded project in the current customer scope.
 
 ## [1.15.7] - 2026-11-14
 

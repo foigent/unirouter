@@ -1,5 +1,243 @@
 # Current Execution Record
 
+## 2026-11-22 — Standard 配置与 Gateway 失败归因
+
+本地切片基于 PR #500 的 `1310e231`。客户预检现可校验 canonical 下的
+`customer_standard_v1`，通过配置校验后仍需读取目标就绪状态。预检此前只允许
+legacy 和 rate_card，CI 没有渲染 Standard 的正、负向用例。本地 Compose 夹具
+复现旧版拒绝和修订通过，11 项断言通过；原生渲染断言已放入现有 Docker CI 步骤。
+
+Responses、Messages 的流式与非流式入口共用入站诊断。以请求 ID 关联 Redis
+准入期限、通用策略状态和派发授权 `40001`。未放宽期限、增加重试或修改资金状态机。
+新定向测试在原生产文件上因缺少诊断失败，修订后 8 个 Go 包的 race 测试和 7 个
+PG16 race 集成用例通过。集成覆盖并发健康写入、授权变更拒绝、切换冻结价、
+超额待核对、周费率恢复和 M131 迁移。
+
+[独立复核](reviews/standard-contract-attribution-independent-20261122.md)
+绑定精确代码差异。先前 ECS 的 24 次模拟请求回执只适用于原二进制与试点配额。
+本批止于可复核本地补丁。原生 Compose、候选签名和客户运行验收由后续批次负责。
+
+## 2026-11-22 — 主线维护排查与第一轮修正
+
+维护分支 `codex/ur-maintenance` 从 GitHub `main`
+`9ae41697dac1e376f2efb87177dd63ab2bec6b7d` 建立。基线为 1.15.7/M130。
+本地代码候选的版本元数据为 1.15.8。公开签名预览和安装证据见
+[发布记录](../community/release-readiness.md)。
+
+### 排查范围与修正
+
+机械遍历 3,091 个跟踪文件。扫描了 414 份 Markdown 的 763 处本地链接
+和 2,806 处代码路径引用，也扫描了 2,619 个源码和配置文件。用含字面量
+归一化的片段比较定位 Go、TypeScript 和脚本重复，再沿运行入口核对候选。
+文档匹配项包括过往机器路径、生成物和跨项目证据引用。人工复核了现行
+公开索引、工程导航、主要运行合同及需要修正的候选，仓库外历史证据
+仍按各自记录的环境读取。
+
+| 检查项 | 结果 |
+| --- | --- |
+| 发布与文档入口 | 英文目录原称公开包和 XI 源码待发布。发布记录和现行上手文档已提供入口。中英文目录、接手导航与状态页链接到对应来源。 |
+| 迁移和 License | 代码地图原将 M113 写成当前上限，基线可执行定义为 M130。改为链接定义和版本匹配的安装、升级手册。更新退役 License、canonical release 路由和部署入口说明。 |
+| 链接与历史材料 | 修复部署指南的旧 README 锚点和 Kimi K2.6 收口链接。将 PRD1/PRD2 前端审计标为历史参考，保留其原有发现和实施证据。 |
+| 分页和表单 | 限流、安全、项目预算和用户表格复用 `PagedTable`。限流、安全及预算共用请求状态，拒绝过时响应。专项页面复核了每页条数变更与页码回到 1 的行为。两个策略抽屉共用字段宽度样式。 |
+| 重复定义和逻辑 | 复用项目预算上限、已有的精确 Token 上限及 Vite 开发代理配置。Go 的 OIDC scope 解析复用已有逗号列表规范化，继续保留默认 scope。 |
+| 工程约定 | 在[前端交互规范](../governance/README.md#frontend-interaction-conventions)记录分页、读失败和共享入口，在[文档治理](../DOCS-GOVERNANCE.md)记录相对链接及版本权威的位置。 |
+
+`scripts/testdata/recovery-m128` 下的重复安装和升级源码服务于真实前驱回归，
+应按原制品身份保留。
+
+### 六个前端候选的复核
+
+用 Vite 生产构建的模块加载与输出清单核对，六个候选均未加载或打包。构建仅在内存生成。
+`main.tsx`、`ApplicationsV2Page.tsx` 和 `ModelEndpointsPage.tsx`
+均已加载并进入 bundle。首轮候选及现行相邻页面、API 的定向回归通过，
+共 10 个文件、146 项用例。前端 API 合同检查通过，旧聚合请求为 151/152。
+
+### 前端测试迁移与下游核查
+
+- 新增 4 项 JSDOM 回归，加载 [实际入口](../../frontend/src/main.tsx)的
+  BrowserRouter 和登录保护。登录后 `/test` 用 replace 到达 `/channels`，
+  清除原查询参数和 hash，未登录时到达 `/login`。目标页组件使用替身。
+  [路由回归](../../frontend/src/routing/__tests__/legacyTestRedirect.test.tsx)
+- 25 项应用页回归改为直接导入 `ApplicationsV2Page`，保留既有覆盖、
+  文件名及 MAR-006 证据。
+  [V2 回归](../../frontend/src/pages/__tests__/WorkloadApplicationsPage.test.tsx) ·
+  [MAR-006](../tech-ref/MODEL-ADAPTATION-LEARNINGS.md#mar-006-keep-customer-sponsorship-separate-from-platform-operation)
+- [WorkloadApplicationsPage.tsx](../../frontend/src/pages/WorkloadApplicationsPage.tsx)
+  自 `a507a773` 起明确供下游源码嵌入。迁移后工作树已无导入。GitHub
+  索引仅命中旧版 UR 测试和经验文件。另扫描了 X-Insight 当时 `main` 的
+  4,479 个文件，无旧导出或 UR 前端包名引用。未索引的私有和外部嵌入仍
+  无法核实，保留兼容文件，待单独确定退出条件。
+  [X-Insight 源码快照](https://github.com/foigent/x-insight/tree/64000cd8f74ad431cb2ef635963993bf0d111d84)
+- 删除前在 Node 24.19.0 / npm 11.17.0 下定向 3 个文件、32 项通过，全量 109 个
+  文件、1,000 项通过。类型检查、API 合同、React 兼容检查、生产构建和
+  包体预算通过。以上为本地证据。
+
+### 前端退役与验证
+
+用户批准的 10 个文件已按两批在独立工作树删除。表中原文件可从本节开头的
+`main` 基线按原路径复查。
+
+| 批次 | 源文件 | 配套测试 | 退役依据 |
+| --- | --- | --- | --- |
+| 1 | `frontend/src/pages/TestPage.tsx` | `frontend/src/pages/__tests__/TestPage.test.tsx` | 主线从 `62ed2c5e` 起直接重定向。旧测试验证转发 `channel_id` 和 `model` 的旧行为，现行合同已有入口回归覆盖。 |
+| 1 | `frontend/src/components/ConnectionModelPanel.tsx` | `frontend/src/components/__tests__/ConnectionModelPanel.test.tsx` | 旧面板仅由自身测试渲染。API 合同检查已撤掉面板的路径例外，继续禁止前端引用。 |
+| 1 | `frontend/src/utils/channelReadiness.ts` | `frontend/src/utils/__tests__/channelReadiness.test.ts` | 仅被旧面板和自身测试使用。现行就绪判断使用后端投影，通用名单解析及回归由 `modelList.ts` 和 `modelList.test.ts` 维护。 |
+| 2 | `frontend/src/api/channels.ts` | `frontend/src/api/__tests__/channels.test.ts` | 旧渠道及凭据只读客户端，配套测试只覆盖请求拼装及导出形状。 |
+| 2 | `frontend/src/api/routing.ts` | `frontend/src/api/__tests__/routing.test.ts` | 旧路由预览客户端，配套测试只覆盖参数编码及导出形状。 |
+
+- 第 1 批定向回归 7 个文件、90 项通过，类型及 API 合同检查通过，随后实施第 2 批。
+- 合同检查器拒绝两个旧客户端文件再次出现，继续扫描整个前端源码中的退役写调用。
+  在临时副本验证正常输入通过、9 种重新引入场景均被拒绝，覆盖客户端、退役写调用
+  和组件引用。[API 合同检查](../../frontend/scripts/check-api-contract-debt.mjs)
+- 两批完成后，前端全量 104 个文件、986 项通过。生产构建、类型检查、API 合同、
+  React 兼容和包体预算通过。构建报告的 122 项资源名称和大小与退役前一致。
+- 后端渠道列表、渠道详情、凭据列表和路由预览仍按 [OpenAPI](../tech-ref/05-openapi-spec.yaml)
+  提供只读合同，代码与规范对照的 3 项 Go 测试通过。兼容导出
+  [WorkloadApplicationsPage.tsx](../../frontend/src/pages/WorkloadApplicationsPage.tsx)
+  仍可供下游使用。模型适配经验文件无需变化。
+
+### 编码前独立复核
+
+- 计费确认为 16 个相同的直接转发。采纳暂缓抽取的结论，保留可追溯的
+  策略、Agent 和钱包装配。预算与终态流程各有自己的条件和错误语义。
+  [计费复核与裁定](reviews/ur-maintenance-billing-review-20261122.md)
+- Webhook 更新与范围确认的源文件与独立复核的 blob 一致。两条路径共用的候选范围
+  限于事务内的 22 行校验。
+  [Webhook 复核与裁定](reviews/ur-maintenance-webhook-review-20261122.md)
+
+### Webhook 回归与抽取评估
+
+- 两个 handler 新增 10 个失败场景，覆盖提交时授权失败和锁内读取失败。通过现有
+  DB mock 验证查询顺序、`403`/`404`/`500` 的响应、恰好一次回滚，以及零业务写入、
+  零审计写入和零提交。
+- 范围确认补两个场景。对已确认记录，`expected_updated_at` 匹配预读但早于锁内快照时
+  返回 `409`，匹配锁内快照时返回幂等 `200`。两条分支均回滚且无写入。
+  [Webhook 事务回归](../../internal/admin/notification_handlers_test.go)
+- Go 1.25.12 下 `internal/admin` 全包测试通过。现有
+  `TestP6F33NotificationTenantIsolationIntegration` 在独立 PostgreSQL 16.14 上通过，
+  覆盖租户隔离、更新和范围确认的审计失败回滚。临时测试库已清理，数据库进程已关闭。
+- 用户确认暂缓抽取。提交时重验、锁内重读、最终写权限已有共用函数，22 行重复的是这些
+  调用的顺序及错误映射，现已由两条入口的回归约束。新增调用方或需要同步改变校验时，
+  再评估抽取接收现有事务的 helper，各 handler 持有本身的事务与审计。计费继续暂缓。
+
+### 维护清单复盘与分批修正
+
+首轮已收口的范围包括已核实的硬编码、标准列表分页与重试、字段宽度复用、批准的退役文件
+及保留的兼容入口。本批按实际影响先闭环查询正确性，再处理两处复制实现和文档导航。
+
+| 优先级 | 位置 | 收口结果 |
+| --- | --- | --- |
+| P1 | [执行请求](../../frontend/src/pages/LogsPage.tsx) | 状态码筛选从旧页码发请求。合并筛选提交入口，按查询与客户作用域绑定列表和详情，等待期间隐藏旧行及其操作。状态码、计量来源和客户切换进入定向回归。 |
+| P2 | [通用复制](../../frontend/src/utils/clipboard.ts) · [开发者控制台](../../frontend/src/pages/DeveloperConsolePage.tsx) | 两处复制使用同一 helper，保留原始值、快捷反馈和安全剪贴板拒绝语义。兼容分支在退出时移除临时文本框。 |
+| P2 | [设计导航](../design/README.md) · [字段问题历史](../issues/frontend-backend-field-mismatches.md) · [代码地图](../CODEBASE-MAP.md#frontend-map) | 精简现行入口，标注 PRD1 快照和字段问题历史，核对实际兼容路由、应用页和日志字段。将筛选回到第一页、旧查询隔离和复制规则收进现有前端规范。 |
+
+- 验证使用 Node 24.19.0 / npm 11.17.0。日志与审计日志定向 38 项、复制相关定向
+  99 项、前端全量 105 个文件共 993 项通过。生产构建、类型检查、API 合同、React
+  兼容及包体预算通过。Playwright 在 1440px 与 390px 下访问实际 `/logs` 路由，
+  使用合成客户和延迟响应验证第 2 页筛选回第 1 页、等待期间旧行和复制动作隐藏、
+  以及复制新记录的完整 Request ID。
+- 文档扫描剩余一处仓外历史引用。R1 合同原字节及摘要由
+  [来源清单](../../contracts/source-content/v1/provenance.json)固定，保留原文。
+- 保留 `WorkloadApplicationsPage.tsx` 的源码兼容入口。Webhook 抽取和计费继续暂缓。
+
+### 人员与权限分页收口
+
+- [UsersPage](../../frontend/src/pages/UsersPage.tsx) 先复用
+  [共用分页读取](../../frontend/src/utils/pagination.ts)，以当前用户、组织角色、
+  客户和账号来源确定读取范围。翻页、改页大小、同查询重试和阻止旧来源响应覆盖
+  均通过。账号批次先跑完 26 项定向验证和类型检查。
+- [ProjectManagementPage](../../frontend/src/pages/ProjectManagementPage.tsx)
+  分批接入。项目列表按当前客户读取，深链及保存视图一次恢复页码、页大小和项目。
+  成员列表按选中项目读取，页大小变更与重试沿用已提交的候选人搜索。
+  模型范围由[共用读取](../../frontend/src/utils/scopedRead.ts)等待该组织所有模型集
+  页面和该项目的已分配项，成功后才允许保存。模型治理许可证和项目角色门槛继续生效。
+  项目、成员、模型三个批次的定向验证分别通过 67、22 和 25 项。
+- 使用本地构建的 `/organization-members` 路由和合成账号复验。旧本地账号页迟到后，
+  重试成功的企业身份结果持续可见；项目深链恢复至第 3 页、每页 50 条；
+  项目 32 的候选人搜索在翻页和修改页大小时保持；模型读取绑定到组织 7 和项目 32，
+  完成后保存动作才可用。
+- 该批收拢后前端全量 105 个文件共 1,003 项通过。生产构建、API 合同检查、包体预算和
+  本地 1.15.8 版本元数据均通过。R1 原文件的 SHA-256 与来源清单一致。
+
+### 历史文档处置
+
+- 经逐文件批准，工作树已删除早期会话交接与 2026-06-24 初始测试计划。
+  原文和当时的测试基线按提交固定在[文档归档索引](../DOC-INVENTORY.md#historical-archive)。
+  现行协作和测试要求见[项目规则](../../AGENTS.md)及[贡献指南](../../CONTRIBUTING.md)。
+
+### 首轮本地验证
+
+- Node 24.19.0 / npm 11.17.0 下前端 108 个测试文件、996 项通过。
+  前端构建及包体预算通过。分页回归覆盖实际 Semi 控件和迟到响应。
+- Playwright 从构建产物打开实际路由。模拟账号的请求序列为
+  `(1,20) → (4,20) → (1,50)`，安全策略读取从一次模拟 503 经重试恢复。
+  在 390px 视口打开安全策略抽屉，文档保持 390px，9 个可见共用控件填满父容器。
+- `go vet ./...`、配置包、路由与 OpenAPI 对照、发布元数据校验和
+  24 项发布策略测试通过。Go 全量首跑自动命中本地默认测试库，5 个用例
+  在 PostgreSQL 的建库、迁移或清理阶段超时。4 个遗留临时库逐个确认归属和
+  连接数后删除并读回，5 个失败用例在任务独立 PostgreSQL 16 中串行复跑通过。
+  本节记录 Local 验证，发布和环境验收引用其各自证据源。
+
+### 整批本地验收
+
+- 最终复核发现切换客户并重新加载项目时，保存视图仍可能持久化上一客户的项目。
+  [项目页](../../frontend/src/pages/ProjectManagementPage.tsx)现在使用当前结果中的已选
+  项目校验保存，等待期间禁用按钮并拦截回车。新增断言先复现旧行为，再验证迟到响应
+  无法恢复旧项目，且加载完成后保存绑定到新项目。
+  [项目页回归](../../frontend/src/pages/__tests__/ProjectManagementPage.test.tsx)
+- 最终工作树的前端全量通过，共 105 个文件、1,003 项用例，未出现非预期告警。
+  生产构建、类型检查、API 合同、React 兼容及包体预算通过。最大 JS 资源
+  为 371,446 字节，预算 460,800 字节。用构建产物和模拟组织管理员复验
+  `/organization-members` 的账号范围、翻页、失败重试、迟到响应和页大小变更，
+  也复验项目深链、成员搜索、模型分配范围及保存视图的限制。
+- Go 1.25.12 下 `go vet ./...` 与 `go test -json -p 2 ./... -count=1 -timeout=5m`
+  通过。107 个有测试的包通过，7,721 个 Go 测试及子测试通过。4 项可选测试跳过，
+  分别依赖指定的 OpenClaw 安装和固定的 Integration Control N1 制品。数据库回归
+  使用任务独占的 PostgreSQL 16.14 和 Redis 8.8.0，临时测试库无遗留，进程已关闭。
+- 批准删除的 2 份历史文档和 10 个前端文件与实际差异一致。核对 R1 原文摘要、
+  后端只读合同和 `WorkloadApplicationsPage.tsx`。Webhook 保留已验证的回归测试，
+  抽取及计费继续暂缓。本节验收范围为独立工作树的本地候选。
+
+### 断电恢复复验
+
+- 实际差异及构建仍在独立工作树。恢复锁定的 Node 24.19.0 和 npm 11.17.0 后，
+  前端全量 105 个文件、1,003 项通过，生产构建通过。123 个构建文件逐一比对
+  SHA-256，与断电前留存的构建一致，沿用该产物的浏览器验证结果。
+- 用隔离 PostgreSQL 16.14 和 Redis 8.8.0 复跑 `go vet`、全量 Go 测试及
+  `TestP6F33NotificationTenantIsolationIntegration`，均通过。全量仍有
+  107 个包通过及 4 项可选跳过，两项临时服务均已关闭，无遗留测试数据库。
+- 复查了 12 个已批准的删除项、保留的兼容导出、R1 原文摘要和 1.15.8 版本元数据。
+  恢复复验仅更新此记录。
+
+### 总体审查前的维护补充
+
+本轮沿用同一独立工作树及断电恢复复验，按既有盘点补查仍在运行的页面和现行文档。
+
+| 范围 | 本地结果与保留依据 |
+| --- | --- |
+| 硬编码、共用组件与样式 | 现有标准列表继续用 `PagedTable`。执行请求与开发者控制台的三个表格合用[分页选项](../../frontend/src/utils/pagination.ts)。执行请求和审计日志的筛选控件复用现有全宽类。保留各表的默认页大小、客户端或服务端分页方式、行选择和检查器。 |
+| 重复逻辑与交互 | 延用此前验证的共用分页读取、客户与查询作用域、剪贴板入口。执行请求曾在读取失败时同时显示空列表提示。[回归](../../frontend/src/pages/__tests__/LogsPage.test.tsx)先复现，再验证失败时展示重试，成功空响应时才展示空列表。将该约定补入[前端交互规范](../governance/README.md#frontend-interaction-conventions)。 |
+| 现行文档 | [接手导航](../PROJECT-HANDOFF.md)的必读入口缩至当前任务来源，7 月 Target 验收归入历史导航。[本地测试](LOCAL-TEST-REUSE.md#共享测试入口)把六组实际 runner 和不写入的预检放在前面。[空库安装](../ops/FRESH-INSTALL.md)转到签名包安装证据和当前 CLI，旧 M126/M127 证据按历史保留。[代码地图](../CODEBASE-MAP.md#frontend-map)直达现行页面、共享状态及测试入口。 |
+| 冗余与兼容 | 经追加批准删除一份早期计划，累计按批准删除 13 个文件。保留后端只读 API、前端兼容导出、R1 原文和用于前驱验证的夹具。旧 `FIX-SIGNAL.md` 仍是协议兼容入口，`VERIFY-RESULT.md` 提供既有验收依据，`CHECKLIST.md` 保留历史复核用法。 |
+
+用户逐文件批准后，已删除早期执行清单 `docs/agent-workflows/PLAN.md`。
+原文包含已退役的渠道写入口和前端页面。删除前核对了与本批基线
+`9ae41697` 一致的 Git blob `87b3eabaf5a3b5797821490f365addacc1fbe5f5`，
+原文入口见[历史归档](../DOC-INVENTORY.md#historical-archive)。
+[工作流导航](README.md)继续指向执行记录，[代码地图](../CODEBASE-MAP.md)列出现行实现。
+
+- 前端最终全量 105 个文件、1,003 项通过，生产构建、类型、API 合同、React
+  兼容及包体预算检查通过。首轮同样通过 1,003 项，但 Vitest 在 jsdom
+  退出时捕获了一次 `lottie-web` 计时器异常，命令退出码为 1。同一差异完整复跑
+  未再出现，未改告警阈值或跳过测试。
+- Playwright 使用本地构建和合成组织管理员打开实际 `/logs`、`/audit-logs`，
+  验证 503 时只显示失败、一次重试后的成功空态，以及 390px 与 1440px
+  下的筛选宽度。测试 runner 的配置预检通过，未连接服务或生成日志目录。
+  仓内链接及修改的标题锚点已核对，R1 的原有历史链接按原文保留。
+- 本轮沿用断电恢复时的 Go 和 Webhook 证据。Webhook 抽取和计费继续暂缓。
+  跨模块契约及 Standard 路线归《UR 架构与代码优化》。本轮证据范围为本地，
+  生产与发布留待下一阶段。
+
 ## 2026-11-21 — Standard first-use rehearsal and dispatch 503
 
 Worked in an isolated clone of the Standard M131 candidate

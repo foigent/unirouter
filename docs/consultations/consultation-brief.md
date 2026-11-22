@@ -158,7 +158,7 @@ TestFreeze_Success:
 |---|------|-----|------|
 | 1 | relay.go | 198 | 循环内 defer，failover 时 resp.Body 直到函数返回才关闭 |
 | 2 | router.go | 75 | `r.db.Exec()` 返回值未检查 |
-| 3 | encryptString | - | XOR 加密，CONTEXT_HANDOFF.md 记录应为 AES-GCM |
+| 3 | encryptString | - | XOR 加密，[当时的交接记录](https://github.com/foigent/unirouter/blob/9ae41697dac1e376f2efb87177dd63ab2bec6b7d/docs/agent-workflows/CONTEXT_HANDOFF.md)记载的预期为 AES-GCM |
 | 4 | billing_debug_test.go | 131 | `result.Success` 在 `err != nil` 检查之前访问，result 为 nil 时 panic |
 
 ---

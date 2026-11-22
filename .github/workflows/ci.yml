@@ -133,6 +133,7 @@ jobs:
           python3 -I -B .github/tests/test-community-backend-reuse.py
           python3 -I -B .github/tests/test-private-image-publisher.py
           python3 -I -B .github/tests/test-community-release-acceptance.py
+          python3 -I -B .github/tests/test-action-artifact-snapshot.py
           python3 -B scripts/internal-target-rollout.py environment-check
 
   backend:
@@ -367,20 +368,17 @@ jobs:
         # admin and other untagged feature tests.
         run: bash scripts/test-backend-integration.sh
       
-      - name: Check complete coverage artifact size
-        run: |
-          python3 -I -B - <<'PYBOUND'
-          from pathlib import Path
-          path = Path('coverage.out')
-          if path.is_symlink() or not path.is_file() or path.stat().st_size > 64 * 1024 * 1024:
-              raise SystemExit('Complete coverage artifact must be a regular file at most 64 MiB; never truncate it.')
-          PYBOUND
+      - name: Freeze complete coverage within the ZIP budget
+        id: coverage-snapshot
+        run: python3 -I -B .github/tests/action-artifact-snapshot.py coverage coverage.out
 
       - name: Upload coverage
+        if: steps.coverage-snapshot.outputs.path != ''
         uses: actions/upload-artifact@v7
         with:
           name: coverage
-          path: coverage.out
+          path: ${{ steps.coverage-snapshot.outputs.path }}
+          if-no-files-found: error
           retention-days: 90
 
       - name: Save shared Go cache from trusted main dispatch
@@ -544,13 +542,18 @@ jobs:
           -run '^(TestPR4AccessUXModelReadinessBrowserE2E|TestModelEndpointOnboardingBrowserE2E|TestSourceBudgetManagementBrowserE2E|TestCustomerOverviewBrowserE2E|TestCommunityFirstUseBusinessBrowserE2E)$'
           -count=1 -timeout=20m -v
 
-      - name: Preserve overview browser evidence
+      - name: Freeze complete browser evidence within the ZIP budget
+        id: browser-snapshot
         if: always()
+        run: python3 -I -B .github/tests/action-artifact-snapshot.py browser "$RUNNER_TEMP/ur-customer-overview-browser"
+
+      - name: Preserve overview browser evidence
+        if: ${{ always() && steps.browser-snapshot.outcome == 'success' && steps.browser-snapshot.outputs.path != '' }}
         uses: actions/upload-artifact@v7
         with:
           name: customer-overview-browser-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/ur-customer-overview-browser
-          if-no-files-found: warn
+          path: ${{ steps.browser-snapshot.outputs.path }}
+          if-no-files-found: error
           retention-days: 90
 
   docker:
@@ -794,6 +797,23 @@ jobs:
           fi
           canonical_route_authority_preflight="$(MODEL_ROUTE_AUTHORITY=canonical MODEL_ROUTE_COMPATIBILITY_ENABLED=false ASYNC_MEDIA_ENABLED=false deploy/customer/preflight.sh /dev/null 2>&1)"
           grep -F 'backend database startup gate (this config preflight is not readiness)' <<< "$canonical_route_authority_preflight"
+          standard_pricing_preflight="$(REQUEST_PRICING_AUTHORITY=customer_standard_v1 MODEL_ROUTE_AUTHORITY=canonical MODEL_ROUTE_COMPATIBILITY_ENABLED=false ASYNC_MEDIA_ENABLED=false deploy/customer/preflight.sh /dev/null 2>&1)"
+          grep -F 'verify active, approved customer price bindings' <<< "$standard_pricing_preflight"
+          standard_pricing_compose="$(REQUEST_PRICING_AUTHORITY=customer_standard_v1 MODEL_ROUTE_AUTHORITY=canonical MODEL_ROUTE_COMPATIBILITY_ENABLED=false ASYNC_MEDIA_ENABLED=false docker compose --env-file /dev/null -f deploy/customer/docker-compose.yml config --format json)"
+          jq -e '.services.backend.environment.REQUEST_PRICING_AUTHORITY == "customer_standard_v1"' <<< "$standard_pricing_compose"
+          for route_authority in legacy verify; do
+            if standard_pricing_preflight="$(REQUEST_PRICING_AUTHORITY=customer_standard_v1 MODEL_ROUTE_AUTHORITY="$route_authority" MODEL_ROUTE_COMPATIBILITY_ENABLED=true ASYNC_MEDIA_ENABLED=false deploy/customer/preflight.sh /dev/null 2>&1)"; then
+              echo "Standard pricing must reject model route authority ${route_authority}" >&2
+              exit 1
+            fi
+            grep -F 'REQUEST_PRICING_AUTHORITY=customer_standard_v1 requires canonical model routing' <<< "$standard_pricing_preflight"
+          done
+          if REQUEST_PRICING_AUTHORITY=Customer_Standard_V1 deploy/customer/preflight.sh /dev/null; then
+            echo 'customer preflight must reject a non-exact pricing authority' >&2
+            exit 1
+          fi
+          REQUEST_PRICING_AUTHORITY= deploy/customer/preflight.sh /dev/null
+          REQUEST_PRICING_AUTHORITY=rate_card deploy/customer/preflight.sh /dev/null
           if JWT_SECRET=short deploy/customer/preflight.sh /dev/null; then
             echo 'customer preflight must reject a short JWT secret' >&2
             exit 1

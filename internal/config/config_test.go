@@ -96,6 +96,19 @@ func TestValidate_RequestPricingAuthorityMigrationGate(t *testing.T) {
 	if err := base.Validate(); err != nil {
 		t.Fatalf("strict Rate Card authority should be supported: %v", err)
 	}
+	base.RequestPricingAuthority = billing.RequestPricingAuthorityCustomerStandard
+	if err := base.Validate(); err != nil {
+		t.Fatalf("Standard pricing should accept the canonical default: %v", err)
+	}
+	for _, mode := range []modelrouting.Mode{modelrouting.ModeLegacy, modelrouting.ModeVerify} {
+		base.ModelRouteAuthority = mode
+		base.ModelRouteCompatibilityEnabled = true
+		if err := base.Validate(); err == nil || !strings.Contains(err.Error(), "requires canonical model routing") {
+			t.Fatalf("Standard pricing must reject %q routing, got %v", mode, err)
+		}
+	}
+	base.ModelRouteAuthority = modelrouting.ModeCanonical
+	base.ModelRouteCompatibilityEnabled = false
 	base.RequestPricingAuthority = "auto"
 	if err := base.Validate(); err == nil || !strings.Contains(err.Error(), "REQUEST_PRICING_AUTHORITY") {
 		t.Fatalf("unknown authority must fail startup validation, got %v", err)

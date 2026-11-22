@@ -1052,17 +1052,7 @@ func (c Config) LicenseRefreshInterval() time.Duration {
 }
 
 func splitCSV(value string) []string {
-	parts := strings.Split(value, ",")
-	out := make([]string, 0, len(parts))
-	seen := map[string]bool{}
-	for _, part := range parts {
-		item := strings.TrimSpace(part)
-		if item == "" || seen[item] {
-			continue
-		}
-		seen[item] = true
-		out = append(out, item)
-	}
+	out := splitCSVAllowEmpty(value)
 	if len(out) == 0 {
 		return []string{"openid", "email", "profile"}
 	}

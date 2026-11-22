@@ -1,5 +1,6 @@
 import { setLocale } from '../../i18n';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StrictMode } from 'react';
 import ProjectManagementPage from '../ProjectManagementPage';
@@ -22,6 +23,24 @@ vi.mock('../../api/client', async () => {
   const actual = await vi.importActual<any>('../../api/client');
   return { ...actual, api: mocks };
 });
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => { resolve = complete; });
+  return { promise, resolve };
+}
+
+function projectRecord(id: number, name: string, orgId = 1) {
+  return { id, org_id: orgId, name, slug: `project-${id}`, status: 'active', budget_cents: 0, budget_period: 'none' };
+}
+
+function memberResponse(username: string, total = 120) {
+  return {
+    data: [{ user_id: 9, username, auth_provider: 'local', membership_role: 'project_user', status: 'active' }],
+    eligible_users: [],
+    total,
+  };
+}
 
 describe('ProjectManagementPage', () => {
   it('keeps the project, customer names and unsaved edits when the locale changes', async () => {
@@ -143,7 +162,7 @@ describe('ProjectManagementPage', () => {
     expect(screen.queryByRole('heading', { name: '页面出错了' })).toBeNull();
   });
 
-  it('does not let a project administrator create projects', async () => {
+  it('restores the member deep link for a project administrator without granting project creation', async () => {
     useAuthStore.setState({
       user: {
         id: 7,
@@ -155,9 +174,16 @@ describe('ProjectManagementPage', () => {
         license_access: { status: 'valid', enforceable: true, features: { gateway: true, agent_capabilities: true, oidc: true, guardrails: true, notifications: true, model_governance: true, data_exchange: true } },
       },
     });
+    window.history.replaceState(null, '', '/projects?project_id=31&project_tab=members');
+    mocks.getProjects.mockResolvedValueOnce({
+      data: [{ ...projectRecord(31, '核心项目'), current_user_membership_role: 'project_admin' }],
+      total: 1,
+    });
     render(<ProjectManagementPage />);
     await screen.findByLabelText('项目详情：核心项目');
     expect(screen.queryByText('新建项目')).toBeNull();
+    expect(await screen.findByText('developer-a')).toBeInTheDocument();
+    expect(mocks.getProjectMembers).toHaveBeenCalledWith(31, 1, 20, '');
   });
 
   it('binds a platform operator to the canonical customer and removes organization selection', async () => {
@@ -221,7 +247,7 @@ describe('ProjectManagementPage', () => {
   });
 
   it('restores the selected project and member tab from a deep link', async () => {
-    window.history.replaceState(null, '', '/projects?project_id=32&project_tab=members');
+    window.history.replaceState(null, '', '/projects?org_id=99&project_id=32&project_tab=members&project_page=3&project_page_size=50');
     mocks.getProjects.mockResolvedValueOnce({
       data: [
         {
@@ -245,15 +271,241 @@ describe('ProjectManagementPage', () => {
           budget_period: 'none',
         },
       ],
-      total: 2,
+      total: 112,
     });
 
     render(<ProjectManagementPage />);
 
     expect(await screen.findByLabelText('项目详情：辅助项目')).toBeTruthy();
     expect(await screen.findByText('developer-a')).toBeTruthy();
+    expect(mocks.getProjects.mock.calls).toEqual([[3, 50, { org_id: undefined }]]);
     expect(mocks.getProjectMembers).toHaveBeenCalledWith(32, 1, 20, '');
-    expect(new URLSearchParams(window.location.search).get('project_tab')).toBe('members');
+    const params = new URLSearchParams(window.location.search);
+    expect(params.get('project_tab')).toBe('members');
+    expect(params.get('project_page')).toBe('3');
+    expect(params.get('org_id')).toBeNull();
+  });
+
+  it('restores a saved view with one read at the saved page and size', async () => {
+    window.localStorage.setItem('unirouter.projects.saved-views.v1', JSON.stringify([{
+      name: '第 3 页模型',
+      state: { project_id: 32, project_tab: 'models', project_page: 3, project_page_size: 50 },
+    }]));
+    mocks.getProjects.mockImplementation((page: number) => Promise.resolve({
+      data: page === 3 ? [projectRecord(32, '已保存项目')] : [projectRecord(31, '初始项目')],
+      total: 120,
+    }));
+
+    render(<ProjectManagementPage />);
+    await screen.findByLabelText('项目详情：初始项目');
+    fireEvent.click(screen.getByText('已保存工作区（此浏览器）'));
+    fireEvent.click(await screen.findByText('第 3 页模型', { selector: '.semi-select-option-text' }));
+
+    expect(await screen.findByLabelText('项目详情：已保存项目')).toBeInTheDocument();
+    await waitFor(() => expect(mocks.getProjectModelSets).toHaveBeenCalledWith(32));
+    expect(mocks.getProjects.mock.calls).toEqual([[1, 20, { org_id: undefined }], [3, 50, { org_id: undefined }]]);
+    expect(new URLSearchParams(window.location.search).get('project_tab')).toBe('models');
+  });
+
+  it('hides the previous customer project and prevents saving its view while the new scope loads', async () => {
+    const actor = {
+      id: 2, username: 'platform', organization_role: 'platform_admin', role: 'platform_admin', org_id: 99,
+      customer_context: { state: 'ready' as const, org_id: 7 },
+    };
+    act(() => useAuthStore.setState({ user: actor }));
+    const viewsKey = 'unirouter.projects.saved-views.v1';
+    const savedViews = [{
+      name: '已有视图',
+      state: { project_id: 31, project_tab: 'overview', project_page: 1, project_page_size: 20 },
+    }];
+    window.localStorage.setItem(viewsKey, JSON.stringify(savedViews));
+    const oldResult = deferred<{ data: ReturnType<typeof projectRecord>[]; total: number }>();
+    const newResult = deferred<{ data: ReturnType<typeof projectRecord>[]; total: number }>();
+    mocks.getProjects
+      .mockResolvedValueOnce({ data: [projectRecord(31, '旧客户项目', 7)], total: 1 })
+      .mockReturnValueOnce(oldResult.promise)
+      .mockReturnValueOnce(newResult.promise);
+
+    render(<ProjectManagementPage />);
+    await screen.findByLabelText('项目详情：旧客户项目');
+    fireEvent.click(screen.getByRole('button', { name: /刷新$/ }));
+    await waitFor(() => expect(mocks.getProjects).toHaveBeenCalledTimes(2));
+    act(() => useAuthStore.setState({ user: { ...actor, customer_context: { state: 'ready', org_id: 8 } } }));
+
+    await waitFor(() => expect(mocks.getProjects).toHaveBeenLastCalledWith(1, 20, { org_id: 8 }));
+    expect(screen.queryByText('旧客户项目')).not.toBeInTheDocument();
+    const viewName = screen.getByLabelText('项目工作区名称');
+    const saveView = screen.getByRole('button', { name: '保存 / 覆盖' });
+    fireEvent.change(viewName, { target: { value: '新客户视图' } });
+    expect(saveView).toBeDisabled();
+    fireEvent.keyDown(viewName, { key: 'Enter' });
+    expect(JSON.parse(window.localStorage.getItem(viewsKey) || '[]')).toEqual(savedViews);
+
+    await act(async () => newResult.resolve({ data: [projectRecord(32, '新客户项目', 8)], total: 1 }));
+    expect(await screen.findByLabelText('项目详情：新客户项目')).toBeInTheDocument();
+    await act(async () => oldResult.resolve({ data: [projectRecord(31, '迟到的客户项目', 7)], total: 1 }));
+    expect(screen.queryByText('迟到的客户项目')).not.toBeInTheDocument();
+    expect(new URLSearchParams(window.location.search).get('project_id')).toBe('32');
+    fireEvent.click(screen.getByRole('button', { name: '保存 / 覆盖' }));
+    expect(JSON.parse(window.localStorage.getItem(viewsKey) || '[]')).toEqual([
+      ...savedViews,
+      {
+        name: '新客户视图',
+        state: { project_id: 32, project_tab: 'overview', project_page: 1, project_page_size: 20 },
+      },
+    ]);
+  });
+
+  it('keeps the submitted candidate search through paging, size changes and retry', async () => {
+    const user = userEvent.setup();
+    let failed = false;
+    mocks.getProjectMembers.mockImplementation((_id: number, page: number, size: number, query: string) => {
+      if (size === 50 && !failed) {
+        failed = true;
+        return Promise.reject(new Error('unavailable'));
+      }
+      return Promise.resolve(memberResponse(`member-${page}-${size}-${query || 'all'}`));
+    });
+
+    render(<ProjectManagementPage />);
+    const detail = within(await screen.findByLabelText('项目详情：核心项目'));
+    fireEvent.click(detail.getByText('成员与角色'));
+    await detail.findByText('member-1-20-all');
+    fireEvent.click(detail.getByLabelText('Page 4'));
+    await detail.findByText('member-4-20-all');
+
+    const search = detail.getByRole('textbox', { name: '搜索项目成员候选人' });
+    fireEvent.change(search, { target: { value: '  candidate  ' } });
+    expect(mocks.getProjectMembers).toHaveBeenCalledTimes(2);
+    fireEvent.click(detail.getByRole('button', { name: '搜索' }));
+    await detail.findByText('member-1-20-candidate');
+    fireEvent.click(detail.getByLabelText('Page 4'));
+    const currentRow = await detail.findByText('member-4-20-candidate');
+
+    fireEvent.change(search, { target: { value: 'draft only' } });
+    const table = currentRow.closest('.ur-table-shell') as HTMLElement;
+    const sizeControl = table.querySelector('.semi-page-switch [role="combobox"]') as HTMLElement;
+    await user.click(sizeControl);
+    await user.click(await screen.findByRole('option', { name: /50/ }));
+    expect(await detail.findByText('项目成员加载失败')).toBeInTheDocument();
+    expect(detail.queryByText('member-4-20-candidate')).not.toBeInTheDocument();
+    fireEvent.click(detail.getByRole('button', { name: '重试' }));
+    expect(await detail.findByText('member-1-50-candidate')).toBeInTheDocument();
+    expect(mocks.getProjectMembers.mock.calls).toEqual([
+      [31, 1, 20, ''], [31, 4, 20, ''],
+      [31, 1, 20, 'candidate'], [31, 4, 20, 'candidate'],
+      [31, 1, 50, 'candidate'], [31, 1, 50, 'candidate'],
+    ]);
+  });
+
+  it('ignores a late member response after another project is selected', async () => {
+    const previousRead = deferred<ReturnType<typeof memberResponse>>();
+    mocks.getProjects.mockResolvedValue({
+      data: [projectRecord(31, '初始项目'), projectRecord(32, '新选项目')],
+      total: 2,
+    });
+    mocks.getProjectMembers.mockImplementation((id: number) => (
+      id === 31 ? previousRead.promise : Promise.resolve(memberResponse('新项目成员'))
+    ));
+
+    render(<ProjectManagementPage />);
+    const previous = within(await screen.findByLabelText('项目详情：初始项目'));
+    fireEvent.click(previous.getByText('成员与角色'));
+    await waitFor(() => expect(mocks.getProjectMembers).toHaveBeenLastCalledWith(31, 1, 20, ''));
+    fireEvent.click(screen.getByText('新选项目'));
+
+    const current = within(await screen.findByLabelText('项目详情：新选项目'));
+    fireEvent.click(current.getByText('成员与角色'));
+    await current.findByText('新项目成员');
+    await act(async () => previousRead.resolve(memberResponse('迟到的旧项目成员')));
+    expect(current.getByText('新项目成员')).toBeInTheDocument();
+    expect(screen.queryByText('迟到的旧项目成员')).not.toBeInTheDocument();
+    expect(mocks.getProjectMembers.mock.calls).toEqual([[31, 1, 20, ''], [32, 1, 20, '']]);
+  });
+
+  it('enables model saves only after the selected project and its organization reads both settle', async () => {
+    const actor = {
+      ...useAuthStore.getState().user!,
+      role: 'platform_admin',
+      organization_role: 'platform_admin',
+      org_id: 99,
+      customer_context: { state: 'ready' as const, org_id: 7 },
+    };
+    act(() => useAuthStore.setState({ user: actor }));
+    window.history.replaceState(null, '', '/projects?project_id=31&project_tab=models');
+    const previousAssignments = deferred<{ model_set_ids: number[] }>();
+    const lastCatalogPage = deferred<{ data: { id: number; name: string; slug: string; status: string }[]; total: number }>();
+    mocks.getProjects.mockImplementation((_page: number, _size: number, scope: { org_id: number }) => Promise.resolve({
+      data: scope.org_id === 7
+        ? [projectRecord(31, '旧客户项目', 7)]
+        : [projectRecord(32, '新客户项目', 8)],
+      total: 1,
+    }));
+    mocks.getModelSets.mockImplementation((page: number, _size: number, scope: { org_id: number }) => {
+      if (scope.org_id === 7) {
+        return Promise.resolve({ data: [{ id: 71, name: '旧模型集', slug: 'old-set', status: 'active' }], total: 1 });
+      }
+      if (page === 2) return lastCatalogPage.promise;
+      return Promise.resolve({ data: [{ id: 81, name: '新模型集', slug: 'new-set', status: 'active' }], total: 101 });
+    });
+    mocks.getProjectModelSets.mockImplementation((id: number) => (
+      id === 31 ? previousAssignments.promise : Promise.resolve({ data: [{ model_set_id: 81 }] })
+    ));
+    mocks.replaceProjectModelSets.mockResolvedValue({ success: true });
+
+    render(<ProjectManagementPage />);
+    const oldDetail = within(await screen.findByLabelText('项目详情：旧客户项目'));
+    const oldSave = oldDetail.getByRole('button', { name: '保存模型范围' });
+    expect(oldSave).toBeDisabled();
+    fireEvent.click(oldSave);
+    expect(mocks.replaceProjectModelSets).not.toHaveBeenCalled();
+    expect(mocks.getProjectModelSets).toHaveBeenCalledWith(31);
+
+    act(() => useAuthStore.setState({ user: { ...actor, customer_context: { state: 'ready', org_id: 8 } } }));
+    const newDetail = within(await screen.findByLabelText('项目详情：新客户项目'));
+    await waitFor(() => expect(mocks.getModelSets).toHaveBeenCalledWith(2, 100, { org_id: 8 }));
+    expect(newDetail.getByRole('button', { name: '保存模型范围' })).toBeDisabled();
+    await act(async () => lastCatalogPage.resolve({
+      data: [{ id: 82, name: '下页模型集', slug: 'next-catalog-page', status: 'active' }], total: 101,
+    }));
+    await act(async () => previousAssignments.resolve({ model_set_ids: [71] }));
+
+    const save = newDetail.getByRole('button', { name: '保存模型范围' });
+    await waitFor(() => expect(save).toBeEnabled());
+    expect(newDetail.getByRole('combobox', { name: '允许的模型集' })).toHaveTextContent('新模型集');
+    expect(screen.queryByText(/旧模型集/)).not.toBeInTheDocument();
+    await act(async () => { fireEvent.click(save); });
+    expect(mocks.replaceProjectModelSets.mock.calls).toEqual([[32, [81]]]);
+    expect(mocks.getModelSets.mock.calls).toEqual([
+      [1, 100, { org_id: 7 }], [1, 100, { org_id: 8 }], [2, 100, { org_id: 8 }],
+    ]);
+    expect(mocks.getProjectModelSets.mock.calls).toEqual([[31], [32]]);
+  });
+
+  it('retries the organization catalog and selected project assignments together', async () => {
+    window.history.replaceState(null, '', '/projects?project_id=31&project_tab=models');
+    mocks.getModelSets.mockRejectedValueOnce(new Error('unavailable'));
+
+    render(<ProjectManagementPage />);
+    const detail = within(await screen.findByLabelText('项目详情：核心项目'));
+    expect(await detail.findByText('模型范围加载失败，请稍后重试。')).toBeInTheDocument();
+    expect(detail.queryByRole('button', { name: '保存模型范围' })).not.toBeInTheDocument();
+    fireEvent.click(detail.getByRole('button', { name: '重试' }));
+
+    await waitFor(() => expect(detail.getByRole('button', { name: '保存模型范围' })).toBeEnabled());
+    expect(mocks.getModelSets.mock.calls).toEqual([[1, 100, { org_id: 1 }], [1, 100, { org_id: 1 }]]);
+    expect(mocks.getProjectModelSets.mock.calls).toEqual([[31], [31]]);
+  });
+
+  it('keeps model reads gated by the model-governance license', async () => {
+    window.history.replaceState(null, '', '/projects?project_id=31&project_tab=models');
+    act(() => useAuthStore.setState({ user: { ...useAuthStore.getState().user!, license_access: null } }));
+
+    render(<ProjectManagementPage />);
+    const detail = within(await screen.findByLabelText('项目详情：核心项目'));
+    expect(detail.getByRole('heading', { name: '模型治理暂不可用' })).toBeInTheDocument();
+    expect(mocks.getModelSets).not.toHaveBeenCalled();
+    expect(mocks.getProjectModelSets).not.toHaveBeenCalled();
   });
 
   it('saves project workspace metadata in the browser and supports keyboard selection', async () => {

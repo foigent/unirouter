@@ -183,9 +183,9 @@ This section mixes governing documents and dated evidence references. Each file 
 | `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` | PRD5 X-Insight data exchange control | Implemented UniRouter-owned outbound approval/export/delivery/receipt surface and remaining X-Insight contract without duplicating downstream audit/investigation UI |
 | `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` | PRD5 implementation plan | Batch order, gates, and ownership split for UniRouter vs X-Insight |
 | `docs/planning/PRD5-COMPETITOR-COMPARISON.md` | PRD5 competitor comparison | Source-grounded comparison against LiteLLM, New API, one-api, Langfuse, and Helicone |
-| `docs/design/` | UI design decisions | Current design reference unless contradicted by code |
+| [UI design index](design/README.md) | Frontend navigation and design references | Current code and interaction conventions, plus dated design records |
 | `docs/design/PRD2-DEVELOPER-CONSOLE-SPEC.md` | PRD2 Developer Console design spec | Draft for review |
-| `docs/ui/FRONTEND-UI-ARCHITECTURE-AUDIT.md` | Frontend UI/architecture audit | Current PRD1 closeout and PRD2 frontend architecture guidance |
+| `docs/ui/FRONTEND-UI-ARCHITECTURE-AUDIT.md` | Historical frontend UI/architecture audit | PRD1 closeout and PRD2 design context. [Current frontend conventions](governance/README.md#frontend-interaction-conventions) |
 | `docs/consultations/` | External/internal consultation history | Background, not current status |
 | `docs/analysis/UNIROUTER-VS-ONEAPI-COMPARISON.md` | OneAPI comparison | Reference only |
 
@@ -293,15 +293,13 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 |------|------|
 | `docs/agent-workflows/README.md` | Agent workflow index |
 | `docs/agent-workflows/LOCAL-TEST-REUSE.md` | Shared local/CI test entrypoint, concrete fixture preparation, exact dependencies and evidence reuse |
-| `docs/ops/FRESH-INSTALL.md` | Fresh installer source candidate, original ownership contracts and pending native verification |
+| `docs/ops/FRESH-INSTALL.md` | Fresh installer source entry and retained owner-design history. Follow the release record for signed-package evidence. |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Current Agent Protocol v2.3; apply root AGENTS.md review triggers |
 | `docs/agent-workflows/EXECUTION-RECORD.md` | Active delivery scope and authority, followed by dated historical records; do not infer current scope from an old checkpoint |
 | `docs/agent-workflows/reviews/README.md` | Independent review naming, contents and severity rules |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |
 | `docs/agent-workflows/CHECKLIST.md` | Historical Canary checklist/reference; optional review input only |
-| `docs/agent-workflows/PLAN.md` | Historical/temporary plan notes; not the current task authority |
-| `docs/agent-workflows/CONTEXT_HANDOFF.md` | Context transfer notes; reference only |
 
 ## Historical Archive
 
@@ -309,6 +307,9 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 |------|------|
 | `docs/testing/archive/` | Historical testing stages, coverage, bug log, and status snapshots |
 | `docs/archive/` | Historical knowledge and todo notes |
+| [Early context checkpoint](https://github.com/foigent/unirouter/blob/9ae41697dac1e376f2efb87177dd63ab2bec6b7d/docs/agent-workflows/CONTEXT_HANDOFF.md) | Session handoff cited by the early [consultation brief](consultations/consultation-brief.md). Current entry points are in [Project Handoff](PROJECT-HANDOFF.md). |
+| [Canary's initial test plan](https://github.com/foigent/unirouter/blob/9ae41697dac1e376f2efb87177dd63ab2bec6b7d/docs/testing/archive/ACTION-PLAN.md) | The June 24 plan and its recorded coverage baseline. See the [consultation summary](consultations/round1-summary.md) for the revised plan and [Contributing](../CONTRIBUTING.md#backend) for current validation. |
+| [Early implementation plan](https://github.com/foigent/unirouter/blob/9ae41697dac1e376f2efb87177dd63ab2bec6b7d/docs/agent-workflows/PLAN.md) | Historical checklist for the original APIs and pages. See the [execution record](agent-workflows/EXECUTION-RECORD.md) for current work and the [codebase map](CODEBASE-MAP.md) for implementation paths. |
 
 Archive files are useful for evidence and root-cause history, but any active status must be copied into `CURRENT-STATUS.md`, `PRD-ACCEPTANCE-MATRIX.md`, or `OPEN-ISSUES.md`.
 

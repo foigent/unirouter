@@ -1,10 +1,12 @@
 import '../i18n/people';
 import { translate as t, localizeOptions, useI18n } from '../i18n';
-import { useCallback, useEffect, useState } from 'react';
-import { Button, Form, SideSheet, Table, Toast } from '@douyinfe/semi-ui';
+import { useEffect, useState } from 'react';
+import { Button, Form, SideSheet, Toast } from '@douyinfe/semi-ui';
 import { IconEdit, IconRefresh } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { EmptyState, StatusTag } from '../ui';
+import { EmptyState, PagedTable, StatusTag } from '../ui';
+import { useServerPage } from '../utils/pagination';
+import { MAX_PROJECT_BUDGET_YUAN } from '../utils/projectDisplay';
 
 interface ProjectBudget {
   id: number;
@@ -15,8 +17,6 @@ interface ProjectBudget {
   budget_period: string;
 }
 
-const maxProjectBudgetYuan = 21474836.47;
-
 const periodOptions = [
   { label: '不限制', value: 'none' },
   { label: '每日', value: 'daily' },
@@ -25,30 +25,11 @@ const periodOptions = [
 
 export default function ProjectBudgetPanel() {
   useI18n();
-  const [projects, setProjects] = useState<ProjectBudget[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
-  const [loading, setLoading] = useState(false);
+  const projectPage = useServerPage<{ data?: ProjectBudget[]; total?: number }>(api.getProjects, 'project-budgets');
+  const projects = projectPage.data?.data ?? [];
   const [editing, setEditing] = useState<ProjectBudget | null>(null);
   const [formApi, setFormApi] = useState<any>(null);
 
-  const load = useCallback((nextPage = page, nextPageSize = pageSize) => {
-    setLoading(true);
-    return api.getProjects(nextPage, nextPageSize)
-      .then((response: any) => {
-        setProjects(response.data || []);
-        setTotal(response.total || 0);
-      })
-      .catch(() => {
-        setProjects([]);
-        setTotal(0);
-        Toast.error(t("项目预算加载失败"));
-      })
-      .finally(() => setLoading(false));
-  }, [page, pageSize]);
-
-  useEffect(() => { void load(1, pageSize); }, []);
   useEffect(() => {
     if (!editing || !formApi) return;
     formApi.setValues({
@@ -60,8 +41,8 @@ export default function ProjectBudgetPanel() {
   const save = async (values: any) => {
     if (!editing) return;
     const yuan = Number(values.budget_yuan || 0);
-    if (!Number.isFinite(yuan) || yuan < 0 || yuan > maxProjectBudgetYuan) {
-      Toast.error(t('预算金额需在 0 至 {max} 元之间', { max: maxProjectBudgetYuan.toFixed(2) }));
+    if (!Number.isFinite(yuan) || yuan < 0 || yuan > MAX_PROJECT_BUDGET_YUAN) {
+      Toast.error(t('预算金额需在 0 至 {max} 元之间', { max: MAX_PROJECT_BUDGET_YUAN.toFixed(2) }));
       return;
     }
     try {
@@ -71,7 +52,7 @@ export default function ProjectBudgetPanel() {
       });
       Toast.success(t("项目预算已更新"));
       setEditing(null);
-      await load(page, pageSize);
+      projectPage.reload();
     } catch {
       Toast.error(t("项目预算更新失败"));
     }
@@ -90,39 +71,32 @@ export default function ProjectBudgetPanel() {
     { title: t("操作"), render: (_: unknown, project: ProjectBudget) => <Button icon={<IconEdit />} onClick={() => setEditing(project)}>{t("调整预算")}</Button> },
   ];
 
-  if (!loading && projects.length === 0) {
-    return <EmptyState title={t("暂无项目预算")} description={t("项目创建后会在这里显示；账务管理员只能修改预算金额与周期。")} />;
-  }
-
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-        <Button icon={<IconRefresh />} onClick={() => load(page, pageSize)}>{t("刷新")}</Button>
+      <div className="ur-surface-actions">
+        <Button icon={<IconRefresh />} onClick={projectPage.reload}>{t("刷新")}</Button>
       </div>
-      <div className="ur-table-shell">
-        <Table
-          rowKey="id"
-          columns={columns}
-          dataSource={projects}
-          loading={loading}
-          pagination={{
-            currentPage: page,
-            pageSize,
-            total,
-            showSizeChanger: true,
-            pageSizeOpts: [20, 50, 100],
-            onPageChange: nextPage => { setPage(nextPage); void load(nextPage, pageSize); },
-            onPageSizeChange: size => { setPage(1); setPageSize(size); void load(1, size); },
-          }}
-        />
-      </div>
+      <PagedTable
+        rowKey="id"
+        columns={columns}
+        dataSource={projects}
+        loading={projectPage.loading}
+        total={projectPage.failed ? 0 : projectPage.latestData?.total ?? 0}
+        page={projectPage.page}
+        pageSize={projectPage.pageSize}
+        showSizeChanger
+        onPageChange={projectPage.onPageChange}
+        onPageSizeChange={projectPage.onPageSizeChange}
+        loadError={projectPage.failed ? { title: t("项目预算加载失败"), retry: projectPage.reload } : undefined}
+        empty={<EmptyState title={t("暂无项目预算")} description={t("项目创建后会在这里显示；账务管理员只能修改预算金额与周期。")} />}
+      />
       <SideSheet title={editing ? t('调整预算 · {name}', { name: editing.name }) : t("调整预算")} visible={!!editing} onCancel={() => setEditing(null)} width="min(440px, 100vw)">
         <Form getFormApi={setFormApi} onSubmit={save}>
           <Form.InputNumber
             field="budget_yuan"
             label={t("预算金额（元）")}
             min={0}
-            max={maxProjectBudgetYuan}
+            max={MAX_PROJECT_BUDGET_YUAN}
             precision={2}
             extraText={t("0 表示不限制；最大值由当前数据库金额字段上限决定。")}
             style={{ width: '100%' }}

@@ -15,9 +15,8 @@ type modelDeploymentRouteGuards struct {
 	safety  modelDeploymentRouteGuard
 }
 
-// registerModelDeploymentRoutes exposes only the canonical persistent
-// deployment identity. Read truth is safe without a Gateway entitlement;
-// expansion remains paid while explicit safety contractions stay available.
+// registerModelDeploymentRoutes exposes canonical deployment operations
+// through the caller-provided read, write, approval and safety guards.
 func registerModelDeploymentRoutes(mux *http.ServeMux, handler *admin.Handler, guards modelDeploymentRouteGuards) {
 	mux.Handle("GET /api/v1/model-deployments", guards.read(handler.ListCanonicalModelApplications))
 	mux.Handle("GET /api/v1/model-deployments/{deploymentID}", guards.read(handler.GetCanonicalModelApplication))

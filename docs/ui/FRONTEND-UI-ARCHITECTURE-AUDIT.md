@@ -1,5 +1,10 @@
 # Frontend UI and Architecture Audit
 
+> Historical PRD1 and PRD2 audit. Its route examples, missing-component findings
+> and proposals describe that review window. Current source paths and shared
+> interaction conventions are in the [codebase map](../CODEBASE-MAP.md#frontend-map)
+> and [engineering governance](../governance/README.md#frontend-interaction-conventions).
+
 Status: PRD1 closeout guidance
 Owner: Codex
 Last updated: 2026-07-01

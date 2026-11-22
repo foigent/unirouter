@@ -921,7 +921,7 @@ describe('DeveloperConsolePage', () => {
     expect(await screen.findByText('req-001')).toBeTruthy();
   });
 
-  it('creates project-scoped keys with the selected project_id', async () => {
+  it('creates a key for the selected project and copies the exact issued value', async () => {
     const user = userEvent.setup();
     renderPage('project_admin');
 
@@ -940,6 +940,13 @@ describe('DeveloperConsolePage', () => {
       }));
     });
     expect(await screen.findByText('sk-created-secret')).toBeTruthy();
+    vi.stubGlobal('isSecureContext', true);
+    try {
+      await user.click(screen.getByRole('button', { name: /复制 Key$/ }));
+      expect(await navigator.clipboard.readText()).toBe('sk-created-secret');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('lets a developer stop only their own active project key', async () => {

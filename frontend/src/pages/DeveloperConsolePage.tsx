@@ -33,8 +33,10 @@ import {
 } from '../navigation';
 import { EmptyState, MetricTile, MoneyText, PageHeader, parseMicros, StatusTag, Surface } from '../ui';
 import { roleLabel as formatRoleLabel } from '../utils/displayLabels';
+import { copyText } from '../utils/clipboard';
 import { loadAllPages } from '../utils/loadAllPages';
 import { normalizeModelList, parseModelList } from '../utils/modelList';
+import { COMPACT_PAGE_SIZES } from '../utils/pagination';
 import { keyQuotaText } from '../utils/quota';
 import { projectDisplayName, projectOption } from '../utils/projectDisplay';
 import ProjectApiQuickstart from '../features/apiDocs/ProjectApiQuickstart';
@@ -151,21 +153,6 @@ function RecordedCharge({ micros, pricingVersion, strong, labeled }: {
       {isUnpricedObservation(pricingVersion) && <Text size="small" type="tertiary">{t("未定价 · 成本观察")}</Text>}
     </div>
   );
-}
-
-function fallbackCopyText(text: string) {
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.setAttribute('readonly', 'true');
-  textarea.style.position = 'fixed';
-  textarea.style.left = '-9999px';
-  document.body.appendChild(textarea);
-  textarea.select();
-  try {
-    return document.execCommand('copy');
-  } finally {
-    document.body.removeChild(textarea);
-  }
 }
 
 export default function DeveloperConsolePage() {
@@ -501,11 +488,7 @@ export default function DeveloperConsolePage() {
   const copyCreatedKey = async () => {
     if (!createdKey?.key) return;
     try {
-      if (navigator.clipboard?.writeText && window.isSecureContext) {
-        await navigator.clipboard.writeText(createdKey.key);
-      } else if (!fallbackCopyText(createdKey.key)) {
-        throw new Error('fallback copy failed');
-      }
+      await copyText(createdKey.key);
       Toast.success(t("已复制完整 Key"));
     } catch {
       Toast.error(t("复制失败，请手动复制"));
@@ -966,8 +949,9 @@ export default function DeveloperConsolePage() {
                 currentPage: keyPage,
                 pageSize: keyPageSize,
                 total: keys.length,
-                pageSizeOpts: [10, 20, 50, 100],
+                pageSizeOpts: COMPACT_PAGE_SIZES,
                 showSizeChanger: true,
+                preventPageChangeOnPageSizeChange: true,
                 showTotal: true,
                 onPageChange: (page: number) => setKeyPage(page),
                 onPageSizeChange: (pageSize: number) => { setKeyPageSize(pageSize); setKeyPage(1); },
@@ -1182,8 +1166,9 @@ export default function DeveloperConsolePage() {
                   currentPage: modelPage,
                   pageSize: modelPageSize,
                   total: models.length,
-                  pageSizeOpts: [10, 20, 50, 100],
+                  pageSizeOpts: COMPACT_PAGE_SIZES,
                   showSizeChanger: true,
+                  preventPageChangeOnPageSizeChange: true,
                   showTotal: true,
                   onPageChange: (page: number) => setModelPage(page),
                   onPageSizeChange: (pageSize: number) => { setModelPageSize(pageSize); setModelPage(1); },
