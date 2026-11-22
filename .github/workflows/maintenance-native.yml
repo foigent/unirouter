@@ -36,7 +36,7 @@ jobs:
   linux-maintenance:
     name: M125 to M126 to M127 Maintenance (synthetic)
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: ${{ github.event_name == 'pull_request' && github.event.pull_request.number == 500 && 23 || 45 }}
     steps:
       - name: Check out exact candidate and original baseline
         uses: actions/checkout@v7
