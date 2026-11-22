@@ -1,6 +1,8 @@
 # Deployment Runbook（部署运维手册）
 
-> 1.10.0 开源候选：商业 License 已从运行时退役，旧章节中的商业签发、导入、功能和资源额度要求仅适用于旧版本。当前安装与 M125→M126 停机迁移以 [License 退役说明](COMMERCIAL-LICENSE-RETIREMENT.md) 为准；升级签名、权限、账务和正式安装合同仍生效。该候选尚未发布或在 Target 验收。
+> Linux amd64 / ECS 的新装入口见[签名预览安装指南](../community/install-linux.zh-CN.md)。既有安装按[版本匹配的社区升级手册](COMMUNITY-UPGRADE.md)维护，并查看[该制品的验收记录](../community/release-readiness.md)。
+>
+> M126 起商业 License 退出运行时。下文涉及商业签发、导入和额度门禁的旧步骤只适用于对应前驱，M125 → M126 的迁移以[退役说明](COMMERCIAL-LICENSE-RETIREMENT.md)为准。签名升级、权限和账务仍由各自的合同约束。本手册后续章节保留源码开发、内部测试和历史迁移的操作记录。
 
 > **版本**：v1.25
 > **日期**：2026-08-30
@@ -247,10 +249,11 @@ chmod 600 .env .env.production
 
 下面的普通启动只适用于已完成 canonical authoring/inventory、且 migration ledger 与
 当前 binary ceiling 精确一致的数据库。全新空库不能用默认
-`canonical + compatibility=false` 直接启动；必须先按根
-[`README` 的隔离 bootstrap 流程](../../README.md#快速开始) 完成 author/check、停止
-bootstrap backend、恢复 canonical 默认并重启。bootstrap 期间不得接入外部代理、
-负载均衡或客户 Gateway 流量。
+`canonical + compatibility=false` 直接启动。源码路径先按
+[客户模板中的隔离 bootstrap 与路由库存流程](../../deploy/customer/README.md)
+完成 author/check、停止 bootstrap backend、恢复 canonical 默认后再启动。
+bootstrap 期间断开外部代理、负载均衡和客户 Gateway 流量。已签名社区安装遵循
+[相应安装合同](COMMUNITY-INSTALLER.md)。
 
 ```bash
 docker compose up -d

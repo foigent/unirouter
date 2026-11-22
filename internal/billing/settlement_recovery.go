@@ -165,7 +165,12 @@ func (b *Billing) PersistSettlementUsage(ctx context.Context, req SettleRequest)
 		return fmt.Errorf("billing settlement payload requires request_id and org_id")
 	}
 	var err error
-	req, err = normalizeSettlementUsage(req)
+	providerEvidence := req.StreamFence != nil && req.UsagePurpose == metering.UsagePurposeProviderEvidence
+	if providerEvidence {
+		req, err = normalizeProviderEvidenceUsage(req)
+	} else {
+		req, err = normalizeSettlementUsage(req)
+	}
 	if err != nil {
 		return err
 	}
@@ -192,6 +197,13 @@ func (b *Billing) PersistSettlementUsage(ctx context.Context, req SettleRequest)
 	record = canonicalizeLegacyReservationUsage(record)
 	if err := requireSettlementCounterVersionTx(ctx, tx, req); err != nil {
 		return err
+	}
+	if providerEvidence && !customerQuotePricing(record.PricingVersion) {
+		return fmt.Errorf("provider evidence requires a Standard customer quote")
+	}
+	if customerQuotePricing(record.PricingVersion) &&
+		(req.UsageAuthority != metering.UsageAuthorityProviderReported || req.UsageFinality != metering.UsageFinalityFinal) {
+		return ErrProviderFinalUsageRequired
 	}
 	if req.AttemptID != "" {
 		if err := bindDeliveryAttemptTx(ctx, tx, &record, req.OrgID, req.RequestID, req.AttemptID); err != nil {
@@ -232,10 +244,13 @@ func (b *Billing) PersistSettlementUsage(ctx context.Context, req SettleRequest)
 		return fmt.Errorf("cannot persist settlement payload in state %s", record.Status)
 	}
 	if record.SettlementPayloadAt.Valid {
-		if settlementUsageMatches(record, req) {
-			return tx.Commit(ctx)
+		if !settlementUsageMatches(record, req) {
+			return ErrSettlementUsageConflict
 		}
-		return ErrSettlementUsageConflict
+		if record.SettlementPendingReason == customerAuthorizationExceeded {
+			return ErrCustomerAuthorizationExceeded
+		}
+		return tx.Commit(ctx)
 	}
 
 	calculatedCost, costBreakdown, err := calculateReservationCost(record, req)
@@ -244,6 +259,20 @@ func (b *Billing) PersistSettlementUsage(ctx context.Context, req SettleRequest)
 	}
 	if err := persistReservationMeterEvidenceTx(ctx, tx, req.RequestID, req.OrgID, req.MeterUsage, costBreakdown.NonTokenCostMicros); err != nil {
 		return err
+	}
+
+	// A structurally valid terminal provider event can violate the output
+	// contract. Preserve an over-cap fact under the live delivery fence without
+	// making the rejected terminal event eligible for customer settlement.
+	if providerEvidence {
+		overrun, err := customerQuoteOverrun(ctx, tx, record, req, calculatedCost)
+		if err != nil || overrun == 0 {
+			return err
+		}
+		if err := b.holdCustomerAuthorizationOverrun(ctx, tx, record, req, calculatedCost, overrun, costBreakdown); err != nil {
+			return err
+		}
+		return ErrCustomerAuthorizationExceeded
 	}
 	var streamOwner any
 	var streamGeneration any

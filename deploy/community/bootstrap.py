@@ -22,7 +22,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-SCHEMA = "000130_upgrade_admission_recovery"
+SCHEMA = "000131_customer_standard_pricing"
+SUPPORTED_SCHEMAS = ("000130_upgrade_admission_recovery", SCHEMA)
 MAX_BOOTSTRAP = 32 * 1024
 MAX_MANIFEST = 128 * 1024
 MAX_SIGNATURE = 16 * 1024
@@ -168,7 +169,7 @@ class Bootstrap:
                 "Invalid release sequence.")
         require(isinstance(release["key_id"], str) and re.fullmatch(r"[A-Za-z0-9._-]{1,64}", release["key_id"]),
                 "Invalid signing key identifier.")
-        require(release["target_schema"] == SCHEMA, "This entry requires the current artifact fresh-install contract.")
+        require(release["target_schema"] in SUPPORTED_SCHEMAS, "This entry requires a supported artifact fresh-install contract.")
         exact_keys(value["assets"], ASSETS)
         for name, (_, maximum) in ASSETS.items():
             asset = value["assets"][name]
@@ -430,7 +431,7 @@ def verify_release(bootstrap, directory, verify=verifier_output):
     manifest_raw, files = scan_archive(directory / "release.tar.gz")
     verified = verify([directory / "uniroute-upgrade", "verify", "--public-keys", directory / "public-keys.json",
                        "--package", directory / "release.tar.gz", "--target-os", "linux", "--target-arch", "amd64",
-                       "--current-sequence", "0", "--current-schema", SCHEMA,
+                       "--current-sequence", "0", "--current-schema", bootstrap.release["target_schema"],
                        "--max-payload-bytes", str(MAX_PAYLOAD)])
     manifest_sha = hashlib.sha256(manifest_raw).hexdigest()
     require(verified.get("verified") == "true" and verified.get("package_sha256") == bootstrap.assets["package"]["sha256"]

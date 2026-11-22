@@ -162,8 +162,15 @@ case "${request_pricing_authority}" in
   rate_card)
     echo "customer preflight: REQUEST_PRICING_AUTHORITY=rate_card selected; verify every routed model has one complete active supplier_contracted or provider_list Rate Card before restart" >&2
     ;;
+  customer_standard_v1)
+    if [[ "${model_route_authority}" != "canonical" ]]; then
+      echo "customer preflight: REQUEST_PRICING_AUTHORITY=customer_standard_v1 requires canonical model routing" >&2
+      exit 1
+    fi
+    echo "customer preflight: verify active, approved customer price bindings for the intended organization, projects and operations before admitting traffic (this config preflight is not readiness)" >&2
+    ;;
   *)
-    echo "customer preflight: REQUEST_PRICING_AUTHORITY must be legacy or rate_card" >&2
+    echo "customer preflight: REQUEST_PRICING_AUTHORITY must be legacy, rate_card, or customer_standard_v1" >&2
     exit 1
     ;;
 esac

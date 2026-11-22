@@ -14,7 +14,7 @@ import { loadOnboardingProfiles, modelExecutionProfileApi, type ProfileCatalogSo
 import { useAuthStore } from '../../store/auth';
 import { modelBatchRetryWindowMS } from '../../utils/modelOnboardingBatch';
 import { ApiError } from '../../api/transport';
-import { PasswordField } from '../../ui';
+import { MAX_EXACT_TOKEN_COUNT, PasswordField } from '../../ui';
 import {
   reviewedModelDisplayName,
   reviewedModelOnboardingLimits,
@@ -77,7 +77,6 @@ const exactHTTPSOriginOperations = new Set<CanonicalOperationID>([
   'anthropic.messages.v1',
 ]);
 
-const maxCanonicalTokenLimit = 2_147_483_647;
 const initialPreset = providerPreset('deepseek');
 const initialFormValues = {
   connection_mode: 'new',
@@ -95,7 +94,7 @@ const initialFormValues = {
 
 function positiveCanonicalTokenLimit(value: unknown) {
   const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed > 0 && parsed <= maxCanonicalTokenLimit ? parsed : 0;
+  return Number.isSafeInteger(parsed) && parsed > 0 && parsed <= MAX_EXACT_TOKEN_COUNT ? parsed : 0;
 }
 
 function canonicalPublicModelExecutionLimitsReady(model: CanonicalModelApplication['public_model']) {
@@ -1019,7 +1018,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
             field="public_context_length"
             label={t("公共模型上下文上限（Token）")}
             min={1}
-            max={maxCanonicalTokenLimit}
+            max={MAX_EXACT_TOKEN_COUNT}
             precision={0}
             disabled={Boolean(selectedReviewedModel)}
             style={{ width: '100%' }}
@@ -1037,7 +1036,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
             field="public_output_limit"
             label={t("公共模型单次输出上限（Token）")}
             min={1}
-            max={maxCanonicalTokenLimit}
+            max={MAX_EXACT_TOKEN_COUNT}
             precision={0}
             disabled={Boolean(selectedReviewedModel)}
             style={{ width: '100%' }}
@@ -1085,7 +1084,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
           field="deployment_max_context"
           label={t("Deployment 上下文上限（Token）")}
           min={1}
-          max={maxCanonicalTokenLimit}
+          max={MAX_EXACT_TOKEN_COUNT}
           precision={0}
           disabled={Boolean(activeReviewedModel)}
           style={{ width: '100%' }}
@@ -1103,7 +1102,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
           field="deployment_default_max_output"
           label={activeReviewedModel ? t("请求默认单次输出（Profile 投影，Token）") : t("Deployment 默认单次输出（Token）")}
           min={1}
-          max={maxCanonicalTokenLimit}
+          max={MAX_EXACT_TOKEN_COUNT}
           precision={0}
           disabled={Boolean(activeReviewedModel)}
           style={{ width: '100%' }}

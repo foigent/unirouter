@@ -5,12 +5,16 @@
 
 ## Current navigation
 
-- [Project instructions](../AGENTS.md): applicable task, review and approval boundaries.
-- [Current status](ops/CURRENT-STATUS.md): dated evidence summary and explicit non-claims.
-- [Execution record](agent-workflows/EXECUTION-RECORD.md): active batch, accepted criteria, authority and blockers.
-- [PRD8](PRD-Phase8.md) and [boundary matrix](ops/PRD8-BOUNDARY-MATRIX.md): forward product ownership; completed PRD7 evidence remains historical.
-- [Agent protocol](agent-workflows/AGENT-PROTOCOL.md) and [engineering governance](governance/README.md): applicable execution and validation requirements.
-- [Document inventory](DOC-INVENTORY.md): references with their own scope, date and approval state.
+| Task | Source |
+| --- | --- |
+| Locate backend, frontend or tests | [Codebase map](CODEBASE-MAP.md) |
+| Trace a user-facing fact or cross-page change | [System fact map](architecture/SYSTEM-FACT-MAP.md), [PRD8 boundary matrix](ops/PRD8-BOUNDARY-MATRIX.md) |
+| Review UI reuse and behavior | [Frontend conventions](governance/README.md#frontend-interaction-conventions) |
+| Check an active batch or its evidence | [Execution record](agent-workflows/EXECUTION-RECORD.md), [status and dated checkpoints](ops/CURRENT-STATUS.md) |
+| Install, upgrade or verify a signed preview | [Release evidence](community/release-readiness.md), [Linux guide](community/install-linux.md), [upgrade runbook](ops/COMMUNITY-UPGRADE.md) |
+| Check permissions and review | [Project instructions](../AGENTS.md), [agent protocol](agent-workflows/AGENT-PROTOCOL.md), [engineering governance](governance/README.md) |
+| Run local checks or reuse test evidence | [Contributing](../CONTRIBUTING.md#development-prerequisites), [shared test entry](agent-workflows/LOCAL-TEST-REUSE.md#共享测试入口) |
+| Locate a dated reference | [Document inventory](DOC-INVENTORY.md) |
 
 ## Historical checkpoints and reference navigation
 
@@ -373,29 +377,11 @@ an action that depends on changing facts. Historical evidence bodies are retaine
 > outside this closed work window. The
 > non-X-Insight residuals are deferred/not implemented outside it.
 
-## First Read Order
+## Historical PRD6 and V1 evidence index
 
-Read `docs/agent-workflows/EXECUTION-RECORD.md` first, then the exact current
-target evidence
-`docs/ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md`, then
-`docs/ops/CURRENT-STATUS.md`. The immutable local implementation predecessor is
-`docs/ops/evidence/V1-SECURITY-REMEDIATION-LOCAL-20260717.md`. For the earlier
-closed work window, next read
-`docs/ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md`; the later
-security/IA corrective closeout does not rewrite it. Earlier completed target
-evidence is
-`docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md`,
-followed by its immutable local checkpoint
-`docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md`.
-Earlier named-provider target evidence is
-`docs/ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md` followed by
-`docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md` and
-`docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md`.
-Read all three immediately after `docs/ops/CURRENT-STATUS.md`, then read the earlier
-`docs/ops/evidence/V1-FIRST-RELEASE-TARGET-CLOSEOUT-20260715.md` and full
-classification matrix in
-`docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md` before
-using the preserved PRD6 history below.
+The July 18 [seven-role Target closeout](ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md)
+follows the July 17 [local remediation](ops/evidence/V1-SECURITY-REMEDIATION-LOCAL-20260717.md).
+Use the index below to find earlier runs by scope.
 
 1. `docs/ops/CURRENT-STATUS.md` - current verified project status.
 2. `docs/planning/PRD6-START-HERE.md` - PRD6 decision state and reading map.
@@ -479,7 +465,7 @@ using the preserved PRD6 history below.
 80. `docs/tech-ref/27-signed-offline-upgrade.md` - bundle format, trust ordering, provenance binding, verify/record workflow and explicit Update Center/TUF non-claims.
 81. `docs/ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md` - User-directed V1 work-window closeout, X-Insight-only active boundary, deferred/not-implemented register and supplier-cost non-claims.
 
-## Current Project Shape
+## Historical PRD1–PRD7 project shape
 
 UniRouter is a local-deployable enterprise AI gateway/MaaS platform. PRD1 delivered the core gateway, admin API, admin frontend, billing, logs, wallet, pricing, admission controls, health checks, and monitoring foundation. PRD2 is frozen for new feature work after accepted product expansions such as project/RBAC, model governance, notification events, license foundation, OIDC, usage analytics, internal status, and error docs.
 
@@ -583,9 +569,9 @@ independently deployable `D7-CACHE-001` Cache Service reusable by private and
 SaaS regional-cell profiles. This is a PRD7 architecture/backlog decision only:
 no PRD6 response persistence, deployment or semantic cache is accepted.
 
-## What Is Current Truth
+## Historical evidence by question
 
-| Question | Current Source |
+| Question | Reference |
 |----------|----------------|
 | What proves release `1.0.1` / sequence `5` / schema `000042`, the seven-role UI/API/DB acceptance and cleanup? | `docs/ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md` |
 | What closes the Post-PRD6 V1 first-release work window, and which items remain pending or deferred? | `docs/ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md` |

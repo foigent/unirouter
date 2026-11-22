@@ -1349,6 +1349,9 @@ func TestModelExecutionReleaseAndHealthMapping(t *testing.T) {
 			t.Fatalf("health action %d: %v", action, err)
 		}
 	}
+	if err := relay.applyRouteHealth(healthCtx, route, 0); !errors.Is(err, errUnsupportedRouteHealthAction) {
+		t.Fatalf("unsupported health action: %v", err)
+	}
 	if coordinator.successCount.Load() != 1 || coordinator.providerCount.Load() != 1 || coordinator.authCount.Load() != 1 || coordinator.rateCount.Load() != 1 {
 		t.Fatalf("health mapping mismatch: success=%d provider=%d auth=%d rate=%d", coordinator.successCount.Load(), coordinator.providerCount.Load(), coordinator.authCount.Load(), coordinator.rateCount.Load())
 	}

@@ -77,7 +77,10 @@ author remains responsible for understanding the change and its tests.
 Do not run database tests against a customer or shared production database.
 Tests can create, migrate and remove their own databases. Use a disposable
 local test environment and read [the integration runner](scripts/test-backend-integration.sh)
-before supplying test connection settings.
+before supplying test connection settings. For database-backed runs, provide
+an explicit `TEST_DATABASE_URL` for the disposable PostgreSQL 16 instance.
+An unset DSN falls back to the default local test database, which can overlap
+with another local run. [Test database selection](internal/testdb/testdb.go)
 
 ### Frontend
 

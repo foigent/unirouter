@@ -37,6 +37,20 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function accountResponse(username: string, authProvider: 'local' | 'oidc' = 'local') {
+  return {
+    data: [{
+      id: authProvider === 'local' ? 8 : 9,
+      org_id: 1,
+      username,
+      auth_provider: authProvider,
+      organization_role: 'member',
+      status: 'active',
+    }],
+    total: 120,
+  };
+}
+
 async function chooseCommittedOption(user: ReturnType<typeof userEvent.setup>, label: string, option: string) {
   const combobox = screen.getByRole('combobox', { name: label });
   await user.click(combobox);
@@ -161,6 +175,53 @@ describe('UsersPage enterprise identity presentation', () => {
       await Promise.resolve();
     });
     expect(await screen.findByRole('heading', { name: '暂无用户' })).toBeTruthy();
+  });
+
+  it('requests page one with the new size once after navigating to another page', async () => {
+    const user = userEvent.setup();
+    mocks.getUsers.mockImplementation((page: number, size: number) => (
+      Promise.resolve(accountResponse(`local-${page}-${size}`))
+    ));
+
+    render(<UsersPage />);
+
+    await screen.findByText('local-1-20');
+    await user.click(screen.getByLabelText('Page 4'));
+    await screen.findByText('local-4-20');
+    await user.click(screen.getByRole('combobox', { name: 'selected' }));
+    fireEvent.click(await screen.findByRole('option', { name: /50/ }));
+
+    await waitFor(() => expect(mocks.getUsers.mock.calls).toEqual([
+      [1, 20, 'local'], [4, 20, 'local'], [1, 50, 'local'],
+    ]));
+    expect(await screen.findByText('local-1-50')).toBeInTheDocument();
+  });
+
+  it('starts the new account source at page one and ignores a late response from the previous source', async () => {
+    const previousRead = deferred<ReturnType<typeof accountResponse>>();
+    const enterpriseRead = deferred<ReturnType<typeof accountResponse>>();
+    mocks.getUsers.mockImplementation((page: number, _size: number, source: string) => {
+      if (source === 'enterprise') return enterpriseRead.promise;
+      return page === 4 ? previousRead.promise : Promise.resolve(accountResponse('local-first-page'));
+    });
+
+    render(<UsersPage />);
+
+    await screen.findByText('local-first-page');
+    fireEvent.click(screen.getByLabelText('Page 4'));
+    await waitFor(() => expect(mocks.getUsers).toHaveBeenLastCalledWith(4, 20, 'local'));
+    fireEvent.click(screen.getByText('企业身份 / OIDC'));
+
+    await waitFor(() => expect(mocks.getUsers).toHaveBeenLastCalledWith(1, 20, 'enterprise'));
+    expect(screen.getByRole('heading', { name: '正在加载用户列表' })).toBeInTheDocument();
+    expect(screen.queryByText('local-first-page')).not.toBeInTheDocument();
+    await act(async () => enterpriseRead.resolve(accountResponse('enterprise-first-page', 'oidc')));
+    expect(await screen.findByText('enterprise-first-page')).toBeInTheDocument();
+
+    await act(async () => previousRead.resolve(accountResponse('stale-local-account')));
+    expect(screen.queryByText('stale-local-account')).not.toBeInTheDocument();
+    expect(screen.getByText('enterprise-first-page')).toBeInTheDocument();
+    expect(mocks.getUsers).toHaveBeenCalledTimes(3);
   });
 
   it('creates a local user in the customer organization and grants the recommended project access', async () => {
@@ -393,13 +454,16 @@ describe('UsersPage enterprise identity presentation', () => {
     expect((screen.getByRole('button', { name: '离场用户 platform-admin' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('does not present a failed user request as an empty directory', async () => {
+  it('distinguishes failed reads from an empty directory and retries the same query', async () => {
     mocks.getUsers.mockRejectedValueOnce(new Error('unavailable'));
 
     render(<UsersPage />);
 
     expect(await screen.findByRole('heading', { name: '用户列表加载失败' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '重新加载用户列表' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: '暂无用户' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '重新加载用户列表' }));
+    expect(await screen.findByText('local-user')).toBeInTheDocument();
+    expect(mocks.getUsers.mock.calls).toEqual([[1, 20, 'local'], [1, 20, 'local']]);
   });
 
   it('blocks customer user operations when a platform session has no canonical customer', () => {

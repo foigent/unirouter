@@ -81,6 +81,12 @@ func (b *Billing) ExtendReservation(ctx context.Context, request ExtendReservati
 	if err != nil {
 		return nil, fmt.Errorf("lock reservation extension: %w", err)
 	}
+	if customerQuotePricing(pricingVersion) {
+		return &ExtendReservationResult{
+			Success: false, Sequence: request.Sequence, ErrorCode: "reservation_not_extendable",
+			ErrorDetail: "customer quote authorization cannot be extended",
+		}, nil
+	}
 	if err := validateReservationBillingMode(mode); err != nil {
 		return nil, err
 	}

@@ -63,7 +63,7 @@ func runCommunityAdmissionRecovery(ctx context.Context, pool *pgxpool.Pool, cfg 
 	if err != nil {
 		return zero, err
 	}
-	if len(artifact) < 2 || artifact[len(artifact)-1] != schemaauthority.UpgradeAdmissionRecoveryHead ||
+	if len(artifact) < 2 || !schemaauthority.HasUpgradeAdmissionRecovery(artifact[len(artifact)-1]) ||
 		!slices.Equal(s.Ledger, artifact) || s.Record == nil || s.Record.State != "completed" ||
 		s.Record.Plan.InstallationID != in.InstallationID || s.Record.Plan.Digest != in.InstallationPlanDigest ||
 		s.Record.Plan.Target.Environment != cfg.RuntimeEnvironment {
@@ -83,7 +83,7 @@ func runCommunityAdmissionRecovery(ctx context.Context, pool *pgxpool.Pool, cfg 
 	}
 	for _, r := range in.Admission.Departed {
 		if r.ExpectedDatabaseSystemID != system || r.ExpectedEnvironment != cfg.RuntimeEnvironment ||
-			r.ExpectedSchemaHead != schemaauthority.UpgradeAdmissionRecoveryHead || r.ArtifactDigest != cfg.RuntimeImageDigest {
+			r.ExpectedSchemaHead != artifact[len(artifact)-1] || r.ArtifactDigest != cfg.RuntimeImageDigest {
 			return zero, fmt.Errorf("admission recovery writer differs from the installed artifact")
 		}
 	}
@@ -93,7 +93,7 @@ func runCommunityAdmissionRecovery(ctx context.Context, pool *pgxpool.Pool, cfg 
 	}
 	if state.ReleaseSequence != in.ReleaseSequence || state.PackageSHA256 != in.PackageSHA256 ||
 		state.Version != cfg.RuntimeVersion || state.Commit != cfg.RuntimeCommit ||
-		state.TargetSchema != schemaauthority.UpgradeAdmissionRecoveryHead {
+		state.TargetSchema != artifact[len(artifact)-1] {
 		return zero, fmt.Errorf("admission recovery installed release changed")
 	}
 	var raw, singleton []byte

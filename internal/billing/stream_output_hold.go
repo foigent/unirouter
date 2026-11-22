@@ -74,7 +74,8 @@ func (b *Billing) holdStreamOutputTx(ctx context.Context, tx pgx.Tx, req SettleR
 	if err != nil {
 		return err
 	}
-	if record.SettlementPendingReason == OutputHoldReasonProviderResponseUnusable {
+	if record.SettlementPendingReason == OutputHoldReasonProviderResponseUnusable ||
+		record.SettlementPendingReason == customerAuthorizationExceeded {
 		return matchStreamOutputHoldTx(ctx, tx, record, attempt, req, deliveredBytes, deliveredChunks)
 	}
 	if record.Status != "settlement_pending" || !record.OutputStartedAt.Valid || record.SettlementPayloadAt.Valid ||
@@ -97,11 +98,19 @@ func (b *Billing) holdStreamOutputTx(ctx context.Context, tx pgx.Tx, req SettleR
 	if err != nil {
 		return err
 	}
+	uncovered, err := customerQuoteOverrun(ctx, tx, record, req, calculatedCost)
+	if err != nil {
+		return err
+	}
+	reason := OutputHoldReasonProviderResponseUnusable
+	if uncovered > 0 {
+		reason = customerAuthorizationExceeded
+	}
 	if err := persistReservationMeterEvidenceTx(ctx, tx, req.RequestID, req.OrgID, req.MeterUsage, breakdown.NonTokenCostMicros); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE freeze_idempotency
-SET settlement_pending_reason='provider_response_unusable',
+SET settlement_pending_reason=$23,uncovered_cost_micros=$24,
     provider_cost_pending_at=COALESCE(provider_cost_pending_at,NOW()),
     prompt_tokens=$3,uncached_prompt_tokens=$4,cache_read_tokens=$5,cache_creation_tokens=$6,
     completion_tokens=$7,usage_source=$8,usage_authority=$9,usage_purpose=$10,usage_finality=$11,
@@ -115,7 +124,8 @@ WHERE org_id=$1 AND request_id=$2`, req.OrgID, req.RequestID,
 		req.CompletionTokens, req.UsageSource, req.UsageAuthority, req.UsagePurpose, req.UsageFinality,
 		req.UsageContractVersion, req.UsageEstimateVersion, req.CacheUsageSchema, req.CacheUsageStatus,
 		calculatedCost, breakdown.UncachedInputCostMicros, breakdown.CacheReadCostMicros,
-		breakdown.CacheCreationCostMicros, breakdown.OutputCostMicros, req.StreamFence.OwnerID, req.StreamFence.Generation); err != nil {
+		breakdown.CacheCreationCostMicros, breakdown.OutputCostMicros, req.StreamFence.OwnerID, req.StreamFence.Generation,
+		reason, uncovered); err != nil {
 		return fmt.Errorf("persist stream output hold: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `UPDATE billing_provider_attempts
@@ -170,7 +180,9 @@ func (b *Billing) readStreamOutputHold(ctx context.Context, req SettleRequest, d
 }
 
 func matchStreamOutputHoldTx(ctx context.Context, tx pgx.Tx, record reservationRecord, attempt providerAttemptRecord, req SettleRequest, deliveredBytes int64, deliveredChunks int) error {
-	if record.Status != "settlement_pending" || record.SettlementPendingReason != OutputHoldReasonProviderResponseUnusable ||
+	sameReason := record.SettlementPendingReason == OutputHoldReasonProviderResponseUnusable ||
+		(record.SettlementPendingReason == customerAuthorizationExceeded && customerQuotePricing(record.PricingVersion))
+	if record.Status != "settlement_pending" || !sameReason ||
 		!record.SettlementPayloadAt.Valid || !settlementUsageMatches(record, req) ||
 		!record.DeliveryAttemptID.Valid || record.DeliveryAttemptID.String != req.AttemptID ||
 		!record.SettlementStreamOwnerID.Valid || record.SettlementStreamOwnerID.String != req.StreamFence.OwnerID ||

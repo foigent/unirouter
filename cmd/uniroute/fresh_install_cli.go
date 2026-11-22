@@ -309,7 +309,7 @@ func executeFreshInstallObserved(ctx context.Context, owner *migrate.FreshOwner,
 			return err
 		}
 	}
-	for _, version := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.XInsightPolicyExpandHead, schemaauthority.XInsightAdoptionExpandHead, schemaauthority.XInsightCredentialExpandHead, schemaauthority.CommercialLicenseRetirementHead, schemaauthority.XInsightCommunicationHead, schemaauthority.UpstreamReleaseObservationHead, schemaauthority.UpstreamObservationRestoreHead, schemaauthority.UpgradeAdmissionRecoveryHead} {
+	for _, version := range []string{schemaauthority.CapabilityExpandHead, schemaauthority.StreamCounterExpandHead, schemaauthority.SourceFactsExpandHead, schemaauthority.ObservationExpandHead, schemaauthority.BudgetSnapshotExpandHead, schemaauthority.ContentCaptureExpandHead, schemaauthority.ContentReclaimExpandHead, schemaauthority.PreDispatchExpandHead, schemaauthority.ScopedContentExpandHead, schemaauthority.XInsightPolicyExpandHead, schemaauthority.XInsightAdoptionExpandHead, schemaauthority.XInsightCredentialExpandHead, schemaauthority.CommercialLicenseRetirementHead, schemaauthority.XInsightCommunicationHead, schemaauthority.UpstreamReleaseObservationHead, schemaauthority.UpstreamObservationRestoreHead, schemaauthority.UpgradeAdmissionRecoveryHead, schemaauthority.CustomerStandardPricingHead} {
 		s, err := owner.Snapshot(ctx)
 		if err != nil {
 			return err
@@ -327,7 +327,7 @@ func executeFreshInstallObserved(ctx context.Context, owner *migrate.FreshOwner,
 				return nil
 			}
 		}
-		if version == schemaauthority.ContentCaptureExpandHead || version == schemaauthority.ContentReclaimExpandHead || version == schemaauthority.PreDispatchExpandHead || (version == schemaauthority.ScopedContentExpandHead || (version == schemaauthority.XInsightPolicyExpandHead || (version == schemaauthority.XInsightAdoptionExpandHead || version == schemaauthority.XInsightCredentialExpandHead || version == schemaauthority.CommercialLicenseRetirementHead || version == schemaauthority.XInsightCommunicationHead || version == schemaauthority.UpstreamReleaseObservationHead || version == schemaauthority.UpstreamObservationRestoreHead || version == schemaauthority.UpgradeAdmissionRecoveryHead))) {
+		if version == schemaauthority.ContentCaptureExpandHead || version == schemaauthority.ContentReclaimExpandHead || version == schemaauthority.PreDispatchExpandHead || (version == schemaauthority.ScopedContentExpandHead || (version == schemaauthority.XInsightPolicyExpandHead || (version == schemaauthority.XInsightAdoptionExpandHead || version == schemaauthority.XInsightCredentialExpandHead || version == schemaauthority.CommercialLicenseRetirementHead || version == schemaauthority.XInsightCommunicationHead || version == schemaauthority.UpstreamReleaseObservationHead || version == schemaauthority.UpstreamObservationRestoreHead || schemaauthority.HasUpgradeAdmissionRecovery(version)))) {
 			final = func(ctx context.Context, tx pgx.Tx) error {
 				if version == p.Artifact.Ledger[len(p.Artifact.Ledger)-1] {
 					return verifyFreshCompletion(ctx, tx, p.Artifact.Ledger)
@@ -513,7 +513,7 @@ func verifyFreshCompletion(ctx context.Context, q interface {
 	if err := schemaauthority.VerifyLedger(artifact, actual); err != nil {
 		return err
 	}
-	if len(actual) > 0 && (actual[len(actual)-1] == schemaauthority.UpstreamObservationRestoreHead || actual[len(actual)-1] == schemaauthority.UpgradeAdmissionRecoveryHead) {
+	if len(actual) > 0 && (actual[len(actual)-1] == schemaauthority.UpstreamObservationRestoreHead || schemaauthority.HasUpgradeAdmissionRecovery(actual[len(actual)-1])) {
 		if err := upstreamrelease.CheckNamespace(ctx, q); err != nil {
 			return err
 		}

@@ -95,6 +95,24 @@ describe('LimitPoliciesPage', () => {
     expect(mocks.getProjects).toHaveBeenCalledWith(1, 100, { org_id: 22 });
   });
 
+  it('requests page one once when the page size changes', async () => {
+    const user = userEvent.setup();
+    useAuthStore.setState({ user: { id: 2, username: 'org-admin', role: 'org_admin', org_id: 22, org_name: 'Acme' } });
+    mocks.getLimitPolicies.mockImplementation((page: number, size: number) =>
+      Promise.resolve({ data: [{ id: 7, name: `${page} / ${size} policy` }], total: 120 }));
+    render(<LimitPoliciesPage />);
+
+    expect(await screen.findByText('1 / 20 policy')).toBeInTheDocument();
+    await user.click(screen.getByLabelText('Page 4'));
+    expect(await screen.findByText('4 / 20 policy')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('combobox', { name: 'selected' }));
+    fireEvent.click(await screen.findByRole('option', { name: /50/ }));
+
+    expect(await screen.findByText('1 / 50 policy')).toBeInTheDocument();
+    expect(mocks.getLimitPolicies.mock.calls).toEqual([[1, 20], [4, 20], [1, 50]]);
+  });
+
   it('loads customer selectors for an organization admin without platform endpoint inventory', async () => {
     const user = userEvent.setup();
     useAuthStore.setState({ user: { id: 2, username: 'org-admin', role: 'org_admin', org_id: 22, org_name: 'Acme' } });

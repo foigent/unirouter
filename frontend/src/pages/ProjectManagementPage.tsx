@@ -10,11 +10,11 @@ import {
   isPlatformAdminRole,
 } from '../navigation';
 import { useAuthStore } from '../store/auth';
-import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
+import { EmptyState, PagedTable, PageHeader, StatusTag, Surface } from '../ui';
 import { organizationRoleLabel } from '../utils/displayLabels';
 import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { loadAllPages } from '../utils/loadAllPages';
-import { projectDisplayName } from '../utils/projectDisplay';
+import { MAX_PROJECT_BUDGET_YUAN, projectDisplayName } from '../utils/projectDisplay';
 import {
   deleteLocalView,
   loadSavedViews,
@@ -23,10 +23,11 @@ import {
   saveLocalView,
   type SavedView,
 } from '../utils/viewState';
+import { SERVER_PAGE_SIZES, useServerPage } from '../utils/pagination';
+import { useScopedRead } from '../utils/scopedRead';
 
 const { Text } = Typography;
 const { TabPane } = Tabs;
-const maxProjectBudgetYuan = 21474836.47;
 
 interface Project {
   id: number;
@@ -41,6 +42,8 @@ interface Project {
   key_count?: number;
   current_user_membership_role?: string;
 }
+
+const NO_PROJECTS: Project[] = [];
 
 interface ProjectMember {
   user_id: number;
@@ -62,11 +65,38 @@ interface EligibleUser {
   status: string;
 }
 
+interface MemberControls {
+  scope: string | null;
+  search: string;
+  query: string;
+  role: string;
+  candidateID?: number;
+}
+
+const DEFAULT_MEMBER_CONTROLS: MemberControls = { scope: null, search: '', query: '', role: 'project_user' };
+const NO_ELIGIBLE_USERS: EligibleUser[] = [];
+
 interface ModelSet {
   id: number;
   name: string;
   slug: string;
   status: string;
+}
+
+interface ProjectModelScope {
+  sets: ModelSet[];
+  assignedIDs: number[];
+}
+
+async function readProjectModelScope({ orgID, projectID }: { orgID: number; projectID: number }): Promise<ProjectModelScope> {
+  const [sets, assignments] = await Promise.all([
+    loadAllPages<ModelSet>((page, size) => api.getModelSets(page, size, { org_id: orgID })),
+    api.getProjectModelSets(projectID),
+  ]);
+  return {
+    sets: sets.filter(set => set.status === 'active'),
+    assignedIDs: (assignments.data || assignments.model_set_ids || []).map((item: any) => Number(item.model_set_id ?? item.id ?? item)),
+  };
 }
 
 type ProjectTab = 'overview' | 'members' | 'models';
@@ -122,7 +152,7 @@ function readInitialProjectState() {
     projectID: readPositiveQueryParam(params, 'project_id'),
     tab: normalizeProjectTab(params.get('project_tab')),
     page: readPositiveQueryParam(params, 'project_page') || 1,
-    pageSize: pageSize && [20, 50, 100].includes(pageSize) ? pageSize : 20,
+    pageSize: pageSize && SERVER_PAGE_SIZES.includes(pageSize) ? pageSize : 20,
   };
 }
 
@@ -136,7 +166,7 @@ function normalizeProjectSavedState(value: unknown): ProjectSavedState | null {
   if (!Number.isSafeInteger(projectID) || projectID <= 0 ||
     (orgID !== undefined && (!Number.isSafeInteger(orgID) || orgID <= 0)) ||
     !Number.isSafeInteger(page) || page <= 0 ||
-    !Number.isSafeInteger(pageSize) || ![20, 50, 100].includes(pageSize)) {
+    !Number.isSafeInteger(pageSize) || !SERVER_PAGE_SIZES.includes(pageSize)) {
     return null;
   }
   return {
@@ -169,7 +199,7 @@ function yuanFromCents(cents: number) {
 
 function centsFromYuan(yuan: unknown) {
   const value = Number(yuan || 0);
-  return Number.isFinite(value) && value >= 0 && value <= maxProjectBudgetYuan ? Math.round(value * 100) : -1;
+  return Number.isFinite(value) && value >= 0 && value <= MAX_PROJECT_BUDGET_YUAN ? Math.round(value * 100) : -1;
 }
 
 export default function ProjectManagementPage({ embedded = false }: { embedded?: boolean }) {
@@ -185,38 +215,29 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
   const licenseModelGovernance = currentUser?.license_access?.features?.model_governance === true;
 
   const selectedOrgID = customerOrgID;
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [projectTotal, setProjectTotal] = useState(0);
-  const [projectPage, setProjectPage] = useState(initialState.page);
-  const [projectPageSize, setProjectPageSize] = useState(initialState.pageSize);
-  const [projectLoading, setProjectLoading] = useState(false);
-  const [projectLoadError, setProjectLoadError] = useState('');
+  const projectScope = selectedOrgID
+    ? JSON.stringify([currentUser?.id, organizationRole, selectedOrgID])
+    : null;
+  const readProjects = useCallback((page: number, pageSize: number) => (
+    api.getProjects(page, pageSize, { org_id: platform ? selectedOrgID : undefined })
+  ), [platform, selectedOrgID]);
+  const projectList = useServerPage<{ data?: Project[]; total?: number }>(readProjects, projectScope, initialState);
+  const { page: projectPage, pageSize: projectPageSize, loading: projectLoading } = projectList;
+  const projects = projectList.data?.data ?? NO_PROJECTS;
+  const projectTotal = projectList.data?.total ?? 0;
+  const projectLoadError = projectList.failed ? '无法加载当前组织与分页范围内的项目。' : '';
   const [selectedProjectID, setSelectedProjectID] = useState<number | undefined>(initialState.projectID);
   const selectedProjectIDRef = useRef<number | undefined>(initialState.projectID);
   const [activeTab, setActiveTab] = useState<ProjectTab>(initialState.tab);
   const activeTabRef = useRef<ProjectTab>(initialState.tab);
-  const [reloadVersion, setReloadVersion] = useState(0);
   const [createSheet, setCreateSheet] = useState(false);
   const [createFormApi, setCreateFormApi] = useState<any>(null);
   const [overviewFormApi, setOverviewFormApi] = useState<any>(null);
 
-  const [members, setMembers] = useState<ProjectMember[]>([]);
-  const [memberTotal, setMemberTotal] = useState(0);
-  const [memberPage, setMemberPage] = useState(1);
-  const [memberPageSize, setMemberPageSize] = useState(20);
-  const [eligibleUsers, setEligibleUsers] = useState<EligibleUser[]>([]);
-  const [selectedCandidateID, setSelectedCandidateID] = useState<number>();
-  const [selectedMembershipRole, setSelectedMembershipRole] = useState('project_user');
-  const [candidateQuery, setCandidateQuery] = useState('');
-  const [membersLoading, setMembersLoading] = useState(false);
+  const [memberControls, setMemberControls] = useState(DEFAULT_MEMBER_CONTROLS);
 
-  const [modelSets, setModelSets] = useState<ModelSet[]>([]);
-  const [assignedModelSetIDs, setAssignedModelSetIDs] = useState<number[]>([]);
-  const [modelsLoading, setModelsLoading] = useState(false);
-  const [modelError, setModelError] = useState('');
-  const projectRequestVersion = useRef(0);
-  const memberRequestVersion = useRef(0);
-  const modelRequestVersion = useRef(0);
+  const [modelReadVersion, setModelReadVersion] = useState(0);
+  const [modelDraft, setModelDraft] = useState<{ source: ProjectModelScope; assignedIDs: number[] }>();
   const [savedViews, setSavedViews] = useState<SavedView<ProjectSavedState>[]>(() => (
     loadSavedViews(projectSavedViewStorageKey, normalizeProjectSavedState)
   ));
@@ -236,116 +257,61 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
     ? projectMembershipOptions
     : projectMembershipOptions.filter(option => option.value !== 'project_admin')), [canGrantProjectAdmin, locale]);
 
-  const loadProjects = useCallback((page: number, pageSize: number) => {
-    if (!customerOrgID || selectedOrgID !== customerOrgID) {
-      setProjects([]);
-      setProjectTotal(0);
-      selectedProjectIDRef.current = undefined;
-      setSelectedProjectID(undefined);
-      return Promise.resolve();
-    }
-    const version = ++projectRequestVersion.current;
-    const desiredProjectID = selectedProjectIDRef.current;
-    memberRequestVersion.current += 1;
-    modelRequestVersion.current += 1;
-    setProjectLoading(true);
-    setProjectLoadError('');
-    setProjects([]);
-    setProjectTotal(0);
-    setSelectedProjectID(undefined);
-    setMembers([]);
-    setMemberTotal(0);
-    setEligibleUsers([]);
-    setMembersLoading(false);
-    setModelSets([]);
-    setAssignedModelSetIDs([]);
-    setModelsLoading(false);
-    setModelError('');
-    return api.getProjects(page, pageSize, { org_id: platform ? selectedOrgID : undefined })
-      .then((response: any) => {
-        if (version !== projectRequestVersion.current) return;
-        const nextProjects = response.data || [];
-        const preferred = nextProjects.find((project: Project) => project.id === desiredProjectID) || nextProjects[0];
-        setProjects(nextProjects);
-        setProjectTotal(response.total || 0);
-        selectedProjectIDRef.current = preferred?.id;
-        setSelectedProjectID(preferred?.id);
-        syncProjectURL({
-          projectID: preferred?.id,
-          tab: activeTabRef.current,
-          page,
-          pageSize,
-        });
-      })
-      .catch(() => {
-        if (version !== projectRequestVersion.current) return;
-        setProjects([]);
-        setProjectTotal(0);
-        selectedProjectIDRef.current = undefined;
-        setSelectedProjectID(undefined);
-        setProjectLoadError('无法加载当前组织与分页范围内的项目。');
-        syncProjectURL({
-          tab: activeTabRef.current,
-          page,
-          pageSize,
-        });
-        Toast.error(t("项目列表加载失败"));
-      })
-      .finally(() => {
-        if (version === projectRequestVersion.current) setProjectLoading(false);
-      });
-  }, [customerOrgID, platform, selectedOrgID]);
+  const selectedProjectScope = selectedProject
+    ? JSON.stringify([projectScope, selectedProject.org_id, selectedProject.id])
+    : null;
+  const memberScope = canManageMembers && activeTab === 'members' ? selectedProjectScope : null;
+  const memberEditor = memberControls.scope === selectedProjectScope ? memberControls : DEFAULT_MEMBER_CONTROLS;
+  const memberProjectID = selectedProject?.id;
+  const readMembers = useCallback(async (page: number, pageSize: number) => {
+    if (memberProjectID === undefined) return {};
+    return api.getProjectMembers(memberProjectID, page, pageSize, memberEditor.query);
+  }, [memberProjectID, memberEditor.query]);
+  const memberList = useServerPage<{ data?: ProjectMember[]; total?: number; eligible_users?: EligibleUser[] }>(
+    readMembers,
+    memberScope,
+  );
+  const reloadMembers = memberList.reload;
+  const eligibleUsers = memberList.data?.eligible_users ?? NO_ELIGIBLE_USERS;
+  const selectedCandidateID = eligibleUsers.find(user => user.user_id === memberEditor.candidateID)?.user_id;
+
+  const modelQuery = useMemo(() => {
+    if (activeTab !== 'models' || !canManageMembers || !licenseModelGovernance || !selectedProject || !selectedProjectScope) return null;
+    return { scope: selectedProjectScope, orgID: selectedProject.org_id, projectID: selectedProject.id, revision: modelReadVersion };
+  }, [activeTab, canManageMembers, licenseModelGovernance, modelReadVersion, selectedProject, selectedProjectScope]);
+  const modelRead = useScopedRead(modelQuery, readProjectModelScope);
+  const modelReadForbidden = modelRead.error instanceof ApiError && modelRead.error.status === 403;
+  const modelError = !modelRead.failed ? '' : modelReadForbidden
+    ? '当前角色或商业授权不允许维护项目模型范围。'
+    : '模型范围加载失败，请稍后重试。';
+  const assignedModelSetIDs = modelRead.data && modelDraft?.source === modelRead.data
+    ? modelDraft.assignedIDs
+    : modelRead.data?.assignedIDs ?? [];
+
+  const updateMemberControls = (changes: Partial<Omit<MemberControls, 'scope'>>) => {
+    setMemberControls({ ...memberEditor, ...changes, scope: selectedProjectScope });
+  };
+  const searchMembers = () => {
+    updateMemberControls({ query: memberEditor.search.trim(), candidateID: undefined });
+    memberList.onPageChange(1);
+  };
 
   useEffect(() => {
-    void loadProjects(projectPage, projectPageSize);
-    return () => { projectRequestVersion.current += 1; };
-  }, [loadProjects, projectPage, projectPageSize, reloadVersion]);
-
-  const loadMembers = useCallback((projectID: number, page = 1, pageSize = 20, query = '') => {
-    const version = ++memberRequestVersion.current;
-    setMembersLoading(true);
-    return api.getProjectMembers(projectID, page, pageSize, query)
-      .then((response: any) => {
-        if (version !== memberRequestVersion.current) return;
-        setMembers(response.data || []);
-        setMemberTotal(response.total || 0);
-        setEligibleUsers(response.eligible_users || []);
-      })
-      .catch(() => {
-        if (version !== memberRequestVersion.current) return;
-        setMembers([]);
-        setMemberTotal(0);
-        setEligibleUsers([]);
-        Toast.error(t("项目成员加载失败"));
-      })
-      .finally(() => {
-        if (version === memberRequestVersion.current) setMembersLoading(false);
-      });
-  }, []);
-
-  const loadModels = useCallback(async (project: Project) => {
-    const version = ++modelRequestVersion.current;
-    setModelsLoading(true);
-    setModelError('');
-    try {
-      const [sets, assigned] = await Promise.all([
-        loadAllPages<ModelSet>((page, size) => api.getModelSets(page, size, { org_id: project.org_id })),
-        api.getProjectModelSets(project.id),
-      ]);
-      if (version !== modelRequestVersion.current) return;
-      setModelSets(sets.filter(item => item.status === 'active'));
-      setAssignedModelSetIDs((assigned.data || assigned.model_set_ids || []).map((item: any) => Number(item.model_set_id ?? item.id ?? item)));
-    } catch (error) {
-      if (version !== modelRequestVersion.current) return;
-      setModelSets([]);
-      setAssignedModelSetIDs([]);
-      setModelError(error instanceof ApiError && error.status === 403
-        ? '当前角色或商业授权不允许维护项目模型范围。'
-        : '模型范围加载失败，请稍后重试。');
-    } finally {
-      if (version === modelRequestVersion.current) setModelsLoading(false);
+    if (projectLoading || !projectScope) {
+      setSelectedProjectID(undefined);
+      return;
     }
-  }, []);
+    const preferred = projects.find(project => project.id === selectedProjectIDRef.current) || projects[0];
+    selectedProjectIDRef.current = preferred?.id;
+    setSelectedProjectID(preferred?.id);
+    syncProjectURL({
+      projectID: preferred?.id,
+      tab: activeTabRef.current,
+      page: projectPage,
+      pageSize: projectPageSize,
+    });
+    if (projectList.failed) Toast.error(t("项目列表加载失败"));
+  }, [projects, projectList.failed, projectLoading, projectPage, projectPageSize, projectScope]);
 
   useEffect(() => {
     if (!selectedProject) return;
@@ -361,34 +327,18 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
   }, [overviewFormApi, selectedProject]);
 
   useEffect(() => {
-    if (!selectedProject) return;
-    if (activeTab === 'members' && canManageMembers) void loadMembers(selectedProject.id, 1, memberPageSize);
-    if (activeTab === 'models' && canManageMembers && licenseModelGovernance) void loadModels(selectedProject);
-  }, [activeTab, canManageMembers, licenseModelGovernance, loadMembers, loadModels, memberPageSize, selectedProject]);
-
-  useEffect(() => {
-    if (canManageMembers || activeTab === 'overview') return;
+    if (!selectedProject || canManageMembers || activeTab === 'overview') return;
     activeTabRef.current = 'overview';
     setActiveTab('overview');
-  }, [activeTab, canManageMembers]);
+    syncProjectURL({ projectID: selectedProject.id, tab: 'overview', page: projectPage, pageSize: projectPageSize });
+  }, [activeTab, canManageMembers, projectPage, projectPageSize, selectedProject]);
 
   const selectProject = useCallback((project: Project) => {
-    memberRequestVersion.current += 1;
-    modelRequestVersion.current += 1;
     selectedProjectIDRef.current = project.id;
     setSelectedProjectID(project.id);
     activeTabRef.current = 'overview';
     setActiveTab('overview');
-    setMemberPage(1);
-    setMembers([]);
-    setMemberTotal(0);
-    setEligibleUsers([]);
-    setModelSets([]);
-    setAssignedModelSetIDs([]);
-    setModelError('');
-    setSelectedCandidateID(undefined);
-    setSelectedMembershipRole('project_user');
-    setCandidateQuery('');
+    setMemberControls(DEFAULT_MEMBER_CONTROLS);
     syncProjectURL({
       projectID: project.id,
       tab: 'overview',
@@ -412,7 +362,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
   const changeProjectPage = (nextPage: number) => {
     selectedProjectIDRef.current = undefined;
     setSelectedProjectID(undefined);
-    setProjectPage(nextPage);
+    projectList.onPageChange(nextPage);
     syncProjectURL({
       tab: activeTabRef.current,
       page: nextPage,
@@ -423,8 +373,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
   const changeProjectPageSize = (nextPageSize: number) => {
     selectedProjectIDRef.current = undefined;
     setSelectedProjectID(undefined);
-    setProjectPageSize(nextPageSize);
-    setProjectPage(1);
+    projectList.onPageSizeChange(nextPageSize);
     syncProjectURL({
       tab: activeTabRef.current,
       page: 1,
@@ -433,12 +382,12 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
   };
 
   const saveCurrentProjectView = () => {
-    if (!selectedProjectIDRef.current) {
+    if (!selectedProject) {
       Toast.warning(t("当前没有可保存的项目工作区"));
       return;
     }
     const next = saveLocalView(projectSavedViewStorageKey, savedViews, savedViewName, {
-      project_id: selectedProjectIDRef.current,
+      project_id: selectedProject.id,
       project_tab: activeTabRef.current,
       project_page: projectPage,
       project_page_size: projectPageSize,
@@ -458,23 +407,19 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
     const view = savedViews.find(item => item.name === name);
     if (!view) return;
     const nextTab = canManageMembers ? view.state.project_tab : 'overview';
-    memberRequestVersion.current += 1;
-    modelRequestVersion.current += 1;
     setSelectedSavedView(name);
     setSavedViewName(name);
     selectedProjectIDRef.current = view.state.project_id;
     setSelectedProjectID(view.state.project_id);
     activeTabRef.current = nextTab;
     setActiveTab(nextTab);
-    setProjectPage(view.state.project_page);
-    setProjectPageSize(view.state.project_page_size);
+    projectList.restorePage(view.state.project_page, view.state.project_page_size);
     syncProjectURL({
       projectID: view.state.project_id,
       tab: nextTab,
       page: view.state.project_page,
       pageSize: view.state.project_page_size,
     });
-    setReloadVersion(version => version + 1);
   };
 
   const deleteProjectView = () => {
@@ -493,7 +438,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
   const submitCreate = async (values: any) => {
     const budgetCents = centsFromYuan(values.create_budget_yuan);
     if (budgetCents < 0) {
-      Toast.error(t('预算金额需在 0 至 {max} 元之间', { max: maxProjectBudgetYuan.toFixed(2) }));
+      Toast.error(t('预算金额需在 0 至 {max} 元之间', { max: MAX_PROJECT_BUDGET_YUAN.toFixed(2) }));
       return;
     }
     if (!selectedOrgID) {
@@ -512,8 +457,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
       Toast.success(t("项目已创建"));
       setCreateSheet(false);
       selectedProjectIDRef.current = undefined;
-      setProjectPage(1);
-      setReloadVersion(version => version + 1);
+      projectList.onPageChange(1);
     } catch {
       Toast.error(t("项目创建失败"));
     }
@@ -523,7 +467,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
     if (!selectedProject) return;
     const budgetCents = centsFromYuan(values.budget_yuan);
     if (budgetCents < 0) {
-      Toast.error(t('预算金额需在 0 至 {max} 元之间', { max: maxProjectBudgetYuan.toFixed(2) }));
+      Toast.error(t('预算金额需在 0 至 {max} 元之间', { max: MAX_PROJECT_BUDGET_YUAN.toFixed(2) }));
       return;
     }
     try {
@@ -536,7 +480,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
         budget_period: values.budget_period,
       });
       Toast.success(t("项目已更新"));
-      setReloadVersion(version => version + 1);
+      projectList.reload();
     } catch {
       Toast.error(t("项目更新失败"));
     }
@@ -547,10 +491,12 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
     const candidate = eligibleUsers.find(item => item.user_id === selectedCandidateID);
     if (!candidate) return;
     try {
-      await api.upsertProjectMember(selectedProject.id, candidate.user_id, selectedMembershipRole);
+      await api.upsertProjectMember(selectedProject.id, candidate.user_id, memberEditor.role);
       Toast.success(t("成员已加入项目"));
-      setSelectedCandidateID(undefined);
-      await loadMembers(selectedProject.id, memberPage, memberPageSize, candidateQuery);
+      setMemberControls(current => current.scope === selectedProjectScope && current.candidateID === candidate.user_id
+        ? { ...current, candidateID: undefined }
+        : current);
+      reloadMembers();
     } catch {
       Toast.error(t("添加成员失败"));
     }
@@ -561,11 +507,11 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
     try {
       await api.upsertProjectMember(selectedProject.id, member.user_id, nextRole);
       Toast.success(t("项目角色已更新"));
-      await loadMembers(selectedProject.id, memberPage, memberPageSize, candidateQuery);
+      reloadMembers();
     } catch (error) {
       Toast.error(error instanceof ApiError ? error.message : t("项目角色更新失败"));
     }
-  }, [candidateQuery, loadMembers, memberPage, memberPageSize, selectedProject]);
+  }, [reloadMembers, selectedProject]);
 
   const removeMember = useCallback((member: ProjectMember) => {
     if (!selectedProject) return;
@@ -579,16 +525,16 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
         try {
           await api.deleteProjectMember(project.id, member.user_id);
           Toast.success(t("成员已移除"));
-          await loadMembers(project.id, memberPage, memberPageSize, candidateQuery);
+          reloadMembers();
         } catch (error) {
           Toast.error(error instanceof ApiError ? error.message : t("移除成员失败"));
         }
       },
     });
-  }, [candidateQuery, loadMembers, memberPage, memberPageSize, selectedProject]);
+  }, [reloadMembers, selectedProject]);
 
   const saveModels = async () => {
-    if (!selectedProject) return;
+    if (!selectedProject || !modelRead.data) return;
     try {
       await api.replaceProjectModelSets(selectedProject.id, assignedModelSetIDs);
       Toast.success(t("项目模型范围已更新"));
@@ -697,7 +643,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
             <Text type="tertiary">{t("项目是 UniRouter 本地权限和成本归属范围；人员可同时属于多个项目。")}</Text>
           </div>
           <Space>
-            <Button icon={<IconRefresh />} loading={projectLoading} onClick={() => setReloadVersion(version => version + 1)}>{t("刷新")}</Button>
+            <Button icon={<IconRefresh />} loading={projectLoading} onClick={projectList.reload}>{t("刷新")}</Button>
             {canCreateProject && <Button aria-label={t("新建项目")} type="primary" icon={<IconPlus />} onClick={() => setCreateSheet(true)}>{t("新建项目")}</Button>}
           </Space>
         </div>
@@ -706,7 +652,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
         title={t("项目与成员")}
         description={t("项目列表与工作区保持并列；首个项目自动进入检查器，无需再次打开详情。")}
         actions={<Space>
-          <Button icon={<IconRefresh />} loading={projectLoading} onClick={() => setReloadVersion(version => version + 1)}>{t("刷新")}</Button>
+          <Button icon={<IconRefresh />} loading={projectLoading} onClick={projectList.reload}>{t("刷新")}</Button>
           {canCreateProject && <Button aria-label={t("新建项目")} type="primary" icon={<IconPlus />} onClick={() => setCreateSheet(true)}>{t("新建项目")}</Button>}
         </Space>}
       />}
@@ -734,7 +680,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
               onChange={setSavedViewName}
               onEnterPress={saveCurrentProjectView}
             />
-            <Button onClick={saveCurrentProjectView}>{t("保存 / 覆盖")}</Button>
+            <Button disabled={!selectedProject} onClick={saveCurrentProjectView}>{t("保存 / 覆盖")}</Button>
             <Button disabled={!selectedSavedView} onClick={deleteProjectView}>{t("删除")}</Button>
           </div>
         </div>}
@@ -761,7 +707,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
               <EmptyState
                 title={t("项目列表加载失败")}
                 description={translateLabel(projectLoadError)}
-                actions={<Button type="primary" onClick={() => setReloadVersion(version => version + 1)}>{t("重新加载项目")}</Button>}
+                actions={<Button type="primary" onClick={projectList.reload}>{t("重新加载项目")}</Button>}
                 minHeight={240}
               />
             ) : <EmptyState title={t("当前范围暂无项目")} minHeight={240} />}
@@ -770,7 +716,8 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
               pageSize: projectPageSize,
               total: projectTotal,
               showSizeChanger: true,
-              pageSizeOpts: [20, 50, 100],
+              preventPageChangeOnPageSizeChange: true,
+              pageSizeOpts: SERVER_PAGE_SIZES,
               onPageChange: changeProjectPage,
               onPageSizeChange: changeProjectPageSize,
             }}
@@ -816,7 +763,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
                 <Form.Select field="status" label={<span id="project-overview-status-label">{t("项目状态")}</span>} aria-labelledby="project-overview-status-label" disabled={!canEditProject} optionList={[
                   { label: t("启用"), value: 'active' }, { label: t("停用"), value: 'disabled' }, { label: t("归档"), value: 'archived' },
                 ]} />
-                <Form.InputNumber field="budget_yuan" label={<span id="project-overview-budget-label">{t("预算金额（元）")}</span>} aria-labelledby="project-overview-budget-label" disabled={!canEditProject} min={0} max={maxProjectBudgetYuan} precision={2} extraText={t("0 表示不限制；结算和告警以所选预算周期为准。")} style={{ width: '100%' }} />
+                <Form.InputNumber field="budget_yuan" label={<span id="project-overview-budget-label">{t("预算金额（元）")}</span>} aria-labelledby="project-overview-budget-label" disabled={!canEditProject} min={0} max={MAX_PROJECT_BUDGET_YUAN} precision={2} extraText={t("0 表示不限制；结算和告警以所选预算周期为准。")} style={{ width: '100%' }} />
                 <Form.Select field="budget_period" label={<span id="project-overview-budget-period-label">{t("预算周期")}</span>} aria-labelledby="project-overview-budget-period-label" disabled={!canEditProject} optionList={localizeOptions(periodOptions)} style={{ width: '100%' }} />
                 {canEditProject && <Button type="primary" htmlType="submit">{t("保存项目")}</Button>}
               </Form>
@@ -827,13 +774,13 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
                 <div className="ur-project-member-controls">
                   <Input
                     aria-label={t("搜索项目成员候选人")}
-                    value={candidateQuery}
+                    value={memberEditor.search}
                     placeholder={t("按用户名或邮箱搜索候选人")}
-                    onChange={setCandidateQuery}
-                    onEnterPress={() => loadMembers(selectedProject.id, 1, memberPageSize, candidateQuery)}
+                    onChange={search => updateMemberControls({ search })}
+                    onEnterPress={searchMembers}
                     className="ur-project-member-search"
                   />
-                  <Button onClick={() => loadMembers(selectedProject.id, 1, memberPageSize, candidateQuery)}>{t("搜索")}</Button>
+                  <Button onClick={searchMembers}>{t("搜索")}</Button>
                   <Select
                     aria-labelledby="project-member-candidate-label"
                     insetLabel={t("账号")}
@@ -841,7 +788,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
                     value={selectedCandidateID}
                     placeholder={t("选择同组织的活跃账号")}
                     optionList={candidateOptions}
-                    onChange={value => setSelectedCandidateID(Number(value))}
+                    onChange={value => updateMemberControls({ candidateID: Number(value) })}
                     filter
                     className="ur-project-member-select"
                   />
@@ -849,30 +796,26 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
                     aria-labelledby="project-member-role-label"
                     insetLabel={t("项目角色")}
                     insetLabelId="project-member-role-label"
-                    value={selectedMembershipRole}
+                    value={memberEditor.role}
                     optionList={membershipOptions}
-                    onChange={value => setSelectedMembershipRole(String(value))}
+                    onChange={value => updateMemberControls({ role: String(value) })}
                     style={{ width: 210 }}
                   />
                   <Button type="primary" disabled={!selectedCandidateID} onClick={addMember}>{t("加入项目")}</Button>
                 </div>
-                <div className="ur-table-shell">
-                  <Table
-                    rowKey="user_id"
-                    columns={memberColumns}
-                    dataSource={members}
-                    loading={membersLoading}
-                    pagination={{
-                      currentPage: memberPage,
-                      pageSize: memberPageSize,
-                      total: memberTotal,
-                      showSizeChanger: true,
-                      pageSizeOpts: [20, 50, 100],
-                      onPageChange: page => { setMemberPage(page); void loadMembers(selectedProject.id, page, memberPageSize, candidateQuery); },
-                      onPageSizeChange: size => { setMemberPage(1); setMemberPageSize(size); void loadMembers(selectedProject.id, 1, size, candidateQuery); },
-                    }}
-                  />
-                </div>
+                <PagedTable
+                  rowKey="user_id"
+                  columns={memberColumns}
+                  dataSource={memberList.data?.data ?? []}
+                  loading={memberList.loading}
+                  page={memberList.page}
+                  pageSize={memberList.pageSize}
+                  total={memberList.data?.total ?? 0}
+                  showSizeChanger
+                  onPageChange={memberList.onPageChange}
+                  onPageSizeChange={memberList.onPageSizeChange}
+                  loadError={memberList.failed ? { title: t("项目成员加载失败"), retry: reloadMembers } : undefined}
+                />
               </TabPane>
             )}
 
@@ -881,7 +824,10 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
                 {!licenseModelGovernance ? (
                   <EmptyState title={t("模型治理暂不可用")} description={t("模型治理随有效商业授权自动包含；请刷新授权状态，若仍不可用请检查许可证有效性。")} />
                 ) : modelError ? (
-                  <Banner type="danger" description={translateLabel(modelError)} closeIcon={null} />
+                  <Space vertical align="start">
+                    <Banner type="danger" description={translateLabel(modelError)} closeIcon={null} />
+                    {!modelReadForbidden && <Button onClick={() => setModelReadVersion(version => version + 1)}>{t("重试")}</Button>}
+                  </Space>
                 ) : (
                   <Space vertical align="start" spacing="medium" style={{ width: '100%' }}>
                     <Text>{t("选择该项目允许使用的模型集合。模型集合本身在“模型治理”中维护。")}</Text>
@@ -891,13 +837,16 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
                       insetLabelId="project-model-set-scope-label"
                       multiple
                       filter
-                      loading={modelsLoading}
+                      loading={modelRead.loading}
+                      disabled={!modelRead.data}
                       value={assignedModelSetIDs}
-                      optionList={modelSets.map(set => ({ label: `${set.name} (${set.slug})`, value: set.id }))}
-                      onChange={value => setAssignedModelSetIDs((value as number[]) || [])}
+                      optionList={(modelRead.data?.sets ?? []).map(set => ({ label: `${set.name} (${set.slug})`, value: set.id }))}
+                      onChange={value => {
+                        if (modelRead.data) setModelDraft({ source: modelRead.data, assignedIDs: (value as number[]) || [] });
+                      }}
                       style={{ width: '100%' }}
                     />
-                    <Button type="primary" onClick={saveModels}>{t("保存模型范围")}</Button>
+                    <Button type="primary" disabled={!modelRead.data} onClick={saveModels}>{t("保存模型范围")}</Button>
                   </Space>
                 )}
               </TabPane>
@@ -924,7 +873,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
           <Form.Input field="create_name" label={t("项目名称")} rules={[{ required: true, message: t("必填") }]} />
           <Form.Input field="create_slug" label={t("项目标识（可留空自动生成）")} />
           <Form.TextArea field="create_description" label={t("项目说明")} />
-          <Form.InputNumber field="create_budget_yuan" label={t("预算金额（元）")} min={0} max={maxProjectBudgetYuan} precision={2} initValue={0} style={{ width: '100%' }} />
+          <Form.InputNumber field="create_budget_yuan" label={t("预算金额（元）")} min={0} max={MAX_PROJECT_BUDGET_YUAN} precision={2} initValue={0} style={{ width: '100%' }} />
           <Form.Select field="create_budget_period" aria-label={t("新项目预算周期")} label={t("预算周期")} optionList={localizeOptions(periodOptions)} initValue="monthly" style={{ width: '100%' }} />
           <Space style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24 }}>
             <Button onClick={() => setCreateSheet(false)}>{t("取消")}</Button>

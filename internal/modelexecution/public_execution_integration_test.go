@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/billing"
@@ -216,6 +217,94 @@ VALUES ($1,$2,$3,clock_timestamp()+INTERVAL '1 second')`,
 			fixture.requireAttemptCount(t, identity.RequestID, 0)
 		})
 	}
+}
+
+type publicDispatchFixtureLedger struct {
+	attemptLedger
+	beforeInsert func(context.Context, pgx.Tx)
+}
+
+func (ledger publicDispatchFixtureLedger) BeginProviderAttemptOwnedTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	start billing.ProviderAttemptStart,
+	ownerHash string,
+) (bool, error) {
+	ledger.beforeInsert(ctx, tx)
+	return ledger.attemptLedger.BeginProviderAttemptOwnedTx(ctx, tx, start, ownerHash)
+}
+
+func TestPublicCoordinatorAuthorizesDuringCommittedCanonicalHealthWritesIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	fixture := newPublicExecutionFixture(t, pool, "concurrent-health")
+	plan, route := fixture.plan(t, "concurrent-health")
+	healthCoordinator, err := New(pool, fixture.billing, DefaultConfig())
+	require.NoError(t, err)
+
+	// Give the real health owner a different finished attempt for each of the
+	// two possible authorization tries. Neither health commit changes route authority.
+	healthDecisions := make([]Decision, 0, 2)
+	for i := range 2 {
+		identity := fixture.freeze(t, fmt.Sprintf("prior-health-%d", i))
+		decision, err := healthCoordinator.AuthorizePublic(t.Context(), plan, route, identity)
+		require.NoError(t, err)
+		require.Equal(t, Applied, decision.Status)
+		require.NoError(t, fixture.billing.CompleteProviderAttempt(t.Context(), billing.ProviderAttemptCompletion{
+			OrgID: identity.OrgID, RequestID: identity.RequestID, AttemptID: identity.AttemptID,
+			Outcome: billing.ProviderAttemptOutcomeResponseAccepted, HTTPStatus: 200,
+		}))
+		healthDecisions = append(healthDecisions, decision)
+	}
+
+	calls := 0
+	ledger := publicDispatchFixtureLedger{
+		attemptLedger: fixture.billing,
+		beforeInsert: func(ctx context.Context, tx pgx.Tx) {
+			var deploymentID int64
+			require.NoError(t, tx.QueryRow(ctx, "SELECT id FROM model_deployments WHERE id=$1", fixture.deploymentID).Scan(&deploymentID))
+			require.Less(t, calls, len(healthDecisions))
+			health, err := healthCoordinator.MarkSuccess(ctx, healthDecisions[calls])
+			require.NoError(t, err)
+			require.Equal(t, Applied, health.Status, "the concurrent health transaction must commit before attempt insertion")
+			calls++
+		},
+	}
+	dispatch, err := New(pool, ledger, DefaultConfig())
+	require.NoError(t, err)
+	identity := fixture.freeze(t, "after-health")
+	decision, err := dispatch.AuthorizePublic(t.Context(), plan, route, identity)
+	require.NoError(t, err)
+	require.Equal(t, Applied, decision.Status)
+	require.Equal(t, 1, calls, "an ordinary committed health write must not consume the serialization retry")
+	fixture.requireAttemptCount(t, identity.RequestID, 1)
+}
+
+func TestPublicCoordinatorRefusesAuthorityChangeInsideDispatchTransactionIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	fixture := newPublicExecutionFixture(t, pool, "concurrent-authority")
+	plan, route := fixture.plan(t, "concurrent-authority")
+	identity := fixture.freeze(t, "before-authority-change")
+
+	ledger := publicDispatchFixtureLedger{
+		attemptLedger: fixture.billing,
+		beforeInsert: func(ctx context.Context, tx pgx.Tx) {
+			var revision int64
+			require.NoError(t, tx.QueryRow(ctx, `
+SELECT state_revision FROM provider_credential_bindings WHERE id=$1`, fixture.credentialBindingID).Scan(&revision))
+			tag, err := pool.Exec(ctx, `
+UPDATE provider_credential_bindings SET status='disabled',state_revision=$2,updated_at=clock_timestamp()
+ WHERE id=$1`, fixture.credentialBindingID, revision+1)
+			require.NoError(t, err)
+			require.EqualValues(t, 1, tag.RowsAffected())
+		},
+	}
+	dispatch, err := New(pool, ledger, DefaultConfig())
+	require.NoError(t, err)
+	decision, err := dispatch.AuthorizePublic(t.Context(), plan, route, identity)
+	require.NoError(t, err)
+	require.Equal(t, Disabled, decision.Status)
+	require.Empty(t, decision.DispatchOwnerToken)
+	fixture.requireAttemptCount(t, identity.RequestID, 0)
 }
 
 func newPublicExecutionFixture(t *testing.T, pool *pgxpool.Pool, label string) *publicExecutionFixture {

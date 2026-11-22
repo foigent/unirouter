@@ -3,7 +3,10 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Typography, Table, Tag, Input, Select, Button, Space, Descriptions, Tooltip, Toast } from '@douyinfe/semi-ui';
 import { IconSearch, IconRefresh, IconCopy } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
+import { requestLogsApi, type RequestLog as Log, type RequestLogFilters as LogFilters, type RequestTraceEvent as TraceEvent } from '../api/requestLogs';
+import { copyText } from '../utils/clipboard';
 import { formatDateTime } from '../utils/formatDate';
+import { COMPACT_PAGE_SIZES } from '../utils/pagination';
 import { isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, LatencyText, microsRatio, MoneyText, PageHeader, StatusTag, Surface } from '../ui';
@@ -13,104 +16,21 @@ import { translate as t, translateLabel, useI18n } from '../i18n';
 
 const { Title, Text } = Typography;
 
-interface Log {
-  id: number;
-  request_id: string;
-  client_request_id?: string;
-  workflow_id?: string;
-  agent_id?: string;
-  attempt_id?: string;
-  model: string;
-  provider: string;
-  channel: string;
-  status_code: number;
-  latency_ms: number;
-  ttft_ms: number;
-  prompt_tokens: number;
-  uncached_prompt_tokens?: number;
-  cache_read_tokens?: number;
-  cache_creation_tokens?: number;
-  completion_tokens: number;
-  total_tokens: number;
-  cost_micros: string;
-  is_stream: boolean;
-  ip_address: string;
-  requested_model: string;
-  upstream_status_code: number | null;
-  upstream_error: string;
-  usage_source: string;
-  cache_usage_schema?: string;
-  cache_usage_status?: string;
-  pricing_version?: string;
-  cache_read_ratio?: number;
-  cache_creation_ratio?: number;
-  effective_input_price_micros_per_million?: string;
-  effective_cache_read_price_micros_per_million?: string;
-  effective_cache_creation_price_micros_per_million?: string;
-  effective_output_price_micros_per_million?: string;
-  cache_read_cost_micros?: string;
-  cache_creation_cost_micros?: string;
-  created_at: string;
+interface LogListQuery {
+  scope: string;
+  page: number;
+  pageSize: number;
+  filters: LogFilters;
 }
 
-interface LogFilters {
-  model?: string;
-  provider?: string;
-  status_code?: string;
-  usage_source?: string;
-  start_time?: string;
-  end_time?: string;
-  request_id?: string;
-  client_request_id?: string;
-  trace_id?: string;
-  workflow_id?: string;
-  agent_id?: string;
-  attempt_id?: string;
-  upstream_request_id?: string;
-  evidence_ref?: string;
-  source_event_hash?: string;
-  latency_min?: string;
-  latency_max?: string;
-  search?: string;
+interface LogListResult {
+  query: LogListQuery;
+  rows: Log[];
+  total: number;
+  error?: string;
 }
 
-interface TraceEvent {
-  id: number;
-  event_type: string;
-  stage: string;
-  severity: 'info' | 'warning' | 'error';
-  model: string;
-  requested_model: string;
-  provider: string;
-  channel: string;
-  status_code: number | null;
-  latency_ms: number;
-  metadata: Record<string, unknown>;
-  created_at: string;
-  trace_id?: string | null;
-  span_id?: string | null;
-  parent_span_id?: string | null;
-  schema_version?: string | null;
-  source_component?: string | null;
-  capture_mode?: string | null;
-  capture_gap?: string | null;
-  evidence_ref?: string | null;
-  upstream_request_id?: string | null;
-  decision_kind?: string | null;
-  decision_result?: string | null;
-  decision_reason?: string | null;
-  actor_type?: string | null;
-  actor_ref?: string | null;
-  on_behalf_of?: string | null;
-  session_id?: string | null;
-  client_request_id?: string | null;
-  workflow_id?: string | null;
-  agent_id?: string | null;
-  attempt_id?: string | null;
-  payload_capture_mode?: string | null;
-  payload_ref?: string | null;
-  source_event_hash?: string | null;
-}
+const NO_LOGS: Log[] = [];
 
 type ReceiptTab = 'decision' | 'attempts' | 'policy' | 'cost' | 'provenance';
 
@@ -169,28 +89,9 @@ function filterValueLabel(key: string, value: string | undefined) {
   return value || '-';
 }
 
-function fallbackCopyText(text: string) {
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.setAttribute('readonly', 'true');
-  textarea.style.position = 'fixed';
-  textarea.style.left = '-9999px';
-  document.body.appendChild(textarea);
-  textarea.select();
-  try {
-    return document.execCommand('copy');
-  } finally {
-    document.body.removeChild(textarea);
-  }
-}
-
 async function copyToClipboard(text: string) {
   try {
-    if (navigator.clipboard?.writeText && window.isSecureContext) {
-      await navigator.clipboard.writeText(text);
-    } else if (!fallbackCopyText(text)) {
-      throw new Error('fallback copy failed');
-    }
+    await copyText(text);
     Toast.success(t("已复制 Request ID"));
   } catch {
     Toast.error(t("复制失败，请手动复制"));
@@ -321,19 +222,19 @@ function routeAttemptsFromTrace(events: TraceEvent[]): RouteAttempt[] {
 export default function LogsPage() {
   const { locale } = useI18n();
   const user = useAuthStore((state) => state.user);
-  const platform = isPlatformAdminRole(organizationRoleForUser(user));
+  const organizationRole = organizationRoleForUser(user);
+  const platform = isPlatformAdminRole(organizationRole);
   const customerContext = resolveCustomerContext(user);
-  const [logs, setLogs] = useState<Log[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [logsError, setLogsError] = useState<string | null>(null);
+  const customerOrgID = effectiveCustomerOrgID(user);
+  const [listResult, setListResult] = useState<LogListResult>();
+  const [listLoading, setListLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
-  const [total, setTotal] = useState(0);
   const [filters, setFilters] = useState<LogFilters>(paramsToFilters);
   const [draftFilters, setDraftFilters] = useState<LogFilters>(paramsToFilters);
   const pendingFilters = useRef<LogFilters>({});
   const listRequestRef = useRef(0);
-  const [selectedLog, setSelectedLog] = useState<Log | null>(null);
+  const [selectedRecord, setSelectedRecord] = useState<Log | null>(null);
   const [receiptTab, setReceiptTab] = useState<ReceiptTab>('decision');
   const [traceEvents, setTraceEvents] = useState<TraceEvent[]>([]);
   const [traceLoading, setTraceLoading] = useState(false);
@@ -346,23 +247,32 @@ export default function LogsPage() {
   const [customTimeStart, setCustomTimeStart] = useState('');
   const [customTimeEnd, setCustomTimeEnd] = useState('');
   const [selectedPreset, setSelectedPreset] = useState<string>('');
-  const targetOrgID = platform ? effectiveCustomerOrgID(user) : undefined;
+  const targetOrgID = platform ? customerOrgID : undefined;
   const customerContextReady = !platform || customerContext.state === 'ready';
+  const scope = JSON.stringify([user?.id, user?.org_id, organizationRole, customerOrgID, customerContext.state]);
+  const listQuery = useMemo<LogListQuery>(() => ({ scope, page, pageSize, filters }), [scope, page, pageSize, filters]);
+  const currentResult = listResult?.query === listQuery ? listResult : undefined;
+  const logs = currentResult?.rows ?? NO_LOGS;
+  const total = currentResult?.total ?? 0;
+  const loading = listLoading || !currentResult;
+  const logsError = loading ? undefined : currentResult?.error;
+  const selectedLog = currentResult ? selectedRecord : null;
+  const rowsForFilterOptions = listResult?.query.scope === scope ? listResult.rows : NO_LOGS;
   const providerFilterOptions = useMemo(() => Array.from(new Set(
-    logs.map(log => log.provider?.trim()).filter((value): value is string => Boolean(value))
-  )).sort((a, b) => a.localeCompare(b)), [logs]);
+    rowsForFilterOptions.map(log => log.provider?.trim()).filter((value): value is string => Boolean(value))
+  )).sort((a, b) => a.localeCompare(b)), [rowsForFilterOptions]);
   const modelFilterOptions = useMemo(() => Array.from(new Set([
     ...modelOptions,
-    ...logs.flatMap(log => [log.model?.trim(), log.requested_model?.trim()]),
-  ].filter((value): value is string => Boolean(value)))).sort((a, b) => a.localeCompare(b)), [logs, modelOptions]);
+    ...rowsForFilterOptions.flatMap(log => [log.model?.trim(), log.requested_model?.trim()]),
+  ].filter((value): value is string => Boolean(value)))).sort((a, b) => a.localeCompare(b)), [rowsForFilterOptions, modelOptions]);
 
   const loadTrace = useCallback((record: Log) => {
     const requestSequence = ++traceRequestRef.current;
     setTraceEvents([]);
     setTraceLoading(true);
     setTraceError(null);
-    (targetOrgID ? api.getLogTrace(record.id, targetOrgID) : api.getLogTrace(record.id))
-      .then((data: any) => {
+    (targetOrgID ? requestLogsApi.getLogTrace(record.id, targetOrgID) : requestLogsApi.getLogTrace(record.id))
+      .then(data => {
         if (requestSequence !== traceRequestRef.current) return;
         setTraceEvents(Array.isArray(data?.events) ? data.events : []);
       })
@@ -379,32 +289,30 @@ export default function LogsPage() {
 
   const selectLog = useCallback((record: Log) => {
     selectedLogIDRef.current = record.id;
-    setSelectedLog(record);
+    setSelectedRecord(record);
     loadTrace(record);
   }, [loadTrace]);
 
-  const fetchLogs = useCallback(async (p?: number) => {
+  const fetchLogs = useCallback(async () => {
     const requestSequence = ++listRequestRef.current;
     traceRequestRef.current += 1;
-    setLoading(true);
-    setLogsError(null);
-    setSelectedLog(null);
+    setListLoading(true);
+    setSelectedRecord(null);
     setTraceEvents([]);
     setTraceError(null);
     try {
-      const currentPage = p ?? page;
-      const data = await api.getLogs(currentPage, pageSize, targetOrgID ? { ...filters, org_id: targetOrgID } : filters);
+      const { page, pageSize, filters } = listQuery;
+      const data = await requestLogsApi.getLogs(page, pageSize, targetOrgID ? { ...filters, org_id: targetOrgID } : filters);
       if (requestSequence !== listRequestRef.current) return;
-      const nextLogs = Array.isArray(data.data) ? data.data : [];
-      setLogs(nextLogs);
-      setTotal(data.total || 0);
+      const nextLogs = Array.isArray(data?.data) ? data.data : [];
+      setListResult({ query: listQuery, rows: nextLogs, total: data?.total ?? 0 });
       const nextSelected = nextLogs.find((log: Log) => log.id === selectedLogIDRef.current) || nextLogs[0] || null;
       if (nextSelected) {
         selectLog(nextSelected);
       } else {
         selectedLogIDRef.current = undefined;
         traceRequestRef.current += 1;
-        setSelectedLog(null);
+        setSelectedRecord(null);
         setTraceEvents([]);
         setTraceLoading(false);
         setTraceError(null);
@@ -412,19 +320,17 @@ export default function LogsPage() {
     } catch (e) {
       if (requestSequence !== listRequestRef.current) return;
       console.error('Failed to fetch logs', e);
-      setLogs([]);
-      setTotal(0);
+      setListResult({ query: listQuery, rows: NO_LOGS, total: 0, error: '请求日志加载失败；当前筛选结果不可用。' });
       selectedLogIDRef.current = undefined;
       traceRequestRef.current += 1;
-      setSelectedLog(null);
+      setSelectedRecord(null);
       setTraceEvents([]);
       setTraceLoading(false);
       setTraceError(null);
-      setLogsError('请求日志加载失败；当前筛选结果不可用。');
     } finally {
-      if (requestSequence === listRequestRef.current) setLoading(false);
+      if (requestSequence === listRequestRef.current) setListLoading(false);
     }
-  }, [page, pageSize, filters, targetOrgID, selectLog]);
+  }, [listQuery, targetOrgID, selectLog]);
 
   useEffect(() => {
     if (!customerContextReady) return;
@@ -451,6 +357,11 @@ export default function LogsPage() {
     window.history.replaceState(null, '', url);
   }, [filters, selectedLog?.id]);
 
+  const applyFilterChanges = useCallback((changes: LogFilters) => {
+    setFilters(prev => ({ ...prev, ...changes }));
+    setPage(1);
+  }, []);
+
   const updateFilter = useCallback((key: keyof LogFilters, value: string) => {
     setDraftFilters(prev => ({ ...prev, [key]: value }));
     pendingFilters.current[key] = value || undefined;
@@ -458,10 +369,9 @@ export default function LogsPage() {
     debounceRef.current = setTimeout(() => {
       const changes = pendingFilters.current;
       pendingFilters.current = {};
-      setFilters(prev => ({ ...prev, ...changes }));
-      setPage(1);
+      applyFilterChanges(changes);
     }, 300);
-  }, []);
+  }, [applyFilterChanges]);
 
   useEffect(() => () => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -515,8 +425,7 @@ export default function LogsPage() {
     setSelectedPreset(preset);
     if (preset === 'custom') {
       if (customTimeStart && customTimeEnd) {
-        setFilters(prev => ({ ...prev, start_time: new Date(customTimeStart).toISOString(), end_time: new Date(customTimeEnd).toISOString() }));
-        setPage(1);
+        applyFilterChanges({ start_time: new Date(customTimeStart).toISOString(), end_time: new Date(customTimeEnd).toISOString() });
       }
       return;
     }
@@ -530,8 +439,7 @@ export default function LogsPage() {
       case '7d': start = new Date(now.getTime() - 7 * 86400000); break;
       default: return;
     }
-    setFilters(prev => ({ ...prev, start_time: fmt(start), end_time: fmt(now) }));
-    setPage(1);
+    applyFilterChanges({ start_time: fmt(start), end_time: fmt(now) });
   };
 
   const tableColumns = useMemo(() => {
@@ -712,7 +620,7 @@ export default function LogsPage() {
         actions={(
           <>
             {platform && <Text type="tertiary">{t('客户范围：{name}', { name: customerContext.orgName || t('组织 #{id}', { id: targetOrgID || '—' }) })}</Text>}
-            <Tag color="blue">{t('{count} 条', { count: total })}</Tag>
+            {!logsError && <Tag color="blue">{loading ? t('加载中') : t('{count} 条', { count: total })}</Tag>}
             <Tooltip content={t("刷新")}>
               <Button aria-label={t("刷新执行请求")} icon={<IconRefresh />} size="small" onClick={() => fetchLogs()} />
             </Tooltip>
@@ -779,8 +687,8 @@ export default function LogsPage() {
               size="small"
               placeholder={t("选择供应商")}
               value={filters.provider || undefined}
-              onChange={(v) => { setFilters(prev => ({ ...prev, provider: v as string || undefined })); setPage(1); }}
-              style={{ width: '100%' }}
+              onChange={(v) => applyFilterChanges({ provider: v as string || undefined })}
+              className="ur-form-control-full-width"
               showClear
               filter
             >
@@ -795,8 +703,8 @@ export default function LogsPage() {
               size="small"
               placeholder={t("模型名称")}
               value={filters.model || undefined}
-              onChange={(v) => { setFilters(prev => ({ ...prev, model: v as string || undefined })); setPage(1); }}
-              style={{ width: '100%' }}
+              onChange={(v) => applyFilterChanges({ model: v as string || undefined })}
+              className="ur-form-control-full-width"
               showClear
               filter
             >
@@ -810,8 +718,8 @@ export default function LogsPage() {
               aria-labelledby="logs-status-filter-label"
               size="small"
               placeholder={t("选择状态码")}
-              style={{ width: '100%' }}
-              onChange={(v) => setFilters(prev => ({ ...prev, status_code: v as string || undefined }))}
+              className="ur-form-control-full-width"
+              onChange={(v) => applyFilterChanges({ status_code: v as string || undefined })}
               value={filters.status_code || undefined}
             >
               <Select.Option value="2xx">{t("2xx 成功")}</Select.Option>
@@ -827,8 +735,8 @@ export default function LogsPage() {
               aria-labelledby="logs-usage-source-filter-label"
               size="small"
               placeholder={t("来源")}
-              style={{ width: '100%' }}
-              onChange={(v) => { setFilters(prev => ({ ...prev, usage_source: v as string || undefined })); setPage(1); }}
+              className="ur-form-control-full-width"
+              onChange={(v) => applyFilterChanges({ usage_source: v as string || undefined })}
               value={filters.usage_source || undefined}
             >
               {usageSourceOptions.map(option => (
@@ -926,7 +834,7 @@ export default function LogsPage() {
             <Text className="ur-panel-hint">{t("默认选择最新记录 · ↑/↓ 切换")}</Text>
           </div>
 
-          {logsError && (
+          {logsError ? (
             <div className="ur-detail-card ur-detail-card-error" role="alert">
               <Text className="ur-detail-card-title">{t("请求列表不可用")}</Text>
               <Text size="small">{translateLabel(logsError)}</Text>
@@ -934,34 +842,37 @@ export default function LogsPage() {
                 <Button size="small" type="primary" onClick={() => fetchLogs()}>{t("重试列表")}</Button>
               </div>
             </div>
+          ) : (
+            <div className="ur-table-shell">
+              <Table
+                dataSource={logs}
+                columns={tableColumns}
+                rowKey="id"
+                size="small"
+                loading={loading}
+                onRow={(record) => ({
+                  onClick: () => {
+                    if (record) {
+                      selectLog(record as Log);
+                    }
+                  },
+                  style: { cursor: 'pointer', background: selectedLog?.id === (record as any)?.id ? 'var(--ur-bg-subtle)' : undefined },
+                })}
+                pagination={{
+                  currentPage: page,
+                  pageSize,
+                  total,
+                  showSizeChanger: true,
+                  pageSizeOpts: COMPACT_PAGE_SIZES,
+                  onChange: (nextPage, nextPageSize) => {
+                    setPage(nextPageSize === pageSize ? nextPage : 1);
+                    setPageSize(nextPageSize);
+                  },
+                }}
+                empty={loading ? t('加载中') : t("暂无日志记录")}
+              />
+            </div>
           )}
-
-          <div className="ur-table-shell">
-            <Table
-              dataSource={logs}
-              columns={tableColumns}
-              rowKey="id"
-              size="small"
-              loading={loading}
-              onRow={(record) => ({
-                onClick: () => {
-                  if (record) {
-                    selectLog(record as Log);
-                  }
-                },
-                style: { cursor: 'pointer', background: selectedLog?.id === (record as any)?.id ? 'var(--ur-bg-subtle)' : undefined },
-              })}
-              pagination={{
-                currentPage: page,
-                pageSize,
-                total,
-                showSizeChanger: true,
-                pageSizeOpts: [10, 20, 50, 100],
-                onChange: (p, ps) => { setPage(p); setPageSize(ps); },
-              }}
-              empty={t("暂无日志记录")}
-            />
-          </div>
         </main>
 
         <aside className="ur-explorer-panel ur-explorer-detail" aria-label={t("执行决策凭证")}>
@@ -975,7 +886,7 @@ export default function LogsPage() {
 
           {!selectedLog ? (
             <div className="ur-receipt-empty" role="status">
-              <Title heading={5}>{logsError ? t("等待可验证的请求列表") : t("暂无可检查的执行")}</Title>
+              <Title heading={5}>{logsError ? t("等待可验证的请求列表") : loading ? t('加载中') : t("暂无可检查的执行")}</Title>
               <Text type="tertiary">
                 {logsError
                   ? t("列表加载失败时不会保留旧凭证或把失败解释为空结果。")

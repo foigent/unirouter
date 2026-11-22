@@ -17,6 +17,7 @@ import {
   IconServer,
 } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
+import { requestLogsApi, type RequestLog as CallLog } from '../api/requestLogs';
 import { useAuthStore } from '../store/auth';
 import {
   authzContextForUser,
@@ -32,8 +33,10 @@ import {
 } from '../navigation';
 import { EmptyState, MetricTile, MoneyText, PageHeader, parseMicros, StatusTag, Surface } from '../ui';
 import { roleLabel as formatRoleLabel } from '../utils/displayLabels';
+import { copyText } from '../utils/clipboard';
 import { loadAllPages } from '../utils/loadAllPages';
 import { normalizeModelList, parseModelList } from '../utils/modelList';
+import { COMPACT_PAGE_SIZES } from '../utils/pagination';
 import { keyQuotaText } from '../utils/quota';
 import { projectDisplayName, projectOption } from '../utils/projectDisplay';
 import ProjectApiQuickstart from '../features/apiDocs/ProjectApiQuickstart';
@@ -87,29 +90,6 @@ interface CatalogModel {
   pricing_model_name?: string;
   migration_recommendation?: string;
   aliases?: string | string[];
-}
-
-interface CallLog {
-  id: number;
-  project_id: number;
-  request_id: string;
-  model: string;
-  requested_model?: string;
-  provider: string;
-  channel: string;
-  prompt_tokens: number;
-  completion_tokens: number;
-  total_tokens: number;
-  cost_micros?: string;
-  pricing_version?: string;
-  status_code: number;
-  latency_ms: number;
-  ttft_ms?: number;
-  upstream_status_code?: number;
-  upstream_error?: string;
-  usage_source?: string;
-  is_stream?: boolean;
-  created_at: string;
 }
 
 interface UsageAnalyticsRow {
@@ -173,21 +153,6 @@ function RecordedCharge({ micros, pricingVersion, strong, labeled }: {
       {isUnpricedObservation(pricingVersion) && <Text size="small" type="tertiary">{t("未定价 · 成本观察")}</Text>}
     </div>
   );
-}
-
-function fallbackCopyText(text: string) {
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.setAttribute('readonly', 'true');
-  textarea.style.position = 'fixed';
-  textarea.style.left = '-9999px';
-  document.body.appendChild(textarea);
-  textarea.select();
-  try {
-    return document.execCommand('copy');
-  } finally {
-    document.body.removeChild(textarea);
-  }
 }
 
 export default function DeveloperConsolePage() {
@@ -262,6 +227,7 @@ export default function DeveloperConsolePage() {
     || playgroundResult?.billing_status === 'settlement_pending_recovery'
     || playgroundResult?.billing_status === 'cancellation_failed_no_billable_output';
   const projectDataRequestVersion = useRef(0);
+  const lookupRequestVersion = useRef(0);
 
   const selectedProject = projects.find(project => project.id === selectedProjectId);
   const selectedProjectMembershipRole = canonicalProjectMembershipRole(selectedProject?.current_user_membership_role);
@@ -408,7 +374,7 @@ export default function DeveloperConsolePage() {
             routable_only: true,
           }))
           : Promise.resolve([] as CatalogModel[]),
-        api.getLogs(1, 20, { project_id: projectId }),
+        requestLogsApi.getLogs(1, 20, { project_id: projectId }),
         api.getUsageAnalytics({ project_id: projectId, scope: 'my', group_by: 'alias' }).catch((err: any) => {
           usageFailure = { detail: err?.message || '' };
           return null;
@@ -417,7 +383,7 @@ export default function DeveloperConsolePage() {
       if (projectDataRequestVersion.current !== requestVersion) return;
       setKeys(keyItems);
       setModels(modelItems);
-      setLogs((logData?.data || []) as CallLog[]);
+      setLogs(logData?.data ?? []);
       setUsageSummary((usageData?.summary || null) as UsageAnalyticsSummary | null);
       setUsageByModel((usageData?.data || []) as UsageAnalyticsRow[]);
       setUsageLoadError(usageFailure);
@@ -434,6 +400,8 @@ export default function DeveloperConsolePage() {
     const nextProjectId = Number(value);
     if (!Number.isFinite(nextProjectId) || nextProjectId === selectedProjectId) return;
     projectDataRequestVersion.current += 1;
+    lookupRequestVersion.current += 1;
+    setLookupLoading(false);
     clearProjectData();
     setProjectDataError('');
     setUsageLoadError(null);
@@ -453,6 +421,11 @@ export default function DeveloperConsolePage() {
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
   useEffect(() => { loadProjectData(); }, [loadProjectData]);
+  useEffect(() => {
+    setLookupResult(null);
+    setLookupLoading(false);
+    return () => { lookupRequestVersion.current += 1; };
+  }, [selectedProjectId]);
   useEffect(() => {
     if (!playgroundModel && modelOptions[0]) setPlaygroundModel(modelOptions[0]);
   }, [modelOptions, playgroundModel]);
@@ -515,11 +488,7 @@ export default function DeveloperConsolePage() {
   const copyCreatedKey = async () => {
     if (!createdKey?.key) return;
     try {
-      if (navigator.clipboard?.writeText && window.isSecureContext) {
-        await navigator.clipboard.writeText(createdKey.key);
-      } else if (!fallbackCopyText(createdKey.key)) {
-        throw new Error('fallback copy failed');
-      }
+      await copyText(createdKey.key);
       Toast.success(t("已复制完整 Key"));
     } catch {
       Toast.error(t("复制失败，请手动复制"));
@@ -529,21 +498,25 @@ export default function DeveloperConsolePage() {
   const handleLookup = async () => {
     const requestID = lookupRequestId.trim();
     if (!selectedProjectId || !requestID) return;
+    const requestVersion = ++lookupRequestVersion.current;
     setLookupLoading(true);
     setLookupResult(null);
     try {
-      const list = await api.getLogs(1, 1, { project_id: selectedProjectId, request_id: requestID });
-      const first = list?.data?.[0] as CallLog | undefined;
+      const list = await requestLogsApi.getLogs(1, 1, { project_id: selectedProjectId, request_id: requestID });
+      if (requestVersion !== lookupRequestVersion.current) return;
+      const first = list?.data?.[0];
       if (!first) {
         Toast.warning(t("未找到该 Request ID"));
         return;
       }
-      const detail = await api.getLogDetail(first.id);
-      setLookupResult(detail as CallLog);
-    } catch (err: any) {
-      Toast.error(t("查询失败{v0}", { v0: String(err?.message ? `：${err.message}` : '') }));
+      const detail = await requestLogsApi.getLogDetail(first.id);
+      if (requestVersion === lookupRequestVersion.current) setLookupResult(detail);
+    } catch (err) {
+      if (requestVersion === lookupRequestVersion.current) {
+        Toast.error(t("查询失败{v0}", { v0: err instanceof Error ? `：${err.message}` : '' }));
+      }
     } finally {
-      setLookupLoading(false);
+      if (requestVersion === lookupRequestVersion.current) setLookupLoading(false);
     }
   };
 
@@ -976,8 +949,9 @@ export default function DeveloperConsolePage() {
                 currentPage: keyPage,
                 pageSize: keyPageSize,
                 total: keys.length,
-                pageSizeOpts: [10, 20, 50, 100],
+                pageSizeOpts: COMPACT_PAGE_SIZES,
                 showSizeChanger: true,
+                preventPageChangeOnPageSizeChange: true,
                 showTotal: true,
                 onPageChange: (page: number) => setKeyPage(page),
                 onPageSizeChange: (pageSize: number) => { setKeyPageSize(pageSize); setKeyPage(1); },
@@ -1192,8 +1166,9 @@ export default function DeveloperConsolePage() {
                   currentPage: modelPage,
                   pageSize: modelPageSize,
                   total: models.length,
-                  pageSizeOpts: [10, 20, 50, 100],
+                  pageSizeOpts: COMPACT_PAGE_SIZES,
                   showSizeChanger: true,
+                  preventPageChangeOnPageSizeChange: true,
                   showTotal: true,
                   onPageChange: (page: number) => setModelPage(page),
                   onPageSizeChange: (pageSize: number) => { setModelPageSize(pageSize); setModelPage(1); },

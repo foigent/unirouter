@@ -32,9 +32,16 @@ RELEASE_KEYS = {"release_sequence", "created_at", "expires_at", "tag", "bootstra
                 "bootstrap_size", "bootstrap_sha256", "package_size", "package_sha256"}
 UPGRADE_SOURCE = '.github/release-inputs/community-upgrade-source.json'
 PREDECESSOR_DIRECTORY = '.community-retained-source'
-REQUIRED_DELTA_VERSIONS = frozenset({'1.15.6', '1.15.7'})
+REQUIRED_DELTA_VERSIONS = frozenset({'1.15.6', '1.15.7', '1.15.8'})
 RESTORE_SCHEMA = '000129_upstream_observation_restore_namespace'
 ADMISSION_SCHEMA = '000130_upgrade_admission_recovery'
+PRICING_SCHEMA = '000131_customer_standard_pricing'
+PUBLIC_SCHEMA_EXPANSIONS = {RESTORE_SCHEMA: ADMISSION_SCHEMA, ADMISSION_SCHEMA: PRICING_SCHEMA}
+PUBLIC_UPGRADE_SCHEMAS = (RESTORE_SCHEMA, ADMISSION_SCHEMA, PRICING_SCHEMA)
+
+
+def supported_public_schema_transition(source, target):
+    return source in PUBLIC_UPGRADE_SCHEMAS and (source == target or PUBLIC_SCHEMA_EXPANSIONS.get(source) == target)
 
 
 class Stop(Exception):
@@ -278,7 +285,7 @@ def asset_url(release, name):
     return "https://github.com/foigent/unirouter/releases/download/" + release["tag"] + "/" + name
 
 
-STAGE_PROGRAM_SHA256 = 'cdfc566fbd8e0d9ec5f076f974bce6ede4d17da1fcb2d5b8366d7a99abe8baa9'
+STAGE_PROGRAM_SHA256 = '5d9eb8e192426f21355e4678212eb2373a78bccc666bdfdc18fefbaf8bcbec77'
 
 
 def stage_module():
@@ -335,8 +342,7 @@ def validate_current_fixed(config, stage_record):
         names.append(name)
     require(names==sorted(set(names)) and sum(row['size'] for row in artifacts)<=512*1024*1024, 'Consumer payload closure differs.')
     required={'payload/deploy/install.py','payload/install.json','payload/provenance/build-provenance.json'}
-    if target_schema(config) in ('000128_upstream_release_observation', '000129_upstream_observation_restore_namespace',
-                                 '000130_upgrade_admission_recovery'):
+    if target_schema(config) in ('000128_upstream_release_observation', *PUBLIC_UPGRADE_SCHEMAS):
         required.update({'payload/deploy/upgrade.py','payload/deploy/recovery.py','payload/scripts/source-budget-restore-rebase.sql'})
     require(required <= set(names), 'Consumer required installation/upgrade payload is missing.')
     provenance=next((row for row in artifacts if row['path']=='payload/provenance/build-provenance.json'),None)
@@ -495,8 +501,7 @@ def validate_upgrade_source(record, candidate):
     a, b = old['immutable'], candidate['immutable']
     sequence = old['release']['release_sequence']
     source_schema, target = a['product']['schema'], b['product']['schema']
-    require((source_schema, target) in ((RESTORE_SCHEMA, RESTORE_SCHEMA),
-            (RESTORE_SCHEMA, ADMISSION_SCHEMA), (ADMISSION_SCHEMA, ADMISSION_SCHEMA))
+    require(supported_public_schema_transition(source_schema, target)
             and b['min_current_schema'] <= source_schema, 'Unsupported exact public upgrade fixture schemas.')
     require(all(a[k] == b[k] for k in ('key_id', 'public_ring', 'raw_public_fingerprint')),
             'Public upgrade fixture signing authority differs.')
@@ -918,9 +923,9 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
             require(source_contract.schema == old.schema and source_ledger == source_contract.ledger,
                     'Installed public source ledger differs from its exact source.')
             same_schema = old.schema == self.schema
-            expected_ledger = source_ledger if same_schema else source_ledger + (ADMISSION_SCHEMA,)
-            require(expected_ledger == self.source_contract.ledger and (same_schema or
-                    (old.schema, self.schema) == (RESTORE_SCHEMA, ADMISSION_SCHEMA)),
+            expected_ledger = source_ledger if same_schema else source_ledger + (self.schema,)
+            require(expected_ledger == self.source_contract.ledger
+                    and supported_public_schema_transition(old.schema, self.schema),
                     'Unsupported public schema transition.')
             self.observe_migration_owner()
             protected = self.protected_upgrade_rows(directory, project, old.release_sequence, old.schema)
@@ -953,7 +958,7 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
             audit = [strict_json(line) for line in self.migration_audit.read_text().splitlines()]
             migration_calls = sum(row['migration_owner_calls'] for row in audit)
             old_schema_rows = {} if same_schema else {
-                'schema_migrations': ('to_jsonb(t)', " WHERE version <> '" + ADMISSION_SCHEMA + "'")}
+                'schema_migrations': ('to_jsonb(t)', " WHERE version <> '" + self.schema + "'")}
             require(witness['state'] == 'completed' and witness['pending'] is None
                     and witness['candidate'] == checked['candidate']
                     and witness['source']['package_sha256'] == checked['source']['package_sha256']

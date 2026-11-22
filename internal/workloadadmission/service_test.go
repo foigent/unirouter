@@ -1,10 +1,13 @@
 package workloadadmission
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"log"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -56,6 +59,51 @@ func newTestService(t *testing.T, server *miniredis.Miniredis, options Options) 
 
 func request(operation string, orgID int64, class string, ttl time.Duration) Request {
 	return Request{OperationID: operation, OrgID: orgID, Class: class, LeaseTTL: ttl}
+}
+
+func TestReserveAttributesRedisDeadlineOnlyWhileCallerIsActive(t *testing.T) {
+	const privateDetail = "private Redis detail"
+	for _, failure := range []string{"store deadline", "cancelled caller", "opaque error"} {
+		t.Run(failure, func(t *testing.T) {
+			server := miniredis.RunT(t)
+			service, client := newTestService(t, server, testOptions())
+			caller, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			injected := false
+			client.AddHook(cc13ReserveHook{after: func(ctx context.Context, cmd redis.Cmder) error {
+				if cmd.Name() != "evalsha" || cmd.Args()[1] != reserveScript.Hash() {
+					return nil
+				}
+				injected = true
+				switch failure {
+				case "store deadline":
+					<-ctx.Done()
+					return fmt.Errorf("%s: %w", privateDetail, ctx.Err())
+				case "cancelled caller":
+					cancel()
+					return fmt.Errorf("%s: %w", privateDetail, context.DeadlineExceeded)
+				default:
+					return errors.New(privateDetail + ": context deadline exceeded")
+				}
+			}})
+			var logs bytes.Buffer
+			previous := log.Writer()
+			log.SetOutput(&logs)
+			t.Cleanup(func() { log.SetOutput(previous) })
+			reservation, decision, err := service.Reserve(caller, request("redis-deadline-fixture", 7, ClassInteractive, time.Minute))
+			log.SetOutput(previous)
+
+			if !injected || reservation != nil || !errors.Is(err, ErrStateUnavailable) ||
+				decision.Reason != ReasonStateUnavailable || decision.RetryAfter != time.Second {
+				t.Fatalf("injected=%t reservation=%+v decision=%+v error=%v", injected, reservation, decision, err)
+			}
+			line := "request_id=\"redis-deadline-fixture\" phase=redis_reserve reason=deadline_exceeded"
+			if got := logs.String(); strings.Contains(got, line) != (failure == "store deadline") ||
+				strings.Contains(got, privateDetail) {
+				t.Fatalf("diagnostic = %s", got)
+			}
+		})
+	}
 }
 
 func TestP6F21StreamWeightPreservesShortCapacity(t *testing.T) {

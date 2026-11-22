@@ -27,19 +27,25 @@ class PublicPredecessorTests(unittest.TestCase):
     def setUp(self):
         self.old = json.loads((ROOT / m.UPGRADE_SOURCE).read_bytes())
         self.current = copy.deepcopy(self.old)
-        self.current['product'].update(commit='b' * 40, tree='c' * 40, version='1.15.7', schema=m.ADMISSION_SCHEMA)
+        self.current['product'].update(commit='b' * 40, tree='c' * 40, version='1.15.8', schema=m.PRICING_SCHEMA)
         c = self.current['inputs']['config']
         c['immutable']['product'] = {k: self.current['product'][k] for k in ('commit', 'tree', 'version', 'schema')}
-        c['immutable'].update(max_current_sequence=23, historical_sequence_reserved_through=23,
+        c['immutable'].update(max_current_sequence=24, historical_sequence_reserved_through=24,
             native_acceptance_helper_sha256=m.sha(ROOT / '.github/tests/community-installer.py'))
         bootstrap = ROOT / 'deploy/community/bootstrap.py'
         c['immutable']['bootstrap_script'] = {
             'url': ('https://raw.githubusercontent.com/foigent/unirouter/' +
                     self.current['product']['commit'] + '/deploy/community/bootstrap.py'),
             'sha256': m.sha(bootstrap), 'size': bootstrap.stat().st_size}
-        c['release'].update(release_sequence=24, tag='v1.15.7-preview.24', package_sha256='d' * 64)
+        c['release'].update(release_sequence=25, tag='v1.15.8-preview.25', package_sha256='d' * 64)
         c['release']['bootstrap_url'] = m.asset_url(c['release'], 'community-bootstrap.json')
         self.candidate = c  # Synthetic future metadata, never dispatched or signed.
+
+    def test_pricing_transition_requires_exact_admission_predecessor_or_same_schema(self):
+        self.assertTrue(m.supported_public_schema_transition(m.ADMISSION_SCHEMA, m.PRICING_SCHEMA))
+        self.assertTrue(m.supported_public_schema_transition(m.PRICING_SCHEMA, m.PRICING_SCHEMA))
+        self.assertFalse(m.supported_public_schema_transition(m.RESTORE_SCHEMA, m.PRICING_SCHEMA))
+        self.assertFalse(m.supported_public_schema_transition(m.PRICING_SCHEMA, m.ADMISSION_SCHEMA))
 
     def git(self, root, *args):
         return subprocess.check_output(['git', '-c', 'user.name=Offline fixture',
@@ -55,14 +61,14 @@ class PublicPredecessorTests(unittest.TestCase):
         self.assertEqual(m.validate(self.candidate, ready=True, stage_record=self.current), [])
         self.assertEqual(m.validate_upgrade_source(self.old, self.candidate), self.old['inputs']['config'])
         self.assertEqual(self.old['inputs']['config']['release']['package_sha256'],
-                         '8b6eac5d69cefd53c203389a36f45a3df8783da1508733dab00b9f0d4bd4cff5')
+                         'e7e2dfca5fce168b06b4e2db87efcfba4b04baea124a1a7eab9b814a6ed0cee8')
         for field, value in [('key_id', 'other'), ('raw_public_fingerprint', 'f' * 64),
                              ('public_ring', {'size': 83, 'sha256': 'f' * 64}),
-                             ('max_current_sequence', 22), ('min_current_sequence', 24), ('min_current_schema', m.ADMISSION_SCHEMA)]:
+                             ('max_current_sequence', 23), ('min_current_sequence', 25), ('min_current_schema', m.PRICING_SCHEMA)]:
             with self.subTest(field=field):
                 candidate = copy.deepcopy(self.candidate); candidate['immutable'][field] = value
                 with self.assertRaises(m.Stop): m.validate_upgrade_source(self.old, candidate)
-        candidate = copy.deepcopy(self.candidate); candidate['release']['release_sequence'] = 23
+        candidate = copy.deepcopy(self.candidate); candidate['release']['release_sequence'] = 24
         with self.assertRaises(m.Stop): m.validate_upgrade_source(self.old, candidate)
         broken = copy.deepcopy(self.old); broken['inputs']['config']['immutable']['public_ring']['sha256'] = 'f' * 64
         with self.assertRaisesRegex(Exception, 'stage_consumer_trust'):
@@ -92,9 +98,9 @@ class PublicPredecessorTests(unittest.TestCase):
                 if action == 'describe':
                     self.assertEqual(json.loads(output.getvalue())['upgrade_source'], self.old['product'])
         bad = copy.deepcopy(self.current)
-        bad['inputs']['config']['immutable'].update(max_current_sequence=22, historical_sequence_reserved_through=22)
+        bad['inputs']['config']['immutable'].update(max_current_sequence=23, historical_sequence_reserved_through=23)
         release = bad['inputs']['config']['release']
-        release.update(release_sequence=23, tag='v1.15.7-preview.23')
+        release.update(release_sequence=24, tag='v1.15.8-preview.24')
         release['bootstrap_url'] = m.asset_url(release, 'community-bootstrap.json')
         self.assertEqual(m.validate(bad['inputs']['config'], ready=True, stage_record=bad), [])
         with mock.patch.object(m, 'stage_module', return_value=stages), \
@@ -534,8 +540,8 @@ class PublicPredecessorTests(unittest.TestCase):
                 old = types.SimpleNamespace(instances=old_root / 'instances', ring=old_root / 'ring',
                     preflight=lambda: None, prepare=prepare, command=lambda *a: [],
                     installed_checks=lambda *a: None, native_first_use_checks=lambda *a, **kw: None,
-                    result={'first_customer': {'organization_id': 2}}, release_sequence=23,
-                    schema='000129_upstream_observation_restore_namespace', compose=lambda *a: [])
+                    result={'first_customer': {'organization_id': 2}}, release_sequence=24,
+                    schema=m.ADMISSION_SCHEMA, compose=lambda *a: [])
                 old.run = lambda label, argv: (json.dumps({'services': {'backend': {'environment': {}}}})
                                               if label == 'read original content configuration' else '')
                 old.sql = lambda _d, _p, q: ('2' if q.startswith('INSERT INTO projects') else
@@ -547,10 +553,14 @@ class PublicPredecessorTests(unittest.TestCase):
                 instance.inventory = lambda: {'containers': []}
                 native = m.load_module(ROOT / '.github/tests/community-installer.py',
                                        m.sha(ROOT / '.github/tests/community-installer.py'), 'public_source_fixture')
-                source_ledger = native.source_contract(ROOT).ledger[:-1]
-                old.source_contract = native.SourceContract(m.RESTORE_SCHEMA, source_ledger, ())
+                # Exercise the exact public M130 to M131 transition.
+                ledger = native.source_contract(ROOT).ledger
+                target_ledger = ledger[:ledger.index(m.PRICING_SCHEMA) + 1]
+                instance.source_contract = native.SourceContract(m.PRICING_SCHEMA, target_ledger, ())
+                source_ledger = instance.source_contract.ledger[:-1]
+                old.source_contract = native.SourceContract(m.ADMISSION_SCHEMA, source_ledger, ())
                 instance.sql = lambda *a: json.dumps(source_ledger)
-                instance.upgrade_fingerprint = lambda *a, **kw: {'schema_migrations': {'count': 129, 'sha256': 'stable'}}
+                instance.upgrade_fingerprint = lambda *a, **kw: {'schema_migrations': {'count': 130, 'sha256': 'stable'}}
                 instance.protected_upgrade_rows = lambda *a: {name: {'count': 1} for name in
                     ('users', 'orgs', 'projects', 'wallets', 'transactions', 'audit_logs', 'release_history')}
                 def command(label, argv):
@@ -592,17 +602,20 @@ class PublicPredecessorTests(unittest.TestCase):
         # are doubled; package/state/receipt files and their hashes are real.
         native_path = ROOT / '.github/tests/community-installer.py'
         native = m.load_module(native_path, m.sha(native_path), 'post_upgrade_report_fixture')
-        ledger = native.source_contract(ROOT).ledger
+        # Use the exact M131 contract for the post-upgrade error fixtures.
+        current = native.source_contract(ROOT).ledger
+        ledger = current[:current.index(m.PRICING_SCHEMA) + 1]
         for fault in ('readiness', 'login'):
             with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp, \
                  mock.patch.object(m.shutil, 'which', return_value='/fixture/docker'):
                 root = Path(tmp).resolve()
                 instance = m.make_acceptance(ROOT, root, self.candidate, {},
                     upgrade_source=(root / 'old-source', self.old))
+                instance.source_contract = native.SourceContract(m.PRICING_SCHEMA, ledger, ())
                 directory = root / 'installed-predecessor/instances/preserved'
                 old = types.SimpleNamespace(instances=directory.parent, ring=root / 'ring',
-                    result={'first_customer': {'organization_id': 2}}, release_sequence=23,
-                    schema=m.RESTORE_SCHEMA, preflight=lambda: None, installed_checks=lambda *a: None,
+                    result={'first_customer': {'organization_id': 2}}, release_sequence=24,
+                    schema=m.ADMISSION_SCHEMA, preflight=lambda: None, installed_checks=lambda *a: None,
                     native_first_use_checks=lambda *a, **kw: None, command=lambda *a: [], compose=lambda *a: [])
                 def prepare():
                     (directory / 'evidence').mkdir(parents=True)
@@ -632,7 +645,7 @@ class PublicPredecessorTests(unittest.TestCase):
                         {'state': 'not_started'} if label == 'read original public upgrade status' else {})
                 instance.run = run
                 source_ledger = ledger[:-1]
-                old.source_contract = native.SourceContract(m.RESTORE_SCHEMA, source_ledger, ())
+                old.source_contract = native.SourceContract(m.ADMISSION_SCHEMA, source_ledger, ())
                 instance.sql = lambda *a: json.dumps(ledger if instance.run_native_upgrade.called else source_ledger)
                 def upgrade(*args):
                     backup = directory / 'upgrades/synthetic-operation/backup'

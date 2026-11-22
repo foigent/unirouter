@@ -15,7 +15,7 @@ func TestFirstCustomerInventoryKeepsContentSeparateFromReset(t *testing.T) {
 	content := []string{"execution_content_enterprise_policies", "execution_content_health", "execution_content_manifests", "execution_content_objects", "execution_content_policies", "execution_content_streams", "execution_content_user_policies", "execution_source_content_bindings", "execution_source_content_operations", "execution_source_content_scopes", "xinsight_connector_credential_operations", "xinsight_communication_policies", "xinsight_communication_runs", "xinsight_receiver_adoptions", "xinsight_machine_credentials", "xinsight_policy_delegations", "xinsight_policy_operations", "xinsight_source_enrollment_bindings", "xinsight_source_enrollment_exclusions", "xinsight_source_enrollments"}
 	require.Equal(t, content, firstCustomerContentTables())
 	reset := resetplan.ExpectedPublicTables()
-	require.Len(t, reset, 140)
+	require.Len(t, reset, 143)
 	expected := append(slices.Clone(reset), content...)
 	slices.Sort(expected)
 	actual := firstCustomerExpectedPublicTables()

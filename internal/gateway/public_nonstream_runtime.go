@@ -15,16 +15,19 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
 	"github.com/uniroute/unirouter/internal/executionevidence"
+	"github.com/uniroute/unirouter/internal/logger"
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/modelexecution"
 	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelqualification"
 	"github.com/uniroute/unirouter/internal/modelrouting"
+	"github.com/uniroute/unirouter/internal/policybilling"
 )
 
 var (
@@ -35,6 +38,7 @@ var (
 	errPublicNonStreamGuardFailed        = errors.New("gateway: public nonstream guard failed")
 	errPublicNonStreamUpstreamFailed     = errors.New("gateway: public nonstream upstream failed")
 	errPublicNonStreamHealthFailed       = errors.New("gateway: public nonstream health authority failed")
+	errPublicCustomerPriceUnavailable    = errors.New("gateway: public customer price unavailable")
 	errPublicNonStreamBillingFailed      = errors.New("gateway: public nonstream billing failed")
 	errPublicNonStreamDeliveryFailed     = errors.New("gateway: public nonstream delivery failed")
 )
@@ -45,10 +49,7 @@ var (
 type publicModelExecutionCoordinator interface {
 	AuthorizePublic(context.Context, modelrouting.Plan, modelrouting.Route, modelexecution.AttemptIdentity) (modelexecution.Decision, error)
 	ReleaseUndispatched(context.Context, modelexecution.Decision) (modelexecution.HealthResult, error)
-	MarkSuccess(context.Context, modelexecution.Decision) (modelexecution.HealthResult, error)
-	MarkProviderFailure(context.Context, modelexecution.Decision) (modelexecution.HealthResult, error)
-	MarkCredentialAuthFailure(context.Context, modelexecution.Decision) (modelexecution.HealthResult, error)
-	MarkCredentialRateLimited(context.Context, modelexecution.Decision) (modelexecution.HealthResult, error)
+	providerAttemptHealthWriter
 }
 
 // publicNonStreamBilling is intentionally narrower than BillingProvider. In
@@ -125,13 +126,14 @@ type preparedPublicNonStreamRoute struct {
 }
 
 type publicExecutionPreparation struct {
-	plan           modelrouting.Plan
-	identity       endpointprotocol.PublicContractIdentity
-	publicProfile  endpointprotocol.PublicNonStreamProfile
-	prepared       *endpointprotocol.PublicPreparedRequest
-	routes         []preparedPublicNonStreamRoute
-	maximumInput   int
-	outputEstimate int
+	plan                modelrouting.Plan
+	identity            endpointprotocol.PublicContractIdentity
+	publicProfile       endpointprotocol.PublicNonStreamProfile
+	prepared            *endpointprotocol.PublicPreparedRequest
+	routes              []preparedPublicNonStreamRoute
+	maximumInput        int
+	outputEstimate      int
+	customerChargeQuote bool
 }
 
 type publicAttemptOutcome struct {
@@ -635,6 +637,36 @@ func publicResponseWasStarted(err error) bool {
 	return errors.As(err, &started)
 }
 
+func (orchestrator *publicNonStreamOrchestrator) authorizeAttempt(
+	ctx context.Context,
+	request publicNonStreamRequest,
+	plan modelrouting.Plan,
+	route modelrouting.Route,
+	sequence, total int,
+) (string, modelexecution.Decision, error) {
+	attemptID := publicAttemptID(request.RequestID, sequence, route.PublicEvidence.PublicExecutionBindingID)
+	decision, err := orchestrator.coordinator.AuthorizePublic(ctx, plan, route, modelexecution.AttemptIdentity{
+		RequestID: request.RequestID, AttemptID: attemptID, OrgID: request.OrgID,
+		APIKeyID: request.APIKeyID, AccessCredentialID: request.AccessCredentialID,
+		CredentialRef: request.CredentialRef, AccessGrantID: request.AccessGrantID,
+		RouteSequence: sequence, RouteTotal: total, Endpoint: request.Path,
+	})
+	if err != nil {
+		reason := "authorization_error"
+		var postgresError *pgconn.PgError
+		if errors.As(err, &postgresError) && postgresError != nil && postgresError.Code == "40001" {
+			reason = "postgres_serialization_failure"
+		}
+		logger.New(logger.Fields{Module: "public_execution"}).Warn(
+			"request_id=%q phase=dispatch_authorization reason=%s", request.RequestID, reason)
+	}
+	return attemptID, decision, err
+}
+
+func (orchestrator *publicNonStreamOrchestrator) releaseUndispatchedAttempt(ctx context.Context, decision modelexecution.Decision) error {
+	return publicHealthResult(orchestrator.coordinator.ReleaseUndispatched(context.WithoutCancel(ctx), decision))
+}
+
 func (orchestrator *publicNonStreamOrchestrator) execute(
 	ctx context.Context,
 	w http.ResponseWriter,
@@ -657,14 +689,7 @@ func (orchestrator *publicNonStreamOrchestrator) execute(
 	var lastFailure error
 	for index := range routes {
 		candidate := routes[index]
-		bindingID := candidate.route.PublicEvidence.PublicExecutionBindingID
-		attemptID := publicAttemptID(request.RequestID, index+1, bindingID)
-		decision, authorizeErr := orchestrator.coordinator.AuthorizePublic(ctx, plan, candidate.route, modelexecution.AttemptIdentity{
-			RequestID: request.RequestID, AttemptID: attemptID, OrgID: request.OrgID,
-			APIKeyID: request.APIKeyID, AccessCredentialID: request.AccessCredentialID,
-			CredentialRef: request.CredentialRef, AccessGrantID: request.AccessGrantID,
-			RouteSequence: index + 1, RouteTotal: len(routes), Endpoint: request.Path,
-		})
+		attemptID, decision, authorizeErr := orchestrator.authorizeAttempt(ctx, request, plan, candidate.route, index+1, len(routes))
 		if authorizeErr != nil {
 			return orchestrator.cancelFrozen(ctx, request, fmt.Errorf("%w: authorize", errPublicNonStreamRuntimeUnavailable))
 		}
@@ -678,8 +703,7 @@ func (orchestrator *publicNonStreamOrchestrator) execute(
 		if executionErr != nil {
 			var failure *PublicNonStreamExecutionError
 			if errors.As(executionErr, &failure) && failure.Stage == PublicNonStreamStagePreflight {
-				health, healthErr := orchestrator.coordinator.ReleaseUndispatched(context.WithoutCancel(ctx), decision)
-				if err := publicHealthResult(health, healthErr); err != nil {
+				if err := orchestrator.releaseUndispatchedAttempt(ctx, decision); err != nil {
 					return orchestrator.cancelFrozen(ctx, request, err)
 				}
 				lastFailure = executionErr
@@ -867,17 +891,24 @@ func (orchestrator *publicNonStreamOrchestrator) prepare(
 		RequestID: request.RequestID, OrgID: request.OrgID, ProjectID: request.ProjectID,
 		APIKeyID: request.APIKeyID, AccessCredentialID: request.AccessCredentialID,
 		CredentialRef: request.CredentialRef, AccessGrantID: request.AccessGrantID,
-		Model: request.ResolvedModel, EstimatedTokens: estimatedTokens,
+		Model: request.ResolvedModel, ModelOperation: request.Operation, EstimatedTokens: estimatedTokens,
 		EstimatedInputTokens: maximumInput, ReservedCompletionTokens: outputEstimate,
 		ExecutionSnapshotHash: plan.SnapshotHash,
 		SafetyFactor:          orchestrator.safetyFactor, MinFreezeCents: orchestrator.minFreeze,
 	})
+	if err == nil && freeze != nil && freeze.ErrorCode == "billing_contract_unavailable" {
+		return publicExecutionPreparation{}, errPublicCustomerPriceUnavailable
+	}
 	if err != nil || freeze == nil || !freeze.Success {
+		if err == nil && freeze != nil && freeze.ErrorCode == policybilling.ErrorCodeStateUnavailable {
+			logger.New(logger.Fields{Module: "public_execution"}).Warn(
+				"request_id=%q phase=execution_admission reason=limit_policy_state_unavailable", request.RequestID)
+		}
 		return publicExecutionPreparation{}, fmt.Errorf("%w: freeze", errPublicNonStreamBillingFailed)
 	}
 	return publicExecutionPreparation{
 		plan: plan, identity: identity, publicProfile: publicProfile, prepared: prepared,
-		routes: routes, maximumInput: maximumInput, outputEstimate: outputEstimate,
+		routes: routes, maximumInput: maximumInput, outputEstimate: outputEstimate, customerChargeQuote: freeze.HasCustomerChargeQuote(),
 	}, nil
 }
 
@@ -990,20 +1021,11 @@ func (orchestrator *publicNonStreamOrchestrator) applyTerminalHealth(
 	decision modelexecution.Decision,
 	action PublicNonStreamHealthAction,
 ) error {
-	var result modelexecution.HealthResult
-	var err error
-	switch action {
-	case PublicNonStreamHealthNone:
+	if action == PublicNonStreamHealthNone {
 		return nil
-	case PublicNonStreamHealthSuccess:
-		result, err = orchestrator.coordinator.MarkSuccess(ctx, decision)
-	case PublicNonStreamHealthProviderFailure:
-		result, err = orchestrator.coordinator.MarkProviderFailure(ctx, decision)
-	case PublicNonStreamHealthCredentialAuthFailure:
-		result, err = orchestrator.coordinator.MarkCredentialAuthFailure(ctx, decision)
-	case PublicNonStreamHealthCredentialRateLimited:
-		result, err = orchestrator.coordinator.MarkCredentialRateLimited(ctx, decision)
-	default:
+	}
+	result, err := applyProviderAttemptHealth(ctx, orchestrator.coordinator, decision, action)
+	if errors.Is(err, errUnsupportedRouteHealthAction) {
 		return errPublicNonStreamHealthFailed
 	}
 	return publicHealthResult(result, err)

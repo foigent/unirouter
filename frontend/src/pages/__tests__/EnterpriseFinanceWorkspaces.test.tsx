@@ -1,7 +1,8 @@
 import { setLocale, translate as t } from '../../i18n';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildUTCOverridePriceBands, buildUTCValleyPriceBands, EnterpriseRateCardWorkspace } from '../EnterpriseFinanceWorkspaces';
+import { ApiError } from '../../api/transport';
 
 const apiMocks = vi.hoisted(() => ({
   getRateCards: vi.fn(),
@@ -9,6 +10,13 @@ const apiMocks = vi.hoisted(() => ({
   approveRateCard: vi.fn(),
   activateRateCard: vi.fn(),
   getPricingSnapshot: vi.fn(),
+  getCustomerChargeQuote: vi.fn(),
+  getCustomerChargeQuoteOverruns: vi.fn(),
+  getCustomerPriceTable: vi.fn(),
+  createCustomerPriceTable: vi.fn(),
+  approveCustomerPriceTable: vi.fn(),
+  getCustomerPriceBinding: vi.fn(),
+  bindCustomerPriceTable: vi.fn(),
   bootstrapLegacyRateCardDrafts: vi.fn(),
   preflightRateCardAuthority: vi.fn(),
 }));
@@ -69,6 +77,30 @@ describe('EnterpriseRateCardWorkspace request-pricing authority', () => {
     apiMocks.activateRateCard.mockResolvedValue({});
   });
 
+  it('binds an approved Standard version with the revision read for the selected project', async () => {
+    const table = { org_id: 9, table_ref: 'standard-v1', version: 1, created_by: 'user:1',
+      approved_at: '2026-11-21T00:00:00Z', effective_from: '2026-11-21T00:00:00Z', entries: [] };
+    apiMocks.getCustomerPriceTable.mockResolvedValue(table);
+    apiMocks.getCustomerPriceBinding
+      .mockRejectedValueOnce(new ApiError('no current binding', 404, null))
+      .mockResolvedValueOnce({ org_id: 9, project_id: 42, table_ref: 'older', table_version: 2, revision: 7 });
+    apiMocks.bindCustomerPriceTable.mockRejectedValueOnce(new ApiError('binding revision changed', 409, null));
+    const { container } = render(<EnterpriseRateCardWorkspace orgId={9} canManage />);
+    const view = within(container);
+    fireEvent.change(await view.findByLabelText('客户价表标识'), { target: { value: 'standard-v1' } });
+    fireEvent.click(view.getByRole('button', { name: '查阅价表' }));
+    fireEvent.click(await view.findByRole('button', { name: '查阅当前绑定' }));
+    expect(await view.findByText(/尚无绑定/)).toBeTruthy();
+    fireEvent.change(view.getByLabelText('绑定项目 ID，0 为组织'), { target: { value: '42' } });
+    expect(view.queryByRole('button', { name: '确认绑定已批准版本' })).toBeNull();
+    fireEvent.click(view.getByRole('button', { name: '查阅当前绑定' }));
+    expect(await view.findByText(/older v2/)).toBeTruthy();
+    fireEvent.click(view.getByRole('button', { name: '确认绑定已批准版本' }));
+    expect(await view.findByText('binding revision changed')).toBeTruthy();
+    expect(apiMocks.bindCustomerPriceTable).toHaveBeenCalledExactlyOnceWith(9, 42, table, 7);
+    expect(view.queryByRole('button', { name: '确认绑定已批准版本' })).toBeNull();
+  });
+
   it('states the fail-closed authority and evidence-backed draft boundary', async () => {
     render(<EnterpriseRateCardWorkspace orgId={9} canManage={false} />);
 
@@ -77,6 +109,54 @@ describe('EnterpriseRateCardWorkspace request-pricing authority', () => {
     expect(screen.getByText(/所谓官方价格同步是受控导入/)).toBeTruthy();
     expect(screen.getByText(/逐模型预检确认完整性/)).toBeTruthy();
     expect(screen.getByText('旧价格兼容模式')).toBeTruthy();
+  });
+
+  it('shows the scoped Standard receipt and exact amounts without retaining a prior result', async () => {
+    apiMocks.getCustomerChargeQuote.mockResolvedValueOnce({
+      quote: {
+        request_id: 'rq-receipt', pricing_version: 'ccq1_fixture', currency: 'CNY',
+        priced_at: '2026-11-20T10:00:00Z',
+        selection: { tier: 'standard', binding: { project_id: 13, table_ref: 'standard-cny', table_version: 4 } },
+        quoted_customer_cost_micros: '1234567', maximum_authorized_customer_cost_micros: '2000000',
+      },
+      wallet_authorized_cost_micros: '2000000', charged_customer_cost_micros: '0',
+      settlement_status: 'settlement_pending', settlement_pending_reason: 'customer_authorization_exceeded',
+    });
+    apiMocks.getCustomerChargeQuote.mockRejectedValueOnce(new Error('报价不存在'));
+    render(<EnterpriseRateCardWorkspace orgId={9} canManage={false} />);
+    const input = await screen.findByLabelText('客户报价 Request ID');
+    fireEvent.change(input, { target: { value: ' rq-receipt ' } });
+    fireEvent.click(screen.getByRole('button', { name: '查询客户报价' }));
+
+    expect(await screen.findByText('¥1.234567')).toBeTruthy();
+    expect(screen.getByText('¥2.00')).toBeTruthy();
+    expect(screen.getByText('待核对')).toBeTruthy();
+    expect(screen.getByText(/standard-cny v4/)).toBeTruthy();
+    expect(apiMocks.getCustomerChargeQuote).toHaveBeenNthCalledWith(1, 'rq-receipt', 9);
+
+    fireEvent.change(input, { target: { value: 'different-request' } });
+    expect(screen.queryByText('¥1.234567')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '查询客户报价' }));
+    expect(await screen.findByText(/报价不存在/)).toBeTruthy();
+    expect(screen.queryByText(/standard-cny v4/)).toBeNull();
+  });
+
+  it('loads the overrun queue with an organization-scoped cursor', async () => {
+    const cursor = { request_id: 'overrun-1', provider_cost_pending_at: '2026-11-20T10:00:00.123456Z' };
+    apiMocks.getCustomerChargeQuoteOverruns.mockResolvedValueOnce({
+      data: [{ ...cursor, project_id: 7, wallet_authorized_cost_micros: '2000000',
+        calculated_customer_cost_micros: '3000123', charged_customer_cost_micros: '0', uncovered_customer_cost_micros: '1000123',
+        uncached_input_tokens: 17, cache_read_tokens: 2, cache_creation_tokens: 1, output_tokens: 3 }],
+      next: cursor,
+    }).mockResolvedValueOnce({ data: [] });
+    render(<EnterpriseRateCardWorkspace orgId={9} canManage={false} />);
+    fireEvent.click(await screen.findByRole('button', { name: '加载超额待核对' }));
+    expect(await screen.findByText('¥1.000123')).toBeTruthy();
+    expect(screen.getByText('17 / 2 / 1 / 3')).toBeTruthy();
+    expect(apiMocks.getCustomerChargeQuoteOverruns).toHaveBeenNthCalledWith(1, 9, undefined);
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    await waitFor(() => expect(screen.queryByText('¥1.000123')).toBeNull());
+    expect(apiMocks.getCustomerChargeQuoteOverruns).toHaveBeenNthCalledWith(2, 9, cursor);
   });
 
   it('creates a complete four-meter draft without asking for an internal ref', async () => {

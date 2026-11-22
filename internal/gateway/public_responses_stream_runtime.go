@@ -145,15 +145,8 @@ func (orchestrator *publicStreamOrchestrator) execute(
 	var lastFailure error
 	for index := range preparation.routes {
 		candidate := preparation.routes[index]
-		bindingID := candidate.route.PublicEvidence.PublicExecutionBindingID
-		attemptID := publicAttemptID(request.RequestID, index+1, bindingID)
-		decision, authorizeErr := orchestrator.core.coordinator.AuthorizePublic(
-			ctx, preparation.plan, candidate.route, modelexecution.AttemptIdentity{
-				RequestID: request.RequestID, AttemptID: attemptID, OrgID: request.OrgID,
-				APIKeyID: request.APIKeyID, AccessCredentialID: request.AccessCredentialID,
-				CredentialRef: request.CredentialRef, AccessGrantID: request.AccessGrantID,
-				RouteSequence: index + 1, RouteTotal: len(preparation.routes), Endpoint: request.Path,
-			},
+		attemptID, decision, authorizeErr := orchestrator.core.authorizeAttempt(
+			ctx, request, preparation.plan, candidate.route, index+1, len(preparation.routes),
 		)
 		if authorizeErr != nil {
 			return orchestrator.core.cancelFrozen(ctx, request, fmt.Errorf("%w: authorize", errPublicNonStreamRuntimeUnavailable))
@@ -173,8 +166,7 @@ func (orchestrator *publicStreamOrchestrator) execute(
 			return result.err
 		}
 		if result.providerState == "undispatched" {
-			health, healthErr := orchestrator.core.coordinator.ReleaseUndispatched(context.WithoutCancel(ctx), decision)
-			if err := publicHealthResult(health, healthErr); err != nil {
+			if err := orchestrator.core.releaseUndispatchedAttempt(ctx, decision); err != nil {
 				return orchestrator.core.cancelFrozen(ctx, request, err)
 			}
 			lastFailure = result.err
@@ -196,11 +188,14 @@ func (orchestrator *publicStreamOrchestrator) execute(
 			if healthErr := orchestrator.core.applyTerminalHealth(
 				context.WithoutCancel(ctx), decision, result.health,
 			); healthErr != nil {
-				if result.started || result.providerState == publicStreamProviderUnknown ||
-					result.providerState == publicStreamProviderUnusable {
-					return &publicResponseStartedError{err: errors.Join(result.err, healthErr)}
+				failure := errors.Join(result.err, healthErr)
+				if result.started {
+					return &publicResponseStartedError{err: failure}
 				}
-				return orchestrator.core.cancelFrozen(ctx, request, errors.Join(result.err, healthErr))
+				if result.providerState == publicStreamProviderUnknown || result.providerState == publicStreamProviderUnusable {
+					return failure
+				}
+				return orchestrator.core.cancelFrozen(ctx, request, failure)
 			}
 		}
 		if result.started {
@@ -356,7 +351,8 @@ func (orchestrator *publicStreamOrchestrator) executeAttempt(
 			state = publicStreamProviderAccepted
 		}
 		return publicStreamAttemptResult{
-			started: run.started, attemptCompleted: run.attemptCompleted, healthAttempted: run.healthAttempted,
+			started:          run.streamWriter != nil && run.streamWriter.hasStarted(),
+			attemptCompleted: run.attemptCompleted, healthAttempted: run.healthAttempted,
 			completionFailed: run.completionFailed,
 			providerState:    state, httpStatus: status, failureKind: "invalid_response",
 			health: run.providerHealth, err: err,
@@ -415,6 +411,11 @@ func (run *publicStreamRun) execute(ctx context.Context) (returnErr error) {
 	}
 	run.fence = run.lease.Fence()
 	run.streamWriter = newSSEStreamWriter(run.writer, run.orchestrator.streamPolicy.WriteIdleTimeout())
+	run.streamWriter.beforeFirstWrite = func() {
+		run.writer.Header().Set("Content-Type", "text/event-stream")
+		run.writer.Header().Set("Cache-Control", "no-cache")
+		run.writer.Header().Set("Connection", "keep-alive")
+	}
 	defer func() {
 		if returnErr == nil {
 			return
@@ -444,11 +445,15 @@ func (run *publicStreamRun) execute(ctx context.Context) (returnErr error) {
 			return
 		}
 		if !run.completionFailed {
+			status := 0
+			if run.streamWriter.hasStarted() {
+				status = http.StatusOK
+			}
 			returnErr = errors.Join(returnErr, run.orchestrator.billing.RecordDelivery(ctx, billing.DeliveryEvent{
 				RequestID: run.request.RequestID, AttemptID: run.attemptID, OrgID: run.request.OrgID,
 				Mode: billing.DeliveryModeStream, Outcome: billing.DeliveryOutcomeInterrupted,
 				DeliveredBytes: run.deliveredBytes, DeliveredChunks: run.deliveredChunks,
-				HTTPStatus: http.StatusOK, ErrorCode: run.stream.interruptedCode, StreamFence: &run.fence,
+				HTTPStatus: status, ErrorCode: run.stream.interruptedCode, StreamFence: &run.fence,
 			}))
 		}
 		returnErr = errors.Join(returnErr, run.orchestrator.billing.FinishStreamDelivery(
@@ -573,7 +578,7 @@ func (run *publicStreamRun) execute(ctx context.Context) (returnErr error) {
 				if event.Terminal() && event.Success() {
 					if event.CustomerUsage().OutputTokens > int64(run.preparation.outputEstimate) {
 						run.providerHealth = PublicNonStreamHealthProviderFailure
-						return errPublicNonStreamUpstreamFailed
+						return errors.Join(errPublicNonStreamUpstreamFailed, run.retainOverCapStreamEvidence(streamCtx, event))
 					}
 					if err := run.complete(event, streamCtx); err != nil {
 						return err
@@ -728,9 +733,6 @@ func (run *publicStreamRun) beginDelivery() error {
 	if err := run.orchestrator.billing.BeginStreamDelivery(ctx, run.lease); err != nil {
 		return errors.Join(errPublicNonStreamBillingFailed, err)
 	}
-	run.writer.Header().Set("Content-Type", "text/event-stream")
-	run.writer.Header().Set("Cache-Control", "no-cache")
-	run.writer.Header().Set("Connection", "keep-alive")
 	run.started = true
 	return nil
 }
@@ -804,6 +806,25 @@ func (run *publicStreamRun) checkpoint(force bool) error {
 	run.checkpointBytes = run.deliveredBytes
 	run.checkpointTokens = run.completionTokens
 	return nil
+}
+
+func (run *publicStreamRun) retainOverCapStreamEvidence(ctx context.Context, event publicStreamEvent) error {
+	if !run.started || !run.preparation.customerChargeQuote {
+		return nil
+	}
+	usage, err := publicSettleRequest(run.request, run.attemptID, event.CustomerUsage(), metering.UsagePurposeProviderEvidence, run.stream.endpointKind)
+	if err != nil {
+		return err
+	}
+	usage.StreamFence = &run.fence
+	persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	err = run.orchestrator.billing.PersistSettlementUsage(persistCtx, usage)
+	if errors.Is(err, billing.ErrCustomerAuthorizationExceeded) {
+		run.attemptCompleted = true
+		return nil
+	}
+	return err
 }
 
 func (run *publicStreamRun) complete(

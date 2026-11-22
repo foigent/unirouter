@@ -91,6 +91,19 @@ describe('GuardrailPoliciesPage', () => {
     expect(screen.queryByText('全局输入阻断词库')).toBeNull();
   });
 
+  it('offers retry when the safety policy read fails', async () => {
+    useAuthStore.setState({ user: { id: 2, username: 'org-admin', role: 'org_admin', org_id: 22, org_name: 'Acme' } });
+    mocks.getGuardrailPolicies.mockRejectedValueOnce(new Error('read unavailable'));
+    render(<GuardrailPoliciesPage />);
+
+    expect(await screen.findByText('安全策略加载失败')).toBeInTheDocument();
+    expect(screen.queryByText('暂无数据')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+
+    expect(await screen.findByText('redact-email')).toBeInTheDocument();
+    expect(mocks.getGuardrailPolicies.mock.calls).toEqual([[1, 20], [1, 20]]);
+  });
+
   it('keeps billing administrators read-only', async () => {
     useAuthStore.setState({ user: { id: 3, username: 'billing', role: 'billing_admin', org_id: 22 } });
     render(<GuardrailPoliciesPage />);

@@ -175,6 +175,50 @@ It is charged only from the documented provider response condition, independentl
 from the token components. Observation mode continues to generate zero customer
 charge while retaining the same evidence.
 
+## Standard 客户报价 V1
+
+1.15.8 候选使用 `000131_customer_standard_pricing`。现有安装先通过 M130
+的维护入口撤回入口并停止写入者，再执行精确 M131 迁移。新装由现有安装
+所有者在 M131 原子记录完成。默认计价为 `legacy`。采用 Standard 之前，
+在「费率与计价」核对每个作用域的已批准价表、模型与操作，以及生效时间。
+
+财务管理员可新建草稿，另一名有权用户复核后按精确版本批准。绑定前读取
+组织或项目当前修订。用量超过冻结授权时，财务工作台展示应收、授权、超额
+差异和待核对状态，实扣保持为零。队列时间是首次成本待处理时间。已形成价表、
+绑定、报价或对应冻结证据时，迁移拒绝删除这些记录的回退。
+
+`customer_standard_v1` 是独立的请求定价模式，需要 canonical 路由。现有
+`legacy` 默认值和 `rate_card` 选择规则继续适用于各自配置。安装或升级至
+M106 不代表配置已切换或客户已授权新价格。
+
+财务管理员可以按以下顺序准备客户价格。接口均位于
+`/api/v1/enterprise-finance`，依现有财务读写角色及客户范围授权。
+
+1. `POST /customer-price-tables` 提交 `table_ref`、正整数 `version`、
+   `effective_from`、可选 `effective_to` 和 `entries`。每项按公开模型及
+   精确操作配置四个 Token meter。每个 meter 的 `unit_quantity` 为字符串
+   `"1000000"`，以 CNY 微元整数表示每百万 Token 的价格。
+2. 另一位财务管理员通过 `GET /customer-price-tables/{table_ref}/{version}`
+   复核完整经济内容，再向同路径的 `/approve` 提交审批。已创建的经济内容
+   保持不可变，调整价格需创建另一个版本。
+3. `POST /customer-price-bindings` 为组织或项目绑定通过审批的精确版本。
+   `project_id=0` 表示组织。首次绑定用 `expected_revision=0`，重绑先通过
+   `GET /customer-price-bindings?project_id=...` 核对当前 revision。项目绑定
+   优先。若绑定的价表缺少当前模型或操作、尚未生效或已过期，请求返回报价不可用。
+4. 使用标准文本操作验证报价、交付与结算。通过
+   `GET /customer-charge-quotes/{request_ref}` 核对报价、钱包授权额、实扣和
+   结算状态。重试和切换上游共用首次冻结的报价。
+
+当前范围为 Chat Completions、Embeddings、Responses 和 Messages 的
+Standard Token 计价。按次 meter 和非 Standard 需要独立的客户授权合同。
+项目和 API Key 取自认证上下文。供应商价卡、供应商结算证据和请求头均不
+参与选择客户价表。
+
+预付模式先写入报价与同事务的冻结，再允许派发。供应商确认的用量超过授权
+上限时保留原冻结与确认用量，状态为 `customer_authorization_exceeded`，
+实扣和补扣均为零。该状态需要另行授权处理。现有补扣、扩量和人工集账动作
+不能改变其金额。成本观察模式记录已审核报价，钱包授权与实扣均为零。
+
 ## 5. OpenClaw projection
 
 `GET /v1/models` keeps its ordinary OpenAI-compatible shape by default.

@@ -5,12 +5,10 @@ const root = resolve(import.meta.dirname, '..');
 const sourceRoot = join(root, 'src');
 const clientPath = join(sourceRoot, 'api', 'client.ts');
 const transportPath = join(sourceRoot, 'api', 'transport.ts');
-const routingPath = join(sourceRoot, 'api', 'routing.ts');
-const channelsPath = join(sourceRoot, 'api', 'channels.ts');
 const modelEndpointsPath = join(sourceRoot, 'api', 'modelEndpoints.ts');
 const retiredChannelKeysPagePath = join(sourceRoot, 'pages', 'ChannelKeysPage.tsx');
-const dormantConnectionPanelPath = join(sourceRoot, 'components', 'ConnectionModelPanel.tsx');
-const maxLegacyRequests = 152;
+const retiredApiClientPaths = ['api/channels.ts', 'api/routing.ts'];
+const maxLegacyRequests = 148;
 const retiredRuntimeWriterNames = [
   'create',
   'validate',
@@ -49,8 +47,6 @@ function sourceFiles(directory) {
 const failures = [];
 const transport = readFileSync(transportPath, 'utf8');
 const client = readFileSync(clientPath, 'utf8');
-const routing = readFileSync(routingPath, 'utf8');
-const channels = readFileSync(channelsPath, 'utf8');
 const modelEndpoints = readFileSync(modelEndpointsPath, 'utf8');
 const apiSources = sourceFiles(join(sourceRoot, 'api'));
 const productSources = sourceFiles(sourceRoot);
@@ -83,8 +79,8 @@ for (const path of productSources) {
   if (/\bRuntimeChangeControlWorkspace\b/.test(source)) {
     failures.push(`${relative(root, path)} references the retired RuntimeChangeControlWorkspace`);
   }
-  if (path !== dormantConnectionPanelPath && /\bConnectionModelPanel\b/.test(source)) {
-    failures.push(`${relative(root, path)} revives the dormant legacy connection model panel`);
+  if (/\bConnectionModelPanel\b/.test(source)) {
+    failures.push(`${relative(root, path)} references the retired ConnectionModelPanel`);
   }
 }
 
@@ -92,15 +88,10 @@ if (existsSync(retiredChannelKeysPagePath)) {
   failures.push('pages/ChannelKeysPage.tsx revives the retired credential mutation workspace');
 }
 
-const retiredRoutingExport = retiredRuntimeWriterNames.find(name => new RegExp(`\\b${name}\\s*:`).test(routing));
-if (retiredRoutingExport || /\/runtime-changes(?:\/|['"`])/.test(routing)) {
-  failures.push('api/routing.ts exposes the retired runtime-change writer surface');
-}
-
-const retiredChannelExport = retiredChannelWriterNames.find(name => new RegExp(`\\b${name}\\s*:`).test(channels));
-const retiredCredentialExport = retiredCredentialWriterNames.find(name => new RegExp(`\\b${name}\\s*:`).test(channels));
-if (retiredChannelExport || retiredCredentialExport) {
-  failures.push('api/channels.ts exposes a retired channel or credential writer');
+for (const path of retiredApiClientPaths) {
+  if (existsSync(join(sourceRoot, path))) {
+    failures.push(`${path} revives a retired API client`);
+  }
 }
 
 const retiredModelEndpointExport = retiredModelEndpointWriterNames.find(name => new RegExp(`\\b${name}\\s*:`).test(modelEndpoints));

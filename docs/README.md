@@ -27,13 +27,12 @@ engineering records retain their original language and evidence boundaries.
    [client examples](../examples/client-compatibility/README.md) for integration.
 4. To combine execution with analysis and review, follow the
    [X-Insight integration entry](community/getting-started.md#optional-x-insight-integration).
-   X-Insight source publication and the public joint walkthrough are pending.
 
-This is an unreleased candidate. Native installation has passed on a disposable
-Linux amd64 runner with synthetic data; a public download is still pending.
-See [release readiness](community/release-readiness.md) for the exact evidence
-and remaining publication work. Existing deployments must use their
-release-matched migration and recovery procedures.
+The Linux amd64 installer uses published signed previews. The release record
+identifies the download, the verified clean installation and the predecessor
+used in the data-preserving upgrade rehearsal. Existing deployments use the
+release-matched upgrade procedure. [Release record](community/release-readiness.md) ·
+[Community upgrade](ops/COMMUNITY-UPGRADE.md)
 
 ## Contribute
 
@@ -44,7 +43,7 @@ release-matched migration and recovery procedures.
 - [Starter contribution issues](community/starter-issues.md): three published
   tasks with entry points and acceptance criteria; check each issue's availability.
 - [Security reporting](../SECURITY.md) and [Code of Conduct](../CODE_OF_CONDUCT.md).
-- [Changelog](../CHANGELOG.md): the current candidate entry is in English;
+- [Changelog](../CHANGELOG.md): recent entries are in English;
   older release records retain their original language.
 
 English and Simplified Chinese questions and contributions are welcome.

@@ -328,12 +328,12 @@ class InstallerFixtureContract(unittest.TestCase):
                 self.assertEqual(work.result.get('installer_stop'),authored)
 
     def test_exact_predecessor_rehearsal_checks_owner_before_repacking_only_backend(self):
-        for owner_verified, sequence in ((False, 24), (True, 25), (True, 24)):
+        for owner_verified, sequence in ((False, 25), (True, 26), (True, 25)):
             with self.subTest(owner_verified=owner_verified, sequence=sequence), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp).resolve()
                 work = object.__new__(fixture.Acceptance)
                 work.root, work.repo, work.result = root, ROOT, {'checks': []}
-                work.version, work.schema = "1.15.7", fixture.CURRENT_SCHEMA
+                work.version, work.schema = "1.15.8", fixture.CURRENT_SCHEMA
                 work.release_sequence = sequence
                 work.release = root / 'prepared-original-candidate'
                 work.verifier = root / 'verifier'
@@ -358,7 +358,7 @@ class InstallerFixtureContract(unittest.TestCase):
                     old.images[role], old.image_ids[role] = ref, 'test-backend-id'
                 old.observe_fixture_image = observe
                 def upgrade(old, layout, *, instance_name, public_predecessor):
-                    self.assertEqual((work.release_sequence, old.release_sequence), (24, 23))
+                    self.assertEqual((work.release_sequence, old.release_sequence), (25, 24))
                     self.assertEqual(work.release, root / 'prepared-original-candidate')
                     work.result['predecessor_delta'] = {'byte_identical': True}
                     work.result.setdefault('finite_upgrades', []).append({'exact_predecessor': True})
@@ -369,7 +369,7 @@ class InstallerFixtureContract(unittest.TestCase):
                      patch.object(first, 'verify_predecessor_checkout') as checked, \
                      patch.object(first, 'make_acceptance', return_value=owner), \
                      patch.object(fixture, 'Acceptance', return_value=old):
-                    if not owner_verified or sequence != 24:
+                    if not owner_verified or sequence != 25:
                         reason = 'public predecessor identity' if not owner_verified else 'immediately follow'
                         with self.assertRaisesRegex(fixture.Failed, reason):
                             work.qualify_accepted_predecessor_delta()
@@ -539,14 +539,14 @@ class InstallerFixtureContract(unittest.TestCase):
             self.assertEqual(old.schema, fixture.RETAINED_SCHEMA)
             self.assertEqual(old.ledger[-1], fixture.RETAINED_SCHEMA)
             self.assertNotIn(fixture.CURRENT_SCHEMA, old.supported_heads)
-            self.assertEqual(fixture.source_contract(ROOT).ledger, old.ledger + (fixture.OBSERVATION_SCHEMA,fixture.RESTORE_SCHEMA,fixture.CURRENT_SCHEMA,))
+            self.assertEqual(fixture.source_contract(ROOT).ledger, old.ledger + (fixture.OBSERVATION_SCHEMA, fixture.RESTORE_SCHEMA, fixture.ADMISSION_SCHEMA, fixture.CURRENT_SCHEMA,))
 
     def test_retained_m128_contract_reads_the_actual_original_application_source(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);self.retained_metadata(root,fixture.OBSERVATION_COMMIT)
             old=fixture.source_contract(root)
             self.assertEqual(old.schema,fixture.OBSERVATION_SCHEMA)
-            self.assertEqual(fixture.source_contract(ROOT).ledger,old.ledger+(fixture.RESTORE_SCHEMA,fixture.CURRENT_SCHEMA,))
+            self.assertEqual(fixture.source_contract(ROOT).ledger,old.ledger+(fixture.RESTORE_SCHEMA, fixture.ADMISSION_SCHEMA, fixture.CURRENT_SCHEMA,))
             self.assertNotIn(fixture.CURRENT_SCHEMA,old.supported_heads)
             self.assertEqual(subprocess.check_output(['git','-C',str(ROOT),'show',fixture.OBSERVATION_COMMIT+':VERSION']).decode().strip(),'1.15.0')
 
@@ -690,7 +690,7 @@ class InstallerFixtureContract(unittest.TestCase):
                 work.source_contract=fixture.source_contract(ROOT);ledger=list(work.source_contract.ledger)
                 same_schema=schema==fixture.CURRENT_SCHEMA
                 source_sequence=3 if same_schema else 2
-                source_ledger=ledger if same_schema else ledger[:-2]
+                source_ledger=ledger if same_schema else ledger[:ledger.index(schema) + 1]
                 work.verifier,work.ring=root/'verifier',root/'public-ring'
                 work.result={};work.migration_audit=root/'migration-owner-audit.jsonl'
                 checked={'writes':0,'writers':1,'source':{'release_sequence':source_sequence,'package_sha256':fixture.sha(source/'release.tar.gz')},

@@ -43,6 +43,10 @@ func TestEnterpriseFinanceRoutesSeparateReadAndWriteAuthority(t *testing.T) {
 		"/api/v1/enterprise-finance/budgets",
 		"/api/v1/enterprise-finance/budget-positions",
 		"/api/v1/enterprise-finance/rate-cards",
+		"/api/v1/enterprise-finance/customer-price-tables/review/1",
+		"/api/v1/enterprise-finance/customer-price-bindings",
+		"/api/v1/enterprise-finance/customer-charge-quotes/request-1",
+		"/api/v1/enterprise-finance/customer-charge-quote-overruns",
 		"/api/v1/enterprise-finance/pricing-snapshots/request-1",
 		"/api/v1/enterprise-finance/allocation-runs?period_ref=FY26-P08",
 		"/api/v1/enterprise-finance/allocation-runs/ALLOC-1",
@@ -57,6 +61,8 @@ func TestEnterpriseFinanceRoutesSeparateReadAndWriteAuthority(t *testing.T) {
 			require.Equal(t, http.StatusForbidden, serve(http.MethodGet, path, "", role).Code, path+" "+role)
 		}
 	}
+	require.Equal(t, http.StatusForbidden, serve(http.MethodGet,
+		"/api/v1/enterprise-finance/customer-charge-quote-overruns?org_id=12", "", auth.RoleOrgAdmin).Code)
 
 	writeTargets := []string{
 		"/api/v1/enterprise-finance/fiscal-periods",
@@ -70,6 +76,9 @@ func TestEnterpriseFinanceRoutesSeparateReadAndWriteAuthority(t *testing.T) {
 		"/api/v1/enterprise-finance/rate-cards/preflight",
 		"/api/v1/enterprise-finance/rate-cards/RATE-1/approve",
 		"/api/v1/enterprise-finance/rate-cards/RATE-1/activate",
+		"/api/v1/enterprise-finance/customer-price-tables",
+		"/api/v1/enterprise-finance/customer-price-tables/review/1/approve",
+		"/api/v1/enterprise-finance/customer-price-bindings",
 		"/api/v1/enterprise-finance/allocation-runs",
 		"/api/v1/enterprise-finance/adjustment-journals",
 		"/api/v1/enterprise-finance/adjustment-journals/ADJ-1/approve",

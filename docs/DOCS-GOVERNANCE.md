@@ -18,7 +18,6 @@
 | Engineering governance | `docs/governance/README.md` | Minimum ADR, API compatibility, migration/rollback, release, incident, and deprecation rules |
 | Active issues | `docs/issues/OPEN-ISSUES.md` | Only active unresolved issues and recently closed items |
 | Agent protocol | `docs/agent-workflows/AGENT-PROTOCOL.md` | Single execution owner, approval and evidence; mandatory review triggers remain in root AGENTS.md |
-| Current execution record | `docs/agent-workflows/EXECUTION-RECORD.md` | Maintained by the execution owner for the active batch |
 | Independent reviews | `docs/agent-workflows/reviews/` | Exact-object review results; verified/adjudicated current blockers affect the relevant promotion, not unrelated scope |
 | Legacy workflow files | `docs/agent-workflows/FIX-SIGNAL.md`, `docs/agent-workflows/VERIFY-RESULT.md` | v1.x compatibility entry and most recent historical verification result; not current serial gates |
 | Runtime evidence | `docs/ops/evidence/` | Deployment, recovery, and runtime drill reports cited by current status or acceptance matrices |
@@ -43,7 +42,11 @@
 1. Do not make archive files the current status source.
 2. Do not duplicate active bug status in multiple places.
 3. Do not reuse issue IDs.
-4. Do not hard-code "latest" dates unless they are verified in the current pass.
+4. Link navigation from the reader’s task to the authority. Use `VERSION` and
+   `internal/schemaauthority/version.go` for source identities, the release record
+   for signed package identities and dated evidence for deployment results.
+   Check relative paths and section links in the edited document. Personal
+   checkout paths belong only in historical records tied to that environment.
 5. Every `E2E accepted` or `Production verified` claim needs command/manual path, environment, expected result, actual result, and timestamp or commit/worktree reference.
 6. Execution uses R0–R3 in `docs/agent-workflows/AGENT-PROTOCOL.md`. Maintain `EXECUTION-RECORD.md` when a task is long-running, crosses an external lifecycle or needs recovery; add evidence at applicable material risk boundaries. Root `AGENTS.md` defines mandatory pre-code independent reviews; other reviews are optional. Verified/adjudicated current blockers affect the relevant action; post-release fixes preserve historical evidence and do not silently reopen completed PRD scope.
 7. Documentation-only changes use proportionate checks. Changes to status, issues, acceptance, phase boundaries, reader entrypoints or process rules must reconcile the affected sources; spelling and ordinary wording do not require a full engineering workflow.

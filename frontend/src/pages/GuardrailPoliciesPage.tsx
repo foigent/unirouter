@@ -1,15 +1,16 @@
 import '../i18n/security';
 import { translate as t, useI18n, labelFor, translateLabel } from '../i18n';
 import { useEffect, useState } from 'react';
-import { Banner, Button, Form, Modal, SideSheet, Space, Table, Tag, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
+import { Banner, Button, Form, Modal, SideSheet, Space, Tag, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconEdit, IconPlus } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { modelEndpointApi } from '../api/modelEndpoints';
 import { isBillingRole, isOrgAdminRole, isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
-import { EmptyState, PageHeader, Surface } from '../ui';
+import { EmptyState, PagedTable, PageHeader, Surface } from '../ui';
 import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { loadAllPages } from '../utils/loadAllPages';
+import { useServerPage } from '../utils/pagination';
 import { projectDisplayName } from '../utils/projectDisplay';
 
 const { Text, Paragraph } = Typography;
@@ -86,6 +87,19 @@ const stageLabels: Record<GuardrailPolicy['stage'], string> = {
   stream_output: '流式输出',
 };
 
+interface GuardrailPolicyPage {
+  data?: GuardrailPolicy[];
+  total?: number;
+  approved_detectors?: string[];
+  stream_detector_capabilities?: Record<string, StreamDetectorCapability>;
+  stream_enforce_buffer_max_bytes?: number;
+  stream_enforce_buffer_max_wait_ms?: number;
+  stream_checkpoint_interval_ms?: number;
+  local_detector_max_bytes?: number;
+  external_detector_max_bytes?: number;
+  detector_max_texts?: number;
+}
+
 export default function GuardrailPoliciesPage() {
   useI18n();
   const user = useAuthStore((state) => state.user);
@@ -95,25 +109,26 @@ export default function GuardrailPoliciesPage() {
   const customerContextReady = customerContext.state === 'ready' && Boolean(customerOrgID);
   const canManage = isOrgAdminRole(organizationRole) && !isBillingRole(organizationRole);
   const platform = isPlatformAdminRole(organizationRole);
-  const [policies, setPolicies] = useState<GuardrailPolicy[]>([]);
+  const policyPage = useServerPage<GuardrailPolicyPage>(
+    api.getGuardrailPolicies,
+    customerContextReady && customerOrgID ? customerOrgID : null,
+  );
+  const policies = policyPage.data?.data ?? [];
+  const settings = policyPage.latestData;
   const [keys, setKeys] = useState<KeyOption[]>([]);
   const [models, setModels] = useState<string[]>([]);
   const [projects, setProjects] = useState<Array<{ value: number; label: string }>>([]);
-  const [detectors, setDetectors] = useState<string[]>(['builtin:sensitive_words', 'builtin:pii_secrets']);
-  const [streamCapabilities, setStreamCapabilities] = useState<Record<string, StreamDetectorCapability>>({
+  const detectors = settings?.approved_detectors || ['builtin:sensitive_words', 'builtin:pii_secrets'];
+  const streamCapabilities: Record<string, StreamDetectorCapability> = settings?.stream_detector_capabilities || {
     'builtin:sensitive_words': { synchronous: true, lookbehind_bytes: 4 * 1024 },
     'builtin:pii_secrets': { synchronous: true, lookbehind_bytes: 512 },
-  });
-  const [streamBufferMaxBytes, setStreamBufferMaxBytes] = useState(4 * 1024);
-  const [streamBufferMaxWaitMs, setStreamBufferMaxWaitMs] = useState(200);
-  const [streamCheckpointIntervalMs, setStreamCheckpointIntervalMs] = useState(1000);
-  const [localDetectorMaxBytes, setLocalDetectorMaxBytes] = useState(128 * 1024);
-  const [externalDetectorMaxBytes, setExternalDetectorMaxBytes] = useState(256 * 1024);
-  const [detectorMaxTexts, setDetectorMaxTexts] = useState(256);
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
-  const [total, setTotal] = useState(0);
+  };
+  const streamBufferMaxBytes = settings?.stream_enforce_buffer_max_bytes || 4 * 1024;
+  const streamBufferMaxWaitMs = settings?.stream_enforce_buffer_max_wait_ms || 200;
+  const streamCheckpointIntervalMs = settings?.stream_checkpoint_interval_ms || 1000;
+  const localDetectorMaxBytes = settings?.local_detector_max_bytes || 128 * 1024;
+  const externalDetectorMaxBytes = settings?.external_detector_max_bytes || 256 * 1024;
+  const detectorMaxTexts = settings?.detector_max_texts || 256;
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [editing, setEditing] = useState<GuardrailPolicy | null>(null);
   const [policyScope, setPolicyScope] = useState<'customer' | 'deployment_global'>('customer');
@@ -124,32 +139,6 @@ export default function GuardrailPoliciesPage() {
   const [sensitiveWordsSaving, setSensitiveWordsSaving] = useState(false);
   const [sensitiveWordsError, setSensitiveWordsError] = useState('');
 
-  const load = (nextPage = page, nextSize = pageSize) => {
-    if (!customerContextReady) return;
-    setLoading(true);
-    api.getGuardrailPolicies(nextPage, nextSize)
-      .then((data: any) => {
-        setPolicies(data?.data || []);
-        setTotal(data?.total || 0);
-        setDetectors(data?.approved_detectors || ['builtin:sensitive_words', 'builtin:pii_secrets']);
-        setStreamCapabilities(data?.stream_detector_capabilities || {
-          'builtin:sensitive_words': { synchronous: true, lookbehind_bytes: 4 * 1024 },
-          'builtin:pii_secrets': { synchronous: true, lookbehind_bytes: 512 },
-        });
-        setStreamBufferMaxBytes(data?.stream_enforce_buffer_max_bytes || 4 * 1024);
-        setStreamBufferMaxWaitMs(data?.stream_enforce_buffer_max_wait_ms || 200);
-        setStreamCheckpointIntervalMs(data?.stream_checkpoint_interval_ms || 1000);
-        setLocalDetectorMaxBytes(data?.local_detector_max_bytes || 128 * 1024);
-        setExternalDetectorMaxBytes(data?.external_detector_max_bytes || 256 * 1024);
-        setDetectorMaxTexts(data?.detector_max_texts || 256);
-      })
-      .catch((err: any) => Toast.error(err?.message || t("安全策略加载失败")))
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    if (customerContextReady) load(1, pageSize);
-  }, [customerContextReady, customerOrgID]);
   const loadSensitiveWords = async () => {
     setSensitiveWordsLoading(true);
     setSensitiveWordsLoaded(false);
@@ -261,7 +250,7 @@ export default function GuardrailPoliciesPage() {
       if (result?.runtime_snapshot_applied === false) Toast.warning(t("策略已保存，运行副本将在下一次刷新时收敛"));
       else Toast.success(editing ? t("安全策略已更新并生成新版本") : t("安全策略已创建"));
       closeDrawer();
-      load();
+      policyPage.reload();
     } catch (err: any) {
       Toast.error(err?.message || t("安全策略保存失败"));
     }
@@ -331,13 +320,19 @@ export default function GuardrailPoliciesPage() {
       />
 
       <Surface title={t("安全策略")} description={t("策略列表是权威管理入口；先确认当前范围、检查阶段和执行模式，再新增或编辑。")}>
-        <div className="ur-table-shell">
-          <Table rowKey="id" columns={columns} dataSource={policies} loading={loading} pagination={{
-            currentPage: page, pageSize, total, pageSizeOpts: [20, 50, 100], showSizeChanger: true,
-            onPageChange: (next: number) => { setPage(next); load(next, pageSize); },
-            onPageSizeChange: (next: number) => { setPageSize(next); setPage(1); load(1, next); },
-          }} />
-        </div>
+        <PagedTable
+          rowKey="id"
+          columns={columns}
+          dataSource={policies}
+          loading={policyPage.loading}
+          total={policyPage.failed ? 0 : policyPage.latestData?.total ?? 0}
+          page={policyPage.page}
+          pageSize={policyPage.pageSize}
+          showSizeChanger
+          onPageChange={policyPage.onPageChange}
+          onPageSizeChange={policyPage.onPageSizeChange}
+          loadError={policyPage.failed ? { title: t("安全策略加载失败"), retry: policyPage.reload } : undefined}
+        />
       </Surface>
 
       {platform ? (
@@ -416,27 +411,27 @@ export default function GuardrailPoliciesPage() {
                 }
               }}
               rules={[{ required: true }]}
-              style={{ width: '100%' }}
+              className="ur-form-control-full-width"
             />
           ) : <Text type="tertiary">{t("客户范围：")}{customerContext.orgName || t('组织 #{id}', {id: customerOrgID || '-'})}</Text>}
-          <Form.Select field="project_id" label={<span id="guardrail-policy-project-label">{t("仅保护某个项目（可选）")}</span>} aria-labelledby="guardrail-policy-project-label" optionList={projects} showClear filter disabled={policyScope === 'deployment_global'} style={{ width: '100%' }} extraText={t("留空表示作用于所选客户范围中的全部项目。")} />
-          <Form.Select field="model" label={<span id="guardrail-policy-model-label">{t("模型（可选）")}</span>} aria-labelledby="guardrail-policy-model-label" optionList={models.map((model) => ({ value: model, label: model }))} showClear filter style={{ width: '100%' }} />
+          <Form.Select field="project_id" label={<span id="guardrail-policy-project-label">{t("仅保护某个项目（可选）")}</span>} aria-labelledby="guardrail-policy-project-label" optionList={projects} showClear filter disabled={policyScope === 'deployment_global'} className="ur-form-control-full-width" extraText={t("留空表示作用于所选客户范围中的全部项目。")} />
+          <Form.Select field="model" label={<span id="guardrail-policy-model-label">{t("模型（可选）")}</span>} aria-labelledby="guardrail-policy-model-label" optionList={models.map((model) => ({ value: model, label: model }))} showClear filter className="ur-form-control-full-width" />
           <Form.Select field="detector_ref" label={<span id="guardrail-policy-detector-label">{t("检测内容")}</span>} aria-labelledby="guardrail-policy-detector-label" optionList={detectors.map((value) => ({
             value,
             label: `${labelFor(detectorLabels, value)}${streamCapabilities[value]?.synchronous ? '' : t("（流式仅影子/审计）")}`,
-          }))} rules={[{ required: true }]} style={{ width: '100%' }} extraText={t("默认在 UniRouter 本地检测，不会把正文发送到外部服务。")} />
+          }))} rules={[{ required: true }]} className="ur-form-control-full-width" extraText={t("默认在 UniRouter 本地检测，不会把正文发送到外部服务。")} />
           <Form.Select field="entities" label={<span id="guardrail-policy-entities-label">{t("要识别的敏感数据")}</span>} aria-labelledby="guardrail-policy-entities-label" multiple optionList={[
             { value: 'email', label: t("邮箱") }, { value: 'phone', label: t("电话号码") },
             { value: 'credit_card', label: t("银行卡号（含校验）") }, { value: 'secret', label: 'API Key / Token / Secret' },
-          ]} style={{ width: '100%' }} />
-          <Form.Select field="action" label={<span id="guardrail-policy-action-label">{t("命中后动作")}</span>} aria-labelledby="guardrail-policy-action-label" optionList={[{ value: 'audit', label: t("只审计，不改变内容") }, { value: 'redact', label: t("脱敏后继续（仅支持可定位的 PII）") }, { value: 'block', label: t("阻断，不交付内容") }]} rules={[{ required: true }]} style={{ width: '100%' }} />
-          <Form.Select field="mode" label={<span id="guardrail-policy-mode-label">{t("如何开始")}</span>} aria-labelledby="guardrail-policy-mode-label" optionList={[{ value: 'shadow', label: t("先影子观察，不改变请求（推荐）") }, { value: 'enforce', label: t("立即正式执行") }, { value: 'disabled', label: t("保存但暂不运行") }]} rules={[{ required: true }]} style={{ width: '100%' }} />
+          ]} className="ur-form-control-full-width" />
+          <Form.Select field="action" label={<span id="guardrail-policy-action-label">{t("命中后动作")}</span>} aria-labelledby="guardrail-policy-action-label" optionList={[{ value: 'audit', label: t("只审计，不改变内容") }, { value: 'redact', label: t("脱敏后继续（仅支持可定位的 PII）") }, { value: 'block', label: t("阻断，不交付内容") }]} rules={[{ required: true }]} className="ur-form-control-full-width" />
+          <Form.Select field="mode" label={<span id="guardrail-policy-mode-label">{t("如何开始")}</span>} aria-labelledby="guardrail-policy-mode-label" optionList={[{ value: 'shadow', label: t("先影子观察，不改变请求（推荐）") }, { value: 'enforce', label: t("立即正式执行") }, { value: 'disabled', label: t("保存但暂不运行") }]} rules={[{ required: true }]} className="ur-form-control-full-width" />
           <details className="ur-form-advanced">
             <summary>{t("高级设置（检查阶段、单个凭证和故障规则）")}</summary>
             <div style={{ marginTop: 12 }}>
-              <Form.Select field="api_key_id" label={<span id="guardrail-policy-key-label">{t("仅保护某个访问凭证（可选）")}</span>} aria-labelledby="guardrail-policy-key-label" optionList={keys.map((key) => ({ value: key.id, label: `${key.name} · ${projectDisplayName({ id: key.project_id || 0, name: key.project_name || '' })} · ${key.key_prefix}***` }))} showClear filter disabled={policyScope === 'deployment_global'} style={{ width: '100%' }} />
-              <Form.Select field="stage" label={<span id="guardrail-policy-stage-label">{t("检查阶段")}</span>} aria-labelledby="guardrail-policy-stage-label" optionList={[{ value: 'input', label: t("请求输入（发往上游前）") }, { value: 'nonstream_output', label: t("非流式输出（完整结果交付前）") }, { value: 'stream_output', label: t("流式输出（每个模型数据帧写出前）") }]} rules={[{ required: true }]} style={{ width: '100%' }} />
-              <Form.Select field="failure_mode" label={<span id="guardrail-policy-failure-label">{t("检测器不可用时")}</span>} aria-labelledby="guardrail-policy-failure-label" optionList={[{ value: 'degraded_allow', label: t("记录降级后继续（适合普通审计）") }, { value: 'fail_closed', label: t("安全拒绝（适合强制规则）") }]} rules={[{ required: true }]} style={{ width: '100%' }} />
+              <Form.Select field="api_key_id" label={<span id="guardrail-policy-key-label">{t("仅保护某个访问凭证（可选）")}</span>} aria-labelledby="guardrail-policy-key-label" optionList={keys.map((key) => ({ value: key.id, label: `${key.name} · ${projectDisplayName({ id: key.project_id || 0, name: key.project_name || '' })} · ${key.key_prefix}***` }))} showClear filter disabled={policyScope === 'deployment_global'} className="ur-form-control-full-width" />
+              <Form.Select field="stage" label={<span id="guardrail-policy-stage-label">{t("检查阶段")}</span>} aria-labelledby="guardrail-policy-stage-label" optionList={[{ value: 'input', label: t("请求输入（发往上游前）") }, { value: 'nonstream_output', label: t("非流式输出（完整结果交付前）") }, { value: 'stream_output', label: t("流式输出（每个模型数据帧写出前）") }]} rules={[{ required: true }]} className="ur-form-control-full-width" />
+              <Form.Select field="failure_mode" label={<span id="guardrail-policy-failure-label">{t("检测器不可用时")}</span>} aria-labelledby="guardrail-policy-failure-label" optionList={[{ value: 'degraded_allow', label: t("记录降级后继续（适合普通审计）") }, { value: 'fail_closed', label: t("安全拒绝（适合强制规则）") }]} rules={[{ required: true }]} className="ur-form-control-full-width" />
               {platform ? <Form.Select field="mandatory" label={<span id="guardrail-policy-mandatory-label">{t("是否为部署强制规则")}</span>} aria-labelledby="guardrail-policy-mandatory-label" optionList={[{ value: 'no', label: t("否") }, { value: 'yes', label: t("是（自动设为部署全局、正式执行、安全拒绝）") }]} onChange={(value: any) => {
                 if (value === 'yes') {
                   setPolicyScope('deployment_global');
@@ -444,7 +439,7 @@ export default function GuardrailPoliciesPage() {
                   formApi?.setValue('project_id', undefined);
                   formApi?.setValue('api_key_id', undefined);
                 }
-              }} rules={[{ required: true }]} style={{ width: '100%' }} /> : null}
+              }} rules={[{ required: true }]} className="ur-form-control-full-width" /> : null}
             </div>
           </details>
           <Space style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24 }}>

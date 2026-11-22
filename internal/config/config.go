@@ -452,6 +452,9 @@ func (c *Config) Validate() error {
 	if err := billing.ValidateRequestPricingAuthority(requestPricingAuthority); err != nil {
 		return fmt.Errorf("REQUEST_PRICING_AUTHORITY: %w", err)
 	}
+	if requestPricingAuthority == billing.RequestPricingAuthorityCustomerStandard && modelRouteAuthority != modelrouting.ModeCanonical {
+		return fmt.Errorf("REQUEST_PRICING_AUTHORITY=customer_standard_v1 requires canonical model routing")
+	}
 	if c.MinFreezeCents < 0 {
 		return fmt.Errorf("MIN_FREEZE_AMOUNT must be >= 0 cents")
 	}
@@ -1049,17 +1052,7 @@ func (c Config) LicenseRefreshInterval() time.Duration {
 }
 
 func splitCSV(value string) []string {
-	parts := strings.Split(value, ",")
-	out := make([]string, 0, len(parts))
-	seen := map[string]bool{}
-	for _, part := range parts {
-		item := strings.TrimSpace(part)
-		if item == "" || seen[item] {
-			continue
-		}
-		seen[item] = true
-		out = append(out, item)
-	}
+	out := splitCSVAllowEmpty(value)
 	if len(out) == 0 {
 		return []string{"openid", "email", "profile"}
 	}

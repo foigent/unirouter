@@ -7,6 +7,11 @@ const packageVersion = JSON.parse(
   readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
 ).version as string
 
+const developmentApiProxy = {
+  target: 'http://localhost:8080',
+  changeOrigin: true,
+}
+
 /// <reference types="vitest" />
 export default defineConfig({
   plugins: [react()],
@@ -26,18 +31,9 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
-      '/v1': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-      '/api': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-      '/health': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
+      '/v1': developmentApiProxy,
+      '/api': developmentApiProxy,
+      '/health': developmentApiProxy,
     },
   },
 })

@@ -55,11 +55,13 @@ func TestUpstreamObservationM127MaintenanceAndEmptyDownIntegration(t *testing.T)
 func TestUpstreamObservationCorrectedFreshSchemaIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := t.Context()
-	var head string
-	require.NoError(t, pool.QueryRow(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&head))
-	require.Equal(t, schemaauthority.UpgradeAdmissionRecoveryHead, head)
+	expected, err := schemaauthority.ExpectedLedger(testutil.MigrationsDir(t))
+	require.NoError(t, err)
+	var actual []string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT array_agg(version ORDER BY version) FROM schema_migrations`).Scan(&actual))
+	require.NoError(t, schemaauthority.VerifyLedger(expected, actual))
 	require.NoError(t, upstreamrelease.CheckNamespace(ctx, pool))
-	_, err := runtimegeneration.ReadBudgetCoverage(ctx, pool)
+	_, err = runtimegeneration.ReadBudgetCoverage(ctx, pool)
 	require.NoError(t, err)
 	var valid bool
 	for _, wire := range []string{`{}`, `[]`, `null`, `{"schema_version":3}`, `{"identity":"uor_x"}`} {

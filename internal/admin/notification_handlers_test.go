@@ -5,14 +5,17 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/testutil"
@@ -447,6 +450,188 @@ func TestUpdateNotificationWebhookLocksAndAuditsInTransaction(t *testing.T) {
 	if rec.Code != http.StatusOK || !locked || !updated || !audited || !committed {
 		t.Fatalf("expected locked atomic cross-org update: code=%d body=%s locked=%v updated=%v audited=%v committed=%v", rec.Code, rec.Body.String(), locked, updated, audited, committed)
 	}
+}
+
+func TestNotificationWebhookMutationEarlyExitDoesNotWrite(t *testing.T) {
+	const (
+		webhookID   int64 = 7
+		orgID       int64 = 3
+		projectID   int64 = 9
+		actorID     int64 = 5
+		readSession       = "read live session"
+		readProject       = "reauthorize project"
+		readLocked        = "read locked webhook"
+	)
+	type outcome struct {
+		failAt   string
+		readErr  error
+		status   int
+		response string
+	}
+
+	lockedUpdatedAt := time.Date(2026, time.July, 16, 0, 1, 0, 0, time.UTC)
+	preflightUpdatedAt := lockedUpdatedAt.Add(-time.Minute)
+	webhookRow := func(updatedAt time.Time) pgx.Row {
+		return &testutil.MockRow{ScanFn: func(dest ...any) error {
+			*dest[0].(*int64) = orgID
+			*dest[1].(*int64) = projectID
+			*dest[2].(*string) = "Ops webhook"
+			*dest[3].(*string) = "https://example.test/hook"
+			*dest[4].(*json.RawMessage) = json.RawMessage(`["ops.alert"]`)
+			*dest[5].(*bool) = true
+			*dest[6].(*bool) = true
+			*dest[7].(*sql.NullBool) = sql.NullBool{}
+			*dest[8].(*time.Time) = updatedAt
+			return nil
+		}}
+	}
+
+	run := func(t *testing.T, req *http.Request, invoke func(*Handler, http.ResponseWriter, *http.Request), want outcome) {
+		t.Helper()
+		var steps []string
+		read := func(step string, row pgx.Row) pgx.Row {
+			steps = append(steps, step)
+			if step == want.failAt {
+				return &testutil.MockRow{ScanFn: func(...any) error { return want.readErr }}
+			}
+			return row
+		}
+		rejectQuery := func(_ context.Context, query string, _ ...any) (pgx.Rows, error) {
+			t.Fatalf("unexpected query on a no-write path: %s", query)
+			return nil, nil
+		}
+		tx := &testutil.MockTx{
+			QueryRowFn: func(_ context.Context, query string, args ...any) pgx.Row {
+				require.True(t, strings.HasPrefix(strings.TrimSpace(query), "SELECT "), "unexpected transaction statement: %s", query)
+				var step string
+				switch {
+				case strings.Contains(query, "FROM notification_webhooks"):
+					require.Contains(t, query, "FOR UPDATE OF webhook")
+					require.Contains(t, query, "webhook.org_id = $2")
+					require.Equal(t, []any{webhookID, orgID}, args)
+					return read(readLocked, webhookRow(lockedUpdatedAt))
+				case strings.Contains(query, "FROM users u"):
+					step = "read live actor"
+				case strings.Contains(query, "FROM admin_sessions"):
+					step = readSession
+				case strings.Contains(query, "FROM projects p"):
+					step = readProject
+				default:
+					t.Fatalf("unexpected transaction query: %s", query)
+				}
+				row, ok := notificationCommittingActorRow(query, orgID, auth.RoleOrgAdmin, auth.RoleOrgAdmin, orgID)
+				require.True(t, ok, "missing authorization fixture for %s", step)
+				return read(step, row)
+			},
+			QueryFn: rejectQuery,
+			ExecFn: func(_ context.Context, query string, _ ...any) (pgconn.CommandTag, error) {
+				require.Equal(t, "SELECT pg_advisory_xact_lock($1)", strings.TrimSpace(query), "only the actor lock may use Exec")
+				steps = append(steps, "lock actor")
+				return pgconn.NewCommandTag("SELECT 1"), nil
+			},
+			CommitFn: func(context.Context) error {
+				t.Fatal("a webhook early exit must not commit")
+				return nil
+			},
+			RollbackFn: func(context.Context) error {
+				steps = append(steps, "rollback")
+				return nil
+			},
+		}
+		db := &testutil.MockDB{
+			QueryRowFn: func(_ context.Context, query string, args ...any) pgx.Row {
+				require.True(t, strings.HasPrefix(strings.TrimSpace(query), "SELECT "), "unexpected non-transactional statement: %s", query)
+				switch {
+				case strings.Contains(query, "FROM notification_webhooks"):
+					require.NotContains(t, query, "FOR UPDATE")
+					require.Contains(t, query, "webhook.org_id = $2")
+					require.Equal(t, []any{webhookID, orgID}, args)
+					return read("preflight", webhookRow(preflightUpdatedAt))
+				case strings.Contains(query, "COUNT(*) FROM projects"):
+					require.Equal(t, []any{projectID, orgID}, args)
+					return read("check locked webhook scope", &testutil.MockRow{ScanFn: func(dest ...any) error {
+						*dest[0].(*int) = 1
+						return nil
+					}})
+				default:
+					t.Fatalf("unexpected non-transactional query: %s", query)
+					return nil
+				}
+			},
+			QueryFn: rejectQuery,
+			ExecFn: func(_ context.Context, query string, _ ...any) (pgconn.CommandTag, error) {
+				t.Fatalf("unexpected non-transactional execution: %s", query)
+				return pgconn.CommandTag{}, nil
+			},
+			BeginFn: func(context.Context) (pgx.Tx, error) {
+				steps = append(steps, "begin")
+				return tx, nil
+			},
+		}
+		req.SetPathValue("id", "7")
+		req = withNotificationCommittingActor(req, actorID, orgID, auth.RoleOrgAdmin, auth.RoleOrgAdmin)
+		rec := httptest.NewRecorder()
+		invoke(newTestHandler(db), rec, req)
+
+		wantSteps := []string{"preflight", "begin", "lock actor", "read live actor", readSession, readProject, readLocked, "check locked webhook scope"}
+		if want.failAt != "" {
+			stop := slices.Index(wantSteps, want.failAt)
+			require.NotEqual(t, -1, stop, "unknown failure step %s", want.failAt)
+			wantSteps = wantSteps[:stop+1]
+		}
+		require.Equal(t, append(wantSteps, "rollback"), steps)
+		require.Equal(t, want.status, rec.Code, rec.Body.String())
+		require.JSONEq(t, want.response, rec.Body.String())
+	}
+
+	verifyRequest := func(expectedUpdatedAt time.Time) *http.Request {
+		body := fmt.Sprintf(`{"expected_updated_at":%q}`, expectedUpdatedAt.Format(time.RFC3339Nano))
+		return httptest.NewRequest(http.MethodPost, "/notification-webhooks/7/verify-scope", strings.NewReader(body))
+	}
+	for _, endpoint := range []struct {
+		name    string
+		request func() *http.Request
+		invoke  func(*Handler, http.ResponseWriter, *http.Request)
+	}{
+		{"update", func() *http.Request {
+			return httptest.NewRequest(http.MethodPut, "/notification-webhooks/7", strings.NewReader(`{"name":"Updated name"}`))
+		}, (*Handler).UpdateNotificationWebhook},
+		{"verify_scope", func() *http.Request {
+			return verifyRequest(lockedUpdatedAt)
+		}, (*Handler).VerifyNotificationWebhookScope},
+	} {
+		t.Run(endpoint.name, func(t *testing.T) {
+			dbErr := errors.New("database read failed")
+			for _, tc := range []struct {
+				name string
+				want outcome
+			}{
+				{"authorization_revoked", outcome{readSession, pgx.ErrNoRows, http.StatusForbidden, `{"error":"Forbidden"}`}},
+				{"authorization_scope_missing", outcome{readProject, pgx.ErrNoRows, http.StatusNotFound, `{"error":"Webhook not found"}`}},
+				{"authorization_read_error", outcome{readProject, dbErr, http.StatusInternalServerError, `{"error":"Webhook authorization failed"}`}},
+				{"locked_webhook_missing", outcome{readLocked, pgx.ErrNoRows, http.StatusNotFound, `{"error":"Webhook not found"}`}},
+				{"locked_lookup_error", outcome{readLocked, dbErr, http.StatusInternalServerError, `{"error":"Query failed"}`}},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					run(t, endpoint.request(), endpoint.invoke, tc.want)
+				})
+			}
+		})
+	}
+
+	t.Run("already_verified_with_stale_timestamp", func(t *testing.T) {
+		// The supplied timestamp matches the preflight row, but the locked row has since changed.
+		run(t, verifyRequest(preflightUpdatedAt), (*Handler).VerifyNotificationWebhookScope, outcome{
+			status:   http.StatusConflict,
+			response: `{"error":"Webhook changed; reload before verification"}`,
+		})
+	})
+	t.Run("already_verified_with_matching_timestamp", func(t *testing.T) {
+		run(t, verifyRequest(lockedUpdatedAt), (*Handler).VerifyNotificationWebhookScope, outcome{
+			status:   http.StatusOK,
+			response: `{"message":"Webhook scope already verified","scope_verified":true}`,
+		})
+	})
 }
 
 func TestBillingAdminCannotAccessNotificationWebhookHandlers(t *testing.T) {

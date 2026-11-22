@@ -142,7 +142,7 @@ VALUES($1,decode(repeat('81',32),'hex'),now()-interval '2 hours',now()-interval 
 	require.NoError(t, err)
 	beforeMigration := normalSetupOriginalTables(t, f)
 	require.NoError(t, migrate.RunExisting(t.Context(), f.pool, testutil.MigrationsDir(t)))
-	require.Equal(t, beforeMigration, normalSetupOriginalTables(t, f), "M127 protected rows survive the real M128 migration")
+	requireNormalSetupRowsPreservedAcrossCurrentUpgrade(t, f, beforeMigration)
 	ledger, err := schemaauthority.ExpectedLedger(testutil.MigrationsDir(t))
 	require.NoError(t, err)
 	id := runtimegeneration.Identity{Instance: "uri_" + strings.Repeat("8", 32), Artifact: "sha256:" + strings.Repeat("8", 64)}
@@ -367,8 +367,8 @@ func normalSetupRow(t *testing.T, f normalSetupFixture) (string, string) {
 	return row, revision
 }
 
-// Every committed original row stays in this comparison. Only the known M128
-// suffix rows and known observation columns are projected away, as in the shipped upgrade owner.
+// Every committed original row stays in this comparison. The known migration
+// suffix and observation columns are projected away for the retained M127 fixture.
 func normalSetupOriginalTables(t *testing.T, f normalSetupFixture) map[string]string {
 	t.Helper()
 	var names []string
@@ -380,7 +380,12 @@ func normalSetupOriginalTables(t *testing.T, f normalSetupFixture) map[string]st
 			expr += "-'upstream_release_observation'-'upstream_observation_revision'"
 		}
 		if name == "schema_migrations" {
-			where = " WHERE version NOT IN ('" + schemaauthority.UpstreamReleaseObservationHead + "','" + schemaauthority.UpstreamObservationRestoreHead + "','" + schemaauthority.UpgradeAdmissionRecoveryHead + "')"
+			where = " WHERE version NOT IN ('" + strings.Join([]string{
+				schemaauthority.UpstreamReleaseObservationHead,
+				schemaauthority.UpstreamObservationRestoreHead,
+				schemaauthority.UpgradeAdmissionRecoveryHead,
+				schemaauthority.CustomerStandardPricingHead,
+			}, "','") + "')"
 		}
 		var raw string
 		require.NoError(t, f.pool.QueryRow(t.Context(), `SELECT COALESCE(jsonb_agg(`+expr+` ORDER BY (`+expr+`)::text),'[]')::text FROM `+pgx.Identifier{name}.Sanitize()+` t`+where).Scan(&raw))
@@ -388,6 +393,18 @@ func normalSetupOriginalTables(t *testing.T, f normalSetupFixture) map[string]st
 		result[name] = hex.EncodeToString(hash[:])
 	}
 	return result
+}
+
+func requireNormalSetupRowsPreservedAcrossCurrentUpgrade(t *testing.T, f normalSetupFixture, before map[string]string) {
+	t.Helper()
+	after := normalSetupOriginalTables(t, f)
+	empty := fmt.Sprintf("%x", sha256.Sum256([]byte("[]")))
+	for _, table := range []string{"customer_price_table_versions", "customer_price_binding_versions", "customer_charge_quote_receipts"} {
+		require.NotContains(t, before, table)
+		require.Equal(t, empty, after[table], "M131 must add an empty pricing evidence table: %s", table)
+		delete(after, table)
+	}
+	require.Equal(t, before, after, "protected M127 rows must survive the full upgrade")
 }
 
 func TestXInsightNormalSetupPairedReconciliationPreservesM127AndM128RowsIntegration(t *testing.T) {
@@ -475,7 +492,7 @@ func TestXInsightNormalSetupRecoveryOracleActualPairedM128Integration(t *testing
 		require.NotEqual(t, string(original.Row["updated_at"]), string(current.Row["updated_at"]))
 	} else {
 		require.Equal(t, string(original.Row["updated_at"]), string(current.Row["updated_at"]))
-		require.Equal(t, before, normalSetupOriginalTables(t, f))
+		requireNormalSetupRowsPreservedAcrossCurrentUpgrade(t, f, before)
 	}
 	plan := map[string]any{
 		"allowed_row": map[string]any{

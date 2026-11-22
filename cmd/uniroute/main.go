@@ -921,7 +921,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">GET</td><td><code>/v1/models</code></td><td>OpenAI-compatible model list</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/chat/completions</code></td><td>OpenAI-compatible chat completions</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/embeddings</code></td><td>OpenAI-compatible embeddings</td></tr>
-<tr><td class="method">POST</td><td><code>/v1/responses</code></td><td>Strict OpenAI Responses non-stream text subset; Bearer auth, metadata-only at-most-once idempotency, cache bypass</td></tr>
+<tr><td class="method">POST</td><td><code>/v1/responses</code></td><td>Strict OpenAI Responses text subset with SSE on qualified execution profiles, Bearer auth, metadata-only at-most-once idempotency and cache bypass</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/messages</code></td><td>Strict Anthropic Messages non-stream text subset; x-api-key plus anthropic-version 2023-06-01, metadata-only at-most-once idempotency, cache bypass</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/media/jobs</code></td><td>Submit one asynchronous GPT Image V1 job using a project root API key</td></tr>
 <tr><td class="method">GET</td><td><code>/v1/media/jobs/{id}</code></td><td>Read tenant-scoped image job metadata</td></tr>

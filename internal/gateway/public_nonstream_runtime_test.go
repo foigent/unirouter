@@ -1,16 +1,21 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
 	"github.com/uniroute/unirouter/internal/executionevidence"
@@ -20,6 +25,7 @@ import (
 	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelqualification"
 	"github.com/uniroute/unirouter/internal/modelrouting"
+	"github.com/uniroute/unirouter/internal/policybilling"
 )
 
 type publicRuntimePlanner struct {
@@ -68,6 +74,7 @@ func (planner *publicRuntimePlanner) Plan(_ context.Context, request modelroutin
 type publicRuntimeCoordinator struct {
 	events       *[]string
 	authorize    []modelexecution.Status
+	authorizeErr error
 	attemptIDs   []string
 	healthStatus modelexecution.Status
 	healthErr    error
@@ -90,7 +97,7 @@ func (coordinator *publicRuntimeCoordinator) AuthorizePublic(
 		ProviderAttemptKey: modelexecution.ProviderAttemptKey{
 			OrgID: identity.OrgID, RequestID: identity.RequestID, AttemptID: identity.AttemptID,
 		},
-	}, nil
+	}, coordinator.authorizeErr
 }
 
 func (coordinator *publicRuntimeCoordinator) health(name string) (modelexecution.HealthResult, error) {
@@ -121,6 +128,7 @@ func (coordinator *publicRuntimeCoordinator) MarkCredentialRateLimited(context.C
 type publicRuntimeBilling struct {
 	events          *[]string
 	freeze          []billing.FreezeRequest
+	freezeResult    *billing.FreezeResult
 	completions     []billing.ProviderAttemptCompletion
 	prepared        []billing.SettleRequest
 	helds           []billing.SettleRequest
@@ -136,6 +144,9 @@ type publicRuntimeBilling struct {
 func (service *publicRuntimeBilling) Freeze(_ context.Context, request billing.FreezeRequest) (*billing.FreezeResult, error) {
 	*service.events = append(*service.events, "freeze")
 	service.freeze = append(service.freeze, request)
+	if service.freezeResult != nil {
+		return service.freezeResult, nil
+	}
 	return &billing.FreezeResult{Success: true}, nil
 }
 
@@ -902,6 +913,23 @@ func TestPublicNonStreamOrchestratorExactM77FenceRejectsStaticRouteDriftBeforeSe
 	}
 }
 
+func TestPublicNonStreamOrchestratorHealthActionsWithoutTransition(t *testing.T) {
+	var events []string
+	orchestrator := &publicNonStreamOrchestrator{coordinator: &publicRuntimeCoordinator{events: &events}}
+	decision := modelexecution.Decision{Status: modelexecution.Applied}
+	if err := orchestrator.applyTerminalHealth(t.Context(), decision, PublicNonStreamHealthNone); err != nil {
+		t.Fatalf("explicit no-op action: %v", err)
+	}
+	for _, action := range []PublicNonStreamHealthAction{"", "unknown"} {
+		if err := orchestrator.applyTerminalHealth(t.Context(), decision, action); !errors.Is(err, errPublicNonStreamHealthFailed) {
+			t.Fatalf("unsupported health action %q: %v", action, err)
+		}
+	}
+	if len(events) != 0 {
+		t.Fatalf("unexpected health writes: %v", events)
+	}
+}
+
 func TestPublicNonStreamOrchestratorHealthNonAppliedRetainsLiabilityAndStopsDelivery(t *testing.T) {
 	events := []string{}
 	fixture := newPublicRuntimeFixture(t, &events, 1)
@@ -1019,6 +1047,91 @@ func TestPublicNonStreamOrchestratorRejectedHealthFailureCancelsWithoutFallback(
 				t.Fatalf("health failure crossed fallback/cancel fence: %s", got)
 			}
 		})
+	}
+}
+
+func TestPublicRuntimeAttributesAdmissionAndDispatchFailures(t *testing.T) {
+	const privateDetail = "private database detail"
+	tests := []struct {
+		name         string
+		freezeResult *billing.FreezeResult
+		authorizeErr error
+		publicError  error
+		publicCode   string
+		diagnostic   string
+		wantCancels  int
+	}{
+		{
+			name: "policy unavailable", freezeResult: &billing.FreezeResult{ErrorCode: policybilling.ErrorCodeStateUnavailable},
+			publicError: errPublicNonStreamBillingFailed, publicCode: "server_error.billing_unavailable",
+			diagnostic: "phase=execution_admission reason=limit_policy_state_unavailable",
+		},
+		{
+			name: "missing binding", freezeResult: &billing.FreezeResult{ErrorCode: "billing_contract_unavailable"},
+			publicError: errPublicCustomerPriceUnavailable, publicCode: "billing_error.billing_contract_unavailable",
+		},
+		{
+			name: "dispatch serialization", authorizeErr: fmt.Errorf("authorize attempt: %w", &pgconn.PgError{Code: "40001", Message: privateDetail}),
+			publicError: errPublicNonStreamRuntimeUnavailable, publicCode: "server_error.public_execution_unavailable",
+			diagnostic: "phase=dispatch_authorization reason=postgres_serialization_failure", wantCancels: 1,
+		},
+		{
+			name: "opaque dispatch error", authorizeErr: errors.New(privateDetail + " with text 40001"),
+			publicError: errPublicNonStreamRuntimeUnavailable, publicCode: "server_error.public_execution_unavailable",
+			diagnostic: "phase=dispatch_authorization reason=authorization_error", wantCancels: 1,
+		},
+	}
+
+	for _, stream := range []bool{false, true} {
+		for _, test := range tests {
+			t.Run(fmt.Sprintf("stream=%t/%s", stream, test.name), func(t *testing.T) {
+				var events []string
+				coordinator := &publicRuntimeCoordinator{events: &events, authorizeErr: test.authorizeErr}
+				var request publicNonStreamRequest
+				var financial *publicRuntimeBilling
+				var execute func(context.Context, http.ResponseWriter, publicNonStreamRequest) error
+				if stream {
+					fixture := newPublicResponsesStreamFixture(t, &events, "", disabledPublicStreamGuard(t))
+					fixture.orchestrator.core.coordinator = coordinator
+					execute, request, financial = fixture.orchestrator.execute, fixture.request, fixture.billing
+				} else {
+					fixture := newPublicRuntimeFixture(t, &events, 2)
+					fixture.orchestrator.coordinator = coordinator
+					execute, request, financial = fixture.orchestrator.execute, fixture.request, fixture.billing
+				}
+				financial.freezeResult = test.freezeResult
+				var logs bytes.Buffer
+				previous := log.Writer()
+				log.SetOutput(&logs)
+				t.Cleanup(func() { log.SetOutput(previous) })
+				writer := httptest.NewRecorder()
+				err := execute(t.Context(), writer, request)
+				log.SetOutput(previous)
+
+				if !errors.Is(err, test.publicError) || publicResponseWasStarted(err) {
+					t.Fatalf("pre-response error = %v", err)
+				}
+				writePublicNonStreamError(writer, httptest.NewRequest(http.MethodPost, request.Path, nil), request.RequestID, err)
+				if writer.Code != http.StatusServiceUnavailable || !strings.Contains(writer.Body.String(), test.publicCode) ||
+					strings.Contains(writer.Body.String(), privateDetail) || strings.Contains(writer.Body.String(), "phase=") {
+					t.Fatalf("public response = %d %s", writer.Code, writer.Body.String())
+				}
+				if len(coordinator.attemptIDs) != test.wantCancels || financial.cancelled != test.wantCancels ||
+					len(financial.completions) != 0 || len(financial.settled) != 0 ||
+					strings.Contains(strings.Join(events, ","), "provider:") {
+					t.Fatalf("unexpected provider or wallet lifecycle: %v", events)
+				}
+				logged := logs.String()
+				if test.diagnostic == "" {
+					if strings.Contains(logged, "module=public_execution") {
+						t.Fatalf("missing binding misclassified: %s", logged)
+					}
+				} else if !strings.Contains(logged, fmt.Sprintf("request_id=%q %s", request.RequestID, test.diagnostic)) ||
+					strings.Contains(logged, privateDetail) {
+					t.Fatalf("diagnostic = %s", logged)
+				}
+			})
+		}
 	}
 }
 

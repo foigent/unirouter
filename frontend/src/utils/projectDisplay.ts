@@ -1,5 +1,8 @@
 import { translate as t } from '../i18n';
 
+// budget_cents is a signed 32-bit integer in the project API.
+export const MAX_PROJECT_BUDGET_YUAN = 2_147_483_647 / 100;
+
 type ProjectDisplayInput = {
   id?: number;
   name?: string;

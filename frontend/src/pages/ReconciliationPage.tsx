@@ -581,6 +581,7 @@ export default function ReconciliationPage() {
               pageSize,
               pageSizeOpts: [20, 50, 100],
               showSizeChanger: true,
+              preventPageChangeOnPageSizeChange: true,
               total,
               onPageChange: (p: number) => setPage(p),
               onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); },

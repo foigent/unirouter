@@ -8,8 +8,8 @@
 |------|------|
 | [AGENT-PROTOCOL.md](AGENT-PROTOCOL.md) | Agent Protocol v2.3，权限、风险、执行和复核规则 |
 | [EXECUTION-RECORD.md](EXECUTION-RECORD.md) | 当前批次的执行、测试、CI、部署、批准和缺口记录 |
-| [LOCAL-TEST-REUSE.md](LOCAL-TEST-REUSE.md) | 已验证测试入口、前置条件、当前交付与依赖、证据复用 |
-| [../ops/FRESH-INSTALL.md](../ops/FRESH-INSTALL.md) | 正式空库安装源码候选、命令合同与待执行原生验证 |
+| [本地及 CI 测试入口](LOCAL-TEST-REUSE.md#共享测试入口) | 工具链、隔离测试依赖和证据复用 |
+| [社区安装器](../ops/COMMUNITY-INSTALLER.md) · [空库安装所有者](../ops/FRESH-INSTALL.md) | 签名包安装与底层源码入口 |
 | [reviews/README.md](reviews/README.md) | 独立复核格式；明确前置触发项见项目 AGENTS.md |
 | [../ops/CURRENT-STATUS.md](../ops/CURRENT-STATUS.md) | 当前项目事实入口 |
 | [../PROJECT-HANDOFF.md](../PROJECT-HANDOFF.md) | 按任务导航；历史检查点不替代当前状态 |
@@ -21,8 +21,8 @@
 | [FIX-SIGNAL.md](FIX-SIGNAL.md) | 协议 v1.x 旧链接兼容入口，指向当前执行记录 |
 | [VERIFY-RESULT.md](VERIFY-RESULT.md) | 最近一次协议 v1.x 独立验收历史，不再覆盖 |
 | [CHECKLIST.md](CHECKLIST.md) | 历史 Canary 检查参考，可供复核者选择使用 |
-| [PLAN.md](PLAN.md) | 历史/临时计划，不是当前事实源 |
-| [CONTEXT_HANDOFF.md](CONTEXT_HANDOFF.md) | 历史上下文转移参考 |
+
+早期计划的基线快照见[历史归档](../DOC-INVENTORY.md#historical-archive)。
 
 ## 当前流程
 

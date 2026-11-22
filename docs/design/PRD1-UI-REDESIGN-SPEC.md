@@ -1,6 +1,9 @@
 # PRD1 UI Redesign Execution Spec
 
-Status: reference-inspired pass implemented locally, awaiting verification
+Historical snapshot (2026-07-01). At that checkpoint the reference-inspired
+pass was implemented locally and awaiting verification. See the
+[UI design index](README.md) for current implementation and conventions.
+
 Owner: Codex
 Last updated: 2026-07-01
 

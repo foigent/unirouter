@@ -6,6 +6,10 @@
 
 ## 1. Product boundary
 
+The [commercial License retirement contract](../ops/COMMERCIAL-LICENSE-RETIREMENT.md)
+governs M126 and later. The older gated rollout checkpoints below describe their
+recorded versions.
+
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
 `cmd/uniroute/http_runtime.go` owns process-local admission and bounded request
@@ -315,7 +319,7 @@ commit `4c6a92b2863663eb9b544cb7a8c87462ab897741`, then by the versioned SSE
 contract, M90/M91 capability batch and historical M92 checkpoint
 `c4ee78fc3eb41f144e72000d01917f41d7470bfb`. The current M95 artifact and
 Target evidence are recorded at the start of this section and in the
-[active Kimi delivery batch](../tech-ref/42-model-execution-profile-capability-status.md#active-delivery-batch--kimi-k26-chat).
+[Kimi K2.6 Chat Core closeout](../tech-ref/42-model-execution-profile-capability-status.md#completed-delivery-batch--kimi-k26-chat-core-target-closeout).
 Canonical model-route authority remains enabled with compatibility disabled.
 The active organization Alias resolves to public model 697, whose sealed active
 Release 23 remains bound to immutable Profile 1.5. M93 did not change that
@@ -484,7 +488,7 @@ rejects empty runtime inventory. This is not supplier-live or billing evidence.
 
 | Workspace | Primary actor | Owns | Does not own |
 |---|---|---|---|
-| Deployment operations | deployment operator | runtime, License, provider endpoints, upstream credentials, release/routing operations, global safeguards | customer project membership or application credentials |
+| Deployment operations | deployment operator | runtime, provider endpoints, upstream credentials, release/routing operations, global safeguards | customer project membership or application credentials |
 | Customer administration | customer administrator | people, project membership, model visibility, application access, budgets, usage | host/runtime lifecycle or upstream secret custody |
 | Project workspace | project member | project-scoped applications, API keys, permitted model use, usage visibility | provider endpoints, prices, or deployment policy |
 
@@ -631,10 +635,10 @@ flowchart LR
   authority still must pass. It atomically restores the raw v1 slot identity
   and retains the immutable evidence chain.
 - Collection/detail reads allow `platform_admin`, `org_admin` and `org_viewer`
-  without a Gateway License. Authoring, normal expansion and legacy cutover
-  allow only `platform_admin`/`org_admin` and require the Gateway feature.
-  Canary cancellation and legacy rollback keep the same write RBAC but no
-  License gate. Authentication and RBAC run before License admission.
+  within their authorized scopes. Authoring, normal expansion, canary
+  cancellation, cutover and rollback use write RBAC. Older releases used
+  separate commercial feature gates. [Current route guards](../../cmd/uniroute/model_deployment_routes.go) ·
+  [Commercial License retirement](../ops/COMMERCIAL-LICENSE-RETIREMENT.md)
 - All authoring and lifecycle request bodies are one strict JSON object no
   larger than 16 KiB. Unknown/duplicate members and trailing values fail before
   durable receipt access. A 409 means the client must refresh server truth; no
@@ -908,7 +912,7 @@ The approved V1 target freezes these invariants:
 |---|---|---|
 | Runtime status | current process, PostgreSQL/Redis probes, traffic and host snapshot | none |
 | Deployment and network | runtime status can show the actually running instance | manually registered deployment/entry records describe intended or auxiliary topology |
-| License | verified license claims and feature gates | no page-local duplicate feature status |
+| Commercial License compatibility | M126 retired commercial runtime activation. The endpoint reports `not_required` | Retained historical License records describe the predecessor only. [Retirement contract](../ops/COMMERCIAL-LICENSE-RETIREMENT.md) |
 | Integrations | connector-specific live state only after the connector is configured | available integrations and planned integrations must be visually distinct |
 
 A normal “not configured” integration is not a global page error. Connector failures belong inside that connector’s detail surface.

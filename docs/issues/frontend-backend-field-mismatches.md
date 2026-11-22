@@ -1,32 +1,10 @@
-# Issue: 前后端字段名不匹配汇总
+# 前后端字段不匹配的历史记录
 
-**发现者**: Canary
-**日期**: 2026-06-29
-**状态**: 待修复
+Canary 于 2026-06-29 扫描时记录了下列问题。当前待办以
+[Open Issues](OPEN-ISSUES.md) 为准。
 
-## 概述
-
-全功能扫描发现多处前端和后端字段名不匹配，导致功能异常。
-
-## Bug #23: LogsPage total_tokens
-
-- 前端 `LogsPage.tsx:22` 期望 `total_tokens`
-- 后端 `ListLogs` handler 只返回 `prompt_tokens` + `completion_tokens`
-- 修复方向：后端添加 `total_tokens` 字段（`prompt_tokens + completion_tokens`）
-
-## Bug #25: TestPage success vs status
-
-- 前端 `TestPage.tsx:72` 检查 `result.success`
-- 后端 `TestChannel` 返回 `status: "ok"`
-- 修复方向：统一为 `success: true` 或前端改为检查 `result.status === "ok"`
-
-## Bug #21 (已修复): ChannelKeysPage api_key vs key
-
-- 前端发送 `api_key`，后端期望 `key`
-- 已修复：前端改为 `key: values.api_key`
-
-## 额外发现: channel_keys key_prefix vs key_masked
-
-- 前端 `ChannelKeysPage.tsx` dataIndex 为 `key_prefix`
-- 后端返回 `key_masked`
-- 需确认是否为 bug
+| 历史发现 | 当前源码核对 |
+| --- | --- |
+| Bug #23。请求日志读取 `total_tokens`，当时的列表响应只返回输入和输出 Token。 | `ListLogs` 现在返回 `total_tokens`，日志页直接读取该字段。[后端列表](../../internal/admin/log_handlers.go) · [前端日志](../../frontend/src/pages/LogsPage.tsx) |
+| Bug #25。旧测试页读取 `result.success`，旧响应返回 `status: "ok"`。 | `/test` 现在跳转到模型端点页。[前端路由](../../frontend/src/main.tsx) · [跳转回归](../../frontend/src/routing/__tests__/legacyTestRedirect.test.tsx) |
+| Bug #21。旧凭据页曾将 `api_key` 改为后端所需的 `key`。另记录过 `key_prefix` 与 `key_masked` 的显示差异。 | `/channel-keys` 现在跳转到模型端点的凭据标签页。原扫描及修复经过见历史记录。[前端路由](../../frontend/src/main.tsx) · [历史 Bug 记录](../testing/archive/BUG-LOG.md) |

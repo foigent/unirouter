@@ -1581,6 +1581,10 @@ body {
   min-width: 0;
 }
 
+.ur-form-control-full-width {
+  width: 100%;
+}
+
 .ur-form-advanced {
   width: 100%;
   box-sizing: border-box;

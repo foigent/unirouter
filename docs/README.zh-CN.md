@@ -9,7 +9,7 @@
 - [Why UniRouter](community/why-unirouter.md) / [设计理念](community/why-unirouter.zh-CN.md) — 项目动机、设计取舍和长期方向
 - [Gateway design comparison](community/gateway-design-comparison.md) — 固定源码版本的机制比较与适用边界
 
-- [开始使用](community/getting-started.md) — 安装路径、首次请求与候选限制
+- [Linux amd64 / ECS 安装](community/install-linux.zh-CN.md)、[现有安装升级](ops/COMMUNITY-UPGRADE.md)与[首次请求](community/getting-started.md)
 - [架构与 X-Insight](community/architecture.md) — 请求链路及产品职责
 - [X-Insight 接入入口（英文）](community/getting-started.md#optional-x-insight-integration) — 已有合同、验证组合与公开联合上手限制
 - [数据处理](community/data-handling.md) — 本地记录、Provider、遥测与证据外发
@@ -19,9 +19,18 @@
 
 下方保留工程与历史证据导航；初次使用无需从历史阶段记录开始阅读。
 
-## 当前入口
+## 工程与运维入口
 
-先按任务读取 [项目规则](../AGENTS.md)、[当前状态](ops/CURRENT-STATUS.md) 和 [活动执行记录](agent-workflows/EXECUTION-RECORD.md)。以下历史证据保留各自截止时间，不因列在入口中成为实时状态或当前授权。
+| 任务 | 入口 |
+| --- | --- |
+| 找到代码、API 和前端共享组件 | [代码地图](CODEBASE-MAP.md)、[OpenAPI](tech-ref/05-openapi-spec.yaml)、[前端交互规范](governance/README.md#frontend-interaction-conventions) |
+| 核对业务权威和受影响页面 | [系统事实图](architecture/SYSTEM-FACT-MAP.md)、[PRD8 边界矩阵](ops/PRD8-BOUNDARY-MATRIX.md) |
+| 查看发布证据、当前工作和部署记录 | [签名预览证据](community/release-readiness.md)、[执行记录](agent-workflows/EXECUTION-RECORD.md)、[状态导航](ops/CURRENT-STATUS.md) |
+| 核对协作、审查和验证要求 | [项目规则](../AGENTS.md)、[工程治理](governance/README.md)、[执行协议](agent-workflows/AGENT-PROTOCOL.md) |
+| 查验收、版本和历史材料 | [问题登记](issues/OPEN-ISSUES.md)、[文档分类](DOC-INVENTORY.md) |
+
+<details>
+<summary>展开原有 PRD8、PRD7 和 V1 参考链接</summary>
 
 - [PRD-Phase8.md](PRD-Phase8.md) — 当前前向产品合同：UniRouter、X-Insight、Tool Gateway、MCP Gateway 和共享协议边界封板
 - [ops/PRD8-BOUNDARY-MATRIX.md](ops/PRD8-BOUNDARY-MATRIX.md) — PRD7 十九项能力的保留、收窄、迁出、UI 归并和兼容处置
@@ -54,13 +63,15 @@
 - [ops/evidence/PRD7-B11-P7F15-P7F16-provenance-passport-local-20260731.md](ops/evidence/PRD7-B11-P7F15-P7F16-provenance-passport-local-20260731.md) — 精确 Source Passport、四类 provenance、固定 Capture Gaps 与隔离的第二 Connector 一致性证明
 - [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — 按任务导航；其中历史检查点不替代当前状态
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前已验证项目状态和明确非声明
-- [ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md](ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md) — 当前 `1.0.1` 七角色开发目标验收与清理证据
+- [ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md](ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md) — 2026-07-18 的 `1.0.1` 七角色开发验收
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 活动、延期和未实现问题登记
 - [../deploy/customer/README.md](../deploy/customer/README.md) — 客户签名发布包与 source-free Compose 安装入口
 - [ops/deployment-runbook.md](ops/deployment-runbook.md) — 部署、备份、签名升级和客户 HTTPS 边界
 - [tech-ref/05-openapi-spec.yaml](tech-ref/05-openapi-spec.yaml) — 当前 API 合同
 - [DOC-INVENTORY.md](DOC-INVENTORY.md) — 当前、参考、候选和历史文档完整分类
 - [ops/evidence/PRD6-FINAL-COMPLETION-20260714.md](ops/evidence/PRD6-FINAL-COMPLETION-20260714.md) — PRD6 `Completed (Accepted Scope)` 历史边界
+
+</details>
 
 ## 证据与阶段索引
 
@@ -179,7 +190,7 @@
 - [design/manifesto.md](design/manifesto.md) — 设计宣言（定稿）
 - [design/spec-v1.md](design/spec-v1.md) — 设计规范 v1（定稿）
 - [design/pages/](design/pages/) — 页面级设计文档
-- [ui/FRONTEND-UI-ARCHITECTURE-AUDIT.md](ui/FRONTEND-UI-ARCHITECTURE-AUDIT.md) — 当前前端 UI/架构审计与 PRD1/PRD2 建议
+- [ui/FRONTEND-UI-ARCHITECTURE-AUDIT.md](ui/FRONTEND-UI-ARCHITECTURE-AUDIT.md) — PRD1/PRD2 前端审计历史
 
 ## 技术参考
 - [tech-ref/](tech-ref/) — 开发团队技术参考索引
@@ -241,7 +252,7 @@
 - [issues/](issues/) — 问题补充说明和历史 issue 文件
 - [consultations/](consultations/) — 顾问咨询记录
 
-## 归档（本地保留，不推送 GitHub）
+## 归档与历史记录
 - `archive/issues/` — 已解决的 issue
 - `archive/todolist/` — 待办事项（非 Bug，如功能集成、配置完善）
 - `reviews/` — PRD 评审记录

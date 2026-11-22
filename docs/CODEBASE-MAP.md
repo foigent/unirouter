@@ -11,10 +11,10 @@
 | Main server | `cmd/uniroute/main.go` | Loads config, connects Postgres/Redis, runs migrations, wires gateway/admin routes, starts background cleanup and alerts |
 | Main tests | `cmd/uniroute/main_test.go` | Top-level route behavior tests |
 | Request preflight and client projection | `internal/gateway/chat_preflight.go`, `internal/gateway/model_catalog_execution_profile.go`, `cmd/uniroute-openclaw-sync` | Optional same-caller Chat preparation without dispatch effects; safe routing reasons, stable Release/default provenance and override-aware client config. Static Profile verification is not a request-combination qualification. |
-| Config | `internal/config/config.go` | Environment config and validation, including secrets, optional license, trace/retention, Runtime Status integration metadata, stream transport, weighted workload admission and application-authoritative payload limits |
+| Config | `internal/config/config.go` | Environment config and validation, including secrets, trace/retention, Runtime Status integration metadata, stream transport, weighted workload admission and application-authoritative payload limits |
 | Database | `internal/db/postgres.go` | pgx pool setup and health |
 | Redis | `internal/redisx/redis.go` | Redis setup, health, wallet cache helpers |
-| Migrations | `migrations/*.sql` | Ordered PostgreSQL schema history. The current source ceiling is `000113_glm_stream_function_tools_qualification`; the exact development/test Target snapshot is recorded in `docs/architecture/SYSTEM-FACT-MAP.md`. `internal/schemaauthority/version.go` is the executable compatibility authority, and source identity must not be confused with Target evidence. After either migration execution or `SKIP_MIGRATION`, every backend calls the exact runtime-schema gate before customer baseline or HTTP bind: the complete ordered database ledger must equal the binary artifact ledger, so missing, extra, future, duplicate, reordered and empty histories all fail closed. Ceiling changes are non-rolling: stop the older fleet, let one migration owner advance the database, then start binaries matching that exact ledger; a secondary may skip migration only after the database matches. M75–M84 establish exact public execution, lifecycle, evidence, cost-observation and reviewed-pricing authorities; M85 binds immutable Plan snapshots to Freeze and attempts; M86 preserves exact v1/v2 public execution bindings; M87 adds the Messages tools v3 tuple; M88 adds append-only capability probes/approvals plus receipt-aware qualification; M89 versions the DeepSeek Flash SSE final-usage contract; M90 adds reasoning qualification; M91 adds tools/tool-choice/JSON qualification; M92 adds the immutable Profile 1.5 composition correction and exact bindings; M93 advances only the five Flash Profile 1.5 function-tool capabilities under two existing Chat tuples to Probe Contract v2; M94 publishes nine exact Pro Profile 1.5 Chat v4 capability contracts without a generic tuple; M95 publishes six exact Kimi K2.6 Profile 1.7 Chat v5 contracts without authorizing K2.7 or a generic tuple; M96 advances only that exact K2.6 streaming binding to Probe Contract v2 after the live v1 delivery-shape failure; M97 advances only that streaming binding to Probe Contract v3 for bounded choice-level terminal usage while preserving failed v1/v2 evidence; M98 advances only the five non-streaming K2.6 bindings to Probe Contract v2 for bounded cache/reasoning usage details while preserving failed v1 evidence; M99 advances only tools, function tools and automatic tool choice to Function Tools Probe Contract v3 for the existing bounded public delivery shape; M100 advances the same three exact bindings to Probe Contract v4 and shares the non-stream child tool-call index normalizer with runtime delivery; M101 publishes six exact K2.7 Code Profile 1.3 Chat v5 contracts through Publication V1 without a generic tuple or live qualification; M102 publishes eight exact K3 Profile 1.9 Chat v5 Core contracts, including reasoning effort and required tool choice, while excluding Dynamic Tools, JSON Schema, search and media; M103 publishes one exact Function Tools contract each for historical MiniMax M3 Token Plan and official-open-platform GLM 5.3 through one compatible plan while keeping separate Probe identities; M104 appends three exact MiniMax PAYG Function Tools bindings for M3, M2.7 and M2.7 Highspeed with separate M3/M2 Probe identities and without rewriting M103; M105 appends five exact GLM toggle-family pure-text Function Tools bindings over shared validator mechanics while preserving model-specific Profile, protocol, reasoning, evidence and approval identities; M106 appends three exact MiniMax PAYG Profile 1.1 Function Tools bindings for the official `api.minimax.cn/v1` endpoint while preserving M104 Profile 1.0 and endpoint identities. M107 adds an atomic published-predecessor first-successor stable request identity cutover with immutable primary Alias, complete model-set evidence, authorization-aware Catalog projection and guarded downgrade. M108 publishes the three exact MiniMax PAYG Profile 1.2 Function Tools bindings with a threshold-aware cache-usage contract. M109 adds a separate never-activated staging-predecessor receipt and operation scope while preserving M107 wire and replay semantics. M110 publishes 42 exact runtime-composition bindings across the current three MiniMax PAYG and six GLM Chat Profiles, advancing existing provider-family Probe contracts to v2 without adding Profile attachment guards or dynamic execution authority. M111 appends exact MiniMax M2.7 PAYG Profile 1.3 stream Function Tools contracts and their static Publication. M112 extends the existing successor command to repeated primary-Alias transitions with v4/v3 receipts, guarded same-product pins, atomic Slot/registry/Alias/model-set changes and historical replay; it adds no new table and is not a Publication. M113 appends 30 pure-text stream Function Tools bindings for six exact GLM successors, without dynamic qualification. M88–M113 Publications do not infer live support from a Profile, rewrite sealed Releases, change aliases, activate pricing or promote traffic. M107 and M109 are not Capability Publications and do not reinterpret those bindings. Historical sealed identities remain addressable, and downgrade guards reject durable state the predecessor cannot interpret. Read the exact later migrations and `docs/architecture/SYSTEM-FACT-MAP.md` rather than inferring current authority from early PRD ranges. |
+| Migrations | [SQL history](../migrations/), [schema authority](../internal/schemaauthority/version.go) | Read `LatestSupportedMigration` for the checkout’s schema head. Use the [native installer contract](ops/COMMUNITY-INSTALLER.md) and [upgrade runbook](ops/COMMUNITY-UPGRADE.md) for release-bound ledger, predecessor and recovery rules. |
 
 ## Backend Packages
 
@@ -36,10 +36,10 @@
 | `internal/guardrail` | Immutable stacked Guardrail policies, deterministic PII/secret detection, sensitive-word compatibility, fixed-registry bounded external classifiers, fail-closed/degraded decisions and HMAC-only finding evidence |
 | `internal/errdocs` | Error documentation registry used by gateway `doc_url` responses and API Docs |
 | `internal/gateway` | Model routing, immutable weighted route snapshots, cross-replica probe/epoch health, upstream relay, chat completions, embeddings, strict M77 Responses/Messages non-stream orchestration, model listing, request logging, metadata-only request trace events, distributed/Guardrail policy evidence and protocol-specific errors, bounded request/non-stream response envelopes, and serialized bounded SSE transport. Public non-stream execution bypasses legacy Router/adapters/response-cache and delivers only endpointprotocol-whitelisted bodies |
-| `internal/gatewayerror` | Operation-catalog-aware OpenAI/Anthropic public error envelopes used consistently by outer identity, payload, License, strict JSON, idempotency, rate and public execution boundaries |
-| `internal/licensing` | Strict V1 commercial License signing/verification, deployment/time/feature/limit admission, legacy read compatibility and HTTP gates |
+| `internal/gatewayerror` | Operation-catalog-aware OpenAI/Anthropic public error envelopes used consistently by outer identity, payload, strict JSON, idempotency, rate and public execution boundaries |
+| `internal/licensing` | Historical V1 commercial License verification and compatibility. Current runtime admission uses the retired status |
 | `internal/licensestudio` | Loopback-only graphical vendor issuer, macOS native file dialogs, no-overwrite key/License file operations and browser assets |
-| `internal/releasetrust` | Release-build embedded License/upgrade public rings; formal binaries reject runtime trust-root replacement |
+| `internal/releasetrust` | Release-build public rings for signed upgrades and historical License verification |
 | `internal/signing` | Shared strict Ed25519 key parsing/encoding and named public-key ring validation |
 | `internal/upgradebundle` | Deterministic signed offline release bundle packing and streaming tamper/platform/sequence/schema verification |
 | `deploy/customer` | Source-free customer Compose/env template for prebuilt signed release artifacts; public trust roots are embedded in the backend image and no `build:` context is present |
@@ -94,7 +94,7 @@ Defined in `cmd/uniroute/main.go`.
 | Notifications | Notification events, deliveries, and webhook CRUD |
 | Users/access | User CRUD, grants, audit logs |
 | Settings/filter | Settings CRUD and sensitive-word CRUD |
-| License | `GET/PUT /api/v1/license` |
+| Commercial License compatibility | `GET /api/v1/license` returns `not_required`. `PUT /api/v1/license` validates the legacy input shape and imports nothing. [Retirement contract](ops/COMMERCIAL-LICENSE-RETIREMENT.md) |
 | Data exchange | Platform-admin approval candidates and exchange/delivery/receipt/delete ledger under `/api/v1/data-exchange/*` |
 | Docs | `GET /docs` simple HTML endpoint |
 
@@ -123,17 +123,25 @@ OpenAPI snapshot: `docs/tech-ref/05-openapi-spec.yaml` is the current route-leve
 | Area | Path |
 |------|------|
 | App routes | `frontend/src/main.tsx` |
-| Sidebar/navigation shell | `frontend/src/App.tsx` |
-| API client | `frontend/src/api/client.ts` |
+| Sidebar and page access | [App shell](../frontend/src/App.tsx) and [navigation and role rules](../frontend/src/navigation.tsx) |
+| API clients and OpenAPI | [Typed clients and legacy facade](../frontend/src/api/) and [API contract](tech-ref/05-openapi-spec.yaml) |
 | Auth store | `frontend/src/store/auth.ts` |
-| Shared UI primitives | `frontend/src/ui/` (`PageHeader`, `Surface`, `EmptyState`, `MoneyText`, `LatencyText`, `StatusTag`, `PagedTable`) |
-| Shared UI utilities | `frontend/src/utils/` (`displayLabels`, `format`, `quota`, and `modelOnboarding` for provider/Profile composition without evidence inference) |
+| Shared console UI | [Components](../frontend/src/ui/index.ts) and [interaction conventions](governance/README.md#frontend-interaction-conventions) |
+| Shared page state | [Pagination](../frontend/src/utils/pagination.ts), [scoped reads](../frontend/src/utils/scopedRead.ts) and [load all pages](../frontend/src/utils/loadAllPages.ts) |
+| Shared display | [Utilities](../frontend/src/utils/) and [localization](../frontend/src/i18n/) |
 | Pages | `frontend/src/pages/*.tsx` |
 | Shared error boundary | `frontend/src/components/ErrorBoundary.tsx` |
 | Global CSS | `frontend/src/index.css` |
-| Tests | `frontend/src/**/__tests__/*.test.tsx`, `frontend/src/**/__tests__/*.test.ts` |
+| Tests | Co-located `__tests__` directories, [test setup](../frontend/src/test/setup.ts) and [route regressions](../frontend/src/routing/__tests__/) |
 
-Frontend route pages currently include dashboard, product-facing model onboarding (“模型接入”), canonical deployment/release detail workspaces, API keys, shared limits, content safety/Guardrail policy, developer console, usage analytics, internal status, notification center, model governance, wallet, logs, data exchange, users, model prices, org model prices, grants, audit logs, reconciliation, license, settings, API docs, access state, and login. The onboarding sheet composes a reviewed provider preset with the latest exact Profile per Profile ID, constrains safe aliases/limits/operation, and sends the exact Profile pin; manual/custom flow remains explicitly unverified. Legacy `/channels` resolves to this canonical-backed workspace and `/channel-keys` is a compatibility redirect; the retired channel-key page and runtime-change workspace are not mounted.
+Use [the router](../frontend/src/main.tsx) to find page entry points. Model access
+uses the canonical deployment workspace at `/channels`. The onboarding sheet
+uses reviewed provider presets and submits an exact Profile pin. Provider
+qualification evidence is recorded with the applicable Profile and run.
+The [applications entry](../frontend/src/pages/ApplicationsV2Page.tsx) is `/applications`.
+`/test` redirects to `/channels`, `/channel-keys` opens its credentials tab, and
+`/users`, `/project-management` and `/member-lifecycle` lead to the corresponding
+sections of [People and permissions](../frontend/src/pages/OrganizationMembersPage.tsx).
 
 ## Data Model
 

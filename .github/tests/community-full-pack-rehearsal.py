@@ -23,12 +23,12 @@ def module(name):
 
 
 REPO = 'foigent/unirouter'
-TARGET_VERSION = '1.15.7'
-TARGET_SCHEMA = '000130_upgrade_admission_recovery'
-OLD_VERSION = '1.15.6'
-OLD_SCHEMA = '000129_upstream_observation_restore_namespace'
+TARGET_VERSION = '1.15.8'
+TARGET_SCHEMA = '000131_customer_standard_pricing'
+OLD_VERSION = '1.15.7'
+OLD_SCHEMA = '000130_upgrade_admission_recovery'
 PREDECESSOR = '.github/release-inputs/community-upgrade-source.json'
-PREDECESSOR_SHA = '82f627fdf4a484e3f3fff860697410dc61ad702d3c2dc9b1e84f86da8b140fa0'
+PREDECESSOR_SHA = 'f821dbf3803a43178d9201f1548d4dd8b6016efc12b7079b961f6db19f5b5347'
 KEY_ID = 'test-only-full-material-rehearsal'
 RING_SHA = '96c91635460ddfb2a14aa1ea97d8445951730e9eb04a33cbdf4320141e61d63d'
 

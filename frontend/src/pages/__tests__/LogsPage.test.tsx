@@ -9,11 +9,15 @@ const mockGetModelNames = vi.fn();
 const mockGetLogTrace = vi.fn();
 const mockGetOrganizations = vi.fn();
 const auth = vi.hoisted(() => ({ user: null as any }));
+vi.mock('../../api/requestLogs', () => ({
+  requestLogsApi: {
+    getLogs: (...args: any[]) => mockGetLogs(...args),
+    getLogTrace: (...args: any[]) => mockGetLogTrace(...args),
+  },
+}));
 vi.mock('../../api/client', () => ({
   api: {
-    getLogs: (...args: any[]) => mockGetLogs(...args),
     getModelNames: (...args: any[]) => mockGetModelNames(...args),
-    getLogTrace: (...args: any[]) => mockGetLogTrace(...args),
     getOrganizations: (...args: any[]) => mockGetOrganizations(...args),
   },
 }));
@@ -216,6 +220,58 @@ describe('LogsPage', () => {
     expect(screen.queryByText('stale-request')).not.toBeInTheDocument();
     expect(mockGetLogTrace).not.toHaveBeenCalledWith(999);
   });
+
+  it.each([
+    ['状态码', '2xx 成功', { status_code: '2xx' }],
+    ['计量来源', '上游回传', { usage_source: 'upstream' }],
+  ])('starts %s filtering at page one and hides the previous result while loading', async (label, option, filter) => {
+    mockGetLogs.mockResolvedValue({ ...MOCK_LOGS_RESPONSE, total: 120 });
+    renderLogs();
+    fireEvent.click(await screen.findByLabelText('Page 2'));
+    await waitFor(() => expect(mockGetLogs).toHaveBeenLastCalledWith(2, 50, {}));
+    await screen.findAllByText('req-001-aaa');
+
+    let finish!: (value: unknown) => void;
+    mockGetLogs.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    fireEvent.click(screen.getByText('高级筛选', { selector: 'summary' }));
+    fireEvent.click(screen.getByRole('combobox', { name: label }));
+    fireEvent.click(await screen.findByText(option, { selector: '.semi-select-option-text' }));
+
+    await waitFor(() => expect(mockGetLogs).toHaveBeenLastCalledWith(1, 50, filter));
+    expect(screen.queryAllByText('req-001-aaa')).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: '复制当前 Request ID' })).not.toBeInTheDocument();
+
+    await act(async () => finish({ data: [{ ...MOCK_LOGS_RESPONSE.data[0], id: 3, request_id: 'filtered-request' }], total: 1 }));
+    expect(screen.getAllByText('filtered-request').length).toBeGreaterThan(0);
+    expect(mockGetLogTrace).toHaveBeenLastCalledWith(3);
+  });
+
+  it('hides the previous customer results before the new customer read settles', async () => {
+    auth.user = {
+      id: 5,
+      role: 'platform_admin',
+      org_id: 99,
+      customer_context: { state: 'ready', org_id: 7, org_name: '旧客户' },
+      identity_scope: 'deployment_operator',
+    };
+    const { rerender } = renderLogs();
+    await screen.findAllByText('req-001-aaa');
+    expect(mockGetLogTrace).toHaveBeenLastCalledWith(1, 7);
+
+    let finish!: (value: unknown) => void;
+    mockGetLogs.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    auth.user = { ...auth.user, customer_context: { state: 'ready', org_id: 12, org_name: '新客户' } };
+    rerender(<MemoryRouter><LogsPage /></MemoryRouter>);
+
+    await waitFor(() => expect(mockGetLogs).toHaveBeenLastCalledWith(1, 50, { org_id: 12 }));
+    expect(screen.queryAllByText('req-001-aaa')).toHaveLength(0);
+    expect(mockGetLogTrace).not.toHaveBeenCalledWith(1, 12);
+
+    await act(async () => finish({ data: [{ ...MOCK_LOGS_RESPONSE.data[0], id: 12, request_id: 'new-customer-request' }], total: 1 }));
+    expect(screen.getAllByText('new-customer-request').length).toBeGreaterThan(0);
+    expect(mockGetLogTrace).toHaveBeenLastCalledWith(12, 12);
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     window.history.replaceState(null, '', '/logs');
@@ -521,9 +577,7 @@ describe('LogsPage', () => {
   it('handles empty log response', async () => {
     mockGetLogs.mockResolvedValue({ data: [], total: 0 });
     const { container } = renderLogs();
-    await waitFor(() => {
-      expect(mockGetLogs).toHaveBeenCalled();
-    });
+    expect(await screen.findByText('暂无日志记录')).toBeInTheDocument();
     const html = container.textContent || '';
     expect(html).not.toContain('req-001-aaa');
     expect(html).toContain('暂无可检查的执行');
@@ -568,6 +622,7 @@ describe('LogsPage', () => {
     const { container } = renderLogs();
 
     await waitFor(() => expect(container.textContent || '').toContain('请求列表不可用'));
+    expect(screen.queryByText('暂无日志记录')).not.toBeInTheDocument();
     expect(container.textContent || '').toContain('不会保留旧凭证');
     expect(container.textContent || '').not.toContain('req-001-aaa');
 

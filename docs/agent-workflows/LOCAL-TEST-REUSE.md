@@ -1,8 +1,38 @@
 # 本地测试准备与交付复用
 
+## 共享测试入口
+
+本地与 CI 共用[后端集成测试入口](../../scripts/test-backend-integration.sh)。
+顺序为 source-http、consolidated、source-media、agentcap、limitpolicy、
+workloadadmission。三个 Redis 组串行执行。全量 unit/race、admin 和
+sourceevidence 等检查仍从各自的 CI 入口运行。
+
+按批次设置专用合成环境的 `TEST_DATABASE_URL`、`REDIS_ADDR`、`REDIS_DB` 和 `REQUIRE_TEST_DATABASE=1`。脚本先离线核对实际工具链与 go.mod，再检查 CGO/编译器；不能把自动选出的 Go 版本当成强制 `GOTOOLCHAIN=local` 后的版本。脚本不安装工具、启动服务或创建凭据。
+
+```sh
+qa_log_dir="$(mktemp -d)/backend-integration"
+# 从当前候选根目录运行；只核对配置和 race 编译工具，不连接数据库。
+bash scripts/test-backend-integration.sh --check --log-dir "$qa_log_dir"
+# 确认专用环境、前态与授权后执行；日志目录必须尚不存在。
+bash scripts/test-backend-integration.sh --log-dir "$qa_log_dir"
+```
+
+前端构建和常规后端测试见[贡献指南](../../CONTRIBUTING.md#development-prerequisites)。
+按[执行记录](EXECUTION-RECORD.md)确认候选身份和可复用的测试范围。
+
+日志模式完整保留 `go test -json`，只返回退出码、包数、测试/子测试数、失败行号与路径。首次失败停止，未到达的组仍是未执行；不自动重试。空选择、全部跳过、不完整执行不会被摘要判为通过。摘要保留观察到的 commit/tree、tracked diff 摘要、未跟踪路径、runner 摘要；存在差异/覆盖文件时不能只引用 HEAD 声称 exact-commit 通过，也不自动授予证据复用资格。
+
+`--check --log-dir` 会先用所选 Python 执行摘要脚本 `--help`，验证实际语法和标准库，
+不创建日志目录、不运行测试。fresh 入口复用同一检查。摘要要求显式 `--runner` 并核对
+它与现有测试组的对应关系，记录实际入口路径、SHA-256 和摘要工具 SHA-256；不再把
+fresh 归为 backend。历史摘要不回写；原 a84 首装摘要中的 backend runner hash 是已知
+归属问题，需连同当时实际命令及源码裁定读取，不能用新字段追认旧证据。
+
+## 历史交付与复用依据
+
 2026-09-11 的优化仅涉及内部测试和交接。已验收产品为 `59f7712d09653034756b846b15b8d69a16782791`，tree `ab09c48939539a10dbb039814489d764c0b53ca5`，版本 1.4.0。下文历史路径保留原始归属，不代表现在可用。
 
-## 当前入口与复用判定（2026-09-15）
+### U1 复用判定（2026-09-15）
 
 持久隔离工作树为 `/Users/m4/Desktop/test/ur-regression-20260914/source`，分支
 `codex/fresh-regression-20260914`。已交付诊断候选为
@@ -44,7 +74,7 @@
 证据时检查受影响差异和环境，不把四个后续组单独通过覆盖 consolidated FAIL。
 本轮仅优化内部工具及交接，不宣称性能、成功 M118 reset、真实 XI 或父平台验收完成。
 
-## 2026-09-11 交付与依赖（历史）
+### 2026-09-11 交付与依赖
 
 后续 1.4.1 安装器源码工作见 [FRESH-INSTALL.md](../ops/FRESH-INSTALL.md)。其
 `scripts/test-fresh-install.sh` 为新增覆盖，复用本页工具链预检和日志摘要；原五组
@@ -64,28 +94,7 @@
 
 UR A/B/D/X Local 已通过独立整体验收。性能与附加观测缺口、M118 无受支持成功 reset、未发布/远端 CI/exact-main/真实 XI/父平台验收仍保留。B/BD 约 4.99/5.56 ms 增量来自两次运行各自 p95 的均值，不是合并样本 p95 或容量验收。
 
-## 共享测试入口
-
-本地与 CI 的 consolidated backend 步骤统一使用 `scripts/test-backend-integration.sh`。原包列表、正则和 integration/race/count/timeout 参数保留；顺序为 consolidated、source-media、agentcap、limitpolicy、workloadadmission，三个 Redis 组不并行。原 CI 其余全量 unit/race、admin、sourceevidence 等步骤继续保留。
-
-按批次设置专用合成环境的 `TEST_DATABASE_URL`、`REDIS_ADDR`、`REDIS_DB` 和 `REQUIRE_TEST_DATABASE=1`。脚本先离线核对实际工具链与 go.mod，再检查 CGO/编译器；不能把自动选出的 Go 版本当成强制 `GOTOOLCHAIN=local` 后的版本。脚本不安装工具、启动服务或创建凭据。
-
-```sh
-# 从当前候选根目录运行；只核对配置和 race 编译工具，不连接数据库。
-bash scripts/test-backend-integration.sh --check --log-dir /Users/m4/Desktop/test/ur-regression-20260914/next-run
-# 确认专用环境、前态与授权后执行；日志目录必须尚不存在。
-bash scripts/test-backend-integration.sh --log-dir /Users/m4/Desktop/test/ur-regression-20260914/next-run
-```
-
-日志模式完整保留 `go test -json`，只返回退出码、包数、测试/子测试数、失败行号与路径。首次失败停止，未到达的组仍是未执行；不自动重试。空选择、全部跳过、不完整执行不会被摘要判为通过。摘要保留观察到的 commit/tree、tracked diff 摘要、未跟踪路径、runner 摘要；存在差异/覆盖文件时不能只引用 HEAD 声称 exact-commit 通过，也不自动授予证据复用资格。
-
-`--check --log-dir` 会先用所选 Python 执行摘要脚本 `--help`，验证实际语法和标准库，
-不创建日志目录、不运行测试。fresh 入口复用同一检查。摘要要求显式 `--runner` 并核对
-它与现有测试组的对应关系，记录实际入口路径、SHA-256 和摘要工具 SHA-256；不再把
-fresh 归为 backend。历史摘要不回写；原 a84 首装摘要中的 backend runner hash 是已知
-归属问题，需连同当时实际命令及源码裁定读取，不能用新字段追认旧证据。
-
-## 昂贵执行前的具体准备
+### 过往执行故障与复用准备
 
 下表的 `P` 为 `/private/tmp/ur-asus-a11-20260910`。复用对应已通过材料，审查新候选差异；历史 ID 和前态不能用全局替换机械改写。
 

@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/uniroute/unirouter/internal/logger"
 )
 
 const maxLeaseTTL = 24 * time.Hour
@@ -81,14 +83,15 @@ func (s *Service) Reserve(ctx context.Context, request Request) (*Reservation, D
 			ceilMilliseconds(request.LeaseTTL+s.options.LeaseGrace), ceilMilliseconds(policy.MaxWait),
 			ceilMilliseconds(s.options.ActivePollWindow), s.options.MaxQueueDepth, s.options.MaxQueueScan,
 			ceilSeconds(stateTTL), s.Version(), s.options.MaxOrgQueueDepth, queueStartedMS).Result()
+		// Only attribute a deadline to this Redis reservation if the caller is still active.
+		storeDeadline := err != nil && ctx.Err() == nil && errors.Is(err, context.DeadlineExceeded)
 		cancel()
 		if err != nil {
-			s.abandon(request.OrgID, member, fingerprint, stateTTL)
-			if ctx.Err() != nil {
-				decision := s.decision(request.Class, policy.Weight, "deny", ReasonStateUnavailable)
-				decision.RetryAfter = time.Second
-				return nil, decision, ErrStateUnavailable
+			if storeDeadline {
+				logger.New(logger.Fields{Module: "workload_admission"}).Warn(
+					"request_id=%q phase=redis_reserve reason=deadline_exceeded", request.OperationID)
 			}
+			s.abandon(request.OrgID, member, fingerprint, stateTTL)
 			decision := s.decision(request.Class, policy.Weight, "deny", ReasonStateUnavailable)
 			decision.RetryAfter = time.Second
 			return nil, decision, ErrStateUnavailable

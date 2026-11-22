@@ -56,6 +56,8 @@ func TestCommunityFirstUseBusinessBrowserE2E(t *testing.T) {
 	ctx := t.Context()
 	rdb := redis.NewClient(&redis.Options{Addr: address})
 	t.Cleanup(func() { _ = rdb.Close() })
+	limitRedis := redis.NewClient(&redis.Options{Addr: address})
+	t.Cleanup(func() { _ = limitRedis.Close() })
 	require.NoError(t, rdb.Ping(ctx).Err())
 	require.NoError(t, rdb.FlushDB(ctx).Err())
 	t.Cleanup(func() { require.NoError(t, rdb.FlushDB(context.Background()).Err()) })
@@ -110,7 +112,7 @@ func TestCommunityFirstUseBusinessBrowserE2E(t *testing.T) {
 	manager, err := runtimechange.NewManager(pool, router, policy)
 	require.NoError(t, err)
 	router.SetRuntimeResolver(manager)
-	limits, err := limitpolicy.NewService(pool, rdb, limitpolicy.DefaultOptions())
+	limits, err := limitpolicy.NewService(pool, limitRedis, limitpolicy.DefaultOptions())
 	require.NoError(t, err)
 	require.NoError(t, limits.Refresh(ctx))
 	events, err := outbox.New(pool, outbox.DefaultOptions())
@@ -204,7 +206,18 @@ func TestCommunityFirstUseBusinessBrowserE2E(t *testing.T) {
 	}))
 	chat := middleware.IdempotencyGuard(middleware.NewPostgresIdempotencyStore(pool), pr4BrowserAPIKeySecret, newGatewayChatHandler(pool, relay, events))
 	gatewayAuth := middleware.GatewayAuth(pool, pr4BrowserAPIKeySecret)
-	mux.Handle("POST /v1/chat/completions", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, payloadpolicy.RequestMiddleware(payload, payloadpolicy.ProfileChatRequest, middleware.GetOrgIDFromContext))(middleware.StrictJSONIngress(shared.GatewayRateAdmission(chat))))
+	gatewayChat := middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, payloadpolicy.RequestMiddleware(payload, payloadpolicy.ProfileChatRequest, middleware.GetOrgIDFromContext))(middleware.StrictJSONIngress(shared.GatewayRateAdmission(chat)))
+	mux.HandleFunc("POST /v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		// The last synthetic request loses only this fixture's limit client.
+		// Auth, the production admission path and durable evidence stay in service.
+		if r.Header.Get("X-UniRouter-Fixture-Limit-State") == "unavailable" {
+			if err := limitRedis.Close(); err != nil {
+				http.Error(w, "could not close synthetic limit client", http.StatusInternalServerError)
+				return
+			}
+		}
+		gatewayChat.ServeHTTP(w, r)
+	})
 	mux.Handle("POST /v1/chat/completions/preflight", chatPreflightOperation(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, payloadpolicy.RequestMiddleware(payload, payloadpolicy.ProfileChatRequest, middleware.GetOrgIDFromContext))(middleware.StrictJSONIngress(newGatewayChatPreflightHandler(pool, relay)))))
 	server := httptest.NewServer(pr4BrowserSPAHandler(filepath.Join(pr4BrowserRepositoryRoot(t), "frontend", "dist"), middleware.SecurityHeaders(middleware.OperationIdentityWithSecret(pr4BrowserAPIKeySecret)(mux))))
 	t.Cleanup(server.Close)
@@ -240,7 +253,7 @@ func TestCommunityFirstUseBusinessBrowserE2E(t *testing.T) {
 		require.Zero(t, trap.count.Load(), "external %s traffic", trap.name)
 	}
 	require.NoError(t, runErr, "real backend browser first-use failed: %s", output.String())
-	require.EqualValues(t, 4, providerCalls.Load(), "two setup probes plus two ordinary requests; refusal never dispatches")
+	require.EqualValues(t, 4, providerCalls.Load(), "two setup probes plus two ordinary requests; neither refusal dispatches")
 	require.EqualValues(t, 2, nonStreamCalls.Load())
 	require.EqualValues(t, 2, streamCalls.Load())
 	t.Log("COMMUNITY_FIRST_USE canonical=true db_price_provider=true pricing=rate_card synthetic_prepaid=true external_provider=0 XI=0")
@@ -360,6 +373,11 @@ func verifyCommunityBusinessSQL(t *testing.T, pool *pgxpool.Pool, f pr4BrowserFi
 			RequestID string `json:"request_id"`
 			Status    int    `json:"status"`
 		} `json:"requests"`
+		Unavailable struct {
+			RequestID string `json:"request_id"`
+			Status    int    `json:"status"`
+			ErrorCode string `json:"error_code"`
+		} `json:"admission_unavailable"`
 	}
 	data, err := os.ReadFile(filepath.Join(artifacts, "browser-result.json"))
 	require.NoError(t, err)
@@ -373,6 +391,23 @@ func verifyCommunityBusinessSQL(t *testing.T, pool *pgxpool.Pool, f pr4BrowserFi
 	require.Equal(t, 1, count)
 	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM enterprise_finance_rate_card_versions WHERE org_id=$1 AND version=3 AND state='active' AND created_by<>approved_by AND approved_by<>''`, f.OrgID).Scan(&count))
 	require.Equal(t, 1, count)
+	failed := result.Unavailable
+	require.Regexp(t, "^op_", failed.RequestID)
+	require.Equal(t, http.StatusServiceUnavailable, failed.Status)
+	require.Equal(t, policybilling.ErrorCodeStateUnavailable, failed.ErrorCode)
+	var phase string
+	require.Eventually(t, func() bool {
+		return pool.QueryRow(ctx, `SELECT stage
+			FROM request_trace_events WHERE org_id=$1 AND project_id=$2 AND request_id=$3 AND owner_user_id=$4
+			AND event_type='limit_policy.admission' AND status_code=503 AND metadata->>'limit_policy_result'='denied'`,
+			f.OrgID, f.ProjectA, failed.RequestID, member).Scan(&phase) == nil
+	}, 10*time.Second, 50*time.Millisecond, "same 503 Request ID must retain its admission decision")
+	require.Equal(t, "admission", phase)
+	var attempts int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM billing_provider_attempts WHERE org_id=$1 AND request_id=$2`,
+		f.OrgID, failed.RequestID).Scan(&attempts))
+	require.Zero(t, attempts, "rate state unavailable must not dispatch")
+	t.Logf("NATIVE_503 request_id=%s http_status=%d phase=%s reason=%s provider_attempts=%d", failed.RequestID, failed.Status, phase, failed.ErrorCode, attempts)
 	var budget int64
 	var period string
 	require.NoError(t, pool.QueryRow(ctx, `SELECT budget_cents,budget_period FROM projects WHERE org_id=$1 AND id=$2`, f.OrgID, f.ProjectA).Scan(&budget, &period))

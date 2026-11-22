@@ -1,0 +1,78 @@
+name: Community anonymous source build
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_commit:
+        description: Exact protected main commit approved for anonymous Linux build
+        required: true
+        type: string
+      expected_tree:
+        description: Exact protected main tree approved for this run
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: ur-community-anonymous-source-build
+  cancel-in-progress: false
+
+jobs:
+  linux-build:
+    if: github.repository == 'foigent/unirouter' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && github.actor_id == '252312344'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Clone public source without credentials
+        env:
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+          EXPECTED_TREE: ${{ inputs.expected_tree }}
+          GIT_CONFIG_NOSYSTEM: '1'
+          GIT_CONFIG_GLOBAL: /dev/null
+          GIT_TERMINAL_PROMPT: '0'
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          [[ "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_TREE" =~ ^[0-9a-f]{40}$ ]]
+          test "$EXPECTED_COMMIT" = "$GITHUB_SHA"
+          test "$EXPECTED_COMMIT" = "$GITHUB_WORKFLOW_SHA"
+          unset GH_TOKEN GITHUB_TOKEN SSH_AUTH_SOCK
+          git -c credential.helper= clone https://github.com/foigent/unirouter.git source
+          git -C source checkout --detach "$EXPECTED_COMMIT"
+          test "$(git -C source rev-parse HEAD)" = "$EXPECTED_COMMIT"
+          test "$(git -C source rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
+          test -z "$(git -C source status --porcelain)"
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: source/go.mod
+          cache: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: source/frontend/package.json
+          package-manager-cache: false
+      - name: Build with empty dependency caches
+        working-directory: source
+        env:
+          GOMODCACHE: ${{ runner.temp }}/ur-cold-gomod
+          GOCACHE: ${{ runner.temp }}/ur-cold-gocache
+          GOTOOLCHAIN: local
+          NPM_CONFIG_CACHE: ${{ runner.temp }}/ur-cold-npm
+          NPM_CONFIG_USERCONFIG: /dev/null
+        run: |
+          set -euo pipefail
+          unset GH_TOKEN GITHUB_TOKEN NODE_AUTH_TOKEN NPM_TOKEN SSH_AUTH_SOCK
+          for directory in "$GOMODCACHE" "$GOCACHE" "$NPM_CONFIG_CACHE"; do
+            test ! -e "$directory"
+            mkdir -m 700 "$directory"
+          done
+          go version
+          npm --version
+          go build -mod=readonly -o "$RUNNER_TEMP/uniroute-cold" ./cmd/uniroute
+          test -s "$RUNNER_TEMP/uniroute-cold"
+          npm --prefix frontend ci
+          npm --prefix frontend run build
+          test -s frontend/dist/index.html
+          test -z "$(git status --porcelain --untracked-files=no)"
+          printf 'Anonymous cold Linux build passed at %s / %s\n' "$(git rev-parse HEAD)" "$(git rev-parse HEAD^{tree})"

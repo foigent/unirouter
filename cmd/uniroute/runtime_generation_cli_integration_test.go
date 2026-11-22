@@ -84,8 +84,8 @@ func TestRuntimeGenerationCLIExpandedLedgerLifecycleIntegration(t *testing.T) {
 				for _, environment := range []string{"test", "development", "production"} {
 					cfg.RuntimeEnvironment = environment
 					_, err := invokeGenerationCLI(t, cfg, "inspect", nil)
-					if head == schemaauthority.UpstreamObservationRestoreHead && environment != "production" {
-						require.NoError(t, err, "M130 may inspect the exact corrected M129 predecessor in an isolated environment")
+					if head == schemaauthority.UpgradeAdmissionRecoveryHead && environment != "production" {
+						require.NoError(t, err, "M131 may inspect the exact M130 predecessor in an isolated environment")
 					} else {
 						require.ErrorContains(t, err, "outside this artifact")
 					}

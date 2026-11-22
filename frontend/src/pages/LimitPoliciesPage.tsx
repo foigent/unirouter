@@ -1,15 +1,16 @@
 import '../i18n/security';
 import { translate as t, useI18n } from '../i18n';
 import { useEffect, useState } from 'react';
-import { Button, Form, SideSheet, Space, Table, Tag, Toast, Typography } from '@douyinfe/semi-ui';
+import { Button, Form, SideSheet, Space, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconEdit, IconPlus } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { modelEndpointApi } from '../api/modelEndpoints';
 import { isBillingRole, isOrgAdminRole, isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
-import { EmptyState, PageHeader, Surface } from '../ui';
+import { EmptyState, PagedTable, PageHeader, Surface } from '../ui';
 import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { loadAllPages } from '../utils/loadAllPages';
+import { useServerPage } from '../utils/pagination';
 import { projectDisplayName } from '../utils/projectDisplay';
 
 const { Text, Paragraph } = Typography;
@@ -96,36 +97,20 @@ export default function LimitPoliciesPage() {
   const customerContextReady = customerContext.state === 'ready' && Boolean(customerOrgID);
   const canManage = isOrgAdminRole(organizationRole) && !isBillingRole(organizationRole);
   const platform = isPlatformAdminRole(organizationRole);
-  const [policies, setPolicies] = useState<LimitPolicy[]>([]);
+  const policyPage = useServerPage<{ data?: LimitPolicy[]; total?: number; builtin_limits?: BuiltinLimits }>(
+    api.getLimitPolicies,
+    customerContextReady && customerOrgID ? `${customerOrgID}:${platform}` : null,
+  );
+  const policies = policyPage.data?.data ?? [];
+  const builtinLimits = policyPage.latestData?.builtin_limits ?? {};
   const [keys, setKeys] = useState<KeyOption[]>([]);
   const [models, setModels] = useState<string[]>([]);
   const [projects, setProjects] = useState<Array<{ value: number; label: string }>>([]);
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
-  const [total, setTotal] = useState(0);
-  const [builtinLimits, setBuiltinLimits] = useState<BuiltinLimits>({});
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [editing, setEditing] = useState<LimitPolicy | null>(null);
   const [policyScope, setPolicyScope] = useState<'customer' | 'deployment_global'>('customer');
   const [formApi, setFormApi] = useState<any>(null);
 
-  const load = (nextPage = page, nextSize = pageSize) => {
-    if (!customerContextReady) return;
-    setLoading(true);
-    api.getLimitPolicies(nextPage, nextSize)
-      .then((data: any) => {
-        setPolicies(data?.data || []);
-        setTotal(data?.total || 0);
-        setBuiltinLimits(data?.builtin_limits || {});
-      })
-      .catch((err: any) => Toast.error(err?.message || t("共享限额策略加载失败")))
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    if (customerContextReady) load(1, pageSize);
-  }, [customerContextReady, customerOrgID, platform]);
   useEffect(() => {
     if (!customerContextReady || !customerOrgID) return;
     void (async () => {
@@ -217,7 +202,7 @@ export default function LimitPoliciesPage() {
         Toast.success(editing ? t("策略已更新并生成新版本") : t("策略已创建"));
       }
       closeDrawer();
-      load();
+      policyPage.reload();
     } catch (err: any) {
       Toast.error(err?.message || t("策略保存失败"));
     }
@@ -259,19 +244,19 @@ export default function LimitPoliciesPage() {
       />
 
       <Surface title={t("限额策略")} description={t("策略按范围条件叠加匹配；先从列表确认现状，再新增或编辑。")}>
-        <div className="ur-table-shell">
-          <Table
-            rowKey="id"
-            columns={columns}
-            dataSource={policies}
-            loading={loading}
-            pagination={{
-              currentPage: page, pageSize, total, pageSizeOpts: [20, 50, 100], showSizeChanger: true,
-              onPageChange: (next: number) => { setPage(next); load(next, pageSize); },
-              onPageSizeChange: (next: number) => { setPageSize(next); setPage(1); load(1, next); },
-            }}
-          />
-        </div>
+        <PagedTable
+          rowKey="id"
+          columns={columns}
+          dataSource={policies}
+          loading={policyPage.loading}
+          total={policyPage.failed ? 0 : policyPage.latestData?.total ?? 0}
+          page={policyPage.page}
+          pageSize={policyPage.pageSize}
+          showSizeChanger
+          onPageChange={policyPage.onPageChange}
+          onPageSizeChange={policyPage.onPageSizeChange}
+          loadError={policyPage.failed ? { title: t("共享限额策略加载失败"), retry: policyPage.reload } : undefined}
+        />
       </Surface>
 
       <details className="ur-workspace-notes"><summary>{t("使用说明与故障策略")}</summary>
@@ -305,25 +290,25 @@ export default function LimitPoliciesPage() {
                 }
               }}
               rules={[{ required: true }]}
-              style={{ width: '100%' }}
+              className="ur-form-control-full-width"
             />
           ) : <Text type="tertiary">{t("客户范围：")}{customerContext.orgName || t('组织 #{id}', {id: customerOrgID || '-'})}</Text>}
-          <Form.Select field="project_id" label={<span id="limit-policy-project-label">{t("项目（可选）")}</span>} aria-labelledby="limit-policy-project-label" optionList={projects} showClear filter disabled={policyScope === 'deployment_global'} style={{ width: '100%' }} />
+          <Form.Select field="project_id" label={<span id="limit-policy-project-label">{t("项目（可选）")}</span>} aria-labelledby="limit-policy-project-label" optionList={projects} showClear filter disabled={policyScope === 'deployment_global'} className="ur-form-control-full-width" />
           <Form.Select
             field="api_key_id"
             label={<span id="limit-policy-key-label">{t("访问凭证（可选）")}</span>}
             aria-labelledby="limit-policy-key-label"
             optionList={keys.map((key) => ({ value: key.id, label: `${key.name} · ${projectDisplayName({ id: key.project_id || 0, name: key.project_name || '' })} · ${key.key_prefix}***` }))}
-            showClear filter disabled={policyScope === 'deployment_global'} style={{ width: '100%' }}
+            showClear filter disabled={policyScope === 'deployment_global'} className="ur-form-control-full-width"
           />
-          <Form.Select field="model" label={<span id="limit-policy-model-label">{t("模型（可选）")}</span>} aria-labelledby="limit-policy-model-label" optionList={models.map((model) => ({ value: model, label: model }))} showClear filter style={{ width: '100%' }} />
+          <Form.Select field="model" label={<span id="limit-policy-model-label">{t("模型（可选）")}</span>} aria-labelledby="limit-policy-model-label" optionList={models.map((model) => ({ value: model, label: model }))} showClear filter className="ur-form-control-full-width" />
           <Form.Input field="policy_label" label={t("策略标签（可选）")} placeholder="production" />
           <Text type="tertiary" size="small">{t("已填写的客户、项目、凭证、模型和标签必须同时匹配；标签由管理员绑定到访问凭证，调用方不能通过请求头自行声明。")}</Text>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 16 }}>
-            <Form.InputNumber field="rps_limit" label={t("RPS（每秒请求）")} min={0} style={{ width: '100%' }} />
-            <Form.InputNumber field="rpm_limit" label={t("RPM（每分钟请求）")} min={0} style={{ width: '100%' }} />
-            <Form.InputNumber field="tpm_limit" label={t("TPM（每分钟 Token）")} min={0} style={{ width: '100%' }} />
-            <Form.InputNumber field="concurrency_limit" label={t("并发请求数")} min={0} style={{ width: '100%' }} />
+            <Form.InputNumber field="rps_limit" label={t("RPS（每秒请求）")} min={0} className="ur-form-control-full-width" />
+            <Form.InputNumber field="rpm_limit" label={t("RPM（每分钟请求）")} min={0} className="ur-form-control-full-width" />
+            <Form.InputNumber field="tpm_limit" label={t("TPM（每分钟 Token）")} min={0} className="ur-form-control-full-width" />
+            <Form.InputNumber field="concurrency_limit" label={t("并发请求数")} min={0} className="ur-form-control-full-width" />
           </div>
           <Form.Select
             field="mode"
@@ -335,7 +320,7 @@ export default function LimitPoliciesPage() {
               { value: 'disabled', label: t("停用") },
             ]}
             rules={[{ required: true }]}
-            style={{ width: '100%' }}
+            className="ur-form-control-full-width"
           />
           <Form.Select
             field="failure_mode"
@@ -346,7 +331,7 @@ export default function LimitPoliciesPage() {
               { value: 'last_known_safe', label: t("只用健康期预发的短暂安全许可") },
             ]}
             rules={[{ required: true }]}
-            style={{ width: '100%' }}
+            className="ur-form-control-full-width"
           />
           <Space style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24 }}>
             <Button onClick={closeDrawer}>{t("取消")}</Button>

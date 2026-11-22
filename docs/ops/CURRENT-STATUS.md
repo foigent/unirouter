@@ -1,5 +1,16 @@
 # UniRouter Current Status
 
+| Question | Source |
+| --- | --- |
+| What version and schema does this checkout support? | [Product version](../../VERSION) and [schema authority](../../internal/schemaauthority/version.go) |
+| What was publicly distributed and tested? | [Signed preview and installation evidence](../community/release-readiness.md) |
+| What is the maintenance procedure for an installed release? | [Community upgrade](COMMUNITY-UPGRADE.md) |
+| What is being worked on? | [Execution record](../agent-workflows/EXECUTION-RECORD.md) |
+
+The dated checkpoints below describe the source, artifacts and environments
+recorded at the time. For a current deployment, use its own observed receipts
+and readbacks.
+
 ## Community bootstrap source accepted — 1.11.0 — 2026-10-11
 
 The Linux amd64 download/verify/prepare entry was merged through [PR 448](https://github.com/foigent/unirouter/pull/448)
@@ -166,7 +177,7 @@ customer/integration delivery remain open. No release or GitHub push is claimed.
 Version 1.4.1 adds the reviewed one-off fresh owner in the same backend image,
 using original migrations and Publication Plans. Source/test text is being
 delivered from `codex/fresh-install-owner`; no new compile, database, image,
-restore or runtime result is claimed. [Current contract and evidence gaps](FRESH-INSTALL.md).
+restore or runtime result is claimed in this checkpoint. [Retained owner design](FRESH-INSTALL.md#retained-original-design-context).
 Accepted 1.4.0 and test-workflow 6676 evidence below are unchanged in scope.
 
 ## UR A/B/D/X Local accepted; internal test workflow optimization — 2026-09-11
@@ -178,7 +189,7 @@ The September 10 active/pending entries below are historical checkpoints.
 Performance/optional-observation gaps and unsupported successful M118 reset remain;
 no release, remote CI/exact-main, real XI or parent-platform acceptance is claimed.
 The separately authorized September 11 work changes internal tests and handoff only.
-[Current evidence, dependencies and reusable entrypoints](../agent-workflows/LOCAL-TEST-REUSE.md).
+[Retained evidence and dependencies](../agent-workflows/LOCAL-TEST-REUSE.md#历史交付与复用依据).
 
 ## UR-A Local accepted; B/D/X implementation active — 2026-09-10
 
