@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Review candidate: manual existing-public GHCR upload of two already accepted images.
+"""Publish an accepted image pair from an authorized GitHub workflow.
 
-Never run this during local preparation. --describe is strictly offline.
-Actual execution requires a separately authorized GitHub workflow dispatch.
-No image build, visibility transition, signing, release or container execution.
+The Docker identity probe loads and removes a synthetic local image.
+--describe is strictly offline.
 """
 import argparse
 import hashlib
+import io
 import json
 import importlib.util
 import os
@@ -15,10 +15,14 @@ import re
 import shutil
 import stat
 import subprocess
+import tarfile
 import tempfile
 
 REPOSITORY = 'foigent/unirouter'
 WORKFLOW_REF = REPOSITORY + '/.github/workflows/publish-accepted-community-images.yml@refs/heads/main'
+# The successful producer already closed both 1.15.8 archives and all six
+# draft assets. This is the canonical publisher record from that producer.
+RETAINED_RECORD_SHA256 = '7acf2ff6e27dd29c9249f613996e4a4e14adac639e403c891bb857c71e9d0cdd'
 
 def require(ok, message):
     if not ok:
@@ -104,6 +108,84 @@ def check_image(q, image):
     require(q['RootFS']['Layers'] == image['diff_ids'], 'Image filesystem layers differ from accepted bytes.')
     require(q['Os'] == 'linux' and q['Architecture'] == 'amd64', 'Wrong image platform.')
 
+
+def probe_archive(path):
+    def add(archive, name, body):
+        info = tarfile.TarInfo(name)
+        info.size = len(body)
+        archive.addfile(info, io.BytesIO(body))
+
+    layer = io.BytesIO()
+    with tarfile.open(fileobj=layer, mode='w') as archive:
+        add(archive, 'publisher-identity-fixture', b'UniRouter Docker identity fixture\n')
+
+    def content(body):
+        if not isinstance(body, bytes):
+            body = json.dumps(body, separators=(',', ':')).encode()
+        digest = 'sha256:' + hashlib.sha256(body).hexdigest()
+        return digest, 'blobs/sha256/' + digest[7:], body
+
+    layer_digest, layer_name, layer_body = content(layer.getvalue())
+    config = {
+        'architecture': 'amd64', 'os': 'linux', 'config': {},
+        'rootfs': {'type': 'layers', 'diff_ids': [layer_digest]},
+        'history': [{'created_by': 'UniRouter publisher identity probe ' + path.parent.name}],
+    }
+    cfg_digest, cfg_name, cfg_body = content(config)
+    oci = 'application/vnd.oci.image.'
+    manifest_type = oci + 'manifest.v1+json'
+    layer_source = {'mediaType': oci + 'layer.v1.tar', 'digest': layer_digest, 'size': len(layer_body)}
+    manifest = {
+        'schemaVersion': 2, 'mediaType': manifest_type,
+        'config': {'mediaType': oci + 'config.v1+json', 'digest': cfg_digest, 'size': len(cfg_body)},
+        'layers': [layer_source],
+    }
+    manifest_digest, manifest_name, manifest_body = content(manifest)
+    index = {
+        'schemaVersion': 2, 'mediaType': oci + 'index.v1+json',
+        'manifests': [{'mediaType': manifest_type, 'digest': manifest_digest, 'size': len(manifest_body)}],
+    }
+    legacy = {'Config': cfg_name, 'RepoTags': None, 'Layers': [layer_name],
+              'LayerSources': {layer_digest: layer_source}}
+    with tarfile.open(path, 'x') as archive:
+        add(archive, 'oci-layout', b'{"imageLayoutVersion":"1.0.0"}')
+        add(archive, 'index.json', json.dumps(index).encode())
+        add(archive, 'manifest.json', json.dumps([legacy]).encode())
+        for name, body in ((cfg_name, cfg_body), (layer_name, layer_body), (manifest_name, manifest_body)):
+            add(archive, name, body)
+    return {'config_id': cfg_digest, 'diff_ids': [layer_digest]}
+
+
+def check_docker_archive_identity(environment):
+    require(environment.get('GITHUB_ACTIONS') == 'true' and environment.get('RUNNER_ENVIRONMENT') == 'github-hosted'
+            and environment.get('RUNNER_OS') == 'Linux' and environment.get('RUNNER_ARCH') == 'X64',
+            'Docker identity probe requires a disposable GitHub Linux x64 runner.')
+    with tempfile.TemporaryDirectory(prefix='ur-publisher-probe-', dir=environment['RUNNER_TEMP']) as scratch:
+        root = Path(scratch)
+        config = root / 'docker-config'
+        config.mkdir()
+        env = {'PATH': environment['PATH'], 'DOCKER_CONFIG': str(config), 'DOCKER_HOST': 'unix:///var/run/docker.sock'}
+        version = command(['docker', 'version', '--format', '{{.Server.Version}}'], env).decode().strip()
+        driver = command(['docker', 'info', '--format', '{{.Driver}}'], env).decode().strip()
+        require(re.fullmatch(r'[0-9][0-9A-Za-z.+~-]{0,63}', version)
+                and re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,31}', driver), 'Invalid Docker server or storage driver identity.')
+        print(json.dumps({'docker_server': version, 'storage_driver': driver}), flush=True)
+        archive = root / 'archive.tar'
+        image = probe_archive(archive)
+        command(['docker', 'load', '--input', str(archive)], env)
+        check_image(inspected(env, image['config_id']), image)
+        command(['docker', 'image', 'rm', image['config_id']], env)
+    print('Publisher Docker identity probe passed (untagged archive, config digest, ordered layer, linux/amd64).')
+
+
+def require_subject_binding(raw, record, workflow_commit):
+    product_commit = record['product']['commit']
+    require(product_commit == record['predecessor']['program_commit'],
+            'Publisher product and producer program differ.')
+    require(product_commit == workflow_commit or hashlib.sha256(raw).hexdigest() == RETAINED_RECORD_SHA256,
+            'A separate publisher program requires the exact retained 1.15.8 record.')
+
+
 def image_pin(q, image):
     check_image(q, image)
     digests = {d for d in q.get('RepoDigests', []) if d.startswith(image['repository'] + '@sha256:')}
@@ -168,10 +250,16 @@ def verify_parent_evidence(stages, record, env, assets, directory):
             and verifier['digest'] == 'sha256:' + result['verifier']['sha256'], 'Producer verifier asset differs.')
 
 
-def execute():
+def read_publisher_dispatch():
     check_context(os.environ)  # Must precede token access, tools, temp files or API calls.
     stages = stage_module()
-    raw_record, record, _ = stages.read_dispatch('publisher')
+    raw, record, _ = stages.read_dispatch('publisher')
+    require_subject_binding(raw, record, os.environ['GITHUB_SHA'])
+    return stages, raw, record
+
+
+def execute():
+    stages, raw_record, record = read_publisher_dispatch()
     draft = record['inputs']['draft_id']; tag = record['inputs']['tag']
     images = [record['inputs']['images'][role] for role in ('backend', 'frontend')]
     require(bool(os.environ.get('GH_TOKEN')), 'Missing temporary repository GITHUB_TOKEN.')
@@ -275,10 +363,16 @@ def main():
     p = argparse.ArgumentParser()
     group = p.add_mutually_exclusive_group(required=True)
     group.add_argument('--describe', action='store_true')
+    group.add_argument('--check-docker-archive-identity', action='store_true')
+    group.add_argument('--validate-publisher-subject', action='store_true')
     group.add_argument('--execute-approved-public-stage', action='store_true')
     args = p.parse_args()
     if args.describe:
         print(json.dumps(describe(), indent=2)); return
+    if args.check_docker_archive_identity:
+        check_docker_archive_identity(os.environ); return
+    if args.validate_publisher_subject:
+        read_publisher_dispatch(); return
     execute()
 
 if __name__ == '__main__':

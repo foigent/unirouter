@@ -25,9 +25,6 @@ def module(name, filename):
     exec(compile(Path(result.__file__).read_bytes(),result.__file__,'exec'),result.__dict__); return result
 M=module('publisher_stage_fixture_contract','community-stage-record.py')
 F=module('publisher_stage_fixture_inputs','community-stage-fixtures.py')
-COMMIT = 'a' * 40
-
-
 class World:
     """Synthetic native API/Docker responses; unknown calls fail immediately."""
     def __init__(self, directory):
@@ -47,11 +44,12 @@ class World:
                      'config_id': 'sha256:' + str(n) * 64, 'diff_ids': ['sha256:' + str(n + 2) * 64]}
             self.images.append(image); self.payloads[n] = data
             self.states[role] = None; self.exists[role] = True; self.reads[role] = 0
-        self.source = F.producer(); self.draft=456; self.parent_program='c'*40; self.parent_run=12345
+        self.source = F.producer(); self.draft=456; self.parent_run=12345
         self.tag = 'source-'+self.source['product']['commit']+'-run-'+str(self.parent_run)+'-linux-amd64'
         self.prepare_chain()
 
     def prepare_chain(self):
+        self.parent_program = self.source['product']['commit']
         members={'synthetic-source-observation.json':b'{"source":"synthetic"}'}
         self.verifier=b'synthetic-verifier'; self.payloads[3]=self.verifier
         files=dict(members)
@@ -74,7 +72,7 @@ class World:
         if path == 'repos/' + H.REPOSITORY:
             return {'id':M.REPOSITORY_ID,'full_name': H.REPOSITORY, 'visibility': 'public'}
         if path.endswith('/git/ref/heads/main'):
-            return {'object': {'sha': COMMIT}}
+            return {'object': {'sha': env['GITHUB_SHA']}}
         if path == 'repos/'+H.REPOSITORY+'/actions/runs/'+str(self.parent_run):
             return {'id':self.parent_run,'run_attempt':1,'status':'completed','conclusion':'success',
                 'head_sha':self.parent_program,'event':'workflow_dispatch','head_branch':'main','path':'.github/workflows/community-byte-candidate.yml',
@@ -148,19 +146,20 @@ class World:
             return b''
         raise AssertionError('Unexpected command: ' + repr(args))
 
-    def execute(self):
+    def execute(self, *, workflow_commit=None):
+        workflow_commit = workflow_commit or self.record['product']['commit']
         env = {'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': H.REPOSITORY,
                'GITHUB_REF': 'refs/heads/main', 'GITHUB_EVENT_NAME': 'workflow_dispatch',
-               'GITHUB_WORKFLOW_REF': H.WORKFLOW_REF, 'GITHUB_SHA': COMMIT,
+               'GITHUB_WORKFLOW_REF': H.WORKFLOW_REF, 'GITHUB_SHA': workflow_commit,
                'GH_TOKEN': 'offline-synthetic-value', 'GITHUB_ACTOR': 'offline-fixture',
                'RUNNER_TEMP': str(self.directory), 'GITHUB_STEP_SUMMARY': str(self.directory / 'summary.md')}
-        inputs=dict(M.encode(self.record),expected_workflow_commit=COMMIT,admission_sha256='d'*64)
+        inputs=dict(M.encode(self.record),expected_workflow_commit=workflow_commit,admission_sha256='d'*64)
         event=self.directory/'event.json';event.write_bytes(M.canonical({'repository':{'id':M.REPOSITORY_ID,'full_name':H.REPOSITORY},
             'sender':{'id':M.ACTOR_ID},'inputs':inputs}))
-        env.update(GITHUB_REPOSITORY_ID=str(M.REPOSITORY_ID),GITHUB_ACTOR_ID=str(M.ACTOR_ID),GITHUB_WORKFLOW_SHA=COMMIT,
+        env.update(GITHUB_REPOSITORY_ID=str(M.REPOSITORY_ID),GITHUB_ACTOR_ID=str(M.ACTOR_ID),GITHUB_WORKFLOW_SHA=workflow_commit,
             GITHUB_RUN_ATTEMPT='1',GITHUB_RUN_ID='67890',RUNNER_ENVIRONMENT='github-hosted',RUNNER_OS='Linux',RUNNER_ARCH='X64',
             GITHUB_EVENT_PATH=str(event),STAGE_RECORD_B64=inputs['stage_record_b64'],STAGE_RECORD_SHA256=inputs['stage_record_sha256'],
-            EXPECTED_WORKFLOW_COMMIT=COMMIT,ADMISSION_SHA256=inputs['admission_sha256'])
+            EXPECTED_WORKFLOW_COMMIT=workflow_commit,ADMISSION_SHA256=inputs['admission_sha256'])
         with patch.dict(os.environ, env, clear=True), \
              patch.object(H, 'gh', self.gh), patch.object(H, 'command', self.command), \
              patch.object(H.shutil, 'which', return_value='/unused'), \
@@ -186,7 +185,87 @@ class PublisherTests(unittest.TestCase):
         first_push = next(i for i, c in enumerate(self.world.calls) if c[:2] == ('docker', 'push'))
         self.assertEqual(sum(c[:2] == ('docker', 'load') for c in self.world.calls[:first_push]), 2)
 
-    def test_same_actual_entry_accepts_two_sources_without_changing_program(self):
+    def test_separate_program_accepts_only_the_retained_candidate(self):
+        accepted = M.sha(M.canonical(self.world.record))
+        workflow_commit = 'e' * 40
+        with self.assertRaisesRegex(RuntimeError, 'exact retained'):
+            self.world.execute(workflow_commit=workflow_commit)
+        self.assertEqual([], self.world.calls)
+        with patch.object(H, 'RETAINED_RECORD_SHA256', accepted):
+            result = self.world.execute(workflow_commit=workflow_commit)
+            self.assertEqual(accepted, result['stage_result']['record_sha256'])
+            self.assertEqual(workflow_commit, result['stage_result']['program_commit'])
+            for mutate in (
+                lambda record: record['product'].update(tree='f' * 40),
+                lambda record: record['predecessor'].update(program_commit='f' * 40),
+                lambda record: record['inputs'].update(draft_id=9999),
+                lambda record: record['inputs']['images']['frontend'].update(diff_ids=['sha256:' + 'f' * 64]),
+            ):
+                with self.subTest(change=mutate):
+                    before = self.world.record
+                    self.world.record = copy.deepcopy(before)
+                    mutate(self.world.record)
+                    self.world.calls.clear()
+                    with self.assertRaisesRegex(RuntimeError, 'exact retained|producer program differ'):
+                        self.world.execute(workflow_commit=workflow_commit)
+                    self.assertEqual([], self.world.calls)
+                    self.world.record = before
+
+    def test_probe_uses_the_original_untagged_archive_shape_without_credentials(self):
+        environment = {
+            'PATH': '/unused',
+            'RUNNER_TEMP': self.temp.name,
+            'GITHUB_ACTIONS': 'true',
+            'RUNNER_ENVIRONMENT': 'github-hosted',
+            'RUNNER_OS': 'Linux',
+            'RUNNER_ARCH': 'X64',
+            'GH_TOKEN': 'synthetic excluded input',
+        }
+        calls = []
+        image = {}
+
+        def command(args, env):
+            self.assertEqual({'PATH', 'DOCKER_CONFIG', 'DOCKER_HOST'}, set(env))
+            self.assertEqual('unix:///var/run/docker.sock', env['DOCKER_HOST'])
+            self.assertEqual([], list(Path(env['DOCKER_CONFIG']).iterdir()))
+            calls.append(args[1:3])
+            if args[1] == 'version':
+                return b'28.0.4'
+            if args[1] == 'info':
+                return b'overlay2'
+            if args[1] == 'load':
+                archive_path = Path(args[-1])
+                self.assertLess(archive_path.stat().st_size, 32 * 1024)
+                with tarfile.open(archive_path) as archive:
+                    def read(name):
+                        return archive.extractfile(name).read()
+                    member, = json.loads(read('manifest.json'))
+                    self.assertIsNone(member['RepoTags'])
+                    cfg_digest = 'sha256:' + M.sha(read(member['Config']))
+                    platform = json.loads(read(member['Config']))
+                    descriptor, = json.loads(read('index.json'))['manifests']
+                    manifest = read('blobs/sha256/' + descriptor['digest'][7:])
+                    self.assertNotEqual(cfg_digest, descriptor['digest'])
+                    self.assertEqual(descriptor['digest'], 'sha256:' + M.sha(manifest))
+                    self.assertEqual(cfg_digest, json.loads(manifest)['config']['digest'])
+                    layers = ['sha256:' + M.sha(read(name)) for name in member['Layers']]
+                    self.assertEqual(layers, platform['rootfs']['diff_ids'])
+                    image.update(Id=cfg_digest, RootFS={'Layers': layers},
+                                 Os=platform['os'], Architecture=platform['architecture'])
+                return b''
+            self.assertEqual(image['Id'], args[-1])
+            if args[2] == 'inspect':
+                return json.dumps([image]).encode()
+            self.assertEqual('rm', args[2])
+            return b''
+
+        with patch.object(H, 'command', side_effect=command), contextlib.redirect_stdout(io.StringIO()):
+            H.check_docker_archive_identity(environment)
+        self.assertEqual([['version', '--format'], ['info', '--format'], ['load', '--input'],
+                          ['image', 'inspect'], ['image', 'rm']], calls)
+        self.assertEqual([], list(Path(self.temp.name).iterdir()))
+
+    def test_actual_entry_accepts_new_product_with_its_same_commit_program(self):
         for version,commit in (('1.15.0','a'*40),('1.15.1','b'*40)):
             with self.subTest(version=version),tempfile.TemporaryDirectory() as tmp:
                 world=World(tmp);world.source=F.producer(version,commit)

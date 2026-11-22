@@ -193,6 +193,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      - name: Test publisher Docker archive identity
+        run: python3 -I -B .github/tests/community-image-publisher.py --check-docker-archive-identity
+
       - name: Checkout exact Neutral D1 qualifier
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

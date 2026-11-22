@@ -323,9 +323,22 @@ class StageChainTests(unittest.TestCase):
                 with self.assertRaises(AssertionError):
                     rehearsal.read_rehearsal_context(M, P.H, other_env)
 
+            amended = self.native_env(path, record, 'publisher')
+            with patch.object(P.H, 'RETAINED_RECORD_SHA256', M.sha(body)):
+                self.assertEqual((body, record), rehearsal.read_rehearsal_context(M, P.H, amended))
+                with self.assertRaises(AssertionError):
+                    rehearsal.read_rehearsal_context(M, P.H, {**amended, 'GITHUB_WORKFLOW_SHA': 'f' * 40})
+                alternate = copy.deepcopy(record)
+                alternate['inputs']['draft_id'] += 1
+                with self.assertRaisesRegex(RuntimeError, 'exact retained'):
+                    rehearsal.read_rehearsal_context(M, P.H, self.native_env(path, alternate, 'publisher'))
+
         workflow = (ROOT / '.github/workflows' / M.WORKFLOWS['publisher']).read_text()
         publisher, verify = workflow.split('\n  rehearse-full-materials:\n')
         self.assertIn('github.run_attempt == 1', publisher)
+        self.assertIn('runs-on: ubuntu-24.04', publisher)
+        self.assertLess(publisher.index('--validate-publisher-subject'), publisher.index('--check-docker-archive-identity'))
+        self.assertLess(publisher.index('--check-docker-archive-identity'), publisher.index('GH_TOKEN:'))
         self.assertIn('--execute-approved-public-stage', publisher)
         self.assertIn('needs: publish-public', verify)
         self.assertIn("needs.publish-public.result == 'success'", verify)
