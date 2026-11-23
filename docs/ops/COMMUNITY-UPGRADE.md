@@ -1,6 +1,8 @@
 # Community upgrade: retained installations and exact schema transitions
 
-The current signed entry is [UR 1.15.7, release sequence 24](https://github.com/foigent/unirouter/releases/tag/v1.15.7-preview.24), with target M130. The [formal public package consumer](https://github.com/foigent/unirouter/actions/runs/43619096141) used the actual signed 1.15.6 predecessor on M129. It reconstructed the signed target with the 136,840-byte delta, preserved the original administrator password and nonempty financial history, appended M130 as the only missing migration, and verified an independent database and file restore. Follow the original-host admission, cold pair and independent restore checks below.
+The current signed preview is [UR 1.15.8, release sequence 25](https://github.com/foigent/unirouter/releases/tag/v1.15.8-preview.25), with target M131. The [first isolated Linux upgrade run on 23 November 2026](https://github.com/foigent/unirouter/actions/runs/45116045540) used the exact signed 1.15.7/M130 predecessor. It reconstructed the signed target with the 138,502-byte delta, applied M131 and verified an independent database and file restore. The run failed when the original administrator login returned HTTP 503 after the upgrade. Before scheduling maintenance, check [Community Release Acceptance](https://github.com/foigent/unirouter/actions/workflows/community-release-acceptance.yml) for subsequent runs that match this [version, sequence and package digest](../community/release-readiness.md#track-signed-package-acceptance).
+
+Previously verified transition to [UR 1.15.7, release sequence 24](https://github.com/foigent/unirouter/releases/tag/v1.15.7-preview.24) on M130. The [formal public package consumer](https://github.com/foigent/unirouter/actions/runs/43619096141) used the actual signed 1.15.6 predecessor on M129. It reconstructed the signed target with the 136,840-byte delta, preserved the original administrator password and nonempty financial history, appended M130 as the only missing migration, and verified an independent database and file restore. Follow the original-host admission, cold pair and independent restore checks below.
 
 The M130 upgrade adds recovery for one interrupted admission during
 its own signed single-host upgrade. Use the same `resume-upgrade` entry and
@@ -24,8 +26,9 @@ Fresh installation continues to use `install`/`resume` and the exact candidate s
 
 ## Supported source
 
-- Exact complete M127, M128 or M129, completed native installation envelope, and its recorded
-  signed full package. Use the package actually named by native release history;
+- The documented sequence 25 differential starts at 1.15.7 / M130 / sequence 24.
+  Earlier M127, M128 and M129 transitions remain scoped to their historical releases.
+  Use the completed native installation envelope and the signed full package named by native release history;
   after an earlier manual patch it may differ from the install directory's
   original `release.tar.gz`.
 - The standard single backend, or the named `ur_edge_pair` adapter with the
@@ -44,11 +47,14 @@ only their previously supported scope.
 
 ## One entry for check, upgrade, resume and status
 
-First prepare and independently verify the complete release using the existing
-[bootstrap instructions](../community/install-linux.md). The same signed full
-bundle supports fresh sequence 0 and its declared upgrade window; exact native
-predecessor binding is checked separately. There is no new differential download
-or executable-fragment channel.
+Obtain the pinned bootstrap script and metadata from the
+[installation guide](../community/install-linux.md). For sequence 25,
+run `prepare` with the retained 1.15.7 signed full package as `--source-package`.
+The published delta reconstructs the exact signed full target, which is
+independently verified before maintenance. Use `--source-verifier` to retain an
+installed verifier whose digest matches. The signed full package is also
+published. The prepared bundle's declared sequence/schema window and the
+installed native predecessor identity are verified separately.
 
 Use the prepared signed payload with the original operator, for example:
 
@@ -161,18 +167,22 @@ outside that file check and remain valid.
    body bindings and the existing financial/content restore rebase. Both the
    original and verification objects are retained. No restore overwrites the
    original database or content tree.
-5. For M127/M128 sources, run the candidate's existing native migration owner
-   for the exact missing suffix. A proved interrupted M127 → M128 prefix may
-   continue only the missing M129 migration after full cold/data checks. For a
-   same-schema M129 source, verify the full ledger/cold pair without invoking
-   migrations. Verify original table facts, preserve configuration/credentials, start exact candidate writer
-   images and verify native readiness. Record the signed target release only
+5. Run the candidate's existing native migration owner for the exact missing
+   ledger suffix. The sequence 25 path adds only M131 to the complete M130
+   ledger. A historical, proved interrupted M127 → M128 prefix may continue
+   only the missing M129 migration after full cold/data checks. A same-schema
+   M129 upgrade verifies the full ledger and cold pair without invoking
+   migrations. Verify original table facts and preserved configuration and
+   credentials, then start the exact candidate writer images and verify native readiness. Record the signed target release only
    with the exact installed source sequence/package under the native lock.
 6. Verify original database/content/configuration before opening receivers.
    Prepare new native membership, start/read back the receivers, then complete
    admission. Post-admission checks verify native release/runtime/admission and
    retained recovery archive identity. Legitimate new business writes do not
    invalidate the successful upgrade or cause migration/recording to repeat.
+7. Once the ordinary console can accept requests, sign in as the existing
+   administrator and verify access to the original records. If the console or
+   login still fails, preserve the native receipts and consult the release status before repeating maintenance.
 
 A legacy M128 cold dump with a nonempty observation uses PostgreSQL's native
 pre-data/data/post-data restore stages on the private empty verification clone.

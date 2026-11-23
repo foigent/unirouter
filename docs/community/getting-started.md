@@ -89,12 +89,10 @@ associate its execution, usage and economic facts with other authorized sources
 for analysis and review. Facts are transferred asynchronously; X-Insight is not
 part of the synchronous model request path.
 
-[X-Insight's source](https://github.com/foigent/x-insight) and
-[Linux preview release](https://github.com/foigent/x-insight/releases/tag/v0.2.0-dev.fpv24)
-are public. Start with its [installation and first-use instructions](https://github.com/foigent/x-insight#readme),
-then create a new authorized connection from the corresponding product setup
-screens. The original UR 1.15.6 and XI FPV24 installations have verified
-connection recovery and scoped reader access.
+Start with [X-Insight's current installation and first-use instructions](https://github.com/foigent/x-insight#readme),
+then create a new authorized connection from the product setup screens. The
+[recorded UR 1.15.6 and XI FPV24 acceptance](release-readiness.md#verified-existing-ur-and-xi-installation)
+covers connection recovery and scoped reader access on those installations.
 
 Use the existing sources for the relevant step:
 

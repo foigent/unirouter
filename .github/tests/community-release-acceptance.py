@@ -123,7 +123,7 @@ def _fixture_loopback_origin(port):
     return "http://127.0.0.1:" + str(port)
 
 
-def fixture_admin_login(password, *, expected_status=200, loopback_port=13000):
+def fixture_admin_login(password, *, expected_status=200, loopback_port=13000, failure_reason=None):
     require(isinstance(password, str) and password and len(password.encode()) <= 72 and
             "\r" not in password and "\n" not in password and
             type(expected_status) is int and expected_status in (200, 401),
@@ -147,12 +147,16 @@ def fixture_admin_login(password, *, expected_status=200, loopback_port=13000):
                     isinstance(value.get("token"), str) and value["token"], "Chosen fixture input did not authenticate.")
             return value
     except urllib.error.HTTPError as error:
-        code = error.code
-        error.close()
+        try:
+            code = error.code
+            reason = failure_reason(error) if failure_reason is not None and code == 503 else None
+        finally:
+            error.close()
         require(type(code) is int and 100 <= code <= 599,
                 "Fixture administrator login failed: invalid HTTP status.")
+        suffix = " (" + reason + ")" if reason else ""
         require(expected_status == code == 401,
-                "Fixture administrator login failed: HTTP " + str(code) + ".")
+                "Fixture administrator login failed: HTTP " + str(code) + suffix + ".")
         return None
     except urllib.error.URLError as error:
         category = "timeout" if isinstance(error.reason, TimeoutError) else "transport error"
@@ -989,8 +993,12 @@ def make_acceptance(repo, root, config, context, *, stage_record=None, upgrade_s
                     'Original public process exits are unproved.')
             self.phase = 'verify public upgrade readiness'
             self.request(self.loopback_url + '/health/ready')
+            self.phase = 'verify public upgrade business startup'
+            self.result['post_upgrade_business_startup'] = {}
+            self.wait_business_startup(evidence=self.result['post_upgrade_business_startup'])
             self.phase = 'verify original administrator after public upgrade'
-            fixture_admin_login(FIRST_USE_TEST_INPUT, loopback_port=self.loopback_port)
+            fixture_admin_login(FIRST_USE_TEST_INPUT, loopback_port=self.loopback_port,
+                                failure_reason=base.fixture_http_failure_reason)
             actual_release = strict_json(self.sql(directory, project,
                 "SELECT jsonb_build_object('release_sequence',release_sequence,'version',version,'commit',commit,"
                 "'package_sha256',package_sha256,'schema',target_schema) FROM release_state"))
