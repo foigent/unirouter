@@ -2,9 +2,25 @@
 
 English is the primary community language. Chinese entry points and contributions are welcome.
 
-## Current public preview — 1.15.7 / M130
+## Current public preview — 1.15.8 / M131
 
-The [signed Linux amd64 preview](https://github.com/foigent/unirouter/releases/tag/v1.15.7-preview.24) is release sequence 24 from source `e48bd73097e0d20a49395782cde1562741f8e78b`. The full package is 130,056,614 bytes, SHA-256 `e7e2dfca5fce168b06b4e2db87efcfba4b04baea124a1a7eab9b814a6ed0cee8`. Start with the [English installation guide](install-linux.md) or the [Chinese guide](install-linux.zh-CN.md).
+The [signed Linux amd64 preview](https://github.com/foigent/unirouter/releases/tag/v1.15.8-preview.25) is release sequence 25 from source `8b4ccd99f34425eec8d4363d2939bd5c7f569e8d`. The full package is 130,056,833 bytes, SHA-256 `54505cb6ffd08dfb8c27aa8034be82f65a74647d476fb84a61e7c55d3d94766d`. For a new instance, use the [English installation guide](install-linux.md) or the [Simplified Chinese guide](install-linux.zh-CN.md).
+
+The [first isolated Ubuntu acceptance run on 23 November 2026](https://github.com/foigent/unirouter/actions/runs/45116045540) verified the published signed package and six anonymous image pulls. Fresh installation, administrator login, first-customer initialization and interrupted-install recovery passed before the upgrade case.
+
+The upgrade case used the actual signed 1.15.7 predecessor on M130, reconstructed the exact signed target using the 138,502-byte delta and verified the M131 migration and independent database/file restore. The run failed after the native upgrade completed because the original administrator login returned HTTP 503. Existing-server rollout and joint UR/X-Insight acceptance have separate checks.
+
+The [anonymous source build](https://github.com/foigent/unirouter/actions/runs/45038213604) passed at the same product commit with empty dependency caches. This verifies the checkout and build path. A new independent contributor's full experience remains unverified.
+
+### Track signed-package acceptance
+
+1. Sign in to GitHub to view step logs. Open [Community Release Acceptance](https://github.com/foigent/unirouter/actions/workflows/community-release-acceptance.yml), listed as **Consume exact record-bound signed public community release**, and choose a completed run on `main`.
+2. Open `public-release-consumer` and expand **Consume exact real signed public release on this disposable runner**. Find the `unirouter.formal-community-consumer.v1` report near the end of the step log.
+3. Match `version: 1.15.8`, `release_sequence: 25` and `public_upgrade_delta.target.sha256` with the full package SHA-256 above. For isolated upgrade acceptance, look for a successful run whose matching report has `status: passed` and `installed_public_upgrade.original_password_usable: true`.
+
+## Historical public preview — 1.15.7 / M130
+
+The [signed Linux amd64 preview](https://github.com/foigent/unirouter/releases/tag/v1.15.7-preview.24) is release sequence 24 from source `e48bd73097e0d20a49395782cde1562741f8e78b`. The full package is 130,056,614 bytes, SHA-256 `e7e2dfca5fce168b06b4e2db87efcfba4b04baea124a1a7eab9b814a6ed0cee8`. Its [English installation guide](https://github.com/foigent/unirouter/blob/174b8c71c108e81b0c2696e72d23ee99690a7e41/docs/community/install-linux.md) and [Simplified Chinese guide](https://github.com/foigent/unirouter/blob/174b8c71c108e81b0c2696e72d23ee99690a7e41/docs/community/install-linux.zh-CN.md) retain the original download instructions.
 
 The [formal Ubuntu consumer](https://github.com/foigent/unirouter/actions/runs/43619096141) verified all six image pulls anonymously, installed the real signed package and verified login, first-customer initialization and interrupted-install recovery. It reconstructed the new package from the actual signed 1.15.6 predecessor with a 136,840-byte delta and a retained verifier. The original password and nonempty financial history were preserved. M130 was the only migration appended, and an independent database and file restore passed.
 
@@ -212,9 +228,9 @@ remain unchanged. Existing App secret revocation is outside this batch.
 
 ## Verified existing UR and XI installation
 
-The [integration entry](getting-started.md#optional-x-insight-integration) links [X-Insight FPV24](https://github.com/foigent/x-insight/releases/tag/v0.2.0-dev.fpv24). UR 1.15.6 and XI FPV24 were verified on existing installations after upgrading and recovering the original connection. Owner and restricted reader could match the original project records. Scope denials, synchronization and later control-credential rotation were checked separately.
+UR 1.15.6 and [X-Insight FPV24](https://github.com/foigent/x-insight/releases/tag/v0.2.0-dev.fpv24) were verified on existing installations after upgrading and recovering the original connection. Owner and restricted reader could match the original project records. Scope denials, synchronization and later control-credential rotation were checked separately. For new installations, follow the [integration entry](getting-started.md#optional-x-insight-integration).
 
-A guided first use from two fresh public installations, through receipt matching in XI, would extend that coverage. The project still needs a complete anonymous checkout and source build of the current exact revision from empty dependency caches. The earlier external fork and the signed package consumer cover their own paths.
+A guided first use from two fresh public installations, through receipt matching in XI, remains to be verified. The earlier external fork and the anonymous source build cover separate paths.
 
 The Linux bootstrap uses Python and an installed Docker Engine/Compose. Use the current signed preview and its guides above.
 

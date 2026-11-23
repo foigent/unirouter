@@ -597,7 +597,7 @@ class PublicPredecessorTests(unittest.TestCase):
                         self.assertEqual(instance.phase, 'read completed exact public upgrade resume' if fault == 'resume'
                                          else 'current native upgrade')
 
-    def test_actual_post_upgrade_checks_report_their_own_phase_and_safe_login_status(self):
+    def test_actual_post_upgrade_startup_and_single_login_report_distinct_outcomes(self):
         # Run the real signed-pair method and report boundary. Native services
         # are doubled; package/state/receipt files and their hashes are real.
         native_path = ROOT / '.github/tests/community-installer.py'
@@ -605,8 +605,23 @@ class PublicPredecessorTests(unittest.TestCase):
         # Use the exact M131 contract for the post-upgrade error fixtures.
         current = native.source_contract(ROOT).ledger
         ledger = current[:current.index(m.PRICING_SCHEMA) + 1]
-        for fault in ('readiness', 'login'):
-            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp, \
+        temporary = (503, 'runtime_unavailable')
+        ready = (200, None)
+        refused = (503, 'limit_policy.state_unavailable')
+        unauthorized = (401, None)
+        cases = {
+            'health_refused': ([], None),
+            'startup_then_login': ([temporary, ready], ready),
+            'startup_deadline': ([temporary] * 20, None),
+            'startup_draining': ([(503, 'runtime_draining')], None),
+            'startup_unknown': ([(503, 'unknown_raw_code')], None),
+            'startup_401': ([unauthorized], None),
+            'login_503': ([ready], refused),
+            'login_runtime_503': ([ready], temporary),
+            'login_401': ([ready], unauthorized),
+        }
+        for case, (probes, login) in cases.items():
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp, \
                  mock.patch.object(m.shutil, 'which', return_value='/fixture/docker'):
                 root = Path(tmp).resolve()
                 instance = m.make_acceptance(ROOT, root, self.candidate, {},
@@ -626,7 +641,6 @@ class PublicPredecessorTests(unittest.TestCase):
                 protected = {name: {'count': 1} for name in
                     ('users', 'orgs', 'projects', 'wallets', 'transactions', 'audit_logs', 'release_history')}
                 fingerprint = {'schema_migrations': {'count': len(ledger), 'sha256': 'synthetic-stable'}}
-                instance.wait_business_startup = lambda: None
                 instance.migration_audit = root / 'synthetic-migration-audit.jsonl'
                 instance.observe_migration_owner = lambda: instance.migration_audit.write_text(
                     '{"native_owner_calls":1,"migration_owner_calls":1}\n')
@@ -646,7 +660,16 @@ class PublicPredecessorTests(unittest.TestCase):
                 instance.run = run
                 source_ledger = ledger[:-1]
                 old.source_contract = native.SourceContract(m.ADMISSION_SCHEMA, source_ledger, ())
-                instance.sql = lambda *a: json.dumps(ledger if instance.run_native_upgrade.called else source_ledger)
+                def sql(_directory, _project, query):
+                    if query == 'SELECT count(*) FROM release_history':
+                        return '2'
+                    if query.startswith("SELECT jsonb_build_object('release_sequence'"):
+                        return json.dumps({
+                            'release_sequence': instance.release_sequence, 'version': instance.version,
+                            'commit': instance.commit, 'package_sha256': checked['candidate']['package_sha256'],
+                            'schema': instance.schema})
+                    return json.dumps(ledger if instance.run_native_upgrade.called else source_ledger)
+                instance.sql = sql
                 def upgrade(*args):
                     backup = directory / 'upgrades/synthetic-operation/backup'
                     backup.mkdir(parents=True)
@@ -667,17 +690,35 @@ class PublicPredecessorTests(unittest.TestCase):
                                for role in ('backend', 'frontend')}}}
                     (directory / 'install-state.json').write_text(json.dumps({'upgrade': witness}))
                 instance.run_native_upgrade = mock.Mock(side_effect=upgrade)
-                def ready(url):
+                def health(url):
                     self.assertEqual(url, 'http://127.0.0.1:13001/health/ready')
-                    if fault == 'readiness': raise m.Stop('Synthetic readiness refusal.')
+                    if case == 'health_refused': raise m.Stop('Synthetic readiness refusal.')
                     return b'{}'
-                instance.request = mock.Mock(side_effect=ready)
-                instance.execute = instance.installed_public_upgrade
+                instance.request = mock.Mock(side_effect=health)
+                def execute():
+                    instance.installed_public_upgrade()
+                    instance.result['status'] = 'passed'
+                instance.execute = execute
                 instance.failure_facts = mock.Mock()
                 opener = mock.Mock()
-                error_body = mock.Mock(wraps=io.BytesIO(b'SYNTHETIC-PRIVATE-REPORT-MARKER'))
-                opener.open.side_effect = m.urllib.error.HTTPError('http://127.0.0.1:13001/private',
-                    503, 'SYNTHETIC-PRIVATE-REPORT-MARKER', {}, error_body)
+                marker = 'SYNTHETIC-PRIVATE-REPORT-MARKER'
+                bodies = []
+                def response(status, reason):
+                    if status == 200:
+                        value = mock.MagicMock(status=200)
+                        value.__enter__.return_value = value
+                        value.read.return_value = json.dumps({'organization_role': 'platform_admin', 'token': marker}).encode()
+                        return value
+                    payload = json.dumps({'error': {'code': reason, 'message': marker}}).encode()
+                    body = mock.Mock(wraps=io.BytesIO(payload))
+                    bodies.append((status, body))
+                    return m.urllib.error.HTTPError('http://127.0.0.1:13001/private', status, marker, {}, body)
+                opener.open.side_effect = [
+                    response(*outcome) for outcome in [(200, None), *probes, *([login] if login else [])]
+                ]
+                clock = [0]
+                def advance(seconds):
+                    clock[0] += seconds
                 # The first factory call is the report owner; the next is its
                 # actual retained-predecessor call. No method body is replaced.
                 with mock.patch.object(m, 'validate'), mock.patch.object(m, 'native_guard', return_value={}), \
@@ -687,22 +728,46 @@ class PublicPredecessorTests(unittest.TestCase):
                      mock.patch.object(m, 'same_public_ring'), \
                      mock.patch.object(m, 'clean_environment', side_effect=lambda env: contextlib.nullcontext()), \
                      mock.patch.object(m.urllib.request, 'build_opener', return_value=opener), \
+                     mock.patch.object(native.time, 'monotonic', side_effect=lambda: clock[0]), \
+                     mock.patch.object(native.time, 'sleep', side_effect=advance), \
                      contextlib.redirect_stdout(io.StringIO()) as output, \
                      contextlib.redirect_stderr(io.StringIO()) as stderr:
-                    self.assertEqual(m.execute(self.candidate, ROOT, self.current), 1)
-                report = json.loads(output.getvalue())
-                self.assertEqual(report['status'], 'failed')
-                self.assertEqual(report['phase'], 'verify public upgrade readiness' if fault == 'readiness'
-                                 else 'verify original administrator after public upgrade')
-                self.assertEqual(report['error'], 'Synthetic readiness refusal.' if fault == 'readiness'
-                                 else 'Fixture administrator login failed: HTTP 503.')
-                self.assertNotIn('installed_public_upgrade', report)
-                self.assertNotIn('SYNTHETIC-PRIVATE-REPORT-MARKER', output.getvalue() + stderr.getvalue())
+                    self.assertEqual(m.execute(self.candidate, ROOT, self.current), int(case != 'startup_then_login'))
+                report = json.loads(output.getvalue().splitlines()[-1])
+                self.assertNotIn(marker, output.getvalue() + stderr.getvalue())
+                self.assertNotIn(m.FIRST_USE_TEST_INPUT, output.getvalue() + stderr.getvalue())
                 instance.run_native_upgrade.assert_called_once()
                 recovery.verify_archive.assert_called_once()
-                self.assertEqual(opener.open.call_count, 0 if fault == 'readiness' else 1)
-                error_body.read.assert_not_called()
-                if fault == 'login': error_body.close.assert_called_once()
+                requests = [call.args[0] for call in opener.open.call_args_list]
+                self.assertEqual([(q.get_method(), q.full_url) for q in requests],
+                    [('GET', 'http://127.0.0.1:13001/api/v1/auth/oidc/config')] * (1 + len(probes))
+                    + ([('POST', 'http://127.0.0.1:13001/api/v1/auth/login')] if login else []))
+                for status, body in bodies:
+                    body.close.assert_called_once()
+                    if status == 503:
+                        body.read.assert_called_once_with(4097)
+                    else:
+                        body.read.assert_not_called()
+                if case == 'health_refused':
+                    self.assertEqual(report['phase'], 'verify public upgrade readiness')
+                    self.assertNotIn('post_upgrade_business_startup', report)
+                    continue
+                startup = report['post_upgrade_business_startup']
+                status, reason = probes[-1]
+                self.assertEqual(startup['http_status'], status)
+                self.assertEqual(startup['reason'], None if case == 'startup_unknown' else reason)
+                self.assertEqual(startup['runtime_unavailable_503s'], probes.count(temporary))
+                self.assertEqual(startup['elapsed_ms'], probes.count(temporary) * 1000)
+                if case == 'startup_then_login':
+                    self.assertTrue(report['installed_public_upgrade']['original_password_usable'])
+                    continue
+                self.assertNotIn('installed_public_upgrade', report)
+                if login:
+                    self.assertEqual(report['phase'], 'verify original administrator after public upgrade')
+                    suffix = ' (' + login[1] + ')' if login[1] else ''
+                    self.assertEqual(report['error'], f'Fixture administrator login failed: HTTP {login[0]}{suffix}.')
+                else:
+                    self.assertEqual(report['phase'], 'verify public upgrade business startup')
 
 
 class ConsumerTests(unittest.TestCase):

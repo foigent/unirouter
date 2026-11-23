@@ -59,6 +59,35 @@ def require(condition, label):
         raise Failed(label)
 
 
+class NoFixtureRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def fixture_http_failure_reason(error):
+    """Return a source-authored 503 code from bounded fixture response bytes."""
+    if error.code != 503:
+        return None
+
+    def unique_fields(pairs):
+        result = dict(pairs)
+        if len(result) != len(pairs):
+            raise ValueError("duplicate fixture error field")
+        return result
+
+    try:
+        raw = error.read(4097)
+        if len(raw) > 4096:
+            return None
+        document = json.loads(raw, object_pairs_hook=unique_fields)
+        reason = document["error"]["code"]
+    except (KeyError, TypeError, ValueError, OSError, RecursionError):
+        return None
+    if reason in ("runtime_unavailable", "runtime_draining", "limit_policy.state_unavailable"):
+        return reason
+    return None
+
+
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -1159,16 +1188,41 @@ raise SystemExit("expected startup-hold checkpoint was not reached")
         self.result.setdefault("admission_recovery", []).append({"layout": "ur_edge_pair" if edge else "community_single",
             "physical_writer_exit": True, "original_receipt_retained": True, "replacement_admission": True})
 
-    def wait_business_startup(self):
-        deadline = time.monotonic() + 20
+    def wait_business_startup(self, *, evidence=None):
+        if evidence is None:
+            evidence = {}
+        evidence.update(http_status=None, reason=None, elapsed_ms=0, runtime_unavailable_503s=0)
+        request = urllib.request.Request(self.loopback_url + "/api/v1/auth/oidc/config")
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoFixtureRedirect())
+        started = time.monotonic()
+        deadline = started + 20
         while True:
+            now = time.monotonic()
+            evidence["elapsed_ms"] = int((now - started) * 1000)
+            remaining = deadline - now
+            require(remaining > 0, "ordinary HTTP startup did not release within its deadline")
             try:
-                self.request(self.loopback_url + "/api/v1/auth/oidc/config")
-                return
+                with opener.open(request, timeout=remaining) as response:
+                    status, reason = response.status, None
             except urllib.error.HTTPError as error:
-                require(error.code == 503 and time.monotonic() < deadline, "ordinary HTTP startup did not release")
-                error.close()
-                time.sleep(1)
+                try:
+                    status, reason = error.code, fixture_http_failure_reason(error)
+                finally:
+                    error.close()
+            except (urllib.error.URLError, TimeoutError):
+                evidence.update(http_status=None, reason="transport_unavailable",
+                                elapsed_ms=int((time.monotonic() - started) * 1000))
+                raise Failed("ordinary HTTP startup probe transport unavailable") from None
+            now = time.monotonic()
+            status = status if type(status) is int and 100 <= status <= 599 else None
+            evidence.update(http_status=status, reason=reason, elapsed_ms=int((now - started) * 1000))
+            if status == 200:
+                require(now <= deadline, "ordinary HTTP startup did not release within its deadline")
+                return
+            require(status == 503 and reason == "runtime_unavailable", "ordinary HTTP startup probe refused")
+            evidence["runtime_unavailable_503s"] += 1
+            require(now < deadline, "ordinary HTTP startup did not release within its deadline")
+            time.sleep(min(1, deadline - now))
 
     def verify_released_cleanup(self, directory, project):
         deadline = time.monotonic() + 330
