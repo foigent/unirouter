@@ -62,19 +62,29 @@ def git_body(source, commit, relative):
     return subprocess.check_output(['git', '-C', str(source), 'show', f'{commit}:{relative}'])
 
 
-def bound_doc(source, commit, relative):
-    parent = (source / relative).parent
+def preview_release_url(version, sequence):
+    assert re.fullmatch(r"[0-9]+[.][0-9]+[.][0-9]+", version)
+    assert type(sequence) is int and sequence > 0
+    return f"https://github.com/foigent/unirouter/releases/tag/v{version}-preview.{sequence}"
 
-    def link(match):
-        target = match[1]
-        if target.startswith(('#', 'https://', 'http://', 'mailto:')):
-            return match[0]
-        path, marker, fragment = target.partition('#')
-        dest = (parent / path).resolve()
-        assert dest.is_relative_to(source) and dest.exists()
-        return '](https://github.com/foigent/unirouter/blob/' + commit + '/' + dest.relative_to(source).as_posix() + marker + fragment + ')'
 
-    return re.sub(r'\]\(([^)\s]+)\)', link, git_body(source, commit, relative).decode())
+def recovery_guide(product, predecessor, source_sequence):
+    target_migration, source_migration = ("M" + row["schema"][3:6] for row in (product, predecessor))
+    fields = {
+        "TARGET": product["version"], "SOURCE": predecessor["version"],
+        "TARGET_MIGRATION": target_migration, "SOURCE_MIGRATION": source_migration,
+        "SOURCE_SEQUENCE": str(source_sequence), "TARGET_SEQUENCE": str(source_sequence + 1),
+        "TARGET_RELEASE": preview_release_url(product["version"], source_sequence + 1),
+        "SOURCE_RELEASE": preview_release_url(predecessor["version"], source_sequence),
+        "SOURCE_RUNBOOK": f'https://raw.githubusercontent.com/foigent/unirouter/{product["commit"]}/docs/ops/COMMUNITY-UPGRADE.md',
+        "ACCEPTANCE": "https://github.com/foigent/unirouter/actions/workflows/community-release-acceptance.yml",
+        "MIGRATION_STEP": ("The schema remains " + target_migration + ". The complete ledger is checked and no migration is applied."
+                           if product["schema"] == predecessor["schema"]
+                           else "Verify the complete ledger and the exact missing migration suffix."),
+    }
+    template = Path(__file__).with_name("community-recovery-guide.md").read_text(encoding="utf-8")
+    assert set(re.findall(r"@([A-Z_]+)@", template)) == set(fields)
+    return re.sub(r"@([A-Z_]+)@", lambda row: fields[row[1]], template).encode()
 
 
 def frontend_disposition(previous, producer_files, product, producer_run, config_id, predecessor_version):
@@ -247,13 +257,13 @@ def assemble(source, previous, output, evidence_path, old_manifest, predecessor,
             pattern = r'(校验器为)[0-9]+(字节，SHA256：\n)[0-9a-f]{64}'
         body, matches = re.subn(pattern, lambda m: m[1] + str(verifier['bytes']) + m[2] + verifier['sha256'], body)
         assert matches == 1 and commit in body and ring['sha256'] in body
+        release_page = preview_release_url(version, old_release['release_sequence'] + 1)
+        body, matches = re.subn(r"(https://github.com/foigent/unirouter/releases|https://github.com/foigent/unirouter/blob/main/docs/community/install-linux[.]zh-CN[.]md)(?=[)])",
+                                lambda _: release_page, body)
+        assert matches == 1
+        body = body.replace("the83-byte", f"the {ring['bytes']}-byte")
         payload['payload/docs/' + name] = body.encode()
-    heading = (f'# UniRouter {version} recovery and ordinary upgrade\n\n'
-               f'The supported {old_product["version"]} / M{old_product["schema"][3:6]} / sequence '
-               f'{old_release["release_sequence"]} predecessor can reconstruct the exact {version} package from the published delta.\n'
-               'Keep the verified predecessor and follow the published download and upgrade instructions. Preserve original data and native receipts.\n')
-    payload['payload/docs/RECOVERY.md'] = ('\n\n---\n\n'.join(
-        [heading, bound_doc(source, commit, 'docs/ops/COMMUNITY-UPGRADE.md'), bound_doc(source, commit, 'deploy/customer/README.md')])).encode()
+    payload['payload/docs/RECOVERY.md'] = recovery_guide(product, old_product, old_release['release_sequence'])
     source_export = json.loads(producer_files['source-and-fixed-inputs.json'])['source_export']
     upstream = (f'# UniRouter {version} source and upstream materials\n\n'
                 f'Product source: https://github.com/foigent/unirouter/tree/{commit}\n\n'

@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -31,6 +32,16 @@ PREDECESSOR = '.github/release-inputs/community-upgrade-source.json'
 PREDECESSOR_SHA = 'cbd0b2e0352ce27d7d2957bb2aaa4c3ea703f01aa02124c309063ba6f0cd2b11'
 KEY_ID = 'test-only-full-material-rehearsal'
 RING_SHA = '96c91635460ddfb2a14aa1ea97d8445951730e9eb04a33cbdf4320141e61d63d'
+# The frozen Preview 26 images were published before its package guides changed.
+# Only this original record and successful publish job may cross program commits.
+RETAINED_PRODUCT_COMMIT = '3e84663f54bd8e57e4637d61bfcdb946a77bc11f'
+RETAINED_PRODUCT_TREE = 'e346307c92b165c8396608cc9332eb24268abe44'
+RETAINED_RECORD_SHA = '58ade6e3d3141fbef84d9eec98ca86efcc4645e40519d895c54a8d84b2ae8104'
+RETAINED_PUBLISHER_RUN = 45463904680
+RETAINED_PUBLISHER_JOB = 138693566754
+RETAINED_LOG_SIZE = 41550
+RETAINED_LOG_SHA = '42f0e1e52b81ff75fbe948517cda71593e88061b911c7da213e162da2da4f9e2'
+RETAINED_RESULT_SHA = 'd1a7b295aa098f3be86d6906c95a6ab28c775729c21692924d54dacffd30ecec'
 
 
 def fact(path):
@@ -141,6 +152,53 @@ def read_rehearsal_context(stages, publisher, env):
     return raw, record
 
 
+def replay_context(stages, publisher, env):
+    publisher.check_context(env)
+    raw, record, _ = stages.read_dispatch('publisher', env)
+    assert stages.sha(raw) == RETAINED_RECORD_SHA
+    assert record['product'] == {
+        'repository': REPO, 'commit': RETAINED_PRODUCT_COMMIT, 'tree': RETAINED_PRODUCT_TREE,
+        'version': TARGET_VERSION, 'schema': TARGET_SCHEMA,
+    }
+    assert env['GITHUB_SHA'] != RETAINED_PRODUCT_COMMIT
+    assert record['predecessor']['program_commit'] == RETAINED_PRODUCT_COMMIT
+    return raw, record
+
+
+def retained_receipt(stages, publisher, env, raw):
+    repo = f'repos/{REPO}'
+    branch = publisher.gh(env, f'{repo}/branches/main')
+    assert branch['protected'] is True and branch['commit']['sha'] == env['GITHUB_SHA']
+    run = publisher.gh(env, f'{repo}/actions/runs/{RETAINED_PUBLISHER_RUN}')
+    assert (run['id'], run['workflow_id'], run['run_attempt'], run['event'],
+            run['head_sha'], run['head_branch'], run['status'], run['conclusion']) == (
+                RETAINED_PUBLISHER_RUN, 387706956, 1, 'workflow_dispatch',
+                RETAINED_PRODUCT_COMMIT, 'main', 'completed', 'success')
+    assert run['path'] == '.github/workflows/publish-accepted-community-images.yml'
+    assert run['repository']['id'] == run['head_repository']['id'] == stages.REPOSITORY_ID
+    assert run['repository']['full_name'] == REPO
+    assert run['actor']['id'] == run['triggering_actor']['id'] == stages.ACTOR_ID
+    job = publisher.gh(env, f'{repo}/actions/jobs/{RETAINED_PUBLISHER_JOB}')
+    assert (job['id'], job['run_id'], job['run_attempt'], job['name'], job['status'], job['conclusion']) == (
+        RETAINED_PUBLISHER_JOB, RETAINED_PUBLISHER_RUN, 1, 'publish-public', 'completed', 'success')
+    assert job['head_sha'] == RETAINED_PRODUCT_COMMIT and job['labels'] == ['ubuntu-24.04']
+    log = publisher.command(['gh', 'api', '--hostname', 'github.com', '--method', 'GET',
+                            f'{repo}/actions/jobs/{RETAINED_PUBLISHER_JOB}/logs'], env)
+    assert len(log) == RETAINED_LOG_SIZE and stages.sha(log) == RETAINED_LOG_SHA
+    text = re.sub(r'^\ufeff?\d{4}-\d{2}-\d{2}T[0-9:.]+Z\s?', '', log.decode(), flags=re.M)
+    rows = text.splitlines()
+    starts = [i - 1 for i, row in enumerate(rows)
+              if row.strip() == '"status": "public_images_authenticated_identity_verified_only",']
+    start, = starts
+    assert start >= 0 and rows[start] == '{'
+    receipt, _ = json.JSONDecoder().raw_decode('\n'.join(rows[start:]))
+    result = stages.verify_publisher_result(raw, receipt['stage_result'])
+    assert stages.sha(stages.canonical(result)) == RETAINED_RESULT_SHA
+    assert (result['run_id'], result['program_commit'], receipt['images']) == (
+        RETAINED_PUBLISHER_RUN, RETAINED_PRODUCT_COMMIT, result['images'])
+    return receipt
+
+
 def rehearse(source, directory, evidence, verifier, old, predecessor, raw_record, receipt):
     stages = module('stage-record')
     assembler = module('full-pack-materials')
@@ -245,14 +303,21 @@ def main():
     parser.add_argument('--source', type=Path, required=True)
     args = parser.parse_args()
     stages, publisher = module('stage-record'), module('image-publisher')
-    raw, record = read_rehearsal_context(stages, publisher, os.environ)
+    env = os.environ
+    replay = not env.get('PUBLISHER_RECEIPT')
+    raw, record = (replay_context if replay else read_rehearsal_context)(stages, publisher, env)
     assert platform.system() == 'Linux' and platform.machine() == 'x86_64'
     source = args.source.resolve()
-    assert run(['git', 'rev-parse', 'HEAD'], os.environ, 'product_checkout_failed', cwd=source).decode().strip() == record['product']['commit']
-    assert run(['git', 'rev-parse', 'HEAD^{tree}'], os.environ, 'product_tree_failed', cwd=source).decode().strip() == record['product']['tree']
-    receipt = stages.strict_json(os.environ['PUBLISHER_RECEIPT'].encode())
-    published = stages.verify_publisher_result(raw, receipt['stage_result'])
-    assert published['program_commit'] == os.environ['GITHUB_SHA'] and published['run_id'] == int(os.environ['GITHUB_RUN_ID'])
+    assert run(['git', 'rev-parse', 'HEAD'], env, 'product_checkout_failed', cwd=source).decode().strip() == record['product']['commit']
+    assert run(['git', 'rev-parse', 'HEAD^{tree}'], env, 'product_tree_failed', cwd=source).decode().strip() == record['product']['tree']
+    program = Path(__file__).resolve().parents[2]
+    assert run(['git', 'rev-parse', 'HEAD'], env, 'program_checkout_failed', cwd=program).decode().strip() == env['GITHUB_SHA']
+    if replay:
+        receipt = retained_receipt(stages, publisher, env, raw)
+    else:
+        receipt = stages.strict_json(env['PUBLISHER_RECEIPT'].encode())
+        published = stages.verify_publisher_result(raw, receipt['stage_result'])
+        assert published['program_commit'] == env['GITHUB_SHA'] and published['run_id'] == int(env['GITHUB_RUN_ID'])
     predecessor_bytes = (source / PREDECESSOR).read_bytes()
     assert stages.sha(predecessor_bytes) == PREDECESSOR_SHA
     predecessor = stages.validate_record(stages.strict_json(predecessor_bytes), 'consumer')
@@ -263,6 +328,9 @@ def main():
         evidence, verifier, old = download_inputs(publisher, stages, record, directory, predecessor)
         os.environ.pop('GH_TOKEN', None)
         result = rehearse(source, directory, evidence, verifier, old, predecessor, raw, receipt)
+    result.update(rehearsal_program_commit=env['GITHUB_SHA'], rehearsal_run_id=int(env['GITHUB_RUN_ID']),
+                  original_publisher_program=receipt['stage_result']['program_commit'],
+                  original_publisher_run_id=receipt['stage_result']['run_id'], replayed_publisher_receipt=replay)
     print(json.dumps(result, sort_keys=True))
 
 

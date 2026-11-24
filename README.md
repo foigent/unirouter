@@ -12,7 +12,7 @@ administration console. It brings model access policies, routing, budgets,
 usage, billing and execution receipts together, so operators can inspect how a
 request was handled and what its charges are based on.
 
-> **Start on a Linux server / ECS:** follow the
+> **Start on a Linux server / ECS:** choose a signed preview in the
 > [Linux amd64 installation guide](docs/community/install-linux.md), then
 > [sign in, initialize your customer and make a first request](docs/community/getting-started.md).
 > Preview downloads use a signed package and fixed image digests. The

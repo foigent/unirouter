@@ -21,7 +21,6 @@ on:
         type: string
 permissions:
   contents: read
-  packages: write
 concurrency:
   group: ur-public-image-publication
   cancel-in-progress: false
@@ -31,7 +30,9 @@ jobs:
     permissions:
       contents: write
       packages: write
-    if: github.repository == 'foigent/unirouter' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && github.actor_id == '252312344'
+    if: >-
+      github.repository == 'foigent/unirouter' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && github.actor_id == '252312344' &&
+      !(inputs.stage_record_sha256 == '58ade6e3d3141fbef84d9eec98ca86efcc4645e40519d895c54a8d84b2ae8104' && github.sha != '3e84663f54bd8e57e4637d61bfcdb946a77bc11f')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
@@ -73,10 +74,15 @@ jobs:
 
   rehearse-full-materials:
     needs: publish-public
-    if: needs.publish-public.result == 'success' && needs.publish-public.outputs.product_version == '1.16.0' && github.repository == 'foigent/unirouter' && github.ref == 'refs/heads/main' && github.actor_id == '252312344'
-    # The runner only reads the producer draft. The draft API requires push access.
+    if: >-
+      ${{ !cancelled() && github.repository == 'foigent/unirouter' && github.ref == 'refs/heads/main' && github.actor_id == '252312344' &&
+      ((needs.publish-public.result == 'success' && needs.publish-public.outputs.product_version == '1.16.0') ||
+      (needs.publish-public.result == 'skipped' && github.run_attempt == 1 && inputs.stage_record_sha256 == '58ade6e3d3141fbef84d9eec98ca86efcc4645e40519d895c54a8d84b2ae8104' && github.sha != '3e84663f54bd8e57e4637d61bfcdb946a77bc11f')) }}
+    # Draft release GET requires push access. Actions access is read-only for
+    # replaying the exact successful publisher receipt from the original job.
     permissions:
       contents: write
+      actions: read
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
@@ -91,9 +97,17 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Check out the exact accepted product for full material rehearsal
+        if: needs.publish-public.result == 'success'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ needs.publish-public.outputs.product_commit }}
+          path: .community-formal-product
+          persist-credentials: false
+      - name: Check out the originally published Preview 26 product
+        if: needs.publish-public.result == 'skipped'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 3e84663f54bd8e57e4637d61bfcdb946a77bc11f
           path: .community-formal-product
           persist-credentials: false
       - name: Set up the existing native test key generator toolchain

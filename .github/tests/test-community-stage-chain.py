@@ -9,6 +9,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import tarfile
@@ -342,11 +343,105 @@ class StageChainTests(unittest.TestCase):
         self.assertIn('--execute-approved-public-stage', publisher)
         self.assertIn('needs: publish-public', verify)
         self.assertIn("needs.publish-public.result == 'success'", verify)
+        self.assertIn("needs.publish-public.result == 'skipped' && github.run_attempt == 1", verify)
+        self.assertIn(rehearsal.RETAINED_RECORD_SHA, publisher)
+        self.assertIn(rehearsal.RETAINED_RECORD_SHA, verify)
+        self.assertIn(rehearsal.RETAINED_PRODUCT_COMMIT, publisher)
+        self.assertIn(rehearsal.RETAINED_PRODUCT_COMMIT, verify)
         self.assertIn('PUBLISHER_RECEIPT: ${{ needs.publish-public.outputs.publisher_receipt }}', verify)
         self.assertIn('ref: ${{ needs.publish-public.outputs.product_commit }}', verify)
-        self.assertIn('permissions:\n      contents: write\n    runs-on:', verify)
+        self.assertIn('permissions:\n      contents: write\n      actions: read\n    runs-on:', verify)
         self.assertNotIn('packages:', verify)
         self.assertNotIn('--execute-approved-public-stage', verify)
+
+    def test_preview26_recovery_uses_its_retained_predecessor_in_the_prepare_step(self):
+        materials = module('full_pack_guides', 'community-full-pack-materials.py')
+        predecessor = {'version': '1.15.8', 'schema': '000131_customer_standard_pricing'}
+        product = {'version': '1.16.0', 'schema': predecessor['schema'], 'commit': 'a' * 40}
+        guide = materials.recovery_guide(product, predecessor, 25).decode()
+        target_release = 'https://github.com/foigent/unirouter/releases/tag/v1.16.0-preview.26'
+        source_release = 'https://github.com/foigent/unirouter/releases/tag/v1.15.8-preview.25'
+
+        def check(body):
+            words = ' '.join(body.split())
+            self.assertIn('from **1.15.8 / M131 / sequence 25** to **1.16.0 / M131 / sequence 26**', words)
+            self.assertIn('The complete ledger is checked and no migration is applied.', words)
+            self.assertIn(target_release, body)
+            self.assertIn(source_release, body)
+            source_arguments = re.findall(
+                r'retained (?:signed )?([0-9]+[.][0-9]+[.][0-9]+) (?:signed )?full package as `--source-package`', words)
+            self.assertEqual(['1.15.8'], source_arguments)
+
+        check(guide)
+        check(guide + '\n2026-11-23 historical Preview 25 used 1.15.7 / M130 and applied M131.\n')
+        # The original preview document had the correct header and also
+        # embedded this incorrect operational instruction further down.
+        with self.assertRaises(AssertionError):
+            check(guide + '\nrun `prepare` with the retained 1.15.7 signed full package as `--source-package`.\n')
+        for name in ('install-linux.md', 'install-linux.zh-CN.md'):
+            with self.subTest(guide=name):
+                text = (ROOT / 'docs/community' / name).read_text()
+                self.assertLess(text.index(target_release), text.index(source_release))
+
+    def test_full_pack_replays_only_the_pinned_successful_publisher(self):
+        rehearsal = module('full_pack_replay', 'community-full-pack-rehearsal.py')
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary)
+            product = rehearsal.RETAINED_PRODUCT_COMMIT
+            _, raw, result_raw, _, _, _ = self.setup_chain(
+                path, rehearsal.TARGET_VERSION, product, schema=rehearsal.TARGET_SCHEMA)
+            record = M.strict_json(raw)
+            record['predecessor']['program_commit'] = product
+            record['product']['tree'] = rehearsal.RETAINED_PRODUCT_TREE
+            raw = M.canonical(record)
+            receipt_images = M.strict_json(result_raw)['images']
+            result = M.publisher_result(raw, product, rehearsal.RETAINED_PUBLISHER_RUN, receipt_images)
+            receipt = {'status': 'public_images_authenticated_identity_verified_only',
+                       'stage_result': result, 'images': receipt_images}
+            log = ''.join('2026-11-24T18:51:20.0000000Z ' + line + '\n'
+                          for line in json.dumps(receipt, indent=2).splitlines()).encode()
+            env = self.native_env(path, record, 'publisher')
+            run = {'id': rehearsal.RETAINED_PUBLISHER_RUN, 'workflow_id': 387706956,
+                   'run_attempt': 1, 'event': 'workflow_dispatch', 'head_sha': product, 'head_branch': 'main',
+                   'status': 'completed', 'conclusion': 'success',
+                   'path': '.github/workflows/publish-accepted-community-images.yml',
+                   'repository': {'id': M.REPOSITORY_ID, 'full_name': M.REPOSITORY},
+                   'head_repository': {'id': M.REPOSITORY_ID},
+                   'actor': {'id': M.ACTOR_ID}, 'triggering_actor': {'id': M.ACTOR_ID}}
+            job = {'id': rehearsal.RETAINED_PUBLISHER_JOB, 'run_id': rehearsal.RETAINED_PUBLISHER_RUN,
+                   'run_attempt': 1, 'name': 'publish-public', 'status': 'completed', 'conclusion': 'success',
+                   'head_sha': product, 'labels': ['ubuntu-24.04']}
+            branch = {'protected': True, 'commit': {'sha': env['GITHUB_SHA']}}
+            replies = {'branches/main': branch, f'actions/runs/{run["id"]}': run, f'actions/jobs/{job["id"]}': job}
+            calls = []
+            def read_native(_env, endpoint):
+                calls.append(endpoint)
+                return replies[endpoint.removeprefix(f'repos/{M.REPOSITORY}/')]
+            def read_log(argv, _env):
+                self.assertEqual('GET', argv[argv.index('--method') + 1])
+                self.assertEqual(f'repos/{M.REPOSITORY}/actions/jobs/{job["id"]}/logs', argv[-1])
+                calls.append(argv[-1])
+                return log
+            api = types.SimpleNamespace(gh=read_native, command=read_log, check_context=P.H.check_context)
+            with patch.multiple(rehearsal, RETAINED_RECORD_SHA=M.sha(raw), RETAINED_LOG_SIZE=len(log),
+                                RETAINED_LOG_SHA=M.sha(log), RETAINED_RESULT_SHA=M.sha(M.canonical(result))):
+                self.assertEqual((raw, record), rehearsal.replay_context(M, api, env))
+                for change in ({'GITHUB_RUN_ATTEMPT':'2'}, {'GITHUB_WORKFLOW_SHA':'e'*40},
+                               {'STAGE_RECORD_SHA256':'0'*64}):
+                    with self.subTest(change=change), self.assertRaises((AssertionError, RuntimeError, M.Stop)):
+                        rehearsal.replay_context(M, api, {**env, **change})
+                self.assertEqual([], calls)
+                self.assertEqual(receipt, rehearsal.retained_receipt(M, api, env, raw))
+                self.assertEqual(4, len(calls))
+                for fields, name, swapped in ((branch,'protected',False), (run,'conclusion','failure'),
+                                              (run,'head_sha','e'*40), (job,'run_id',999), (job,'name','other')):
+                    value = fields[name]
+                    fields[name] = swapped
+                    with self.subTest(name=name), self.assertRaises(AssertionError):
+                        rehearsal.retained_receipt(M, api, env, raw)
+                    fields[name] = value
+                with patch.object(api, 'command', return_value=log+b'!'), self.assertRaises(AssertionError):
+                    rehearsal.retained_receipt(M, api, env, raw)
 
     def test_offline_handoff_commands_are_exclusive_and_use_existing_receipts(self):
         with tempfile.TemporaryDirectory() as tmp:
