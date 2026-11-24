@@ -206,7 +206,7 @@ func TestCommunityFirstUseBusinessBrowserE2E(t *testing.T) {
 	}))
 	chat := middleware.IdempotencyGuard(middleware.NewPostgresIdempotencyStore(pool), pr4BrowserAPIKeySecret, newGatewayChatHandler(pool, relay, events))
 	gatewayAuth := middleware.GatewayAuth(pool, pr4BrowserAPIKeySecret)
-	gatewayChat := middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, payloadpolicy.RequestMiddleware(payload, payloadpolicy.ProfileChatRequest, middleware.GetOrgIDFromContext))(middleware.StrictJSONIngress(shared.GatewayRateAdmission(chat)))
+	gatewayChat := middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, payloadpolicy.RequestMiddleware(payload, payloadpolicy.ProfileChatRequest, middleware.GetOrgIDFromContext))(middleware.StrictJSONIngress(middleware.ChatUpstreamAttemptPolicy(shared.GatewayRateAdmission(chat))))
 	mux.HandleFunc("POST /v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
 		// The last synthetic request loses only this fixture's limit client.
 		// Auth, the production admission path and durable evidence stay in service.
@@ -218,7 +218,7 @@ func TestCommunityFirstUseBusinessBrowserE2E(t *testing.T) {
 		}
 		gatewayChat.ServeHTTP(w, r)
 	})
-	mux.Handle("POST /v1/chat/completions/preflight", chatPreflightOperation(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, payloadpolicy.RequestMiddleware(payload, payloadpolicy.ProfileChatRequest, middleware.GetOrgIDFromContext))(middleware.StrictJSONIngress(newGatewayChatPreflightHandler(pool, relay)))))
+	mux.Handle("POST /v1/chat/completions/preflight", chatPreflightOperation(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, payloadpolicy.RequestMiddleware(payload, payloadpolicy.ProfileChatRequest, middleware.GetOrgIDFromContext))(middleware.StrictJSONIngress(middleware.ChatUpstreamAttemptPolicy(newGatewayChatPreflightHandler(pool, relay))))))
 	server := httptest.NewServer(pr4BrowserSPAHandler(filepath.Join(pr4BrowserRepositoryRoot(t), "frontend", "dist"), middleware.SecurityHeaders(middleware.OperationIdentityWithSecret(pr4BrowserAPIKeySecret)(mux))))
 	t.Cleanup(server.Close)
 	f.BaseURL = server.URL
@@ -253,8 +253,8 @@ func TestCommunityFirstUseBusinessBrowserE2E(t *testing.T) {
 		require.Zero(t, trap.count.Load(), "external %s traffic", trap.name)
 	}
 	require.NoError(t, runErr, "real backend browser first-use failed: %s", output.String())
-	require.EqualValues(t, 4, providerCalls.Load(), "two setup probes plus two ordinary requests; neither refusal dispatches")
-	require.EqualValues(t, 2, nonStreamCalls.Load())
+	require.EqualValues(t, 5, providerCalls.Load(), "two probes and three ordinary requests; preflight and refusals never dispatch")
+	require.EqualValues(t, 3, nonStreamCalls.Load())
 	require.EqualValues(t, 2, streamCalls.Load())
 	t.Log("COMMUNITY_FIRST_USE canonical=true db_price_provider=true pricing=rate_card synthetic_prepaid=true external_provider=0 XI=0")
 }
@@ -382,7 +382,7 @@ func verifyCommunityBusinessSQL(t *testing.T, pool *pgxpool.Pool, f pr4BrowserFi
 	data, err := os.ReadFile(filepath.Join(artifacts, "browser-result.json"))
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(data, &result))
-	require.Len(t, result.Requests, 3)
+	require.Len(t, result.Requests, 4)
 	var member int64
 	require.NoError(t, pool.QueryRow(ctx, `SELECT id FROM users WHERE org_id=$1 AND username='community-new-member' AND organization_role='member'`, f.OrgID).Scan(&member))
 	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM project_members WHERE user_id=$1`, member).Scan(&count))
@@ -433,7 +433,7 @@ func verifyCommunityBusinessSQL(t *testing.T, pool *pgxpool.Pool, f pr4BrowserFi
 	require.Equal(t, browserResult.RateCardRef, quote.RateCardRef)
 	require.NotEmpty(t, browserResult.CredentialRef)
 	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM freeze_idempotency WHERE org_id=$1`, f.OrgID).Scan(&count))
-	require.Equal(t, 2, count, "preflight and refusal must not create reservations")
+	require.Equal(t, 3, count, "preflight and refusal must not create reservations")
 	quoteWire, err := json.MarshalIndent(quote, "", "  ")
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(artifacts, "resolved-rate-quote.json"), append(quoteWire, '\n'), 0600))
@@ -459,6 +459,8 @@ func verifyCommunityBusinessSQL(t *testing.T, pool *pgxpool.Pool, f pr4BrowserFi
 			}, 10*time.Second, 50*time.Millisecond, "same request must reach real settlement journal")
 			require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM call_logs WHERE org_id=$1 AND request_id=$2 AND project_id=$3 AND owner_user_id=$4 AND total_tokens=15 AND cost_micros=20000 AND status_code=200 AND route_channel_id IS NULL`, f.OrgID, request.RequestID, f.ProjectA, member).Scan(&count))
 			require.Equal(t, 1, count, "canonical requests must not use legacy channels")
+			require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM billing_provider_attempts WHERE org_id=$1 AND request_id=$2`, f.OrgID, request.RequestID).Scan(&count))
+			require.Equal(t, 1, count, "each successful fixture request sent once to the local provider")
 			require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM freeze_idempotency WHERE org_id=$1 AND request_id=$2 AND status='settled'`, f.OrgID, request.RequestID).Scan(&count))
 			require.Equal(t, 1, count)
 		} else {
@@ -481,7 +483,7 @@ func verifyCommunityBusinessSQL(t *testing.T, pool *pgxpool.Pool, f pr4BrowserFi
 	}
 	var spent int64
 	require.NoError(t, pool.QueryRow(ctx, `SELECT spent_micros FROM project_budget_usage WHERE org_id=$1 AND project_id=$2 AND budget_period='monthly'`, f.OrgID, f.ProjectA).Scan(&spent))
-	require.EqualValues(t, 40000, spent, "settled journal increments project usage once per request")
+	require.EqualValues(t, 60000, spent, "settled journal increments project usage once per request")
 	require.Eventually(t, func() bool {
 		return pool.QueryRow(ctx, `SELECT count(*) FROM notification_events WHERE org_id=$1 AND project_id=$2 AND event_type='project_budget.threshold'`, f.OrgID, f.ProjectA).Scan(&count) == nil && count == 1
 	}, 10*time.Second, 50*time.Millisecond, "real budget threshold alert")
@@ -489,10 +491,10 @@ func verifyCommunityBusinessSQL(t *testing.T, pool *pgxpool.Pool, f pr4BrowserFi
 	require.Zero(t, count, "no external notification subscription")
 	var balance, frozen, total int64
 	require.NoError(t, pool.QueryRow(ctx, `SELECT balance_micros,frozen_micros,total_spent_micros FROM wallets WHERE org_id=$1`, f.OrgID).Scan(&balance, &frozen, &total))
-	require.EqualValues(t, 99960000, balance)
+	require.EqualValues(t, 99940000, balance)
 	require.Zero(t, frozen)
-	require.EqualValues(t, 40000, total)
-	t.Log("SQL_AUTHORITY member=isolated canonical=active fee=version3 charge_micros=40000 usage_tokens=30 budget_alert=1 refusal_reservation=0")
+	require.EqualValues(t, 60000, total)
+	t.Log("SQL_AUTHORITY member=isolated canonical=active fee=version3 charge_micros=60000 usage_tokens=45 budget_alert=1 refusal_reservation=0")
 }
 
 // This transport substitutes a loopback provider wire endpoint for one exact

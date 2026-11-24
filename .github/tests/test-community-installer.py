@@ -328,12 +328,12 @@ class InstallerFixtureContract(unittest.TestCase):
                 self.assertEqual(work.result.get('installer_stop'),authored)
 
     def test_exact_predecessor_rehearsal_checks_owner_before_repacking_only_backend(self):
-        for owner_verified, sequence in ((False, 25), (True, 26), (True, 25)):
+        for owner_verified, sequence in ((False, 26), (True, 27), (True, 26)):
             with self.subTest(owner_verified=owner_verified, sequence=sequence), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp).resolve()
                 work = object.__new__(fixture.Acceptance)
                 work.root, work.repo, work.result = root, ROOT, {'checks': []}
-                work.version, work.schema = "1.15.8", fixture.CURRENT_SCHEMA
+                work.version, work.schema = "1.16.0", fixture.CURRENT_SCHEMA
                 work.release_sequence = sequence
                 work.release = root / 'prepared-original-candidate'
                 work.verifier = root / 'verifier'
@@ -358,7 +358,7 @@ class InstallerFixtureContract(unittest.TestCase):
                     old.images[role], old.image_ids[role] = ref, 'test-backend-id'
                 old.observe_fixture_image = observe
                 def upgrade(old, layout, *, instance_name, public_predecessor):
-                    self.assertEqual((work.release_sequence, old.release_sequence), (25, 24))
+                    self.assertEqual((work.release_sequence, old.release_sequence), (26, 25))
                     self.assertEqual(work.release, root / 'prepared-original-candidate')
                     work.result['predecessor_delta'] = {'byte_identical': True}
                     work.result.setdefault('finite_upgrades', []).append({'exact_predecessor': True})
@@ -369,7 +369,7 @@ class InstallerFixtureContract(unittest.TestCase):
                      patch.object(first, 'verify_predecessor_checkout') as checked, \
                      patch.object(first, 'make_acceptance', return_value=owner), \
                      patch.object(fixture, 'Acceptance', return_value=old):
-                    if not owner_verified or sequence != 25:
+                    if not owner_verified or sequence != 26:
                         reason = 'public predecessor identity' if not owner_verified else 'immediately follow'
                         with self.assertRaisesRegex(fixture.Failed, reason):
                             work.qualify_accepted_predecessor_delta()
@@ -387,6 +387,36 @@ class InstallerFixtureContract(unittest.TestCase):
                                  {'backend': 'test-backend', 'frontend': 'owner-frontend'})
                 self.assertEqual(proof['delta'], {'byte_identical': True})
                 self.assertEqual(proof['upgrade'], {'exact_predecessor': True})
+
+    def test_native_public_same_schema_entry_binds_the_exact_fresh_single_writer(self):
+        cases = (
+            ("exact", "1.15.8", 25, fixture.CURRENT_SCHEMA, 26, "single", {}, "first native install reached"),
+            ("wrong source version", "1.15.7", 25, fixture.CURRENT_SCHEMA, 26, "single", {}, "unexpected public delta"),
+            ("wrong source sequence", "1.15.8", 24, fixture.CURRENT_SCHEMA, 26, "single", {}, "unexpected public delta"),
+            ("wrong source schema", "1.15.8", 25, fixture.ADMISSION_SCHEMA, 26, "single", {}, "unexpected public delta"),
+            ("wrong target sequence", "1.15.8", 25, fixture.CURRENT_SCHEMA, 27, "single", {}, "immediately follow"),
+            ("edge", "1.15.8", 25, fixture.CURRENT_SCHEMA, 26, "edge", {}, "fresh, single-writer"),
+            ("existing", "1.15.8", 25, fixture.CURRENT_SCHEMA, 26, "single", {"existing": ()}, "fresh, single-writer"),
+            ("origin override", "1.15.8", 25, fixture.CURRENT_SCHEMA, 26, "single", {"origin_sequence": 13}, "fresh, single-writer"),
+        )
+        for name, version, sequence, schema, target, layout, options, stop in cases:
+            with self.subTest(name=name):
+                current = object.__new__(fixture.Acceptance)
+                current.schema, current.version, current.release_sequence = fixture.CURRENT_SCHEMA, "1.16.0", target
+                current.suffix, current.result = "synthetic", {}
+                current.observe_migration_owner = MagicMock()
+                old = SimpleNamespace(version=version, release_sequence=sequence, schema=schema,
+                    instances=Path("/fixture/original"), phase="native install", result={},
+                    command=MagicMock(return_value=["native-install"]), run=MagicMock(
+                        side_effect=fixture.Failed("first native install reached")))
+                with self.assertRaisesRegex(fixture.Failed, stop):
+                    current.qualify_upgrade(old, layout, public_predecessor=True, **options)
+                if name == "exact":
+                    current.observe_migration_owner.assert_called_once_with()
+                    old.run.assert_called_once_with("install exact test-signed public predecessor", ["native-install"])
+                else:
+                    current.observe_migration_owner.assert_not_called()
+                    old.run.assert_not_called()
 
     def test_native_json_stdout_stays_separate_from_retained_startup_diagnostics(self):
         with tempfile.TemporaryDirectory() as tmp:

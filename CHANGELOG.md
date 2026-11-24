@@ -4,6 +4,13 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.16.0] - 2026-11-25
+
+- Let Chat callers opt into at most one upstream POST. A supporting
+  preflight acknowledges the request header without dispatching a model.
+- Add a standard-library Python example for preflight, an explicit first Chat
+  request and request-ID lookup. Bring public roadmap references up to date.
+
 ## [1.15.8] - 2026-11-21
 
 - Add opt-in Standard customer price tables, bindings and frozen CNY quotes.

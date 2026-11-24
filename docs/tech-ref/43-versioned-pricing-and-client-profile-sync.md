@@ -340,6 +340,23 @@ preflight before every request; SDK configuration alone is not a compatibility
 guarantee. No persistent Agent-ready flag or client-specific model directory is
 introduced.
 
+Chat callers can send `X-UniRouter-Max-Upstream-Attempts: 1` to cap a
+single gateway execution at one upstream POST. Before using this option on a
+new installation, send it with the same payload to preflight on that
+installation. Proceed only when preflight returns HTTP 200,
+`locally_admissible: true`, and echoes `X-UniRouter-Max-Upstream-Attempts: 1`.
+Older installations can ignore the header. Reuse the same header on the Chat
+request. Only a single value of `1` is accepted. Keep the header choice
+consistent when retrying with the same `Idempotency-Key`. A completed operation
+returns the existing receipt.
+
+The cap allows zero upstream requests. Preflight, a local rejection, or a
+UniRouter cache hit can produce zero. To verify a fresh upstream invocation,
+omit the response-cache opt-in, use a fresh idempotency key if sending one,
+and check the recorded upstream attempt and usage for that request. The
+header caps each gateway execution. A client that sends a second independent
+Chat request starts a separate execution.
+
 Provider cache usage has a separate response projection. When the selected
 execution profile makes Kimi's top-level `cached_tokens` or DeepSeek's exact
 hit/miss pair authoritative, the OpenAI-compatible response retains those

@@ -32,7 +32,7 @@ RELEASE_KEYS = {"release_sequence", "created_at", "expires_at", "tag", "bootstra
                 "bootstrap_size", "bootstrap_sha256", "package_size", "package_sha256"}
 UPGRADE_SOURCE = '.github/release-inputs/community-upgrade-source.json'
 PREDECESSOR_DIRECTORY = '.community-retained-source'
-REQUIRED_DELTA_VERSIONS = frozenset({'1.15.6', '1.15.7', '1.15.8'})
+REQUIRED_DELTA_VERSIONS = frozenset({'1.15.6', '1.15.7', '1.15.8', '1.16.0'})
 RESTORE_SCHEMA = '000129_upstream_observation_restore_namespace'
 ADMISSION_SCHEMA = '000130_upgrade_admission_recovery'
 PRICING_SCHEMA = '000131_customer_standard_pricing'

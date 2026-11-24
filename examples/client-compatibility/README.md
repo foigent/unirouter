@@ -2,7 +2,7 @@
 
 These examples bind an explicit UniRouter Gateway Endpoint, application credential and approved model alias. They never infer a Base URL from a browser location and contain no real credential.
 
-Required environment for Python examples:
+For your first Chat request, use the [standalone Python example](../first_request.py) and the [getting-started guide](../../docs/community/getting-started.md#make-and-inspect-a-request). The compatibility examples in this directory use the following environment:
 
 ```bash
 export UNIROUTER_BASE_URL='https://gateway.example.internal/v1'

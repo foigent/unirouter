@@ -73,7 +73,7 @@ jobs:
 
   rehearse-full-materials:
     needs: publish-public
-    if: needs.publish-public.result == 'success' && needs.publish-public.outputs.product_version == '1.15.8' && github.repository == 'foigent/unirouter' && github.ref == 'refs/heads/main' && github.actor_id == '252312344'
+    if: needs.publish-public.result == 'success' && needs.publish-public.outputs.product_version == '1.16.0' && github.repository == 'foigent/unirouter' && github.ref == 'refs/heads/main' && github.actor_id == '252312344'
     # The runner only reads the producer draft. The draft API requires push access.
     permissions:
       contents: write

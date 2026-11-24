@@ -27,30 +27,28 @@ See [release readiness](docs/community/release-readiness.md) for the exact
 versions, runs and evidence boundaries. These results do not establish that an
 existing ECS or Production installation has been upgraded.
 
-## Remaining signed-distribution work
+## Signed Linux distribution
 
-- Complete the owner's signing-key custody and recovery testing.
-- Prepare and publish the official signed package, verifier, public verification
-  ring and exact image identities with their applicable notices.
-- Verify public downloads, anonymous image pulls and the documented first-request
-  path for that release, including usage and receipts.
+Signed Linux amd64 previews, a public verifier and release-matched
+installation instructions are available. The
+[release status](docs/community/release-readiness.md) records exact package
+identities, isolated installation and upgrade results, and open evidence by
+version. Continue improving first use, upgrade and recovery.
+[Install on Linux](docs/community/install-linux.md) · [Signed previews](https://github.com/foigent/unirouter/releases)
 
-Official signed downloads are not available yet. Source publication and the
-completed synthetic installation checks are recorded separately from this work.
+## UniRouter and X-Insight walkthrough
 
-## Public UniRouter and X-Insight walkthrough — pending
+Both [UniRouter](https://github.com/foigent/unirouter) and
+[X-Insight](https://github.com/foigent/x-insight) publish source and Linux
+installation instructions. The [integration guide](docs/community/getting-started.md#optional-x-insight-integration)
+starts from an explicitly authorized connection. The
+[architecture notes](docs/community/architecture.md#integration-entry-and-verified-scope)
+record tested version pairs and their evidence.
 
-X-Insight source publication is preparing. When both product sources and their
-formal installation/connection instructions are public, reproduce one bounded
-synthetic chain: UniRouter records execution and usage/billing facts, an
-explicitly authorized connection transfers those facts asynchronously, and an
-ordinary authorized X-Insight reader finds the same execution and original
-source with its supporting evidence. Verify the denied-access boundary as well.
-
-Record the exact product versions, shared pins, configuration and executed steps;
-keep gaps and failures explicit. This joint result cannot be inferred from two
-separate product tests. Reuse the [existing integration entry](docs/community/getting-started.md#optional-x-insight-integration)
-and the products' existing contracts.
+We welcome a repeatable public walkthrough that follows one synthetic
+execution from UniRouter usage and billing evidence to authorized X-Insight
+reader access, and exercises the denied-access case. Record exact versions,
+shared interfaces and observed steps with the result.
 
 ## Contributions we welcome
 
@@ -69,9 +67,9 @@ changes before coding.
 Make model execution a reliable source of facts for enterprise AI operations.
 Support asynchronous evidence consumers through explicit interfaces, preserve
 source ownership, and distinguish observed facts from estimates and hypotheses.
-The direction is to open-source the complete UniRouter and X-Insight products
-under Apache-2.0, without a community/commercial edition split. No commercial
-product is currently planned. See [licensing and product scope](docs/community/commercial-boundaries.md).
+The public UniRouter and X-Insight sources use Apache-2.0 for project-owned
+material. We develop the public products without a community/commercial
+edition split. See [licensing and product scope](docs/community/commercial-boundaries.md).
 
 Read the owner's [Why UniRouter](docs/community/why-unirouter.md) essay
 ([简体中文](docs/community/why-unirouter.zh-CN.md)) for the motivation, design

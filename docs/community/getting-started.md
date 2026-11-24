@@ -49,35 +49,54 @@ success for real qualification or bypass access/Release checks.
 
 ## Make and inspect a request
 
-Use a model identifier eligible in your deployment. Supply `UR_BASE_URL`,
-`UR_API_KEY` and `UR_MODEL` through your approved local environment:
+Use the [Python first-request example](../../examples/first_request.py) with
+Python 3.10 or later and the [repository checkout](#development-and-recovery-references).
+It needs an application key allowed to use the selected project and Chat
+model. Choose a qualified model that accepts a non-streaming Chat request
+with `max_tokens`. Use the gateway HTTPS origin, or keep the install
+guide's SSH tunnel open and use its loopback URL. Run from the repository
+root in Bash:
 
-```python
-import json
-import os
-import urllib.request
-
-request = urllib.request.Request(
-    os.environ["UR_BASE_URL"].rstrip("/") + "/v1/chat/completions",
-    data=json.dumps({
-        "model": os.environ["UR_MODEL"],
-        "messages": [{"role": "user", "content": "Reply with a brief greeting."}],
-        "stream": False,
-    }).encode(),
-    headers={
-        "Authorization": "Bearer " + os.environ["UR_API_KEY"],
-        "Content-Type": "application/json",
-    },
-    method="POST",
-)
-with urllib.request.urlopen(request, timeout=60) as response:
-    print("Request ID:", response.headers.get("X-Request-ID"))
-    print(response.read().decode())
+```bash
+export UR_BASE_URL='http://127.0.0.1:3000'
+export UR_MODEL='your-qualified-model-alias'
+read -rsp 'UniRouter application key: ' UR_API_KEY
+printf '\n'
+export UR_API_KEY
+python3 -I -B examples/first_request.py
 ```
 
-Use the identifier to inspect routing, final status, usage provenance and
-billing/receipt records. A response alone does not prove billing finality or
-business-task completion. Keep missing provider evidence explicit.
+The default command only runs preflight. No model request is sent. The
+example checks that the same installation explicitly acknowledges the
+single-attempt option and accepts the exact request locally. If either
+check fails, it stops before Chat. This includes older installations that
+ignore the option. For a model profile that supports `thinking.type=disabled`
+and requires separate qualification for default reasoning, add
+`--disable-thinking` to both commands. The example does not assume which
+Provider or profile your alias selects.
+
+If the preflight passes and you intend to make a potentially billable
+request, run the following once. It preflights again with the same payload,
+then sends at most one Chat request without enabling UniRouter response cache.
+
+```bash
+python3 -I -B examples/first_request.py --send
+unset UR_API_KEY
+```
+
+In the console, open **Logs** in the same organization and project. Use the
+**Chat request ID** from the example, not the preflight ID. For a timeout or
+invalid response, search by the separately printed **Chat client request ID**
+if the server did not return an ID. If your role cannot read these logs, ask
+the project administrator to check that ID. A missing row is not proof
+that nothing was sent or billed. The example never retries Chat automatically.
+
+In the log detail, check the upstream attempt, usage source, and billing
+status or receipt. Upstream token counts report usage; a gateway estimate
+can differ. The amount observed or calculated as cost can differ from the
+amount actually charged to the customer. In cost-observation mode a zero
+customer charge does not mean the provider charged nothing. A successful
+HTTP response alone does not prove a settled charge.
 
 For a report, retain version, sanitized error code, request ID and reproduction
 conditions; remove real prompts and credentials.

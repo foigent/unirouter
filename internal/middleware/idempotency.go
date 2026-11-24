@@ -390,6 +390,9 @@ func fingerprintRequest(r *http.Request, secret string) (string, error) {
 	_, _ = mac.Write([]byte(r.URL.RequestURI()))
 	_, _ = mac.Write([]byte{0})
 	_, _ = mac.Write(canonicalBody)
+	if SingleChatUpstreamAttemptRequested(r.Context()) {
+		_, _ = mac.Write([]byte("\x00chat-upstream-attempts=1"))
+	}
 	return hex.EncodeToString(mac.Sum(nil)), nil
 }
 
