@@ -27,17 +27,17 @@ class PublicPredecessorTests(unittest.TestCase):
     def setUp(self):
         self.old = json.loads((ROOT / m.UPGRADE_SOURCE).read_bytes())
         self.current = copy.deepcopy(self.old)
-        self.current['product'].update(commit='b' * 40, tree='c' * 40, version='1.15.8', schema=m.PRICING_SCHEMA)
+        self.current['product'].update(commit='b' * 40, tree='c' * 40, version='1.15.9', schema=m.PRICING_SCHEMA)
         c = self.current['inputs']['config']
         c['immutable']['product'] = {k: self.current['product'][k] for k in ('commit', 'tree', 'version', 'schema')}
-        c['immutable'].update(max_current_sequence=24, historical_sequence_reserved_through=24,
+        c['immutable'].update(max_current_sequence=25, historical_sequence_reserved_through=25,
             native_acceptance_helper_sha256=m.sha(ROOT / '.github/tests/community-installer.py'))
         bootstrap = ROOT / 'deploy/community/bootstrap.py'
         c['immutable']['bootstrap_script'] = {
             'url': ('https://raw.githubusercontent.com/foigent/unirouter/' +
                     self.current['product']['commit'] + '/deploy/community/bootstrap.py'),
             'sha256': m.sha(bootstrap), 'size': bootstrap.stat().st_size}
-        c['release'].update(release_sequence=25, tag='v1.15.8-preview.25', package_sha256='d' * 64)
+        c['release'].update(release_sequence=26, tag='v1.15.9-preview.26', package_sha256='d' * 64)
         c['release']['bootstrap_url'] = m.asset_url(c['release'], 'community-bootstrap.json')
         self.candidate = c  # Synthetic future metadata, never dispatched or signed.
 
@@ -61,14 +61,14 @@ class PublicPredecessorTests(unittest.TestCase):
         self.assertEqual(m.validate(self.candidate, ready=True, stage_record=self.current), [])
         self.assertEqual(m.validate_upgrade_source(self.old, self.candidate), self.old['inputs']['config'])
         self.assertEqual(self.old['inputs']['config']['release']['package_sha256'],
-                         'e7e2dfca5fce168b06b4e2db87efcfba4b04baea124a1a7eab9b814a6ed0cee8')
+                         '54505cb6ffd08dfb8c27aa8034be82f65a74647d476fb84a61e7c55d3d94766d')
         for field, value in [('key_id', 'other'), ('raw_public_fingerprint', 'f' * 64),
                              ('public_ring', {'size': 83, 'sha256': 'f' * 64}),
-                             ('max_current_sequence', 23), ('min_current_sequence', 25), ('min_current_schema', m.PRICING_SCHEMA)]:
+                             ('max_current_sequence', 24), ('min_current_sequence', 26), ('min_current_schema', '000132_invalid')]:
             with self.subTest(field=field):
                 candidate = copy.deepcopy(self.candidate); candidate['immutable'][field] = value
                 with self.assertRaises(m.Stop): m.validate_upgrade_source(self.old, candidate)
-        candidate = copy.deepcopy(self.candidate); candidate['release']['release_sequence'] = 24
+        candidate = copy.deepcopy(self.candidate); candidate['release']['release_sequence'] = 25
         with self.assertRaises(m.Stop): m.validate_upgrade_source(self.old, candidate)
         broken = copy.deepcopy(self.old); broken['inputs']['config']['immutable']['public_ring']['sha256'] = 'f' * 64
         with self.assertRaisesRegex(Exception, 'stage_consumer_trust'):
@@ -98,9 +98,9 @@ class PublicPredecessorTests(unittest.TestCase):
                 if action == 'describe':
                     self.assertEqual(json.loads(output.getvalue())['upgrade_source'], self.old['product'])
         bad = copy.deepcopy(self.current)
-        bad['inputs']['config']['immutable'].update(max_current_sequence=23, historical_sequence_reserved_through=23)
+        bad['inputs']['config']['immutable'].update(max_current_sequence=24, historical_sequence_reserved_through=24)
         release = bad['inputs']['config']['release']
-        release.update(release_sequence=24, tag='v1.15.8-preview.24')
+        release.update(release_sequence=25, tag='v1.15.9-preview.25')
         release['bootstrap_url'] = m.asset_url(release, 'community-bootstrap.json')
         self.assertEqual(m.validate(bad['inputs']['config'], ready=True, stage_record=bad), [])
         with mock.patch.object(m, 'stage_module', return_value=stages), \

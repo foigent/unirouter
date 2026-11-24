@@ -90,6 +90,27 @@ func TestChatPreflightUsesCanonicalPreparationWithoutExecutionEffects(t *testing
 	require.Zero(t, coordinator.releaseCount.Load())
 }
 
+func TestChatPreflightAcknowledgesSingleUpstreamAttemptWithoutDispatch(t *testing.T) {
+	relay, planner, coordinator := newPreflightFixture(t)
+	r := executionRequest(http.MethodPost, "/v1/chat/completions/preflight", "single-attempt-preflight", preflightToolRequest)
+	r = r.WithContext(context.WithValue(r.Context(), middleware.CtxModelAlias, "glm-5.3"))
+	r.Header.Set(middleware.ChatUpstreamAttemptsHeader, "1")
+	budget := payloadpolicy.MustNewBudget(payloadpolicy.DefaultLimits())
+	handler := payloadpolicy.RequestMiddleware(budget, payloadpolicy.ProfileChatRequest, middleware.GetOrgIDFromContext)(
+		middleware.StrictJSONIngress(middleware.ChatUpstreamAttemptPolicy(http.HandlerFunc(relay.HandleChatPreflight))),
+	)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Equal(t, "1", w.Header().Get(middleware.ChatUpstreamAttemptsHeader))
+	var result chatPreflightResult
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
+	require.True(t, result.LocallyAdmissible, w.Body.String())
+	require.Len(t, planner.requests, 1)
+	require.Zero(t, coordinator.authorizeCount.Load())
+}
+
 func TestChatPreflightDistinguishesProfileRejectionQualificationAndRuntime(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

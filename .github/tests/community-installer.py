@@ -168,6 +168,8 @@ class Acceptance:
         self.source_contract = source_contract(repo)
         self.schema = self.source_contract.schema
         self.release_sequence = {RETAINED_SCHEMA:16, OBSERVATION_SCHEMA:17, RESTORE_SCHEMA:21, ADMISSION_SCHEMA:24, CURRENT_SCHEMA:25}[self.schema]
+        if self.schema == CURRENT_SCHEMA and self.version == "1.15.9":
+            self.release_sequence = 26
         self.result.update(commit=self.commit, tree=self.tree, version=self.version)
         self.release = root / "release"
         self.release.mkdir(mode=0o700)
@@ -494,7 +496,8 @@ class Acceptance:
             require((product["version"], sequence, product["schema"], self.version, self.schema) in (
                         ("1.15.5", 22, RESTORE_SCHEMA, "1.15.6", RESTORE_SCHEMA),
                         ("1.15.6", 23, RESTORE_SCHEMA, "1.15.7", ADMISSION_SCHEMA),
-                        ("1.15.7", 24, ADMISSION_SCHEMA, "1.15.8", CURRENT_SCHEMA)),
+                        ("1.15.7", 24, ADMISSION_SCHEMA, "1.15.8", CURRENT_SCHEMA),
+                        ("1.15.8", 25, CURRENT_SCHEMA, "1.15.9", CURRENT_SCHEMA)),
                     "unexpected public delta rehearsal predecessor")
             require(self.release_sequence == sequence + 1,
                     "prepared candidate must immediately follow the pinned predecessor")

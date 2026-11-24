@@ -209,7 +209,7 @@ func TestCORS_Headers(t *testing.T) {
 	allowedHeaders := splitComma(rec.Header().Get("Access-Control-Allow-Headers"))
 	for _, expected := range []string{
 		"X-Request-ID", "X-UniRouter-Client-Request-ID", "Idempotency-Key", "Cache-Control",
-		"X-UniRouter-Response-Cache", "X-UniRouter-Prompt-Compression",
+		"X-UniRouter-Response-Cache", "X-UniRouter-Prompt-Compression", ChatUpstreamAttemptsHeader,
 	} {
 		found := false
 		for _, allowed := range allowedHeaders {
@@ -234,14 +234,14 @@ func TestCORS_Headers(t *testing.T) {
 		"X-UniRouter-Original-Request-ID",
 		"X-UniRouter-Idempotency-Replayed",
 		"X-UniRouter-Limit-Policy-Version", "X-UniRouter-Workload-Class",
-		"X-UniRouter-Response-Cache", "X-UniRouter-Prompt-Compression",
+		"X-UniRouter-Response-Cache", "X-UniRouter-Prompt-Compression", ChatUpstreamAttemptsHeader,
 	} {
 		if !slices.Contains(exposedHeaders, expected) {
 			t.Fatalf("expected %s to be browser-readable: %#v", expected, exposedHeaders)
 		}
 	}
-	if len(exposedHeaders) != 8 {
-		t.Fatalf("expected identity, policy, workload and invocation-optimization headers, got %#v", exposedHeaders)
+	if len(exposedHeaders) != 9 {
+		t.Fatalf("expected identity, policy, workload and invocation-control headers, got %#v", exposedHeaders)
 	}
 }
 

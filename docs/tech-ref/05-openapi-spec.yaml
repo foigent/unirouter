@@ -238,6 +238,10 @@ paths:
         - $ref: "#/components/parameters/ResponseCacheOptIn"
         - $ref: "#/components/parameters/PromptCompressionOptIn"
         - $ref: "#/components/parameters/RequestCacheControl"
+        - in: header
+          name: X-UniRouter-Max-Upstream-Attempts
+          schema: { type: string, enum: ["1"] }
+          description: Optional cap of one upstream Chat POST per gateway execution.
       requestBody:
         required: true
         content:
@@ -248,6 +252,9 @@ paths:
         "200":
           description: Chat completion or SSE stream. The final `_uniroute.provider_prompt_cache` object reports only provider-authoritative Prompt Cache token classes, status/schema, and frozen pricing evidence; it is not a UniRouter response-cache signal. Unknown provider fields never receive a cache discount.
           headers:
+            X-UniRouter-Max-Upstream-Attempts:
+              description: Echoed when the requested single-attempt cap was accepted.
+              schema: { type: string, enum: ["1"] }
             X-Request-ID:
               $ref: "#/components/headers/OperationId"
             X-UniRouter-Client-Request-ID:
@@ -267,6 +274,8 @@ paths:
             text/event-stream:
               schema:
                 type: string
+        "400":
+          $ref: "#/components/responses/Error"
         "401":
           $ref: "#/components/responses/Error"
         "402":
@@ -450,6 +459,11 @@ paths:
         requests need not call it. Other adapters/protocols are not inferred.
       security:
         - gatewayKey: []
+      parameters:
+        - in: header
+          name: X-UniRouter-Max-Upstream-Attempts
+          schema: { type: string, enum: ["1"] }
+          description: Optional cap of one upstream Chat POST per gateway execution.
       requestBody:
         required: true
         content:
@@ -459,6 +473,9 @@ paths:
         "200":
           description: Local admissibility snapshot, including explicit reasons and unchecked boundaries
           headers:
+            X-UniRouter-Max-Upstream-Attempts:
+              description: Echoed when the requested single-attempt cap was accepted.
+              schema: { type: string, enum: ["1"] }
             X-Request-ID: { $ref: "#/components/headers/OperationId" }
             Cache-Control: { schema: { type: string, enum: [no-store] } }
           content:

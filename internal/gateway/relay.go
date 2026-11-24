@@ -842,6 +842,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		relay.contextWithTrustedEvidence(r.Context(), r.Header),
 		telemetryexport.OperationChatCompletion,
 	)
+	singleUpstreamAttempt := middleware.SingleChatUpstreamAttemptRequested(ctx)
 	requestStart := time.Now()
 	requestID := middleware.GetRequestIDFromContext(ctx)
 	w.Header().Set("X-Request-ID", requestID)
@@ -1230,6 +1231,11 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		recordCompressionReceipt(route)
 		providerAttempts++
 		upstreamReq, observeResponse := relay.observeProvider(attemptCtx, upstreamReq, preparedRoute.adapter, adapters.EndpointChatCompletions)
+		if singleUpstreamAttempt {
+			// The adapter and local checks have already read the serialized body.
+			// The transport may use it once without restarting a sent POST.
+			upstreamReq.GetBody = nil
+		}
 		upstreamStart := time.Now()
 		finishMeasurement := executionmeasurement.HTTPStart(attemptCtx, attemptIDFromContext(attemptCtx))
 		resp, err := client.Do(upstreamReq)
@@ -1291,10 +1297,11 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 			// Per PRD F12: adapters normalize provider-specific HTTP semantics
 			// into routing failure kinds. Client errors are not channel failures.
 			classified := adapter.ClassifyHTTPStatus(resp.StatusCode, errBody)
-			willRetry := classified.Retryable && providerAttempts <= routingPolicy.MaxRetryCount && routeIndex+1 < len(routes)
+			retryAuthorized := !singleUpstreamAttempt && classified.Retryable
+			willRetry := retryAuthorized && providerAttempts <= routingPolicy.MaxRetryCount && routeIndex+1 < len(routes)
 			if err := relay.completeProviderAttemptWithRetry(providerAttemptCompletion(
 				attemptCtx, requestID, orgID, billing.ProviderAttemptOutcomeRejected,
-				classified.Retryable, resp.StatusCode, string(classified.FailureKind), upstreamRequestID,
+				retryAuthorized, resp.StatusCode, string(classified.FailureKind), upstreamRequestID,
 			), reqLog); err != nil {
 				resp.Body.Close()
 				relay.recordTraceEvent(attemptCtx, requestID, "billing.provider_attempt.complete_failed", "billing", "critical", req.Model, requestedModel, route, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{

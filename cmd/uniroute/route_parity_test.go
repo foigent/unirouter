@@ -450,6 +450,7 @@ func TestGatewayAuthenticationWrapsExecutionAdmission(t *testing.T) {
 		`mux.Handle("POST /v1/embeddings", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, embeddingsPayloadGuard)(captureExecutionContext(`,
 		`mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(`,
 		`mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(`,
+		`mux.Handle("POST /v1/chat/completions/preflight", chatPreflightOperation(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(middleware.StrictJSONIngress(middleware.ChatUpstreamAttemptPolicy(newGatewayChatPreflightHandler(postgres.Pool, relay))))))`,
 		`mux.Handle("GET /v1/models", gatewayAuth(`,
 	} {
 		if !strings.Contains(mainSource, registration) {
@@ -466,7 +467,7 @@ func TestGatewayRateAdmissionPrecedesIdempotencyAndBusinessHandlers(t *testing.T
 	mainSource := string(src)
 	for _, registration := range []string{
 		`sharedPolicyBilling.SetEarlyRateAdmissionEvidenceSink(relay)`,
-		`middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(chatHandler)))`,
+		`middleware.StrictJSONIngress(middleware.ChatUpstreamAttemptPolicy(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(chatHandler))))`,
 		`middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(embeddingsHandler)))`,
 		`middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(responsesHandler)))`,
 		`middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(messagesHandler)))`,

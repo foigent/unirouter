@@ -787,8 +787,8 @@ func main() {
 	// Repeat live authentication after the complete body is retained. A slow
 	// upload cannot carry a pre-revocation Grant, Credential, membership,
 	// capability, endpoint, or provider-liability snapshot into paid admission.
-	mux.Handle("POST /v1/chat/completions", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(captureExecutionContext(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(chatHandler)))))))
-	mux.Handle("POST /v1/chat/completions/preflight", chatPreflightOperation(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(middleware.StrictJSONIngress(newGatewayChatPreflightHandler(postgres.Pool, relay)))))
+	mux.Handle("POST /v1/chat/completions", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(captureExecutionContext(capturePublicContent(middleware.StrictJSONIngress(middleware.ChatUpstreamAttemptPolicy(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(chatHandler))))))))
+	mux.Handle("POST /v1/chat/completions/preflight", chatPreflightOperation(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(middleware.StrictJSONIngress(middleware.ChatUpstreamAttemptPolicy(newGatewayChatPreflightHandler(postgres.Pool, relay))))))
 	mux.Handle("POST /v1/embeddings", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, embeddingsPayloadGuard)(captureExecutionContext(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(embeddingsHandler)))))))
 	mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(responsesHandler)))))))
 	mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(messagesHandler)))))))

@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
+import { promisify } from 'node:util';
 import { chromium } from 'playwright';
 
 const f = JSON.parse(process.env.COMMUNITY_FIRST_USE_FIXTURE || '{}');
@@ -215,7 +217,23 @@ try {
   }
   await debug.getByPlaceholder('粘贴项目访问凭证').fill('');
   step('canonical_gateway_success_and_stream_terminal_same_requests');
-  // Reuse the same two requests; the native frozen quote/journal assertions
+  const firstRequest = await promisify(execFile)('python3', ['-I', '-B', '../examples/first_request.py', '--send'], {
+    env: { PATH: process.env.PATH, UR_BASE_URL: f.base_url, UR_API_KEY: key, UR_MODEL: f.ready_model },
+    timeout: 15000,
+    maxBuffer: 4096,
+  });
+  assert.equal(firstRequest.stderr, '');
+  assert.ok(!firstRequest.stdout.includes(key), 'the example must never emit the application key');
+  const previewID = firstRequest.stdout.match(/^Preflight request ID: (op_[0-9a-f]{32})$/m)?.[1];
+  const chatID = firstRequest.stdout.match(/^Chat request ID: (op_[0-9a-f]{32})$/m)?.[1];
+  const clientID = firstRequest.stdout.match(/^Chat client request ID: (first-use-[0-9a-f]{32})$/m)?.[1];
+  assert.ok(previewID && chatID && clientID);
+  assert.notEqual(previewID, chatID);
+  const exampleLog = await waitForRequestLog(member, chatID);
+  assert.equal(exampleLog.client_request_id, clientID);
+  result.requests.push({request_id:chatID,stream:false,status:200});
+  step('standard_library_example_preflight_and_one_real_gateway_dispatch');
+  // Reuse the same requests; the native frozen quote/journal assertions
   // in Go bind the Rate Card and actual prices. The separate enterprise report
   // snapshot API is deliberately not a gateway settlement authority.
   for(const request of result.requests){
