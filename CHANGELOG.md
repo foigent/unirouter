@@ -4,7 +4,7 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
-## [1.15.9] - 2026-11-25
+## [1.16.0] - 2026-11-25
 
 - Let Chat callers opt into at most one upstream POST. A supporting
   preflight acknowledges the request header without dispatching a model.

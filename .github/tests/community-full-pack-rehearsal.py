@@ -23,7 +23,7 @@ def module(name):
 
 
 REPO = 'foigent/unirouter'
-TARGET_VERSION = '1.15.9'
+TARGET_VERSION = '1.16.0'
 TARGET_SCHEMA = '000131_customer_standard_pricing'
 OLD_VERSION = '1.15.8'
 OLD_SCHEMA = '000131_customer_standard_pricing'

@@ -333,7 +333,7 @@ class InstallerFixtureContract(unittest.TestCase):
                 root = Path(tmp).resolve()
                 work = object.__new__(fixture.Acceptance)
                 work.root, work.repo, work.result = root, ROOT, {'checks': []}
-                work.version, work.schema = "1.15.9", fixture.CURRENT_SCHEMA
+                work.version, work.schema = "1.16.0", fixture.CURRENT_SCHEMA
                 work.release_sequence = sequence
                 work.release = root / 'prepared-original-candidate'
                 work.verifier = root / 'verifier'

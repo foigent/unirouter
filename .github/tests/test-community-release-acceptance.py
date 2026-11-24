@@ -27,7 +27,7 @@ class PublicPredecessorTests(unittest.TestCase):
     def setUp(self):
         self.old = json.loads((ROOT / m.UPGRADE_SOURCE).read_bytes())
         self.current = copy.deepcopy(self.old)
-        self.current['product'].update(commit='b' * 40, tree='c' * 40, version='1.15.9', schema=m.PRICING_SCHEMA)
+        self.current['product'].update(commit='b' * 40, tree='c' * 40, version='1.16.0', schema=m.PRICING_SCHEMA)
         c = self.current['inputs']['config']
         c['immutable']['product'] = {k: self.current['product'][k] for k in ('commit', 'tree', 'version', 'schema')}
         c['immutable'].update(max_current_sequence=25, historical_sequence_reserved_through=25,
@@ -37,7 +37,7 @@ class PublicPredecessorTests(unittest.TestCase):
             'url': ('https://raw.githubusercontent.com/foigent/unirouter/' +
                     self.current['product']['commit'] + '/deploy/community/bootstrap.py'),
             'sha256': m.sha(bootstrap), 'size': bootstrap.stat().st_size}
-        c['release'].update(release_sequence=26, tag='v1.15.9-preview.26', package_sha256='d' * 64)
+        c['release'].update(release_sequence=26, tag='v1.16.0-preview.26', package_sha256='d' * 64)
         c['release']['bootstrap_url'] = m.asset_url(c['release'], 'community-bootstrap.json')
         self.candidate = c  # Synthetic future metadata, never dispatched or signed.
 
@@ -100,7 +100,7 @@ class PublicPredecessorTests(unittest.TestCase):
         bad = copy.deepcopy(self.current)
         bad['inputs']['config']['immutable'].update(max_current_sequence=24, historical_sequence_reserved_through=24)
         release = bad['inputs']['config']['release']
-        release.update(release_sequence=25, tag='v1.15.9-preview.25')
+        release.update(release_sequence=25, tag='v1.16.0-preview.25')
         release['bootstrap_url'] = m.asset_url(release, 'community-bootstrap.json')
         self.assertEqual(m.validate(bad['inputs']['config'], ready=True, stage_record=bad), [])
         with mock.patch.object(m, 'stage_module', return_value=stages), \
