@@ -386,7 +386,17 @@ describe('ProjectManagementPage', () => {
     const table = currentRow.closest('.ur-table-shell') as HTMLElement;
     const sizeControl = table.querySelector('.semi-page-switch [role="combobox"]') as HTMLElement;
     await user.click(sizeControl);
-    fireEvent.click(await screen.findByRole('option', { name: /50/ }));
+    const sizeOption = await screen.findByRole('option', { name: /50/ });
+    const popup = sizeOption.closest('[role="dialog"]');
+    if (!popup) throw new Error('Missing page size popup');
+    // jsdom does not send the CSS events that commit a controlled Semi Select.
+    await waitFor(() => expect(popup).toHaveClass('semi-tooltip-animation-show'));
+    fireEvent.animationEnd(popup);
+    await user.click(sizeOption);
+    await waitFor(() => expect(popup).toHaveClass('semi-tooltip-animation-hide'));
+    await act(async () => {
+      fireEvent.animationEnd(popup);
+    });
     expect(await detail.findByText('项目成员加载失败')).toBeInTheDocument();
     expect(detail.queryByText('member-4-20-candidate')).not.toBeInTheDocument();
     fireEvent.click(detail.getByRole('button', { name: '重试' }));

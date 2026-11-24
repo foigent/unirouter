@@ -51,10 +51,12 @@ function accountResponse(username: string, authProvider: 'local' | 'oidc' = 'loc
   };
 }
 
-async function chooseCommittedOption(user: ReturnType<typeof userEvent.setup>, label: string, option: string) {
+async function chooseCommittedOption(user: ReturnType<typeof userEvent.setup>, label: string, option: string | RegExp) {
   const combobox = screen.getByRole('combobox', { name: label });
   await user.click(combobox);
-  const choice = (await screen.findByText(option)).closest('[role="option"]');
+  const choice = typeof option === 'string'
+    ? (await screen.findByText(option)).closest('[role="option"]')
+    : await screen.findByRole('option', { name: option });
   if (!choice) throw new Error(`missing option ${option} for ${label}`);
   const popup = choice.closest('[role="dialog"]');
   if (!popup) throw new Error(`missing option popup for ${label}`);
@@ -64,8 +66,10 @@ async function chooseCommittedOption(user: ReturnType<typeof userEvent.setup>, l
   fireEvent.animationEnd(popup);
   await user.click(choice);
   await waitFor(() => expect(popup).toHaveClass('semi-tooltip-animation-hide'));
-  fireEvent.animationEnd(popup);
-  await waitFor(() => expect(combobox).toHaveTextContent(option));
+  await act(async () => {
+    fireEvent.animationEnd(popup);
+  });
+  await waitFor(() => expect(screen.getByRole('combobox', { name: label })).toHaveTextContent(option));
 }
 
 describe('UsersPage enterprise identity presentation', () => {
@@ -188,8 +192,7 @@ describe('UsersPage enterprise identity presentation', () => {
     await screen.findByText('local-1-20');
     await user.click(screen.getByLabelText('Page 4'));
     await screen.findByText('local-4-20');
-    await user.click(screen.getByRole('combobox', { name: 'selected' }));
-    fireEvent.click(await screen.findByRole('option', { name: /50/ }));
+    await chooseCommittedOption(user, 'selected', /50/);
 
     await waitFor(() => expect(mocks.getUsers.mock.calls).toEqual([
       [1, 20, 'local'], [4, 20, 'local'], [1, 50, 'local'],

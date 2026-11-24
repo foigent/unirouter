@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import LimitPoliciesPage from '../LimitPoliciesPage';
@@ -107,7 +107,17 @@ describe('LimitPoliciesPage', () => {
     expect(await screen.findByText('4 / 20 policy')).toBeInTheDocument();
 
     await user.click(screen.getByRole('combobox', { name: 'selected' }));
-    fireEvent.click(await screen.findByRole('option', { name: /50/ }));
+    const sizeOption = await screen.findByRole('option', { name: /50/ });
+    const popup = sizeOption.closest('[role="dialog"]');
+    if (!popup) throw new Error('Missing page size popup');
+    // jsdom does not send the CSS events that commit a controlled Semi Select.
+    await waitFor(() => expect(popup).toHaveClass('semi-tooltip-animation-show'));
+    fireEvent.animationEnd(popup);
+    await user.click(sizeOption);
+    await waitFor(() => expect(popup).toHaveClass('semi-tooltip-animation-hide'));
+    await act(async () => {
+      fireEvent.animationEnd(popup);
+    });
 
     expect(await screen.findByText('1 / 50 policy')).toBeInTheDocument();
     expect(mocks.getLimitPolicies.mock.calls).toEqual([[1, 20], [4, 20], [1, 50]]);
