@@ -44,7 +44,7 @@ jobs:
           test "$(git -C source rev-parse HEAD)" = "$EXPECTED_COMMIT"
           test "$(git -C source rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
           test -z "$(git -C source status --porcelain)"
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@v7.1.0
         with:
           go-version-file: source/go.mod
           cache: false
