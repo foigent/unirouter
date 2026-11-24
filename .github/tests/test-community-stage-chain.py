@@ -396,10 +396,9 @@ class StageChainTests(unittest.TestCase):
             raw = M.canonical(record)
             receipt_images = M.strict_json(result_raw)['images']
             result = M.publisher_result(raw, product, rehearsal.RETAINED_PUBLISHER_RUN, receipt_images)
-            receipt = {'status': 'public_images_authenticated_identity_verified_only',
-                       'stage_result': result, 'images': receipt_images}
-            log = ''.join('2026-11-24T18:51:20.0000000Z ' + line + '\n'
-                          for line in json.dumps(receipt, indent=2).splitlines()).encode()
+            receipt = {'stage_result': result, 'images': receipt_images}
+            frozen = path / 'reviewed-result.json'
+            frozen.write_bytes(M.canonical(result))
             env = self.native_env(path, record, 'publisher')
             run = {'id': rehearsal.RETAINED_PUBLISHER_RUN, 'workflow_id': 387706956,
                    'run_attempt': 1, 'event': 'workflow_dispatch', 'head_sha': product, 'head_branch': 'main',
@@ -414,34 +413,92 @@ class StageChainTests(unittest.TestCase):
             branch = {'protected': True, 'commit': {'sha': env['GITHUB_SHA']}}
             replies = {'branches/main': branch, f'actions/runs/{run["id"]}': run, f'actions/jobs/{job["id"]}': job}
             calls = []
-            def read_native(_env, endpoint):
-                calls.append(endpoint)
-                return replies[endpoint.removeprefix(f'repos/{M.REPOSITORY}/')]
-            def read_log(argv, _env):
+            run_path = f'actions/runs/{run["id"]}'
+            job_path = f'actions/jobs/{job["id"]}'
+            denied_path = None
+            def read_native(argv, **_):
                 self.assertEqual('GET', argv[argv.index('--method') + 1])
-                self.assertEqual(f'repos/{M.REPOSITORY}/actions/jobs/{job["id"]}/logs', argv[-1])
-                calls.append(argv[-1])
-                return log
-            api = types.SimpleNamespace(gh=read_native, command=read_log, check_context=P.H.check_context)
-            with patch.multiple(rehearsal, RETAINED_RECORD_SHA=M.sha(raw), RETAINED_LOG_SIZE=len(log),
-                                RETAINED_LOG_SHA=M.sha(log), RETAINED_RESULT_SHA=M.sha(M.canonical(result))):
-                self.assertEqual((raw, record), rehearsal.replay_context(M, api, env))
+                endpoint = argv[-1].removeprefix(f'repos/{M.REPOSITORY}/')
+                calls.append(endpoint)
+                if endpoint == denied_path:
+                    return subprocess.CompletedProcess(argv, 1,
+                        b'HTTP/2.0 403 Forbidden\r\nX-GitHub-Request-Id: BEF1:258A:112F:C191:12345\r\n'
+                        b'Location: https://example.invalid/release?signed=synthetic-private\r\n\r\n'
+                        b'{"token":"synthetic-private"}', b'gh: synthetic-private (HTTP 403)')
+                return subprocess.CompletedProcess(argv, 0, b'HTTP/2.0 200 OK\r\n\r\n' + M.canonical(replies[endpoint]), b'')
+            with patch.multiple(rehearsal, RETAINED_RECORD_SHA=M.sha(raw), RETAINED_RESULT=frozen,
+                                RETAINED_RESULT_SHA=M.sha(frozen.read_bytes())), patch.object(rehearsal.subprocess, 'run', side_effect=read_native):
+                self.assertEqual((raw, record), rehearsal.replay_context(M, P.H, env))
                 for change in ({'GITHUB_RUN_ATTEMPT':'2'}, {'GITHUB_WORKFLOW_SHA':'e'*40},
                                {'STAGE_RECORD_SHA256':'0'*64}):
                     with self.subTest(change=change), self.assertRaises((AssertionError, RuntimeError, M.Stop)):
-                        rehearsal.replay_context(M, api, {**env, **change})
+                        rehearsal.replay_context(M, P.H, {**env, **change})
                 self.assertEqual([], calls)
-                self.assertEqual(receipt, rehearsal.retained_receipt(M, api, env, raw))
-                self.assertEqual(4, len(calls))
-                for fields, name, swapped in ((branch,'protected',False), (run,'conclusion','failure'),
-                                              (run,'head_sha','e'*40), (job,'run_id',999), (job,'name','other')):
+                # A wrong result fails before the first GitHub GET.
+                unmodified = frozen.read_bytes()
+                frozen.write_bytes(unmodified+b' ')
+                with self.assertRaises(rehearsal.RehearsalFailure) as invalid:
+                    rehearsal.retained_receipt(M, P.H, env, raw)
+                self.assertEqual('verify_retained_publisher_result', invalid.exception.report['stage'])
+                self.assertEqual([], calls)
+                frozen.write_bytes(unmodified)
+                self.assertEqual(receipt, rehearsal.retained_receipt(M, P.H, env, raw))
+                self.assertEqual(['branches/main', run_path, job_path], calls)
+                for fields, name, swapped, phase in (
+                        (branch, 'protected', False, 'verify_protected_main'),
+                        (run, 'conclusion', 'failure', 'verify_original_publisher_run'),
+                        (run, 'head_sha', 'e'*40, 'verify_original_publisher_run'),
+                        (job, 'run_id', 999, 'verify_original_publisher_job'),
+                        (job, 'name', 'other', 'verify_original_publisher_job')):
                     value = fields[name]
                     fields[name] = swapped
-                    with self.subTest(name=name), self.assertRaises(AssertionError):
-                        rehearsal.retained_receipt(M, api, env, raw)
+                    with self.subTest(name=name), self.assertRaises(rehearsal.RehearsalFailure) as invalid:
+                        rehearsal.retained_receipt(M, P.H, env, raw)
+                    self.assertEqual(phase, invalid.exception.report['stage'])
                     fields[name] = value
-                with patch.object(api, 'command', return_value=log+b'!'), self.assertRaises(AssertionError):
-                    rehearsal.retained_receipt(M, api, env, raw)
+                denied_path = job_path
+                with self.assertRaises(rehearsal.RehearsalFailure) as denied:
+                    rehearsal.retained_receipt(M, P.H, env, raw)
+                self.assertEqual({'state':'linux_complete_formal_members_stopped',
+                                  'stage':'read_original_publisher_job','failure_type':'GitHubReadError',
+                                  'http_status':403,'github_request_id':'BEF1:258A:112F:C191:12345'},
+                                 denied.exception.report)
+                self.assertNotIn('synthetic-private', json.dumps(denied.exception.report))
+
+    def test_rehearsal_download_diagnostic_discards_the_child_error(self):
+        rehearsal = module('full_pack_safe_failure', 'community-full-pack-rehearsal.py')
+        args = ['gh', 'api', '--method', 'GET', 'unused']
+        stderr = b'gh: https://example.invalid/a?signed=synthetic-private (HTTP 429)\n'
+        reply = subprocess.CompletedProcess(args, 1, b'', stderr)
+        with patch.object(rehearsal.subprocess, 'run', return_value=reply):
+            with self.assertRaises(rehearsal.RehearsalFailure) as error:
+                rehearsal.download_github_asset(args, {}, 'download_producer_evidence', output=io.BytesIO())
+        report = error.exception.report
+        self.assertEqual(('download_producer_evidence', 429, None),
+                         (report['stage'], report['http_status'], report['github_request_id']))
+        self.assertNotIn('synthetic-private', json.dumps(report))
+        self.assertEqual({'http_status': None, 'github_request_id': None},
+            rehearsal.http_failure(b'HTTP/2.0 418 Ignored\nX-GitHub-Request-Id: invalid-value'))
+
+    def test_rehearsal_request_id_requires_complete_unambiguous_http_headers(self):
+        rehearsal = module('full_pack_http_shape', 'community-full-pack-rehearsal.py')
+        status = b'HTTP/2.0 503 Unavailable\r\n'
+        header = b'X-GitHub-Request-Id: BEF1:258A:112F:C191:12345\r\n'
+        self.assertEqual({'http_status':503,'github_request_id':'BEF1:258A:112F:C191:12345'},
+                         rehearsal.http_failure(status+header+b'\r\nbody'))
+        for response, expected_status in (
+                (b'CLI diagnostic text\r\n'+header+b'\r\n', None),
+                (status+header, None),
+                (status+header+header+b'\r\n', 503),
+                (status+header+b'x-github-request-id: invalid-value\r\n\r\n', 503),
+                (status+b'Content-Type: text/plain\r\n\r\n'+header, 503),
+                (status+header+b'incomplete header line\r\n\r\n', 503)):
+            with self.subTest(response=response):
+                self.assertEqual({'http_status':expected_status,'github_request_id':None},
+                                 rehearsal.http_failure(response))
+        self.assertEqual({'http_status':403,'github_request_id':None}, rehearsal.http_failure(
+            b'CLI diagnostic text\r\n'+header+b'\r\n',
+            b'gh: could not read (HTTP 403)\n'+header))
 
     def test_offline_handoff_commands_are_exclusive_and_use_existing_receipts(self):
         with tempfile.TemporaryDirectory() as tmp:

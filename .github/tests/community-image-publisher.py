@@ -207,9 +207,10 @@ def stage_module():
     return module
 
 
-def verify_parent_native(stages, record, env, release):
+def verify_parent_native(stages, record, env, release, *, read_json=None):
     parent = record['predecessor']
-    run = gh(env, 'repos/' + REPOSITORY + '/actions/runs/' + str(parent['run_id']))
+    read_json = gh if read_json is None else read_json
+    run = read_json(env, 'repos/' + REPOSITORY + '/actions/runs/' + str(parent['run_id']))
     require(run['id'] == parent['run_id'] and run['run_attempt'] == 1 and run['status'] == 'completed'
             and run['conclusion'] == 'success' and run['head_sha'] == parent['program_commit']
             and run['event'] == 'workflow_dispatch' and run['head_branch'] == 'main'
@@ -233,13 +234,14 @@ def verify_parent_native(stages, record, env, release):
     return {row['id']: row for row in rows}
 
 
-def verify_parent_evidence(stages, record, env, assets, directory):
+def verify_parent_evidence(stages, record, env, assets, directory, *, download=None):
+    download = command if download is None else download
     asset = next(row for row in assets.values() if row['name'] == 'candidate-evidence.tar.gz')
     require(asset['size'] <= stages.MAX_EVIDENCE, 'Producer evidence download bound differs.')
     path = directory/'candidate-evidence.tar.gz'
     with path.open('xb') as out:
         path.chmod(0o600)
-        command(['gh', 'api', '--hostname', 'github.com', 'repos/' + REPOSITORY + '/releases/assets/' + str(asset['id']),
+        download(['gh', 'api', '--hostname', 'github.com', 'repos/' + REPOSITORY + '/releases/assets/' + str(asset['id']),
                  '--header', 'X-GitHub-Api-Version: 2022-11-28', '--header', 'Accept: application/octet-stream'], env, output=out)
     require(path.stat().st_size == asset['size'] and hashlib.sha256(path.read_bytes()).hexdigest() == asset['digest'][7:],
             'Producer evidence native asset bytes differ.')
