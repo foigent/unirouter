@@ -39,6 +39,12 @@ OBSERVATION_SCHEMA = "000128_upstream_release_observation"
 RESTORE_SCHEMA = "000129_upstream_observation_restore_namespace"
 ADMISSION_SCHEMA = "000130_upgrade_admission_recovery"
 CURRENT_SCHEMA = "000131_customer_standard_pricing"
+PUBLIC_DELTA_TRANSITIONS = {
+    ("1.15.5", 22, RESTORE_SCHEMA): ("1.15.6", RESTORE_SCHEMA),
+    ("1.15.6", 23, RESTORE_SCHEMA): ("1.15.7", ADMISSION_SCHEMA),
+    ("1.15.7", 24, ADMISSION_SCHEMA): ("1.15.8", CURRENT_SCHEMA),
+    ("1.15.8", 25, CURRENT_SCHEMA): ("1.16.0", CURRENT_SCHEMA),
+}
 FIXTURE_PORTS = {"fresh": 13000, "single": 13001, "edge": 13002, "predecessor": 13003}
 SourceContract = namedtuple("SourceContract", "schema ledger supported_heads")
 # Match the accepted installation descriptor, not build-stage pull labels or floating tags.
@@ -482,6 +488,12 @@ class Acceptance:
                            "release_sequence": self.release_sequence, "package": proof["target"]},
                 "delta": proof["delta"], "full_package_requests": 0, "byte_identical": True}
 
+    def require_public_delta_predecessor(self, version, sequence, schema):
+        require(PUBLIC_DELTA_TRANSITIONS.get((version, sequence, schema)) == (self.version, self.schema),
+                "unexpected public delta rehearsal predecessor")
+        require(self.release_sequence == sequence + 1,
+                "prepared candidate must immediately follow the pinned predecessor")
+
     def qualify_accepted_predecessor_delta(self):
         """Verify the public predecessor, then re-sign its payload for test trust."""
         first = self.formal_consumer_module()
@@ -493,14 +505,7 @@ class Acceptance:
             first.validate(config, ready=True, stage_record=record)
             product = record["product"]
             sequence = config["release"]["release_sequence"]
-            require((product["version"], sequence, product["schema"], self.version, self.schema) in (
-                        ("1.15.5", 22, RESTORE_SCHEMA, "1.15.6", RESTORE_SCHEMA),
-                        ("1.15.6", 23, RESTORE_SCHEMA, "1.15.7", ADMISSION_SCHEMA),
-                        ("1.15.7", 24, ADMISSION_SCHEMA, "1.15.8", CURRENT_SCHEMA),
-                        ("1.15.8", 25, CURRENT_SCHEMA, "1.16.0", CURRENT_SCHEMA)),
-                    "unexpected public delta rehearsal predecessor")
-            require(self.release_sequence == sequence + 1,
-                    "prepared candidate must immediately follow the pinned predecessor")
+            self.require_public_delta_predecessor(product["version"], sequence, product["schema"])
             source = self.checkout_fixture_source("public-predecessor", product["commit"])
             first.verify_predecessor_checkout(source, record)
             public_root = self.root / "predecessor-owner-signed"
@@ -1524,8 +1529,13 @@ raise SystemExit("expected cold-pair interruption was not reached")
         # Independent installations must not share a recently used host port.
         # The original installer's real collision check remains unchanged.
         same_schema = old.schema == self.schema
-        require(not public_predecessor or (existing is None and layout == "single" and old.schema in (RESTORE_SCHEMA, ADMISSION_SCHEMA)),
-                "public predecessor fixture needs its exact fresh, single-writer installation")
+        if public_predecessor:
+            self.phase = "validate exact public predecessor upgrade"
+            require(existing is None and layout == "single" and origin_sequence is None,
+                    "public predecessor fixture needs its exact fresh, single-writer installation")
+            self.require_public_delta_predecessor(old.version, old.release_sequence, old.schema)
+            if same_schema:
+                self.observe_migration_owner()
         self.loopback_port = old.loopback_port = FIXTURE_PORTS["predecessor" if public_predecessor else layout]
         case = instance_name or layout
         project = "ur-upgrade-" + case + "-" + self.suffix

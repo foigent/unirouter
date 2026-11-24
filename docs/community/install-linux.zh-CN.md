@@ -150,7 +150,7 @@ ssh -N -L 3000:127.0.0.1:3000 your-user@your-server
 
 配置好模型和项目应用 Key 后，可使用[仅依赖 Python 标准库的首次请求示例](../../examples/first_request.py)，
 参照[运行说明](getting-started.md#make-and-inspect-a-request)在本机安全输入 Key。默认只预检；
-旧版未确认支持单次派发时会在收费前停止。确认要发送后才加 `--send`，程序只提交一次 Chat。
+旧版未确认支持单次派发时会在收费前停止。已确认支持 `thinking.type=disabled` 的模型可在两次命令中都加 `--disable-thinking`。确认要发送后才加 `--send`，程序只提交一次 Chat。
 在调用日志中用 **Chat request ID** 查用量、计量来源和结算结果；若超时没有拿到它，用 **Chat client request ID**
 查原请求，先核实再决定是否另发。预检 ID 不对应模型调用；成本观测金额不等于客户实际扣费。
 

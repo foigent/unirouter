@@ -101,6 +101,14 @@ class FirstRequestTest(unittest.TestCase):
             self.assertEqual(headers["idempotency-key"], intent)
             self.assertIn(intent, result.stdout)
 
+    def test_explicit_thinking_setting_is_the_same_in_both_requests(self):
+        with self.gateway() as (calls, config):
+            result = self.run_example(("--disable-thinking", "--send"), **config)
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(calls[0][2], calls[1][2])
+            self.assertEqual(calls[0][2]["thinking"], {"type": "disabled"})
+
     def test_unsafe_preflight_results_never_send_chat(self):
         for options in ({"supported": False}, {"admissible": False}, {"preview_status": 404},
                         {"preview_status": 401}, {"preview_status": 307}):

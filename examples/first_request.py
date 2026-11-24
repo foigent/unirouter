@@ -91,6 +91,8 @@ def send(opener, url, body, headers, api_key, *, preflight):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--send", action="store_true", help="send one potentially billable Chat request after preflight")
+    parser.add_argument("--disable-thinking", action="store_true",
+                        help="set thinking.type=disabled on a compatible model profile")
     args = parser.parse_args()
 
     settings = {name: os.environ.get(name, "") for name in ("UR_BASE_URL", "UR_API_KEY", "UR_MODEL")}
@@ -107,12 +109,15 @@ def main():
         print("Use an HTTPS gateway URL or a local HTTP tunnel and a valid application key.")
         return 2
 
-    body = json.dumps({
+    payload = {
         "model": settings["UR_MODEL"].strip(),
         "messages": [{"role": "user", "content": "Reply with a brief greeting."}],
         "stream": False,
         "max_tokens": 32,
-    }).encode()
+    }
+    if args.disable_thinking:
+        payload["thinking"] = {"type": "disabled"}
+    body = json.dumps(payload).encode()
     headers = {
         "Authorization": "Bearer " + api_key,
         "Content-Type": "application/json",

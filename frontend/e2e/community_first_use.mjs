@@ -217,10 +217,14 @@ try {
   }
   await debug.getByPlaceholder('粘贴项目访问凭证').fill('');
   step('canonical_gateway_success_and_stream_terminal_same_requests');
-  const firstRequest = await promisify(execFile)('python3', ['-I', '-B', '../examples/first_request.py', '--send'], {
+  const firstRequest = await promisify(execFile)('python3', ['-I', '-B', '../examples/first_request.py', '--disable-thinking', '--send'], {
     env: { PATH: process.env.PATH, UR_BASE_URL: f.base_url, UR_API_KEY: key, UR_MODEL: f.ready_model },
     timeout: 15000,
     maxBuffer: 4096,
+  }).catch((error) => {
+    const safeFacts = String(error.stdout ?? '').split('\n')
+      .filter((line) => /^(Preflight|Chat): [A-Za-z0-9 .,]+$/.test(line));
+    assert.fail(`First-request command failed (exit ${Number(error.code) || 'unknown'}). ${safeFacts.join(' ')}`);
   });
   assert.equal(firstRequest.stderr, '');
   assert.ok(!firstRequest.stdout.includes(key), 'the example must never emit the application key');

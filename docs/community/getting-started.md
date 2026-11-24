@@ -70,7 +70,10 @@ The default command only runs preflight. No model request is sent. The
 example checks that the same installation explicitly acknowledges the
 single-attempt option and accepts the exact request locally. If either
 check fails, it stops before Chat. This includes older installations that
-ignore the option.
+ignore the option. For a model profile that supports `thinking.type=disabled`
+and requires separate qualification for default reasoning, add
+`--disable-thinking` to both commands. The example does not assume which
+Provider or profile your alias selects.
 
 If the preflight passes and you intend to make a potentially billable
 request, run the following once. It preflights again with the same payload,
