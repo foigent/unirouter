@@ -1,6 +1,12 @@
 # 在 Linux 服务器上安装
 
-**已经在运行 UniRouter？** 请查阅[保留数据的升级手册](../ops/COMMUNITY-UPGRADE.md)。下方命令会创建全新实例。
+## 选择发行版
+
+[1.16.0 Linux amd64 预览版（序号 26）](https://github.com/foigent/unirouter/releases/tag/v1.16.0-preview.26)发布签名包和摘要后，请按该发布页的命令下载和运行 bootstrap。
+准备好的目录内含 `payload/docs/install-linux.zh-CN.md` 和 `payload/docs/RECOVERY.md`。
+
+若预览版 26 尚未发布，可使用[已签名的 1.15.8 预览版](https://github.com/foigent/unirouter/releases/tag/v1.15.8-preview.25)和[下方的下载安装命令](#下载并安装本预览版)。
+下方命令固定用于 1.15.8。已有实例请查看[保留数据的升级手册](../ops/COMMUNITY-UPGRADE.md)。
 
 明确无到期限制的安装包使用签名格式 `unirouter.upgrade-manifest.v2` 和 `expires_at: "never"`（UR 1.14.0 起支持）。独立校验程序和后端都必须支持 v2，后端的 `upgrade record-applied` 也不例外。旧 v1 包仍遵守原到期时间；更换包不能恢复绑定原包哈希的安装计划。检查、安装、恢复仍验证原包的签名、哈希、创建时间、平台、数据库版本和发布序号。无到期限制不等于允许回滚、跳过信任检查或延长所有者的签名授权。这一策略本身不代表公开下载可用或已完成部署。
 

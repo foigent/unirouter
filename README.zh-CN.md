@@ -10,7 +10,7 @@ UniRouter（UR）为应用和 Agent 提供统一模型入口及管理控制台�
 路由、预算、用量、计费和执行回执放在同一条可检查的链路中。你可以追溯请求
 如何执行，以及费用依据如何形成。
 
-> **在 Linux 服务器／ECS 上开始：** 按[Linux amd64 安装说明](docs/community/install-linux.zh-CN.md)安装，
+> **在 Linux 服务器／ECS 上开始：** 从 [Linux amd64 安装说明](docs/community/install-linux.zh-CN.md)选择已签名的预览版，
 > 再[登录、初始化客户并发出第一次请求](docs/community/getting-started.md)。
 > 预览版使用签名包与固定镜像摘要；[发布状态](docs/community/release-readiness.md)
 > 分别记录具体包、安装和现有服务器升级的实际验证结果。

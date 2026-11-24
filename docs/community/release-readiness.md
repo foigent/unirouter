@@ -2,9 +2,23 @@
 
 English is the primary community language. Chinese entry points and contributions are welcome.
 
-## Current public preview — 1.15.8 / M131
+## Preview 26 — 1.16.0 / M131
 
-The [signed Linux amd64 preview](https://github.com/foigent/unirouter/releases/tag/v1.15.8-preview.25) is release sequence 25 from source `8b4ccd99f34425eec8d4363d2939bd5c7f569e8d`. The full package is 130,056,833 bytes, SHA-256 `54505cb6ffd08dfb8c27aa8034be82f65a74647d476fb84a61e7c55d3d94766d`. For a new instance, use the [English installation guide](install-linux.md) or the [Simplified Chinese guide](install-linux.zh-CN.md).
+The [Preview 26 release page](https://github.com/foigent/unirouter/releases/tag/v1.16.0-preview.26) is the source for signed downloads,
+checksums, and fresh Linux amd64 installation. If the release page is not
+public yet, the signed Preview 25 below remains available. Preview 26 uses
+product source `3e84663f54bd8e57e4637d61bfcdb946a77bc11f`. Its ordinary delta
+starts at signed 1.15.8 / M131 / sequence 25 and stays at M131. Follow the
+[upgrade guide](../ops/COMMUNITY-UPGRADE.md) and the verified package's
+`payload/docs/RECOVERY.md`.
+
+Use the formal consumer workflow below to check the result for **1.16.0,
+sequence 26** and the package SHA-256 published on the Preview 26 release
+page. Match the exact package before relying on the outcome.
+
+## Signed public preview — 1.15.8 / M131
+
+The [signed Linux amd64 preview](https://github.com/foigent/unirouter/releases/tag/v1.15.8-preview.25) is release sequence 25 from source `8b4ccd99f34425eec8d4363d2939bd5c7f569e8d`. The full package is 130,056,833 bytes, SHA-256 `54505cb6ffd08dfb8c27aa8034be82f65a74647d476fb84a61e7c55d3d94766d`. For a new instance, use the [English installation guide](https://github.com/foigent/unirouter/blob/3e84663f54bd8e57e4637d61bfcdb946a77bc11f/docs/community/install-linux.md) or the [Simplified Chinese guide](https://github.com/foigent/unirouter/blob/3e84663f54bd8e57e4637d61bfcdb946a77bc11f/docs/community/install-linux.zh-CN.md).
 
 The [first isolated Ubuntu acceptance run on 23 November 2026](https://github.com/foigent/unirouter/actions/runs/45116045540) verified the published signed package and six anonymous image pulls. Fresh installation, administrator login, first-customer initialization and interrupted-install recovery passed before the upgrade case.
 
@@ -16,7 +30,7 @@ The [anonymous source build](https://github.com/foigent/unirouter/actions/runs/4
 
 1. Sign in to GitHub to view step logs. Open [Community Release Acceptance](https://github.com/foigent/unirouter/actions/workflows/community-release-acceptance.yml), listed as **Consume exact record-bound signed public community release**, and choose a completed run on `main`.
 2. Open `public-release-consumer` and expand **Consume exact real signed public release on this disposable runner**. Find the `unirouter.formal-community-consumer.v1` report near the end of the step log.
-3. Match `version: 1.15.8`, `release_sequence: 25` and `public_upgrade_delta.target.sha256` with the full package SHA-256 above. For isolated upgrade acceptance, look for a successful run whose matching report has `status: passed` and `installed_public_upgrade.original_password_usable: true`.
+3. Match the product version, release sequence and `public_upgrade_delta.target.sha256` with the full package SHA-256 on the corresponding release page. For isolated upgrade acceptance, look for a successful run whose matching report has `status: passed` and `installed_public_upgrade.original_password_usable: true`.
 
 ## Historical public preview — 1.15.7 / M130
 

@@ -1,6 +1,20 @@
 # Community upgrade: retained installations and exact schema transitions
 
-The current signed preview is [UR 1.15.8, release sequence 25](https://github.com/foigent/unirouter/releases/tag/v1.15.8-preview.25), with target M131. The [first isolated Linux upgrade run on 23 November 2026](https://github.com/foigent/unirouter/actions/runs/45116045540) used the exact signed 1.15.7/M130 predecessor. It reconstructed the signed target with the 138,502-byte delta, applied M131 and verified an independent database and file restore. The run failed when the original administrator login returned HTTP 503 after the upgrade. Before scheduling maintenance, check [Community Release Acceptance](https://github.com/foigent/unirouter/actions/workflows/community-release-acceptance.yml) for subsequent runs that match this [version, sequence and package digest](../community/release-readiness.md#track-signed-package-acceptance).
+## Choose the target and exact installed source
+
+- [Preview 26 (1.16.0 / M131 / sequence 26)](https://github.com/foigent/unirouter/releases/tag/v1.16.0-preview.26) uses the retained
+  signed **1.15.8 / M131 / sequence 25** package as its differential source.
+  Once the signed target and checksums appear on the release page, follow its
+  preparation commands and the resulting `payload/docs/RECOVERY.md`. The
+  complete ledger is verified at M131 without applying a migration.
+- [Preview 25 (1.15.8 / M131 / sequence 25)](https://github.com/foigent/unirouter/releases/tag/v1.15.8-preview.25) remains available with
+  its [version-pinned instructions](https://raw.githubusercontent.com/foigent/unirouter/3e84663f54bd8e57e4637d61bfcdb946a77bc11f/docs/ops/COMMUNITY-UPGRADE.md)
+  while Preview 26 is awaiting publication. Its differential uses 1.15.7 /
+  M130 / sequence 24.
+
+## Historical acceptance on the original packages
+
+For the earlier [UR 1.15.8, release sequence 25](https://github.com/foigent/unirouter/releases/tag/v1.15.8-preview.25), the target was M131. The [first isolated Linux upgrade run on 23 November 2026](https://github.com/foigent/unirouter/actions/runs/45116045540) used the exact signed 1.15.7/M130 predecessor. It reconstructed the signed target with the 138,502-byte delta, applied M131 and verified an independent database and file restore. The run failed when the original administrator login returned HTTP 503 after the upgrade. Before scheduling maintenance, check [Community Release Acceptance](https://github.com/foigent/unirouter/actions/workflows/community-release-acceptance.yml) for subsequent runs that match this [version, sequence and package digest](../community/release-readiness.md#track-signed-package-acceptance).
 
 Previously verified transition to [UR 1.15.7, release sequence 24](https://github.com/foigent/unirouter/releases/tag/v1.15.7-preview.24) on M130. The [formal public package consumer](https://github.com/foigent/unirouter/actions/runs/43619096141) used the actual signed 1.15.6 predecessor on M129. It reconstructed the signed target with the 136,840-byte delta, preserved the original administrator password and nonempty financial history, appended M130 as the only missing migration, and verified an independent database and file restore. Follow the original-host admission, cold pair and independent restore checks below.
 
@@ -26,7 +40,8 @@ Fresh installation continues to use `install`/`resume` and the exact candidate s
 
 ## Supported source
 
-- The documented sequence 25 differential starts at 1.15.7 / M130 / sequence 24.
+- For Preview 26, the source is 1.15.8 / M131 / sequence 25. For the earlier
+  Preview 25, the source is 1.15.7 / M130 / sequence 24.
   Earlier M127, M128 and M129 transitions remain scoped to their historical releases.
   Use the completed native installation envelope and the signed full package named by native release history;
   after an earlier manual patch it may differ from the install directory's
@@ -47,9 +62,10 @@ only their previously supported scope.
 
 ## One entry for check, upgrade, resume and status
 
-Obtain the pinned bootstrap script and metadata from the
-[installation guide](../community/install-linux.md). For sequence 25,
-run `prepare` with the retained 1.15.7 signed full package as `--source-package`.
+Obtain the pinned bootstrap script and metadata from the chosen release page.
+For [Preview 26](https://github.com/foigent/unirouter/releases/tag/v1.16.0-preview.26), run `prepare` with the retained
+**1.15.8** signed full package as `--source-package`. For the previous
+Preview 25, use its version-pinned preparation instructions above.
 The published delta reconstructs the exact signed full target, which is
 independently verified before maintenance. Use `--source-verifier` to retain an
 installed verifier whose digest matches. The signed full package is also
@@ -168,8 +184,9 @@ outside that file check and remain valid.
    original and verification objects are retained. No restore overwrites the
    original database or content tree.
 5. Run the candidate's existing native migration owner for the exact missing
-   ledger suffix. The sequence 25 path adds only M131 to the complete M130
-   ledger. A historical, proved interrupted M127 → M128 prefix may continue
+   ledger suffix. The sequence 26 path verifies the complete M131 ledger
+   without applying a migration. The earlier sequence 25 path adds only M131
+   to the complete M130 ledger. A historical, proved interrupted M127 → M128 prefix may continue
    only the missing M129 migration after full cold/data checks. A same-schema
    M129 upgrade verifies the full ledger and cold pair without invoking
    migrations. Verify original table facts and preserved configuration and

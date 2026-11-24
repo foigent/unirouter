@@ -1,6 +1,16 @@
 # Install on a Linux server
 
-**Already running UniRouter?** Use the [data-preserving upgrade guide](../ops/COMMUNITY-UPGRADE.md). The commands below create a fresh instance.
+## Choose your release
+
+Start with the [1.16.0 Linux amd64 preview, sequence 26](https://github.com/foigent/unirouter/releases/tag/v1.16.0-preview.26) once
+its signed package and checksums appear on that release page. Follow its
+download and bootstrap commands. The prepared package contains
+`payload/docs/install-linux.md` and `payload/docs/RECOVERY.md`.
+
+If Preview 26 is still awaiting publication, the [signed 1.15.8 preview](https://github.com/foigent/unirouter/releases/tag/v1.15.8-preview.25)
+and its [download and install instructions below](#download-and-install-this-preview)
+are available now. Those commands are pinned to 1.15.8.
+For an existing installation, use the [data-preserving upgrade guide](../ops/COMMUNITY-UPGRADE.md).
 
 Explicitly non-expiring packages use signed `unirouter.upgrade-manifest.v2` with `expires_at: "never"` (UniRouter 1.14.0+). The standalone verifier and backend must both support v2, including `upgrade record-applied`. Existing finite v1 packages retain their original deadline; replacing or re-signing them cannot resume a plan bound to a different package hash. Every check/install/resume still verifies the original signature, hashes, creation time (with the existing five-minute future tolerance), platform, schema and release sequence. Non-expiring does not authorize rollback, skip trust checks or extend the owner's finite signing-authority window. This policy alone does not establish public availability or a verified deployment.
 
