@@ -2,7 +2,7 @@
 
 **企业 AI 的模型执行与可信事实底座。**
 
-[Foigent](https://github.com/foigent) · [English](README.md) · [设计理念](docs/community/why-unirouter.zh-CN.md) · [开始使用](docs/community/getting-started.md) ·
+[Foigent](https://github.com/foigent) · [English](README.md) · [设计理念](docs/community/why-unirouter.zh-CN.md) · [开始使用](docs/community/getting-started.zh-CN.md) ·
 [架构与 X-Insight](docs/community/architecture.md) · [参与贡献](CONTRIBUTING.md) ·
 [路线图](ROADMAP.md) · [许可证](LICENSE)
 
@@ -11,7 +11,7 @@ UniRouter（UR）为应用和 Agent 提供统一模型入口及管理控制台�
 如何执行，以及费用依据如何形成。
 
 > **在 Linux 服务器／ECS 上开始：** 从 [Linux amd64 安装说明](docs/community/install-linux.zh-CN.md)选择已签名的预览版，
-> 再[登录、初始化客户并发出第一次请求](docs/community/getting-started.md)。
+> 再[登录、初始化客户并发出第一次请求](docs/community/getting-started.zh-CN.md)。
 > 预览版使用签名包与固定镜像摘要；[发布状态](docs/community/release-readiness.md)
 > 分别记录具体包、安装和现有服务器升级的实际验证结果。
 
@@ -35,8 +35,8 @@ UniRouter（UR）为应用和 Agent 提供统一模型入口及管理控制台�
 | 你的目标 | 阅读入口 |
 | --- | --- |
 | 在 Linux／ECS 上安装 | [Linux 安装说明](docs/community/install-linux.zh-CN.md) |
-| 登录、初始化客户并发出第一次请求 | [开始使用（英文）](docs/community/getting-started.md) |
-| 连接 X-Insight | [接入入口与当前限制（英文）](docs/community/getting-started.md#optional-x-insight-integration) |
+| 登录、初始化客户并发出第一次请求 | [开始使用](docs/community/getting-started.zh-CN.md) |
+| 连接 X-Insight | [接入入口与当前限制](docs/community/getting-started.zh-CN.md#可选接入-x-insight) |
 | 理解为什么做 UR 及设计取舍 | [设计理念](docs/community/why-unirouter.zh-CN.md) |
 | 深入了解网关实现差异 | [源码比较说明（英文）](docs/community/gateway-design-comparison.md) |
 | 理解产品与职责边界 | [架构与 X-Insight](docs/community/architecture.md) |
@@ -57,7 +57,7 @@ X-Insight 异步接收事实，不进入模型调用的同步关键路径。
 
 [Foigent 首页](https://github.com/foigent) 是产品选择入口。
 [X-Insight 源码](https://github.com/foigent/x-insight)和[预览版发布](https://github.com/foigent/x-insight/releases)已公开。
-先按其指南安装，再按 [UR 连接说明（英文）](docs/community/getting-started.md#optional-x-insight-integration)接入。
+先按其指南安装，再按 [UR 连接说明](docs/community/getting-started.zh-CN.md#可选接入-x-insight)接入。
 两个产品的独立安装和组合首次使用分别记录实际验证结果。
 共享协议与 Integration Control 为产品及验证提供基础组件，不是需要用户另行选择或
 自行拼装的其他产品。

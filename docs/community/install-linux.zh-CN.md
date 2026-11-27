@@ -152,13 +152,9 @@ ssh -N -L 3000:127.0.0.1:3000 your-user@your-server
 `http://127.0.0.1:3000`，使用 `admin` 和你刚自选的密码登录。
 如保留了初始随机密码，可在服务器上私下执行 `sudo cat /opt/unirouter/admin-password` 读取。
 不要把密码或密码文件粘贴到 Issue 或共享日志中。
-按页面完成首次客户设置，再按[模型配置指南](getting-started.md#prepare-model-access)继续。
-
-配置好模型和项目应用 Key 后，可使用[仅依赖 Python 标准库的首次请求示例](../../examples/first_request.py)，
-参照[运行说明](getting-started.md#make-and-inspect-a-request)在本机安全输入 Key。默认只预检；
-旧版未确认支持单次派发时会在收费前停止。已确认支持 `thinking.type=disabled` 的模型可在两次命令中都加 `--disable-thinking`。确认要发送后才加 `--send`，程序只提交一次 Chat。
-在调用日志中用 **Chat request ID** 查用量、计量来源和结算结果；若超时没有拿到它，用 **Chat client request ID**
-查原请求，先核实再决定是否另发。预检 ID 不对应模型调用；成本观测金额不等于客户实际扣费。
+按页面完成首次客户设置，再按[模型配置指南](getting-started.zh-CN.md#准备模型调用权限)继续。
+使用 Preview 26 时，按[首次请求与回执指南](getting-started.zh-CN.md#发送并查验首次请求)
+单独下载并校验示例。默认只预检，明确加 `--send` 才会发送一次可能收费的 Chat。
 
 安装器不会自动登录、导入模型密钥、执行资格探测或发起付费模型请求。管理页面可用，
 还不代表模型已经可以向应用提供服务。完成配置和资格验证前保留本机访问限制；公开 HTTPS
