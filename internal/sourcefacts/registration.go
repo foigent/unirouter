@@ -32,6 +32,10 @@ func ValidateProfiles(profiles []string) bool {
 	if len(profiles) < 1 || len(profiles) > 12 || !slices.IsSorted(profiles) {
 		return false
 	}
+	if slices.Contains(profiles, MediaChargeProfile) &&
+		(!slices.Contains(profiles, RuntimeProfile) || !slices.Contains(profiles, CostProfile)) {
+		return false
+	}
 	for i, p := range profiles {
 		if (!ValidProfile(p) && !validObservationProfile(p) && !validBudgetProfile(p)) || i > 0 && profiles[i-1] == p {
 			return false
@@ -48,7 +52,11 @@ func EnabledProfiles(controller interface{ ProfilesEnabled([]string) bool }) []s
 		return result
 	}
 	for _, profile := range append(append(Profiles(), ObservationProfiles()...), BudgetProfiles()...) {
-		if controller.ProfilesEnabled([]string{profile}) {
+		check := []string{profile}
+		if profile == MediaChargeProfile {
+			check = []string{CostProfile, MediaChargeProfile, RuntimeProfile}
+		}
+		if controller.ProfilesEnabled(check) {
 			result = append(result, profile)
 		}
 	}

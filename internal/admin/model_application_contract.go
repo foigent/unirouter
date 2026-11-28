@@ -142,6 +142,7 @@ type canonicalOperationAxis struct {
 	ProbeState               string                                `json:"probe_state"`
 	ProbeReasonCode          string                                `json:"probe_reason_code"`
 	ProbeAvailable           bool                                  `json:"probe_available"`
+	AsyncProbe               bool                                  `json:"async_probe,omitempty"`
 	ProbeAvailabilityReason  string                                `json:"probe_availability_reason_code"`
 	CapabilityProbeContracts []canonicalCapabilityProbeContractRef `json:"capability_probe_contracts"`
 	ExecutionSupport         *canonicalExecutionSupport            `json:"execution_support,omitempty"`
@@ -804,7 +805,7 @@ func normalizeCanonicalApplicationCreate(request canonicalModelApplicationCreate
 	request.PublicModel.ExecutionProfileID = strings.TrimSpace(request.PublicModel.ExecutionProfileID)
 	request.PublicModel.ExecutionProfileVersion = strings.TrimSpace(request.PublicModel.ExecutionProfileVersion)
 	request.Deployment.UpstreamModel = strings.TrimSpace(request.Deployment.UpstreamModel)
-	if request.Deployment.ProfileDefinitionDigest != "" && (!modelprofile.IsDefinitionDigest(request.Deployment.ProfileDefinitionDigest) || request.Operation.OperationID != modelprofile.OperationOpenAIChat) {
+	if request.Deployment.ProfileDefinitionDigest != "" && !modelprofile.IsDefinitionDigest(request.Deployment.ProfileDefinitionDigest) {
 		return request, errCanonicalApplicationInvalid
 	}
 	request.Credential.APIKey = strings.TrimSpace(request.Credential.APIKey)
@@ -982,6 +983,11 @@ func resolveCanonicalOperationProfile(input canonicalOperationInput, adapterType
 			return input, errCanonicalApplicationInvalid
 		}
 		input.ProtocolProfileID, input.ProtocolProfileVersion = "openai.embeddings", "1.0.0"
+	case modeloperation.IDMediaJobs:
+		if adapterType != adapters.TypeOpenAICompatible {
+			return input, errCanonicalApplicationInvalid
+		}
+		input.ProtocolProfileID, input.ProtocolProfileVersion = endpointprotocol.ProfileOpenAIImageGPT, "1.0.0"
 	case modeloperation.IDResponses:
 		if adapterType != adapters.TypeOpenAICompatible {
 			return input, errCanonicalApplicationInvalid
@@ -1049,7 +1055,8 @@ func validateCanonicalProfileProductBinding(
 		profile = publicModel.Definition.Profile()
 		ok = true
 	}
-	if !ok {
+	if !ok || (operation.OperationID == string(modeloperation.IDMediaJobs) &&
+		(publicModel.Definition.Digest() == "" || !modelprofile.MediaJobProfile(profile))) {
 		return errCanonicalApplicationInvalid
 	}
 	endpointPathMode := ""
@@ -1810,7 +1817,7 @@ SELECT md.id,operation.operation_id,operation.protocol_profile_id,
          AND probe.probe_profile_id=operation.protocol_profile_id
          AND probe.probe_profile_version=operation.protocol_profile_version
          AND (
-           operation.operation_id NOT IN ('openai.responses.v1','anthropic.messages.v1')
+           operation.operation_id NOT IN ('openai.responses.v1','anthropic.messages.v1','unirouter.media_jobs.v1')
            OR (
              probe.operation_revision IS NOT NULL
              AND probe.public_path=execution_support.public_path
@@ -1903,7 +1910,7 @@ SELECT md.id,operation.operation_id,operation.protocol_profile_id,
                  AND p.probe_profile_id=operation.protocol_profile_id
                  AND p.probe_profile_version=operation.protocol_profile_version
                  AND (
-                   operation.operation_id NOT IN ('openai.responses.v1','anthropic.messages.v1')
+                   operation.operation_id NOT IN ('openai.responses.v1','anthropic.messages.v1','unirouter.media_jobs.v1')
                    OR (
                      p.operation_revision IS NOT NULL
                      AND p.public_path=execution_support.public_path
@@ -2146,14 +2153,21 @@ SELECT md.id,operation.operation_id,operation.protocol_profile_id,
 			for _, binding := range bindings {
 				op.CapabilityProbeContracts = append(op.CapabilityProbeContracts, canonicalCapabilityProbeContractRef{binding.CapabilityID, binding.ProbeContractID, binding.ProbeContractVersion})
 			}
-			snapshot := canonicalOperationProbeSnapshot{OperationID: op.OperationID, ProfileID: op.ProtocolProfileID, ProfileVersion: op.ProtocolProfileVersion,
-				ProfileDefinitionDigest: definition.Digest(), Definition: definition, UpstreamModel: applications[i].Deployment.UpstreamModel}
+			app := &applications[i]
+			snapshot := canonicalOperationProbeSnapshot{
+				OperationID: op.OperationID, ProfileID: op.ProtocolProfileID, ProfileVersion: op.ProtocolProfileVersion,
+				ProfileDefinitionDigest: op.ProfileDefinitionDigest, Definition: definition, UpstreamModel: app.Deployment.UpstreamModel,
+				ExecutionProfileID: app.PublicModel.ExecutionProfileID, ExecutionProfileVersion: app.PublicModel.ExecutionProfileVersion,
+				Provider: app.Connection.Provider, BaseURL: app.Connection.BaseURL,
+				AdapterType: app.Connection.AdapterType, AdapterConfig: app.Connection.AdapterConfig,
+			}
 			_, specErr := canonicalOperationProbeSpecForSnapshot(snapshot)
 			_, payloadErr := canonicalOperationProbePayloadForSnapshot(snapshot, "")
 			op.ProbeAvailable = specErr == nil && payloadErr == nil
 			op.ProbeAvailabilityReason = "operation_profile_not_probeable"
 			if op.ProbeAvailable {
 				op.ProbeAvailabilityReason = "exact_probe_contract_available"
+				op.AsyncProbe = asyncOperationProbeProtocol(snapshot) != nil
 			}
 		}
 	}

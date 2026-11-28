@@ -27,17 +27,17 @@ class PublicPredecessorTests(unittest.TestCase):
     def setUp(self):
         self.old = json.loads((ROOT / m.UPGRADE_SOURCE).read_bytes())
         self.current = copy.deepcopy(self.old)
-        self.current['product'].update(commit='b' * 40, tree='c' * 40, version='1.16.0', schema=m.PRICING_SCHEMA)
+        self.current['product'].update(commit='b' * 40, tree='c' * 40, version='1.17.0', schema=m.RESPONSES_TOOLS_SCHEMA)
         c = self.current['inputs']['config']
         c['immutable']['product'] = {k: self.current['product'][k] for k in ('commit', 'tree', 'version', 'schema')}
-        c['immutable'].update(max_current_sequence=25, historical_sequence_reserved_through=25,
+        c['immutable'].update(max_current_sequence=26, historical_sequence_reserved_through=26,
             native_acceptance_helper_sha256=m.sha(ROOT / '.github/tests/community-installer.py'))
         bootstrap = ROOT / 'deploy/community/bootstrap.py'
         c['immutable']['bootstrap_script'] = {
             'url': ('https://raw.githubusercontent.com/foigent/unirouter/' +
                     self.current['product']['commit'] + '/deploy/community/bootstrap.py'),
             'sha256': m.sha(bootstrap), 'size': bootstrap.stat().st_size}
-        c['release'].update(release_sequence=26, tag='v1.16.0-preview.26', package_sha256='d' * 64)
+        c['release'].update(release_sequence=27, tag='v1.17.0-preview.27', package_sha256='d' * 64)
         c['release']['bootstrap_url'] = m.asset_url(c['release'], 'community-bootstrap.json')
         self.candidate = c  # Synthetic future metadata, never dispatched or signed.
 
@@ -46,6 +46,8 @@ class PublicPredecessorTests(unittest.TestCase):
         self.assertTrue(m.supported_public_schema_transition(m.PRICING_SCHEMA, m.PRICING_SCHEMA))
         self.assertFalse(m.supported_public_schema_transition(m.RESTORE_SCHEMA, m.PRICING_SCHEMA))
         self.assertFalse(m.supported_public_schema_transition(m.PRICING_SCHEMA, m.ADMISSION_SCHEMA))
+        self.assertTrue(m.supported_public_schema_transition(m.PRICING_SCHEMA, m.RESPONSES_TOOLS_SCHEMA))
+        self.assertFalse(m.supported_public_schema_transition(m.ADMISSION_SCHEMA, m.RESPONSES_TOOLS_SCHEMA))
 
     def git(self, root, *args):
         return subprocess.check_output(['git', '-c', 'user.name=Offline fixture',
@@ -61,14 +63,14 @@ class PublicPredecessorTests(unittest.TestCase):
         self.assertEqual(m.validate(self.candidate, ready=True, stage_record=self.current), [])
         self.assertEqual(m.validate_upgrade_source(self.old, self.candidate), self.old['inputs']['config'])
         self.assertEqual(self.old['inputs']['config']['release']['package_sha256'],
-                         '54505cb6ffd08dfb8c27aa8034be82f65a74647d476fb84a61e7c55d3d94766d')
+                         '7a96a3019cdf895905e8e0d089f030e13bf35a36605c8a3339bc1eaa71b9b381')
         for field, value in [('key_id', 'other'), ('raw_public_fingerprint', 'f' * 64),
                              ('public_ring', {'size': 83, 'sha256': 'f' * 64}),
-                             ('max_current_sequence', 24), ('min_current_sequence', 26), ('min_current_schema', '000132_invalid')]:
+                             ('max_current_sequence', 25), ('min_current_sequence', 27), ('min_current_schema', '000133_invalid')]:
             with self.subTest(field=field):
                 candidate = copy.deepcopy(self.candidate); candidate['immutable'][field] = value
                 with self.assertRaises(m.Stop): m.validate_upgrade_source(self.old, candidate)
-        candidate = copy.deepcopy(self.candidate); candidate['release']['release_sequence'] = 25
+        candidate = copy.deepcopy(self.candidate); candidate['release']['release_sequence'] = 26
         with self.assertRaises(m.Stop): m.validate_upgrade_source(self.old, candidate)
         broken = copy.deepcopy(self.old); broken['inputs']['config']['immutable']['public_ring']['sha256'] = 'f' * 64
         with self.assertRaisesRegex(Exception, 'stage_consumer_trust'):
@@ -98,9 +100,9 @@ class PublicPredecessorTests(unittest.TestCase):
                 if action == 'describe':
                     self.assertEqual(json.loads(output.getvalue())['upgrade_source'], self.old['product'])
         bad = copy.deepcopy(self.current)
-        bad['inputs']['config']['immutable'].update(max_current_sequence=24, historical_sequence_reserved_through=24)
+        bad['inputs']['config']['immutable'].update(max_current_sequence=25, historical_sequence_reserved_through=25)
         release = bad['inputs']['config']['release']
-        release.update(release_sequence=25, tag='v1.16.0-preview.25')
+        release.update(release_sequence=26, tag='v1.17.0-preview.26')
         release['bootstrap_url'] = m.asset_url(release, 'community-bootstrap.json')
         self.assertEqual(m.validate(bad['inputs']['config'], ready=True, stage_record=bad), [])
         with mock.patch.object(m, 'stage_module', return_value=stages), \
@@ -540,8 +542,8 @@ class PublicPredecessorTests(unittest.TestCase):
                 old = types.SimpleNamespace(instances=old_root / 'instances', ring=old_root / 'ring',
                     preflight=lambda: None, prepare=prepare, command=lambda *a: [],
                     installed_checks=lambda *a: None, native_first_use_checks=lambda *a, **kw: None,
-                    result={'first_customer': {'organization_id': 2}}, release_sequence=24,
-                    schema=m.ADMISSION_SCHEMA, compose=lambda *a: [])
+                    result={'first_customer': {'organization_id': 2}}, release_sequence=26,
+                    schema=m.PRICING_SCHEMA, compose=lambda *a: [])
                 old.run = lambda label, argv: (json.dumps({'services': {'backend': {'environment': {}}}})
                                               if label == 'read original content configuration' else '')
                 old.sql = lambda _d, _p, q: ('2' if q.startswith('INSERT INTO projects') else
@@ -553,14 +555,14 @@ class PublicPredecessorTests(unittest.TestCase):
                 instance.inventory = lambda: {'containers': []}
                 native = m.load_module(ROOT / '.github/tests/community-installer.py',
                                        m.sha(ROOT / '.github/tests/community-installer.py'), 'public_source_fixture')
-                # Exercise the exact public M130 to M131 transition.
+                # Exercise the exact public M131 to M132 transition.
                 ledger = native.source_contract(ROOT).ledger
-                target_ledger = ledger[:ledger.index(m.PRICING_SCHEMA) + 1]
-                instance.source_contract = native.SourceContract(m.PRICING_SCHEMA, target_ledger, ())
+                target_ledger = ledger[:ledger.index(m.RESPONSES_TOOLS_SCHEMA) + 1]
+                instance.source_contract = native.SourceContract(m.RESPONSES_TOOLS_SCHEMA, target_ledger, ())
                 source_ledger = instance.source_contract.ledger[:-1]
-                old.source_contract = native.SourceContract(m.ADMISSION_SCHEMA, source_ledger, ())
+                old.source_contract = native.SourceContract(m.PRICING_SCHEMA, source_ledger, ())
                 instance.sql = lambda *a: json.dumps(source_ledger)
-                instance.upgrade_fingerprint = lambda *a, **kw: {'schema_migrations': {'count': 130, 'sha256': 'stable'}}
+                instance.upgrade_fingerprint = lambda *a, **kw: {'schema_migrations': {'count': len(source_ledger), 'sha256': 'stable'}}
                 instance.protected_upgrade_rows = lambda *a: {name: {'count': 1} for name in
                     ('users', 'orgs', 'projects', 'wallets', 'transactions', 'audit_logs', 'release_history')}
                 def command(label, argv):
@@ -602,9 +604,9 @@ class PublicPredecessorTests(unittest.TestCase):
         # are doubled; package/state/receipt files and their hashes are real.
         native_path = ROOT / '.github/tests/community-installer.py'
         native = m.load_module(native_path, m.sha(native_path), 'post_upgrade_report_fixture')
-        # Use the exact M131 contract for the post-upgrade error fixtures.
+        # Use the exact M132 contract for the post-upgrade error fixtures.
         current = native.source_contract(ROOT).ledger
-        ledger = current[:current.index(m.PRICING_SCHEMA) + 1]
+        ledger = current[:current.index(m.RESPONSES_TOOLS_SCHEMA) + 1]
         temporary = (503, 'runtime_unavailable')
         ready = (200, None)
         refused = (503, 'limit_policy.state_unavailable')
@@ -626,11 +628,11 @@ class PublicPredecessorTests(unittest.TestCase):
                 root = Path(tmp).resolve()
                 instance = m.make_acceptance(ROOT, root, self.candidate, {},
                     upgrade_source=(root / 'old-source', self.old))
-                instance.source_contract = native.SourceContract(m.PRICING_SCHEMA, ledger, ())
+                instance.source_contract = native.SourceContract(m.RESPONSES_TOOLS_SCHEMA, ledger, ())
                 directory = root / 'installed-predecessor/instances/preserved'
                 old = types.SimpleNamespace(instances=directory.parent, ring=root / 'ring',
-                    result={'first_customer': {'organization_id': 2}}, release_sequence=24,
-                    schema=m.ADMISSION_SCHEMA, preflight=lambda: None, installed_checks=lambda *a: None,
+                    result={'first_customer': {'organization_id': 2}}, release_sequence=26,
+                    schema=m.PRICING_SCHEMA, preflight=lambda: None, installed_checks=lambda *a: None,
                     native_first_use_checks=lambda *a, **kw: None, command=lambda *a: [], compose=lambda *a: [])
                 def prepare():
                     (directory / 'evidence').mkdir(parents=True)
@@ -659,7 +661,7 @@ class PublicPredecessorTests(unittest.TestCase):
                         {'state': 'not_started'} if label == 'read original public upgrade status' else {})
                 instance.run = run
                 source_ledger = ledger[:-1]
-                old.source_contract = native.SourceContract(m.ADMISSION_SCHEMA, source_ledger, ())
+                old.source_contract = native.SourceContract(m.PRICING_SCHEMA, source_ledger, ())
                 def sql(_directory, _project, query):
                     if query == 'SELECT count(*) FROM release_history':
                         return '2'

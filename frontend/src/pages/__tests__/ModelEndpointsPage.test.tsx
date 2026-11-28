@@ -12,6 +12,7 @@ import {
   providerPresetBaseURLError,
 } from '../../features/modelEndpoints/ModelEndpointCreateSheet';
 import { useAuthStore } from '../../store/auth';
+import { ApiError } from '../../api/transport';
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
@@ -19,8 +20,11 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   create: vi.fn(),
   probe: vi.fn(),
+  readOperationProbe: vi.fn(),
   getCapabilityQualification: vi.fn(),
+  probeCapability: vi.fn(),
   getCapabilityProbePlan: vi.fn(),
+  probeCapabilityGroup: vi.fn(),
   releaseList: vi.fn(),
   authorRelease: vi.fn(),
   lifecycleCurrent: vi.fn(),
@@ -75,8 +79,11 @@ vi.mock('../../api/modelDeployments', async importOriginal => {
       get: mocks.get,
       create: mocks.create,
       probe: mocks.probe,
+      readOperationProbe: mocks.readOperationProbe,
       getCapabilityQualification: mocks.getCapabilityQualification,
+      probeCapability: mocks.probeCapability,
       getCapabilityProbePlan: mocks.getCapabilityProbePlan,
+      probeCapabilityGroup: mocks.probeCapabilityGroup,
     },
   };
 });
@@ -199,6 +206,30 @@ function application(overrides: Record<string, unknown> = {}) {
       license_middleware: 'route_owned',
       rbac_middleware: 'route_owned',
     },
+    ...overrides,
+  };
+}
+
+const asyncOperationID = 'unirouter.media_jobs.v1';
+const asyncProbeRef = 'op_' + '1'.repeat(32);
+
+function asyncApplication() {
+  const baseline = application();
+  return application({ operations: [{ ...baseline.operations[0], operation_id: asyncOperationID, async_probe: true }] });
+}
+
+function asyncReceipt(overrides: Record<string, unknown> = {}) {
+  return {
+    probe_run_ref: asyncProbeRef,
+    deployment_id: 41,
+    operation_id: asyncOperationID,
+    credential_binding_id: 91,
+    pending: true,
+    success: false,
+    provider_success: false,
+    current: true,
+    stale: false,
+    reason_code: 'provider_task_accepted',
     ...overrides,
   };
 }
@@ -361,6 +392,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
       releases: [],
     });
     mocks.get.mockResolvedValue(application());
+    mocks.readOperationProbe.mockReset().mockRejectedValue(new ApiError('No receipt', 404, null));
     mocks.probe.mockResolvedValue({
       probe_id: 301,
       deployment_id: 41,
@@ -761,6 +793,102 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     );
   });
 
+  it.each(['org_admin', 'org_viewer'] as const)(
+    'shows input capabilities from the deployment list and respects probe availability for %s',
+    async role => {
+      setRole(role);
+      const operationID = 'openai.chat_completions.v1';
+      // The audio contract matches the server's inline WAV probe. The other
+      // entries exercise declarations whose contracts cannot run in this configuration.
+      const inputContracts = [
+        { capability_id: 'audio', probe_contract_id: 'unirouter.capability-probe.chat-inline-wav.v1', probe_contract_version: '1.0.0' },
+        { capability_id: 'files', probe_contract_id: 'fixture.files', probe_contract_version: '1.0.0' },
+        { capability_id: 'video', probe_contract_id: 'fixture.video', probe_contract_version: '1.0.0' },
+      ];
+      const base = application();
+      const deployment = application({
+        operations: [{ ...base.operations[0], operation_id: operationID, capability_probe_contracts: inputContracts }],
+      });
+      mocks.list.mockResolvedValue(projection([deployment]));
+      mocks.get.mockResolvedValue(deployment);
+      mocks.getCapabilityQualification.mockImplementation(async (
+        deploymentID: number, currentOperation: string, capabilityID: string,
+      ) => ({
+        ...inputContracts.find(contract => contract.capability_id === capabilityID),
+        deployment_id: deploymentID,
+        operation_id: currentOperation,
+        capability_id: capabilityID,
+        probe_available: capabilityID === 'audio',
+        probe_availability_reason_code: capabilityID === 'audio' ? 'typed_probe_available' : 'compiled_probe_contract_unavailable',
+        planned_provider_requests: capabilityID === 'audio' ? 1 : undefined,
+        state: 'not_probed',
+        qualified: false,
+        qualification_state: 'approval_missing',
+      }));
+      mocks.getCapabilityProbePlan.mockResolvedValue({
+        deployment_id: 41, operation_id: operationID, credential_binding_id: 91,
+        groups: [], separate_capabilities: ['audio', 'files', 'video'],
+      });
+      mocks.probeCapability.mockResolvedValue({ success: true, current: true });
+
+      renderPage('/channels');
+      fireEvent.click(await screen.findByRole('button', { name: '查看详情' }));
+      expect(await screen.findByText('3 · 集中验证')).toBeInTheDocument();
+      for (const label of ['音频理解', '文件理解', '视频理解']) {
+        expect(await screen.findByText(label)).toBeInTheDocument();
+      }
+      if (role === 'org_admin') {
+        expect(await screen.findByText(/音频理解、文件理解、视频理解.*未纳入集中验证/)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '验证这些能力' })).toBeDisabled();
+        expect(screen.getByRole('checkbox', { name: /确认付费验证/ })).toBeDisabled();
+        expect(mocks.getCapabilityProbePlan).toHaveBeenCalledWith(41, operationID, 91);
+      } else {
+        expect(screen.queryByRole('button', { name: '验证这些能力' })).not.toBeInTheDocument();
+        expect(mocks.getCapabilityProbePlan).not.toHaveBeenCalled();
+      }
+
+      fireEvent.click(screen.getByRole('button', { name: '查看详细能力验证' }));
+      for (const label of ['音频理解', '文件理解', '视频理解']) {
+        expect(await screen.findByText(`能力验证 · ${label}`)).toBeInTheDocument();
+      }
+      expect(await screen.findAllByText('当前配置未提供可运行的探测（compiled_probe_contract_unavailable）。')).toHaveLength(2);
+      expect(screen.queryByRole('button', { name: /运行(文件|视频)理解探测/ })).not.toBeInTheDocument();
+      const audioAction = '运行音频理解探测（最多 1 次供应商请求） · binding #91';
+      if (role === 'org_admin') {
+        expect(screen.getByRole('button', { name: audioAction })).toBeEnabled();
+      } else {
+        expect(screen.queryByRole('button', { name: audioAction })).not.toBeInTheDocument();
+      }
+
+      await act(async () => setLocale('en-US'));
+      for (const label of ['Audio understanding', 'File understanding', 'Video understanding']) {
+        expect(screen.getByText(label)).toBeInTheDocument();
+        expect(screen.getByText(`Capability · ${label}`)).toBeInTheDocument();
+      }
+      expect(screen.getByText('Check whether this deployment understands the audio input specified by the probe contract and returns text.')).toBeInTheDocument();
+      expect(screen.getAllByText('No probe is available for this configuration (compiled_probe_contract_unavailable).')).toHaveLength(2);
+      const englishAudioAction = 'Probe Audio understanding (Up to 1 provider request) · binding #91';
+      if (role === 'org_admin') {
+        expect(screen.getByText(/Audio understanding, File understanding, Video understanding.*Excluded from grouped validation/)).toBeInTheDocument();
+        const confirm = vi.spyOn(Modal, 'confirm').mockReturnValue({ destroy: vi.fn(), update: vi.fn() });
+        fireEvent.click(screen.getByRole('button', { name: englishAudioAction }));
+        const dialog = confirm.mock.calls[0][0];
+        expect(dialog.title).toBe('Run the Audio understanding probe?');
+        const preview = render(<>{dialog.content}<button onClick={dialog.onOk}>{dialog.okText}</button></>);
+        expect(within(preview.container).getByText('Up to 1 provider request. Requests sent count against the test-call limit.')).toBeInTheDocument();
+        expect(mocks.probeCapability).not.toHaveBeenCalled();
+        await act(async () => {
+          fireEvent.click(within(preview.container).getByRole('button', { name: 'Probe Audio understanding (Up to 1 provider request)' }));
+        });
+        expect(mocks.probeCapability).toHaveBeenCalledExactlyOnceWith(41, operationID, 'audio', { credential_binding_id: 91 });
+      } else {
+        expect(screen.queryByRole('button', { name: englishAudioAction })).not.toBeInTheDocument();
+        expect(mocks.probeCapability).not.toHaveBeenCalled();
+      }
+      expect(mocks.probeCapabilityGroup).not.toHaveBeenCalled();
+    },
+  );
+
   it('renders the same exact capability qualification workflow for DeepSeek Pro 1.5', async () => {
     const base = application();
     const pro = application({
@@ -895,6 +1023,92 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     await waitFor(() => expect(mocks.probe).toHaveBeenCalledWith(41, 'openai.responses.v1', {
       credential_binding_id: 91,
     }));
+    expect(mocks.readOperationProbe).not.toHaveBeenCalled();
+  });
+
+  it('discovers after a lost POST response and reopens the same async probe without submitting again', async () => {
+    const wan = asyncApplication();
+    mocks.list.mockResolvedValue(projection([wan]));
+    mocks.get.mockResolvedValue(wan);
+    mocks.probe.mockRejectedValueOnce(new TypeError('response lost'));
+    mocks.readOperationProbe
+      .mockRejectedValueOnce(new ApiError('No receipt', 404, null))
+      .mockResolvedValueOnce(asyncReceipt({ reason_code: 'provider_task_submission_unconfirmed' }))
+      .mockResolvedValueOnce(asyncReceipt({ reason_code: 'provider_task_not_due' }))
+      .mockResolvedValueOnce(asyncReceipt({ reason_code: 'provider_task_read_unavailable' }))
+      .mockResolvedValueOnce(asyncReceipt({ pending: undefined, success: true, provider_success: true, reason_code: 'ok' }))
+      .mockResolvedValue(asyncReceipt({ pending: undefined, success: true, provider_success: true, reason_code: 'ok' }));
+    renderPage('/channels?deployment_id=41&operation_id=' + asyncOperationID);
+    const start = await screen.findByRole('button', { name: '提交异步探测' });
+    expect(mocks.probe).not.toHaveBeenCalled();
+    fireEvent.click(start);
+    expect(await screen.findByText('仅提交一次生成请求，可能产生供应商费用。后续查询和成品校验沿用同一任务。')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: '发起精确探测' }));
+    expect(await screen.findByText('生成提交结果未确认，正在核对同一次探测。')).toBeInTheDocument();
+    expect(screen.getByText(asyncProbeRef)).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('button', { name: '发起精确探测' })).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByLabelText('关闭模型详情'));
+    fireEvent.click(await screen.findByRole('button', { name: '查看详情' }));
+    expect(await screen.findByText('供应商已受理，等待同一任务的结果。')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '提交异步探测' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查询本次探测' }));
+    expect(await screen.findByText('结果尚未验证，将继续查询同一任务。')).toBeInTheDocument();
+    await act(async () => { setLocale('en-US'); });
+    fireEvent.click(screen.getByRole('button', { name: 'Check this probe' }));
+    expect(await screen.findByText('Async probe passed. Output verified.')).toBeInTheDocument();
+    expect(screen.getByText(asyncProbeRef)).toBeInTheDocument();
+    expect(mocks.probe.mock.calls).toEqual([[41, asyncOperationID, { credential_binding_id: 91 }]]);
+    expect(mocks.readOperationProbe.mock.calls.map(call => call[3])).toEqual([
+      undefined, undefined, undefined, asyncProbeRef, asyncProbeRef,
+    ]);
+  });
+
+  it.each([
+    { receipt: { pending: undefined, reason_code: 'provider_media_task_failed' }, label: '异步探测失败。' },
+    { receipt: { pending: undefined, current: false, stale: true, reason_code: 'provider_task_read_window_expired' }, label: '状态查询已到期，供应商结果未确认。' },
+    { receipt: { pending: undefined, reason_code: 'provider_task_unavailable' }, label: '供应商任务已不可查询，结果未确认。' },
+  ])('turns a terminal same-ref read into $label with no new POST', async ({ receipt, label }) => {
+    mocks.get.mockResolvedValue(asyncApplication());
+    mocks.readOperationProbe.mockResolvedValueOnce(asyncReceipt()).mockResolvedValueOnce(asyncReceipt(receipt));
+    renderPage('/channels?deployment_id=41&operation_id=' + asyncOperationID);
+    fireEvent.click(await screen.findByRole('button', { name: '查询本次探测' }));
+    expect(await screen.findByText(label)).toBeInTheDocument();
+    expect(screen.getByText(asyncProbeRef)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '提交异步探测' })).not.toBeInTheDocument();
+    expect(mocks.probe).not.toHaveBeenCalled();
+    expect(mocks.readOperationProbe.mock.calls.map(call => call[3])).toEqual([undefined, asyncProbeRef]);
+  });
+
+  it('keeps an ambiguous start blocked on 404 and a rejected same-ref read blocked on 409', async () => {
+    mocks.get.mockResolvedValue(asyncApplication());
+    mocks.probe.mockRejectedValueOnce(new TypeError('response lost'));
+    mocks.readOperationProbe
+      .mockRejectedValueOnce(new ApiError('No receipt', 404, null))
+      .mockRejectedValueOnce(new ApiError('Not visible yet', 404, null))
+      .mockResolvedValueOnce(asyncReceipt())
+      .mockRejectedValueOnce(new ApiError('Changed binding', 409, null));
+    renderPage('/channels?deployment_id=41&operation_id=' + asyncOperationID);
+    fireEvent.click(await screen.findByRole('button', { name: '提交异步探测' }));
+    fireEvent.click(await screen.findByRole('button', { name: '发起精确探测' }));
+    expect(await screen.findByText('探测状态未确认，请查询原记录。')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '提交异步探测' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查找原探测' }));
+    fireEvent.click(await screen.findByRole('button', { name: '查询本次探测' }));
+    expect(await screen.findByText('无法核对本次探测，请检查凭证绑定和配置修订。')).toBeInTheDocument();
+    expect(screen.getByText(asyncProbeRef)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '提交异步探测' })).not.toBeInTheDocument();
+    expect(mocks.probe).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not attempt async receipt discovery for organization readers', async () => {
+    setRole('org_viewer');
+    mocks.get.mockResolvedValue(asyncApplication());
+    renderPage('/channels?deployment_id=41&operation_id=' + asyncOperationID);
+    expect(await screen.findByText('1 · 配置与管理状态')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '提交异步探测' })).not.toBeInTheDocument();
+    expect(mocks.readOperationProbe).not.toHaveBeenCalled();
+    expect(mocks.probe).not.toHaveBeenCalled();
   });
 
   it('keeps org_viewer on canonical list/detail while hiding create, probe and credential binding identity', async () => {

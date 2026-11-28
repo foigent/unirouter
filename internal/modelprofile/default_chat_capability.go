@@ -12,6 +12,9 @@ func DefaultChatReasoningCapability(profile Profile) string {
 	if profile.LegacyProtocolAuthority {
 		return ""
 	}
+	if protocol, ok := ResolveChatProtocolContract(profile.ProtocolProfile); ok && protocol.RequiredDisabledReasoningEffort != "" {
+		return ""
+	}
 	contract, ok := ResolveReasoningContract(profile.ReasoningProfile)
 	if !ok {
 		return ""

@@ -481,6 +481,7 @@ export default function ModelEndpointsPage() {
       gatewayLicensed={gatewayLicensed}
       gatewayRestriction={gatewayRestriction}
       workingBindingID={workingBindingID}
+      operationProbeTarget={probeTarget}
       onClose={closeDetail}
       onProbe={confirmProbe}
       onInspectRelease={inspectReleaseFromDetail}

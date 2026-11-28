@@ -651,6 +651,10 @@ var immutableProfileCatalogEvidenceStates = map[string]string{
 const (
 	APISurfaceOpenAIChat                        = "openai_chat_completions"
 	APISurfaceOpenAIResponses                   = "openai_responses"
+	APISurfaceOpenAIImages                      = "openai_images"
+	APISurfaceVideoJobs                         = "provider_video_jobs"
+	APISurfaceMediaTools                        = "provider_media_tools"
+	OperationMediaJobs                          = "unirouter.media_jobs.v1"
 	APISurfaceAnthropicMessage                  = "anthropic_messages"
 	OperationOpenAIChat                         = "openai.chat_completions.v1"
 	OperationOpenAIResponses                    = "openai.responses.v1"
@@ -666,12 +670,18 @@ const (
 	EndpointClassGeminiOpenAICompatibility      = "gemini_openai_compatibility_v1beta"
 	EndpointClassDeepSeekOfficialOpenAI         = "deepseek_official_openai"
 	EndpointClassKimiPlatformOpenAIV1           = "kimi_platform_openai_v1"
+	EndpointClassMiMoChinaPayGoOpenAIV1         = "mimo_china_paygo_openai_v1"
+	EndpointClassMiMoChinaSpeechOrigin          = "mimo_china_speech_origin"
+	EndpointClassHunyuanTokenHubOpenAIV1        = "hunyuan_tokenhub_openai_v1"
 	EndpointClassMiniMaxCNOpenAIV1              = "minimax_cn_openai_v1"
+	EndpointClassMiniMaxOfficialCNMediaOrigin   = "minimax_official_cn_media_origin"
 	EndpointClassMiniMaxOfficialCNOpenAIV1      = "minimax_official_cn_openai_v1"
+	EndpointClassGLMOfficialMediaOrigin         = "glm_official_media_origin"
 	EndpointClassGLMOfficialOpenAIV4            = "glm_official_openai_v4"
 	EndpointClassXAIOfficialOpenAIV1            = "xai_official_openai_v1"
 	EndpointClassAnthropicOfficialOrigin        = "anthropic_official_origin"
 	EndpointClassDoubaoArkBeijingOpenAIV3       = "doubao_ark_cn_beijing_openai_v3"
+	EndpointClassDashScopeBeijingMediaOrigin    = "dashscope_cn_beijing_media_workspace_origin"
 	EndpointClassDashScopeBeijingWorkspacePayGo = "dashscope_cn_beijing_workspace_payg"
 	EndpointClassDashScopeBeijingSharedPayGo    = "dashscope_cn_beijing_shared_payg"
 	EndpointPathModeCanonicalV1                 = "canonical_v1"
@@ -840,6 +850,7 @@ func immutableProfileExecutionIdentity(profileID, version string) (profileExecut
 // surface, a separate Profile ID may freeze that access contract without
 // turning billing behavior into a mutable model alias.
 var stableProfileProductIdentities = map[string]stableProfileProductIdentity{
+
 	UnverifiedProfileID:                 chatProviderProduct("custom", "custom", DefaultOutputCustomer),
 	"deepseek.v4-flash.api":             chatProviderProduct("deepseek", "cn", DefaultOutputPolicy, "deepseek-v4-flash"),
 	"deepseek.v4-pro.api":               chatProviderProduct("deepseek", "cn", DefaultOutputPolicy, "deepseek-v4-pro"),
@@ -1224,6 +1235,7 @@ func currentProfile(version string) currentProfileManifest {
 // immutable catalog manifests above. Retiring an ID here therefore cannot
 // invalidate or reinterpret its historical ID@version rows.
 var currentProfileManifests = map[string]currentProfileManifest{
+
 	UnverifiedProfileID:              currentProfile(UnverifiedProfileVersion),
 	"deepseek.v4-flash.api":          currentProfile("1.5.0"),
 	"deepseek.v4-pro.api":            currentProfile("1.5.0"),
@@ -3652,6 +3664,10 @@ func validateExecutableComponents(profile Profile, compiledIdentity bool) error 
 		if profile.Operations[0] != OperationOpenAIChat {
 			return fmt.Errorf("OpenAI Chat surface requires operation %s", OperationOpenAIChat)
 		}
+	case APISurfaceOpenAIImages, APISurfaceVideoJobs, APISurfaceMediaTools:
+		if !MediaJobProfile(profile) {
+			return fmt.Errorf("invalid OpenAI Image job execution profile")
+		}
 	case APISurfaceOpenAIResponses:
 		if profile.Operations[0] != OperationOpenAIResponses {
 			return fmt.Errorf("OpenAI Responses surface requires operation %s", OperationOpenAIResponses)
@@ -3769,6 +3785,9 @@ func validateExecutableComponents(profile Profile, compiledIdentity bool) error 
 			operation, ok := ResolveAnthropicMessagesOperationContract(profile.OperationPolicyProfile)
 			modeled = ok && operation.ProfileID == profile.OperationPolicyProfile && operation.FunctionTools != nil &&
 				operation.FunctionTools.MaxTools > 0 && operation.FunctionTools.ExactHistory && operation.FunctionTools.ExactResponse
+		} else if profile.APISurface == APISurfaceOpenAIResponses &&
+			(profile.ProtocolProfile == endpointprotocol.ProfileOpenAIResponsesToolsV3 || NativeInlineJPEGProfile(profile)) {
+			modeled = true
 		} else if contract, ok := ResolveChatProtocolContract(profile.ProtocolProfile); ok {
 			modeled = contract.ProfileID == profile.ProtocolProfile && contract.FunctionToolsModeled &&
 				contract.FunctionTools && contract.MaxFunctionTools > 0
@@ -3815,6 +3834,9 @@ func validateExecutableComponents(profile Profile, compiledIdentity bool) error 
 					modeled = tools.ParallelToolUse
 				}
 			}
+		} else if profile.APISurface == APISurfaceOpenAIResponses &&
+			(profile.ProtocolProfile == endpointprotocol.ProfileOpenAIResponsesToolsV3 || NativeInlineJPEGProfile(profile)) {
+			modeled = capability == CapabilityFunctionTools || capability == CapabilityToolChoiceAuto
 		} else if contract, ok := ResolveChatProtocolContract(profile.ProtocolProfile); ok {
 			modeled = contract.ProfileID == profile.ProtocolProfile && supportedBy(contract)
 		}
@@ -3939,7 +3961,7 @@ func validateExecutableComponents(profile Profile, compiledIdentity bool) error 
 			break
 		}
 	}
-	if advancedChat {
+	if advancedChat && !NativeInlineJPEGProfile(profile) {
 		contract, ok := ResolveChatProtocolContract(profile.ProtocolProfile)
 		if !ok || contract.ProfileID != profile.ProtocolProfile {
 			return fmt.Errorf("advanced chat capabilities require a modeled protocol profile")
@@ -3951,7 +3973,7 @@ func validateExecutableComponents(profile Profile, compiledIdentity bool) error 
 			CapabilityVision:           contract.InlineImageDataURL || contract.RemoteImageHTTPSURL,
 			CapabilityAudio:            contract.InlineAudioBase64 || contract.RemoteAudioHTTPSURL,
 			CapabilityVideo:            contract.InlineVideoDataURL || contract.RemoteVideoHTTPSURL,
-			CapabilityFiles:            contract.RemoteFileHTTPSURL,
+			CapabilityFiles:            contract.RemoteFileHTTPSURL || contract.InlinePlainTextFile,
 		}
 		for capability, supported := range checks {
 			if slices.Contains(profile.Capabilities, capability) && !supported {

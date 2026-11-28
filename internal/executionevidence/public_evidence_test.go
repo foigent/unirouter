@@ -70,6 +70,7 @@ func TestEvidenceV2IsExplicitAndLeavesV1DigestStable(t *testing.T) {
 func TestEvidenceV2ContractConstantsMatchEndpointProtocolRegistry(t *testing.T) {
 	if PublicDeliveryContractV1 != endpointprotocol.PublicDeliveryContractV1 ||
 		PublicResponsesDeliveryContractV2 != endpointprotocol.PublicResponsesDeliveryContractV2 ||
+		PublicResponsesToolsDeliveryV1 != endpointprotocol.PublicResponsesToolsDeliveryV1 ||
 		PublicMessagesDeliveryContractV2 != endpointprotocol.PublicAnthropicMessagesDeliveryContractV2 ||
 		PublicChargeContractV1 != endpointprotocol.PublicCustomerChargeContractV1 ||
 		PublicIdempotencyContractV1 != endpointprotocol.PublicIdempotencyContractV1 {

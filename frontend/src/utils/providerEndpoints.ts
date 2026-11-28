@@ -9,8 +9,8 @@ export type ProviderPreset = {
   adapterConfig?: Record<string, unknown>;
   note: string;
   region?: string;
-  apiSurface?: 'openai_chat_completions' | 'openai_responses' | 'anthropic_messages';
-  endpointClass?: 'provider_https' | 'openai_official_origin' | 'openai_official_v1' | 'gemini_openai_compatibility_v1beta' | 'deepseek_official_openai' | 'kimi_platform_openai_v1' | 'minimax_cn_openai_v1' | 'minimax_official_cn_openai_v1' | 'glm_official_openai_v4' | 'xai_official_openai_v1' | 'anthropic_official_origin' | 'doubao_ark_cn_beijing_openai_v3' | 'dashscope_cn_beijing_workspace_payg' | 'dashscope_cn_beijing_shared_payg';
+  apiSurface?: 'openai_chat_completions' | 'openai_responses' | 'anthropic_messages' | 'openai_images';
+  endpointClass?: 'provider_https' | 'openai_official_origin' | 'openai_official_v1' | 'gemini_openai_compatibility_v1beta' | 'deepseek_official_openai' | 'kimi_platform_openai_v1' | 'minimax_cn_openai_v1' | 'minimax_official_cn_openai_v1' | 'glm_official_openai_v4' | 'glm_official_media_origin' | 'xai_official_openai_v1' | 'anthropic_official_origin' | 'doubao_ark_cn_beijing_openai_v3' | 'dashscope_cn_beijing_workspace_payg' | 'dashscope_cn_beijing_shared_payg';
   editableBaseURL?: boolean;
 };
 
@@ -51,6 +51,13 @@ export const providerPresets: ProviderPreset[] = [
     endpointClass: 'glm_official_openai_v4',
     adapterConfig: { endpoint_path_mode: 'base_relative' },
     note: '使用智谱 OpenAI Chat Completions 兼容入口；目录价按中国区人民币来源建草稿。',
+  },
+  {
+    value: 'glm-image', label: '智谱 GLM-Image 官方', provider: 'glm', region: 'cn',
+    apiSurface: 'openai_images', baseURL: 'https://open.bigmodel.cn', adapterType: 'openai_compatible',
+    endpointClass: 'glm_official_media_origin',
+    adapterConfig: { endpoint_path_mode: 'canonical_v1' },
+    note: '此连接用于已发布的 GLM-Image 合同和项目媒体作业。使用按量账户，保存连接后单独完成受限验证及发布。',
   },
   {
     value: 'mimo', label: '小米 MiMo 官方', provider: 'mimo', region: 'cn',

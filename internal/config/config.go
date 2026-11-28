@@ -367,9 +367,6 @@ func (c *Config) Validate() error {
 		if c.ModelRouteCompatibilityEnabled {
 			return fmt.Errorf("MODEL_ROUTE_COMPATIBILITY_ENABLED must be false when MODEL_ROUTE_AUTHORITY=canonical")
 		}
-		if c.AsyncMediaEnabled {
-			return fmt.Errorf("ASYNC_MEDIA_ENABLED is incompatible with MODEL_ROUTE_AUTHORITY=canonical until async media uses canonical model execution")
-		}
 	} else if !c.ModelRouteCompatibilityEnabled {
 		return fmt.Errorf("MODEL_ROUTE_COMPATIBILITY_ENABLED must be explicitly true when MODEL_ROUTE_AUTHORITY=%s", modelRouteAuthority)
 	}

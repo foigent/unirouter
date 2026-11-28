@@ -1,0 +1,51 @@
+{
+  "schema_version": "unirouter.endpoint-conformance-fixture.v1",
+  "fixture_id": "glm-cogvideox-3-video-v1",
+  "profile_id": "unirouter.glm.video.cogvideox-3.v1",
+  "request": {
+    "base_url": "https://open.bigmodel.cn",
+    "requested_model": "company-video",
+    "mapped_model": "cogvideox-3",
+    "request_id": "fixture-video-1",
+    "body": "{\"model\":\"company-video\",\"operation\":\"text_to_video\",\"prompt\":\"synthetic video fixture\"}",
+    "expected_method": "POST",
+    "expected_url": "https://open.bigmodel.cn/api/paas/v4/videos/generations",
+    "expected_request_id_header": "fixture-video-1",
+    "expected_body": "{\"duration\":5,\"fps\":30,\"model\":\"cogvideox-3\",\"prompt\":\"synthetic video fixture\",\"quality\":\"speed\",\"size\":\"1280x720\",\"with_audio\":false}"
+  },
+  "response": {
+    "status_code": 200,
+    "body": "{\"id\":\"cog-task-fixture\",\"model\":\"cogvideox-3\",\"task_status\":\"PROCESSING\"}",
+    "expected_outcome": {
+      "contract_version": "unirouter.endpoint-protocol.v1",
+      "profile_id": "unirouter.glm.video.cogvideox-3.v1",
+      "provider_state": "pending",
+      "provider_object_id": "cog-task-fixture",
+      "mapped_model": "cogvideox-3",
+      "output_count": 0,
+      "units": null
+    }
+  },
+  "negative_requests": [
+    {
+      "case_id": "image-operation",
+      "body": "{\"model\":\"company-video\",\"operation\":\"text_to_image\",\"prompt\":\"synthetic video fixture\"}",
+      "expected_code": "video_request_invalid"
+    }
+  ],
+  "negative_responses": [
+    {
+      "case_id": "malformed-task",
+      "body": "{\"id\":\"../other\",\"model\":\"cogvideox-3\",\"task_status\":\"PROCESSING\"}",
+      "expected_code": "cog_video_task_identity_mismatch"
+    }
+  ],
+  "status_cases": [
+    {
+      "case_id": "provider-failure",
+      "status_code": 503,
+      "expected_failure_kind": "channel_failure",
+      "expected_retryable": true
+    }
+  ]
+}

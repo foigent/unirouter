@@ -1,0 +1,42 @@
+{
+  "schema_version": "unirouter.endpoint-profile-manifest.v1",
+  "profile_id": "unirouter.glm.ocr.layout.v1",
+  "profile_version": "1.0.0",
+  "provider": "glm",
+  "runtime_state": "repository_local_async_media_v1",
+  "conformance_level": "fixture_verified",
+  "network_verified": false,
+  "descriptor": {
+    "contract_version": "unirouter.endpoint-protocol.v1",
+    "profile_id": "unirouter.glm.ocr.layout.v1",
+    "profile_version": "1.0.0",
+    "provider": "glm",
+    "endpoint_kind": "ocr",
+    "downstream_endpoint": "/v1/media/jobs",
+    "upstream_endpoint": "/api/paas/v4/layout_parsing",
+    "authentication": "bearer",
+    "runtime_state": "repository_local_async_media_v1",
+    "provider_finality": "completed_page_and_reported_tokens",
+    "customer_charge_state": "provider_observed_not_customer_chargeable",
+    "supported_modalities": [
+      "image_to_text"
+    ],
+    "observed_unit_classes": [
+      "input_tokens",
+      "output_tokens"
+    ],
+    "unsupported_semantics": [
+      "multiple_pages",
+      "remote_input_uri",
+      "pdf",
+      "cropped_image_download"
+    ]
+  },
+  "fixtures": [
+    {
+      "fixture_id": "glm-ocr-v1",
+      "path": "fixtures/glm-ocr-v1.json",
+      "sha256": "sha256:47aa5ccb1ba942fa2c5a22c2170cdd740df3bd95bf46e58e1160d2905095f649"
+    }
+  ]
+}

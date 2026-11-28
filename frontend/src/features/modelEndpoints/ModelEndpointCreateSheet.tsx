@@ -62,6 +62,7 @@ const operationOptionsByAdapter: Record<string, { label: string; value: Canonica
     { label: 'Chat Completions · POST /v1/chat/completions', value: 'openai.chat_completions.v1' },
     { label: 'Embeddings · POST /v1/embeddings', value: 'openai.embeddings.v1' },
     { label: 'Responses · POST /v1/responses', value: 'openai.responses.v1' },
+    { label: 'Media jobs · POST /v1/media/jobs', value: 'unirouter.media_jobs.v1' },
   ],
   azure_openai: [
     { label: 'Chat Completions · POST /v1/chat/completions', value: 'openai.chat_completions.v1' },
@@ -110,6 +111,7 @@ const presetOperationBaseURLs: Partial<Record<string, Partial<Record<CanonicalOp
 function defaultOperationForPreset(preset: ProviderPreset): CanonicalOperationID {
   if (preset.apiSurface === 'openai_responses') return 'openai.responses.v1';
   if (preset.apiSurface === 'anthropic_messages') return 'anthropic.messages.v1';
+  if (preset.apiSurface === 'openai_images') return 'unirouter.media_jobs.v1';
   return operationOptionsByAdapter[preset.adapterType][0].value;
 }
 
@@ -186,6 +188,10 @@ export function providerPresetBaseURLError(
     } catch {
       return t('OpenAI 官方模板要求精确使用 https://api.openai.com{path}', { path: operationID === 'openai.responses.v1' ? '' : '/v1' });
     }
+  }
+  if (presetValue === 'glm-image') {
+    return operationID === 'unirouter.media_jobs.v1' && /^https:\/\/open\.bigmodel\.cn\/?$/u.test(baseURL)
+      ? '' : t('GLM-Image 需要独立的官方 HTTPS 媒体入口');
   }
   if (presetValue === 'gemini') {
     try {
@@ -530,6 +536,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
   }, [catalogSource, connectionMode, executionProfilesLoading, formApi, open, reviewedModels, selectedExecutionProfileKey, selectedPreset]);
 
   const adapterOperations = (operationOptionsByAdapter[adapterType] || [])
+    .filter(option => (option.value === 'unirouter.media_jobs.v1') === (selectedProviderPreset.apiSurface === 'openai_images'))
     .filter(option => !activeReviewedModel || activeReviewedModel.operationIDs.includes(option.value));
   const selectedExistingConnection = connections.find(connection => connection.id === selectedConnectionID);
   const effectiveBaseURL = connectionMode === 'existing'
@@ -605,14 +612,16 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
   const selectDataProfile = (value: unknown) => {
     const profile = dataProfiles.find(item => item.profile_definition_digest === value);
     if (!profile || !formApi) return;
+    const operation = profile.operations[0];
+    if (!operation) return;
     const limits = reviewedModelOnboardingLimits(profile);
     patchFormValues(formApi, {
       upstream_model: profile.upstream_model_ids[0],
       deployment_max_context: limits.deploymentMaxContext,
       deployment_default_max_output: limits.deploymentDefaultMaxOutput,
-      operation_id: 'openai.chat_completions.v1',
+      operation_id: operation,
     });
-    setOperationID('openai.chat_completions.v1');
+    setOperationID(operation);
   };
 
   const submit = async (values: Record<string, unknown>) => {
@@ -637,6 +646,11 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     const selectedExistingPublicModel = publicModelMode === 'existing'
       ? publicModels.find(item => item.id === Number(values.public_model_id))
       : undefined;
+    if (selectedProviderPreset.apiSurface === 'openai_images' && publicModelMode === 'new'
+      && !activeReviewedModel?.profile.profile_definition_digest) {
+      Toast.error(t('请选择已发布模型合同'));
+      return;
+    }
     if (!deploymentMaxContext || !deploymentDefaultMaxOutput) {
       Toast.error(t("请填写有效的 Deployment 执行边界；每项必须是正整数 Token"));
       return;

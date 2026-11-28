@@ -3,25 +3,38 @@
 package mediajob
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/accessgrantlifecycle"
+	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/contentcapture"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
+	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/migrate"
+	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/principallock"
+	"github.com/uniroute/unirouter/internal/schemaauthority"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -1399,4 +1412,324 @@ func integrationImageOutcome() endpointprotocol.Outcome {
 			{Class: endpointprotocol.UnitOutputImageTokens, Quantity: "4", Authority: "provider_reported", Finality: "final", ChargeState: endpointprotocol.ChargeObservedOnly},
 		},
 	}
+}
+
+func TestPostgresMediaAttemptModePreservesHistoricalJob(t *testing.T) {
+	pool := testutil.SetupMigratedThroughTestDB(t, schemaauthority.OpenAIResponsesToolsHead)
+	ctx := t.Context()
+	org, project, keyID := seedMediaScope(t, pool)
+	scope := Scope{OrgID: org, ProjectID: project}
+	cipher, err := NewApplicationCipher([]byte(strings.Repeat("h", 32)))
+	require.NoError(t, err)
+	normalized := NormalizedRequest{Model: "company-image", Prompt: "predecessor fixture", N: 1}
+	digest, body, err := RequestSHA256(normalized)
+	require.NoError(t, err)
+	ciphertext, err := cipher.Seal(body)
+	require.NoError(t, err)
+	keyHash, err := IdempotencyHash([]byte(strings.Repeat("m", 32)), scope, keyID, "old-physical-key-intent")
+	require.NoError(t, err)
+	const historical = "mediajob_0123456789abcdef0123456789abcdef"
+	_, err = pool.Exec(ctx, `INSERT INTO async_media_jobs (
+	    job_id,contract_version,org_id,project_id,api_key_id,request_id,operation,profile_id,
+	    requested_model,routing_model,request_sha256,idempotency_hash,request_ciphertext,
+	    admission_state,queue_state,lease_state,execution_state,provider_outcome,cancellation_state,
+	    object_state,settlement_state,max_attempts
+	) VALUES ($1,$2,$3,$4,$5,'old-media-request',$6,$7,'company-image','company-image',$8,$9,$10,
+	   'accepted','queued','unleased','pending','pending','not_requested','pending','not_eligible',1)`,
+		historical, ContractVersion, org, project, keyID, OperationTextToImage, endpointprotocol.ProfileOpenAIImageGPT, digest, keyHash, ciphertext)
+	require.NoError(t, err)
+	legacyOnly := func() int {
+		var count int
+		require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM async_media_jobs WHERE request_sha256=$1 AND max_attempts=1`, digest).Scan(&count))
+		return count
+	}
+	require.Equal(t, 1, legacyOnly())
+	dir := testutil.MigrationsDir(t)
+	require.NoError(t, migrate.RunExistingThrough(ctx, pool, dir, schemaauthority.MediaChargeSourceHead))
+	store, err := NewPostgresStore(pool, ExecutionModelAuthorizerFunc(
+		func(context.Context, db.DBQuerier, ExecutionAuthorization) error { return nil },
+	))
+	require.NoError(t, err)
+	job, err := store.Get(ctx, scope, historical)
+	require.NoError(t, err)
+	require.False(t, job.SingleUpstreamAttempt)
+	require.Equal(t, 1, job.MaxAttempts)
+	restored, err := decodeStoredRequest(cipher, job)
+	require.NoError(t, err)
+	require.Equal(t, normalized, restored)
+	job.SingleUpstreamAttempt = true
+	_, err = decodeStoredRequest(cipher, job)
+	require.ErrorContains(t, err, "stored_request_hash_mismatch")
+	job.RequestSHA256 = singleSubmissionRequestSHA256(body)
+	job.SingleUpstreamAttempt = false
+	_, err = decodeStoredRequest(cipher, job)
+	require.ErrorContains(t, err, "stored_request_hash_mismatch")
+
+	now := time.Now().UTC()
+	record := mediaCreateRecord(scope, keyID, "a", now, 3)
+	record.Job.SingleUpstreamAttempt = true
+	_, _, err = store.CreateOrGet(ctx, record)
+	require.ErrorContains(t, err, "async_media_jobs_single_upstream_attempt_check")
+	record.Job.MaxAttempts = 1
+	newJob, _, err := store.CreateOrGet(ctx, record)
+	require.NoError(t, err)
+	require.True(t, newJob.SingleUpstreamAttempt)
+	down, err := os.ReadFile(filepath.Join(dir, schemaauthority.MediaChargeSourceHead+".down.sql"))
+	require.NoError(t, err)
+	conn, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+	_, err = conn.Exec(ctx, string(down))
+	require.ErrorContains(t, err, "rollback would remove an active single-upstream-attempt commitment")
+	_, err = conn.Exec(ctx, "ROLLBACK")
+	require.NoError(t, err)
+	require.Equal(t, 1, legacyOnly())
+	readBack, err := store.Get(ctx, scope, newJob.JobID)
+	require.NoError(t, err)
+	require.True(t, readBack.SingleUpstreamAttempt)
+}
+
+func TestPostgresSingleSubmissionRecoversOnlyOriginalJob(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := t.Context()
+	store, err := NewPostgresStore(pool, ExecutionModelAuthorizerFunc(
+		func(context.Context, db.DBQuerier, ExecutionAuthorization) error { return nil },
+	))
+	require.NoError(t, err)
+	org, project, key := seedMediaScope(t, pool)
+	scope := Scope{OrgID: org, ProjectID: project}
+	launch := func(digit string, now time.Time, single bool) Lease {
+		t.Helper()
+		record := mediaCreateRecord(scope, key, digit, now, 1)
+		record.Job.SingleUpstreamAttempt = single
+		job, _, err := store.CreateOrGet(ctx, record)
+		require.NoError(t, err)
+		claimed, err := store.Claim(ctx, "worker-first-"+digit, now, time.Minute)
+		require.NoError(t, err)
+		require.NotNil(t, claimed)
+		require.Equal(t, job.JobID, claimed.JobID)
+		require.Equal(t, single, claimed.SingleUpstreamAttempt)
+		lease := leaseFromClaimed(*claimed)
+		subject, err := store.ExecutionLimitSubject(ctx, lease)
+		require.NoError(t, err)
+		operation := "synthetic-single-submission-" + digit
+		attached, _, err := store.AttachExecutionReservation(ctx, lease, subject,
+			&limitpolicy.DurableReservation{OperationID: operation}, operation, now.Add(time.Hour), now.Add(time.Second))
+		require.NoError(t, err)
+		require.Equal(t, 1, attached.ProviderAttempt)
+		return lease
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	unknown := launch("b", now, true)
+	none, err := store.Claim(ctx, "worker-unknown", now.Add(2*time.Minute), time.Minute)
+	require.NoError(t, err)
+	require.Nil(t, none)
+	job, err := store.Get(ctx, scope, unknown.JobID)
+	require.NoError(t, err)
+	require.Equal(t, OutcomeUnknown, job.Lifecycle.Outcome)
+	require.Equal(t, 1, job.Attempt)
+	require.Nil(t, job.ChargeFact)
+
+	now = now.Add(3 * time.Minute)
+	known := launch("c", now, true)
+	require.NoError(t, store.MarkProviderSucceeded(ctx, known, "gpt-image-2.6-flare", now.Add(2*time.Second)))
+	recovered, err := store.Claim(ctx, "worker-recover-original", now.Add(2*time.Minute), time.Minute)
+	require.NoError(t, err)
+	require.NotNil(t, recovered)
+	require.Equal(t, known.JobID, recovered.JobID)
+	require.Equal(t, OutcomeSucceeded, recovered.Lifecycle.Outcome)
+	require.Equal(t, 1, recovered.Attempt)
+	require.Empty(t, recovered.RequestCiphertext)
+	require.ErrorIs(t, store.MarkRunning(ctx, leaseFromClaimed(*recovered), now.Add(2*time.Minute+time.Second)), ErrLeaseLost)
+	result := PersistedResult{
+		ObjectKey: "synthetic/recovered-image", ReceiptKey: "synthetic/recovered-receipt",
+		ContentSHA256: "sha256:" + strings.Repeat("a", 64), MediaType: "image/png",
+		SizeBytes: 128, PersistedAt: now.Add(3 * time.Second), MappedModel: "gpt-image-2.6-flare",
+		Outcome: integrationImageOutcome(),
+	}
+	result.Outcome.MappedModel = result.MappedModel
+	finished, err := store.CompleteSuccess(ctx, leaseFromClaimed(*recovered), result, DefaultRetention, now.Add(2*time.Minute+2*time.Second))
+	require.NoError(t, err)
+	require.Equal(t, ObjectPersisted, finished.Lifecycle.Object)
+	require.NotNil(t, finished.ChargeFact)
+	require.Equal(t, 1, finished.Attempt)
+
+	now = now.Add(4 * time.Minute)
+	noReceipt := launch("d", now, true)
+	require.NoError(t, store.MarkProviderSucceeded(ctx, noReceipt, "gpt-image-2.6-flare", now.Add(2*time.Second)))
+	queued, err := store.RequeueRecovery(ctx, noReceipt, "persisted_object_unavailable", now.Add(3*time.Second), now.Add(4*time.Second))
+	require.NoError(t, err)
+	require.Equal(t, QueueQueued, queued.Lifecycle.Queue)
+	require.Equal(t, 1, queued.Attempt)
+	recovery, err := store.Claim(ctx, "worker-bounded-recovery", now.Add(5*time.Second), time.Minute)
+	require.NoError(t, err)
+	require.NotNil(t, recovery)
+	require.Equal(t, noReceipt.JobID, recovery.JobID)
+	terminal, err := store.RequeueRecovery(ctx, leaseFromClaimed(*recovery), "persisted_object_unavailable", now.Add(6*time.Second), now.Add(7*time.Second))
+	require.NoError(t, err)
+	require.True(t, terminal.Terminal())
+	require.Nil(t, terminal.ChargeFact)
+	require.Equal(t, OutcomeSucceeded, terminal.Lifecycle.Outcome)
+	require.Equal(t, 1, terminal.Attempt)
+	none, err = store.Claim(ctx, "worker-no-second-recovery", now.Add(8*time.Second), time.Minute)
+	require.NoError(t, err)
+	require.Nil(t, none)
+
+	now = now.Add(2 * time.Minute)
+	legacy := launch("e", now, false)
+	require.NoError(t, store.MarkProviderSucceeded(ctx, legacy, "gpt-image-2.6-flare", now.Add(2*time.Second)))
+	none, err = store.Claim(ctx, "worker-legacy-no-extra-recovery", now.Add(2*time.Minute), time.Minute)
+	require.NoError(t, err)
+	require.Nil(t, none)
+	stopped, err := store.Get(ctx, scope, legacy.JobID)
+	require.NoError(t, err)
+	require.True(t, stopped.Terminal())
+	require.Equal(t, "output_recovery_exhausted", stopped.ErrorCode)
+}
+
+func TestPublicMediaSingleSubmissionReturnsVerifiedProjectOutput(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	org, project, keyID := seedMediaScope(t, pool)
+	store, err := NewPostgresStore(pool, ExecutionModelAuthorizerFunc(
+		func(context.Context, db.DBQuerier, ExecutionAuthorization) error { return nil },
+	))
+	require.NoError(t, err)
+	var otherProject, otherKey int64
+	require.NoError(t, pool.QueryRow(t.Context(), `INSERT INTO projects(org_id,name,slug,status,budget_period)
+	    VALUES($1,'Other project','other-media-project','active','none') RETURNING id`, org).Scan(&otherProject))
+	require.NoError(t, pool.QueryRow(t.Context(), `INSERT INTO api_keys(org_id,project_id,name,key_hash,key_prefix,status,allowed_models)
+	    VALUES($1,$2,'Other project viewer',repeat('e',64),'ur-media-other','active','company-image') RETURNING id`, org, otherProject).Scan(&otherKey))
+
+	picture := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	picture.Set(1, 1, color.RGBA{R: 60, G: 130, B: 20, A: 255})
+	var encoded bytes.Buffer
+	require.NoError(t, png.Encode(&encoded, picture))
+	var posts atomic.Int32
+	receiver := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		posts.Add(1)
+		var submitted NormalizedRequest
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/images/generations" ||
+			json.NewDecoder(r.Body).Decode(&submitted) != nil || submitted.Model != "gpt-image-2.6-flare" ||
+			submitted.Prompt != "synthetic color tile" || submitted.N != 1 {
+			http.Error(w, "unexpected synthetic submission", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"created":1,"data":[{"b64_json":%q}],"usage":{"input_tokens":50,"input_tokens_details":{"text_tokens":10,"image_tokens":40},"output_tokens":50,"total_tokens":100}}`,
+			base64.StdEncoding.EncodeToString(encoded.Bytes()))
+	}))
+	t.Cleanup(receiver.Close)
+	enc := []byte(strings.Repeat("e", 32))
+	providerKey, err := auth.EncryptKey([]byte("synthetic-provider-key"), enc)
+	require.NoError(t, err)
+	router := &imageRouterFixture{route: gateway.RouteResult{
+		Channel:    models.Channel{ID: 4, AdapterType: adapters.TypeOpenAICompatible, BaseURL: receiver.URL},
+		ChannelKey: models.ChannelKey{ID: 5, KeyEnc: providerKey}, MappedModel: "gpt-image-2.6-flare",
+	}}
+	provider, err := NewGPTImageProvider(router, enc, GPTImageProviderOptions{HTTPClient: receiver.Client()})
+	require.NoError(t, err)
+	objects, err := newS3ObjectStore(newMemoryS3Client(), S3Config{
+		Bucket: "synthetic-media", Prefix: "local-media", KeySecret: []byte(strings.Repeat("h", 32)),
+	})
+	require.NoError(t, err)
+	cipher, err := NewApplicationCipher(enc)
+	require.NoError(t, err)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	objects.now = func() time.Time { return now }
+	limits := &mediaLimitRuntimeFixture{}
+	service, err := NewService(store, objects, cipher, ModelAuthorizerFunc(
+		func(context.Context, Scope, string) (ModelAuthorization, error) {
+			return ModelAuthorization{RoutingModel: "company-image"}, nil
+		}),
+		[]byte(strings.Repeat("a", 32)), ServiceOptions{RuntimeEnabled: true, AdmissionEnabled: true, MaxAttempts: 3,
+			LimitPolicy: limits, Now: func() time.Time { return now }})
+	require.NoError(t, err)
+	handler, err := NewHTTPHandler(service, pool)
+	require.NoError(t, err)
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /v1/media/jobs", handler.Submit)
+	mux.HandleFunc("GET /v1/media/jobs/{id}", handler.Get)
+	mux.HandleFunc("GET /v1/media/jobs/{id}/content", handler.Content)
+	call := func(method, path, body string, project, id int64, intent string, attemptValues ...string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Idempotency-Key", intent)
+		for _, value := range attemptValues {
+			req.Header.Add(middleware.ChatUpstreamAttemptsHeader, value)
+		}
+		ctx := context.WithValue(req.Context(), middleware.CtxOrgID, org)
+		ctx = context.WithValue(ctx, middleware.CtxProjectID, project)
+		ctx = context.WithValue(ctx, middleware.CtxRequestID, "bounded-project-image-request")
+		ctx = context.WithValue(ctx, middleware.CtxAPIKey, &models.ApiKey{ID: id, OrgID: org, ProjectID: &project, AllowedModels: "company-image", RPMLimit: 60, QPSLimit: 10})
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req.WithContext(ctx))
+		return rec
+	}
+	const input = `{"model":"company-image","prompt":"synthetic color tile","n":1,"output_format":"png"}`
+	const intent = "synthetic-bounded-project-image"
+	rejected := call(http.MethodPost, "/v1/media/jobs", input, project, keyID, intent, "1", "1")
+	require.Equal(t, http.StatusBadRequest, rejected.Code, rejected.Body.String())
+	require.Empty(t, rejected.Header().Get(middleware.ChatUpstreamAttemptsHeader))
+	start := make(chan struct{})
+	results := make(chan *httptest.ResponseRecorder, 2)
+	for range 2 {
+		go func() {
+			<-start
+			results <- call(http.MethodPost, "/v1/media/jobs", input, project, keyID, intent, "1")
+		}()
+	}
+	close(start)
+	first, second := <-results, <-results
+	require.ElementsMatch(t, []int{http.StatusAccepted, http.StatusOK}, []int{first.Code, second.Code})
+	path := first.Header().Get("Location")
+	require.NotEmpty(t, path)
+	require.Equal(t, path, second.Header().Get("Location"))
+	require.Equal(t, "1", first.Header().Get(middleware.ChatUpstreamAttemptsHeader))
+	require.Equal(t, "1", second.Header().Get(middleware.ChatUpstreamAttemptsHeader))
+	require.Zero(t, posts.Load())
+	downgrade := call(http.MethodPost, "/v1/media/jobs", input, project, keyID, intent)
+	require.Equal(t, http.StatusConflict, downgrade.Code, downgrade.Body.String())
+	require.Empty(t, downgrade.Header().Get(middleware.ChatUpstreamAttemptsHeader))
+	worker := newWorkerFixtureWithLimits(t, store, objects, provider, cipher, now.Add(time.Second), limits)
+	didWork, err := worker.RunOnce(t.Context())
+	require.NoError(t, err)
+	require.True(t, didWork)
+	require.EqualValues(t, 1, posts.Load())
+	metadata := call(http.MethodGet, path, "", project, keyID, "")
+	require.Equal(t, http.StatusOK, metadata.Code, metadata.Body.String())
+	var job Job
+	require.NoError(t, json.Unmarshal(metadata.Body.Bytes(), &job))
+	require.Equal(t, "bounded-project-image-request", job.RequestID)
+	require.Equal(t, 1, job.Attempt)
+	require.Equal(t, 1, job.MaxAttempts)
+	require.Equal(t, OutcomeSucceeded, job.Lifecycle.Outcome)
+	require.NotNil(t, job.ChargeFact)
+	require.Len(t, job.ChargeFact.Units, 4)
+	require.Equal(t, ChargeAmountPricingPending, job.ChargeFact.AmountState)
+	require.Nil(t, job.ChargeFact.AmountMicros)
+	require.NotContains(t, metadata.Body.String(), "object_key")
+	content := call(http.MethodGet, path+"/content", "", project, keyID, "")
+	require.Equal(t, http.StatusOK, content.Code)
+	require.Equal(t, "image/png", content.Header().Get("Content-Type"))
+	require.Equal(t, "private, no-store", content.Header().Get("Cache-Control"))
+	require.Equal(t, encoded.Bytes(), content.Body.Bytes())
+	forbidden := call(http.MethodGet, path+"/content", "", otherProject, otherKey, "")
+	require.Equal(t, http.StatusNotFound, forbidden.Code)
+	now = now.Add(DefaultRetention)
+	expired := call(http.MethodGet, path+"/content", "", project, keyID, "")
+	require.Equal(t, http.StatusGone, expired.Code)
+	const ordinary = "synthetic-ordinary-project-image"
+	legacy := call(http.MethodPost, "/v1/media/jobs", input, project, keyID, ordinary)
+	require.Equal(t, http.StatusAccepted, legacy.Code, legacy.Body.String())
+	require.Empty(t, legacy.Header().Get(middleware.ChatUpstreamAttemptsHeader))
+	var ordinaryJob CreateResult
+	require.NoError(t, json.Unmarshal(legacy.Body.Bytes(), &ordinaryJob))
+	require.Equal(t, 3, ordinaryJob.Job.MaxAttempts)
+	claimBounded := call(http.MethodPost, "/v1/media/jobs", input, project, keyID, ordinary, "1")
+	require.Equal(t, http.StatusConflict, claimBounded.Code, claimBounded.Body.String())
+	require.Empty(t, claimBounded.Header().Get(middleware.ChatUpstreamAttemptsHeader))
+	legacyRetry := call(http.MethodPost, "/v1/media/jobs", input, project, keyID, ordinary)
+	require.Equal(t, http.StatusOK, legacyRetry.Code, legacyRetry.Body.String())
+	require.Equal(t, legacy.Header().Get("Location"), legacyRetry.Header().Get("Location"))
+
+	require.EqualValues(t, 1, posts.Load())
 }

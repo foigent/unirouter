@@ -842,7 +842,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		relay.contextWithTrustedEvidence(r.Context(), r.Header),
 		telemetryexport.OperationChatCompletion,
 	)
-	singleUpstreamAttempt := middleware.SingleChatUpstreamAttemptRequested(ctx)
+	singleUpstreamAttempt := middleware.SingleUpstreamAttemptRequested(ctx)
 	requestStart := time.Now()
 	requestID := middleware.GetRequestIDFromContext(ctx)
 	w.Header().Set("X-Request-ID", requestID)
@@ -1085,7 +1085,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	// A published public limit is a hard cap, including streams.
-	ctx = contextWithStreamReservation(ctx, reservedCompletionTokens, false)
+	ctx = contextWithExecutionOutputBudget(ctx, executionBatch.limits)
 	ctx = contextWithAdmissionInputEstimate(ctx, estimatedInputTokens)
 	acceptedMetadata := map[string]interface{}{
 		"stream": req.Stream, "estimated_tokens": estimatedTokens,
@@ -1103,6 +1103,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		OrgID:                    orgID,
 		ProjectID:                middleware.GetProjectIDFromContext(ctx),
 		Model:                    req.Model,
+		APIKeyID:                 keyID,
 		ModelOperation:           modeloperation.IDChatCompletions,
 		ProcessingTier:           string(executionBatch.profileEvidence.ProcessingTierEffective),
 		EstimatedTokens:          estimatedTokens,
@@ -1469,7 +1470,10 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 		OperationProtocolProfileID:      route.OperationProtocolProfileID,
 		OperationProtocolProfileVersion: route.OperationProtocolProfileVersion,
 	})
-	if err != nil {
+	missingRequiredUsage := err == nil &&
+		(modelprofile.IsQwenHostedSplitProtocol(route.ModelProtocolProfile) || route.ModelProtocolProfile == modelprofile.QwenOmniProtocol) &&
+		(normalized == nil || normalized.Usage.IsMissing())
+	if err != nil || missingRequiredUsage {
 		// Adapter errors may quote provider-controlled response values. Keep the
 		// failure classification without copying those values into application logs.
 		reqLog.Error("Failed to parse adapter response")
@@ -1488,6 +1492,10 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 		if healthAuthorityFailed {
 			w.Header().Set("Retry-After", "1")
 			writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", "Routing health authority is temporarily unavailable")
+			return
+		}
+		if missingRequiredUsage {
+			writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", "Supplier completion usage could not be verified; usage requires reconciliation")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to parse upstream response")
@@ -1565,12 +1573,14 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 			evidenceUsage, 0, status, elapsedMilliseconds(requestStart), 0, false, estimatedTokens, upstreamRequestID, nil)
 		return nil
 	}
-	// The new complete-output contract also has to retain a final non-stream
-	// violation before any disclosure. Older protocols keep their existing rules.
-	if enforcement, ok := modelprofile.ResolveOutputEnforcement(route.ModelProtocolProfile); ok &&
-		enforcement.Accounting == modelprofile.OutputEnforcementProviderCompletionV1 &&
-		normalized.Usage.Authority == metering.UsageAuthorityProviderReported &&
-		normalized.Usage.Finality == metering.UsageFinalityFinal && normalized.Usage.CompletionTokens > reservedCompletionTokens {
+	enforcement, providerCompletion := modelprofile.ResolveOutputEnforcement(route.ModelProtocolProfile)
+	providerCompletion = providerCompletion && enforcement.Accounting == modelprofile.OutputEnforcementProviderCompletionV1
+	hostedCompletion := providerCompletion && enforcement.Scope == modelprofile.QwenHostedBudgetScope
+	omniCompletion := route.ModelProtocolProfile == modelprofile.QwenOmniProtocol
+	if (hostedCompletion && !hostedCompletionFits(streamReservationFromContext(ctx), normalized.Usage)) ||
+		(omniCompletion && !normalized.Usage.FitsProviderCompletionSplit(reservedCompletionTokens, 0)) ||
+		(providerCompletion && normalized.Usage.Authority == metering.UsageAuthorityProviderReported &&
+			normalized.Usage.Finality == metering.UsageFinalityFinal && normalized.Usage.CompletionTokens > reservedCompletionTokens) {
 		stopProbeLease()
 		if healthErr := relay.applyRouteHealth(context.WithoutCancel(ctx), route, executionHealthProviderFailure); healthErr != nil {
 			relay.recordExecutionHealthFailure(ctx, requestID, model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), executionHealthProviderFailure, healthErr)
@@ -1580,10 +1590,17 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 			writeError(w, http.StatusInternalServerError, "server_error", "billing_error.provider_attempt_failed", "Failed to retain provider cost authority")
 			return
 		}
+		failureKind := billing.ProviderOutputLimitExceeded
+		message := "Supplier exceeded the completion contract; usage requires reconciliation"
+		if ((hostedCompletion || omniCompletion) && normalized.Usage.Authority != metering.UsageAuthorityProviderReported) ||
+			(hostedCompletion && normalized.Usage.ProviderReasoningTokens == nil && streamReservationFromContext(ctx).HostedReasoningTokenLimit > 0) {
+			failureKind = "provider_completion_partition_unavailable"
+			message = "Supplier completion usage could not be verified; usage requires reconciliation"
+		}
 		relay.recordTraceEvent(ctx, requestID, "provider.response_unusable", "provider", "warning", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
-			"failure_kind": billing.ProviderOutputLimitExceeded,
+			"failure_kind": failureKind,
 		}, upstreamRequestID)
-		writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", "Supplier exceeded the completion contract; usage requires reconciliation")
+		writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", message)
 		return
 	}
 	deliveryInspection := inspectNonStreamOutputTextsForRoute(responseMap, route)
@@ -1956,6 +1973,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	)
 	outputEnforcement, _ := modelprofile.ResolveOutputEnforcement(route.ModelProtocolProfile)
 	providerCompletionBound := outputEnforcement.Accounting == modelprofile.OutputEnforcementProviderCompletionV1
+	splitCompletion := outputEnforcement.Scope == modelprofile.QwenHostedBudgetScope
 	var streamReader io.Reader = resp.Body
 	if providerCompletionBound {
 		streamReader = &boundedStreamReader{reader: resp.Body, remaining: outputEnforcement.MaxUpstreamWireBytes}
@@ -2343,6 +2361,33 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		}
 		return true
 	}
+	const maxSplitCompletionStreamBytes = 1 << 20
+	const maxSplitCompletionStreamFrames = 8192
+	var splitFrames [][]byte
+	var splitBytes int
+	queueStreamDelivery := func(data []byte, doneAfter bool) bool {
+		frameBufferBytes := len(data)
+		if streamGuardrailProfile.Enforced && frameBufferBytes > streampolicy.EnforceBufferMaxBytes {
+			streamTerminationCode = "guardrail_stream_buffer_exceeded"
+			return false
+		}
+		if streamGuardrailProfile.Enforced && len(pendingFrames) > 0 &&
+			pendingBufferBytes+frameBufferBytes > streampolicy.EnforceBufferMaxBytes {
+			if !flushGuardrailBuffer() {
+				return false
+			}
+		}
+		pendingFrames = append(pendingFrames, pendingStreamFrame{data: append([]byte(nil), data...)})
+		pendingBufferBytes += frameBufferBytes
+		if streamGuardrailProfile.Enforced && guardrailBufferTimer == nil {
+			guardrailBufferTimer = time.NewTimer(streampolicy.EnforceBufferMaxWait)
+			guardrailBufferTimerC = guardrailBufferTimer.C
+		}
+		if !streamGuardrailProfile.Enforced || pendingBufferBytes >= streampolicy.EnforceBufferMaxBytes || doneAfter {
+			return flushGuardrailBuffer()
+		}
+		return true
+	}
 	enqueueGuardedFrame := func(data []byte, doneAfter, authoritativeUsage, preparedForDelivery bool) bool {
 		if !preparedForDelivery {
 			normalized, normalizeErr := normalizeProviderStreamFrameForRoute(route, data)
@@ -2388,26 +2433,17 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		if parsed.choiceFrame {
 			providerFinishReasonObserved = parsed.terminal
 		}
-		frameBufferBytes := len(data)
-		if streamGuardrailProfile.Enforced && frameBufferBytes > streampolicy.EnforceBufferMaxBytes {
-			streamTerminationCode = "guardrail_stream_buffer_exceeded"
+		if !splitCompletion {
+			return queueStreamDelivery(data, doneAfter)
+		}
+		// The final provider partition is necessary to authorize delivery.
+		// Keep this narrow protocol's frames bounded before opening delivery.
+		if len(data) > maxSplitCompletionStreamBytes-splitBytes || len(splitFrames) >= maxSplitCompletionStreamFrames {
+			streamTerminationCode = "stream_resource_limit_exceeded"
 			return false
 		}
-		if streamGuardrailProfile.Enforced && len(pendingFrames) > 0 &&
-			pendingBufferBytes+frameBufferBytes > streampolicy.EnforceBufferMaxBytes {
-			if !flushGuardrailBuffer() {
-				return false
-			}
-		}
-		pendingFrames = append(pendingFrames, pendingStreamFrame{data: append([]byte(nil), data...)})
-		pendingBufferBytes += frameBufferBytes
-		if streamGuardrailProfile.Enforced && guardrailBufferTimer == nil {
-			guardrailBufferTimer = time.NewTimer(streampolicy.EnforceBufferMaxWait)
-			guardrailBufferTimerC = guardrailBufferTimer.C
-		}
-		if !streamGuardrailProfile.Enforced || pendingBufferBytes >= streampolicy.EnforceBufferMaxBytes || doneAfter {
-			return flushGuardrailBuffer()
-		}
+		splitFrames = append(splitFrames, bytes.Clone(data))
+		splitBytes += len(data)
 		return true
 	}
 	processCurrentKimiEvent := func(data []byte) bool {
@@ -2819,6 +2855,21 @@ streamLoop:
 		streamTerminationCode = "upstream_stream_invalid_frame"
 		done = true
 	}
+	// The retained stream is released only after the terminal marker, clean
+	// transport completion, and separate answer/reasoning counters agree.
+	splitCompletionFailed := splitCompletion && done && transportEOFObserved &&
+		providerTerminalObserved && streamTerminationCode == "" && !hostedCompletionFits(reservationState, streamUsage)
+	if splitCompletion && done && transportEOFObserved && providerTerminalObserved &&
+		streamTerminationCode == "" && !splitCompletionFailed {
+		for _, frame := range splitFrames {
+			if !queueStreamDelivery(frame, false) {
+				break
+			}
+		}
+		if streamTerminationCode == "" {
+			_ = flushGuardrailBuffer()
+		}
+	}
 	stopGuardrailBufferTimer()
 	pendingFrames = nil
 
@@ -2900,10 +2951,13 @@ streamLoop:
 	supplierOutputOverrun := providerCompletionBound && usedUpstreamUsage &&
 		streamUsage.Authority == metering.UsageAuthorityProviderReported && streamUsage.Finality == metering.UsageFinalityFinal &&
 		streamUsage.CompletionTokens > reservationState.ReservedCompletionTokens
-	if supplierOutputOverrun {
+	if supplierOutputOverrun || (splitCompletionFailed && usedUpstreamUsage &&
+		(streamUsage.ProviderReasoningTokens != nil || reservationState.HostedReasoningTokenLimit == 0)) {
 		streamTerminationCode = billing.ProviderOutputLimitExceeded
+	} else if splitCompletionFailed {
+		streamTerminationCode = "upstream_stream_invalid_frame"
 	}
-	providerStreamFailed := supplierOutputOverrun || scanErr != nil || streamPayloadInvalid || providerStreamErrorObserved || (!providerTerminalObserved && streamTerminationCode == "upstream_stream_read_failed")
+	providerStreamFailed := supplierOutputOverrun || splitCompletionFailed || scanErr != nil || streamPayloadInvalid || providerStreamErrorObserved || (!providerTerminalObserved && streamTerminationCode == "upstream_stream_read_failed")
 	switch {
 	case providerStreamFailed:
 		recordRouteHealth(executionHealthProviderFailure)
@@ -3013,7 +3067,7 @@ streamLoop:
 		}, upstreamRequestID)
 	}
 
-	if supplierOutputOverrun {
+	if supplierOutputOverrun || (splitCompletionFailed && usedUpstreamUsage) {
 		holdReq := settleRequestFromUsage(requestID, attemptIDFromContext(ctx), orgID, providerUsage)
 		holdCtx, holdCancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 		var holdErr error
@@ -3030,12 +3084,12 @@ streamLoop:
 			billingStatus = "provider_usage_hold_unpersisted"
 			reqLog.Error("Supplier overrun hold was not confirmed: %v", holdErr)
 		} else {
-			leaseTerminalReason = billing.ProviderOutputLimitExceeded
+			leaseTerminalReason = streamTerminationCode
 			leaveLeaseForRecovery = false
 		}
 		recordStreamMetrics(providerUsage, 0, nil)
-		recordStreamTermination(billing.ProviderOutputLimitExceeded, billingStatus)
-		writeTerminationFrame(billing.ProviderOutputLimitExceeded, billingStatus)
+		recordStreamTermination(streamTerminationCode, billingStatus)
+		writeTerminationFrame(streamTerminationCode, billingStatus)
 		return
 	}
 

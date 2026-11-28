@@ -179,6 +179,7 @@ func TestServiceSubmissionEncryptsPromptAndEnforcesIdempotencyConflict(t *testin
 		ServiceOptions{
 			RuntimeEnabled:   true,
 			AdmissionEnabled: true,
+			MaxAttempts:      1,
 			LimitPolicy:      &mediaLimitRuntimeFixture{},
 			Now: func() time.Time {
 				return time.Date(2026, 7, 31, 10, 0, 0, 0, time.UTC)
@@ -210,6 +211,15 @@ func TestServiceSubmissionEncryptsPromptAndEnforcesIdempotencyConflict(t *testin
 	if err != nil || !repeated.Reused || repeated.Job.JobID != first.Job.JobID {
 		t.Fatalf("repeat = %+v err=%v", repeated, err)
 	}
+	if first.Job.MaxAttempts != 1 {
+		t.Fatal("the old-style request should have inherited the one-attempt instance default")
+	}
+	input.SingleUpstreamAttempt = true
+	_, err = service.Submit(context.Background(), input)
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("a legacy job cannot attest the explicit submission limit: %v", err)
+	}
+	input.SingleUpstreamAttempt = false
 	input.Body = []byte(`{"model":"image-prod","prompt":"different prompt","output_format":"png"}`)
 	_, err = service.Submit(context.Background(), input)
 	if !errors.Is(err, ErrConflict) {

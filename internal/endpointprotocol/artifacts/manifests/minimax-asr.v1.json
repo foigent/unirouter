@@ -1,0 +1,41 @@
+{
+  "schema_version": "unirouter.endpoint-profile-manifest.v1",
+  "profile_id": "unirouter.minimax.speech.asr-1.v1",
+  "profile_version": "1.0.0",
+  "provider": "minimax",
+  "runtime_state": "repository_local_async_media_v1",
+  "conformance_level": "fixture_verified",
+  "network_verified": false,
+  "descriptor": {
+    "contract_version": "unirouter.endpoint-protocol.v1",
+    "profile_id": "unirouter.minimax.speech.asr-1.v1",
+    "profile_version": "1.0.0",
+    "provider": "minimax",
+    "endpoint_kind": "transcription",
+    "downstream_endpoint": "/v1/media/jobs",
+    "upstream_endpoint": "/v1/speech_to_text",
+    "authentication": "bearer",
+    "runtime_state": "repository_local_async_media_v1",
+    "provider_finality": "completed_transcript_and_reported_duration",
+    "customer_charge_state": "provider_observed_not_customer_chargeable",
+    "supported_modalities": [
+      "speech_to_text"
+    ],
+    "observed_unit_classes": [
+      "input_audio_milliseconds"
+    ],
+    "unsupported_semantics": [
+      "remote_input_uri",
+      "streaming",
+      "word_timestamps",
+      "stereo"
+    ]
+  },
+  "fixtures": [
+    {
+      "fixture_id": "minimax-asr-v1",
+      "path": "fixtures/minimax-asr-v1.json",
+      "sha256": "sha256:ab0d163436f5aae1d22a27ca4e87df77e7e5564f8bf2b5fc729a50f6f24b7459"
+    }
+  ]
+}

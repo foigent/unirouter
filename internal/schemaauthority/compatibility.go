@@ -12,6 +12,36 @@ func RuntimeLedgers(artifact []string) ([][]string, error) {
 		return nil, err
 	}
 	end := len(artifact)
+	if end >= 24 && artifact[end-1] == AsyncMediaProviderTaskHead && artifact[end-2] == CanonicalMediaJobHead {
+		if _, err := RuntimeLedgers(artifact[:end-1]); err != nil {
+			return nil, err
+		}
+		return [][]string{slices.Clone(artifact)}, nil
+	}
+	if end >= 23 && artifact[end-1] == CanonicalMediaJobHead && artifact[end-2] == NativeInlineJPEGHead {
+		if _, err := RuntimeLedgers(artifact[:end-1]); err != nil {
+			return nil, err
+		}
+		return [][]string{slices.Clone(artifact)}, nil
+	}
+	if end >= 22 && artifact[end-1] == NativeInlineJPEGHead && artifact[end-2] == MediaChargeSourceHead {
+		if _, err := RuntimeLedgers(artifact[:end-1]); err != nil {
+			return nil, err
+		}
+		return [][]string{slices.Clone(artifact)}, nil
+	}
+	if end >= 21 && artifact[end-1] == MediaChargeSourceHead && artifact[end-2] == OpenAIResponsesToolsHead {
+		if _, err := RuntimeLedgers(artifact[:end-1]); err != nil {
+			return nil, err
+		}
+		return [][]string{slices.Clone(artifact)}, nil
+	}
+	if end >= 20 && artifact[end-1] == OpenAIResponsesToolsHead && artifact[end-2] == CustomerStandardPricingHead {
+		if _, err := RuntimeLedgers(artifact[:end-1]); err != nil {
+			return nil, err
+		}
+		return [][]string{slices.Clone(artifact)}, nil
+	}
 	if end >= 19 && artifact[end-1] == CustomerStandardPricingHead && artifact[end-2] == UpgradeAdmissionRecoveryHead {
 		if _, err := RuntimeLedgers(artifact[:end-1]); err != nil {
 			return nil, err

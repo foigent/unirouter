@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/uniroute/unirouter/internal/modelqualification"
 )
 
 const deploymentLifecycleOperationScopePrefix = "model_deployment.lifecycle."
@@ -538,7 +539,7 @@ SELECT item.ordinal,item.deployment_id,item.operation_id,
 			return nil, lifecycleWriteError("scan deployment lifecycle qualification snapshot", err)
 		}
 		item.ReleaseID, item.ReleaseRole = release.ID, releaseRole
-		item.QualificationRequired = item.OperationID == "openai.responses.v1" || item.OperationID == "anthropic.messages.v1"
+		item.QualificationRequired = modelqualification.IsQualificationRequired(item.OperationID)
 		if !item.QualificationRequired {
 			item.Qualified, item.QualificationState = true, "not_required"
 		} else {

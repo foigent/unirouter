@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../../../api/transport';
+import { I18nProvider, LanguageSwitcher, setLocale } from '../../../i18n';
 import { useAuthStore } from '../../../store/auth';
 import type { CanonicalModelApplication, CanonicalOperation } from '../../../api/modelDeployments';
 import ModelQualificationWorkspace from '../ModelQualificationWorkspace';
@@ -26,8 +27,8 @@ async function click(element: HTMLElement) {
   await act(async () => { fireEvent.click(element); });
 }
 async function confirm() {
-  await screen.findByText(/本轮合并验证预计 1 次/);
-  await click(screen.getByLabelText('确认发起本轮 1 次付费验证'));
+  await screen.findByText(/本轮合并验证覆盖 2 项能力。最多 1 次供应商请求/);
+  await click(screen.getByLabelText('确认付费验证（最多 1 次供应商请求）'));
   await click(screen.getByRole('button', { name: '验证这些能力' }));
 }
 describe('concentrated qualification', () => {
@@ -36,15 +37,49 @@ describe('concentrated qualification', () => {
     mocks.view.mockImplementation(view); mocks.plan.mockResolvedValue(plan); mocks.probe.mockResolvedValue(result);
     mocks.read.mockResolvedValue({ observation, facts: [], current_qualifications: [] }); mocks.approve.mockImplementation((...args: Parameters<typeof approvalReceipt>) => Promise.resolve(approvalReceipt(...args)));
   });
+  afterEach(() => { act(() => setLocale('zh-CN')); });
   it('loads without paid calls and dispatches once for multiple facts only after consent', async () => {
     render(<ModelQualificationWorkspace {...props}/>);
-    await screen.findByText(/本轮合并验证预计 1 次/);
+    await screen.findByText(/本轮合并验证覆盖 2 项能力。最多 1 次供应商请求/);
     expect(mocks.probe).not.toHaveBeenCalled(); expect(screen.getByRole('button', { name: '验证这些能力' })).toBeDisabled();
     await confirm(); await screen.findByText(/已取得逐项验证事实/);
     expect(mocks.probe).toHaveBeenCalledTimes(1); expect(mocks.probe).toHaveBeenCalledWith(41, operation.operation_id, { credential_binding_id: 91, plan_digest: plan.groups[0].plan_digest, capability_ids: ids });
     expect(mocks.approve).not.toHaveBeenCalled();
     await click(screen.getByRole('button', { name: '刷新逐项状态' })); await waitFor(() => expect(mocks.plan).toHaveBeenCalledTimes(2));
     expect(mocks.probe).toHaveBeenCalledTimes(1);
+  });
+  it('shows a two-round tool group, a one-round group and their total across a language switch', async () => {
+    mocks.plan.mockResolvedValue({ ...plan, groups: [{
+      ...plan.groups[0], capability_ids: ['function_tools'], planned_provider_requests: 2,
+      probe_contract: 'unirouter.capability-probe.native-client-tool-continuation.v1@1.0.0',
+    }, {
+      ...plan.groups[0], plan_digest: 'c'.repeat(64), capability_ids: ['streaming'],
+    }] });
+    render(<I18nProvider><LanguageSwitcher/><ModelQualificationWorkspace {...props}/></I18nProvider>);
+
+    await screen.findByText(/· 最多 2 次供应商请求/);
+    expect(screen.getByText(/· 最多 1 次供应商请求/)).toBeInTheDocument();
+    expect(screen.getByText(/本轮合并验证覆盖 2 项能力。最多 3 次供应商请求/)).toBeInTheDocument();
+    expect(screen.getByText('第一轮获取工具调用。通过校验后，第二轮回传测试工具结果。')).toBeInTheDocument();
+    expect(screen.getByLabelText('确认付费验证（最多 3 次供应商请求）')).toBeInTheDocument();
+
+    await click(screen.getByRole('button', { name: 'English' }));
+    expect(screen.getByText(/· Up to 2 provider requests/)).toBeInTheDocument();
+    expect(screen.getByText(/· Up to 1 provider request/)).toBeInTheDocument();
+    expect(screen.getByText(/covers 2 capabilities\. Up to 3 provider requests/)).toBeInTheDocument();
+    expect(screen.getByText('The first request obtains the tool call. After validation, the second returns the test tool result.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Confirm paid validation (Up to 3 provider requests)')).toBeInTheDocument();
+    expect(mocks.probe).not.toHaveBeenCalled();
+  });
+  it('keeps paid batch confirmation disabled when a group count is missing', async () => {
+    mocks.plan.mockResolvedValue({ ...plan, groups: [{ ...plan.groups[0], planned_provider_requests: undefined }] });
+    render(<ModelQualificationWorkspace {...props}/>);
+
+    await screen.findByText(/· 供应商请求上限未知/);
+    expect(screen.getByText(/本轮合并验证覆盖 2 项能力。供应商请求上限未知/)).toBeInTheDocument();
+    expect(screen.getByLabelText('确认付费验证（供应商请求上限未知）')).toBeDisabled();
+    expect(screen.getByRole('button', { name: '验证这些能力' })).toBeDisabled();
+    expect(mocks.probe).not.toHaveBeenCalled();
   });
   it('fences double clicks and ignores a late result after exact target change', async () => {
     let finish!: (v: unknown) => void; mocks.probe.mockReturnValue(new Promise(r => { finish = r; }));
@@ -95,7 +130,7 @@ describe('concentrated qualification', () => {
   });
   it('does not write after actor changes or when license is unavailable', async () => {
     const ui = render(<ModelQualificationWorkspace {...props} gatewayLicensed={false}/>);
-    await screen.findByText(/本轮合并验证预计/); expect(screen.getByLabelText('确认发起本轮 1 次付费验证')).toBeDisabled();
+    await screen.findByText(/本轮合并验证覆盖/); expect(screen.getByLabelText('确认付费验证（最多 1 次供应商请求）')).toBeDisabled();
     await act(async () => { useAuthStore.setState({ isAuthenticated: false, user: null }); });
     await act(async () => { ui.rerender(<ModelQualificationWorkspace {...props} canManage={false} canApprove={false} gatewayLicensed={false}/>); });
     expect(mocks.probe).not.toHaveBeenCalled(); expect(mocks.approve).not.toHaveBeenCalled();

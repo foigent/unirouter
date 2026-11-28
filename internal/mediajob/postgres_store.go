@@ -17,7 +17,9 @@ import (
 	"github.com/uniroute/unirouter/internal/contentcapture"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
+	"github.com/uniroute/unirouter/internal/executionevidence"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
+	"github.com/uniroute/unirouter/internal/modelrouting"
 )
 
 type PostgresStore struct {
@@ -25,6 +27,7 @@ type PostgresStore struct {
 	executionAuthorizer ExecutionModelAuthorizer
 	sourceMaterializer  SourceMaterializer
 	contentPolicy       *contentcapture.PolicyStore
+	canonicalRoutes     *CanonicalRoutes
 }
 
 const (
@@ -46,6 +49,30 @@ func NewPostgresStore(database db.DBQuerier, authorizers ...ExecutionModelAuthor
 	return &PostgresStore{db: database, executionAuthorizer: authorizer}, nil
 }
 
+func (s *PostgresStore) SetCanonicalRoutes(routes *CanonicalRoutes) {
+	s.canonicalRoutes = routes
+}
+
+// CheckWorkerAuthority prevents a change of route authority from consuming
+// acknowledged jobs that still have an incompatible submission pending.
+func (s *PostgresStore) CheckWorkerAuthority(ctx context.Context) error {
+	var outstanding bool
+	err := s.db.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1 FROM async_media_jobs j
+    WHERE queue_state<>'terminal' AND provider_outcome='pending'
+      AND (to_jsonb(j)->'canonical_route' IS DISTINCT FROM NULL AND
+           to_jsonb(j)->'canonical_route'<>'null'::jsonb) <> $1
+)`, s.canonicalRoutes != nil).Scan(&outstanding)
+	if err != nil {
+		return fmt.Errorf("check pending media job route authority: %w", err)
+	}
+	if outstanding {
+		return domainError(ErrConflict, "pending_media_jobs_use_other_route_authority")
+	}
+	return nil
+}
+
 func (s *PostgresStore) SetContentPolicy(policy *contentcapture.PolicyStore) {
 	s.contentPolicy = policy
 }
@@ -62,8 +89,10 @@ const jobColumns = `
     COALESCE(j.content_policy_vector::text,''),
     j.admission_state, j.queue_state, j.lease_state, j.execution_state,
     j.provider_outcome, j.cancellation_state, j.object_state, j.settlement_state,
-    j.attempt, j.max_attempts, j.lease_owner, j.lease_fence,
+    j.attempt, j.max_attempts, j.single_upstream_attempt, j.lease_owner, j.lease_fence,
     j.lease_expires_at, j.next_attempt_at,
+    to_jsonb(j)->'canonical_route', to_jsonb(j)->'canonical_dispatch_route',
+    COALESCE(to_jsonb(j)->>'provider_task_id',''), (to_jsonb(j)->>'provider_task_read_until')::timestamptz,
     j.object_key, j.receipt_key, j.output_sha256, j.output_media_type,
     j.output_size_bytes, j.output_persisted_at, j.output_expires_at,
     j.output_purged_at, j.purge_owner, j.purge_fence, j.purge_expires_at,
@@ -84,7 +113,7 @@ func scanJobExact(row rowScanner) (Job, error) {
 	var outputPersisted, outputExpires, outputPurged *time.Time
 	var factID, factTrigger, amountState string
 	var amountMicros *int64
-	var unitsBody []byte
+	var unitsBody, canonicalRoute, canonicalDispatch []byte
 	var factRecordedAt *time.Time
 	var policyVersion int64
 	if err := row.Scan(
@@ -99,9 +128,9 @@ func scanJobExact(row rowScanner) (Job, error) {
 		&job.Lifecycle.Admission, &job.Lifecycle.Queue, &job.Lifecycle.Lease,
 		&job.Lifecycle.Execution, &job.Lifecycle.Outcome,
 		&job.Lifecycle.Cancellation, &job.Lifecycle.Object,
-		&job.Lifecycle.Settlement, &job.Attempt, &job.MaxAttempts,
+		&job.Lifecycle.Settlement, &job.Attempt, &job.MaxAttempts, &job.SingleUpstreamAttempt,
 		&job.LeaseOwner, &job.LeaseFence, &job.LeaseExpiresAt,
-		&job.NextAttemptAt, &job.ObjectKey, &job.ReceiptKey,
+		&job.NextAttemptAt, &canonicalRoute, &canonicalDispatch, &job.providerTaskID, &job.providerTaskReadUntil, &job.ObjectKey, &job.ReceiptKey,
 		&outputSHA, &outputMediaType, &outputSize,
 		&outputPersisted, &outputExpires, &outputPurged,
 		&job.PurgeOwner, &job.PurgeFence, &job.PurgeExpiresAt,
@@ -111,6 +140,28 @@ func scanJobExact(row rowScanner) (Job, error) {
 		&factRecordedAt,
 	); err != nil {
 		return Job{}, err
+	}
+	if len(canonicalRoute) != 0 && string(canonicalRoute) != "null" {
+		var route executionevidence.EvidenceV2
+		if err := json.Unmarshal(canonicalRoute, &route); err != nil {
+			return Job{}, fmt.Errorf("mediajob: decode canonical route: %w", err)
+		}
+		normalized, err := executionevidence.NormalizeV2(route)
+		if err != nil || normalized.ChargeContractVersion != executionevidence.MediaJobChargeContractV1 {
+			return Job{}, domainError(ErrUnavailable, "canonical_media_route_invalid")
+		}
+		job.CanonicalRoute = &normalized
+	}
+	if len(canonicalDispatch) != 0 && string(canonicalDispatch) != "null" {
+		var route executionevidence.EvidenceV2
+		if err := json.Unmarshal(canonicalDispatch, &route); err != nil {
+			return Job{}, fmt.Errorf("mediajob: decode dispatch route: %w", err)
+		}
+		normalized, err := executionevidence.NormalizeV2(route)
+		if err != nil || job.CanonicalRoute == nil || !sameCanonicalMediaRoute(*job.CanonicalRoute, normalized) {
+			return Job{}, domainError(ErrUnavailable, "canonical_media_dispatch_route_invalid")
+		}
+		job.CanonicalDispatch = &normalized
 	}
 	job.LeaseExpiresAt = utcTimePointer(job.LeaseExpiresAt)
 	job.RequestExpiresAt = utcTimePointer(job.RequestExpiresAt)
@@ -335,6 +386,17 @@ func (s *PostgresStore) AttachExecutionReservation(
 	}
 	digest := sha256.Sum256(body)
 	hash := hex.EncodeToString(digest[:])
+	if (s.canonicalRoutes != nil) != (lease.Job.CanonicalRoute != nil) {
+		return ExecutionReservation{}, false, domainError(ErrForbidden, "media_job_route_mode_mismatch")
+	}
+	var plan modelrouting.Plan
+	var route modelrouting.Route
+	if s.canonicalRoutes != nil {
+		plan, route, err = s.canonicalRoutes.plan(ctx, lease.Job, lease.Request)
+		if err != nil {
+			return ExecutionReservation{}, false, err
+		}
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return ExecutionReservation{}, false, fmt.Errorf("mediajob: begin execution admission: %w", err)
@@ -443,17 +505,35 @@ func (s *PostgresStore) AttachExecutionReservation(
 	if cancellation != CancellationNotRequested {
 		return ExecutionReservation{}, false, ErrLeaseLost
 	}
+	dispatchAssignment := ""
+	startArgs := []any{now.UTC(), lease.JobID, lease.Scope.OrgID, lease.Scope.ProjectID, lease.Owner, lease.Fence}
+	if s.canonicalRoutes != nil {
+		if err := s.canonicalRoutes.revalidate(ctx, tx, lease.Job, plan, route); err != nil {
+			return ExecutionReservation{}, false, err
+		}
+		normalized, err := executionevidence.NormalizeV2(*route.PublicEvidence)
+		if err != nil {
+			return ExecutionReservation{}, false, err
+		}
+		wire, err := json.Marshal(normalized)
+		if err != nil {
+			return ExecutionReservation{}, false, err
+		}
+		dispatchAssignment = ",canonical_dispatch_route=$7::jsonb"
+		startArgs = append(startArgs, string(wire))
+		stored.providerRoute = &mediaDispatchRoute{Route: route, profileID: plan.ExecutionProfileID, profileVersion: plan.ExecutionProfileVersion}
+	}
 	err = tx.QueryRow(ctx, `
 		UPDATE async_media_jobs
 		   SET execution_state='running',started_at=COALESCE(started_at,$1),
-		       attempt=attempt+1,updated_at=$1
+		       attempt=attempt+1,updated_at=$1`+dispatchAssignment+`
 		 WHERE job_id=$2 AND org_id=$3 AND project_id=$4
 		   AND lease_owner=$5 AND lease_fence=$6 AND lease_expires_at>$1
 		   AND queue_state='leased' AND execution_state='pending'
 		   AND provider_outcome='pending' AND cancellation_state='not_requested'
 		   AND attempt<max_attempts
 		RETURNING attempt`,
-		now.UTC(), lease.JobID, lease.Scope.OrgID, lease.Scope.ProjectID, lease.Owner, lease.Fence,
+		startArgs...,
 	).Scan(&stored.ProviderAttempt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ExecutionReservation{}, false, ErrLeaseLost
@@ -727,7 +807,21 @@ func (s *PostgresStore) CreateOrGet(
 	if orgOutstanding >= maxOutstandingJobsPerOrg {
 		return Job{}, false, domainError(ErrUnavailable, "organization_outstanding_limit")
 	}
-	tag, err := tx.Exec(ctx, `
+	routeColumn, routeValue := "", ""
+	var extra []any
+	if job.CanonicalRoute != nil {
+		route, err := executionevidence.NormalizeV2(*job.CanonicalRoute)
+		if err != nil || route.ChargeContractVersion != executionevidence.MediaJobChargeContractV1 ||
+			!job.SingleUpstreamAttempt || job.MaxAttempts != 1 {
+			return Job{}, false, domainError(ErrInvalid, "invalid_canonical_media_route")
+		}
+		wire, err := json.Marshal(route)
+		if err != nil {
+			return Job{}, false, err
+		}
+		routeColumn, routeValue, extra = ", canonical_route", ", $40::jsonb", []any{string(wire)}
+	}
+	insert := `
 		INSERT INTO async_media_jobs (
 		    job_id, contract_version, org_id, project_id, api_key_id,
 		    access_grant_id, access_credential_id, credential_ref,
@@ -739,15 +833,16 @@ func (s *PostgresStore) CreateOrGet(
 		    settlement_state, attempt, max_attempts, lease_fence,
 		    next_attempt_at, created_at, updated_at,
 		    request_expires_at, execution_storage_mode, content_policy_ref,
-		    content_policy_version, content_policy_vector
+		    content_policy_version, content_policy_vector, single_upstream_attempt` + routeColumn + `
 		) VALUES (
 		    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
 		    $18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,
-		    $34,$35,$36,$37,$38::jsonb
+		    $34,$35,$36,$37,$38::jsonb,$39` + routeValue + `
 		)
 		ON CONFLICT (org_id, project_id, idempotency_subject_type,
 		             idempotency_subject_id, idempotency_hash)
-		DO NOTHING`,
+		DO NOTHING`
+	args := []any{
 		job.JobID, job.ContractVersion, job.Scope.OrgID, job.Scope.ProjectID,
 		job.APIKeyID, job.AccessGrantID, job.AccessCredentialID, nullMediaCredentialRef(job.CredentialRef),
 		job.IdempotencySubjectType, job.IdempotencySubjectID,
@@ -759,8 +854,9 @@ func (s *PostgresStore) CreateOrGet(
 		job.Lifecycle.Settlement, job.Attempt, job.MaxAttempts, job.LeaseFence,
 		job.NextAttemptAt, job.CreatedAt, job.UpdatedAt,
 		job.RequestExpiresAt, nullMediaText(job.ExecutionStorageMode), nullMediaText(job.ContentPolicyRef),
-		nullMediaPolicyVersion(job.ContentPolicyVersion), nullMediaText(job.ContentPolicyVector),
-	)
+		nullMediaPolicyVersion(job.ContentPolicyVersion), nullMediaText(job.ContentPolicyVector), job.SingleUpstreamAttempt,
+	}
+	tag, err := tx.Exec(ctx, insert, append(args, extra...)...)
 	if err != nil {
 		return Job{}, false, fmt.Errorf("mediajob: insert: %w", err)
 	}

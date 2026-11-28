@@ -110,6 +110,11 @@ func (s *Service) CheckReady(ctx context.Context) error {
 		if _, e := observationDescriptors(); e != nil {
 			return e
 		}
+		if head == schemaauthority.MediaChargeSourceHead || head == schemaauthority.NativeInlineJPEGHead || head == schemaauthority.CanonicalMediaJobHead || head == schemaauthority.AsyncMediaProviderTaskHead {
+			if _, e := mediaChargeDescriptor(); e != nil {
+				return e
+			}
+		}
 	}
 	_, e := descriptors()
 	return e

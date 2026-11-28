@@ -110,7 +110,7 @@ func runtimeBootstrapState(t *testing.T, pool *pgxpool.Pool) string {
 		'outbox',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM internal_outbox_events e)
 	)::text`).Scan(&state))
 	parts := map[string]string{"business": state}
-	for _, name := range firstCustomerContentTables() {
+	for _, name := range firstCustomerBootstrapOnlyTables() {
 		var rows string
 		require.NoError(t, pool.QueryRow(t.Context(), `SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]'::jsonb)::text FROM `+pgx.Identifier{"public", name}.Sanitize()+` t`).Scan(&rows))
 		parts[name] = rows

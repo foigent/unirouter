@@ -57,21 +57,22 @@ func meaningfulCapabilityFixture(t *testing.T) (*Handler, modelCapabilitySnapsho
 func TestMeaningfulCapabilityActualDispatchUsesOwn30SecondClientAndParentDeadline(t *testing.T) {
 	// Private process-local test clients are restored; this test is deliberately
 	// serialized. It exercises executeModelCapabilityProbe, not just constants.
-	oldCapability, oldOperation := modelCapabilityProbeDefaultHTTPClient, canonicalOperationProbeDefaultHTTPClient
+	oldCapability, oldOperation := modelCapabilityProbeDefaultHTTPClient, singleOperationProbeHTTPClient
 	t.Cleanup(func() {
-		modelCapabilityProbeDefaultHTTPClient, canonicalOperationProbeDefaultHTTPClient = oldCapability, oldOperation
+		modelCapabilityProbeDefaultHTTPClient, singleOperationProbeHTTPClient = oldCapability, oldOperation
 	})
-	capability, operation := newModelCapabilityProbeHTTPClient(), newCanonicalOperationProbeHTTPClient()
+	capability, operation := newSingleSendProbeHTTPClient(modelCapabilityProbeTimeout), newSingleSendProbeHTTPClient(canonicalOperationProbeTimeout)
 	require.Equal(t, 30*time.Second, capability.Timeout)
 	require.Equal(t, 15*time.Second, operation.Timeout)
 	require.NotSame(t, capability.Transport, operation.Transport)
 	require.Equal(t, int64(64<<10), capability.Transport.(*http.Transport).MaxResponseHeaderBytes)
 	require.ErrorIs(t, capability.CheckRedirect(&http.Request{}, nil), http.ErrUseLastResponse)
-	modelCapabilityProbeDefaultHTTPClient, canonicalOperationProbeDefaultHTTPClient = capability, operation
+	modelCapabilityProbeDefaultHTTPClient, singleOperationProbeHTTPClient = capability, operation
 	h, snapshot, stream := meaningfulCapabilityFixture(t)
 	operationCalls := 0
 	operation.Transport = meaningfulProbeRoundTripper(func(r *http.Request) (*http.Response, error) {
 		operationCalls++
+		require.Nil(t, r.GetBody)
 		deadline, ok := r.Context().Deadline()
 		require.True(t, ok)
 		require.InDelta(t, 15, time.Until(deadline).Seconds(), 1)
@@ -82,6 +83,7 @@ func TestMeaningfulCapabilityActualDispatchUsesOwn30SecondClientAndParentDeadlin
 			calls := 0
 			capability.Transport = meaningfulProbeRoundTripper(func(r *http.Request) (*http.Response, error) {
 				calls++
+				require.Nil(t, r.GetBody)
 				deadline, ok := r.Context().Deadline()
 				require.True(t, ok)
 				remaining := time.Until(deadline)
@@ -115,7 +117,7 @@ func TestMeaningfulCapabilityActualDispatchUsesOwn30SecondClientAndParentDeadlin
 	require.True(t, result.OutcomeAmbiguous)
 	request, err := http.NewRequest(http.MethodPost, "https://api.deepseek.com/chat/completions", nil)
 	require.NoError(t, err)
-	_, err = (&Handler{}).canonicalOperationProbeDoer().Do(request)
+	_, err = (&Handler{}).sendModelProbe(request, singleOperationProbeHTTPClient)
 	require.Error(t, err)
 	require.Equal(t, 1, operationCalls)
 }

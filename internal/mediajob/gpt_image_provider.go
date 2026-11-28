@@ -2,7 +2,6 @@ package mediajob
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,7 +13,9 @@ import (
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
+	"github.com/uniroute/unirouter/internal/executionevidence"
 	"github.com/uniroute/unirouter/internal/gateway"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 )
 
 const maxProviderResponseBytes = endpointprotocol.MaxOpenAIImageResponseBytes
@@ -29,14 +30,22 @@ type ImageRouter interface {
 	MarkKeyFail(context.Context, int64) error
 }
 
+type imageProviderRoute struct {
+	provider, baseURL, encryptedKey, mappedModel string
+	profileID, profileVersion, releaseRef        string
+	legacyChannelID, legacyKeyID                 int64
+	canonical                                    *executionevidence.EvidenceV2
+}
+
 type GPTImageProvider struct {
-	contentObserver MediaContentObserver
-	sourceObserver  SourceMediaProviderObserver
-	router          ImageRouter
-	profile         endpointprotocol.Profile
-	httpClient      *http.Client
-	encKey          []byte
-	timeout         time.Duration
+	contentObserver  MediaContentObserver
+	sourceObserver   SourceMediaProviderObserver
+	router           ImageRouter
+	profile          endpointprotocol.Profile
+	httpClient       *http.Client
+	singleSendClient *http.Client
+	encKey           []byte
+	timeout          time.Duration
 }
 
 type GPTImageProviderOptions struct {
@@ -65,6 +74,20 @@ func NewGPTImageProvider(
 	httpClient.CheckRedirect = func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
+	var singleSendClient *http.Client
+	transport := httpClient.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	// A custom RoundTripper may replay internally. Only a standard Transport
+	// can be constrained for the single provider submission contract.
+	if standard, ok := transport.(*http.Transport); ok && standard != nil && standard.DialTLSContext == nil && standard.DialTLS == nil {
+		bounded := standard.Clone()
+		adapters.ConfigureSingleSendTransport(bounded)
+		single := httpClient
+		single.Transport = bounded
+		singleSendClient = &single
+	}
 	if options.Timeout == 0 {
 		options.Timeout = 3 * time.Minute
 	}
@@ -72,7 +95,7 @@ func NewGPTImageProvider(
 		return nil, domainError(ErrInvalid, "provider_timeout_invalid")
 	}
 	return &GPTImageProvider{
-		router: router, profile: profile, httpClient: &httpClient,
+		router: router, profile: profile, httpClient: &httpClient, singleSendClient: singleSendClient,
 		encKey: append([]byte(nil), encKey...), timeout: options.Timeout,
 	}, nil
 }
@@ -82,11 +105,37 @@ func (p *GPTImageProvider) Generate(
 	job Job,
 	request NormalizedRequest,
 ) (ProviderResult, error) {
+	singleSend := job.SingleUpstreamAttempt
+	if singleSend && (job.MaxAttempts != 1 || job.Attempt != 1 || job.Lifecycle.Outcome != OutcomePending || job.Lifecycle.Execution == ExecutionTerminal) {
+		return ProviderResult{}, &ProviderError{Code: "single_submission_requires_first_dispatch"}
+	}
+	if singleSend && p.singleSendClient == nil {
+		return ProviderResult{}, &ProviderError{Code: "single_submission_transport_unavailable"}
+	}
 	callCtx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
 	requestBody, err := json.Marshal(request)
 	if err != nil {
 		return ProviderResult{}, &ProviderError{Code: "request_encoding_failed"}
+	}
+	if job.CanonicalRoute != nil || job.dispatchRoute != nil {
+		route := job.dispatchRoute
+		if job.CanonicalRoute == nil || job.CanonicalDispatch == nil || route == nil || route.PublicEvidence == nil ||
+			!job.SingleUpstreamAttempt || !modelprofile.SupportsMediaJobBinding(job.ProfileID, route.Provider, route.UpstreamModel) ||
+			route.PublicEvidence.ProtocolProfileID != job.ProfileID ||
+			adapters.NormalizeType(route.AdapterType) != adapters.TypeOpenAICompatible {
+			return ProviderResult{}, &ProviderError{Code: "canonical_media_dispatch_binding_invalid"}
+		}
+		accepted, acceptedErr := executionevidence.DigestV2(*job.CanonicalDispatch)
+		dispatched, dispatchedErr := executionevidence.DigestV2(*route.PublicEvidence)
+		if acceptedErr != nil || dispatchedErr != nil || accepted != dispatched {
+			return ProviderResult{}, &ProviderError{Code: "canonical_media_dispatch_binding_invalid"}
+		}
+		return p.generateRoute(callCtx, job, requestBody, imageProviderRoute{
+			provider: route.Provider, baseURL: route.BaseURL, encryptedKey: route.EncryptedSecret, mappedModel: route.UpstreamModel,
+			profileID: route.profileID, profileVersion: route.profileVersion,
+			releaseRef: route.PublicEvidence.RuntimeReleaseRef, canonical: route.PublicEvidence,
+		}, 1, 1)
 	}
 	routes, err := p.router.RouteAllWithKey(
 		callCtx,
@@ -102,7 +151,11 @@ func (p *GPTImageProvider) Generate(
 			lastErr = &ProviderError{Code: "endpoint_adapter_unsupported"}
 			continue
 		}
-		result, generateErr := p.generateRoute(callCtx, job, requestBody, route, index+1, len(routes))
+		result, generateErr := p.generateRoute(callCtx, job, requestBody, imageProviderRoute{
+			provider: route.Channel.Provider, baseURL: route.Channel.BaseURL, encryptedKey: route.ChannelKey.KeyEnc, mappedModel: route.MappedModel,
+			profileID: route.ExecutionProfileID, profileVersion: route.ExecutionProfileVersion, releaseRef: route.RuntimeReleaseRef,
+			legacyChannelID: route.Channel.ID, legacyKeyID: route.ChannelKey.ID,
+		}, index+1, len(routes))
 		if generateErr == nil {
 			_ = p.router.MarkChannelSuccess(ctx, route.Channel.ID)
 			_ = p.router.MarkKeySuccess(ctx, route.ChannelKey.ID)
@@ -110,7 +163,7 @@ func (p *GPTImageProvider) Generate(
 		}
 		lastErr = generateErr
 		var providerErr *ProviderError
-		if !errors.As(generateErr, &providerErr) || !providerErr.Retryable {
+		if singleSend || !errors.As(generateErr, &providerErr) || !providerErr.Retryable {
 			break
 		}
 	}
@@ -124,21 +177,30 @@ func (p *GPTImageProvider) generateRoute(
 	ctx context.Context,
 	job Job,
 	requestBody []byte,
-	route gateway.RouteResult,
+	route imageProviderRoute,
 	sequence, total int,
 ) (ProviderResult, error) {
-	apiKey, err := auth.DecryptKey(route.ChannelKey.KeyEnc, p.encKey)
+	apiKey, err := auth.DecryptKey(route.encryptedKey, p.encKey)
 	if err != nil {
-		_ = p.router.MarkKeyFail(ctx, route.ChannelKey.ID)
+		if route.canonical == nil {
+			_ = p.router.MarkKeyFail(ctx, route.legacyKeyID)
+		}
 		return ProviderResult{}, &ProviderError{Code: "provider_key_unavailable"}
 	}
 	defer clearString(&apiKey)
-	upstreamRequest, binding, err := p.profile.BuildRequest(
+	profile := p.profile
+	if route.canonical != nil && job.ProfileID != profile.Descriptor().ProfileID {
+		profile, err = endpointprotocol.NewRegistry().Resolve(job.ProfileID, route.canonical.ProtocolProfileVersion)
+		if err != nil {
+			return ProviderResult{}, &ProviderError{Code: "canonical_media_dispatch_binding_invalid"}
+		}
+	}
+	upstreamRequest, binding, err := profile.BuildRequest(
 		ctx,
 		endpointprotocol.BuildInput{
-			BaseURL: route.Channel.BaseURL, APIKey: apiKey,
+			BaseURL: route.baseURL, APIKey: apiKey,
 			RequestID: job.JobID, RequestedModel: job.RequestedModel,
-			MappedModel: route.MappedModel, Body: requestBody,
+			MappedModel: route.mappedModel, Body: requestBody, LegacyImageDelivery: route.canonical == nil,
 		},
 	)
 	if err != nil {
@@ -146,8 +208,8 @@ func (p *GPTImageProvider) generateRoute(
 	}
 	var observation SourceMediaRoute
 	if p.SourceObservationsEnabled() || p.contentObserver != nil {
-		descriptor := p.profile.Descriptor()
-		observation = SourceMediaRoute{Sequence: sequence, Total: total, ChannelID: route.Channel.ID, ChannelKeyID: route.ChannelKey.ID, Provider: route.Channel.Provider, Origin: upstreamRequest.URL.Scheme + "://" + upstreamRequest.URL.Host, Model: job.RoutingModel, Operation: job.Operation, ProtocolProfile: descriptor.ProfileID, ProtocolVersion: descriptor.ProfileVersion, Surface: descriptor.UpstreamEndpoint, ExecutionProfile: route.ExecutionProfileID, ExecutionVersion: route.ExecutionProfileVersion, ReleaseRef: route.RuntimeReleaseRef}
+		descriptor := profile.Descriptor()
+		observation = SourceMediaRoute{Sequence: sequence, Total: total, ChannelID: route.legacyChannelID, ChannelKeyID: route.legacyKeyID, Provider: route.provider, Origin: upstreamRequest.URL.Scheme + "://" + upstreamRequest.URL.Host, Model: job.RoutingModel, Operation: job.Operation, ProtocolProfile: descriptor.ProfileID, ProtocolVersion: descriptor.ProfileVersion, Surface: descriptor.UpstreamEndpoint, ExecutionProfile: route.profileID, ExecutionVersion: route.profileVersion, ReleaseRef: route.releaseRef, Canonical: route.canonical}
 	}
 	if p.SourceObservationsEnabled() {
 		if err := p.sourceObserver.BeforeMediaRoute(ctx, job, observation); err != nil {
@@ -162,7 +224,12 @@ func (p *GPTImageProvider) generateRoute(
 	if p.SourceObservationsEnabled() {
 		started = time.Now()
 	}
-	response, err := p.httpClient.Do(upstreamRequest)
+	client := p.httpClient
+	if job.SingleUpstreamAttempt {
+		upstreamRequest.GetBody = nil
+		client = p.singleSendClient
+	}
+	response, err := client.Do(upstreamRequest)
 	if p.SourceObservationsEnabled() {
 		duration := time.Since(started).Nanoseconds()
 		status := 0
@@ -178,7 +245,9 @@ func (p *GPTImageProvider) generateRoute(
 				Code: "provider_timeout", OutcomeUnknown: true,
 			}
 		}
-		_ = p.router.MarkChannelFail(ctx, route.Channel.ID)
+		if route.canonical == nil {
+			_ = p.router.MarkChannelFail(ctx, route.legacyChannelID)
+		}
 		return ProviderResult{}, &ProviderError{
 			Code: "provider_transport_outcome_unknown", OutcomeUnknown: true,
 		}
@@ -186,13 +255,15 @@ func (p *GPTImageProvider) generateRoute(
 	defer response.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxProviderResponseBytes+1))
 	if err != nil || len(body) == 0 || len(body) > maxProviderResponseBytes {
-		_ = p.router.MarkChannelFail(ctx, route.Channel.ID)
+		if route.canonical == nil {
+			_ = p.router.MarkChannelFail(ctx, route.legacyChannelID)
+		}
 		if response.StatusCode >= 200 && response.StatusCode < 300 {
 			return ProviderResult{}, &ProviderError{
 				Code: "provider_success_response_unusable", OutcomeUnknown: true,
 			}
 		}
-		failureKind, retryable := p.profile.ClassifyHTTPStatus(response.StatusCode)
+		failureKind, retryable := profile.ClassifyHTTPStatus(response.StatusCode)
 		return ProviderResult{}, &ProviderError{
 			Code: fmt.Sprintf(
 				"provider_http_%d_%s_body_unusable",
@@ -203,62 +274,57 @@ func (p *GPTImageProvider) generateRoute(
 		}
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		failureKind, retryable := p.profile.ClassifyHTTPStatus(response.StatusCode)
+		failureKind, retryable := profile.ClassifyHTTPStatus(response.StatusCode)
 		switch failureKind {
 		case "auth":
-			_ = p.router.MarkKeyAuthFailure(ctx, route.ChannelKey.ID)
+			if route.canonical == nil {
+				_ = p.router.MarkKeyAuthFailure(ctx, route.legacyKeyID)
+			}
 		case "rate_limit":
-			_ = p.router.MarkKeyRateLimited(ctx, route.ChannelKey.ID)
+			if route.canonical == nil {
+				_ = p.router.MarkKeyRateLimited(ctx, route.legacyKeyID)
+			}
 		case "channel_failure":
-			_ = p.router.MarkChannelFail(ctx, route.Channel.ID)
+			if route.canonical == nil {
+				_ = p.router.MarkChannelFail(ctx, route.legacyChannelID)
+			}
 		}
 		return ProviderResult{}, &ProviderError{
 			Code:      fmt.Sprintf("provider_http_%d_%s", response.StatusCode, failureKind),
 			Retryable: retryable,
 		}
 	}
-	outcome, err := p.profile.ParseResponse(ctx, binding, response.StatusCode, body)
+	outcome, err := profile.ParseResponse(ctx, binding, response.StatusCode, body)
 	if err != nil {
-		_ = p.router.MarkChannelFail(ctx, route.Channel.ID)
+		if route.canonical == nil {
+			_ = p.router.MarkChannelFail(ctx, route.legacyChannelID)
+		}
 		return ProviderResult{}, &ProviderError{
 			Code: protocolErrorCode(err), OutcomeUnknown: true,
 		}
 	}
-	imageBytes, mediaType, err := extractSingleImage(body)
-	if err != nil {
-		_ = p.router.MarkChannelFail(ctx, route.Channel.ID)
-		var providerErr *ProviderError
-		if errors.As(err, &providerErr) {
-			providerErr.OutcomeUnknown = true
+	if taskID := outcome.MediaTaskReference(); taskID != "" && route.canonical != nil {
+		return ProviderResult{TaskID: taskID}, nil
+	}
+	if outcome.ProviderState == endpointprotocol.MediaTaskFailed {
+		return ProviderResult{}, &ProviderError{Code: "provider_task_failed"}
+	}
+	if remote, ok := profile.(endpointprotocol.RemoteMediaProfile); ok && route.canonical != nil {
+		outcome.Media, err = endpointprotocol.DownloadRemoteMedia(ctx, p.httpClient, remote, outcome.ResultURL)
+		outcome.ResultURL = ""
+		if err != nil {
+			return ProviderResult{}, &ProviderError{Code: protocolErrorCode(err), OutcomeUnknown: true}
 		}
-		return ProviderResult{}, err
 	}
+	if outcome.Media == nil || outcome.Media.MediaType == "" {
+		return ProviderResult{}, &ProviderError{Code: "provider_media_missing", OutcomeUnknown: true}
+	}
+	media := outcome.Media
+	outcome.Media = nil
 	return ProviderResult{
-		MappedModel: route.MappedModel,
-		Bytes:       imageBytes, MediaType: mediaType, Outcome: outcome,
+		MappedModel: route.mappedModel,
+		Bytes:       media.Bytes, MediaType: media.MediaType, Outcome: outcome,
 	}, nil
-}
-
-func extractSingleImage(body []byte) ([]byte, string, error) {
-	var response struct {
-		Data []struct {
-			B64JSON *string `json:"b64_json"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(body, &response); err != nil ||
-		len(response.Data) != 1 ||
-		response.Data[0].B64JSON == nil {
-		return nil, "", &ProviderError{Code: "image_response_invalid"}
-	}
-	decoded, err := base64.StdEncoding.Strict().DecodeString(*response.Data[0].B64JSON)
-	if err != nil || len(decoded) == 0 || len(decoded) > MaxOutputBytes {
-		return nil, "", &ProviderError{Code: "image_bytes_invalid"}
-	}
-	mediaType := detectImageMediaType(decoded)
-	if mediaType == "" {
-		return nil, "", &ProviderError{Code: "image_media_type_invalid"}
-	}
-	return decoded, mediaType, nil
 }
 
 func protocolErrorCode(err error) string {

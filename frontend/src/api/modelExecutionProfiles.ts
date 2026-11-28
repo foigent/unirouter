@@ -58,7 +58,7 @@ export type ModelExecutionProfile = {
   operation_policy_profile?: string;
   provider: string;
   region: string;
-  api_surface: 'openai_chat_completions' | 'openai_responses' | 'anthropic_messages';
+  api_surface: 'openai_chat_completions' | 'openai_responses' | 'anthropic_messages' | 'openai_images';
   operations: CanonicalModelOperationID[];
   endpoint_classes: string[];
   upstream_model_ids: string[];
@@ -79,7 +79,7 @@ export type ModelExecutionProfile = {
   evidence_refs: string[];
 };
 
-type CanonicalModelOperationID = 'openai.chat_completions.v1' | 'openai.responses.v1' | 'anthropic.messages.v1';
+type CanonicalModelOperationID = 'openai.chat_completions.v1' | 'openai.responses.v1' | 'anthropic.messages.v1' | 'unirouter.media_jobs.v1';
 
 export type ModelExecutionProfileCatalog = {
   contract_version: 'unirouter.model-execution-profiles.v1';

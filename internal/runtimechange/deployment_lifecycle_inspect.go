@@ -264,7 +264,7 @@ SELECT deployment.public_model_id,deployment.id,operation.operation_id,
    AND operation.support_state='enabled'
    AND operation.operation_id IN (
        'openai.chat_completions.v1','openai.embeddings.v1',
-       'openai.responses.v1','anthropic.messages.v1')
+       'openai.responses.v1','anthropic.messages.v1','unirouter.media_jobs.v1')
    AND (operation.operation_id IN ('openai.chat_completions.v1','openai.embeddings.v1')
         OR COALESCE(qualification.qualified,FALSE))
  ORDER BY deployment.public_model_id,deployment.id,operation.operation_id`, customerOrgID)

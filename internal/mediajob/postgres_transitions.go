@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/uniroute/unirouter/internal/endpointprotocol"
 )
 
 func getJobTx(
@@ -53,7 +55,7 @@ func (s *PostgresStore) RequestCancellation(
 	outcome := "requested"
 	wasTerminal := job.Terminal()
 	switch {
-	case job.Lifecycle.Outcome == OutcomeSucceeded:
+	case job.Lifecycle.Outcome == OutcomeSucceeded || (job.providerTaskID != "" && !job.Terminal()):
 		outcome = CancellationTooLate
 		_, err = tx.Exec(ctx, `
 			UPDATE async_media_jobs
@@ -143,11 +145,28 @@ func (s *PostgresStore) Claim(
 	}
 	defer tx.Rollback(ctx)
 
-	// Once provider dispatch has begun, an expired lease has an ambiguous
-	// provider outcome. It must never be reclaimed for another provider call.
+	// A bound task can be queried after lease loss. Its read deadline is
+	// separate from the deadline for a request that has not been submitted.
 	var terminalJobs []sourceTerminalJob
 	err = s.updateTerminalJobs(ctx, tx, &terminalJobs, `
-		UPDATE async_media_jobs
+		UPDATE async_media_jobs j
+		   SET queue_state='terminal',lease_state='released',execution_state='terminal',
+		       provider_outcome='unknown',object_state='not_created',settlement_state='not_eligible',
+		       request_ciphertext=NULL,lease_owner='',lease_expires_at=NULL,
+		       cancellation_state=CASE WHEN cancellation_state='requested' THEN 'indeterminate' ELSE cancellation_state END,
+		       terminal_at=$1,updated_at=$1,error_code='provider_task_read_deadline_expired'
+		 WHERE provider_outcome='pending' AND execution_state<>'terminal'
+		   AND (queue_state='queued' OR lease_expires_at<=$1)
+		   AND to_jsonb(j)->>'provider_task_id' IS NOT NULL
+		   AND (to_jsonb(j)->>'provider_task_read_until')::timestamptz<=$1`, now)
+	if err != nil {
+		return nil, fmt.Errorf("mediajob: expire accepted task: %w", err)
+	}
+
+	// Once provider dispatch has begun, an expired lease has an ambiguous
+	// provider outcome. It must never be reclaimed for another provider call.
+	err = s.updateTerminalJobs(ctx, tx, &terminalJobs, `
+		UPDATE async_media_jobs j
 		   SET queue_state='terminal', lease_state='released',
 		       execution_state='terminal', provider_outcome='unknown',
 		       cancellation_state=CASE
@@ -159,7 +178,8 @@ func (s *PostgresStore) Claim(
 		       terminal_at=$1, updated_at=$1,
 		       error_code='provider_outcome_unknown_after_lease_expiry'
 		 WHERE queue_state='leased' AND lease_expires_at <= $1
-		   AND execution_state='running' AND provider_outcome='pending'`,
+		   AND execution_state='running' AND provider_outcome='pending'
+		   AND to_jsonb(j)->>'provider_task_id' IS NULL`,
 		now,
 	)
 	if err != nil {
@@ -197,12 +217,16 @@ func (s *PostgresStore) Claim(
 		 WHERE queue_state='leased' AND lease_expires_at <= $1
 		   AND cancellation_state='not_requested'
 		   AND provider_outcome='pending'
-		   AND attempt >= max_attempts AND execution_state <> 'terminal'`,
+		   AND attempt >= max_attempts AND execution_state <> 'terminal'
+		   AND to_jsonb(async_media_jobs)->>'provider_task_id' IS NULL`,
 		now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("mediajob: expire exhausted lease: %w", err)
 	}
+	// A single-submit job with known provider success may reclaim once to
+	// read its existing receipt. Claim moves that running row to pending;
+	// an expired pending recovery must become terminal.
 	err = s.updateTerminalJobs(ctx, tx, &terminalJobs, `
 		UPDATE async_media_jobs
 		   SET queue_state='terminal', lease_state='released',
@@ -213,7 +237,8 @@ func (s *PostgresStore) Claim(
 		       error_code='output_recovery_exhausted'
 		 WHERE queue_state='leased' AND lease_expires_at <= $1
 		   AND provider_outcome='succeeded'
-		   AND attempt >= max_attempts AND execution_state <> 'terminal'`,
+		   AND attempt >= max_attempts AND execution_state <> 'terminal'
+		   AND NOT (single_upstream_attempt AND attempt=1 AND execution_state='running')`,
 		now,
 	)
 	if err != nil {
@@ -244,19 +269,27 @@ func (s *PostgresStore) Claim(
 		  FROM async_media_jobs
 		 WHERE (
 		     cancellation_state='not_requested'
+		     OR (cancellation_state='too_late' AND to_jsonb(async_media_jobs)->>'provider_task_id' IS NOT NULL)
 		     OR (
 		       provider_outcome='succeeded'
 		       AND cancellation_state='too_late'
 		     )
 		   )
-		   AND attempt < max_attempts
-		   AND (request_expires_at IS NULL OR request_expires_at > $1 OR provider_outcome='succeeded')
 		   AND (
+		     (provider_outcome='pending' AND execution_state='running'
+		      AND (to_jsonb(async_media_jobs)->>'provider_task_read_until')::timestamptz>$1
+		      AND (to_jsonb(async_media_jobs)->>'provider_status_reads')::int<$2)
+		     OR (
+		      (attempt < max_attempts OR (single_upstream_attempt AND attempt=1 AND provider_outcome='succeeded'))
+		      AND (request_expires_at IS NULL OR request_expires_at > $1 OR provider_outcome='succeeded')
+		      AND (
 		     (provider_outcome='pending' AND execution_state='pending')
 		     OR
 		     (
 		       provider_outcome='succeeded'
 		       AND execution_state IN ('pending','running')
+		     )
+		      )
 		     )
 		   )
 		   AND (
@@ -267,7 +300,7 @@ func (s *PostgresStore) Claim(
 		 ORDER BY next_attempt_at, created_at, job_id
 		 FOR UPDATE SKIP LOCKED
 		 LIMIT 1`,
-		now,
+		now, endpointprotocol.MediaTaskMaxStatusReads,
 	).Scan(&jobID, &scope.OrgID, &scope.ProjectID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		if err := s.publishTerminalJobs(ctx, tx, terminalJobs); err != nil {
@@ -286,7 +319,7 @@ func (s *PostgresStore) Claim(
 	tag, err := tx.Exec(ctx, `
 		UPDATE async_media_jobs
 		   SET queue_state='leased', lease_state='leased',
-		       execution_state='pending', lease_owner=$1,
+		       execution_state=CASE WHEN to_jsonb(async_media_jobs)->>'provider_task_id' IS NULL THEN 'pending' ELSE execution_state END, lease_owner=$1,
 		       lease_fence=lease_fence+1, lease_expires_at=$2,
 		       updated_at=$3
 		 WHERE job_id=$4 AND execution_state <> 'terminal'`,
@@ -404,12 +437,10 @@ func validatePersistedResult(job Job, result PersistedResult) error {
 		result.SizeBytes <= 0 || result.SizeBytes > MaxOutputBytes ||
 		result.PersistedAt.IsZero() ||
 		result.MappedModel == "" ||
-		validateImageOutcome(job.ProfileID, result.MappedModel, result.Outcome) != nil {
+		endpointprotocol.ValidateMediaOutcome(job.ProfileID, result.MappedModel, result.Outcome) != nil {
 		return domainError(ErrInvalid, "persisted_result_invalid")
 	}
-	switch result.MediaType {
-	case "image/png", "image/jpeg", "image/webp":
-	default:
+	if !slices.Contains(jobMediaTypes(job), result.MediaType) {
 		return domainError(ErrInvalid, "persisted_media_type_invalid")
 	}
 	return nil
@@ -735,11 +766,11 @@ func (s *PostgresStore) RequeueRecovery(
 	tag, err := tx.Exec(ctx, `
 		UPDATE async_media_jobs
 		   SET queue_state=CASE
-		         WHEN attempt >= max_attempts THEN 'terminal' ELSE 'queued'
+		         WHEN attempt >= max_attempts AND NOT (single_upstream_attempt AND attempt=1 AND execution_state='running') THEN 'terminal' ELSE 'queued'
 		       END,
 		       lease_state='released',
 		       execution_state=CASE
-		         WHEN attempt >= max_attempts THEN 'terminal' ELSE 'pending'
+		         WHEN attempt >= max_attempts AND NOT (single_upstream_attempt AND attempt=1 AND execution_state='running') THEN 'terminal' ELSE 'pending'
 		       END,
 		       provider_outcome='succeeded',
 		       cancellation_state=CASE
@@ -751,7 +782,7 @@ func (s *PostgresStore) RequeueRecovery(
 		       request_ciphertext=NULL,
 		       lease_owner='', lease_expires_at=NULL,
 		       next_attempt_at=$1, error_code=$3,
-		       terminal_at=CASE WHEN attempt >= max_attempts THEN $2 ELSE NULL END,
+		       terminal_at=CASE WHEN attempt >= max_attempts AND NOT (single_upstream_attempt AND attempt=1 AND execution_state='running') THEN $2 ELSE NULL END,
 		       updated_at=$2
 		 WHERE job_id=$4 AND org_id=$5 AND project_id=$6
 		   AND lease_owner=$7 AND lease_fence=$8

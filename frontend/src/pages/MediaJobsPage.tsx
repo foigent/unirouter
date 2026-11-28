@@ -48,7 +48,7 @@ interface Lifecycle {
 
 interface UnitObservation {
   class: string;
-  quantity: string;
+  quantity?: string | null;
   authority: string;
   finality: string;
   charge_state: string;
@@ -89,8 +89,7 @@ interface MediaJob {
     fact_id: string;
     trigger: string;
     amount_state: string;
-    amount_micros?: number;
-    units: UnitObservation[];
+    units?: UnitObservation[] | null;
     recorded_at: string;
   };
   error_code?: string;
@@ -109,6 +108,61 @@ interface RuntimeContract {
   admission_enabled: boolean;
   charge_trigger: string;
   amount_state: string;
+}
+
+type OutputKind = 'image' | 'video' | 'audio' | 'text';
+type OutputPreview = { target: string } & (
+  { kind: 'image' | 'video' | 'audio'; url: string } | { kind: 'text'; text: string }
+);
+
+const binaryPreviewLimit = 32 * 1024 * 1024;
+const transcriptPreviewLimit = 1024 * 1024;
+const outputKinds = new Map<string, OutputKind>([
+  ['image/png', 'image'],
+  ['image/jpeg', 'image'],
+  ['image/webp', 'image'],
+  ['video/mp4', 'video'],
+  ['audio/mpeg', 'audio'],
+  ['audio/wav', 'audio'],
+  ['text/plain', 'text'],
+]);
+
+const mediaOperationLabels = new Map<string, MessageKey>([
+  ['text_to_image', '文生图'],
+  ['text_to_video', '文生视频'],
+  ['image_to_text', '图片文字识别（OCR）'],
+  ['speech_to_text', '语音转写'],
+  ['text_to_speech', '语音合成'],
+]);
+
+// These labels follow the media charge contract.
+const mediaUnitLabels = new Map<string, { label: MessageKey; unit?: MessageKey }>([
+  ['input_tokens', { label: '输入总 Token' }],
+  ['input_text_tokens', { label: '输入文本 Token' }],
+  ['input_image_tokens', { label: '输入图像 Token' }],
+  ['input_audio_tokens', { label: '输入音频 Token' }],
+  ['output_tokens', { label: '输出总 Token' }],
+  ['output_image_tokens', { label: '输出图像 Token' }],
+  ['input_images', { label: '输入图片数' }],
+  ['output_images', { label: '输出图片数' }],
+  ['input_video_milliseconds', { label: '输入视频时长', unit: '毫秒' }],
+  ['output_video_milliseconds', { label: '输出视频时长', unit: '毫秒' }],
+  ['input_audio_milliseconds', { label: '输入音频时长', unit: '毫秒' }],
+  ['input_billable_characters', { label: '计价输入字符数' }],
+  ['recognized_pages', { label: '识别页数' }],
+]);
+
+function formatMediaQuantity(raw: UnitObservation['quantity'], locale: string) {
+  if (typeof raw !== 'string' || !/^(0|[1-9][0-9]{0,18})$/.test(raw)) return null;
+  const quantity = BigInt(raw);
+  return quantity <= 9_223_372_036_854_775_807n ? quantity.toLocaleString(locale) : null;
+}
+
+function outputMediaType(value?: string) {
+  const mediaType = value?.trim().toLowerCase() || '';
+  return /^text\/plain\s*;\s*charset\s*=\s*(?:utf-8|"utf-8")$/.test(mediaType)
+    ? 'text/plain'
+    : mediaType;
 }
 
 function responseData<T>(value: unknown): T[] {
@@ -140,7 +194,7 @@ function outputReadable(job: MediaJob, nowMilliseconds: number) {
 }
 
 export default function MediaJobsPage() {
-  useI18n();
+  const { locale } = useI18n();
   const user = useAuthStore((state) => state.user);
   const organizationRole = organizationRoleForUser(user);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -151,7 +205,7 @@ export default function MediaJobsPage() {
   const [selectedID, setSelectedID] = useState('');
   const [loading, setLoading] = useState(false);
   const [contentLoading, setContentLoading] = useState(false);
-  const [outputURL, setOutputURL] = useState('');
+  const [outputPreview, setOutputPreview] = useState<OutputPreview | null>(null);
   const [error, setError] = useState<{ key: MessageKey; status?: number; detail?: string } | null>(null);
   const [clock, setClock] = useState(() => Date.now());
   const selected = useMemo(
@@ -159,6 +213,9 @@ export default function MediaJobsPage() {
       || jobs.find((job) => job.scope.project_id === projectID) || null,
     [jobs, selectedID, projectID],
   );
+  const operationLabel = mediaOperationLabels.get(selected?.operation ?? '');
+  const chargeFact = selected?.charge_fact;
+  const observedUnits = chargeFact?.units ?? [];
   const selectedProject = projects.find((project) => project.id === projectID);
   const selectedProjectMembershipRole = canonicalProjectMembershipRole(selectedProject?.current_user_membership_role);
   const selectedProjectAuthz = authzContextForUser(user, selectedProjectMembershipRole, true);
@@ -169,6 +226,18 @@ export default function MediaJobsPage() {
   currentProjectID.current = projectID;
   const canCancel = canInvokeProject(selectedProjectAuthz) && selected?.lifecycle.execution !== 'terminal';
   const selectedOutputReadable = Boolean(selected && outputReadable(selected, clock));
+  const output = selected?.output;
+  const mediaType = outputMediaType(output?.media_type);
+  const outputKind = outputKinds.get(mediaType);
+  const outputSize = output?.size_bytes ?? 0;
+  const previewLimit = outputKind === 'text' ? transcriptPreviewLimit : binaryPreviewLimit;
+  const previewSupported = Boolean(outputKind && Number.isSafeInteger(outputSize) && outputSize > 0 && outputSize <= previewLimit);
+  const previewTarget = selected && output && selectedOutputReadable && previewSupported
+    ? JSON.stringify([selected.scope.org_id, selected.scope.project_id, selected.job_id, output.content_sha256, output.expires_at, mediaType, outputSize])
+    : '';
+  const currentPreviewTarget = useRef(previewTarget);
+  currentPreviewTarget.current = previewTarget;
+  const preview = previewTarget && outputPreview?.target === previewTarget ? outputPreview : null;
   const nextOutputExpiry = useMemo(() => {
     const futureExpiries = jobs
       .map((job) => Date.parse(job.output?.expires_at || ''))
@@ -181,7 +250,7 @@ export default function MediaJobsPage() {
     setContentLoading(false);
     if (outputURLRef.current) URL.revokeObjectURL(outputURLRef.current);
     outputURLRef.current = '';
-    setOutputURL('');
+    setOutputPreview(null);
   }, []);
 
   const loadJobs = useCallback(async (silent = false) => {
@@ -194,7 +263,8 @@ export default function MediaJobsPage() {
         api.getMediaJobs(selectedProject.id, selectedProject.org_id),
       ]);
       if (version !== jobsRequestVersion.current || currentProjectID.current !== selectedProject.id) return;
-      const data = responseData<MediaJob>(nextJobs);
+      const data = responseData<MediaJob>(nextJobs).filter(job =>
+        job.scope.org_id === selectedProject.org_id && job.scope.project_id === selectedProject.id);
       setContract(nextContract as RuntimeContract);
       setJobs(data);
       setClock(Date.now());
@@ -206,7 +276,7 @@ export default function MediaJobsPage() {
       if (version !== jobsRequestVersion.current || currentProjectID.current !== selectedProject.id) return;
       setError(loadError instanceof ApiError
         ? { key: '任务读取失败', status: loadError.status, detail: loadError.message }
-        : { key: '暂时无法读取图像任务。' });
+        : { key: '暂时无法读取任务。' });
       if (!silent) {
         setContract(null);
         setJobs([]);
@@ -271,9 +341,7 @@ export default function MediaJobsPage() {
     return () => window.clearTimeout(timer);
   }, [clock, nextOutputExpiry]);
 
-  useEffect(() => {
-    if (!selectedOutputReadable) clearOutput();
-  }, [clearOutput, selected?.job_id, selectedOutputReadable]);
+  useEffect(() => { clearOutput(); }, [clearOutput, previewTarget]);
 
   useEffect(() => {
     if (!selectedProject || !jobs.some((job) => job.lifecycle.execution !== 'terminal')) return undefined;
@@ -298,9 +366,12 @@ export default function MediaJobsPage() {
   };
 
   const loadOutput = async () => {
-    if (!selected?.output || !selectedProject || !selectedOutputReadable) return;
+    if (!selected || !selectedProject || !outputKind || !previewTarget || !outputReadable(selected, Date.now())) return;
     clearOutput();
     const version = outputRequestVersion.current;
+    const isCurrent = () => version === outputRequestVersion.current &&
+      currentPreviewTarget.current === previewTarget && outputReadable(selected, Date.now());
+    setError(null);
     setContentLoading(true);
     try {
       const blob = await api.getMediaJobContent(
@@ -308,15 +379,24 @@ export default function MediaJobsPage() {
         selectedProject.id,
         selectedProject.org_id,
       );
-      if (version !== outputRequestVersion.current) return;
-      const nextURL = URL.createObjectURL(blob as Blob);
-      outputURLRef.current = nextURL;
-      setOutputURL(nextURL);
+      if (!isCurrent()) return;
+      if (outputMediaType(blob.type) !== mediaType || blob.size !== outputSize) {
+        setError({ key: '输出内容与任务记录不符，无法预览。' });
+        return;
+      }
+      if (outputKind === 'text') {
+        const text = new TextDecoder('utf-8', { fatal: true }).decode(await blob.arrayBuffer());
+        if (isCurrent()) setOutputPreview({ target: previewTarget, kind: 'text', text });
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      outputURLRef.current = url;
+      setOutputPreview({ target: previewTarget, kind: outputKind, url });
     } catch (contentError) {
-      if (version !== outputRequestVersion.current) return;
+      if (!isCurrent()) return;
       setError(contentError instanceof ApiError
-        ? { key: '输出读取失败', status: contentError.status, detail: contentError.message }
-        : { key: '暂时无法读取图像输出。' });
+        ? { key: '输出读取失败', status: contentError.status }
+        : { key: '暂时无法预览任务输出。' });
     } finally {
       if (version === outputRequestVersion.current) setContentLoading(false);
     }
@@ -369,7 +449,7 @@ export default function MediaJobsPage() {
       <PageHeader
         eyebrow={t("监控与用量")}
         title={t("异步模型任务")}
-        description={t("异步模型执行的统一工作区；当前仅实现 Image V1 Endpoint Profile，不代表文字、语音或视频任务已经可用。右侧检查器始终可见。")}
+        description={t("查看当前项目的异步任务、执行状态和已保留的输出。")}
         actions={(
           <Space>
             <Select
@@ -380,7 +460,10 @@ export default function MediaJobsPage() {
               placeholder={t("选择项目")}
               style={{ width: 220 }}
               optionList={projects.map(projectOption)}
-              onChange={(value) => setProjectID(Number(value))}
+              onChange={(value) => {
+                clearOutput();
+                setProjectID(Number(value));
+              }}
             />
             <Button onClick={() => loadJobs()} loading={loading}>{t("刷新")}</Button>
           </Space>
@@ -391,7 +474,7 @@ export default function MediaJobsPage() {
       {contract && !contract.runtime_enabled && (
         <Banner
           type="warning"
-          description={t("当前部署未启用 Image V1 异步任务 worker 与对象存储；仅任务元数据和合同证据可读取。")}
+          description={t("当前部署未启用异步任务运行时。")}
           closeIcon={null}
         />
       )}
@@ -475,6 +558,7 @@ export default function MediaJobsPage() {
                 data={[
                   { key: t("任务 ID"), value: selected.job_id },
                   { key: t("请求 ID"), value: selected.request_id },
+                  { key: t("任务类型"), value: operationLabel ? t(operationLabel) : selected.operation || '—' },
                   { key: t("请求模型"), value: selected.requested_model },
                   { key: t("路由模型"), value: selected.routing_model },
                   { key: t("供应商模型"), value: selected.mapped_model || '—' },
@@ -511,44 +595,67 @@ export default function MediaJobsPage() {
                         { key: t("清除"), value: displayTime(selected.output.purged_at) },
                       ]}
                     />
-                    {selectedOutputReadable && (
+                    {previewTarget && (
                       <Button loading={contentLoading} onClick={loadOutput}>{t("鉴权查看输出")}</Button>
                     )}
-                    {outputURL && (
-                      <img className="ur-media-output" src={outputURL} alt={t('任务 {id} 的图像输出', { id: selected.job_id })} />
+                    {selectedOutputReadable && !previewSupported && (
+                      <Text type="tertiary">{t("暂不支持预览此输出类型或大小。")}</Text>
+                    )}
+                    {preview?.kind === 'image' && (
+                      <img className="ur-media-output" src={preview.url} alt={t('任务 {id} 的图像输出', { id: selected.job_id })} />
+                    )}
+                    {preview?.kind === 'video' && (
+                      <video className="ur-media-output" controls playsInline preload="metadata" src={preview.url}
+                        aria-label={t('任务 {id} 的视频输出', { id: selected.job_id })} />
+                    )}
+                    {preview?.kind === 'audio' && (
+                      <audio className="ur-media-output" controls preload="metadata" src={preview.url}
+                        aria-label={t('任务 {id} 的音频输出', { id: selected.job_id })} />
+                    )}
+                    {preview?.kind === 'text' && (
+                      <pre className="ur-media-transcript" aria-label={t('任务 {id} 的转写文本', { id: selected.job_id })}>{preview.text}</pre>
                     )}
                   </>
                 ) : <Text type="tertiary">{t("尚无持久化输出。")}</Text>}
               </section>
 
-              <section className="ur-media-detail-section">
-                <Title heading={6}>{t("计费事实")}</Title>
-                {selected.charge_fact ? (
+              <section className="ur-media-detail-section" aria-labelledby="ur-media-charge-heading">
+                <Title id="ur-media-charge-heading" heading={6}>{t("计费事实")}</Title>
+                {chargeFact ? (
                   <>
-                    <Banner
-                      type="info"
-                      description={t("已记录收费资格事实，但当前媒体价格表尚未冻结，因此没有扣减钱包或推断金额。")}
-                      closeIcon={null}
-                    />
                     <Descriptions
                       align="left"
                       size="small"
                       data={[
-                        { key: t("事实 ID"), value: selected.charge_fact.fact_id },
-                        { key: t("金额状态"), value: selected.charge_fact.amount_state },
-                        { key: t("记录时间"), value: displayTime(selected.charge_fact.recorded_at) },
+                        { key: t("事实 ID"), value: chargeFact.fact_id },
+                        { key: t("计价状态"), value: t(chargeFact.amount_state === 'pricing_pending_media_rate_card'
+                          ? '待媒体价目表' : '计价状态未确认') },
+                        { key: t("事实依据"), value: t(chargeFact.trigger === 'provider_terminal_success_and_output_persisted'
+                          ? '供应商终态成功且输出已保存' : '事实依据未确认') },
+                        { key: t("记录时间"), value: displayTime(chargeFact.recorded_at) },
                       ]}
                     />
-                    <div className="ur-media-units">
-                      {selected.charge_fact.units.map((unit) => (
-                        <div key={unit.class}>
-                          <span>{unit.class}</span>
-                          <strong>{unit.quantity}</strong>
-                        </div>
-                      ))}
-                    </div>
+                    {observedUnits.length > 0 ? (
+                      <div className="ur-media-units" aria-label={t("已记录用量")}>
+                        {observedUnits.map(unit => {
+                          const display = mediaUnitLabels.get(unit.class);
+                          const quantity = formatMediaQuantity(unit.quantity, locale);
+                          return (
+                            <div key={unit.class}>
+                              <span>{t(display?.label ?? '未识别的计量项')}</span>
+                              <strong>{quantity === null ? t("用量未记录") : (
+                                display?.unit ? `${quantity} ${t(display.unit)}` : quantity
+                              )}</strong>
+                              <span>{t("计量来源：{source}", {
+                                source: t(unit.authority === 'provider_reported' ? '供应商报告' : '未确认'),
+                              })}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : <Text type="tertiary">{t("用量未记录")}</Text>}
                   </>
-                ) : <Text type="tertiary">{t("只有供应商终态成功且输出已持久化，才会记录事实。")}</Text>}
+                ) : <Text type="tertiary">{t("暂无计费事实")}</Text>}
               </section>
             </>
           )}

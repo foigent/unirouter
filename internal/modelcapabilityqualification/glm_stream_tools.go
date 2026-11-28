@@ -57,7 +57,8 @@ func ValidateOpenAIChatStreamFunctionToolsForBinding(b Binding, contentType stri
 		if err := b.validateDataDefinition(); err != nil {
 			return OpenAIChatFunctionToolsObservation{}, invalidOpenAIChatFunctionTools("probe_contract", err)
 		}
-		observation, err := validateChatStreamFunctionTools(b, contentType, reader, b.ProbeContractID == MiniMaxM3StreamFunctionToolsProbeContractID)
+		legacyEmbedded := b.ProbeContractID == MiniMaxM3StreamFunctionToolsProbeContractID && b.ProbeContractVersion == "1.0.0"
+		observation, err := validateChatStreamFunctionTools(b, contentType, reader, legacyEmbedded)
 		if err == nil && (b.ProbeContractID == QwenProviderCompletionProbeContractID || b.ProbeContractID == DeepSeekProviderCompletionProbeContractID) && observation.CompletionTokens > 2048 {
 			return observation, invalidOpenAIChatFunctionTools("usage", fmt.Errorf("provider completion exceeds probe contract"))
 		}

@@ -41,7 +41,7 @@ func TestDeepSeekProviderCompletionBundleBindingsAndStrictProbe(t *testing.T) {
 		require.Equal(t, row.ProbeContractVersion, selector.Final.ProbeContractVersion)
 		b, e := BindDefinition(Binding{OperationID: row.OperationID, CapabilityID: row.CapabilityID, ExecutionProfileID: row.ExecutionProfileID, ExecutionProfileVersion: row.ExecutionProfileVersion, ProtocolProfileID: row.ProtocolProfileID, ProtocolProfileVersion: row.ProtocolProfileVersion, ProbeContractID: row.ProbeContractID, ProbeContractVersion: row.ProbeContractVersion, ExpectedProvider: row.ExpectedProvider, ExpectedUpstreamModel: row.ExpectedUpstreamModel, PublicPath: row.PublicPath}, d)
 		require.NoError(t, e)
-		group, e := SharedStreamProbeContract(b)
+		group, e := SharedProbeContract(b)
 		require.NoError(t, e)
 		require.Equal(t, DeepSeekProviderCompletionProbeContractID+"@1.0.0", group)
 		request, e := BuildOpenAIChatFunctionToolsProbeRequest(b)

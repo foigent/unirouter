@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/executionevidence"
+	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/modelqualification"
 	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/runtimegeneration"
@@ -73,7 +74,7 @@ func (c *Coordinator) AuthorizePublic(
 	if c == nil || c.database == nil || c.ledger == nil || c.newToken == nil {
 		return Decision{}, ErrUnavailable
 	}
-	if !modelqualification.IsQualificationRequired(plan.ModelOperationID) || route.PublicEvidence == nil {
+	if !modelqualification.IsQualificationRequired(plan.ModelOperationID) || plan.ModelOperationID == string(modeloperation.IDMediaJobs) || route.PublicEvidence == nil {
 		return Decision{}, fmt.Errorf("%w: public M77 execution authority required", ErrInvalid)
 	}
 	request, err := preparePublicRequest(plan, route, identity)
@@ -87,6 +88,25 @@ func (c *Coordinator) AuthorizePublic(
 	return runBoundedTransaction(ctx, func(operationCtx context.Context) (Decision, transactionRetry, error) {
 		return c.authorizePublicOnce(operationCtx, request)
 	})
+}
+
+// RevalidateMediaJobRoute performs the common canonical route checks inside
+// the transaction that owns the media job lease. It never opens a token
+// attempt or grants a second dispatch owner.
+func (c *Coordinator) RevalidateMediaJobRoute(ctx context.Context, tx pgx.Tx, plan modelrouting.Plan, route modelrouting.Route, identity AttemptIdentity) (Status, error) {
+	if c == nil || tx == nil || plan.ModelOperationID != string(modeloperation.IDMediaJobs) ||
+		identity.Endpoint != modeloperation.PathMediaJobs || route.RequiresProbe {
+		return "", ErrInvalid
+	}
+	request, err := preparePublicRequest(plan, route, identity)
+	if err != nil {
+		return "", err
+	}
+	if !request.usesLockedPublicDispatch() {
+		return "", ErrInvalid
+	}
+	result, err := c.revalidateAndClaim(ctx, tx, request)
+	return result.status, err
 }
 
 // authorizePublicOnce keeps the exact attempt-first M77 transaction contract

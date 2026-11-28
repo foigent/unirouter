@@ -4,6 +4,64 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.17.0] - 2026-11-27
+
+- Add an exact non-streaming Responses tool protocol in M132 and a V2 capability
+  Bundle for GPT-6.2 Astra and Sol and Claude 5.5 Opus, Sonnet and Haiku.
+  A shared Probe verifies one client function call and its result continuation.
+- Qualify one bounded inline JPEG on successors of those native Profiles in
+  M134. A qualified release can serve text, tools, or an inline JPEG under the
+  same public model. Image requests cannot include tools.
+- Let non-streaming Responses and Messages callers opt into one upstream POST
+  using the existing attempt header. The opt-in participates in idempotency.
+- Add a versioned Kimi Chat usage contract for separate cache reads and
+  writes. K3.1 Pro and Highspeed have independent capability bundles. K3
+  has a successor definition for the same upstream ID.
+- Add one text-to-video route for Beijing DashScope Wan 3.0. Project jobs and
+  operation probes persist the accepted supplier task and recover by reading
+  that same task without repeating the submission.
+- Add separate answer and reasoning limits for Beijing DashScope Qwen3.8 27B
+  and 2.4T A95B, with independent tool qualifications and an authoritative
+  completion partition check. Streaming on these two Profiles releases frames
+  after terminal usage has been verified.
+- Add model-specific Chat capability bundles for GLM-5.3 Flash, FlashX
+  and FlashX-Legal, Kimi K2.7 Code Highspeed, MiMo V2.6, MiniMax M3.1 Flash,
+  Qwen4-Max and Qwen3.8-Flash. Reuse grouped probes within each exact model.
+- Add exact text Chat connectivity definitions for Gemini 4 Hydrogen and Neon,
+  Gemini 3.8 Flash, Hunyuan HY4 and HY4 Flash, Grok 4.7 legacy Chat,
+  Doubao Seed 2.1 Pro and Lite, and GPT-6.2 Astra and Sol. Share one
+  non-streaming reasoning probe where the provider documents the evidence.
+- Add a DeepSeek Flash Chat profile for one inline JPEG with a non-thinking text response.
+  Its image-understanding probe checks a synthetic image, exact model identity
+  and provider usage before separate production qualification.
+- Add bounded inline JPEG Chat profiles for exact Kimi, MiniMax, GLM, Qwen
+  and MiMo models. They share the pixel challenge and keep each provider's
+  request, reasoning and usage contract.
+- Qualify bounded inline Chat media through exact published profiles. Beijing
+  Omni Flash returns text for a single JPEG, PCM WAV or short MP4. Beijing
+  Qwen3.8 27B accepts JPEG and MP4 with thinking disabled. Qwen4 Max and
+  Qwen3.8 Flash support bounded MP4 in the same mode. MiMo V2.6 Flash, Pro
+  and Pro Ultraspeed share JPEG, WAV and MP4 probe mechanics. Kimi K3 and K3.1
+  Pro and MiniMax M3.1 Flash share the MP4 challenge. GLM-5.3 Flash and FlashX
+  accept a single inline UTF-8 text file or a credential-free public HTTPS MP4
+  reference. Their video probe uses the sample at the exact release commit.
+  The probes verify the actual media
+  response and the exact provider usage contract.
+- Preserve the authenticated project key identity when freezing Chat usage so
+  the reservation and completed-execution feed share the same request scope.
+- Enable project image jobs on canonically published releases for GPT Image
+  Flare, Beijing Qwen Image 3.0 and Pro, and MiniMax China H3-Image. Dispatch
+  checks authorization and the accepted release and provider credential.
+  The project can recover the original job and download its output privately.
+- Let asynchronous image callers opt into one upstream submission for their
+  job. Canonical submissions require this opt-in. The accepted job binds it to
+  its idempotency identity and recovers an existing result without submitting again.
+- Add an opt-in media charge stream for X-Insight with provider-supplied
+  units and pricing state for existing image jobs. Project-scoped UR content
+  delivery remains independent of this metadata stream.
+- Reconcile Grok 4.7 Chat's separate visible and reasoning output counters
+  once before settlement, using its versioned usage profile.
+
 ## [1.16.0] - 2026-11-25
 
 - Let Chat callers opt into at most one upstream POST. A supporting

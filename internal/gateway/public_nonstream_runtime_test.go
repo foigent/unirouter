@@ -3,23 +3,29 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
 	"github.com/uniroute/unirouter/internal/executionevidence"
 	"github.com/uniroute/unirouter/internal/metering"
+	publication "github.com/uniroute/unirouter/internal/modelcapabilitypublication"
 	"github.com/uniroute/unirouter/internal/modelexecution"
 	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/modelprofile"
@@ -27,6 +33,265 @@ import (
 	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/policybilling"
 )
+
+func TestNativeInlineJPEGUsesTypedCapabilityAndAdmissionBudget(t *testing.T) {
+	rawBundle, err := os.ReadFile("../../capability-bundles/native-responses-messages-client-tools.json")
+	require.NoError(t, err)
+	bundle, err := publication.DecodeBundleV2(rawBundle)
+	require.NoError(t, err)
+	image := testJPEGDataURL(t, 32, 32)
+	for _, raw := range bundle.Definitions {
+		definition, err := modelprofile.DecodeDefinition(raw)
+		require.NoError(t, err)
+		old := definition.Profile()
+		t.Run(old.ID, func(t *testing.T) {
+			profile := old
+			profile.ID += ".inline-jpeg"
+			profile.Capabilities = append(slices.Clone(old.Capabilities), modelprofile.CapabilityVision)
+			identity := endpointprotocol.PublicContractIdentity{ProfileVersion: "1.0.0",
+				ChargeContractVersion: endpointprotocol.PublicCustomerChargeContractV1, IdempotencyContractVersion: endpointprotocol.PublicIdempotencyContractV1}
+			var input []byte
+			if old.APISurface == modelprofile.APISurfaceOpenAIResponses {
+				identity.ModelOperationID, identity.PublicPath = string(modeloperation.IDResponses), modeloperation.PathResponses
+				identity.ProfileID = endpointprotocol.ProfileOpenAIResponsesInlineJPEG
+				identity.ExecutorContractVersion = endpointprotocol.PublicResponsesInlineJPEGExecutorV1
+				identity.DeliveryContractVersion = endpointprotocol.PublicResponsesToolsDeliveryV1
+				input = []byte(fmt.Sprintf(`{"model":"project-vision","max_output_tokens":64,"input":[{"role":"user","content":[{"type":"input_text","text":"count the blocks"},{"type":"input_image","image_url":%q}]}]}`, image))
+			} else {
+				identity.ModelOperationID, identity.PublicPath = string(modeloperation.IDMessages), modeloperation.PathMessages
+				identity.ProfileID = endpointprotocol.ProfileAnthropicMessagesInlineJPEG
+				identity.ExecutorContractVersion = endpointprotocol.PublicMessagesInlineJPEGExecutorV1
+				identity.DeliveryContractVersion = endpointprotocol.PublicAnthropicMessagesToolsDeliveryV1
+				_, data, ok := strings.Cut(image, ",")
+				require.True(t, ok)
+				input = []byte(fmt.Sprintf(`{"model":"project-vision","max_tokens":64,"messages":[{"role":"user","content":[{"type":"text","text":"count the blocks"},{"type":"image","source":{"type":"base64","media_type":"image/jpeg","data":%q}}]}]}`, data))
+			}
+			profile.ProtocolProfile = identity.ProfileID
+			contract, err := publicRequestContractForProfile(profile, identity.ModelOperationID, identity)
+			require.NoError(t, err)
+			codec, err := endpointprotocol.NewPublicNonStreamRegistry().Resolve(identity)
+			require.NoError(t, err)
+			prepared, err := codec.PrepareRequest(input, "project-vision", contract)
+			require.NoError(t, err)
+			requirements, err := publicInvocationCapabilityRequirements(profile, prepared)
+			require.NoError(t, err)
+			require.ElementsMatch(t, []modelrouting.CapabilityRequirement{
+				{CapabilityID: modelprofile.CapabilityVision, Origins: []string{modelrouting.CapabilityOriginExplicitRequest}},
+				{CapabilityID: modelprofile.CapabilityReasoning, Origins: []string{modelrouting.CapabilityOriginProviderDefault}},
+			}, requirements)
+			_, err = publicInvocationCapabilityRequirements(old, prepared)
+			require.ErrorContains(t, err, "inline JPEG capability is not supported")
+			body := prepared.CanonicalBody()
+			require.True(t, json.Valid(body))
+			plain, err := estimateProviderJSONAdmission(body)
+			require.NoError(t, err)
+			bound, err := estimatePublicRequestAdmission(body, prepared.Admission().InlineImagePixels)
+			require.NoError(t, err)
+			require.Equal(t, plain.InputTokens+4*32*32, bound.InputTokens)
+		})
+	}
+}
+
+func TestPublicNonStreamSingleUpstreamAttemptUsesOnePhysicalSend(t *testing.T) {
+	for _, scenario := range []struct {
+		name    string
+		single  bool
+		unknown bool
+		want    int
+	}{
+		{name: "default can switch after known rejection", want: 2},
+		{name: "opt-in stops after known rejection", single: true, want: 1},
+		{name: "opt-in stops on unknown outcome", single: true, unknown: true, want: 1},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			var calls atomic.Int32
+			upstream := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				count := calls.Add(1)
+				_, err := io.ReadAll(r.Body)
+				require.NoError(t, err)
+				if scenario.single {
+					require.Equal(t, 1, r.ProtoMajor)
+				}
+				if count == 1 && scenario.unknown {
+					conn, _, err := w.(http.Hijacker).Hijack()
+					require.NoError(t, err)
+					require.NoError(t, conn.Close())
+					return
+				}
+				if count == 1 {
+					w.WriteHeader(http.StatusServiceUnavailable)
+					return
+				}
+				_, err = io.WriteString(w, publicResponsesProviderBody("accepted second route", ""))
+				require.NoError(t, err)
+			}))
+			upstream.EnableHTTP2 = true
+			upstream.StartTLS()
+			t.Cleanup(upstream.Close)
+			var events []string
+			fixture := newPublicRuntimeFixture(t, &events, 2)
+			for i := range fixture.planner.plan.Routes {
+				fixture.planner.plan.Routes[i].BaseURL = upstream.URL
+			}
+			client := PublicNonStreamHTTPDoer(upstream.Client())
+			if scenario.single {
+				client = newSingleSendProviderClient(upstream.Client().Transport, time.Second)
+			}
+			fixture.orchestrator.doer = publicNonStreamDoerFunc(func(r *http.Request) (*http.Response, error) {
+				require.Equal(t, !scenario.single, r.GetBody != nil)
+				return client.Do(r)
+			})
+			fixture.request.SingleUpstreamAttempt = scenario.single
+			err := fixture.orchestrator.execute(t.Context(), httptest.NewRecorder(), fixture.request)
+			if scenario.single {
+				require.ErrorIs(t, err, errPublicNonStreamUpstreamFailed)
+			} else {
+				require.NoError(t, err)
+			}
+			require.EqualValues(t, scenario.want, calls.Load())
+			require.Len(t, fixture.coordinator.attemptIDs, scenario.want)
+		})
+	}
+}
+
+func TestNativeVisionSameReleaseKeepsTextAndToolContinuation(t *testing.T) {
+	rawBundle, err := os.ReadFile("../../capability-bundles/native-responses-messages-client-tools.json")
+	require.NoError(t, err)
+	bundle, err := publication.DecodeBundleV2(rawBundle)
+	require.NoError(t, err)
+	readFixture := func(t *testing.T, id string) (string, string) {
+		t.Helper()
+		wire, err := os.ReadFile(filepath.Join("../../internal/endpointprotocol/artifacts/fixtures", id+".json"))
+		require.NoError(t, err)
+		var fixture struct {
+			Request  struct{ Body string }
+			Response struct{ Body string }
+		}
+		require.NoError(t, json.Unmarshal(wire, &fixture))
+		return fixture.Request.Body, fixture.Response.Body
+	}
+	for _, raw := range bundle.Definitions {
+		source, err := modelprofile.DecodeDefinition(raw)
+		require.NoError(t, err)
+		profile := source.Profile()
+		t.Run(profile.ID, func(t *testing.T) {
+			responses := profile.APISurface == modelprofile.APISurfaceOpenAIResponses
+			operation, path, requestKey, outputKey := modeloperation.IDResponses, modeloperation.PathResponses, "input", "max_output_tokens"
+			imageFixture, toolsFixture := "openai-responses-inline-jpeg.v1", "openai-responses-text-tools.v3"
+			if !responses {
+				operation, path, requestKey, outputKey = modeloperation.IDMessages, modeloperation.PathMessages, "messages", "max_tokens"
+				imageFixture, toolsFixture = "anthropic-messages-inline-jpeg.v1", "anthropic-messages-text-tools.v3"
+			}
+			profile.ProtocolProfile = endpointprotocol.ProfileOpenAIResponsesInlineJPEG
+			if !responses {
+				profile.ProtocolProfile = endpointprotocol.ProfileAnthropicMessagesInlineJPEG
+			}
+			profile.Version = "1.1.0"
+			profile.Capabilities = append(slices.Clone(profile.Capabilities), modelprofile.CapabilityVision)
+			profile.ProviderCapabilities = append(slices.Clone(profile.ProviderCapabilities), modelprofile.CapabilityVision)
+			definition, err := modelprofile.NewDefinition(profile, source.ProductLineageID(), source.Digest())
+			require.NoError(t, err)
+			var events []string
+			fixture := newPublicRuntimeFixture(t, &events, 1)
+			p := publicRuntimePlanForExecutionProfile(t, 1, profile, operation)
+			p.Definition = definition
+			p.Routes[0].UpstreamModel = profile.UpstreamModelIDs[0]
+			fixture.planner.plan = p
+			fixture.request.Operation, fixture.request.Path = operation, path
+			fixture.request.PublicModel, fixture.request.ResolvedModel = p.PublicModel, p.PublicModel
+			imageRequest, answer := readFixture(t, imageFixture)
+			toolRequest, toolReply := readFixture(t, toolsFixture)
+			bindResponse := func(wire string) string {
+				var response map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal([]byte(wire), &response))
+				response["model"], _ = json.Marshal(p.Routes[0].UpstreamModel)
+				out, err := json.Marshal(response)
+				require.NoError(t, err)
+				return string(out)
+			}
+			var providerCalls int
+			var expectedReply string
+			fixture.orchestrator.doer = publicNonStreamDoerFunc(func(request *http.Request) (*http.Response, error) {
+				providerCalls++
+				require.Equal(t, path, request.URL.Path)
+				var body map[string]json.RawMessage
+				require.NoError(t, json.NewDecoder(request.Body).Decode(&body))
+				require.Equal(t, `"`+p.Routes[0].UpstreamModel+`"`, string(body["model"]))
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(expectedReply))}, nil
+			})
+			run := func(body string, reply string) []byte {
+				t.Helper()
+				var envelope map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal([]byte(body), &envelope))
+				envelope["model"], _ = json.Marshal(p.PublicModel)
+				envelope[outputKey] = json.RawMessage("64")
+				wire, err := json.Marshal(envelope)
+				require.NoError(t, err)
+				fixture.request.Body = wire
+				fixture.request.RequestID = fmt.Sprintf("fixture-native-vision-%d", providerCalls+1)
+				expectedReply = bindResponse(reply)
+				w := httptest.NewRecorder()
+				require.NoError(t, fixture.orchestrator.execute(t.Context(), w, fixture.request))
+				require.Equal(t, http.StatusOK, w.Code)
+				return w.Body.Bytes()
+			}
+			text := `{"input":"Give a short answer."}`
+			if !responses {
+				text = `{"messages":[{"role":"user","content":"Give a short answer."}]}`
+			}
+			run(text, answer)
+			toolDelivery := run(toolRequest, toolReply)
+			var delivery map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(toolDelivery, &delivery))
+			var continuation map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal([]byte(toolRequest), &continuation))
+			if responses {
+				var history []json.RawMessage
+				require.NoError(t, json.Unmarshal(delivery["output"], &history))
+				var callID string
+				for _, item := range history {
+					var fields map[string]json.RawMessage
+					require.NoError(t, json.Unmarshal(item, &fields))
+					if string(fields["type"]) == `"function_call"` {
+						require.NoError(t, json.Unmarshal(fields["call_id"], &callID))
+					}
+				}
+				require.NotEmpty(t, callID)
+				var originalInput string
+				require.NoError(t, json.Unmarshal(continuation[requestKey], &originalInput))
+				firstTurn, err := json.Marshal(map[string]string{"type": "message", "role": "user", "content": originalInput})
+				require.NoError(t, err)
+				history = append([]json.RawMessage{firstTurn}, history...)
+				result, err := json.Marshal(map[string]string{"type": "function_call_output", "call_id": callID, "output": "local fixture result"})
+				require.NoError(t, err)
+				continuation[requestKey], err = json.Marshal(append(history, result))
+				require.NoError(t, err)
+			} else {
+				var history []json.RawMessage
+				require.NoError(t, json.Unmarshal(continuation[requestKey], &history))
+				history = append(history, json.RawMessage(`{"role":"assistant","content":`+string(delivery["content"])+`}`),
+					json.RawMessage(`{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_fixture","content":"local fixture result"}]}`))
+				continuation[requestKey], err = json.Marshal(history)
+				require.NoError(t, err)
+			}
+			second, err := json.Marshal(continuation)
+			require.NoError(t, err)
+			run(string(second), answer)
+			run(imageRequest, answer)
+			require.Equal(t, 4, providerCalls)
+
+			var mixed map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal([]byte(imageRequest), &mixed))
+			mixed["model"], _ = json.Marshal(p.PublicModel)
+			mixed["tools"] = continuation["tools"]
+			fixture.request.Body, err = json.Marshal(mixed)
+			require.NoError(t, err)
+			err = fixture.orchestrator.execute(t.Context(), httptest.NewRecorder(), fixture.request)
+			require.ErrorContains(t, err, "tools_with_inline_jpeg_unsupported")
+			require.Equal(t, 4, providerCalls)
+		})
+	}
+}
 
 type publicRuntimePlanner struct {
 	events       *[]string
@@ -51,10 +316,13 @@ func (planner *publicRuntimePlanner) Plan(_ context.Context, request modelroutin
 	plan := planner.plan
 	if request.DeriveInvocationCapabilities != nil {
 		profile, ok := modelprofile.Lookup(plan.ExecutionProfileID, plan.ExecutionProfileVersion)
+		if plan.Definition.Digest() != "" {
+			profile, ok = plan.Definition.Profile(), true
+		}
 		if !ok {
 			return modelrouting.Plan{}, errors.New("public planner fixture profile is unavailable")
 		}
-		requirements, err := request.DeriveInvocationCapabilities(profile, modelprofile.Definition{})
+		requirements, err := request.DeriveInvocationCapabilities(profile, plan.Definition)
 		if err != nil {
 			return modelrouting.Plan{}, err
 		}
@@ -1227,6 +1495,12 @@ func publicRuntimePlanForProfileOperation(
 	if !ok {
 		t.Fatalf("profile %s@%s is unavailable", executionProfileID, executionProfileVersion)
 	}
+	return publicRuntimePlanForExecutionProfile(t, routeCount, profile, operation)
+}
+
+func publicRuntimePlanForExecutionProfile(t *testing.T, routeCount int, profile modelprofile.Profile, operation modeloperation.ID) modelrouting.Plan {
+	t.Helper()
+	executionProfileID, executionProfileVersion := profile.ID, profile.Version
 	binding, err := modelqualification.CompiledBindingFor(
 		string(operation), profile.ProtocolProfile, profile.ProtocolProfileVersion,
 	)
@@ -1290,3 +1564,49 @@ func publicRuntimePlanForProfileOperation(
 }
 
 func strconvItoa(value int) string { return strconv.Itoa(value) }
+
+func TestPublicNativeClientToolProfilesKeepImageInputOutsideTheirContract(t *testing.T) {
+	wire, err := os.ReadFile("../../capability-bundles/native-responses-messages-client-tools.json")
+	require.NoError(t, err)
+	bundle, err := publication.DecodeBundleV2(wire)
+	require.NoError(t, err)
+	require.Len(t, bundle.Definitions, 5)
+	imageURL := testJPEGDataURL(t, 144, 96)
+	registry := endpointprotocol.NewPublicNonStreamRegistry()
+	for _, raw := range bundle.Definitions {
+		definition, err := modelprofile.DecodeDefinition(raw)
+		require.NoError(t, err)
+		p := definition.Profile()
+		t.Run(p.ID, func(t *testing.T) {
+			op := p.Operations[0]
+			binding, err := publicBindingForExecutionProfile(p, op)
+			require.NoError(t, err)
+			identity, err := modelqualification.CompiledPublicBindingFor(binding)
+			require.NoError(t, err)
+			protocol, err := registry.Resolve(identity)
+			require.NoError(t, err)
+			contract, err := publicRequestContractForProfile(p, op, identity)
+			require.NoError(t, err)
+			const public = "friendly-model"
+			var text, withImage string
+			if op == modelprofile.OperationOpenAIResponses {
+				text = `{"model":"friendly-model","max_output_tokens":512,"store":false,"input":"read the color"}`
+				withImage = fmt.Sprintf(`{"model":"friendly-model","max_output_tokens":512,"store":false,"input":[{"role":"user","content":[{"type":"input_text","text":"read the color"},{"type":"input_image","image_url":%q}]}]}`, imageURL)
+			} else {
+				const controls = `{"model":"friendly-model","max_tokens":512,"tools":[{"name":"lookup","description":"A local lookup.","input_schema":{"type":"object","properties":{"key":{"type":"string"}},"required":["key"]}}],"tool_choice":{"type":"auto"},`
+				text = controls + `"messages":[{"role":"user","content":"read the color"}]}`
+				withImage = controls + fmt.Sprintf(`"messages":[{"role":"user","content":[{"type":"text","text":"read the color"},{"type":"image","source":{"type":"base64","media_type":"image/jpeg","data":%q}}]}]}`,
+					strings.TrimPrefix(imageURL, "data:image/jpeg;base64,"))
+			}
+			_, err = protocol.PrepareRequest([]byte(text), public, contract)
+			require.NoError(t, err, "text on the very same route must still work")
+			_, err = protocol.PrepareRequest([]byte(withImage), public, contract)
+			if op == modelprofile.OperationOpenAIResponses {
+				require.ErrorIs(t, err, endpointprotocol.ErrUnsupportedSemantics)
+			} else {
+				require.ErrorIs(t, err, endpointprotocol.ErrInvalidRequest)
+				require.ErrorContains(t, err, "tool_result_without_tool_use")
+			}
+		})
+	}
+}

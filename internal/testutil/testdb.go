@@ -148,6 +148,21 @@ func PreRetirementLedger(t *testing.T) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(ledger) > 0 && ledger[len(ledger)-1] == schemaauthority.AsyncMediaProviderTaskHead {
+		ledger = ledger[:len(ledger)-1]
+	}
+	if len(ledger) > 0 && ledger[len(ledger)-1] == schemaauthority.CanonicalMediaJobHead {
+		ledger = ledger[:len(ledger)-1]
+	}
+	if len(ledger) > 0 && ledger[len(ledger)-1] == schemaauthority.NativeInlineJPEGHead {
+		ledger = ledger[:len(ledger)-1]
+	}
+	if len(ledger) > 0 && ledger[len(ledger)-1] == schemaauthority.MediaChargeSourceHead {
+		ledger = ledger[:len(ledger)-1]
+	}
+	if len(ledger) > 0 && ledger[len(ledger)-1] == schemaauthority.OpenAIResponsesToolsHead {
+		ledger = ledger[:len(ledger)-1]
+	}
 	if len(ledger) > 0 && ledger[len(ledger)-1] == schemaauthority.CustomerStandardPricingHead {
 		ledger = ledger[:len(ledger)-1]
 	}
@@ -453,7 +468,7 @@ func runStrictTestArtifactInstallThrough(ctx context.Context, pool *pgxpool.Pool
 			return err
 		}
 	}
-	if ceiling == schemaauthority.CommercialLicenseRetirementHead || ceiling == schemaauthority.XInsightCommunicationHead || (ceiling == schemaauthority.UpstreamReleaseObservationHead || ceiling == schemaauthority.UpstreamObservationRestoreHead || ceiling == schemaauthority.UpgradeAdmissionRecoveryHead) {
+	if ceiling == schemaauthority.CommercialLicenseRetirementHead || ceiling == schemaauthority.XInsightCommunicationHead || (ceiling == schemaauthority.UpstreamReleaseObservationHead || ceiling == schemaauthority.UpstreamObservationRestoreHead || ceiling == schemaauthority.UpgradeAdmissionRecoveryHead || ceiling == schemaauthority.CustomerStandardPricingHead || ceiling == schemaauthority.OpenAIResponsesToolsHead) {
 		if err := migrate.RunExistingThrough(ctx, pool, migrationsDir, ceiling); err != nil {
 			return err
 		}

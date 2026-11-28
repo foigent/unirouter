@@ -395,47 +395,16 @@ func (h *Handler) verifyFirstCustomerFreshMigrationCheckpoint(r *http.Request, t
 		{name: "fresh commercial entitlement", query: "SELECT COUNT(*) FROM commercial_license_entitlements", want: 0},
 		{name: "fresh deployment profile", query: "SELECT COUNT(*) FROM deployment_profiles", want: 0},
 		{name: "fresh gateway endpoint", query: "SELECT COUNT(*) FROM gateway_endpoints", want: 0},
-		{name: "fresh compiled execution support", query: `SELECT COUNT(*) FROM model_operation_execution_support_bindings
-			WHERE (operation_id,public_path,protocol_profile_id,protocol_profile_version,
-			       executor_contract_version,introduced_migration) IN (
-			 ('openai.responses.v1','/v1/responses','unirouter.openai.responses.text.v1','1.0.0',
-			  'unirouter.endpoint-profile-nonstream-executor.v1','000075_model_operation_production_qualification'),
-			 ('anthropic.messages.v1','/v1/messages','unirouter.anthropic.messages.text.v1','1.0.0',
-			  'unirouter.endpoint-profile-nonstream-executor.v1','000075_model_operation_production_qualification'),
-			 ('openai.responses.v1','/v1/responses','unirouter.openai.responses.text.v2','1.0.0',
-			  'unirouter.endpoint-profile-responses-dual-executor.v1','000086_exact_public_execution_bindings'),
-			 ('anthropic.messages.v1','/v1/messages','unirouter.anthropic.messages.text.v2','1.0.0',
-			  'unirouter.endpoint-profile-messages-dual-executor.v1','000086_exact_public_execution_bindings'),
-			 ('anthropic.messages.v1','/v1/messages','unirouter.anthropic.messages.text-tools.v3','1.0.0',
-			  'unirouter.endpoint-profile-messages-tools-executor.v1','000087_anthropic_messages_tools_public_binding')
-			)`, want: 5},
-		{name: "fresh compiled execution support count", query: "SELECT COUNT(*) FROM model_operation_execution_support_bindings", want: 5},
-		{name: "fresh public execution extension", query: `SELECT COUNT(*) FROM model_operation_public_execution_contract_extensions
-			WHERE (operation_id,public_path,protocol_profile_id,protocol_profile_version,
-			       executor_contract_version,delivery_contract_version,
-			       charge_contract_version,idempotency_contract_version,introduced_migration) IN (
-			 ('openai.responses.v1','/v1/responses','unirouter.openai.responses.text.v1','1.0.0',
-			  'unirouter.endpoint-profile-nonstream-executor.v1',
-			  'unirouter.public-nonstream-delivery.v1','unirouter.provider-final-token-charge.v1',
-			  'unirouter.public-at-most-once.v1','000077_public_model_execution_authority'),
-			 ('anthropic.messages.v1','/v1/messages','unirouter.anthropic.messages.text.v1','1.0.0',
-			  'unirouter.endpoint-profile-nonstream-executor.v1',
-			  'unirouter.public-nonstream-delivery.v1','unirouter.provider-final-token-charge.v1',
-			  'unirouter.public-at-most-once.v1','000077_public_model_execution_authority'),
-			 ('openai.responses.v1','/v1/responses','unirouter.openai.responses.text.v2','1.0.0',
-			  'unirouter.endpoint-profile-responses-dual-executor.v1',
-			  'unirouter.public-responses-delivery.v2','unirouter.provider-final-token-charge.v1',
-			  'unirouter.public-at-most-once.v1','000086_exact_public_execution_bindings'),
-			 ('anthropic.messages.v1','/v1/messages','unirouter.anthropic.messages.text.v2','1.0.0',
-			  'unirouter.endpoint-profile-messages-dual-executor.v1',
-			  'unirouter.public-anthropic-messages-delivery.v2','unirouter.provider-final-token-charge.v1',
-			  'unirouter.public-at-most-once.v1','000086_exact_public_execution_bindings'),
-			 ('anthropic.messages.v1','/v1/messages','unirouter.anthropic.messages.text-tools.v3','1.0.0',
-			  'unirouter.endpoint-profile-messages-tools-executor.v1',
-			  'unirouter.public-anthropic-messages-tools-delivery.v1','unirouter.provider-final-token-charge.v1',
-			  'unirouter.public-at-most-once.v1','000087_anthropic_messages_tools_public_binding')
-			)`, want: 5},
-		{name: "fresh public execution extension count", query: "SELECT COUNT(*) FROM model_operation_public_execution_contract_extensions", want: 5},
+		// M136 fresh installs accept only the exact immutable migration-owned
+		// projections. Ignore the per-installation insertion timestamp.
+		{name: "fresh compiled execution support", query: `SELECT COUNT(*) FROM (
+			SELECT encode(sha256(convert_to(COALESCE(jsonb_agg(row_data ORDER BY row_data::text COLLATE "C"), '[]'::jsonb)::text, 'UTF8')), 'hex') AS digest
+			FROM (SELECT to_jsonb(binding) - 'created_at' AS row_data FROM model_operation_execution_support_bindings binding) rows
+		) projection WHERE digest=$1`, args: []any{"0fc5d66455bb7dacc0e063523ad50dd4b5a9ff712734ce40158be82a5d897168"}, want: 1},
+		{name: "fresh public execution extension", query: `SELECT COUNT(*) FROM (
+			SELECT encode(sha256(convert_to(COALESCE(jsonb_agg(row_data ORDER BY row_data::text COLLATE "C"), '[]'::jsonb)::text, 'UTF8')), 'hex') AS digest
+			FROM (SELECT to_jsonb(binding) - 'created_at' AS row_data FROM model_operation_public_execution_contract_extensions binding) rows
+		) projection WHERE digest=$1`, args: []any{"f2cc9acc5d498795da231029415e9ad4068e778e4b9d7d511ce2bad1bbacd01b"}, want: 1},
 		{name: "fresh known public tables", query: `SELECT COUNT(*) FROM pg_catalog.pg_tables
 			WHERE schemaname='public' AND tablename=ANY($1::text[])`, args: []any{expectedTables}, want: int64(len(expectedTables))},
 		{name: "fresh exact public table inventory", query: "SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname='public'", want: int64(len(expectedTables))},

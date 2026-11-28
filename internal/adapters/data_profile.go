@@ -29,12 +29,12 @@ func dataChatNonStreamMechanics(in ResponseInput) (ChatNonStreamMechanics, bool,
 	// These are existing typed implementations selected by their exact protocol;
 	// adding data cannot install or broaden one. Legacy address rules stay below.
 	switch p.ProtocolProfile {
-	case "protocol.glm-openai-chat.v5", "protocol.glm-openai-chat.v6", "protocol.glm-openai-chat.v7", "protocol.glm-openai-chat.glm5v.v5", "protocol.glm-openai-chat.glm5v.v6":
+	case "protocol.glm-openai-chat.v5", "protocol.glm-openai-chat.v6", "protocol.glm-openai-chat.v7", "protocol.glm-openai-chat.glm5v.v5", "protocol.glm-openai-chat.glm5v.v6", modelprofile.GLM53InlineJPEGProtocol, modelprofile.GLM53InlineFileProtocol, modelprofile.GLM53PublicVideoProtocol:
 		if p.Provider != "glm" {
 			return ChatNonStreamMechanics{}, false, fmt.Errorf("GLM normalizer provider mismatch")
 		}
 		return ChatNonStreamMechanics{RejectDuplicateMembers: true, NormalizeRequestID: true}, true, nil
-	case "protocol.kimi-openai-chat.v5", "protocol.kimi-openai-chat.k3.v5", "protocol.kimi-openai-chat.v6", "protocol.kimi-openai-chat.k3.v6":
+	case "protocol.kimi-openai-chat.v5", "protocol.kimi-openai-chat.k3.v5", "protocol.kimi-openai-chat.v6", "protocol.kimi-openai-chat.k3.v6", modelprofile.KimiK3InlineJPEGProtocol, modelprofile.KimiK3InlineVideoProtocol:
 		if p.Provider != "kimi" {
 			return ChatNonStreamMechanics{}, false, fmt.Errorf("Kimi normalizer provider mismatch")
 		}

@@ -1,0 +1,19 @@
+{
+  "schema_version": "unirouter.media-charge-manifest.v1",
+  "status": "local_candidate",
+  "connector_id": "unirouter.workfacts",
+  "connector_version": "2.0.0",
+  "source_product": "unirouter",
+  "protocol_version": "2.0.2",
+  "protocol_commit": "ad8fe7a38c9d7335657630baa8670dd07556b98c",
+  "profiles": [
+    "unirouter.media-charge.v1"
+  ],
+  "purpose": "xinsight.source.read",
+  "transport": "pull",
+  "bootstrap": "forward_only",
+  "max_items": 50,
+  "retention_seconds": 604800,
+  "history_backfill": false,
+  "source_schema_sha256": "sha256:2e6a6b217232935e90d46b92075369a620e3934b4273dd34c3f80b0a447c4db1"
+}

@@ -4,13 +4,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/uniroute/unirouter/internal/modeloperation"
 )
 
 const (
 	PublicDeliveryContractV1          = "unirouter.public-nonstream-delivery.v1"
 	PublicResponsesDeliveryContractV2 = "unirouter.public-responses-delivery.v2"
+	PublicResponsesToolsDeliveryV1    = "unirouter.public-responses-tools-delivery.v1"
 	PublicMessagesDeliveryContractV2  = "unirouter.public-anthropic-messages-delivery.v2"
 	PublicMessagesToolsDeliveryV1     = "unirouter.public-anthropic-messages-tools-delivery.v1"
+	MediaJobDeliveryContractV1        = "unirouter.project-media-object-delivery.v1"
+	MediaJobChargeContractV1          = "unirouter.provider-media-charge-fact.v1"
+	MediaJobIdempotencyContractV1     = "unirouter.project-media-job-idempotency.v1"
 	PublicChargeContractV1            = "unirouter.provider-final-token-charge.v1"
 	PublicIdempotencyContractV1       = "unirouter.public-at-most-once.v1"
 )
@@ -42,8 +48,6 @@ func NormalizeV2(value EvidenceV2) (EvidenceV2, error) {
 	value.IdempotencyContractVersion = strings.TrimSpace(value.IdempotencyContractVersion)
 	if normalizedBase.AuthorityMode != ModeCanonical ||
 		normalizedBase.ExecutionContractSource != ContractSourceCanonicalProfile ||
-		(normalizedBase.ModelOperationID != "openai.responses.v1" &&
-			normalizedBase.ModelOperationID != "anthropic.messages.v1") ||
 		value.PublicExecutionBindingID <= 0 ||
 		!validPublicContractBundle(
 			normalizedBase.ModelOperationID,
@@ -59,13 +63,16 @@ func NormalizeV2(value EvidenceV2) (EvidenceV2, error) {
 }
 
 func validPublicContractBundle(operationID, delivery, charge, idempotency string) bool {
+	if operationID == string(modeloperation.IDMediaJobs) {
+		return delivery == MediaJobDeliveryContractV1 && charge == MediaJobChargeContractV1 && idempotency == MediaJobIdempotencyContractV1
+	}
 	if charge != PublicChargeContractV1 || idempotency != PublicIdempotencyContractV1 {
 		return false
 	}
 	switch delivery {
 	case PublicDeliveryContractV1:
 		return operationID == "openai.responses.v1" || operationID == "anthropic.messages.v1"
-	case PublicResponsesDeliveryContractV2:
+	case PublicResponsesDeliveryContractV2, PublicResponsesToolsDeliveryV1:
 		return operationID == "openai.responses.v1"
 	case PublicMessagesDeliveryContractV2:
 		return operationID == "anthropic.messages.v1"

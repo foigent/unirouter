@@ -97,5 +97,12 @@ func (s *Service) MaterializeMediaStageTx(ctx context.Context, tx pgx.Tx, job me
 	if e != nil {
 		return e
 	}
+	if stage == "terminal" && s.ObservationsEnabled() {
+		charge, err := s.mediaChargeObservation(job)
+		if err != nil {
+			return err
+		}
+		observations = append(observations, charge)
+	}
 	return s.publishTogetherTx(ctx, tx, docs, observations)
 }

@@ -3,10 +3,12 @@ package modelcapabilityqualification
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	publication "github.com/uniroute/unirouter/internal/modelcapabilitypublication"
 	"github.com/uniroute/unirouter/internal/modelprofile"
 )
 
@@ -97,5 +99,73 @@ func TestQwenProviderCompletionProbePinsAllowanceAndFinalUsage(t *testing.T) {
 		} else {
 			require.Error(t, err)
 		}
+	}
+}
+
+func TestQwenHostedProbeRequiresExactPartitionAndModel(t *testing.T) {
+	raw, err := os.ReadFile("../../capability-bundles/qwen-beijing-hosted-chat.json")
+	require.NoError(t, err)
+	require.NoError(t, ValidateBundleSource(raw))
+	bundle, err := publication.DecodeBundleV2(raw)
+	require.NoError(t, err)
+	require.Len(t, bundle.Definitions, 2)
+	require.Len(t, bundle.BindingDelta, 12)
+	for _, encoded := range bundle.Definitions {
+		d, err := modelprofile.DecodeDefinition(encoded)
+		require.NoError(t, err)
+		p := d.Profile()
+		model := p.UpstreamModelIDs[0]
+		t.Run(model, func(t *testing.T) {
+			b, err := BindDefinition(Binding{
+				OperationID: modelprofile.OperationOpenAIChat, CapabilityID: modelprofile.CapabilityReasoningBudget,
+				ExecutionProfileID: p.ID, ExecutionProfileVersion: p.Version,
+				ProtocolProfileID: p.ProtocolProfile, ProtocolProfileVersion: modelprofile.ChatOperationProtocolBindingVersionV1,
+				ProbeContractID: QwenStreamFunctionToolsProbeContractID, ProbeContractVersion: QwenHostedStreamToolsProbeVersion,
+				ExpectedProvider: p.Provider, ExpectedUpstreamModel: model, PublicPath: "/v1/chat/completions",
+			}, d)
+			require.NoError(t, err)
+			got, err := SharedProbeContract(b)
+			require.NoError(t, err)
+			require.Equal(t, QwenStreamFunctionToolsProbeContractID+"@"+QwenHostedStreamToolsProbeVersion, got)
+			body, err := BuildOpenAIChatFunctionToolsProbeRequest(b)
+			require.NoError(t, err)
+			var request map[string]any
+			require.NoError(t, json.Unmarshal(body, &request))
+			require.EqualValues(t, 1014, request["max_tokens"])
+			require.EqualValues(t, 512, request["thinking_budget"])
+			require.NotContains(t, request, "enable_thinking")
+			require.NotContains(t, request, "reasoning_effort")
+			require.NotContains(t, request, "max_completion_tokens")
+			wire := strings.ReplaceAll(qwenProbeWire(), "qwen3.7-flash", model)
+			const old = `"completion_tokens":2,"total_tokens":12`
+			for _, tc := range []struct {
+				name, usage string
+				ok          bool
+			}{
+				{"within both", `"completion_tokens":1536,"total_tokens":1546,"completion_tokens_details":{"reasoning_tokens":512,"text_tokens":1536}`, true},
+				{"reasoning above limit below sum", `"completion_tokens":520,"total_tokens":530,"completion_tokens_details":{"reasoning_tokens":513}`, false},
+				{"answer above limit below sum", `"completion_tokens":1030,"total_tokens":1040,"completion_tokens_details":{"reasoning_tokens":5}`, false},
+				{"official inclusive text partition", `"completion_tokens":44,"total_tokens":54,"completion_tokens_details":{"reasoning_tokens":15,"text_tokens":44}`, true},
+				{"visible only is not text_tokens", `"completion_tokens":44,"total_tokens":54,"completion_tokens_details":{"reasoning_tokens":15,"text_tokens":29}`, false},
+				{"missing partition", old, false},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					stream := strings.Replace(wire, old, tc.usage, 1)
+					got, err := ValidateOpenAIChatStreamFunctionToolsForBinding(b, "text/event-stream", strings.NewReader(stream))
+					if tc.ok {
+						require.NoError(t, err)
+						require.True(t, got.ToolCallObserved)
+					} else {
+						require.Error(t, err)
+					}
+				})
+			}
+			wrong := b
+			wrong.ExpectedUpstreamModel = "qwen3.8-flash"
+			_, err = BuildOpenAIChatFunctionToolsProbeRequest(wrong)
+			require.Error(t, err)
+			_, err = ValidateOpenAIChatStreamFunctionToolsForBinding(b, "text/event-stream", strings.NewReader(strings.ReplaceAll(wire, model, "qwen3.8-flash")))
+			require.Error(t, err)
+		})
 	}
 }

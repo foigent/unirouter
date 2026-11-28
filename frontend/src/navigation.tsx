@@ -314,6 +314,7 @@ function applyLicenseState(items: NavItem[], licenseAccess?: LicenseAccess | nul
 
 export function getNavItemsForAuthz(authz: AuthzContext, licenseAccess?: LicenseAccess | null): NavItem[] {
   const organizationRole = authz.organizationRole;
+  const exposeProjectWorkbench = organizationRole === 'member' && authz.hasLiveProjectMembership;
   let allowedRoutes: Set<string>;
   if (isPlatformAdminRole(organizationRole)) allowedRoutes = new Set(platformRoutes);
   else if (isOrgAdminRole(organizationRole)) allowedRoutes = new Set(orgAdminRoutes);
@@ -326,6 +327,7 @@ export function getNavItemsForAuthz(authz: AuthzContext, licenseAccess?: License
   } else if (authz.projectMembershipRole) {
     developerRoutes.forEach(route => allowedRoutes.add(route));
   }
+  if (exposeProjectWorkbench && !authz.projectMembershipKnown) allowedRoutes.add('/media-jobs');
 	if (authz.canDiscoverAccessReview || authz.hasProjectAdminMembership) allowedRoutes.add('/access-review');
 	if (authz.canDiscoverWorkloads || authz.hasProjectAdminMembership) allowedRoutes.add('/applications');
 	if (authz.hasLiveProjectMembership || isOrgAdminRole(organizationRole) || isOrgViewerRole(organizationRole)) allowedRoutes.add('/model-readiness');
@@ -351,7 +353,6 @@ export function getNavItemsForAuthz(authz: AuthzContext, licenseAccess?: License
   // accounts keep their management taxonomy even when stale project membership
   // rows exist in /me.
   const isEndUserIdentity = !organizationRole || organizationRole === 'member';
-  const exposeProjectWorkbench = organizationRole === 'member' && authz.hasLiveProjectMembership;
   if (organizationRole && organizationRole !== 'member') items = labelOverviewForRole(items, organizationRole);
 	const exposeAccessState = isEndUserIdentity;
 	const endUserItems: NavItem[] = [];

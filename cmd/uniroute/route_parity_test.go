@@ -95,6 +95,8 @@ func TestAdminRoutesRegisteredForFrontendClient(t *testing.T) {
 		"GET /api/v1/model-deployments/{deploymentID}",
 		"POST /api/v1/model-deployments",
 		"POST /api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes",
+		"GET /api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes",
+		"GET /api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes/{probeRunRef}",
 		"GET /api/v1/model-deployments/{deploymentID}/operations/{operationID}/capabilities/{capabilityID}",
 		"POST /api/v1/model-deployments/{deploymentID}/operations/{operationID}/capabilities/{capabilityID}/probes",
 		"POST /api/v1/model-deployments/{deploymentID}/operations/{operationID}/capabilities/{capabilityID}/routing-approvals",
@@ -371,6 +373,8 @@ func TestMainRegistersCanonicalModelDeploymentRoutes(t *testing.T) {
 		`mux.Handle("GET /api/v1/model-deployments/{deploymentID}", guards.read(handler.GetCanonicalModelApplication))`,
 		`mux.Handle("POST /api/v1/model-deployments", guards.write(handler.CreateCanonicalModelApplication))`,
 		`mux.Handle("POST /api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes", guards.write(handler.ProbeCanonicalModelOperation))`,
+		`mux.Handle("GET /api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes", guards.write(handler.ReadCanonicalAsyncModelOperationProbe))`,
+		`mux.Handle("GET /api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes/{probeRunRef}", guards.write(handler.ReadCanonicalAsyncModelOperationProbe))`,
 		`mux.Handle("POST /api/v1/model-deployments/{deploymentID}/operations/{operationID}/production-approvals", guards.approve(handler.ApproveCanonicalModelOperationProduction))`,
 		`mux.Handle("GET /api/v1/model-deployments/{deploymentID}/operations/{operationID}/capabilities/{capabilityID}", guards.read(handler.GetCanonicalModelCapabilityQualification))`,
 		`mux.Handle("POST /api/v1/model-deployments/{deploymentID}/operations/{operationID}/capabilities/{capabilityID}/probes", guards.write(handler.ProbeCanonicalModelCapability))`,
@@ -450,7 +454,7 @@ func TestGatewayAuthenticationWrapsExecutionAdmission(t *testing.T) {
 		`mux.Handle("POST /v1/embeddings", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, embeddingsPayloadGuard)(captureExecutionContext(`,
 		`mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(`,
 		`mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(`,
-		`mux.Handle("POST /v1/chat/completions/preflight", chatPreflightOperation(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(middleware.StrictJSONIngress(middleware.ChatUpstreamAttemptPolicy(newGatewayChatPreflightHandler(postgres.Pool, relay))))))`,
+		`mux.Handle("POST /v1/chat/completions/preflight", chatPreflightOperation(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(middleware.StrictJSONIngress(middleware.UpstreamAttemptPolicy(newGatewayChatPreflightHandler(postgres.Pool, relay))))))`,
 		`mux.Handle("GET /v1/models", gatewayAuth(`,
 	} {
 		if !strings.Contains(mainSource, registration) {
@@ -467,10 +471,10 @@ func TestGatewayRateAdmissionPrecedesIdempotencyAndBusinessHandlers(t *testing.T
 	mainSource := string(src)
 	for _, registration := range []string{
 		`sharedPolicyBilling.SetEarlyRateAdmissionEvidenceSink(relay)`,
-		`middleware.StrictJSONIngress(middleware.ChatUpstreamAttemptPolicy(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(chatHandler))))`,
+		`middleware.StrictJSONIngress(middleware.UpstreamAttemptPolicy(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(chatHandler))))`,
 		`middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(embeddingsHandler)))`,
-		`middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(responsesHandler)))`,
-		`middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(messagesHandler)))`,
+		`middleware.StrictJSONIngress(middleware.UpstreamAttemptPolicy(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(responsesHandler))))`,
+		`middleware.StrictJSONIngress(middleware.UpstreamAttemptPolicy(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(messagesHandler))))`,
 	} {
 		if !strings.Contains(mainSource, registration) {
 			t.Fatalf("early distributed rate admission wiring missing %q", registration)
@@ -488,8 +492,8 @@ func TestPublicNonStreamRoutesUseExactProductionPipeline(t *testing.T) {
 		`responsesHandler := newGatewayPublicNonStreamHandler(postgres.Pool, relay, modeloperation.IDResponses, outboxSvc)`,
 		`messagesHandler := newGatewayPublicNonStreamHandler(postgres.Pool, relay, modeloperation.IDMessages, outboxSvc)`,
 		`publicNonStreamPayloadGuard := payloadpolicy.RequestMiddlewareWithMax(payloadBudget, 8*payloadpolicy.MiB, middleware.GetOrgIDFromContext)`,
-		`mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(responsesHandler)))))))`,
-		`mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(messagesHandler)))))))`,
+		`mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(capturePublicContent(middleware.StrictJSONIngress(middleware.UpstreamAttemptPolicy(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(responsesHandler))))))))`,
+		`mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(capturePublicContent(middleware.StrictJSONIngress(middleware.UpstreamAttemptPolicy(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(messagesHandler))))))))`,
 	} {
 		if !strings.Contains(mainSource, fragment) {
 			t.Fatalf("public non-stream production pipeline missing %q", fragment)

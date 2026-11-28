@@ -177,8 +177,8 @@ func TestOpenAPIModelCapabilityQualificationIdentityEnumsMatchCompiledBindings(t
 		compiled["probe_contract_version"] = append(compiled["probe_contract_version"], version)
 	}
 
-	// Data bundles may introduce another already-modeled capability without a
-	// schema migration or compiled per-model binding. Keep its API name covered.
+	// Read finite API identities from data bindings as well, including protocols
+	// that only support non-streaming tool calls.
 	files, err := filepath.Glob("../../capability-bundles/*.json")
 	if err != nil {
 		t.Fatal(err)
@@ -193,7 +193,10 @@ func TestOpenAPIModelCapabilityQualificationIdentityEnumsMatchCompiledBindings(t
 			t.Fatal(err)
 		}
 		for _, binding := range bundle.BindingDelta {
+			compiled["operation_id"] = append(compiled["operation_id"], binding.OperationID)
 			compiled["capability_id"] = append(compiled["capability_id"], binding.CapabilityID)
+			compiled["protocol_profile_id"] = append(compiled["protocol_profile_id"], binding.ProtocolProfileID)
+			compiled["protocol_profile_version"] = append(compiled["protocol_profile_version"], binding.ProtocolProfileVersion)
 		}
 	}
 	for name, values := range compiled {

@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Modal, Toast } from '@douyinfe/semi-ui';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CanonicalModelApplication, CanonicalOperation } from '../../../api/modelDeployments';
+import { setLocale } from '../../../i18n';
 import ModelCapabilityQualificationPanel, { isQualifiedCapabilityID } from '../ModelCapabilityQualificationPanel';
 
 const mocks = vi.hoisted(() => ({
@@ -80,6 +81,7 @@ describe('ModelCapabilityQualificationPanel', () => {
   afterEach(async () => {
     await act(async () => {
       Modal.destroyAll();
+      setLocale('zh-CN');
       await Promise.resolve();
     });
   });
@@ -242,12 +244,12 @@ describe('ModelCapabilityQualificationPanel', () => {
       gatewayRestriction=""
     />);
 
-    const probeButton = await screen.findByRole('button', { name: /运行流式能力探测（预计 1 次调用）/u });
+    const probeButton = await screen.findByRole('button', { name: /运行流式能力探测（供应商请求上限未知）/u });
     fireEvent.click(probeButton);
     expect(confirmationConfig.title).toBe('运行流式能力探测？');
-    expect(confirmationConfig.okText).toBe('运行流式能力探测（预计 1 次调用）');
+    expect(confirmationConfig.okText).toBe('运行流式能力探测（供应商请求上限未知）');
     const content = render(confirmationConfig.content);
-    expect(content.getByText('预计发起 1 次真实供应商调用，并计入已批准的测试调用上限。')).toBeInTheDocument();
+    expect(content.getByText('供应商请求上限未知。实际发出的请求计入测试调用上限。')).toBeInTheDocument();
     expect(content.getByText('供应商成本当前不可得；这不表示费用为 ¥0。')).toBeInTheDocument();
     expect(content.getByText('Connection #21@5 · Deployment #41@7')).toBeInTheDocument();
     expect(content.getByText('openai.chat_completions.v1@9 · deepseek.v4-flash.api@1.4.0 · protocol.deepseek-openai-chat.v4@1.0.0')).toBeInTheDocument();
@@ -255,7 +257,48 @@ describe('ModelCapabilityQualificationPanel', () => {
     await waitFor(() => expect(mocks.probeCapability).toHaveBeenCalledWith(
       41, 'openai.chat_completions.v1', 'streaming', { credential_binding_id: 91 },
     ));
+    expect(mocks.probeCapability).toHaveBeenCalledTimes(1);
     expect(mocks.approveCapability).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['zh-CN', 'function_tools', 'native-client-tool-continuation', '1.0.0', 2, '最多 2 次供应商请求', '第一轮获取工具调用。通过校验后，第二轮回传测试工具结果。'],
+    ['en-US', 'function_tools', 'native-client-tool-continuation', '1.0.0', 2, 'Up to 2 provider requests', 'The first request obtains the tool call. After validation, the second returns the test tool result.'],
+    ['zh-CN', 'vision', 'native-inline-jpeg', '1.0.0', 1, '最多 1 次供应商请求', null],
+    ['en-US', 'vision', 'chat-inline-jpeg', '1.0.0', 1, 'Up to 1 provider request', null],
+    ['en-US', 'function_tools', 'native-client-tool-continuation', '1.0.0', undefined, 'Provider request limit unknown', 'The first request obtains the tool call. After validation, the second returns the test tool result.'],
+    ['en-US', 'function_tools', 'native-client-tool-continuation', '1.0.1', 3, 'Up to 3 provider requests', null],
+  ] as const)('shows the %s request limit for %s / %s@%s with planned count %s', async (locale, capabilityID, contract, version, plannedCount, limit, continuation) => {
+    setLocale(locale);
+    const confirm = vi.spyOn(Modal, 'confirm').mockReturnValue({ destroy: vi.fn(), update: vi.fn() } as any);
+    mocks.getQualification.mockResolvedValue({
+      ...baseQualification,
+      capability_id: capabilityID,
+      probe_contract_id: `unirouter.capability-probe.${contract}.v1`,
+      probe_contract_version: version,
+      ...(plannedCount === undefined ? {} : { planned_provider_requests: plannedCount }),
+    });
+    render(<ModelCapabilityQualificationPanel selected={selected} operation={operation}
+      canManage canApprove gatewayLicensed gatewayRestriction="" capabilityID={capabilityID} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: name => name.includes(limit) }));
+    const config = confirm.mock.calls[0][0];
+    expect(config.okText).toContain(limit);
+    const content = render(<>{config.content}<button type="button" onClick={config.onOk}>{config.okText}</button></>);
+    expect(content.getByText(text => text.startsWith(limit))).toBeInTheDocument();
+    if (continuation) {
+      expect(content.getByText(continuation)).toBeInTheDocument();
+    } else {
+      expect(content.queryByText(/第二轮回传|the second returns/)).not.toBeInTheDocument();
+    }
+    expect(mocks.probeCapability).not.toHaveBeenCalled();
+    if (capabilityID === 'vision') {
+      mocks.probeCapability.mockResolvedValueOnce({ success: true, current: true });
+      await act(async () => { fireEvent.click(content.getByRole('button', { name: config.okText })); });
+      expect(mocks.probeCapability).toHaveBeenCalledTimes(1);
+      expect(mocks.probeCapability).toHaveBeenCalledWith(41, operation.operation_id, 'vision', { credential_binding_id: 91 });
+    }
+    confirm.mockRestore();
   });
 
   it('shows the bounded contract failure category without exposing provider response content', async () => {
@@ -410,7 +453,7 @@ describe('ModelCapabilityQualificationPanel', () => {
 
     expect(await screen.findByText('reasoning evidence: observed')).toBeInTheDocument();
     expect(screen.queryByText(/private reasoning/iu)).not.toBeInTheDocument();
-    const probeButton = screen.getByRole('button', { name: /运行思考模式能力探测（预计 1 次调用）/u });
+    const probeButton = screen.getByRole('button', { name: /运行思考模式能力探测（供应商请求上限未知）/u });
     fireEvent.click(probeButton);
     expect(confirmationConfig.title).toBe('运行思考模式能力探测？');
     const content = render(confirmationConfig.content);

@@ -84,7 +84,8 @@ func groupCapabilitySnapshots(snapshots []modelCapabilitySnapshot) ([]capability
 			return nil, nil, errModelCapabilityInvalid
 		}
 		seen[s.CapabilityID] = true
-		contract, err := modelcapabilityqualification.SharedStreamProbeContract(modelCapabilityProbeBindingFromSnapshot(s))
+		binding := modelCapabilityProbeBindingFromSnapshot(s)
+		contract, err := modelcapabilityqualification.SharedProbeContract(binding)
 		if err != nil {
 			separate = append(separate, s.CapabilityID)
 			continue
@@ -101,7 +102,11 @@ func groupCapabilitySnapshots(snapshots []modelCapabilitySnapshot) ([]capability
 			}
 		}
 		if found < 0 {
-			groups = append(groups, capabilityProbeGroup{ProbeContract: contract, RequestDigest: probeRequestDigest(body), ProviderRequests: 1, body: body})
+			requests := plannedCapabilityProbeProviderRequests(binding)
+			if requests == 0 {
+				return nil, nil, errModelCapabilityUnsupported
+			}
+			groups = append(groups, capabilityProbeGroup{ProbeContract: contract, RequestDigest: probeRequestDigest(body), ProviderRequests: requests, body: body})
 			found = len(groups) - 1
 		}
 		groups[found].CapabilityIDs = append(groups[found].CapabilityIDs, s.CapabilityID)

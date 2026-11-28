@@ -33,7 +33,7 @@ func v1ObservationProfiles() []string {
 }
 
 func ObservationProfiles() []string {
-	return append(v1ObservationProfiles(), GatewayPreDispatchProfile)
+	return append(v1ObservationProfiles(), GatewayPreDispatchProfile, MediaChargeProfile)
 }
 
 func validObservationProfile(profile string) bool {
@@ -78,6 +78,7 @@ type Observation struct {
 	Policy            *PolicyObservation      `json:"policy,omitempty"`
 	Destination       *DestinationObservation `json:"destination,omitempty"`
 	Measurement       *Measurement            `json:"measurement,omitempty"`
+	MediaCharge       *MediaChargeObservation `json:"media_charge,omitempty"`
 }
 
 type RuntimeObservation struct {
@@ -192,11 +193,11 @@ var measurementBoundaries = map[string][2]string{
 }
 
 func (d Observation) factID() string {
-	return sourceID(ObservationVersion, d.SourceInstance, d.OrgID, d.ProjectID, d.Profile, d.RequestID, d.SubjectKind, d.SubjectID, d.Kind)
+	return sourceID(d.SchemaVersion, d.SourceInstance, d.OrgID, d.ProjectID, d.Profile, d.RequestID, d.SubjectKind, d.SubjectID, d.Kind)
 }
 
 func (d Observation) eventID() string {
-	return sourceID(ObservationVersion+".revision", d.factID(), d.Revision)
+	return sourceID(d.SchemaVersion+".revision", d.factID(), d.Revision)
 }
 
 func opaque(value string, maximum int) bool {
@@ -212,6 +213,12 @@ func observationTime(value string) bool {
 }
 
 func (d Observation) Validate() error {
+	if d.Profile == MediaChargeProfile {
+		return d.validateMediaChargeObservation()
+	}
+	if d.MediaCharge != nil {
+		return errors.New("unexpected media charge on legacy observation")
+	}
 	invalid := errors.New("invalid source observation")
 	if d.SchemaVersion != ObservationVersion || !slices.Contains(v1ObservationProfiles(), d.Profile) || !positiveID(d.OrgID) || !positiveID(d.ProjectID) || !positiveID(d.Revision) || !opaque(d.SourceInstance, 128) || !opaque(d.RequestID, 64) || !opaque(d.SubjectID, 128) {
 		return invalid
@@ -456,13 +463,11 @@ func EncodeObservation(d Observation) ([]byte, error) {
 	if e != nil {
 		return nil, e
 	}
-	var value any
-	decoder := json.NewDecoder(bytes.NewReader(wire))
-	decoder.UseNumber()
-	if e = decoder.Decode(&value); e != nil {
+	payload, e := observationPayload(d, wire)
+	if e != nil {
 		return nil, e
 	}
-	encoded, ce := eventconnector.CanonicalJSON(value)
+	encoded, ce := eventconnector.CanonicalJSON(payload)
 	if ce != nil {
 		return nil, ce
 	}
@@ -470,6 +475,29 @@ func EncodeObservation(d Observation) ([]byte, error) {
 		return nil, errors.New("source observation exceeds byte limit")
 	}
 	return encoded, nil
+}
+
+// observationPayload is shared by canonical source encoding and the event envelope.
+func observationPayload(d Observation, wire []byte) (map[string]any, error) {
+	var payload map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(wire))
+	decoder.UseNumber()
+	if err := decoder.Decode(&payload); err != nil {
+		return nil, err
+	}
+	if d.MediaCharge != nil && d.MediaCharge.CustomerCharge != nil {
+		// The validated scale is the only numerical field in this payload.
+		media, ok := payload["media_charge"].(map[string]any)
+		if !ok {
+			return nil, errors.New("missing canonical media charge")
+		}
+		charge, ok := media["customer_charge"].(map[string]any)
+		if !ok {
+			return nil, errors.New("missing canonical customer charge")
+		}
+		charge["amount_scale"] = d.MediaCharge.CustomerCharge.AmountScale
+	}
+	return payload, nil
 }
 
 func DecodeObservation(wire []byte) (Observation, error) {

@@ -22,12 +22,17 @@ const UpstreamReleaseObservationHead = "000128_upstream_release_observation"
 const UpstreamObservationRestoreHead = "000129_upstream_observation_restore_namespace"
 const UpgradeAdmissionRecoveryHead = "000130_upgrade_admission_recovery"
 const CustomerStandardPricingHead = "000131_customer_standard_pricing"
-const LatestSupportedMigration = CustomerStandardPricingHead
+const OpenAIResponsesToolsHead = "000132_openai_responses_client_tools"
+const MediaChargeSourceHead = "000133_media_charge_source_facts"
+const NativeInlineJPEGHead = "000134_native_inline_jpeg_public_bindings"
+const CanonicalMediaJobHead = "000135_canonical_media_job_authority"
+const AsyncMediaProviderTaskHead = "000136_async_media_provider_task"
+const LatestSupportedMigration = AsyncMediaProviderTaskHead
 
 func SupportedSchemaHeads() []string {
-	return []string{LegacyCapabilityHead, CapabilityExpandHead, StreamCounterExpandHead, SourceFactsExpandHead, ObservationExpandHead, BudgetSnapshotExpandHead, ContentCaptureExpandHead, ContentReclaimExpandHead, PreDispatchExpandHead, ScopedContentExpandHead, XInsightPolicyExpandHead, XInsightAdoptionExpandHead, XInsightCredentialExpandHead, CommercialLicenseRetirementHead, XInsightCommunicationHead, UpstreamReleaseObservationHead, UpstreamObservationRestoreHead, UpgradeAdmissionRecoveryHead, CustomerStandardPricingHead}
+	return []string{LegacyCapabilityHead, CapabilityExpandHead, StreamCounterExpandHead, SourceFactsExpandHead, ObservationExpandHead, BudgetSnapshotExpandHead, ContentCaptureExpandHead, ContentReclaimExpandHead, PreDispatchExpandHead, ScopedContentExpandHead, XInsightPolicyExpandHead, XInsightAdoptionExpandHead, XInsightCredentialExpandHead, CommercialLicenseRetirementHead, XInsightCommunicationHead, UpstreamReleaseObservationHead, UpstreamObservationRestoreHead, UpgradeAdmissionRecoveryHead, CustomerStandardPricingHead, OpenAIResponsesToolsHead, MediaChargeSourceHead, NativeInlineJPEGHead, CanonicalMediaJobHead, AsyncMediaProviderTaskHead}
 }
 
 func HasUpgradeAdmissionRecovery(head string) bool {
-	return head == UpgradeAdmissionRecoveryHead || head == CustomerStandardPricingHead
+	return head == UpgradeAdmissionRecoveryHead || head == CustomerStandardPricingHead || head == OpenAIResponsesToolsHead || head == MediaChargeSourceHead || head == NativeInlineJPEGHead || head == CanonicalMediaJobHead || head == AsyncMediaProviderTaskHead
 }

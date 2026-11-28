@@ -84,8 +84,14 @@ func validateChatStreamFunctionTools(b Binding, contentType string, reader io.Re
 			observation.PromptTokens = int64(usage.PromptTokens)
 			observation.CompletionTokens = int64(usage.CompletionTokens)
 			observation.TotalTokens = int64(usage.PromptTokens + usage.CompletionTokens)
-			observation.CacheReadCounterObserved = usage.CacheUsageStatus == adapters.CacheUsageStatusReadReported
+			observation.CacheReadCounterObserved = usage.CacheUsageStatus == adapters.CacheUsageStatusReadReported ||
+				(profile.CacheUsageProfile == modelprofile.KimiChatReadWriteCacheUsageProfile && usage.CacheUsageStatus == adapters.CacheUsageStatusReadWriteReported)
 			observation.CachedTokens = int64(usage.CacheReadTokens)
+			if b.ProbeContractID == QwenStreamFunctionToolsProbeContractID && b.ProbeContractVersion == QwenHostedStreamToolsProbeVersion &&
+				(usage.ProviderReasoningTokens == nil || *usage.ProviderReasoningTokens == 0 ||
+					!usage.FitsProviderCompletionSplit(qwenHostedProbeAnswerLimit, modelprofile.QwenHostedProbeThinking)) {
+				return invalidOpenAIChatFunctionToolsDiagnostic("stream", "usage", "invalid_usage", nil)
+			}
 		}
 		if prepareErr != nil {
 			return invalidOpenAIChatFunctionToolsDiagnostic("stream", "envelope", "invalid_shape", prepareErr)

@@ -1,7 +1,41 @@
 {
   "schema_version": "unirouter.endpoint-conformance-report.v1",
-  "schema_sha256": "sha256:75a3f5a6bf601c8b041f2f1f6aef00f0a97e55d72422d1cb0222b9d74391222f",
+  "schema_sha256": "sha256:f9dcd926ff1075fefd6f5bcd07e7bd4f501c403c128e2cdace6ce1d5a588e3fa",
   "profiles": [
+    {
+      "profile_id": "unirouter.anthropic.messages.inline-jpeg.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "local_contract_only",
+      "manifest_sha256": "sha256:e779725b5eb72b4316bfc9b3bfe3568baa2c2902ac85c61bd4527d52150b1c97",
+      "fixtures": [
+        {
+          "fixture_id": "anthropic-messages-inline-jpeg.v1",
+          "sha256": "sha256:65e49ca59a642b6e1225983f19ad560dd5f90b524a36a53ca2dbdab8fc554183"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "anthropic-messages-inline-jpeg.v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "anthropic-messages-inline-jpeg.v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "anthropic-messages-inline-jpeg.v1/negative-request/remote-image",
+          "passed": true
+        },
+        {
+          "case_id": "anthropic-messages-inline-jpeg.v1/negative-response/wrong-upstream-model",
+          "passed": true
+        },
+        {
+          "case_id": "anthropic-messages-inline-jpeg.v1/status/rate-limited",
+          "passed": true
+        }
+      ]
+    },
     {
       "profile_id": "unirouter.anthropic.messages.text-tools.v3",
       "profile_version": "1.0.0",
@@ -203,6 +237,732 @@
       ]
     },
     {
+      "profile_id": "unirouter.dashscope.images.qwen-3.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "repository_local_image_v1",
+      "manifest_sha256": "sha256:4cefe894b771b8508e8477c5c0d7d43b7230ef9623c90e289ca55d2dc8ec58ee",
+      "fixtures": [
+        {
+          "fixture_id": "dashscope-qwen-image-3-v1",
+          "sha256": "sha256:05b4e3cde7db4d2f9cec10456900060351353eed288cd2fb35928cde718d09fb"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "dashscope-qwen-image-3-v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-qwen-image-3-v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-qwen-image-3-v1/negative-request/multiple-images-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-qwen-image-3-v1/negative-request/stream-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-qwen-image-3-v1/negative-request/gpt-quality-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-qwen-image-3-v1/negative-response/hosted-url-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-qwen-image-3-v1/negative-response/older-metering-shape-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-qwen-image-3-v1/negative-response/charge-count-mismatch-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-qwen-image-3-v1/negative-response/wrong-model-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-qwen-image-3-v1/negative-response/truncated-png-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-qwen-image-3-v1/status/provider-failure-retry",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-qwen-image-3-v1/status/permission-stop",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.dashscope.speech.asr-3-1.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "repository_local_async_media_v1",
+      "manifest_sha256": "sha256:126955ade0eac7f7133ad0eb73655862dfedd8d61fdad0d690d9e765d3447b74",
+      "fixtures": [
+        {
+          "fixture_id": "dashscope-asr-v1",
+          "sha256": "sha256:bdfdaa73f41afc7b917dba6a2cd3d0b21964de8111856be0fffe47eb5773b13f"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "dashscope-asr-v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-asr-v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-asr-v1/negative-request/remote-url",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-asr-v1/negative-response/wrong-total",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-asr-v1/status/provider-failure",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.dashscope.speech.tts-3-1.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "repository_local_async_media_v1",
+      "manifest_sha256": "sha256:8ae6429a3327a6da59d860a6773ebb46cefc16352deb2d869c58879201f10a1d",
+      "fixtures": [
+        {
+          "fixture_id": "dashscope-tts-v1",
+          "sha256": "sha256:a545ab5b7d4ce82abe6b7ef81b493bd0058642ccf872974fa34e1782680bee7f"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "dashscope-tts-v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-tts-v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-tts-v1/negative-request/empty-input",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-tts-v1/negative-response/wrong-origin",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-tts-v1/negative-response/no-finality",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-tts-v1/negative-response/negative-input",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-tts-v1/negative-response/contradictory-totals",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-tts-v1/status/provider-failure",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.dashscope.video.wan-3.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "repository_local_async_media_v1",
+      "manifest_sha256": "sha256:2400a25dc20508c44528acd7563dd74958e48aa320336462b8f5afa369ef43e4",
+      "fixtures": [
+        {
+          "fixture_id": "dashscope-wan-video-v1",
+          "sha256": "sha256:c3dea92eb8580c9651efcf4c0c26097660cdc579b8c443ab7c0ded67a5802832"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "dashscope-wan-video-v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-wan-video-v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-wan-video-v1/negative-request/image-operation",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-wan-video-v1/negative-response/malformed-task",
+          "passed": true
+        },
+        {
+          "case_id": "dashscope-wan-video-v1/status/provider-failure",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.deepseek.tools.asr.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "repository_local_async_media_v1",
+      "manifest_sha256": "sha256:0a47e9460a8190d68a8e3d136f29178b8f2593ec0192991224609091c371a7f2",
+      "fixtures": [
+        {
+          "fixture_id": "deepseek-asr-v1",
+          "sha256": "sha256:5b70f50c3b997fea69317bc735631ab6299001ed288c586d73a30c1a85396d34"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "deepseek-asr-v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "deepseek-asr-v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "deepseek-asr-v1/negative-request/remote-url",
+          "passed": true
+        },
+        {
+          "case_id": "deepseek-asr-v1/negative-response/wrong-duration",
+          "passed": true
+        },
+        {
+          "case_id": "deepseek-asr-v1/status/provider-failure",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.deepseek.tools.ocr.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "repository_local_async_media_v1",
+      "manifest_sha256": "sha256:811364902562e42b2b8870518788ff1e8981ab55bb4331318706385bba62c98b",
+      "fixtures": [
+        {
+          "fixture_id": "deepseek-ocr-v1",
+          "sha256": "sha256:8bbb8e9646077a7d905c1296f33d7d17e2072e52e4f51e48c472fc5d4e0ce6bd"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "deepseek-ocr-v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "deepseek-ocr-v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "deepseek-ocr-v1/negative-request/remote-url",
+          "passed": true
+        },
+        {
+          "case_id": "deepseek-ocr-v1/negative-response/partial-page",
+          "passed": true
+        },
+        {
+          "case_id": "deepseek-ocr-v1/status/provider-failure",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.deepseek.tools.tts.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "repository_local_async_media_v1",
+      "manifest_sha256": "sha256:dc4e6456f3ab4721a17f806dd43d42b63947dc410ed81f79885f3b982bcd14bd",
+      "fixtures": [
+        {
+          "fixture_id": "deepseek-tts-v1",
+          "sha256": "sha256:1eb89f06d7ba475fe814593bddf33d29ea548fe894b1424f9668a442810f8687"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "deepseek-tts-v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "deepseek-tts-v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "deepseek-tts-v1/negative-request/empty-input",
+          "passed": true
+        },
+        {
+          "case_id": "deepseek-tts-v1/negative-response/wrong-media",
+          "passed": true
+        },
+        {
+          "case_id": "deepseek-tts-v1/status/provider-failure",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.glm.images.glm-image.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "repository_local_image_v1",
+      "manifest_sha256": "sha256:1210a58b95cd348bfbba5f507588be7f5f50512e54164c1b2ecda84eff7a5ea8",
+      "fixtures": [
+        {
+          "fixture_id": "glm-image-v1",
+          "sha256": "sha256:eb0b62d1b2c6c867f3d9cfce9d2574aac828edeeaeb48722a9f197998b54f663"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "glm-image-v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "glm-image-v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "glm-image-v1/negative-request/unsupported-format",
+          "passed": true
+        },
+        {
+          "case_id": "glm-image-v1/negative-response/unreviewed-result-origin",
+          "passed": true
+        },
+        {
+          "case_id": "glm-image-v1/status/provider-failure",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.glm.ocr.layout.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "repository_local_async_media_v1",
+      "manifest_sha256": "sha256:8aaa6ac92852f01295ff81282cdb20d81b7d6b19e0a62da659dc3f4fc92c1242",
+      "fixtures": [
+        {
+          "fixture_id": "glm-ocr-v1",
+          "sha256": "sha256:47aa5ccb1ba942fa2c5a22c2170cdd740df3bd95bf46e58e1160d2905095f649"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "glm-ocr-v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "glm-ocr-v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "glm-ocr-v1/negative-request/remote-url",
+          "passed": true
+        },
+        {
+          "case_id": "glm-ocr-v1/negative-response/two-pages",
+          "passed": true
+        },
+        {
+          "case_id": "glm-ocr-v1/negative-response/wrong-model",
+          "passed": true
+        },
+        {
+          "case_id": "glm-ocr-v1/status/provider-failure",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.glm.speech.asr-2512.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "repository_local_async_media_v1",
+      "manifest_sha256": "sha256:18377460580e0404fc77f2ce8540a400cb5ec256d3a8261621315718ed177874",
+      "fixtures": [
+        {
+          "fixture_id": "glm-asr-v1",
+          "sha256": "sha256:359ff66af310b60f5f445108250b66468373aee6b7297b2f3b065d442ce35f2a"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "glm-asr-v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "glm-asr-v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "glm-asr-v1/negative-request/remote-url",
+          "passed": true
+        },
+        {
+          "case_id": "glm-asr-v1/negative-response/wrong-model",
+          "passed": true
+        },
+        {
+          "case_id": "glm-asr-v1/status/provider-failure",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.glm.speech.tts.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "repository_local_async_media_v1",
+      "manifest_sha256": "sha256:95247c5ffb9d97eed84e439e110a3f58bb04704fc80bf3576c94f01d3528ad01",
+      "fixtures": [
+        {
+          "fixture_id": "glm-tts-v1",
+          "sha256": "sha256:72cd3b9e3be36f0c2eab05e14f9cb27a722801a4cb634dc134bcd64131ed6d4b"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "glm-tts-v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "glm-tts-v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "glm-tts-v1/negative-request/empty-input",
+          "passed": true
+        },
+        {
+          "case_id": "glm-tts-v1/negative-response/wrong-media",
+          "passed": true
+        },
+        {
+          "case_id": "glm-tts-v1/status/provider-failure",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.glm.video.cogvideox-3.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "repository_local_async_media_v1",
+      "manifest_sha256": "sha256:3718dfba7b40c484ca48c625d8bcc9159c6dff6afd485dcbe8dffad6006c7c23",
+      "fixtures": [
+        {
+          "fixture_id": "glm-cogvideox-3-video-v1",
+          "sha256": "sha256:ad96fc8246ab46a79540862e7d7fed32520b261717ae4c9b176fd1572b689e26"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "glm-cogvideox-3-video-v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "glm-cogvideox-3-video-v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "glm-cogvideox-3-video-v1/negative-request/image-operation",
+          "passed": true
+        },
+        {
+          "case_id": "glm-cogvideox-3-video-v1/negative-response/malformed-task",
+          "passed": true
+        },
+        {
+          "case_id": "glm-cogvideox-3-video-v1/status/provider-failure",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.mimo.audio.asr.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "repository_local_async_media_v1",
+      "manifest_sha256": "sha256:940139d9cb055e9b91a4ed456fd488ffb222d5622f8aafbc38ee46e452b2e3b2",
+      "fixtures": [
+        {
+          "fixture_id": "mimo-asr-v1",
+          "sha256": "sha256:d7be96d1be3ed2168ae8fb39fbdc3082d05226d3837cf3914e3235ea0a26904c"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "mimo-asr-v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "mimo-asr-v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "mimo-asr-v1/negative-request/remote-url",
+          "passed": true
+        },
+        {
+          "case_id": "mimo-asr-v1/negative-response/wrong-model",
+          "passed": true
+        },
+        {
+          "case_id": "mimo-asr-v1/status/provider-failure",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.mimo.audio.tts.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "repository_local_async_media_v1",
+      "manifest_sha256": "sha256:ec42327174a70801081b90017adf13debeb9ffe5e10e12462843bd3ba05474b8",
+      "fixtures": [
+        {
+          "fixture_id": "mimo-tts-v1",
+          "sha256": "sha256:b02ebedf5ef69c7a1e58968a770da4079bf552e2e4f67273f53b278204255976"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "mimo-tts-v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "mimo-tts-v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "mimo-tts-v1/negative-request/empty-input",
+          "passed": true
+        },
+        {
+          "case_id": "mimo-tts-v1/negative-response/wrong-model",
+          "passed": true
+        },
+        {
+          "case_id": "mimo-tts-v1/status/provider-failure",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.minimax.images.h3.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "repository_local_image_v1",
+      "manifest_sha256": "sha256:1adf2699f25fec03c88c41ea745eba34d671ba0444e89956123e4898f3e7f34e",
+      "fixtures": [
+        {
+          "fixture_id": "minimax-h3-image-v1",
+          "sha256": "sha256:c7bdcc8826283e34eda10979e0be9bc31a248f055c56f48065220bbd6b1be7f1"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "minimax-h3-image-v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-h3-image-v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-h3-image-v1/negative-request/multiple-images-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-h3-image-v1/negative-request/stream-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-h3-image-v1/negative-request/gpt-quality-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-h3-image-v1/negative-response/item-error-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-h3-image-v1/negative-response/mismatched-output-tokens-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-h3-image-v1/negative-response/wrong-reported-model-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-h3-image-v1/status/provider-failure-retry",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-h3-image-v1/status/permission-stop",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.minimax.speech.2-8-turbo.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "repository_local_async_media_v1",
+      "manifest_sha256": "sha256:107d182fe8a13cfcbb2906c6f1209ab1c5ff8a48dcd52b62578960d766a8e084",
+      "fixtures": [
+        {
+          "fixture_id": "minimax-tts-v1",
+          "sha256": "sha256:213106ef56cff99d6e25ccc5d58e97d2f922bdb3a7a8894ffb722a9c1bf8fd3b"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "minimax-tts-v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-tts-v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-tts-v1/negative-request/empty-input",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-tts-v1/negative-response/negative-chars",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-tts-v1/negative-response/wrong-size",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-tts-v1/negative-response/conflicting-format",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-tts-v1/status/provider-failure",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.minimax.speech.asr-1.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "repository_local_async_media_v1",
+      "manifest_sha256": "sha256:36c7e96612e4b008901644618a381bf38b3ebca7f861f460dcfdb5f8dd10d0b7",
+      "fixtures": [
+        {
+          "fixture_id": "minimax-asr-v1",
+          "sha256": "sha256:ab0d163436f5aae1d22a27ca4e87df77e7e5564f8bf2b5fc729a50f6f24b7459"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "minimax-asr-v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-asr-v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-asr-v1/negative-request/remote-url",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-asr-v1/negative-response/wrong-duration",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-asr-v1/status/provider-failure",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.minimax.video.h3.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "repository_local_async_media_v1",
+      "manifest_sha256": "sha256:db3c74f3760144481e5e028c6d33ecd461d7ed45c3e3767f9ae4d2ce14084607",
+      "fixtures": [
+        {
+          "fixture_id": "minimax-h3-video-v1",
+          "sha256": "sha256:75ba7cab798fe24a792254d62925d4b5c6dbea3a3061f630d7d38b13d20d1f71"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "minimax-h3-video-v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-h3-video-v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-h3-video-v1/negative-request/image-operation",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-h3-video-v1/negative-response/malformed-task",
+          "passed": true
+        },
+        {
+          "case_id": "minimax-h3-video-v1/status/provider-failure",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.openai.audio.transcribe.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "repository_local_async_media_v1",
+      "manifest_sha256": "sha256:f2a1efce220f4494188b71f58939b34e3719f1d4059d4c4945311b3c55eaad8c",
+      "fixtures": [
+        {
+          "fixture_id": "openai-transcribe-v1",
+          "sha256": "sha256:223fd5ee96bfc55a25f90643b3e6310a69de776d1d389e592d90b9b9d4aba658"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "openai-transcribe-v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "openai-transcribe-v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "openai-transcribe-v1/negative-request/remote-url",
+          "passed": true
+        },
+        {
+          "case_id": "openai-transcribe-v1/negative-response/overlapping-input-details",
+          "passed": true
+        },
+        {
+          "case_id": "openai-transcribe-v1/negative-response/bad-total",
+          "passed": true
+        },
+        {
+          "case_id": "openai-transcribe-v1/negative-response/ambiguous-usage",
+          "passed": true
+        },
+        {
+          "case_id": "openai-transcribe-v1/status/provider-failure",
+          "passed": true
+        }
+      ]
+    },
+    {
       "profile_id": "unirouter.openai.images.gpt-image.v1",
       "profile_version": "1.0.0",
       "runtime_state": "repository_local_image_v1",
@@ -244,6 +1004,74 @@
         },
         {
           "case_id": "openai-gpt-image-v1/status/permission-stop",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.openai.responses.inline-jpeg.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "local_contract_only",
+      "manifest_sha256": "sha256:7e7b5ebe86f932d85a24d86a80065695393bed9fc45b85ca06b4ddfcb0ec3bed",
+      "fixtures": [
+        {
+          "fixture_id": "openai-responses-inline-jpeg.v1",
+          "sha256": "sha256:4bf6bd792ed1acdd1d0b1a87a7b2d02a045bad2451caa4c9b75a9deb02d9ea47"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "openai-responses-inline-jpeg.v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-inline-jpeg.v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-inline-jpeg.v1/negative-request/remote-image",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-inline-jpeg.v1/negative-response/wrong-upstream-model",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-inline-jpeg.v1/status/rate-limited",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.openai.responses.text-tools.v3",
+      "profile_version": "1.0.0",
+      "runtime_state": "local_contract_only",
+      "manifest_sha256": "sha256:90a7feecd6370722c1496b2e001029934cfa716b1968326dfc8e3168dcd1c26f",
+      "fixtures": [
+        {
+          "fixture_id": "openai-responses-text-tools.v3",
+          "sha256": "sha256:d33a3fffbc2690b4b724272e93a6a446c94e3a5cf187263a2246131297eb604c"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "openai-responses-text-tools.v3/request",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-text-tools.v3/response",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-text-tools.v3/negative-request/parallel-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-text-tools.v3/negative-response/foreign-model-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-text-tools.v3/status/rate-limit",
           "passed": true
         }
       ]
@@ -362,9 +1190,9 @@
     }
   ],
   "summary": {
-    "profiles": 7,
-    "cases": 65,
-    "passed": 65,
+    "profiles": 29,
+    "cases": 195,
+    "passed": 195,
     "failed": 0
   }
 }

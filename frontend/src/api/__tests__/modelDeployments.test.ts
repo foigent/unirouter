@@ -83,6 +83,35 @@ describe('modelDeploymentApi', () => {
     expect(mockFetch.mock.calls[2][0]).toBe('/api/v1/model-deployments/41/operations/openai.chat_completions.v1/capability-probe-groups/op_' + '1'.repeat(32));
   });
 
+  it('discovers and resumes an async operation by GET with the exact binding and observation identity', async () => {
+    const operationID = 'unirouter.media_jobs.v1';
+    const base = '/api/v1/model-deployments/41/operations/unirouter.media_jobs.v1/probes';
+    const probeRunRef = 'op_' + '2'.repeat(32);
+    const target = { credential_binding_id: 91, expected_upstream_observation_identity: 'observation:original' };
+    response({ pending: true, probe_run_ref: probeRunRef }, 202);
+    response({ pending: false, probe_run_ref: probeRunRef, success: true }, 200);
+
+    await expect(modelDeploymentApi.readOperationProbe(41, operationID, target)).resolves.toMatchObject({ pending: true, probe_run_ref: probeRunRef });
+    await expect(modelDeploymentApi.readOperationProbe(41, operationID, target, probeRunRef)).resolves.toMatchObject({ success: true, probe_run_ref: probeRunRef });
+    const query = '?credential_binding_id=91&expected_upstream_observation_identity=observation%3Aoriginal';
+    expect(mockFetch.mock.calls.map(([path, options]) => [path, options.method ?? 'GET', options.body])).toEqual([
+      [base + query, 'GET', undefined],
+      [base + '/' + probeRunRef + query, 'GET', undefined],
+    ]);
+  });
+
+  it('returns the optional single capability probe count from qualification readback', async () => {
+    const qualification = { capability_id: 'function_tools', probe_available: true };
+    response({ ...qualification, planned_provider_requests: 2 });
+    response(qualification);
+
+    const readQualification = () => modelDeploymentApi.getCapabilityQualification(41, 'anthropic.messages.v1', 'function_tools');
+    expect((await readQualification()).planned_provider_requests).toBe(2);
+    expect((await readQualification()).planned_provider_requests).toBeUndefined();
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/model-deployments/41/operations/anthropic.messages.v1/capabilities/function_tools');
+  });
+
   it('requires the caller-owned Idempotency-Key on canonical create', async () => {
     const input: CanonicalModelApplicationCreateRequest = {
       connection: { id: 13 },
@@ -139,6 +168,7 @@ describe('modelDeploymentApi', () => {
     ['openai.embeddings.v1', '/v1/embeddings'],
     ['openai.responses.v1', '/v1/responses'],
     ['anthropic.messages.v1', '/v1/messages'],
+    ['unirouter.media_jobs.v1', '/v1/media/jobs'],
   ] as const)('maps %s to the canonical public path and honors server probe support', (operationID, publicPath) => {
     expect(canonicalOperationPaths[operationID]).toBe(publicPath);
     expect(canonicalOperationProbeAvailability(operation({

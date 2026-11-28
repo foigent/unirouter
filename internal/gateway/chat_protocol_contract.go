@@ -5,14 +5,17 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"image/jpeg"
 	"io"
+	"net/netip"
 	"net/url"
 	"path"
 	"regexp"
 	"slices"
 	"strings"
+	"time"
+	"unicode/utf8"
 
+	"github.com/uniroute/unirouter/internal/endpointprotocol"
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelrouting"
@@ -80,6 +83,12 @@ func validateAdvancedChatProtocolRequestWithAuthority(
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(body, &envelope); err != nil || envelope == nil {
 		return advancedChatProtocolValidation{}, fmt.Errorf("chat request must be an object")
+	}
+	if contract.RequiredDisabledReasoningEffort != "" {
+		var effort string
+		if json.Unmarshal(envelope["reasoning_effort"], &effort) != nil || effort != contract.RequiredDisabledReasoningEffort {
+			return advancedChatProtocolValidation{}, fmt.Errorf("reasoning_effort=%s is required by protocol profile %s", contract.RequiredDisabledReasoningEffort, contract.ProfileID)
+		}
 	}
 	streamRequested := false
 	streamNormalizations := make([]string, 0, 1)
@@ -253,6 +262,9 @@ func validateAdvancedChatProtocolRequestWithAuthority(
 	requestedMediaKinds := make(map[string]struct{})
 	imageRequested := false
 	imageCount := 0
+	boundedAudioCount := 0
+	inlineFileCount := 0
+	inlineVideoCount := 0
 	var imageAdmissionTokenUpper int64
 	for index := range messages {
 		role, err := requiredMessageRole(messages[index])
@@ -344,19 +356,66 @@ func validateAdvancedChatProtocolRequestWithAuthority(
 			for kind := range kinds {
 				requestedMediaKinds[kind] = struct{}{}
 			}
-			sanitized, imageValidation, err := sanitizeAdvancedContentParts(rawContent, role, contract)
+			sanitized, mediaValidation, err := sanitizeAdvancedContentParts(rawContent, role, contract)
 			if err != nil {
 				return advancedChatProtocolValidation{}, fmt.Errorf("message %d content: %w", index, err)
 			}
-			imageRequested = imageRequested || imageValidation.Requested
-			imageCount += imageValidation.Count
-			if imageValidation.AdmissionTokenUpper > 0 {
-				if imageAdmissionTokenUpper > (1<<63-1)-imageValidation.AdmissionTokenUpper {
+			imageRequested = imageRequested || mediaValidation.ImageRequested
+			imageCount += mediaValidation.ImageCount
+			boundedAudioCount += mediaValidation.BoundedAudioCount
+			inlineFileCount += mediaValidation.InlineFileCount
+			inlineVideoCount += mediaValidation.InlineVideoCount
+			if mediaValidation.AdmissionTokenUpper > 0 {
+				if imageAdmissionTokenUpper > (1<<63-1)-mediaValidation.AdmissionTokenUpper {
 					return advancedChatProtocolValidation{}, fmt.Errorf("image admission estimate overflow")
 				}
-				imageAdmissionTokenUpper += imageValidation.AdmissionTokenUpper
+				imageAdmissionTokenUpper += mediaValidation.AdmissionTokenUpper
 			}
 			messages[index]["content"] = sanitized
+		}
+	}
+	if boundedAudioCount > 0 {
+		if boundedAudioCount != 1 || streamRequested {
+			return advancedChatProtocolValidation{}, fmt.Errorf("protocol profile %s accepts one audio input with stream=false", contract.ProfileID)
+		}
+		for _, field := range functionToolRequestFields {
+			if raw, exists := envelope[field]; exists && !isJSONNull(raw) {
+				return advancedChatProtocolValidation{}, fmt.Errorf("audio input is incompatible with %s", field)
+			}
+		}
+		if contract.ProfileID == modelprofile.MiMo26InlineAudioProtocol && !thinkingExplicitlyDisabled(envelope["thinking"]) {
+			return advancedChatProtocolValidation{}, fmt.Errorf("audio input requires thinking.type=disabled")
+		}
+	}
+	if inlineFileCount > 0 {
+		if inlineFileCount != 1 || streamRequested {
+			return advancedChatProtocolValidation{}, fmt.Errorf("protocol profile %s accepts one inline text file with stream=false", contract.ProfileID)
+		}
+		for _, field := range functionToolRequestFields {
+			if raw, exists := envelope[field]; exists && !isJSONNull(raw) {
+				return advancedChatProtocolValidation{}, fmt.Errorf("inline text file is incompatible with %s", field)
+			}
+		}
+	}
+
+	if inlineVideoCount > 0 {
+		if inlineVideoCount != 1 || streamRequested {
+			return advancedChatProtocolValidation{}, fmt.Errorf("protocol profile %s accepts one video with stream=false", contract.ProfileID)
+		}
+		for _, field := range functionToolRequestFields {
+			if raw, exists := envelope[field]; exists && !isJSONNull(raw) {
+				return advancedChatProtocolValidation{}, fmt.Errorf("video is incompatible with %s", field)
+			}
+		}
+		if contract.ProfileID == modelprofile.MiMo26InlineAudioProtocol && !thinkingExplicitlyDisabled(envelope["thinking"]) {
+			return advancedChatProtocolValidation{}, fmt.Errorf("inline video requires thinking.type=disabled")
+		}
+	}
+
+	if (contract.ProfileID == modelprofile.QwenHostedVisionProtocol && imageRequested) ||
+		(inlineVideoCount > 0 && (contract.ProfileID == modelprofile.QwenHostedVisionProtocol || contract.ProfileID == modelprofile.QwenHybridInlineVideoProtocol)) {
+		if !bytes.Equal(bytes.TrimSpace(envelope["enable_thinking"]), []byte("false")) {
+			return advancedChatProtocolValidation{}, fmt.Errorf("hosted Qwen media requires enable_thinking=false")
 		}
 	}
 	if exactDynamicFunctionTools {
@@ -384,6 +443,9 @@ func validateAdvancedChatProtocolRequestWithAuthority(
 		return advancedChatProtocolValidation{}, fmt.Errorf("response_format.type=json_schema cannot be combined with function tool history for protocol profile %s", contract.ProfileID)
 	}
 	if contract.ExclusiveMediaKinds && len(requestedMediaKinds) > 1 {
+		if contract.BoundedAudioWAV || contract.InlinePlainTextFile || contract.BoundedInlineMP4 {
+			return advancedChatProtocolValidation{}, fmt.Errorf("distinct media input types cannot be combined by protocol profile %s", contract.ProfileID)
+		}
 		return advancedChatProtocolValidation{}, fmt.Errorf("image, video, and file inputs cannot be combined by protocol profile %s", contract.ProfileID)
 	}
 	sanitizedMessages, err := json.Marshal(messages)
@@ -1244,9 +1306,14 @@ func requiredMessageRole(message map[string]json.RawMessage) (string, error) {
 	return role, nil
 }
 
-type imageContentValidation struct {
-	Requested           bool
-	Count               int
+var functionToolRequestFields = []string{"tools", "tool_choice", "parallel_tool_calls", "functions", "function_call", "tool_stream"}
+
+type chatMediaContentValidation struct {
+	ImageRequested      bool
+	ImageCount          int
+	BoundedAudioCount   int
+	InlineFileCount     int
+	InlineVideoCount    int
 	AdmissionTokenUpper int64
 }
 
@@ -1254,12 +1321,12 @@ func sanitizeAdvancedContentParts(
 	raw json.RawMessage,
 	messageRole string,
 	contract modelprofile.ChatProtocolContract,
-) (json.RawMessage, imageContentValidation, error) {
+) (json.RawMessage, chatMediaContentValidation, error) {
 	var parts []map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &parts); err != nil {
-		return nil, imageContentValidation{}, fmt.Errorf("content parts must be objects")
+		return nil, chatMediaContentValidation{}, fmt.Errorf("content parts must be objects")
 	}
-	var imageValidation imageContentValidation
+	var mediaValidation chatMediaContentValidation
 	for index := range parts {
 		var kind string
 		if rawType, exists := parts[index]["type"]; !exists || json.Unmarshal(rawType, &kind) != nil {
@@ -1268,51 +1335,91 @@ func sanitizeAdvancedContentParts(
 		switch kind {
 		case "image_url":
 			if !contract.InlineImageDataURL && !contract.RemoteImageHTTPSURL {
-				return nil, imageContentValidation{}, fmt.Errorf("image input is not supported by protocol profile %s", contract.ProfileID)
+				return nil, chatMediaContentValidation{}, fmt.Errorf("image input is not supported by protocol profile %s", contract.ProfileID)
 			}
 			tokenUpper, err := validateImagePart(parts[index], messageRole, contract)
 			if err != nil {
-				return nil, imageContentValidation{}, fmt.Errorf("part %d: %w", index, err)
+				return nil, chatMediaContentValidation{}, fmt.Errorf("part %d: %w", index, err)
 			}
-			imageValidation.Requested = true
-			imageValidation.Count++
+			mediaValidation.ImageRequested = true
+			mediaValidation.ImageCount++
 			if tokenUpper > 0 {
-				if imageValidation.AdmissionTokenUpper > (1<<63-1)-tokenUpper {
-					return nil, imageContentValidation{}, fmt.Errorf("part %d: image admission estimate overflow", index)
+				if mediaValidation.AdmissionTokenUpper > (1<<63-1)-tokenUpper {
+					return nil, chatMediaContentValidation{}, fmt.Errorf("part %d: image admission estimate overflow", index)
 				}
-				imageValidation.AdmissionTokenUpper += tokenUpper
+				mediaValidation.AdmissionTokenUpper += tokenUpper
 			}
 			parts[index] = map[string]json.RawMessage{
 				"type": json.RawMessage(`"text"`), "text": json.RawMessage(`""`),
 			}
 		case "input_audio":
 			if !contract.InlineAudioBase64 && !contract.RemoteAudioHTTPSURL {
-				return nil, imageContentValidation{}, fmt.Errorf("audio input is not supported by protocol profile %s", contract.ProfileID)
+				return nil, chatMediaContentValidation{}, fmt.Errorf("audio input is not supported by protocol profile %s", contract.ProfileID)
 			}
-			if err := validateAudioPart(
-				parts[index], contract.InlineAudioBase64, contract.RemoteAudioHTTPSURL, contract.InlineAudioFormats,
-			); err != nil {
-				return nil, imageContentValidation{}, fmt.Errorf("part %d: %w", index, err)
+			if err := validateAudioPart(parts[index], contract); err != nil {
+				return nil, chatMediaContentValidation{}, fmt.Errorf("part %d: %w", index, err)
+			}
+			if contract.BoundedAudioWAV {
+				var audio struct{ Data string }
+				if messageRole != "user" || json.Unmarshal(parts[index]["input_audio"], &audio) != nil {
+					return nil, chatMediaContentValidation{}, fmt.Errorf("part %d: expected user WAV input", index)
+				}
+				if contract.InlineAudioOmitMIME {
+					encoded, ok := strings.CutPrefix(audio.Data, "data:;base64,")
+					if ok {
+						audio.Data = "data:audio/wav;base64," + encoded
+					}
+				}
+				if _, _, err := endpointprotocol.DecodeASRInputWAV(audio.Data); err != nil {
+					return nil, chatMediaContentValidation{}, fmt.Errorf("part %d: expected bounded PCM WAV input", index)
+				}
+				mediaValidation.BoundedAudioCount++
 			}
 			parts[index] = map[string]json.RawMessage{
 				"type": json.RawMessage(`"text"`), "text": json.RawMessage(`""`),
 			}
 		case "video_url":
 			if !contract.InlineVideoDataURL && !contract.RemoteVideoHTTPSURL {
-				return nil, imageContentValidation{}, fmt.Errorf("video input is not supported by protocol profile %s", contract.ProfileID)
+				return nil, chatMediaContentValidation{}, fmt.Errorf("video input is not supported by protocol profile %s", contract.ProfileID)
 			}
 			if err := validateVideoPart(parts[index], contract); err != nil {
-				return nil, imageContentValidation{}, fmt.Errorf("part %d: %w", index, err)
+				return nil, chatMediaContentValidation{}, fmt.Errorf("part %d: %w", index, err)
+			}
+			if contract.BoundedInlineMP4 {
+				if messageRole != "user" || !validateBoundedInlineMP4(parts[index]["video_url"], contract.InlineVideoOmitMIME) {
+					return nil, chatMediaContentValidation{}, fmt.Errorf("part %d: expected a short bounded inline MP4 on a user message", index)
+				}
+				mediaValidation.InlineVideoCount++
+			}
+
+			if contract.PublicVideoHTTPSURL {
+				var video struct{ URL string }
+				if messageRole != "user" || json.Unmarshal(parts[index]["video_url"], &video) != nil || !publicVideoHTTPSURL(video.URL) {
+					return nil, chatMediaContentValidation{}, fmt.Errorf("part %d: expected a public HTTPS MP4 URL without credentials", index)
+				}
+				mediaValidation.InlineVideoCount++
 			}
 			parts[index] = map[string]json.RawMessage{
 				"type": json.RawMessage(`"text"`), "text": json.RawMessage(`""`),
 			}
+		case "file":
+			if !contract.InlinePlainTextFile || messageRole != "user" {
+				return nil, chatMediaContentValidation{}, fmt.Errorf("inline file input is not supported by protocol profile %s", contract.ProfileID)
+			}
+			if err := validateInlinePlainTextFile(parts[index]); err != nil {
+				return nil, chatMediaContentValidation{}, fmt.Errorf("part %d: %w", index, err)
+			}
+			mediaValidation.InlineFileCount++
+			parts[index] = map[string]json.RawMessage{
+				"type": json.RawMessage(`"text"`), "text": json.RawMessage(`""`),
+			}
+
 		case "file_url":
 			if !contract.RemoteFileHTTPSURL {
-				return nil, imageContentValidation{}, fmt.Errorf("file input is not supported by protocol profile %s", contract.ProfileID)
+				return nil, chatMediaContentValidation{}, fmt.Errorf("file input is not supported by protocol profile %s", contract.ProfileID)
 			}
 			if err := validateMediaPart(parts[index], "file_url", false, true, nil, contract.RemoteFileExtensions); err != nil {
-				return nil, imageContentValidation{}, fmt.Errorf("part %d: %w", index, err)
+				return nil, chatMediaContentValidation{}, fmt.Errorf("part %d: %w", index, err)
 			}
 			parts[index] = map[string]json.RawMessage{
 				"type": json.RawMessage(`"text"`), "text": json.RawMessage(`""`),
@@ -1321,9 +1428,43 @@ func sanitizeAdvancedContentParts(
 	}
 	sanitized, err := json.Marshal(parts)
 	if err != nil {
-		return nil, imageContentValidation{}, err
+		return nil, chatMediaContentValidation{}, err
 	}
-	return sanitized, imageValidation, nil
+	return sanitized, mediaValidation, nil
+}
+
+func validateInlinePlainTextFile(part map[string]json.RawMessage) error {
+	if err := rejectUnknownJSONFields(part, "inline file part", "type", "file"); err != nil {
+		return err
+	}
+	var file map[string]json.RawMessage
+	if err := json.Unmarshal(part["file"], &file); err != nil || file == nil {
+		return fmt.Errorf("file must be an object")
+	}
+	if err := rejectUnknownJSONFields(file, "inline file", "file_data", "filename"); err != nil {
+		return err
+	}
+	if rawName, exists := file["filename"]; exists {
+		var name string
+		if json.Unmarshal(rawName, &name) != nil || len(name) <= len(".txt") || len(name) > 80 ||
+			!strings.HasSuffix(name, ".txt") || strings.ContainsAny(name, "/\\:\r\n\x00") {
+			return fmt.Errorf("filename must be a local .txt name")
+		}
+	}
+	var data string
+	if json.Unmarshal(file["file_data"], &data) != nil {
+		return fmt.Errorf("file_data must be an inline text data URL")
+	}
+	const maxBytes = 16 * 1024
+	encoded, ok := strings.CutPrefix(data, "data:text/plain;base64,")
+	if !ok || len(encoded) > base64.StdEncoding.EncodedLen(maxBytes) || strings.ContainsAny(encoded, "\r\n") {
+		return fmt.Errorf("file_data must be bounded inline UTF-8 text")
+	}
+	plain, err := base64.StdEncoding.Strict().DecodeString(encoded)
+	if err != nil || len(plain) == 0 || len(plain) > maxBytes || !utf8.Valid(plain) || bytes.IndexByte(plain, 0) >= 0 {
+		return fmt.Errorf("file_data must be bounded inline UTF-8 text")
+	}
+	return nil
 }
 
 func validateImagePart(part map[string]json.RawMessage, messageRole string, contract modelprofile.ChatProtocolContract) (int64, error) {
@@ -1420,38 +1561,12 @@ func validateExactInlineJPEG(part map[string]json.RawMessage, contract modelprof
 	if !slices.Contains(contract.InlineImageMIMETypes, mimeType) {
 		return 0, fmt.Errorf("image_url MIME type %s is not supported by the protocol profile", mimeType)
 	}
-	payload := value[separator+8:]
-	if int64(base64.StdEncoding.DecodedLen(len(payload))) > policy.MaximumDecodedBytes+2 {
-		return 0, fmt.Errorf("image decoded bytes must not exceed %d", policy.MaximumDecodedBytes)
-	}
-	decoded, err := base64.StdEncoding.Strict().DecodeString(payload)
+	pixels, err := endpointprotocol.CheckBoundedInlineJPEG(value[separator+8:], endpointprotocol.InlineJPEGBounds{
+		MaximumBytes: policy.MaximumDecodedBytes, MinimumWidth: policy.MinimumWidth, MinimumHeight: policy.MinimumHeight,
+		MinimumPixels: policy.MinimumPixels, MaximumPixels: policy.MaximumPixels, MaximumAspectRatio: policy.MaximumAspectRatio,
+	})
 	if err != nil {
-		return 0, fmt.Errorf("image_url contains invalid base64 data")
-	}
-	if int64(len(decoded)) > policy.MaximumDecodedBytes {
-		return 0, fmt.Errorf("image decoded bytes must not exceed %d", policy.MaximumDecodedBytes)
-	}
-	config, err := jpeg.DecodeConfig(bytes.NewReader(decoded))
-	if err != nil {
-		return 0, fmt.Errorf("image_url payload must be a valid JPEG image")
-	}
-	if config.Width < policy.MinimumWidth || config.Height < policy.MinimumHeight {
-		return 0, fmt.Errorf("image dimensions must be at least %dx%d", policy.MinimumWidth, policy.MinimumHeight)
-	}
-	pixels := int64(config.Width) * int64(config.Height)
-	if pixels < policy.MinimumPixels || pixels > policy.MaximumPixels {
-		return 0, fmt.Errorf("image pixels must be between %d and %d", policy.MinimumPixels, policy.MaximumPixels)
-	}
-	if int64(config.Width) > int64(config.Height)*policy.MaximumAspectRatio ||
-		int64(config.Height) > int64(config.Width)*policy.MaximumAspectRatio {
-		return 0, fmt.Errorf("image aspect ratio must not exceed %d:1", policy.MaximumAspectRatio)
-	}
-	decodedImage, err := jpeg.Decode(bytes.NewReader(decoded))
-	if err != nil {
-		return 0, fmt.Errorf("image_url payload must be a complete JPEG image")
-	}
-	if bounds := decodedImage.Bounds(); bounds.Dx() != config.Width || bounds.Dy() != config.Height {
-		return 0, fmt.Errorf("image JPEG dimensions are inconsistent")
+		return 0, err
 	}
 	if pixels > (1<<63-1)/policy.AdmissionTokenUpperPerPixel {
 		return 0, fmt.Errorf("image admission estimate overflow")
@@ -1472,6 +1587,14 @@ func validateImageRequestCombination(
 	}
 	if policy.RequiresNonStream && streamRequested {
 		return fmt.Errorf("image input requires stream=false for protocol profile %s", contract.ProfileID)
+	}
+	if policy.RequiresDisabledThinking {
+		var thinking struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(envelope["thinking"], &thinking); err != nil || thinking.Type != "disabled" {
+			return fmt.Errorf("image input requires thinking.type=disabled for protocol profile %s", contract.ProfileID)
+		}
 	}
 	if imageCount <= 0 || imageCount > policy.MaximumImages {
 		return fmt.Errorf("image input count must be between 1 and %d for protocol profile %s", policy.MaximumImages, contract.ProfileID)
@@ -1496,7 +1619,8 @@ func validateImageRequestCombination(
 	return nil
 }
 
-func validateAudioPart(part map[string]json.RawMessage, allowInlineBase64, allowRemoteHTTPS bool, allowedFormats []string) error {
+func validateAudioPart(part map[string]json.RawMessage, contract modelprofile.ChatProtocolContract) error {
+	allowedFormats := contract.InlineAudioFormats
 	if err := rejectUnknownJSONFields(part, "audio content part", "type", "input_audio"); err != nil {
 		return err
 	}
@@ -1520,36 +1644,37 @@ func validateAudioPart(part map[string]json.RawMessage, allowInlineBase64, allow
 		return fmt.Errorf("input_audio.data must be a non-empty base64 string")
 	}
 	if strings.HasPrefix(data, "data:") {
-		if !allowInlineBase64 {
+		if !contract.InlineAudioBase64 {
 			return fmt.Errorf("input_audio.data inline base64 is not supported by the protocol profile")
 		}
 		separator := strings.Index(data, ";base64,")
-		if separator <= len("data:") || separator+8 >= len(data) {
+		if separator < len("data:") || separator+8 >= len(data) {
 			return fmt.Errorf("input_audio.data must contain a non-empty base64 payload")
 		}
-		if !strings.HasPrefix(strings.ToLower(data[len("data:"):separator]), "audio/") {
+		mime := strings.ToLower(data[len("data:"):separator])
+		if !strings.HasPrefix(mime, "audio/") && !(contract.InlineAudioOmitMIME && mime == "") {
 			return fmt.Errorf("input_audio.data must use an audio MIME type")
 		}
 		data = data[separator+8:]
 	} else if remote, err := url.Parse(data); err == nil && remote.Scheme != "" {
-		if !allowRemoteHTTPS || remote.Scheme != "https" || remote.Host == "" || remote.User != nil {
+		if !contract.RemoteAudioHTTPSURL || remote.Scheme != "https" || remote.Host == "" || remote.User != nil {
 			return fmt.Errorf("input_audio.data remote URL must be an absolute HTTPS URL without user information")
 		}
-		if len(allowedFormats) > 0 {
+		if _, exists := audio["format"]; exists || (len(allowedFormats) > 0 && !contract.InlineAudioFormatOptional) {
 			return fmt.Errorf("input_audio.data remote URLs cannot be combined with format")
 		}
 		return nil
 	}
-	if !allowInlineBase64 {
+	if !contract.InlineAudioBase64 {
 		return fmt.Errorf("input_audio.data inline base64 is not supported by the protocol profile")
 	}
 	decoder := base64.NewDecoder(base64.StdEncoding.Strict(), strings.NewReader(data))
 	if _, err := io.Copy(io.Discard, decoder); err != nil {
 		return fmt.Errorf("input_audio.data contains invalid base64 data")
 	}
-	if len(allowedFormats) > 0 {
+	if rawFormat, present := audio["format"]; present || (len(allowedFormats) > 0 && !contract.InlineAudioFormatOptional) {
 		var format string
-		if rawFormat, ok := audio["format"]; !ok || json.Unmarshal(rawFormat, &format) != nil || format == "" {
+		if json.Unmarshal(rawFormat, &format) != nil || format == "" {
 			return fmt.Errorf("input_audio.format must be a string")
 		}
 		format = strings.ToLower(strings.TrimSpace(format))
@@ -1560,6 +1685,64 @@ func validateAudioPart(part map[string]json.RawMessage, allowInlineBase64, allow
 	return nil
 }
 
+func validateBoundedInlineMP4(raw json.RawMessage, allowOmitMIME bool) bool {
+	var video struct{ URL string }
+	if json.Unmarshal(raw, &video) != nil {
+		return false
+	}
+	encoded, ok := strings.CutPrefix(video.URL, "data:video/mp4;base64,")
+	if !ok && allowOmitMIME {
+		encoded, ok = strings.CutPrefix(video.URL, "data:;base64,")
+	}
+	const maxVideoBytes = 96 * 1024
+	if !ok || len(encoded) > base64.StdEncoding.EncodedLen(maxVideoBytes) || strings.ContainsAny(encoded, "\r\n") {
+		return false
+	}
+	clip, err := base64.StdEncoding.Strict().DecodeString(encoded)
+	return err == nil && len(clip) <= maxVideoBytes && endpointprotocol.ValidateMP4(clip, endpointprotocol.MP4Requirements{
+		MaxWidth: 320, MaxHeight: 320, MinDuration: 2 * time.Second, MaxDuration: 8 * time.Second,
+	})
+}
+
+func publicVideoHTTPSURL(value string) bool {
+	if len(value) > 2048 {
+		return false
+	}
+	target, err := url.Parse(value)
+	if err != nil || target.Scheme != "https" || target.User != nil || target.RawQuery != "" || target.ForceQuery ||
+		strings.Contains(value, "#") || !strings.EqualFold(path.Ext(target.Path), ".mp4") ||
+		(target.Port() != "" && target.Port() != "443") {
+		return false
+	}
+	host := strings.ToLower(target.Hostname())
+	if _, err := netip.ParseAddr(host); err == nil {
+		return false
+	}
+	labels := strings.Split(host, ".")
+	if len(host) > 253 || len(labels) < 2 {
+		return false
+	}
+	tld := labels[len(labels)-1]
+	switch tld {
+	case "localhost", "local", "internal", "home", "lan", "test", "invalid", "example", "onion", "arpa":
+		return false
+	}
+	if !strings.ContainsAny(tld, "abcdefghijklmnopqrstuvwxyz") {
+		return false
+	}
+	for _, label := range labels {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, c := range label {
+			if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func validateVideoPart(part map[string]json.RawMessage, contract modelprofile.ChatProtocolContract) error {
 	allowedFields := []string{"type", "video_url"}
 	if contract.VideoFPSSupported {
@@ -1568,7 +1751,18 @@ func validateVideoPart(part map[string]json.RawMessage, contract modelprofile.Ch
 	if err := rejectUnknownJSONFields(part, "video content part", allowedFields...); err != nil {
 		return err
 	}
-	mediaOnly := map[string]json.RawMessage{"type": part["type"], "video_url": part["video_url"]}
+	media := part["video_url"]
+	if contract.InlineVideoOmitMIME {
+		var input map[string]json.RawMessage
+		var value string
+		if json.Unmarshal(media, &input) == nil && json.Unmarshal(input["url"], &value) == nil {
+			if encoded, ok := strings.CutPrefix(value, "data:;base64,"); ok {
+				input["url"], _ = json.Marshal("data:video/mp4;base64," + encoded)
+				media, _ = json.Marshal(input)
+			}
+		}
+	}
+	mediaOnly := map[string]json.RawMessage{"type": part["type"], "video_url": media}
 	if err := validateMediaPart(
 		mediaOnly, "video_url", contract.InlineVideoDataURL, contract.RemoteVideoHTTPSURL, contract.InlineVideoMIMETypes, nil,
 	); err != nil {
@@ -1607,7 +1801,7 @@ func mediaKindsInContentParts(raw json.RawMessage) (map[string]struct{}, error) 
 			kinds["audio"] = struct{}{}
 		case "video_url":
 			kinds["video"] = struct{}{}
-		case "file_url":
+		case "file_url", "file":
 			kinds["file"] = struct{}{}
 		}
 	}

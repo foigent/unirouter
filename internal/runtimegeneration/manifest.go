@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	budgetassets "github.com/uniroute/unirouter/contracts/source-budgets/v1"
+	mediachargeassets "github.com/uniroute/unirouter/contracts/source-facts/media-charge-v1"
 	predispatchassets "github.com/uniroute/unirouter/contracts/source-facts/pre-dispatch-v2"
 	sourceassets "github.com/uniroute/unirouter/contracts/source-facts/v1"
 	observationassets "github.com/uniroute/unirouter/contracts/source-facts/v2"
@@ -101,6 +102,7 @@ func CurrentManifest(schemaHeads []string) Manifest {
 		modelprofile.ImplementationReference{Kind: "financial_journal", ID: budgetassets.WriterContract},
 		modelprofile.ImplementationReference{Kind: "source_observations", ID: observationassets.SchemaVersion},
 		modelprofile.ImplementationReference{Kind: "source_observations", ID: predispatchassets.SchemaVersion},
+		modelprofile.ImplementationReference{Kind: "source_observations", ID: mediachargeassets.ID},
 		modelprofile.ImplementationReference{Kind: "source_dispatch", ID: observationassets.DispatchOutboxContract},
 		modelprofile.ImplementationReference{Kind: "stream_counter", ID: metering.GatewayCounterEstimateVersionV2},
 		modelprofile.ImplementationReference{Kind: "stream_counter", ID: metering.GatewayCounterEstimateVersionV3},

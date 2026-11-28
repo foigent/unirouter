@@ -33,11 +33,16 @@ func TestProviderCompletionRelayHoldSurvivesRecoveryIntegration(t *testing.T) {
 	}{
 		{"qwen", billing.BillingModePrepaidEnforced}, {"qwen", billing.BillingModeCostObservation},
 		{"deepseek", billing.BillingModePrepaidEnforced}, {"deepseek", billing.BillingModeCostObservation},
+		{"qwen-hosted", billing.BillingModePrepaidEnforced}, {"qwen-hosted", billing.BillingModeCostObservation},
 	}
 	for _, tc := range cases {
 		family, mode := tc.family, tc.mode
 		t.Run(family+"/"+string(mode), func(t *testing.T) {
 			reserved, reported := 20, 21
+			hosted := family == "qwen-hosted"
+			if hosted {
+				reserved, reported = 96, 66
+			}
 			if family == "deepseek" {
 				reserved, reported = 2048, 2049
 			}
@@ -55,7 +60,7 @@ func TestProviderCompletionRelayHoldSurvivesRecoveryIntegration(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, frozen.Success)
 			require.Equal(t, mode, frozen.BillingMode)
-			require.NoError(t, actual.BeginProviderAttempt(ctx, billing.ProviderAttemptStart{RequestID: requestID, AttemptID: attemptID, OrgID: orgID, APIKeyID: 101, ChannelID: 201, ChannelKeyID: 301, RouteSequence: 1, RouteTotal: 1, Endpoint: "/v1/chat/completions", Provider: map[string]string{"qwen": "dashscope", "deepseek": "deepseek"}[family], Channel: "fixture"}))
+			require.NoError(t, actual.BeginProviderAttempt(ctx, billing.ProviderAttemptStart{RequestID: requestID, AttemptID: attemptID, OrgID: orgID, APIKeyID: 101, ChannelID: 201, ChannelKeyID: 301, RouteSequence: 1, RouteTotal: 1, Endpoint: "/v1/chat/completions", Provider: map[string]string{"qwen": "dashscope", "qwen-hosted": "dashscope", "deepseek": "deepseek"}[family], Channel: "fixture"}))
 			require.NoError(t, actual.CompleteProviderAttempt(ctx, billing.ProviderAttemptCompletion{RequestID: requestID, AttemptID: attemptID, OrgID: orgID, Outcome: billing.ProviderAttemptOutcomeResponseAccepted, HTTPStatus: 200}))
 			terminalChain := policybilling.New(capbilling.New(actual, nil), nil)
 			relay := NewRelay(pool, nil, nil, terminalChain, nil, nil)
@@ -66,7 +71,14 @@ func TestProviderCompletionRelayHoldSurvivesRecoveryIntegration(t *testing.T) {
 			if family == "deepseek" {
 				p = deepSeekCompletionDefinition(t).Profile()
 			}
+			if hosted {
+				p.ProtocolProfile, p.CacheUsageProfile = modelprofile.QwenHostedSplitProtocol, modelprofile.QwenHostedSplitUsageProfile
+				p.UpstreamModelIDs = []string{"qwen3.8-27b"}
+			}
 			wire := existingFamilyRelayFixture(t, p, "tools")
+			if hosted {
+				wire = strings.Replace(wire, `"completion_tokens":20`, `"completion_tokens_details":{"reasoning_tokens":65},"completion_tokens":20`, 1)
+			}
 			if family == "deepseek" {
 				wire = deepSeekCompletionFixture(t)
 			}
@@ -80,6 +92,13 @@ func TestProviderCompletionRelayHoldSurvivesRecoveryIntegration(t *testing.T) {
 				route.ReasoningProfile = p.ReasoningProfile
 			}
 			relayCtx := contextWithStreamReservation(contextWithDurableProviderAttempt(contextWithAttemptID(ctx, attemptID)), reserved, false)
+			if hosted {
+				enforcement, ok := modelprofile.ResolveOutputEnforcement(p.ProtocolProfile)
+				require.True(t, ok)
+				relayCtx = contextWithExecutionOutputBudget(relayCtx, modelExecutionRequestLimits{
+					EstimatedOutputTokens: 96, HostedReasoningTokenLimit: 64, OutputEnforcement: enforcement,
+				})
+			}
 			rec := httptest.NewRecorder()
 			relay.relayStreamRequest(relayCtx, rec, &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(wire))}, route, requestID, orgID, 101, model, model, "127.0.0.1", nil, logger.New(logger.Fields{RequestID: requestID}), time.Now(), 1000, adapters.NewOpenAICompatible(), "")
 			require.Contains(t, rec.Body.String(), "stream_error.provider_output_limit_exceeded")
@@ -96,10 +115,17 @@ func TestProviderCompletionRelayHoldSurvivesRecoveryIntegration(t *testing.T) {
 			require.Equal(t, "provider_evidence", purpose)
 			require.Equal(t, "provider_reported", authority)
 			require.Equal(t, "final", finality)
-			require.NoError(t, pool.QueryRow(ctx, `SELECT state FROM stream_delivery_leases WHERE org_id=$1 AND request_id=$2`, orgID, requestID).Scan(&leaseState))
-			require.Equal(t, billing.StreamLeaseStateInterrupted, leaseState)
-			_, err = pool.Exec(ctx, `UPDATE stream_delivery_leases SET lease_expires_at=NOW()-INTERVAL '1 hour' WHERE org_id=$1 AND request_id=$2`, orgID, requestID)
-			require.NoError(t, err)
+			if hosted {
+				require.NotContains(t, rec.Body.String(), "unirouter_probe_echo")
+				var leaseRows int
+				require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM stream_delivery_leases WHERE org_id=$1 AND request_id=$2`, orgID, requestID).Scan(&leaseRows))
+				require.Zero(t, leaseRows)
+			} else {
+				require.NoError(t, pool.QueryRow(ctx, `SELECT state FROM stream_delivery_leases WHERE org_id=$1 AND request_id=$2`, orgID, requestID).Scan(&leaseState))
+				require.Equal(t, billing.StreamLeaseStateInterrupted, leaseState)
+				_, err = pool.Exec(ctx, `UPDATE stream_delivery_leases SET lease_expires_at=NOW()-INTERVAL '1 hour' WHERE org_id=$1 AND request_id=$2`, orgID, requestID)
+				require.NoError(t, err)
+			}
 			streams, err := actual.RecoverExpiredStreamDeliveries(ctx, 10)
 			require.NoError(t, err)
 			require.Zero(t, streams.Claimed)
@@ -107,8 +133,14 @@ func TestProviderCompletionRelayHoldSurvivesRecoveryIntegration(t *testing.T) {
 			require.NoError(t, err)
 			require.Zero(t, settlements.Claimed)
 			require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM request_delivery_receipts WHERE org_id=$1 AND request_id=$2 AND error_code='provider_output_limit_exceeded' AND delivered_bytes>0 AND delivered_chunks>0`, orgID, requestID).Scan(&receipts))
-			require.Equal(t, 1, receipts)
-			require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM billing_provider_attempts WHERE org_id=$1 AND request_id=$2 AND state='delivery_failed' AND outcome_certainty='known_usage' AND NOT retry_authorized`, orgID, requestID).Scan(&attempts))
+			attemptState := "delivery_failed"
+			if hosted {
+				require.Zero(t, receipts)
+				attemptState = "output_withheld"
+			} else {
+				require.Equal(t, 1, receipts)
+			}
+			require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM billing_provider_attempts WHERE org_id=$1 AND request_id=$2 AND state=$3 AND outcome_certainty='known_usage' AND NOT retry_authorized`, orgID, requestID, attemptState).Scan(&attempts))
 			require.Equal(t, 1, attempts)
 			require.NoError(t, pool.QueryRow(ctx, `SELECT (SELECT COUNT(*) FROM transactions WHERE org_id=$1 AND request_id=$2 AND type='settle')+(SELECT COUNT(*) FROM billing_observation_receipts WHERE org_id=$1 AND request_id=$2)`, orgID, requestID).Scan(&terminals))
 			require.Zero(t, terminals)

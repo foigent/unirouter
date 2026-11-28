@@ -5,12 +5,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"embed"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"path"
 	"reflect"
@@ -74,22 +77,31 @@ type fixtureDocument struct {
 }
 
 type fixtureRequest struct {
-	BaseURL                  string `json:"base_url"`
-	RequestedModel           string `json:"requested_model"`
-	MappedModel              string `json:"mapped_model"`
-	RequestID                string `json:"request_id"`
-	Body                     string `json:"body"`
-	ExpectedMethod           string `json:"expected_method"`
-	ExpectedURL              string `json:"expected_url"`
-	ExpectedAuthentication   string `json:"expected_authentication,omitempty"`
-	ExpectedAnthropicVersion string `json:"expected_anthropic_version_header,omitempty"`
-	ExpectedRequestIDHeader  string `json:"expected_request_id_header"`
-	ExpectedBody             string `json:"expected_body"`
+	BaseURL                  string                 `json:"base_url"`
+	RequestedModel           string                 `json:"requested_model"`
+	MappedModel              string                 `json:"mapped_model"`
+	RequestID                string                 `json:"request_id"`
+	Body                     string                 `json:"body"`
+	ExpectedMethod           string                 `json:"expected_method"`
+	ExpectedURL              string                 `json:"expected_url"`
+	ExpectedAuthentication   string                 `json:"expected_authentication,omitempty"`
+	ExpectedAnthropicVersion string                 `json:"expected_anthropic_version_header,omitempty"`
+	ExpectedRequestIDHeader  string                 `json:"expected_request_id_header"`
+	ExpectedBody             string                 `json:"expected_body,omitempty"`
+	ExpectedMultipart        []fixtureMultipartPart `json:"expected_multipart,omitempty"`
+}
+
+type fixtureMultipartPart struct {
+	Name     string `json:"name"`
+	Filename string `json:"filename,omitempty"`
+	Value    string `json:"value,omitempty"`
+	SHA256   string `json:"sha256,omitempty"`
 }
 
 type fixtureResponse struct {
 	StatusCode      int     `json:"status_code"`
-	Body            string  `json:"body"`
+	Body            string  `json:"body,omitempty"`
+	BodyBase64      string  `json:"body_base64,omitempty"`
 	ExpectedOutcome Outcome `json:"expected_outcome"`
 }
 
@@ -291,7 +303,7 @@ func validateManifest(manifest Manifest, profile Profile) error {
 		return errors.New("manifest must be local fixture_verified evidence")
 	}
 	if manifest.RuntimeState != RuntimeContractOnly &&
-		manifest.RuntimeState != RuntimeRepositoryImageV1 {
+		manifest.RuntimeState != RuntimeRepositoryImageV1 && manifest.RuntimeState != RuntimeRepositoryAsyncMediaV1 {
 		return errors.New("manifest runtime state is not allowed")
 	}
 	if !reflect.DeepEqual(manifest.Descriptor, descriptor) {
@@ -349,11 +361,27 @@ func validateFixture(manifest Manifest, ref FixtureRef) (fixtureDocument, error)
 		fixture.Request.ExpectedAnthropicVersion == "" {
 		return fixtureDocument{}, fmt.Errorf("fixture %s Anthropic version evidence is missing", ref.Path)
 	}
-	for name, body := range map[string]string{
-		"request":       fixture.Request.Body,
-		"expected_body": fixture.Request.ExpectedBody,
-		"response":      fixture.Response.Body,
-	} {
+	bodies := map[string]string{"request": fixture.Request.Body}
+	if fixture.Response.BodyBase64 == "" {
+		bodies["response"] = fixture.Response.Body
+	} else if parsed, err := base64.StdEncoding.Strict().DecodeString(fixture.Response.BodyBase64); fixture.Response.Body != "" || err != nil || len(parsed) == 0 {
+		return fixtureDocument{}, fmt.Errorf("fixture %s binary response is invalid", ref.Path)
+	}
+	if len(fixture.Request.ExpectedMultipart) == 0 {
+		bodies["expected_body"] = fixture.Request.ExpectedBody
+	} else {
+		if fixture.Request.ExpectedBody != "" || len(fixture.Request.ExpectedMultipart) > 8 {
+			return fixtureDocument{}, fmt.Errorf("fixture %s multipart evidence conflicts", ref.Path)
+		}
+		for _, part := range fixture.Request.ExpectedMultipart {
+			text := part.Filename == "" && part.SHA256 == ""
+			file := part.Filename != "" && part.Value == "" && artifactHashPattern.MatchString(part.SHA256)
+			if part.Name == "" || (!text && !file) {
+				return fixtureDocument{}, fmt.Errorf("fixture %s multipart evidence is incomplete", ref.Path)
+			}
+		}
+	}
+	for name, body := range bodies {
 		if strictErr := eventconnector.ValidateStrictJSON([]byte(body), eventconnector.StrictJSONOptions{}); strictErr != nil {
 			return fixtureDocument{}, fmt.Errorf("fixture %s %s is not strict JSON: %s", ref.Path, name, strictErr.Code)
 		}
@@ -422,7 +450,12 @@ func runFixture(ctx context.Context, profile Profile, fixture fixtureDocument) [
 	request, binding, err := profile.BuildRequest(ctx, input)
 	results = append(results, conformanceResult(fixture.FixtureID+"/request", validateBuiltRequest(request, err, fixture.Request)))
 
-	outcome, responseErr := profile.ParseResponse(ctx, binding, fixture.Response.StatusCode, []byte(fixture.Response.Body))
+	responseBody := []byte(fixture.Response.Body)
+	if fixture.Response.BodyBase64 != "" {
+		responseBody, _ = base64.StdEncoding.Strict().DecodeString(fixture.Response.BodyBase64)
+	}
+	outcome, responseErr := profile.ParseResponse(ctx, binding, fixture.Response.StatusCode, responseBody)
+	outcome.Media, outcome.ResultURL, outcome.VerifiedProviderModel = nil, "", ""
 	if responseErr == nil && !reflect.DeepEqual(outcome, fixture.Response.ExpectedOutcome) {
 		responseErr = fmt.Errorf("outcome differs from fixture")
 	}
@@ -472,8 +505,7 @@ func validateBuiltRequest(request *http.Request, buildErr error, expected fixtur
 	if request == nil || request.Method != expected.ExpectedMethod || request.URL.String() != expected.ExpectedURL {
 		return errors.New("request method or URL mismatch")
 	}
-	if request.Header.Get("Content-Type") != "application/json" ||
-		request.Header.Get("X-Client-Request-Id") != expected.ExpectedRequestIDHeader {
+	if request.Header.Get("X-Client-Request-Id") != expected.ExpectedRequestIDHeader {
 		return errors.New("request headers mismatch")
 	}
 	switch expected.ExpectedAuthentication {
@@ -489,12 +521,45 @@ func validateBuiltRequest(request *http.Request, buildErr error, expected fixtur
 			return errors.New("request bearer authentication headers mismatch")
 		}
 	}
+	if len(expected.ExpectedMultipart) > 0 {
+		return compareMultipartFixture(request, expected.ExpectedMultipart)
+	}
+	if request.Header.Get("Content-Type") != "application/json" {
+		return errors.New("request headers mismatch")
+	}
 	body, err := io.ReadAll(request.Body)
 	if err != nil {
 		return err
 	}
 	if !bytes.Equal(body, []byte(expected.ExpectedBody)) {
 		return errors.New("request body mismatch")
+	}
+	return nil
+}
+
+func compareMultipartFixture(request *http.Request, expected []fixtureMultipartPart) error {
+	kind, params, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
+	if err != nil || kind != "multipart/form-data" || params["boundary"] == "" {
+		return errors.New("multipart content type mismatch")
+	}
+	reader := multipart.NewReader(request.Body, params["boundary"])
+	for _, want := range expected {
+		got, err := reader.NextPart()
+		if err != nil || got.FormName() != want.Name || got.FileName() != want.Filename {
+			return errors.New("multipart part identity mismatch")
+		}
+		body, err := io.ReadAll(io.LimitReader(got, 256<<10))
+		if err != nil {
+			return errors.New("multipart part unreadable")
+		}
+		sum := sha256.Sum256(body)
+		if want.Filename == "" && string(body) != want.Value ||
+			want.Filename != "" && "sha256:"+hex.EncodeToString(sum[:]) != want.SHA256 {
+			return errors.New("multipart body mismatch")
+		}
+	}
+	if _, err := reader.NextPart(); !errors.Is(err, io.EOF) {
+		return errors.New("unexpected multipart part")
 	}
 	return nil
 }

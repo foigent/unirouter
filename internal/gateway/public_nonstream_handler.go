@@ -123,17 +123,23 @@ func (relay *Relay) HandlePublicNonStream(w http.ResponseWriter, r *http.Request
 		relay: relay, pinned: relay.pinGuardrail(r.Context(), resolvedModel, r.URL.Path),
 		requestID: requestID, requestedModel: publicModel, resolvedModel: resolvedModel,
 	}
+	single := middleware.SingleUpstreamAttemptRequested(r.Context())
+	doer := relay.providerClient(300 * time.Second)
+	if single {
+		doer = relay.singleSendProviderClient(300 * time.Second)
+	}
 	orchestrator := &publicNonStreamOrchestrator{
 		contentCapture: relay.contentCapture,
 		mode:           runtime.mode, planner: runtime.planner, coordinator: runtime.publicCoordinator,
 		billing: relay.billing, registry: runtime.publicRegistry,
 		decrypt: auth.DecryptKey, encryptionKey: relay.encKey,
-		doer: relay.providerClient(300 * time.Second), guard: guard,
+		doer: doer, guard: guard,
 		safetyFactor: relay.freezeSafetyFactor, minFreeze: relay.minFreezeCents,
 	}
 	request := publicNonStreamRequest{
 		Operation: operation, Path: r.URL.Path, Body: body, PublicModel: publicModel, ResolvedModel: resolvedModel,
 		RequestID: requestID, OrgID: apiKey.OrgID, APIKeyID: apiKey.ID,
+		SingleUpstreamAttempt: single,
 	}
 	if apiKey.ProjectID != nil {
 		request.ProjectID = *apiKey.ProjectID
@@ -163,6 +169,11 @@ func (relay *Relay) HandlePublicNonStream(w http.ResponseWriter, r *http.Request
 		}
 		executionmeasurement.SetStreaming(r.Context(), streaming)
 		if streaming {
+			if single {
+				w.Header().Del(middleware.ChatUpstreamAttemptsHeader)
+				writePublicNonStreamError(w, r, requestID, errPublicNonStreamRequestInvalid)
+				return
+			}
 			streamPolicy := relay.currentStreamPolicy()
 			streamCore := &publicNonStreamOrchestrator{
 				contentCapture: relay.contentCapture,

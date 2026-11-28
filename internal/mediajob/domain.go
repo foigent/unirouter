@@ -11,13 +11,18 @@ import (
 
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
+	"github.com/uniroute/unirouter/internal/executionevidence"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
 )
 
 const (
 	ContractVersion = "unirouter.async-media-runtime.v1"
 
-	OperationTextToImage = "text_to_image"
+	OperationTextToImage  = "text_to_image"
+	OperationTextToVideo  = "text_to_video"
+	OperationImageToText  = "image_to_text"
+	OperationSpeechToText = "speech_to_text"
+	OperationTextToSpeech = "text_to_speech"
 
 	AdmissionAccepted = "accepted"
 
@@ -104,8 +109,10 @@ func (s Scope) Valid() bool {
 }
 
 type SubmitRequest struct {
+	Operation    string `json:"operation,omitempty"`
 	Model        string `json:"model"`
 	Prompt       string `json:"prompt"`
+	InputMedia   string `json:"input_media,omitempty"`
 	N            *int64 `json:"n,omitempty"`
 	Size         string `json:"size,omitempty"`
 	Quality      string `json:"quality,omitempty"`
@@ -115,8 +122,10 @@ type SubmitRequest struct {
 }
 
 type NormalizedRequest struct {
+	Operation    string `json:"operation,omitempty"`
 	Model        string `json:"model"`
 	Prompt       string `json:"prompt"`
+	InputMedia   string `json:"input_media,omitempty"`
 	N            int64  `json:"n"`
 	Size         string `json:"size,omitempty"`
 	Quality      string `json:"quality,omitempty"`
@@ -190,12 +199,18 @@ type Job struct {
 
 	Lifecycle Lifecycle `json:"lifecycle"`
 
-	Attempt        int        `json:"attempt"`
-	MaxAttempts    int        `json:"max_attempts"`
-	LeaseOwner     string     `json:"-"`
-	LeaseFence     int64      `json:"lease_fence"`
-	LeaseExpiresAt *time.Time `json:"lease_expires_at,omitempty"`
-	NextAttemptAt  time.Time  `json:"next_attempt_at"`
+	Attempt               int                           `json:"attempt"`
+	MaxAttempts           int                           `json:"max_attempts"`
+	SingleUpstreamAttempt bool                          `json:"-"`
+	CanonicalRoute        *executionevidence.EvidenceV2 `json:"-"`
+	CanonicalDispatch     *executionevidence.EvidenceV2 `json:"-"`
+	providerTaskID        string
+	providerTaskReadUntil *time.Time
+	dispatchRoute         *mediaDispatchRoute
+	LeaseOwner            string     `json:"-"`
+	LeaseFence            int64      `json:"lease_fence"`
+	LeaseExpiresAt        *time.Time `json:"lease_expires_at,omitempty"`
+	NextAttemptAt         time.Time  `json:"next_attempt_at"`
 
 	Output     *Output     `json:"output,omitempty"`
 	ChargeFact *ChargeFact `json:"charge_fact,omitempty"`
@@ -233,6 +248,7 @@ type IdempotencyLookup struct {
 }
 
 type ExecutionReservation struct {
+	providerRoute   *mediaDispatchRoute
 	JobID           string
 	Scope           Scope
 	LeaseFence      int64
@@ -271,6 +287,7 @@ type Lease struct {
 }
 
 type ProviderResult struct {
+	TaskID      string
 	MappedModel string
 	Bytes       []byte
 	MediaType   string

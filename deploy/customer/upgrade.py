@@ -38,8 +38,80 @@ OBSERVATION_SCHEMA = "000128_upstream_release_observation"
 RESTORE_SCHEMA = "000129_upstream_observation_restore_namespace"
 ADMISSION_SCHEMA = "000130_upgrade_admission_recovery"
 CUSTOMER_PRICING_SCHEMA = "000131_customer_standard_pricing"
+RESPONSES_TOOLS_SCHEMA = "000132_openai_responses_client_tools"
+MEDIA_CHARGE_SCHEMA = "000133_media_charge_source_facts"
+NATIVE_INLINE_JPEG_SCHEMA = "000134_native_inline_jpeg_public_bindings"
+CANONICAL_MEDIA_SCHEMA = "000135_canonical_media_job_authority"
+ASYNC_MEDIA_SCHEMA = "000136_async_media_provider_task"
 TARGET_SCHEMA = install.SCHEMA
-MAINTENANCE_SCHEMAS = (SOURCE_SCHEMA, OBSERVATION_SCHEMA, RESTORE_SCHEMA, ADMISSION_SCHEMA, TARGET_SCHEMA)
+MAINTENANCE_SCHEMAS = (SOURCE_SCHEMA, OBSERVATION_SCHEMA, RESTORE_SCHEMA, ADMISSION_SCHEMA, CUSTOMER_PRICING_SCHEMA,
+                       RESPONSES_TOOLS_SCHEMA, MEDIA_CHARGE_SCHEMA, NATIVE_INLINE_JPEG_SCHEMA, CANONICAL_MEDIA_SCHEMA, ASYNC_MEDIA_SCHEMA)
+TOKEN_CHARGE = "unirouter.provider-final-token-charge.v1"
+TOKEN_IDEMPOTENCY = "unirouter.public-at-most-once.v1"
+MEDIA_CHARGE = "unirouter.provider-media-charge-fact.v1"
+MEDIA_IDEMPOTENCY = "unirouter.project-media-job-idempotency.v1"
+MEDIA_DELIVERY = "unirouter.project-media-object-delivery.v1"
+# Exact append-only rows owed by each migration. The full history outside
+# this manifest still participates in the cold-pair protected table digest.
+QUALIFIED_EXECUTION_MIGRATIONS = {
+    RESPONSES_TOOLS_SCHEMA: (
+        ("openai.responses.v1", "/v1/responses", "unirouter.openai.responses.text-tools.v3", "1.0.0",
+         "unirouter.endpoint-profile-responses-tools-executor.v1", "unirouter.public-responses-tools-delivery.v1",
+         TOKEN_CHARGE, TOKEN_IDEMPOTENCY),
+    ),
+    NATIVE_INLINE_JPEG_SCHEMA: (
+        ("openai.responses.v1", "/v1/responses", "unirouter.openai.responses.inline-jpeg.v1", "1.0.0",
+         "unirouter.endpoint-profile-responses-inline-jpeg-executor.v1", "unirouter.public-responses-tools-delivery.v1",
+         TOKEN_CHARGE, TOKEN_IDEMPOTENCY),
+        ("anthropic.messages.v1", "/v1/messages", "unirouter.anthropic.messages.inline-jpeg.v1", "1.0.0",
+         "unirouter.endpoint-profile-messages-inline-jpeg-executor.v1", "unirouter.public-anthropic-messages-tools-delivery.v1",
+         TOKEN_CHARGE, TOKEN_IDEMPOTENCY),
+    ),
+    ASYNC_MEDIA_SCHEMA: (
+        ("unirouter.media_jobs.v1", "/v1/media/jobs", "unirouter.dashscope.video.wan-3.v1", "1.0.0",
+         "unirouter.endpoint-profile-async-video-job-executor.v1", MEDIA_DELIVERY, MEDIA_CHARGE, MEDIA_IDEMPOTENCY),
+        ("unirouter.media_jobs.v1", "/v1/media/jobs", "unirouter.minimax.video.h3.v1", "1.0.0",
+         "unirouter.endpoint-profile-async-video-job-executor.v1", MEDIA_DELIVERY, MEDIA_CHARGE, MEDIA_IDEMPOTENCY),
+        ("unirouter.media_jobs.v1", "/v1/media/jobs", "unirouter.glm.video.cogvideox-3.v1", "1.0.0",
+         "unirouter.endpoint-profile-async-video-job-executor.v1", MEDIA_DELIVERY, MEDIA_CHARGE, MEDIA_IDEMPOTENCY),
+        ("unirouter.media_jobs.v1", "/v1/media/jobs", "unirouter.glm.images.glm-image.v1", "1.0.0",
+         "unirouter.endpoint-profile-glm-image-job-executor.v1", MEDIA_DELIVERY, MEDIA_CHARGE, MEDIA_IDEMPOTENCY),
+        ("unirouter.media_jobs.v1", "/v1/media/jobs", "unirouter.deepseek.tools.ocr.v1", "1.0.0",
+         "unirouter.endpoint-profile-ocr-job-executor.v1", MEDIA_DELIVERY, MEDIA_CHARGE, MEDIA_IDEMPOTENCY),
+        ("unirouter.media_jobs.v1", "/v1/media/jobs", "unirouter.glm.ocr.layout.v1", "1.0.0",
+         "unirouter.endpoint-profile-ocr-job-executor.v1", MEDIA_DELIVERY, MEDIA_CHARGE, MEDIA_IDEMPOTENCY),
+        ("unirouter.media_jobs.v1", "/v1/media/jobs", "unirouter.deepseek.tools.asr.v1", "1.0.0",
+         "unirouter.endpoint-profile-speech-job-executor.v1", MEDIA_DELIVERY, MEDIA_CHARGE, MEDIA_IDEMPOTENCY),
+        ("unirouter.media_jobs.v1", "/v1/media/jobs", "unirouter.deepseek.tools.tts.v1", "1.0.0",
+         "unirouter.endpoint-profile-speech-job-executor.v1", MEDIA_DELIVERY, MEDIA_CHARGE, MEDIA_IDEMPOTENCY),
+        ("unirouter.media_jobs.v1", "/v1/media/jobs", "unirouter.minimax.speech.asr-1.v1", "1.0.0",
+         "unirouter.endpoint-profile-speech-job-executor.v1", MEDIA_DELIVERY, MEDIA_CHARGE, MEDIA_IDEMPOTENCY),
+        ("unirouter.media_jobs.v1", "/v1/media/jobs", "unirouter.minimax.speech.2-8-turbo.v1", "1.0.0",
+         "unirouter.endpoint-profile-speech-job-executor.v1", MEDIA_DELIVERY, MEDIA_CHARGE, MEDIA_IDEMPOTENCY),
+        ("unirouter.media_jobs.v1", "/v1/media/jobs", "unirouter.glm.speech.asr-2512.v1", "1.0.0",
+         "unirouter.endpoint-profile-speech-job-executor.v1", MEDIA_DELIVERY, MEDIA_CHARGE, MEDIA_IDEMPOTENCY),
+        ("unirouter.media_jobs.v1", "/v1/media/jobs", "unirouter.glm.speech.tts.v1", "1.0.0",
+         "unirouter.endpoint-profile-speech-job-executor.v1", MEDIA_DELIVERY, MEDIA_CHARGE, MEDIA_IDEMPOTENCY),
+        ("unirouter.media_jobs.v1", "/v1/media/jobs", "unirouter.openai.audio.transcribe.v1", "1.0.0",
+         "unirouter.endpoint-profile-speech-job-executor.v1", MEDIA_DELIVERY, MEDIA_CHARGE, MEDIA_IDEMPOTENCY),
+        ("unirouter.media_jobs.v1", "/v1/media/jobs", "unirouter.mimo.audio.asr.v1", "1.0.0",
+         "unirouter.endpoint-profile-speech-job-executor.v1", MEDIA_DELIVERY, MEDIA_CHARGE, MEDIA_IDEMPOTENCY),
+        ("unirouter.media_jobs.v1", "/v1/media/jobs", "unirouter.mimo.audio.tts.v1", "1.0.0",
+         "unirouter.endpoint-profile-speech-job-executor.v1", MEDIA_DELIVERY, MEDIA_CHARGE, MEDIA_IDEMPOTENCY),
+        ("unirouter.media_jobs.v1", "/v1/media/jobs", "unirouter.dashscope.speech.asr-3-1.v1", "1.0.0",
+         "unirouter.endpoint-profile-speech-job-executor.v1", MEDIA_DELIVERY, MEDIA_CHARGE, MEDIA_IDEMPOTENCY),
+        ("unirouter.media_jobs.v1", "/v1/media/jobs", "unirouter.dashscope.speech.tts-3-1.v1", "1.0.0",
+         "unirouter.endpoint-profile-speech-job-executor.v1", MEDIA_DELIVERY, MEDIA_CHARGE, MEDIA_IDEMPOTENCY),
+    ),
+    CANONICAL_MEDIA_SCHEMA: tuple(
+        ("unirouter.media_jobs.v1", "/v1/media/jobs", profile, "1.0.0", executor, MEDIA_DELIVERY, MEDIA_CHARGE, MEDIA_IDEMPOTENCY)
+        for profile, executor in (
+            ("unirouter.openai.images.gpt-image.v1", "unirouter.endpoint-profile-gpt-image-job-executor.v1"),
+            ("unirouter.dashscope.images.qwen-3.v1", "unirouter.endpoint-profile-qwen-image-job-executor.v1"),
+            ("unirouter.minimax.images.h3.v1", "unirouter.endpoint-profile-minimax-image-job-executor.v1"),
+        )
+    ),
+}
 CUSTOMER_PRICING_TABLES = ("customer_price_table_versions", "customer_price_binding_versions", "customer_charge_quote_receipts")
 _NOT_STARTED = object()
 _NATIVE_MIGRATION_CONTINUATION = object()
@@ -1392,8 +1464,42 @@ class Upgrade(Installation):
         added = metadata["ledger"][len(self.witness["source_ledger"]):]
         if added:
             projections["schema_migrations"] = ("to_jsonb(t)", " WHERE version NOT IN " + self._in(added))
+        media_columns = []
+        if MEDIA_CHARGE_SCHEMA in added:
+            require(self.sql("SELECT count(*) FROM async_media_jobs WHERE single_upstream_attempt;") == "0",
+                    "Existing media jobs gained a single-submission commitment before admission")
+            media_columns.append("single_upstream_attempt")
+        if CANONICAL_MEDIA_SCHEMA in added:
+            require(self.sql("SELECT count(*) FROM async_media_jobs WHERE canonical_route IS NOT NULL OR canonical_dispatch_route IS NOT NULL;") == "0",
+                    "Existing media jobs gained canonical route evidence before admission")
+            media_columns.extend(("canonical_route", "canonical_dispatch_route"))
+        if ASYNC_MEDIA_SCHEMA in added:
+            require(self.sql("SELECT count(*) FROM async_media_jobs WHERE provider_task_id IS NOT NULL OR provider_task_read_until IS NOT NULL OR provider_status_reads<>0;") == "0",
+                    "Existing media jobs gained provider task state before admission")
+            media_columns.extend(("provider_task_id", "provider_task_read_until", "provider_status_reads"))
+        if media_columns:
+            projections["async_media_jobs"] = ("to_jsonb(t)" + "".join("-'" + column + "'" for column in media_columns), "")
+        contract_heads = [head for head in added if head in QUALIFIED_EXECUTION_MIGRATIONS]
+        if contract_heads:
+            condition = "introduced_migration IN " + self._in(contract_heads)
+            expected_contracts = [(head, *row) for head in contract_heads for row in QUALIFIED_EXECUTION_MIGRATIONS[head]]
+            for table in ("model_operation_execution_support_bindings", "model_operation_public_execution_contract_extensions"):
+                columns = "introduced_migration,operation_id,public_path,protocol_profile_id,protocol_profile_version,executor_contract_version"
+                width = 6
+                if table.endswith("_extensions"):
+                    columns += ",delivery_contract_version,charge_contract_version,idempotency_contract_version"
+                    width = 9
+                rows = self.sql("SELECT " + columns + " FROM " + table + " WHERE " + condition + ";")
+                require(sorted(rows.splitlines()) == sorted("|".join(row[:width]) for row in expected_contracts),
+                        "New migration-owned public execution support differs")
+                projections[table] = ("to_jsonb(t)", " WHERE NOT (" + condition + ")")
         actual = recovery.table_fingerprints(lambda db, query: self.sql(query, db), self.env["POSTGRES_DB"], projections=projections)
         expected = dict(pair["tables"])
+        if ASYNC_MEDIA_SCHEMA in added:
+            table = "model_deployment_async_probe_tasks"
+            require(table not in expected and actual.get(table, {}).get("count") == 0,
+                    "Media probe tasks exist before admission")
+            del actual[table]
         if CUSTOMER_PRICING_SCHEMA in added:
             for table in CUSTOMER_PRICING_TABLES:
                 require(table not in expected and actual.get(table, {}).get("count") == 0,

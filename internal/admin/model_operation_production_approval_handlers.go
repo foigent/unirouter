@@ -141,8 +141,7 @@ func decodeModelOperationProductionApprovalRequest(w http.ResponseWriter, r *htt
 	request.ExpectedExecutorContractVersion = strings.TrimSpace(request.ExpectedExecutorContractVersion)
 	request.Reason = strings.TrimSpace(request.Reason)
 	if request.ProbeID <= 0 || request.ExpectedConnectionRevision <= 0 || request.ExpectedDeploymentRevision <= 0 ||
-		request.ExpectedOperationRevision <= 0 || request.ExpectedExecutorContractVersion == "" ||
-		request.ExpectedExecutorContractVersion != modelqualification.ExecutorContractVersion ||
+		request.ExpectedOperationRevision <= 0 || !modelqualification.SupportsExecutorContract(request.ExpectedExecutorContractVersion) ||
 		request.Reason == "" || len(request.Reason) > 512 || !utf8.ValidString(request.Reason) ||
 		strings.ContainsAny(request.Reason, "\x00\r\n") {
 		return modelOperationProductionApprovalRequest{}, errModelOperationProductionApprovalInvalid

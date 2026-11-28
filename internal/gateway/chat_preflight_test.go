@@ -97,7 +97,7 @@ func TestChatPreflightAcknowledgesSingleUpstreamAttemptWithoutDispatch(t *testin
 	r.Header.Set(middleware.ChatUpstreamAttemptsHeader, "1")
 	budget := payloadpolicy.MustNewBudget(payloadpolicy.DefaultLimits())
 	handler := payloadpolicy.RequestMiddleware(budget, payloadpolicy.ProfileChatRequest, middleware.GetOrgIDFromContext)(
-		middleware.StrictJSONIngress(middleware.ChatUpstreamAttemptPolicy(http.HandlerFunc(relay.HandleChatPreflight))),
+		middleware.StrictJSONIngress(middleware.UpstreamAttemptPolicy(http.HandlerFunc(relay.HandleChatPreflight))),
 	)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, r)

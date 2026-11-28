@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/modelprofile"
 )
 
@@ -11,8 +12,22 @@ import (
 // cannot install an implementation or loosen its accepted protocol semantics.
 // Legacy contracts keep their exact historical tuple validation.
 var dataProbeImplementations = map[string]func(Binding, modelprofile.Profile) bool{
+	ChatInlineWAVProbeID + "@" + ChatInlineWAVProbeVersion:                           chatInlineWAVComposition,
+	ChatInlineTextFileProbeID + "@" + ChatInlineTextFileProbeVersion:                 chatInlineTextFileComposition,
+	ChatInlineVideoProbeID + "@" + ChatInlineVideoProbeVersion:                       chatInlineVideoComposition,
+	QwenStreamFunctionToolsProbeContractID + "@" + QwenHostedStreamToolsProbeVersion: validQwenStreamComposition,
+	NativeToolProbeContractID + "@1.0.0": func(b Binding, p modelprofile.Profile) bool {
+		return (modelprofile.NativeClientToolsProfile(p) || modelprofile.NativeInlineJPEGProfile(p)) &&
+			b.CapabilityID != modelprofile.CapabilityVision && p.UpstreamModelIDs[0] == b.ExpectedUpstreamModel
+	},
+	NativeInlineJPEGProbeContractID + "@1.0.0": func(b Binding, p modelprofile.Profile) bool {
+		return modelprofile.NativeInlineJPEGProfile(p) && b.CapabilityID == modelprofile.CapabilityVision && p.UpstreamModelIDs[0] == b.ExpectedUpstreamModel
+	},
+	ChatInlineJPEGProbeID + "@" + ChatInlineJPEGProbeVersion:                               chatInlineJPEGComposition,
+	PlainChatReasoningProbeID + "@" + PlainChatReasoningProbeVersion:                       plainChatReasoningComposition,
 	DeepSeekProviderCompletionProbeContractID + "@1.0.0":                                   validExistingFamilyStreamComposition,
 	DeepSeekProviderCompletionProbeContractID + "@" + DeepSeekMeaningfulStreamProbeVersion: validExistingFamilyStreamComposition,
+	QwenStreamFunctionToolsProbeContractID + "@" + QwenHybridStreamToolsProbeVersion:       validQwenStreamComposition,
 	QwenStreamFunctionToolsProbeContractID + "@1.0.0":                                      validQwenStreamComposition,
 	QwenProviderCompletionProbeContractID + "@1.0.0":                                       validQwenStreamComposition,
 	MiniMaxM27StreamFunctionToolsProbeContractID + "@2.0.0": func(b Binding, p modelprofile.Profile) bool {
@@ -47,13 +62,34 @@ var dataProbeImplementations = map[string]func(Binding, modelprofile.Profile) bo
 			p.Provider == "kimi" && p.ProtocolProfile == "protocol.kimi-openai-chat.k3.v6" &&
 			p.ReasoningProfile == "reasoning.kimi-k3-effort.v2" && p.CacheUsageProfile == "cache-usage.kimi-platform.v1"
 	},
+	KimiStreamFunctionToolsProbeContractID + "@" + KimiStreamReadWriteUsageProbeVersion: func(b Binding, p modelprofile.Profile) bool {
+		return streamToolCapability(b.CapabilityID) && p.Provider == "kimi" && p.Region == "cn" &&
+			slices.Equal(p.EndpointClasses, []string{modelprofile.EndpointClassKimiPlatformOpenAIV1}) &&
+			len(p.UpstreamModelIDs) == 1 && p.UpstreamModelIDs[0] == b.ExpectedUpstreamModel &&
+			slices.Contains([]string{"protocol.kimi-openai-chat.k3.v6", modelprofile.KimiK3InlineJPEGProtocol, modelprofile.KimiK3InlineVideoProtocol}, p.ProtocolProfile) && p.ReasoningProfile == "reasoning.kimi-k3-effort.v2" &&
+			p.CacheUsageProfile == modelprofile.KimiChatReadWriteCacheUsageProfile
+	},
 	MiniMaxM3StreamFunctionToolsProbeContractID + "@1.0.0": validExistingFamilyStreamComposition,
+	MiniMaxM3StreamFunctionToolsProbeContractID + "@" + MiniMaxM31StreamFunctionToolsProbeVersion: func(b Binding, p modelprofile.Profile) bool {
+		return p.Provider == "minimax" && p.Region == "cn" && len(p.UpstreamModelIDs) == 1 &&
+			slices.Equal(p.EndpointClasses, []string{modelprofile.EndpointClassMiniMaxOfficialCNOpenAIV1}) &&
+			slices.Contains([]string{"protocol.minimax-m31-openai-chat.v1", modelprofile.MiniMaxM31InlineJPEGProtocol, modelprofile.MiniMaxM31InlineVideoProtocol}, p.ProtocolProfile) &&
+			p.ReasoningProfile == "reasoning.minimax-m31-required-split.v1" &&
+			p.CacheUsageProfile == "cache-usage.minimax-m31-openai.v1" && streamToolCapability(b.CapabilityID)
+	},
 	MiniMaxPAYGM3ChatFunctionToolsProbeContractID + "@2.0.0": func(b Binding, p modelprofile.Profile) bool {
 		return compatibleMiniMaxM3StreamImplementation(p) &&
 			(b.CapabilityID == modelprofile.CapabilityCacheReadUsage || b.CapabilityID == modelprofile.CapabilityPromptCache)
 	},
+	MiMoChatFunctionToolsProbeContractID + "@" + OpenAIChatRuntimeFunctionToolsProbeContractV2: func(b Binding, p modelprofile.Profile) bool {
+		return p.Provider == "mimo" && p.Region == "cn" && len(p.UpstreamModelIDs) == 1 &&
+			slices.Equal(p.EndpointClasses, []string{modelprofile.EndpointClassMiMoChinaPayGoOpenAIV1}) &&
+			slices.Contains([]string{"protocol.mimo-openai-chat.v5", modelprofile.MiMo26InlineJPEGProtocol, modelprofile.MiMo26InlineAudioProtocol}, p.ProtocolProfile) && p.ReasoningProfile == "reasoning.mimo-v2.5-thinking-toggle.v1" &&
+			p.CacheUsageProfile == "cache-usage.mimo-openai.v1" && b.CapabilityID != modelprofile.CapabilityStreaming &&
+			streamToolCapability(b.CapabilityID)
+	},
 	GLMStreamFunctionToolsProbeContractID + "@1.0.0": func(b Binding, p modelprofile.Profile) bool {
-		return p.Provider == "glm" && slices.Contains([]string{"protocol.glm-openai-chat.v7", "protocol.glm-openai-chat.glm5v.v6"}, p.ProtocolProfile) && streamToolCapability(b.CapabilityID)
+		return p.Provider == "glm" && slices.Contains([]string{"protocol.glm-openai-chat.v7", "protocol.glm-openai-chat.glm5v.v6", modelprofile.GLM53InlineJPEGProtocol, modelprofile.GLM53InlineFileProtocol, modelprofile.GLM53PublicVideoProtocol}, p.ProtocolProfile) && streamToolCapability(b.CapabilityID)
 	},
 	MiniMaxM27StreamFunctionToolsProbeContractID + "@1.0.0": func(b Binding, p modelprofile.Profile) bool {
 		return p.Provider == "minimax" && compatibleMiniMaxM2StreamImplementation(p) && streamToolCapability(b.CapabilityID)
@@ -121,10 +157,11 @@ func (b Binding) validateDataDefinition() error {
 	}
 	p := b.definition.Profile()
 	identity, err := b.definition.OperationProtocolIdentity(b.OperationID)
+	operation, knownOperation := modeloperation.LookupID(modeloperation.ID(b.OperationID))
 	implementation := dataProbeImplementations[b.ProbeContractID+"@"+b.ProbeContractVersion]
 	if err != nil || identity.ProtocolProfileID != b.ProtocolProfileID || identity.ProtocolProfileVersion != b.ProtocolProfileVersion ||
 		p.ID != b.ExecutionProfileID || p.Version != b.ExecutionProfileVersion || p.Provider != b.ExpectedProvider ||
-		b.PublicPath != "/v1/chat/completions" || !slices.Contains(p.UpstreamModelIDs, b.ExpectedUpstreamModel) ||
+		!knownOperation || b.PublicPath != operation.Path || !slices.Contains(p.UpstreamModelIDs, b.ExpectedUpstreamModel) ||
 		!slices.Contains(p.Capabilities, b.CapabilityID) || implementation == nil || !implementation(b, p) {
 		return fmt.Errorf("%w: exact data Profile and typed Probe composition", ErrUnsupported)
 	}

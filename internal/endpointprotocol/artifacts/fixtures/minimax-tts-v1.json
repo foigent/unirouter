@@ -1,0 +1,68 @@
+{
+  "schema_version": "unirouter.endpoint-conformance-fixture.v1",
+  "fixture_id": "minimax-tts-v1",
+  "profile_id": "unirouter.minimax.speech.2-8-turbo.v1",
+  "request": {
+    "base_url": "https://api.minimax.cn",
+    "requested_model": "project-tts",
+    "mapped_model": "speech-2.8-turbo",
+    "request_id": "fixture-video-1",
+    "body": "{\"model\":\"project-tts\",\"operation\":\"text_to_speech\",\"prompt\":\"Hello.\"}",
+    "expected_method": "POST",
+    "expected_url": "https://api.minimax.cn/v1/t2a_v2",
+    "expected_request_id_header": "fixture-video-1",
+    "expected_body": "{\"audio_setting\":{\"channel\":1,\"format\":\"wav\",\"sample_rate\":32000},\"model\":\"speech-2.8-turbo\",\"output_format\":\"hex\",\"stream\":false,\"text\":\"Hello.\",\"voice_setting\":{\"voice_id\":\"male-qn-qingse\"}}"
+  },
+  "response": {
+    "status_code": 200,
+    "expected_outcome": {
+      "contract_version": "unirouter.endpoint-protocol.v1",
+      "profile_id": "unirouter.minimax.speech.2-8-turbo.v1",
+      "provider_state": "completed",
+      "mapped_model": "speech-2.8-turbo",
+      "output_count": 1,
+      "units": [
+        {
+          "class": "input_billable_characters",
+          "quantity": "5",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        }
+      ]
+    },
+    "body": "{\"base_resp\":{\"status_code\":0},\"data\":{\"audio\":\"524946462404000057415645666d74201000000001000100007d000000fa0000020010006461746100040000fcfffcfffcfffcfffcfffcfffcfffdfffdfffdfffefffeffffff0000000001000100010002000200020002000200020002000200010001000000fffffefffdfffdfffdfffdfffefffefffefffefffefffefffeffffffffff000001000100020002000200020001000100010000000000000000000000fffffffffffffefffdfffdfffdfffcfffcfffcfffcfffcfffcfffcfffcfffdfffdfffefffefffefffefffefffefffefffeffffff0000000001000000fffffefffdfffcfffcfffdfffdfffefffefffefffdfffdfffdfffdfffdfffefffeffffffffffffffffff00000000010002000200020002000200020001000100010000000000fffffffffeffffffffff000001000100020002000200020001000000000000000000000000000000fffffefffdfffcfffcfffdfffefffeffffffffff0000000001000200020002000100fffffdfffcfffdffffff02000500060005000300fffffcfffafff9fffafffcfffdfffefffdfffcfffcfffdff0000030005000300fcfff3ffe9ffe3ffe3ffebfff9ff090015001a0015000800f7ffe8ffdfffdeffe5fff1fffeff09000f0010000e000a0006000000f9ffefffe2ffd6ffceffcdffd7ffebff05001e00300037003300270019000f000c0011001a0024002b002d002c002a0028002500210019000d00feffeeffe2ffdcffdcffe0ffe6ffeaffebffe8ffe4ffe1ffe1ffe4ffeafff3fffdff0700100016001900170012000b000400fffffdfffcfffcfffafff7fff5fff5fffaff010007000600fbffe4ffc8ffafffa5ffb0ffd1ff000030005000560040001400e3ffbeffb2ffc4ffebff1700360039001f00f1ffc1ffa1ff9dffb4ffdbff0000140013000400f3ffefffffff1e0042005d0065005a0043002b001a00120011000f000a000200fcfffbff0000070009000400f8ffeeffeefffeff1d003e00540050002f00f8ffbfff97ff8effa7ffd6ff09002b0031001c00f6ffd2ffc1ffc8ffe3ff040019001600fcffd5ffb4ffa8ffb9ffe0ff0b002a003100240011000b001b003f0066007a006b003a00f9ffc3ffb1ffcaffffff35004b003000eaff93ff51ff42ff71ffd0ff3b008a00a00077002100c2ff81ff7affb0ff11007900c200d200a4004a00e3ff95ff78ff91ffd1ff1a004b004d001c00c7ff68ff1ffffffe0eff42ff86ffc1ffe0ffdeffc4ffa1ff8bff90ffb6fff2ff330064007700690045002200190037007e00da002f015e0156011801b5004a00efffb2ff91ff81ff74ff64ff55ff51ff60ff83ffafffd6ffebffeffff1ff040039009000f6004e01790167011c01af003d00e0ffa3ff86ff80ff87ff97ffaeffc7ffd8ffd4ffb3ff7aff40ff26ff48ffabff3800c10011010a01b2003200c3ff90ffa5ffe5ff1d001f00dcff6bfffdfec0fecafe09ff53ff7bff6bff33fffcfe\",\"status\":2},\"extra_info\":{\"audio_channel\":1,\"audio_format\":\"wav\",\"audio_sample_rate\":32000,\"audio_size\":1068,\"usage_characters\":5,\"word_count\":99}}"
+  },
+  "negative_requests": [
+    {
+      "case_id": "empty-input",
+      "body": "{\"model\":\"project-tts\",\"operation\":\"text_to_speech\",\"prompt\":\"\"}",
+      "expected_code": "minimax_tts_text_invalid"
+    }
+  ],
+  "negative_responses": [
+    {
+      "case_id": "negative-chars",
+      "body": "{\"base_resp\":{\"status_code\":0},\"data\":{\"audio\":\"524946462404000057415645666d74201000000001000100007d000000fa0000020010006461746100040000fcfffcfffcfffcfffcfffcfffcfffdfffdfffdfffefffeffffff0000000001000100010002000200020002000200020002000200010001000000fffffefffdfffdfffdfffdfffefffefffefffefffefffefffeffffffffff000001000100020002000200020001000100010000000000000000000000fffffffffffffefffdfffdfffdfffcfffcfffcfffcfffcfffcfffcfffcfffdfffdfffefffefffefffefffefffefffefffeffffff0000000001000000fffffefffdfffcfffcfffdfffdfffefffefffefffdfffdfffdfffdfffdfffefffeffffffffffffffffff00000000010002000200020002000200020001000100010000000000fffffffffeffffffffff000001000100020002000200020001000000000000000000000000000000fffffefffdfffcfffcfffdfffefffeffffffffff0000000001000200020002000100fffffdfffcfffdffffff02000500060005000300fffffcfffafff9fffafffcfffdfffefffdfffcfffcfffdff0000030005000300fcfff3ffe9ffe3ffe3ffebfff9ff090015001a0015000800f7ffe8ffdfffdeffe5fff1fffeff09000f0010000e000a0006000000f9ffefffe2ffd6ffceffcdffd7ffebff05001e00300037003300270019000f000c0011001a0024002b002d002c002a0028002500210019000d00feffeeffe2ffdcffdcffe0ffe6ffeaffebffe8ffe4ffe1ffe1ffe4ffeafff3fffdff0700100016001900170012000b000400fffffdfffcfffcfffafff7fff5fff5fffaff010007000600fbffe4ffc8ffafffa5ffb0ffd1ff000030005000560040001400e3ffbeffb2ffc4ffebff1700360039001f00f1ffc1ffa1ff9dffb4ffdbff0000140013000400f3ffefffffff1e0042005d0065005a0043002b001a00120011000f000a000200fcfffbff0000070009000400f8ffeeffeefffeff1d003e00540050002f00f8ffbfff97ff8effa7ffd6ff09002b0031001c00f6ffd2ffc1ffc8ffe3ff040019001600fcffd5ffb4ffa8ffb9ffe0ff0b002a003100240011000b001b003f0066007a006b003a00f9ffc3ffb1ffcaffffff35004b003000eaff93ff51ff42ff71ffd0ff3b008a00a00077002100c2ff81ff7affb0ff11007900c200d200a4004a00e3ff95ff78ff91ffd1ff1a004b004d001c00c7ff68ff1ffffffe0eff42ff86ffc1ffe0ffdeffc4ffa1ff8bff90ffb6fff2ff330064007700690045002200190037007e00da002f015e0156011801b5004a00efffb2ff91ff81ff74ff64ff55ff51ff60ff83ffafffd6ffebffeffff1ff040039009000f6004e01790167011c01af003d00e0ffa3ff86ff80ff87ff97ffaeffc7ffd8ffd4ffb3ff7aff40ff26ff48ffabff3800c10011010a01b2003200c3ff90ffa5ffe5ff1d001f00dcff6bfffdfec0fecafe09ff53ff7bff6bff33fffcfe\",\"status\":2},\"extra_info\":{\"audio_channel\":1,\"audio_format\":\"wav\",\"audio_sample_rate\":32000,\"audio_size\":1068,\"usage_characters\":-1,\"word_count\":99}}",
+      "expected_code": "minimax_tts_result_invalid"
+    },
+    {
+      "case_id": "wrong-size",
+      "body": "{\"base_resp\":{\"status_code\":0},\"data\":{\"audio\":\"524946462404000057415645666d74201000000001000100007d000000fa0000020010006461746100040000fcfffcfffcfffcfffcfffcfffcfffdfffdfffdfffefffeffffff0000000001000100010002000200020002000200020002000200010001000000fffffefffdfffdfffdfffdfffefffefffefffefffefffefffeffffffffff000001000100020002000200020001000100010000000000000000000000fffffffffffffefffdfffdfffdfffcfffcfffcfffcfffcfffcfffcfffcfffdfffdfffefffefffefffefffefffefffefffeffffff0000000001000000fffffefffdfffcfffcfffdfffdfffefffefffefffdfffdfffdfffdfffdfffefffeffffffffffffffffff00000000010002000200020002000200020001000100010000000000fffffffffeffffffffff000001000100020002000200020001000000000000000000000000000000fffffefffdfffcfffcfffdfffefffeffffffffff0000000001000200020002000100fffffdfffcfffdffffff02000500060005000300fffffcfffafff9fffafffcfffdfffefffdfffcfffcfffdff0000030005000300fcfff3ffe9ffe3ffe3ffebfff9ff090015001a0015000800f7ffe8ffdfffdeffe5fff1fffeff09000f0010000e000a0006000000f9ffefffe2ffd6ffceffcdffd7ffebff05001e00300037003300270019000f000c0011001a0024002b002d002c002a0028002500210019000d00feffeeffe2ffdcffdcffe0ffe6ffeaffebffe8ffe4ffe1ffe1ffe4ffeafff3fffdff0700100016001900170012000b000400fffffdfffcfffcfffafff7fff5fff5fffaff010007000600fbffe4ffc8ffafffa5ffb0ffd1ff000030005000560040001400e3ffbeffb2ffc4ffebff1700360039001f00f1ffc1ffa1ff9dffb4ffdbff0000140013000400f3ffefffffff1e0042005d0065005a0043002b001a00120011000f000a000200fcfffbff0000070009000400f8ffeeffeefffeff1d003e00540050002f00f8ffbfff97ff8effa7ffd6ff09002b0031001c00f6ffd2ffc1ffc8ffe3ff040019001600fcffd5ffb4ffa8ffb9ffe0ff0b002a003100240011000b001b003f0066007a006b003a00f9ffc3ffb1ffcaffffff35004b003000eaff93ff51ff42ff71ffd0ff3b008a00a00077002100c2ff81ff7affb0ff11007900c200d200a4004a00e3ff95ff78ff91ffd1ff1a004b004d001c00c7ff68ff1ffffffe0eff42ff86ffc1ffe0ffdeffc4ffa1ff8bff90ffb6fff2ff330064007700690045002200190037007e00da002f015e0156011801b5004a00efffb2ff91ff81ff74ff64ff55ff51ff60ff83ffafffd6ffebffeffff1ff040039009000f6004e01790167011c01af003d00e0ffa3ff86ff80ff87ff97ffaeffc7ffd8ffd4ffb3ff7aff40ff26ff48ffabff3800c10011010a01b2003200c3ff90ffa5ffe5ff1d001f00dcff6bfffdfec0fecafe09ff53ff7bff6bff33fffcfe\",\"status\":2},\"extra_info\":{\"audio_channel\":1,\"audio_format\":\"wav\",\"audio_sample_rate\":32000,\"audio_size\":13,\"usage_characters\":5,\"word_count\":99}}",
+      "expected_code": "minimax_tts_wave_invalid"
+    },
+    {
+      "case_id": "conflicting-format",
+      "body": "{\"base_resp\":{\"status_code\":0},\"data\":{\"audio\":\"524946462404000057415645666d74201000000001000100007d000000fa0000020010006461746100040000fcfffcfffcfffcfffcfffcfffcfffdfffdfffdfffefffeffffff0000000001000100010002000200020002000200020002000200010001000000fffffefffdfffdfffdfffdfffefffefffefffefffefffefffeffffffffff000001000100020002000200020001000100010000000000000000000000fffffffffffffefffdfffdfffdfffcfffcfffcfffcfffcfffcfffcfffcfffdfffdfffefffefffefffefffefffefffefffeffffff0000000001000000fffffefffdfffcfffcfffdfffdfffefffefffefffdfffdfffdfffdfffdfffefffeffffffffffffffffff00000000010002000200020002000200020001000100010000000000fffffffffeffffffffff000001000100020002000200020001000000000000000000000000000000fffffefffdfffcfffcfffdfffefffeffffffffff0000000001000200020002000100fffffdfffcfffdffffff02000500060005000300fffffcfffafff9fffafffcfffdfffefffdfffcfffcfffdff0000030005000300fcfff3ffe9ffe3ffe3ffebfff9ff090015001a0015000800f7ffe8ffdfffdeffe5fff1fffeff09000f0010000e000a0006000000f9ffefffe2ffd6ffceffcdffd7ffebff05001e00300037003300270019000f000c0011001a0024002b002d002c002a0028002500210019000d00feffeeffe2ffdcffdcffe0ffe6ffeaffebffe8ffe4ffe1ffe1ffe4ffeafff3fffdff0700100016001900170012000b000400fffffdfffcfffcfffafff7fff5fff5fffaff010007000600fbffe4ffc8ffafffa5ffb0ffd1ff000030005000560040001400e3ffbeffb2ffc4ffebff1700360039001f00f1ffc1ffa1ff9dffb4ffdbff0000140013000400f3ffefffffff1e0042005d0065005a0043002b001a00120011000f000a000200fcfffbff0000070009000400f8ffeeffeefffeff1d003e00540050002f00f8ffbfff97ff8effa7ffd6ff09002b0031001c00f6ffd2ffc1ffc8ffe3ff040019001600fcffd5ffb4ffa8ffb9ffe0ff0b002a003100240011000b001b003f0066007a006b003a00f9ffc3ffb1ffcaffffff35004b003000eaff93ff51ff42ff71ffd0ff3b008a00a00077002100c2ff81ff7affb0ff11007900c200d200a4004a00e3ff95ff78ff91ffd1ff1a004b004d001c00c7ff68ff1ffffffe0eff42ff86ffc1ffe0ffdeffc4ffa1ff8bff90ffb6fff2ff330064007700690045002200190037007e00da002f015e0156011801b5004a00efffb2ff91ff81ff74ff64ff55ff51ff60ff83ffafffd6ffebffeffff1ff040039009000f6004e01790167011c01af003d00e0ffa3ff86ff80ff87ff97ffaeffc7ffd8ffd4ffb3ff7aff40ff26ff48ffabff3800c10011010a01b2003200c3ff90ffa5ffe5ff1d001f00dcff6bfffdfec0fecafe09ff53ff7bff6bff33fffcfe\",\"status\":2},\"extra_info\":{\"audio_channel\":1,\"audio_format\":\"mp3\",\"audio_sample_rate\":32000,\"audio_size\":1068,\"usage_characters\":5,\"word_count\":99}}",
+      "expected_code": "minimax_tts_wave_invalid"
+    }
+  ],
+  "status_cases": [
+    {
+      "case_id": "provider-failure",
+      "status_code": 503,
+      "expected_failure_kind": "channel_failure",
+      "expected_retryable": true
+    }
+  ]
+}

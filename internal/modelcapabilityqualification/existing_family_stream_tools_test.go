@@ -36,12 +36,12 @@ func TestExistingFamilyDataProbeCompositions(t *testing.T) {
 			require.NoError(t, err)
 			body, err := BuildOpenAIChatFunctionToolsProbeRequest(b)
 			require.NoError(t, err)
-			groupKey, e := SharedStreamProbeContract(b)
+			groupKey, e := SharedProbeContract(b)
 			require.NoError(t, e)
 			require.Equal(t, b.ProbeContractID+"@"+b.ProbeContractVersion, groupKey)
 			streaming := b
 			streaming.CapabilityID = modelprofile.CapabilityStreaming
-			otherKey, e := SharedStreamProbeContract(streaming)
+			otherKey, e := SharedProbeContract(streaming)
 			require.NoError(t, e)
 			require.Equal(t, groupKey, otherKey)
 			otherBody, e := BuildOpenAIChatFunctionToolsProbeRequest(streaming)
@@ -53,7 +53,7 @@ func TestExistingFamilyDataProbeCompositions(t *testing.T) {
 				effort.CapabilityID = modelprofile.CapabilityReasoningEffort
 				effort, e = BindDefinition(effort, d)
 				require.NoError(t, e)
-				key, e := SharedStreamProbeContract(effort)
+				key, e := SharedProbeContract(effort)
 				require.NoError(t, e)
 				require.NotEqual(t, groupKey, key)
 			}

@@ -22,6 +22,7 @@ import (
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/modelcapabilityqualification"
 	"github.com/uniroute/unirouter/internal/modeldeployment"
 	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/modelprofile"
@@ -34,8 +35,10 @@ const (
 	canonicalOperationProbeMaxRequestBytes  = 4 << 10
 	canonicalOperationProbeMaxTextBytes     = 256
 	canonicalOperationProbeMaxResponseBytes = 1 << 20
+	canonicalImageProbeMaxResponseBytes     = 8 << 20
 	canonicalOperationProbeMaxHeaderBytes   = 64 << 10
 	canonicalOperationProbeTimeout          = 15 * time.Second
+	canonicalImageProbeTimeout              = 100 * time.Second
 	canonicalOperationProbeSourceKind       = "admin.operation_probe.v1"
 )
 
@@ -47,6 +50,8 @@ var (
 )
 
 var canonicalOperationProbeDefaultHTTPClient = newCanonicalOperationProbeHTTPClient()
+var singleOperationProbeHTTPClient = newSingleSendProbeHTTPClient(canonicalOperationProbeTimeout)
+var canonicalImageProbeHTTPClient = newSingleSendProbeHTTPClient(canonicalImageProbeTimeout)
 
 // modelDeploymentProbeHTTPDoer is deliberately narrower than *http.Client so
 // tests can prove the exact outbound operation without using a real provider.
@@ -63,12 +68,16 @@ func (h *Handler) SetModelDeploymentProbeHTTPDoer(doer adapters.HTTPDoer) {
 }
 
 type canonicalOperationProbeRequest struct {
+	ResumeProbeRef                      string `json:"-"`
+	DiscoverAsyncProbe                  bool   `json:"-"`
 	ExpectedUpstreamObservationIdentity string `json:"expected_upstream_observation_identity,omitempty"`
 	CredentialBindingID                 int64  `json:"credential_binding_id"`
 	ProbeText                           string `json:"probe_text,omitempty"`
 }
 
 type canonicalOperationProbeResponse struct {
+	Pending             bool   `json:"pending,omitempty"`
+	ProbeRunRef         string `json:"probe_run_ref,omitempty"`
 	ProbeID             int64  `json:"probe_id"`
 	DeploymentID        int64  `json:"deployment_id"`
 	OperationID         string `json:"operation_id"`
@@ -150,6 +159,14 @@ type canonicalOperationProbeSpec struct {
 }
 
 func (h *Handler) ProbeCanonicalModelOperation(w http.ResponseWriter, r *http.Request) {
+	h.serveCanonicalOperationProbe(w, r, false)
+}
+
+func (h *Handler) ReadCanonicalAsyncModelOperationProbe(w http.ResponseWriter, r *http.Request) {
+	h.serveCanonicalOperationProbe(w, r, true)
+}
+
+func (h *Handler) serveCanonicalOperationProbe(w http.ResponseWriter, r *http.Request, resume bool) {
 	deploymentID, err := strconv.ParseInt(strings.TrimSpace(r.PathValue("deploymentID")), 10, 64)
 	if err != nil || deploymentID <= 0 {
 		writeCanonicalOperationProbeError(w, errCanonicalOperationProbeInvalid)
@@ -165,11 +182,24 @@ func (h *Handler) ProbeCanonicalModelOperation(w http.ResponseWriter, r *http.Re
 		writeCanonicalOperationProbeError(w, err)
 		return
 	}
-	request, err := decodeCanonicalOperationProbeRequest(w, r)
-	if err != nil {
-		writeCanonicalOperationProbeError(w, err)
-		return
+	var request canonicalOperationProbeRequest
+	if resume {
+		request.ResumeProbeRef = r.PathValue("probeRunRef")
+		request.DiscoverAsyncProbe = request.ResumeProbeRef == ""
+		request.ExpectedUpstreamObservationIdentity = r.URL.Query().Get("expected_upstream_observation_identity")
+		request.CredentialBindingID, err = strconv.ParseInt(r.URL.Query().Get("credential_binding_id"), 10, 64)
+		if err != nil || request.CredentialBindingID <= 0 || (!request.DiscoverAsyncProbe && !validAsyncOperationProbeRef(request.ResumeProbeRef)) {
+			writeCanonicalOperationProbeError(w, errCanonicalOperationProbeInvalid)
+			return
+		}
+	} else {
+		request, err = decodeCanonicalOperationProbeRequest(w, r)
+		if err != nil {
+			writeCanonicalOperationProbeError(w, err)
+			return
+		}
 	}
+
 	orgID, err := resolveActorOrganization(r.Context(), 0)
 	if err != nil {
 		writeOrganizationScopeError(w, err)
@@ -186,6 +216,11 @@ func (h *Handler) ProbeCanonicalModelOperation(w http.ResponseWriter, r *http.Re
 	)
 	if err != nil {
 		writeCanonicalOperationProbeError(w, err)
+		return
+	}
+	if result.Pending {
+		w.Header().Set("Retry-After", "15")
+		writeJSON(w, http.StatusAccepted, result)
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -249,7 +284,7 @@ func canonicalOperationProbeSpecFor(operation modeloperation.ID) (canonicalOpera
 			Endpoint: adapters.EndpointEmbeddings, ProfileID: "openai.embeddings", ProfileVersion: "1.0.0",
 			SourceKind: canonicalOperationProbeSourceKind,
 		}, nil
-	case modeloperation.IDResponses, modeloperation.IDMessages:
+	case modeloperation.IDResponses, modeloperation.IDMessages, modeloperation.IDMediaJobs:
 		binding, err := modelqualification.CompiledBinding(string(operation))
 		if err != nil {
 			return canonicalOperationProbeSpec{}, errCanonicalOperationProbeUnsupported
@@ -270,7 +305,7 @@ func canonicalOperationProbeSpecForProfile(
 	operation modeloperation.ID,
 	profileID, profileVersion string,
 ) (canonicalOperationProbeSpec, error) {
-	if operation != modeloperation.IDResponses && operation != modeloperation.IDMessages {
+	if !modelqualification.IsQualificationRequired(string(operation)) {
 		return canonicalOperationProbeSpecFor(operation)
 	}
 	binding, err := modelqualification.CompiledBindingFor(string(operation), profileID, profileVersion)
@@ -340,8 +375,14 @@ func (h *Handler) probeCanonicalModelOperation(
 	if err != nil {
 		return canonicalOperationProbeResponse{}, fmt.Errorf("generate canonical operation probe identity: %w", err)
 	}
+	if async := asyncOperationProbeProtocol(snapshot); async != nil {
+		return h.probeAsyncCanonicalOperation(ctx, snapshot, request, audit, sourceRef, async)
+	}
+	if request.DiscoverAsyncProbe || request.ResumeProbeRef != "" {
+		return canonicalOperationProbeResponse{}, errCanonicalOperationProbeUnsupported
+	}
 	outcome := h.executeCanonicalOperationProbe(ctx, snapshot, request.ProbeText, sourceRef)
-	return h.persistCanonicalOperationProbe(ctx, actorID, snapshot, outcome, sourceRef, audit)
+	return h.persistCanonicalOperationProbe(ctx, actorID, snapshot, outcome, sourceRef, audit, nil)
 }
 
 func (h *Handler) loadCanonicalOperationProbeSnapshot(
@@ -565,6 +606,9 @@ func (h *Handler) executeCanonicalOperationProbe(
 		return canonicalOperationProbeOutcome{ReasonCode: "request_build_failed"}
 	}
 	if spec.ExecutionBinding != nil {
+		if p := snapshot.Definition.Profile(); snapshot.ProfileDefinitionDigest != "" && nativeProbeProfile(p) {
+			return h.executeNativeToolOperationProbe(ctx, p, snapshot, secret, body, requestID)
+		}
 		return h.executeEndpointProtocolOperationProbe(ctx, snapshot, spec, secret, body, requestID)
 	}
 	adapter, err := adapters.DefaultRegistry().Get(snapshot.AdapterType)
@@ -585,7 +629,7 @@ func (h *Handler) executeCanonicalOperationProbe(
 		return canonicalOperationProbeOutcome{ReasonCode: "request_build_failed"}
 	}
 	started := time.Now()
-	response, err := h.canonicalOperationProbeDoer().Do(request)
+	response, err := h.sendModelProbe(request, singleOperationProbeHTTPClient)
 	latency := time.Since(started).Milliseconds()
 	if err != nil {
 		return canonicalOperationProbeOutcome{LatencyMS: latency, ReasonCode: "provider_request_failed"}
@@ -609,11 +653,16 @@ func (h *Handler) executeCanonicalOperationProbe(
 		outcome.ReasonCode = "provider_response_too_large"
 		return outcome
 	}
-	normalized, parseErr := adapter.ParseResponse(probeCtx, adapters.ResponseInput{
+	responseInput := adapters.ResponseInput{
 		Endpoint: spec.Endpoint, StatusCode: response.StatusCode, Header: response.Header,
 		Body: responseBody, Channel: channel, RequestedModel: snapshot.UpstreamModel,
 		UpstreamModel: snapshot.UpstreamModel, TTFTMillis: int(latency),
-	})
+	}
+	exactText := exactTextOperationProbe(snapshot)
+	if exactText {
+		responseInput.CacheUsageProfile = snapshot.Definition.Profile().CacheUsageProfile
+	}
+	normalized, parseErr := adapter.ParseResponse(probeCtx, responseInput)
 	if parseErr != nil || normalized == nil {
 		outcome.ReasonCode = "provider_response_invalid"
 		return outcome
@@ -623,7 +672,21 @@ func (h *Handler) executeCanonicalOperationProbe(
 		outcome.ReasonCode = "provider_http_error"
 		return outcome
 	}
-	if !canonicalOperationProbeResponseShape(modeloperation.ID(snapshot.OperationID), normalized.Body) {
+	probeOutputLimit := exactTextOperationProbeOutputLimit
+	profile := snapshot.Definition.Profile()
+	if modelprofile.QwenHostedSplitProfile(profile) {
+		reasoningLimit := 0
+		if profile.ReasoningProfile == modelprofile.QwenHostedA95BReasoning {
+			reasoningLimit = modelprofile.QwenHostedProbeThinking
+		}
+		probeOutputLimit += reasoningLimit
+		if !normalized.Usage.FitsProviderCompletionSplit(exactTextOperationProbeOutputLimit, reasoningLimit) {
+			outcome.ReasonCode = "provider_response_invalid"
+			return outcome
+		}
+	}
+	if (exactText && !modelcapabilityqualification.IsExactPlainChatResponse(response.Header.Get("Content-Type"), responseBody, snapshot.UpstreamModel, normalized.Usage, probeOutputLimit, responseInput.CacheUsageProfile)) ||
+		(!exactText && !canonicalOperationProbeResponseShape(modeloperation.ID(snapshot.OperationID), normalized.Body)) {
 		outcome.ReasonCode = "provider_response_invalid"
 		return outcome
 	}
@@ -651,8 +714,24 @@ func (h *Handler) executeEndpointProtocolOperationProbe(
 	if err != nil {
 		return canonicalOperationProbeOutcome{ReasonCode: "protocol_profile_unavailable"}
 	}
-	probeCtx, cancel := context.WithTimeout(ctx, canonicalOperationProbeTimeout)
+	media := snapshot.OperationID == string(modeloperation.IDMediaJobs)
+	timeout, maxResponse := canonicalOperationProbeTimeout, canonicalOperationProbeMaxResponseBytes
+	if media {
+		timeout, maxResponse = canonicalImageProbeTimeout, canonicalImageProbeMaxResponseBytes
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	var probeAnswer string
+	endpointKind := profile.Descriptor().EndpointKind
+	switch endpointKind {
+	case endpointprotocol.EndpointOCR:
+		body, probeAnswer, err = makeOCRProbe(snapshot.UpstreamModel)
+	case endpointprotocol.EndpointTranscription:
+		body, probeAnswer, err = makeASRProbe(snapshot.UpstreamModel)
+	}
+	if err != nil {
+		return canonicalOperationProbeOutcome{ReasonCode: "request_build_failed"}
+	}
 	request, binding, err := profile.BuildRequest(probeCtx, endpointprotocol.BuildInput{
 		BaseURL: origin, APIKey: secret, RequestID: requestID,
 		RequestedModel: snapshot.UpstreamModel, MappedModel: snapshot.UpstreamModel, Body: body,
@@ -660,8 +739,12 @@ func (h *Handler) executeEndpointProtocolOperationProbe(
 	if err != nil || request == nil || binding == nil {
 		return canonicalOperationProbeOutcome{ReasonCode: "request_build_failed"}
 	}
+	client := singleOperationProbeHTTPClient
+	if media {
+		client = canonicalImageProbeHTTPClient
+	}
 	started := time.Now()
-	response, err := h.canonicalOperationProbeDoer().Do(request)
+	response, err := h.sendModelProbe(request, client)
 	latency := time.Since(started).Milliseconds()
 	if err != nil {
 		return canonicalOperationProbeOutcome{LatencyMS: latency, ReasonCode: "provider_request_failed"}
@@ -670,7 +753,7 @@ func (h *Handler) executeEndpointProtocolOperationProbe(
 		return canonicalOperationProbeOutcome{LatencyMS: latency, ReasonCode: "provider_response_invalid"}
 	}
 	defer response.Body.Close()
-	responseBody, readErr := io.ReadAll(io.LimitReader(response.Body, canonicalOperationProbeMaxResponseBytes+1))
+	responseBody, readErr := io.ReadAll(io.LimitReader(response.Body, int64(maxResponse)+1))
 	outcome := canonicalOperationProbeOutcome{
 		StatusCode: response.StatusCode, LatencyMS: latency, ResponseBytes: len(responseBody),
 	}
@@ -681,7 +764,7 @@ func (h *Handler) executeEndpointProtocolOperationProbe(
 		outcome.ReasonCode = "provider_response_read_failed"
 		return outcome
 	}
-	if len(responseBody) > canonicalOperationProbeMaxResponseBytes {
+	if len(responseBody) > maxResponse {
 		outcome.ReasonCode = "provider_response_too_large"
 		return outcome
 	}
@@ -694,13 +777,46 @@ func (h *Handler) executeEndpointProtocolOperationProbe(
 		}
 		return outcome
 	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 || len(parsed.Units) == 0 {
+	if response.StatusCode < 200 || response.StatusCode >= 300 || (!media && len(parsed.Units) == 0) {
 		outcome.ReasonCode = "provider_response_invalid"
 		return outcome
+	}
+	if media {
+		if endpointprotocol.ValidateMediaOutcome(spec.ProfileID, snapshot.UpstreamModel, parsed) != nil {
+			outcome.ReasonCode = "provider_response_invalid"
+			return outcome
+		}
+		if endpointKind == endpointprotocol.EndpointTranscription && !verifiesASRProbe(parsed.Media, probeAnswer) {
+			outcome.ReasonCode = "asr_probe_answer_mismatch"
+			return outcome
+		}
+		if endpointKind == endpointprotocol.EndpointOCR && !verifiesOCRProbe(parsed.Media, probeAnswer) {
+			outcome.ReasonCode = "ocr_probe_answer_mismatch"
+			return outcome
+		}
+		if remote, ok := profile.(endpointprotocol.RemoteMediaProfile); ok {
+			assetClient := &http.Client{Transport: mediaProbeAssetTransport{handler: h}}
+			if _, err := endpointprotocol.DownloadRemoteMedia(probeCtx, assetClient, remote, parsed.ResultURL); err != nil {
+				outcome.ReasonCode = "provider_media_asset_unverified"
+				return outcome
+			}
+		}
 	}
 	outcome.ProviderSuccess = true
 	outcome.ReasonCode = "ok"
 	outcome.ReportedModel = parsed.MappedModel
+	if media {
+		// A media response can omit model. The exact outbound binding still
+		// identifies the qualified SKU, but does not become a provider echo.
+		outcome.ReportedModel = parsed.VerifiedProviderModel
+		if outcome.ReportedModel == "" {
+			outcome.ReportedModel = canonicalOperationProbeReportedModel(responseBody)
+		}
+		if outcome.ReportedModel != "" && outcome.ReportedModel != snapshot.UpstreamModel && parsed.VerifiedProviderModel == "" {
+			return canonicalOperationProbeOutcome{StatusCode: outcome.StatusCode, LatencyMS: latency,
+				ResponseBytes: outcome.ResponseBytes, ReasonCode: "provider_response_invalid"}
+		}
+	}
 	outcome.OutputCount = parsed.OutputCount
 	outcome.Units = append([]endpointprotocol.UnitObservation(nil), parsed.Units...)
 	return outcome
@@ -711,6 +827,23 @@ func (h *Handler) canonicalOperationProbeDoer() modelDeploymentProbeHTTPDoer {
 		return h.modelDeploymentProbeHTTPDoer
 	}
 	return canonicalOperationProbeDefaultHTTPClient
+}
+
+// All paid management probe steps go through this sender. Discovery's GET
+// continues to use the original client, independently of the POST contract.
+func (h *Handler) sendModelProbe(request *http.Request, client *http.Client) (*http.Response, error) {
+	request.GetBody = nil
+	if h != nil && h.modelDeploymentProbeHTTPDoer != nil {
+		return h.modelDeploymentProbeHTTPDoer.Do(request)
+	}
+	return client.Do(request)
+}
+
+func newSingleSendProbeHTTPClient(timeout time.Duration) *http.Client {
+	client := newCanonicalOperationProbeHTTPClient()
+	adapters.ConfigureSingleSendTransport(client.Transport.(*http.Transport))
+	client.Timeout = timeout
+	return client
 }
 
 func newCanonicalOperationProbeHTTPClient() *http.Client {
@@ -814,6 +947,7 @@ func canonicalOperationProbeRequestSummary(snapshot canonicalOperationProbeSnaps
 		MaxTokens           *int  `json:"max_tokens"`
 		MaxCompletionTokens *int  `json:"max_completion_tokens"`
 		EnableThinking      *bool `json:"enable_thinking"`
+		ThinkingBudget      *int  `json:"thinking_budget"`
 		Thinking            *struct {
 			Type string `json:"type"`
 		} `json:"thinking"`
@@ -832,6 +966,9 @@ func canonicalOperationProbeRequestSummary(snapshot canonicalOperationProbeSnaps
 	}
 	if controls.EnableThinking != nil {
 		summary["enable_thinking"] = *controls.EnableThinking
+	}
+	if controls.ThinkingBudget != nil {
+		summary["thinking_budget"] = *controls.ThinkingBudget
 	}
 	if controls.Thinking != nil && controls.Thinking.Type != "" {
 		summary["thinking_type"] = controls.Thinking.Type
@@ -885,6 +1022,7 @@ func (h *Handler) persistCanonicalOperationProbe(
 	outcome canonicalOperationProbeOutcome,
 	sourceRef string,
 	audit auditMeta,
+	asyncRead *asyncOperationProbeRead,
 ) (canonicalOperationProbeResponse, error) {
 	spec, err := canonicalOperationProbeSpecForSnapshot(snapshot)
 	if err != nil {
@@ -1054,6 +1192,23 @@ UPDATE model_deployment_operations
 	}, audit); err != nil {
 		return canonicalOperationProbeResponse{}, fmt.Errorf("audit canonical operation probe: %w", err)
 	}
+	if asyncRead != nil {
+		result.ProbeRunRef = asyncRead.sourceRef
+		wire, err := json.Marshal(result)
+		if err != nil {
+			return canonicalOperationProbeResponse{}, err
+		}
+		tag, err := tx.Exec(ctx, `UPDATE model_deployment_async_probe_tasks SET result=$3::jsonb
+			WHERE source_ref=$1 AND read_fence=$2 AND result IS NULL AND read_until>$4`,
+			asyncRead.sourceRef, asyncRead.fence, string(wire), h.mediaProbeTime())
+		if err != nil {
+			return canonicalOperationProbeResponse{}, err
+		}
+		if tag.RowsAffected() != 1 {
+			return canonicalOperationProbeResponse{}, errCanonicalOperationProbeConflict
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return canonicalOperationProbeResponse{}, fmt.Errorf("commit canonical operation probe: %w", err)
 	}

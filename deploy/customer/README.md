@@ -79,7 +79,9 @@ model-deployment creation/probing remains the supported write path.
 The asynchronous Image V1 worker still resolves legacy channels and keys, so
 `ASYNC_MEDIA_ENABLED=true` is rejected with canonical authority. It may run
 only in an explicitly authorized legacy/verify compatibility process until a
-canonical media operation and receipt contract exists.
+canonical media operation and receipt contract exists. The supported image
+job endpoint accepts `X-UniRouter-Max-Upstream-Attempts: 1` to bound an
+individual job without adjusting the instance default.
 
 Before first start:
 
@@ -295,8 +297,8 @@ restoration instruction. This source template does not itself sign or release it
 
 - Repository path: `scripts/source-budget-restore-rebase.sql`
 - Signed payload path: `payload/scripts/source-budget-restore-rebase.sql`
-- SHA-256: `dbdfd9d1955fa6b0d8f9bebdce5f2499fcda0cd0b4e51030197018159613cac9`
-- Bytes: `17374`
+- SHA-256: `76f32c1721ce4f9e386a1f35fd9d729e0972f9cf9c4e0d42a0ce43aa975be4bb`
+- Bytes: `17804`
 
 After every supported SQL restore, while all database readers/writers are still
 stopped, run this helper with `psql -v ON_ERROR_STOP=1 -f` before restart. It retains

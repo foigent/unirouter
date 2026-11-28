@@ -7,7 +7,7 @@ import { ApiError } from '../../api/transport';
 import { useAuthStore } from '../../store/auth';
 import { Surface } from '../../ui';
 import { capabilityShortName } from './ModelCapabilityQualificationPanel';
-import { upstreamScopeLabel, endpointFailureText, EndpointUIError, type EndpointFailure } from './presentation';
+import { upstreamScopeLabel, endpointFailureText, EndpointUIError, nativeToolContinuationProbe, plannedProviderRequestCount, providerRequestLimitLabel, type EndpointFailure } from './presentation';
 
 type Props = { selected: CanonicalModelApplication; operation: CanonicalOperation; canManage: boolean; canApprove: boolean; gatewayLicensed: boolean };
 type Run = { state: 'sending' | 'complete' | 'unconfirmed'; sourceRef?: string; observation?: SharedProbeObservation; message?: string };
@@ -19,7 +19,8 @@ function safeSourceRef(e: unknown) {
   return typeof nested?.source_ref === 'string' && /^op_[0-9a-f]{32}$/.test(nested.source_ref) ? nested.source_ref : undefined;
 }
 export default function ModelQualificationWorkspace({ selected, operation, canManage, canApprove, gatewayLicensed }: Props) {
-  useI18n();
+  const { locale } = useI18n();
+  const capabilitySeparator = locale === 'zh-CN' ? '、' : ', ';
   const user = useAuthStore(s => s.user);
   const bindings = selected.credential.bindings.filter(b => b.eligible);
   const [bindingID, setBindingID] = useState(bindings.length === 1 ? bindings[0].id : 0);
@@ -31,6 +32,12 @@ export default function ModelQualificationWorkspace({ selected, operation, canMa
   const currentViews = useRef<CanonicalCapabilityQualification[]>([]);
   const [reason, setReason] = useState(t("已审阅当前模型的逐项验证事实"));
   const [costAccepted, setCostAccepted] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<EndpointFailure | null>(null);
+  const count = plan?.groups.reduce<number | null>((sum, group) => {
+    const limit = plannedProviderRequestCount(group.planned_provider_requests);
+    if (sum === null || limit === null) return null;
+    return Number.isSafeInteger(sum + limit) ? sum + limit : null;
+  }, 0) ?? null;
+  const planRequestLimit = providerRequestLimitLabel(count);
   const generation = useRef(0), inFlight = useRef(false), mounted = useRef(true);
   const target = JSON.stringify([selected.deployment.id, selected.deployment.config_revision, selected.connection.id, selected.connection.config_revision,
     selected.deployment.upstream_release_observation?.observation?.identity, operation.operation_id, operation.revision, operation.profile_definition_digest, operation.protocol_profile_id, operation.protocol_profile_version,
@@ -62,7 +69,7 @@ export default function ModelQualificationWorkspace({ selected, operation, canMa
     finally { inFlight.current = false; if (mounted.current) setBusy(false); }
   };
   const verify = async () => {
-    if (inFlight.current || !plan || !costAccepted || !canManage || !gatewayLicensed || !actor() || Object.values(runs).some(r => r.state === 'unconfirmed')) return;
+    if (inFlight.current || !plan || !count || !costAccepted || !canManage || !gatewayLicensed || !actor() || Object.values(runs).some(r => r.state === 'unconfirmed')) return;
     const stamp = generation.current, who = actor(), frozen = plan;
     inFlight.current = true; setBusy(true); setError(null);
     try {
@@ -122,7 +129,6 @@ export default function ModelQualificationWorkspace({ selected, operation, canMa
     finally { inFlight.current = false; if (mounted.current) setBusy(false); }
   };
   const unresolved = Object.values(runs).some(r => r.state === 'unconfirmed');
-  const count = plan?.groups.reduce((n, g) => n + g.planned_provider_requests, 0) || 0;
   return <Surface title={t("3 · 集中验证")} description={t("一次选择凭证，集中查看逐项事实和批准状态。验证成功后，再到发布工作台启用。")}>
     <Space vertical align="start" style={{ width: '100%' }}>
       {canManage && <><span id="qualification-binding-label">{t("验证使用的凭证")}</span><Select aria-labelledby="qualification-binding-label" style={{ minWidth: 260 }} value={bindingID || undefined} disabled={busy} placeholder={t("选择已保存的凭证")} optionList={bindings.map(b => ({ value: b.id, label: t('凭证 #{id} · {status}', { id: b.id, status: b.status }) }))} onChange={v => setBindingID(Number(v))}/></>}
@@ -138,15 +144,22 @@ export default function ModelQualificationWorkspace({ selected, operation, canMa
       ]}/>
       <Typography.Text type="tertiary">{t("新验证和批准不会自动更新活动 Release。逐项批准所选事实后，可到发布工作台核对并启用新的发布。")}</Typography.Text>
       {plan && <>
-        <Typography.Text>{t('本轮合并验证预计 {calls} 次上游请求，覆盖 {capabilities} 项能力；费用按供应商实际处理计入。', { calls: count, capabilities: plan.groups.flatMap(g => g.capability_ids).length })}</Typography.Text>
-        {plan.groups.map(g => { const run = runs[g.plan_digest]; return <div key={g.plan_digest}>
-          <Typography.Text>{g.capability_ids.map(capabilityShortName).join('、')}  {t("· 1 次请求")}</Typography.Text>
-          {run && <p>{run.state === 'sending' ? t("正在验证") : translateLabel(run.message || '')} {run.sourceRef && <code>{run.sourceRef}</code>} {run.observation && ` · ${run.observation.dispatch_state === 'not_started' ? t("未开始发送") : run.observation.dispatch_state === 'response_received' ? t("已收到供应商响应") : t("已开始发送，结果可能不明")}`}</p>}
-          {run?.state === 'unconfirmed' && run.sourceRef && <Button disabled={busy} onClick={() => void readGroup(g.plan_digest, run.sourceRef!)}>{t("回读本次观察")}</Button>}
-        </div>; })}
-        {plan.separate_capabilities.length > 0 && <Typography.Text type="tertiary">{plan.separate_capabilities.map(capabilityShortName).join('、')}  {t("使用独立验证合同，可在详细验证中处理。")}</Typography.Text>}
+        <Typography.Text>{t('本轮合并验证覆盖 {capabilities} 项能力。{limit}。费用按供应商实际处理计入。', { limit: planRequestLimit, capabilities: plan.groups.flatMap(g => g.capability_ids).length })}</Typography.Text>
+        {plan.groups.map(g => {
+          const run = runs[g.plan_digest];
+          const limit = plannedProviderRequestCount(g.planned_provider_requests);
+          return <div key={g.plan_digest}>
+            <Typography.Text>{g.capability_ids.map(capabilityShortName).join(capabilitySeparator)} · {providerRequestLimitLabel(limit)}</Typography.Text>
+            {limit === 2 && g.probe_contract === nativeToolContinuationProbe && (
+              <div><Typography.Text type="tertiary">{t("第一轮获取工具调用。通过校验后，第二轮回传测试工具结果。")}</Typography.Text></div>
+            )}
+            {run && <p>{run.state === 'sending' ? t("正在验证") : translateLabel(run.message || '')} {run.sourceRef && <code>{run.sourceRef}</code>} {run.observation && ` · ${run.observation.dispatch_state === 'not_started' ? t("未开始发送") : run.observation.dispatch_state === 'response_received' ? t("已收到供应商响应") : t("已开始发送，结果可能不明")}`}</p>}
+            {run?.state === 'unconfirmed' && run.sourceRef && <Button disabled={busy} onClick={() => void readGroup(g.plan_digest, run.sourceRef!)}>{t("回读本次观察")}</Button>}
+          </div>;
+        })}
+        {plan.separate_capabilities.length > 0 && <Typography.Text type="tertiary">{plan.separate_capabilities.map(capabilityShortName).join(capabilitySeparator)} · {t("未纳入集中验证。请在详细验证中查看是否可运行。")}</Typography.Text>}
         {unresolved && <Banner type="warning" closeIcon={null} description={t("存在结果不明的调用；本页已停止重发。若未取得观察标识，请到审计记录核对本次操作，不能用其他最近成功代替。")}/>}
-        <Checkbox checked={costAccepted} disabled={busy || unresolved || !gatewayLicensed} onChange={e => setCostAccepted(Boolean(e.target.checked))}>{t('确认发起本轮 {count} 次付费验证', { count })}</Checkbox>
+        <Checkbox checked={costAccepted} disabled={!count || busy || unresolved || !gatewayLicensed} onChange={e => setCostAccepted(Boolean(e.target.checked))}>{t('确认付费验证（{limit}）', { limit: planRequestLimit })}</Checkbox>
         <Button type="primary" loading={busy} disabled={!count || !costAccepted || unresolved || !gatewayLicensed} onClick={() => void verify()}>{t("验证这些能力")}</Button>
       </>}
       {canApprove && <><Input aria-label={t("集中批准理由")} value={reason} onChange={setReason} disabled={busy} maxLength={512}/><Button disabled={busy || !gatewayLicensed || approvalUnconfirmed || !Object.keys(checked).length || !reason.trim()} onClick={() => void approve()}>{t('批准已选 {count} 项', { count: Object.keys(checked).length })}</Button></>}

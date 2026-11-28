@@ -113,6 +113,24 @@ func (relay *Relay) providerClient(timeout time.Duration) adapters.HTTPDoer {
 	}}
 }
 
+func (relay *Relay) singleSendProviderClient(timeout time.Duration) adapters.HTTPDoer {
+	if relay.providerHTTPDoer != nil {
+		return relay.providerHTTPDoer
+	}
+	return newSingleSendProviderClient(http.DefaultTransport, timeout)
+}
+
+func newSingleSendProviderClient(baseTransport http.RoundTripper, timeout time.Duration) adapters.HTTPDoer {
+	base, ok := baseTransport.(*http.Transport)
+	if !ok || base == nil || base.DialTLS != nil || base.DialTLSContext != nil {
+		return nil
+	}
+	transport := base.Clone()
+	adapters.ConfigureSingleSendTransport(transport)
+	return &http.Client{Transport: transport, Timeout: timeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+}
+
 type preparedModelExecutionBatch struct {
 	plan                modelrouting.Plan
 	routes              []preparedModelExecutionRoute
@@ -142,12 +160,13 @@ const legacyImplicitOutputLimitV1 = 1000
 // exact contract determines any supplier allowance; reservation and final
 // charging remain distinct authorities.
 type modelExecutionRequestLimits struct {
-	EstimatedInputTokens  int
-	EstimatedOutputTokens int
-	ExplicitOutputTokens  *int
-	ProviderOutputLimit   int
-	EstimateVersion       string
-	OutputEnforcement     modelprofile.OutputEnforcement
+	EstimatedInputTokens      int
+	EstimatedOutputTokens     int
+	ExplicitOutputTokens      *int
+	ProviderOutputLimit       int
+	HostedReasoningTokenLimit int
+	EstimateVersion           string
+	OutputEnforcement         modelprofile.OutputEnforcement
 }
 
 func (limits modelExecutionRequestLimits) estimatedTotal() int64 {
@@ -191,6 +210,12 @@ func (limits modelExecutionRequestLimits) resolveOutputReservation(plan modelrou
 		}
 		resolved.OutputEnforcement = enforcement
 		resolved.ProviderOutputLimit = resolved.EstimatedOutputTokens - enforcement.ProviderDeviationTokens
+		if enforcement.Scope == modelprofile.QwenHostedBudgetScope {
+			resolved.EstimatedOutputTokens += resolved.HostedReasoningTokenLimit
+			if plan.PublicOutputLimit > 0 && resolved.EstimatedOutputTokens > plan.PublicOutputLimit {
+				return modelExecutionRequestLimits{}, errModelExecutionOutputLimitExceeded
+			}
+		}
 	}
 	if err := resolved.validatePublic(plan); err != nil {
 		return modelExecutionRequestLimits{}, err
@@ -418,6 +443,7 @@ func (relay *Relay) prepareModelExecutionPlan(
 	if err := relay.validateProcessingTierBillingReadiness(ctx, publicModel, profileEvidence); err != nil {
 		return nil, err
 	}
+	limits.HostedReasoningTokenLimit = profileEvidence.HostedReasoningTokenLimit
 	limits, err = limits.resolveOutputReservation(plan, plan.RequiredCapabilities)
 	if err != nil {
 		return nil, err
@@ -425,7 +451,8 @@ func (relay *Relay) prepareModelExecutionPlan(
 	if limits.OutputEnforcement.Accounting != "" {
 		protocolContract, _ := modelprofile.ResolveChatProtocolContract(plan.ModelProtocolProfile)
 		profileEvidence.ProviderRequestNormalizations = append(profileEvidence.ProviderRequestNormalizations,
-			fmt.Sprintf("%s=%d->%d:provider_deviation_%d", protocolContract.OutputLimitField, limits.EstimatedOutputTokens, limits.ProviderOutputLimit, limits.OutputEnforcement.ProviderDeviationTokens))
+			fmt.Sprintf("%s=%d->%d:provider_deviation_%d", protocolContract.OutputLimitField,
+				limits.EstimatedOutputTokens-limits.HostedReasoningTokenLimit, limits.ProviderOutputLimit, limits.OutputEnforcement.ProviderDeviationTokens))
 	}
 	return &preparedModelExecutionBatch{
 		plan: plan, limits: limits, profileEvidence: profileEvidence,
@@ -568,6 +595,19 @@ func validateExecutionOutboundLimits(endpoint adapters.Endpoint, body []byte, pl
 	}
 	if admission.InputTokens > limits.EstimatedInputTokens {
 		limits.EstimatedInputTokens, limits.EstimateVersion = admission.InputTokens, admission.Version
+	}
+	if limits.OutputEnforcement.Scope == modelprofile.QwenHostedBudgetScope {
+		var provider map[string]json.RawMessage
+		if err := json.Unmarshal(body, &provider); err != nil {
+			return limits, errModelExecutionProfileRequestInvalid
+		}
+		answer, present, err := optionalJSONInteger(provider["max_tokens"], "max_tokens")
+		thinking, hasThinking, thinkingErr := optionalJSONInteger(provider["thinking_budget"], "thinking_budget")
+		if err != nil || !present || answer != int64(limits.ProviderOutputLimit) || thinkingErr != nil ||
+			hasThinking != (limits.HostedReasoningTokenLimit > 0) || thinking != int64(limits.HostedReasoningTokenLimit) ||
+			hasAnyNonNullJSONField(provider, "max_completion_tokens", "reasoning_effort") {
+			return limits, errModelExecutionProfileRequestInvalid
+		}
 	}
 	if !limits.routeFits(plan, route) {
 		return limits, errModelExecutionContextLimitExceeded
@@ -978,6 +1018,10 @@ func invocationCapabilityRequirementsForChat(
 		}
 		if capability == modelCapabilityReasoning {
 			hasReasoningControl = true
+			if protocol, ok := modelprofile.ResolveChatProtocolContract(profile.ProtocolProfile); ok &&
+				protocol.RequiredDisabledReasoningEffort != "" && evidence.ReasoningEffortEffective == "disabled" {
+				continue
+			}
 			exact := explicitReasoningCapabilityIDs(evidence)
 			for _, exactCapability := range exact {
 				requirements = append(requirements, modelrouting.CapabilityRequirement{
@@ -1431,7 +1475,7 @@ func requiredCapabilitiesForChat(body []byte) ([]string, error) {
 					add(modelCapabilityVision)
 				case "video_url", "input_video":
 					add(modelCapabilityVideo)
-				case "file_url":
+				case "file_url", "file":
 					add(modelCapabilityFiles)
 				case "input_audio", "audio":
 					add(modelCapabilityAudio)

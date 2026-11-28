@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	mediachargeassets "github.com/uniroute/unirouter/contracts/source-facts/media-charge-v1"
 	publication "github.com/uniroute/unirouter/internal/modelcapabilitypublication"
 	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
@@ -180,6 +181,11 @@ VALUES($1,$2,$3,$4,'serving','absent',clock_timestamp()+$5*interval '1 second')`
 
 // Schema advertisement alone cannot register a pre-C same-purpose writer on M119.
 func requireLeaseManifest(manifest Manifest, head string) error {
+	if head == schemaauthority.MediaChargeSourceHead || head == schemaauthority.NativeInlineJPEGHead || head == schemaauthority.CanonicalMediaJobHead || head == schemaauthority.AsyncMediaProviderTaskHead {
+		if err := manifest.Require(head, []modelprofile.ImplementationReference{{Kind: "source_observations", ID: mediachargeassets.ID}}); err != nil {
+			return fmt.Errorf("%w: %v", ErrIncompatible, err)
+		}
+	}
 	if head == schemaauthority.UpstreamReleaseObservationHead || head == schemaauthority.UpstreamObservationRestoreHead || schemaauthority.HasUpgradeAdmissionRecovery(head) {
 		if err := manifest.Require(head, UpstreamReleaseObservationRequirements()); err != nil {
 			return fmt.Errorf("%w: %v", ErrIncompatible, err)

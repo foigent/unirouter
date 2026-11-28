@@ -376,15 +376,48 @@ func normalSetupOriginalTables(t *testing.T, f normalSetupFixture) map[string]st
 	result := make(map[string]string, len(names))
 	for _, name := range names {
 		expr, where := "to_jsonb(t)", ""
-		if name == "model_deployments" {
+		switch name {
+		case "model_deployments":
 			expr += "-'upstream_release_observation'-'upstream_observation_revision'"
-		}
-		if name == "schema_migrations" {
+		case "async_media_jobs":
+			expr += "-'single_upstream_attempt'-'canonical_route'-'canonical_dispatch_route'" +
+				"-'provider_task_id'-'provider_task_read_until'-'provider_status_reads'"
+		case "model_operation_execution_support_bindings", "model_operation_public_execution_contract_extensions":
+			where = " WHERE NOT (protocol_profile_version='1.0.0' AND (introduced_migration,operation_id,protocol_profile_id) IN (" +
+				"('" + schemaauthority.OpenAIResponsesToolsHead + "','openai.responses.v1','unirouter.openai.responses.text-tools.v3')," +
+				"('" + schemaauthority.NativeInlineJPEGHead + "','openai.responses.v1','unirouter.openai.responses.inline-jpeg.v1')," +
+				"('" + schemaauthority.NativeInlineJPEGHead + "','anthropic.messages.v1','unirouter.anthropic.messages.inline-jpeg.v1')," +
+				"('" + schemaauthority.CanonicalMediaJobHead + "','unirouter.media_jobs.v1','unirouter.openai.images.gpt-image.v1')," +
+				"('" + schemaauthority.CanonicalMediaJobHead + "','unirouter.media_jobs.v1','unirouter.dashscope.images.qwen-3.v1')," +
+				"('" + schemaauthority.CanonicalMediaJobHead + "','unirouter.media_jobs.v1','unirouter.minimax.images.h3.v1')," +
+				"('" + schemaauthority.AsyncMediaProviderTaskHead + "','unirouter.media_jobs.v1','unirouter.dashscope.video.wan-3.v1')," +
+				"('" + schemaauthority.AsyncMediaProviderTaskHead + "','unirouter.media_jobs.v1','unirouter.minimax.video.h3.v1')," +
+				"('" + schemaauthority.AsyncMediaProviderTaskHead + "','unirouter.media_jobs.v1','unirouter.glm.video.cogvideox-3.v1')," +
+				"('" + schemaauthority.AsyncMediaProviderTaskHead + "','unirouter.media_jobs.v1','unirouter.glm.images.glm-image.v1')," +
+				"('" + schemaauthority.AsyncMediaProviderTaskHead + "','unirouter.media_jobs.v1','unirouter.deepseek.tools.ocr.v1')," +
+				"('" + schemaauthority.AsyncMediaProviderTaskHead + "','unirouter.media_jobs.v1','unirouter.glm.ocr.layout.v1')," +
+				"('" + schemaauthority.AsyncMediaProviderTaskHead + "','unirouter.media_jobs.v1','unirouter.deepseek.tools.asr.v1')," +
+				"('" + schemaauthority.AsyncMediaProviderTaskHead + "','unirouter.media_jobs.v1','unirouter.deepseek.tools.tts.v1')," +
+				"('" + schemaauthority.AsyncMediaProviderTaskHead + "','unirouter.media_jobs.v1','unirouter.minimax.speech.asr-1.v1')," +
+				"('" + schemaauthority.AsyncMediaProviderTaskHead + "','unirouter.media_jobs.v1','unirouter.minimax.speech.2-8-turbo.v1')," +
+				"('" + schemaauthority.AsyncMediaProviderTaskHead + "','unirouter.media_jobs.v1','unirouter.glm.speech.asr-2512.v1')," +
+				"('" + schemaauthority.AsyncMediaProviderTaskHead + "','unirouter.media_jobs.v1','unirouter.glm.speech.tts.v1')," +
+				"('" + schemaauthority.AsyncMediaProviderTaskHead + "','unirouter.media_jobs.v1','unirouter.openai.audio.transcribe.v1')," +
+				"('" + schemaauthority.AsyncMediaProviderTaskHead + "','unirouter.media_jobs.v1','unirouter.mimo.audio.asr.v1')," +
+				"('" + schemaauthority.AsyncMediaProviderTaskHead + "','unirouter.media_jobs.v1','unirouter.mimo.audio.tts.v1')," +
+				"('" + schemaauthority.AsyncMediaProviderTaskHead + "','unirouter.media_jobs.v1','unirouter.dashscope.speech.asr-3-1.v1')," +
+				"('" + schemaauthority.AsyncMediaProviderTaskHead + "','unirouter.media_jobs.v1','unirouter.dashscope.speech.tts-3-1.v1')))"
+		case "schema_migrations":
 			where = " WHERE version NOT IN ('" + strings.Join([]string{
 				schemaauthority.UpstreamReleaseObservationHead,
 				schemaauthority.UpstreamObservationRestoreHead,
 				schemaauthority.UpgradeAdmissionRecoveryHead,
 				schemaauthority.CustomerStandardPricingHead,
+				schemaauthority.OpenAIResponsesToolsHead,
+				schemaauthority.MediaChargeSourceHead,
+				schemaauthority.NativeInlineJPEGHead,
+				schemaauthority.CanonicalMediaJobHead,
+				schemaauthority.AsyncMediaProviderTaskHead,
 			}, "','") + "')"
 		}
 		var raw string
@@ -398,10 +431,27 @@ func normalSetupOriginalTables(t *testing.T, f normalSetupFixture) map[string]st
 func requireNormalSetupRowsPreservedAcrossCurrentUpgrade(t *testing.T, f normalSetupFixture, before map[string]string) {
 	t.Helper()
 	after := normalSetupOriginalTables(t, f)
+	var support, extensions int
+	require.NoError(t, f.pool.QueryRow(t.Context(), `
+		WITH new(migration,operation_id,public_path,profile_id,executor,delivery) AS (VALUES
+		    ($1::text,'openai.responses.v1','/v1/responses','unirouter.openai.responses.text-tools.v3','unirouter.endpoint-profile-responses-tools-executor.v1','unirouter.public-responses-tools-delivery.v1'),
+		    ($2::text,'openai.responses.v1','/v1/responses','unirouter.openai.responses.inline-jpeg.v1','unirouter.endpoint-profile-responses-inline-jpeg-executor.v1','unirouter.public-responses-tools-delivery.v1'),
+		    ($2::text,'anthropic.messages.v1','/v1/messages','unirouter.anthropic.messages.inline-jpeg.v1','unirouter.endpoint-profile-messages-inline-jpeg-executor.v1','unirouter.public-anthropic-messages-tools-delivery.v1'))
+		SELECT (SELECT count(*) FROM new n JOIN model_operation_execution_support_bindings s
+		           ON (s.operation_id,s.public_path,s.protocol_profile_id,s.executor_contract_version)=(n.operation_id,n.public_path,n.profile_id,n.executor)
+		         WHERE s.introduced_migration=n.migration AND s.protocol_profile_version='1.0.0'),
+		       (SELECT count(*) FROM new n JOIN model_operation_public_execution_contract_extensions e
+		           ON (e.operation_id,e.public_path,e.protocol_profile_id,e.executor_contract_version,e.delivery_contract_version)=(n.operation_id,n.public_path,n.profile_id,n.executor,n.delivery)
+		         WHERE e.introduced_migration=n.migration AND e.protocol_profile_version='1.0.0'
+		           AND e.charge_contract_version='unirouter.provider-final-token-charge.v1'
+		           AND e.idempotency_contract_version='unirouter.public-at-most-once.v1')`,
+		schemaauthority.OpenAIResponsesToolsHead, schemaauthority.NativeInlineJPEGHead).Scan(&support, &extensions))
+	require.Equal(t, 3, support)
+	require.Equal(t, 3, extensions)
 	empty := fmt.Sprintf("%x", sha256.Sum256([]byte("[]")))
-	for _, table := range []string{"customer_price_table_versions", "customer_price_binding_versions", "customer_charge_quote_receipts"} {
+	for _, table := range []string{"customer_price_table_versions", "customer_price_binding_versions", "customer_charge_quote_receipts", "model_deployment_async_probe_tasks"} {
 		require.NotContains(t, before, table)
-		require.Equal(t, empty, after[table], "M131 must add an empty pricing evidence table: %s", table)
+		require.Equal(t, empty, after[table], "upgrade must add the new table empty: %s", table)
 		delete(after, table)
 	}
 	require.Equal(t, before, after, "protected M127 rows must survive the full upgrade")

@@ -22,7 +22,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-SCHEMA = "000131_customer_standard_pricing"
+SCHEMA = "000136_async_media_provider_task"
 SUPPORTED_SCHEMAS = ("000130_upgrade_admission_recovery", SCHEMA)
 MAX_BOOTSTRAP = 32 * 1024
 MAX_MANIFEST = 128 * 1024

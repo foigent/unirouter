@@ -1,0 +1,82 @@
+{
+  "fixture_id": "anthropic-messages-inline-jpeg.v1",
+  "negative_requests": [
+    {
+      "body": "{\"max_tokens\":64,\"messages\":[{\"content\":[{\"text\":\"Count the blocks.\",\"type\":\"text\"},{\"source\":{\"data\":\"https://not-fetched.invalid/image.jpg\",\"media_type\":\"image/jpeg\",\"type\":\"url\"},\"type\":\"image\"}],\"role\":\"user\"}],\"model\":\"project-vision\"}",
+      "case_id": "remote-image",
+      "expected_code": "invalid_inline_jpeg_message"
+    }
+  ],
+  "negative_responses": [
+    {
+      "body": "{\"id\":\"msg_fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"wrong-model\",\"content\":[{\"type\":\"text\",\"text\":\"one block\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":12,\"output_tokens\":4}}",
+      "case_id": "wrong-upstream-model",
+      "expected_code": "public_response_identity_invalid"
+    }
+  ],
+  "profile_id": "unirouter.anthropic.messages.inline-jpeg.v1",
+  "request": {
+    "base_url": "https://api.anthropic.example",
+    "body": "{\"max_tokens\":64,\"messages\":[{\"content\":[{\"text\":\"Count the blocks.\",\"type\":\"text\"},{\"source\":{\"data\":\"/9j/2wCEAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDIBCQkJDAsMGA0NGDIhHCEyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMv/AAAsIACAAIAEBEQD/xADSAAABBQEBAQEBAQAAAAAAAAAAAQIDBAUGBwgJCgsQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/aAAgBAQAAPwD5/ooooooooooooooor//Z\",\"media_type\":\"image/jpeg\",\"type\":\"base64\"},\"type\":\"image\"}],\"role\":\"user\"}],\"model\":\"project-vision\"}",
+    "expected_anthropic_version_header": "2023-06-01",
+    "expected_authentication": "anthropic_x_api_key",
+    "expected_body": "{\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Count the blocks.\"},{\"source\":{\"data\":\"/9j/2wCEAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDIBCQkJDAsMGA0NGDIhHCEyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMv/AAAsIACAAIAEBEQD/xADSAAABBQEBAQEBAQAAAAAAAAAAAQIDBAUGBwgJCgsQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/aAAgBAQAAPwD5/ooooooooooooooor//Z\",\"media_type\":\"image/jpeg\",\"type\":\"base64\"},\"type\":\"image\"}]}],\"model\":\"claude-sonnet-5-5\",\"stream\":false}",
+    "expected_method": "POST",
+    "expected_request_id_header": "",
+    "expected_url": "https://api.anthropic.example/v1/messages",
+    "mapped_model": "claude-sonnet-5-5",
+    "request_id": "fixture-vision",
+    "requested_model": "project-vision"
+  },
+  "response": {
+    "body": "{\"id\":\"msg_fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-5-5\",\"content\":[{\"type\":\"text\",\"text\":\"one block\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":12,\"output_tokens\":4}}",
+    "expected_outcome": {
+      "contract_version": "unirouter.endpoint-protocol.v1",
+      "profile_id": "unirouter.anthropic.messages.inline-jpeg.v1",
+      "provider_state": "completed",
+      "provider_object_id": "msg_fixture",
+      "mapped_model": "claude-sonnet-5-5",
+      "output_count": 1,
+      "units": [
+        {
+          "class": "input_tokens",
+          "quantity": "12",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        },
+        {
+          "class": "cache_read_tokens",
+          "quantity": "0",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        },
+        {
+          "class": "cache_write_tokens",
+          "quantity": "0",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        },
+        {
+          "class": "output_tokens",
+          "quantity": "4",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        }
+      ]
+    },
+    "status_code": 200
+  },
+  "schema_version": "unirouter.endpoint-conformance-fixture.v1",
+  "status_cases": [
+    {
+      "case_id": "rate-limited",
+      "expected_failure_kind": "rate_limit",
+      "expected_retryable": true,
+      "status_code": 429
+    }
+  ]
+}

@@ -566,7 +566,7 @@ func serveCanonicalOperationProbeForTest(
 	handler.ProbeCanonicalModelOperation(response, request)
 	require.Equal(t, expectedStatus, response.Code, response.Body.String())
 	var result canonicalOperationProbeResponse
-	if expectedStatus == http.StatusOK {
+	if expectedStatus == http.StatusOK || expectedStatus == http.StatusAccepted {
 		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &result))
 	}
 	return result

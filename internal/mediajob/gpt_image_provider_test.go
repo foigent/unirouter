@@ -5,13 +5,16 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/gateway"
@@ -328,5 +331,117 @@ func TestGPTImageProviderUsesOneTimeoutBudgetAcrossFailoverRoutes(t *testing.T) 
 	})
 	if err == nil || len(deadlines) != 2 || !deadlines[0].Equal(deadlines[1]) {
 		t.Fatalf("err=%v deadlines=%v", err, deadlines)
+	}
+}
+
+func TestGPTImageProviderBoundedFirstDispatch(t *testing.T) {
+	for _, scenario := range []struct {
+		name         string
+		status       int
+		attemptMax   int
+		single       bool
+		wantDownload bool
+		wantFallback int32
+	}{
+		{name: "success", status: 200, attemptMax: 1, single: true, wantDownload: true},
+		{name: "rate-limited", status: 429, attemptMax: 1, single: true},
+		{name: "redirect", status: 307, attemptMax: 1, single: true},
+		{name: "connection lost after full body", attemptMax: 1, single: true},
+		{name: "ordinary failover remains available", status: 429, attemptMax: 3, wantDownload: true, wantFallback: 1},
+		{name: "legacy default one still allows failover", status: 429, attemptMax: 1, wantDownload: true, wantFallback: 1},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			var primaryCalls, fallbackCalls, nonHTTP1Calls atomic.Int32
+			respond := func(w http.ResponseWriter) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"created":1,"data":[{"b64_json":"` +
+					base64.StdEncoding.EncodeToString(fixturePNG()) +
+					`"}],"usage":{"input_tokens":3,"input_tokens_details":{"text_tokens":3,"image_tokens":0},"output_tokens":5,"total_tokens":8}}`))
+			}
+			fallback := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				fallbackCalls.Add(1)
+				body, err := io.ReadAll(r.Body)
+				if err != nil || !strings.Contains(string(body), "unique synthetic prompt") {
+					http.Error(w, "invalid fixture body", 400)
+					return
+				}
+				respond(w)
+			}))
+			fallback.EnableHTTP2 = true
+			fallback.StartTLS()
+			t.Cleanup(fallback.Close)
+			primary := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				primaryCalls.Add(1)
+				if r.ProtoMajor != 1 {
+					nonHTTP1Calls.Add(1)
+				}
+				body, err := io.ReadAll(r.Body)
+				if err != nil || r.Method != http.MethodPost || !strings.Contains(string(body), "unique synthetic prompt") {
+					http.Error(w, "invalid fixture body", 400)
+					return
+				}
+				switch scenario.status {
+				case 200:
+					respond(w)
+				case 0:
+					h, ok := w.(http.Hijacker)
+					if !ok {
+						http.Error(w, "provider cannot model drop", 500)
+						return
+					}
+					conn, _, err := h.Hijack()
+					if err == nil {
+						_ = conn.Close()
+					}
+				default:
+					w.Header().Set("Location", fallback.URL)
+					w.WriteHeader(scenario.status)
+					_, _ = w.Write([]byte(`{"error":{"message":"fixture"}}`))
+				}
+			}))
+			primary.EnableHTTP2 = true
+			primary.StartTLS()
+			t.Cleanup(primary.Close)
+			key := []byte(strings.Repeat("e", 32))
+			encrypted, err := auth.EncryptKey([]byte("fixture-provider-key"), key)
+			require.NoError(t, err)
+			route := func(base, adapter string) gateway.RouteResult {
+				return gateway.RouteResult{Channel: models.Channel{BaseURL: base, AdapterType: adapter},
+					ChannelKey: models.ChannelKey{KeyEnc: encrypted}, MappedModel: "gpt-image-2.6-flare"}
+			}
+			router := &imageRouterFixture{routes: []gateway.RouteResult{
+				route(fallback.URL, "anthropic"), route(primary.URL, adapters.TypeOpenAICompatible), route(fallback.URL, adapters.TypeOpenAICompatible),
+			}}
+			provider, err := NewGPTImageProvider(router, key, GPTImageProviderOptions{HTTPClient: primary.Client()})
+			require.NoError(t, err)
+			job := imageTestJob(Scope{OrgID: 1, ProjectID: 2}, "mediajob_0123456789abcdef0123456789abcdef")
+			job.RequestedModel, job.RoutingModel = "company-image", "company-image"
+			job.MaxAttempts, job.Attempt, job.Lifecycle.Outcome = scenario.attemptMax, 1, OutcomePending
+			job.SingleUpstreamAttempt = scenario.single
+			request := NormalizedRequest{Model: "company-image", Prompt: "unique synthetic prompt", N: 1}
+			result, err := provider.Generate(t.Context(), job, request)
+			if scenario.wantDownload {
+				require.NoError(t, err)
+				require.Equal(t, "image/png", result.MediaType)
+			} else {
+				var failure *ProviderError
+				require.ErrorAs(t, err, &failure)
+				require.Equal(t, scenario.status == 0, failure.OutcomeUnknown)
+			}
+			require.EqualValues(t, 1, primaryCalls.Load())
+			require.Equal(t, scenario.wantFallback, fallbackCalls.Load())
+			if scenario.single {
+				require.Zero(t, nonHTTP1Calls.Load())
+				job.Lifecycle.Outcome = OutcomeSucceeded
+				_, err = provider.Generate(t.Context(), job, request)
+				require.ErrorContains(t, err, "single_submission_requires_first_dispatch")
+				job.Lifecycle.Outcome = OutcomePending
+				job.Attempt++
+				_, err = provider.Generate(t.Context(), job, request)
+				require.ErrorContains(t, err, "single_submission_requires_first_dispatch")
+				require.EqualValues(t, 1, primaryCalls.Load())
+				require.Zero(t, fallbackCalls.Load())
+			}
+		})
 	}
 }

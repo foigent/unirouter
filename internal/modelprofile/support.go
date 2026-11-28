@@ -3,6 +3,7 @@ package modelprofile
 import (
 	"slices"
 
+	"github.com/uniroute/unirouter/internal/endpointprotocol"
 	"github.com/uniroute/unirouter/internal/tokenprofile"
 )
 
@@ -22,6 +23,10 @@ func Implementations() []ImplementationReference {
 		{"profile_definition", DefinitionSchemaV1},
 		{"tokenizer", TokenizerByteUpperID + "@" + TokenizerByteUpperVersion},
 	}
+	for _, endpoint := range endpointprotocol.NewRegistry().Descriptors() {
+		refs = append(refs, ImplementationReference{"endpoint_protocol", endpoint.ProfileID + "@" + endpoint.ProfileVersion})
+	}
+	refs = append(refs, ImplementationReference{"operation_policy", AnthropicMessages55ToolsPolicy})
 	for id := range chatProtocolContracts {
 		refs = append(refs, ImplementationReference{"chat", id})
 	}
@@ -51,12 +56,29 @@ func (d Definition) Requirements() []ImplementationReference {
 		return nil
 	}
 	p := d.profile
+	if MediaJobProfile(p) {
+		refs := []ImplementationReference{
+			{"endpoint_protocol", p.ProtocolProfile + "@" + p.ProtocolProfileVersion},
+			{"profile_definition", DefinitionSchemaV1},
+		}
+		for _, endpoint := range p.EndpointClasses {
+			refs = append(refs, ImplementationReference{"endpoint", endpoint})
+		}
+		SortImplementationReferences(refs)
+		return refs
+	}
 	refs := []ImplementationReference{
 		{"profile_definition", DefinitionSchemaV1},
-		{"chat", p.ProtocolProfile},
 		{"reasoning", p.ReasoningProfile},
-		{"cache_usage", p.CacheUsageProfile},
 		{"tokenizer", p.TokenizerProfileID + "@" + p.TokenizerProfileVersion},
+	}
+	if NativeClientToolsProfile(p) || NativeInlineJPEGProfile(p) {
+		refs = append(refs, ImplementationReference{"endpoint_protocol", p.ProtocolProfile + "@" + p.ProtocolProfileVersion})
+		if p.OperationPolicyProfile != "" {
+			refs = append(refs, ImplementationReference{"operation_policy", p.OperationPolicyProfile})
+		}
+	} else {
+		refs = append(refs, ImplementationReference{"chat", p.ProtocolProfile}, ImplementationReference{"cache_usage", p.CacheUsageProfile})
 	}
 	if p.ProcessingTierPolicy != "" {
 		refs = append(refs, ImplementationReference{"processing_tier", p.ProcessingTierPolicy})

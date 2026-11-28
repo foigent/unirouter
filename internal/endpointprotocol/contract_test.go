@@ -23,17 +23,39 @@ func (profile descriptorOverrideProfile) Descriptor() Descriptor {
 func TestRegistryIsFixedAndDescriptorsAreDefensive(t *testing.T) {
 	registry := NewRegistry()
 	descriptors := registry.Descriptors()
-	if len(descriptors) != 7 {
-		t.Fatalf("descriptors=%d want 7", len(descriptors))
+	if len(descriptors) != 29 {
+		t.Fatalf("descriptors=%d want 29", len(descriptors))
 	}
 	want := []string{
 		ProfileOpenAIResponsesText,
 		ProfileOpenAIResponsesTextV2,
+		ProfileOpenAIResponsesToolsV3,
 		ProfileAnthropicMessagesText,
 		ProfileAnthropicMessagesTextV2,
 		ProfileAnthropicMessagesTextV3,
 		ProfileCohereRerankV2,
 		ProfileOpenAIImageGPT,
+		ProfileDashScopeQwenImage,
+		ProfileMiniMaxH3Image,
+		ProfileDashScopeWanVideo,
+		ProfileMiniMaxH3Video,
+		ProfileGLMCogVideo,
+		ProfileGLMImage,
+		ProfileDeepSeekOCR,
+		ProfileGLMOCR,
+		ProfileDeepSeekASR,
+		ProfileDeepSeekTTS,
+		ProfileMiniMaxASR,
+		ProfileMiniMaxTTS,
+		ProfileGLMASR,
+		ProfileGLMTTS,
+		ProfileOpenAITranscribe,
+		ProfileMiMoASR,
+		ProfileMiMoTTS,
+		ProfileDashScopeASR,
+		ProfileDashScopeTTS,
+		ProfileOpenAIResponsesInlineJPEG,
+		ProfileAnthropicMessagesInlineJPEG,
 	}
 	for index, descriptor := range descriptors {
 		if descriptor.ContractVersion != ContractVersion || descriptor.ProfileID != want[index] {
@@ -43,8 +65,8 @@ func TestRegistryIsFixedAndDescriptorsAreDefensive(t *testing.T) {
 			t.Fatalf("profile became charge authority: %+v", descriptor)
 		}
 	}
-	if descriptors[6].RuntimeState != RuntimeRepositoryImageV1 {
-		t.Fatalf("image runtime evidence drifted: %+v", descriptors[6])
+	if descriptors[7].RuntimeState != RuntimeRepositoryImageV1 {
+		t.Fatalf("image runtime evidence drifted: %+v", descriptors[7])
 	}
 	descriptors[0].SupportedModalities[0] = "mutated"
 	if NewRegistry().Descriptors()[0].SupportedModalities[0] != "text" {

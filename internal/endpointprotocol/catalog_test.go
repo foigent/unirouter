@@ -12,17 +12,39 @@ func TestCatalogCoversEveryFixedProfileWithImmutableEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Catalog failed: %v", err)
 	}
-	if len(profiles) != 7 {
-		t.Fatalf("profiles=%d want 7", len(profiles))
+	if len(profiles) != 29 {
+		t.Fatalf("profiles=%d want 29", len(profiles))
 	}
 	wantRuntimeState := map[string]string{
-		ProfileOpenAIResponsesText:     RuntimeContractOnly,
-		ProfileOpenAIResponsesTextV2:   RuntimeContractOnly,
-		ProfileAnthropicMessagesText:   RuntimeContractOnly,
-		ProfileAnthropicMessagesTextV2: RuntimeContractOnly,
-		ProfileAnthropicMessagesTextV3: RuntimeContractOnly,
-		ProfileCohereRerankV2:          RuntimeContractOnly,
-		ProfileOpenAIImageGPT:          RuntimeRepositoryImageV1,
+		ProfileOpenAIResponsesText:         RuntimeContractOnly,
+		ProfileOpenAIResponsesTextV2:       RuntimeContractOnly,
+		ProfileOpenAIResponsesToolsV3:      RuntimeContractOnly,
+		ProfileAnthropicMessagesText:       RuntimeContractOnly,
+		ProfileAnthropicMessagesTextV2:     RuntimeContractOnly,
+		ProfileAnthropicMessagesTextV3:     RuntimeContractOnly,
+		ProfileCohereRerankV2:              RuntimeContractOnly,
+		ProfileMiniMaxH3Image:              RuntimeRepositoryImageV1,
+		ProfileDashScopeQwenImage:          RuntimeRepositoryImageV1,
+		ProfileDashScopeWanVideo:           RuntimeRepositoryAsyncMediaV1,
+		ProfileMiniMaxH3Video:              RuntimeRepositoryAsyncMediaV1,
+		ProfileGLMCogVideo:                 RuntimeRepositoryAsyncMediaV1,
+		ProfileGLMImage:                    RuntimeRepositoryImageV1,
+		ProfileDeepSeekOCR:                 RuntimeRepositoryAsyncMediaV1,
+		ProfileGLMOCR:                      RuntimeRepositoryAsyncMediaV1,
+		ProfileDeepSeekASR:                 RuntimeRepositoryAsyncMediaV1,
+		ProfileDeepSeekTTS:                 RuntimeRepositoryAsyncMediaV1,
+		ProfileMiniMaxASR:                  RuntimeRepositoryAsyncMediaV1,
+		ProfileMiniMaxTTS:                  RuntimeRepositoryAsyncMediaV1,
+		ProfileGLMASR:                      RuntimeRepositoryAsyncMediaV1,
+		ProfileGLMTTS:                      RuntimeRepositoryAsyncMediaV1,
+		ProfileOpenAITranscribe:            RuntimeRepositoryAsyncMediaV1,
+		ProfileMiMoASR:                     RuntimeRepositoryAsyncMediaV1,
+		ProfileMiMoTTS:                     RuntimeRepositoryAsyncMediaV1,
+		ProfileDashScopeASR:                RuntimeRepositoryAsyncMediaV1,
+		ProfileDashScopeTTS:                RuntimeRepositoryAsyncMediaV1,
+		ProfileOpenAIImageGPT:              RuntimeRepositoryImageV1,
+		ProfileOpenAIResponsesInlineJPEG:   RuntimeContractOnly,
+		ProfileAnthropicMessagesInlineJPEG: RuntimeContractOnly,
 	}
 	var schemaDigest string
 	for _, profile := range profiles {
@@ -71,9 +93,9 @@ func TestOfflineConformanceMatchesGoldenDeterministically(t *testing.T) {
 			}
 		}
 	}
-	if first.Summary.Profiles != 7 ||
-		first.Summary.Cases != 65 ||
-		first.Summary.Passed != 65 ||
+	if first.Summary.Profiles != 29 ||
+		first.Summary.Cases != 195 ||
+		first.Summary.Passed != 195 ||
 		first.Summary.Failed != 0 {
 		t.Fatalf("summary=%+v", first.Summary)
 	}
@@ -95,14 +117,16 @@ func TestOfflineConformanceResolvesManifestExactProfileVersion(t *testing.T) {
 	v1 := openAIResponsesProfile{}
 	v2Descriptor := v1.Descriptor()
 	v2Descriptor.ProfileVersion = "2.0.0"
-	registry := newRegistry(
-		descriptorOverrideProfile{Profile: v1, descriptor: v2Descriptor},
-		anthropicMessagesProfile{},
-		anthropicMessagesProfileV2{},
-		anthropicMessagesProfileV3{},
-		cohereRerankProfile{},
-		openAIImageProfile{},
-	)
+	registry := NewRegistry()
+	profiles := make([]Profile, 0, len(registry.order))
+	for _, identity := range registry.order {
+		profile := registry.profiles[identity]
+		if identity.profileID == v2Descriptor.ProfileID && identity.profileVersion == v1.Descriptor().ProfileVersion {
+			profile = descriptorOverrideProfile{Profile: v1, descriptor: v2Descriptor}
+		}
+		profiles = append(profiles, profile)
+	}
+	registry = newRegistry(profiles...)
 	_, err := RunOffline(context.Background(), registry)
 	assertProtocolConfigurationError(t, err, "unknown_profile_version")
 }

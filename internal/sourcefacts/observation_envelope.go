@@ -2,39 +2,62 @@ package sourcefacts
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"sync"
 
+	mediaassets "github.com/uniroute/unirouter/contracts/source-facts/media-charge-v1"
 	assets "github.com/uniroute/unirouter/contracts/source-facts/v2"
 	"github.com/uniroute/unirouter/internal/eventconnector"
 )
 
 const ObservationConnectorVersion = "2.0.0"
 
+func observationDescriptor(profile, schemaID string, schema, manifest []byte) (eventconnector.Descriptor, error) {
+	typeName, schemaRef := observationEventBinding(profile)
+	schemaDigest := eventconnector.SHA256Reference(schema)
+	descriptor, err := eventconnector.NewDescriptor(eventconnector.DescriptorBinding{
+		ProtocolVersion: "2.0.2", ProtocolCommit: "ad8fe7a38c9d7335657630baa8670dd07556b98c",
+		ReleaseDigest:  "sha256:99f8a541b6d33b0a74d2e4c06aa312c6d6c88c35a4bfb1d4d34b98b4e4e2e8e8",
+		ManifestDigest: eventconnector.SHA256Reference(manifest), EnvelopeSpecVersion: eventconnector.EventEnvelopeSpecVersion,
+		EnvelopeSchemaDigest: "sha256:6942e85d9b5d8b08ff9828b970c317596394184ef29908cbf2b8fc792187cf26",
+		SourceProduct:        "unirouter", ConnectorID: ConnectorID, ConnectorVersion: ObservationConnectorVersion,
+		SourceSchema:  eventconnector.SchemaBinding{SchemaID: schemaID, SHA256: schemaDigest},
+		EmittedEvents: []eventconnector.EventSchemaBinding{{EventType: typeName, SchemaRef: schemaRef, SchemaVersion: "1", SHA256: schemaDigest}},
+	})
+	if err != nil {
+		return eventconnector.Descriptor{}, err
+	}
+	return descriptor, nil
+}
+
 var observationDescriptors = sync.OnceValues(func() (map[string]eventconnector.Descriptor, error) {
 	result := map[string]eventconnector.Descriptor{}
 	for _, profile := range v1ObservationProfiles() {
-		typeName, schemaRef := observationEventBinding(profile)
-		d, e := eventconnector.NewDescriptor(eventconnector.DescriptorBinding{
-			ProtocolVersion: "2.0.2", ProtocolCommit: "ad8fe7a38c9d7335657630baa8670dd07556b98c",
-			ReleaseDigest:  "sha256:99f8a541b6d33b0a74d2e4c06aa312c6d6c88c35a4bfb1d4d34b98b4e4e2e8e8",
-			ManifestDigest: eventconnector.SHA256Reference(assets.Manifest()), EnvelopeSpecVersion: eventconnector.EventEnvelopeSpecVersion,
-			EnvelopeSchemaDigest: "sha256:6942e85d9b5d8b08ff9828b970c317596394184ef29908cbf2b8fc792187cf26",
-			SourceProduct:        "unirouter", ConnectorID: ConnectorID, ConnectorVersion: ObservationConnectorVersion,
-			SourceSchema:  eventconnector.SchemaBinding{SchemaID: ObservationVersion, SHA256: eventconnector.SHA256Reference(assets.Schema())},
-			EmittedEvents: []eventconnector.EventSchemaBinding{{EventType: typeName, SchemaRef: schemaRef, SchemaVersion: "1", SHA256: eventconnector.SHA256Reference(assets.Schema())}},
-		})
-		if e != nil {
-			return nil, e
+		d, err := observationDescriptor(profile, ObservationVersion, assets.Schema(), assets.Manifest())
+		if err != nil {
+			return nil, err
 		}
 		result[profile] = d
 	}
 	return result, nil
 })
 
+var mediaChargeDescriptor = sync.OnceValues(func() (eventconnector.Descriptor, error) {
+	return observationDescriptor(MediaChargeProfile, MediaChargeProfile, mediaassets.Schema(), mediaassets.Manifest())
+})
+
+func descriptorForObservation(profile string) (eventconnector.Descriptor, error) {
+	if profile == MediaChargeProfile {
+		return mediaChargeDescriptor()
+	}
+	registry, err := observationDescriptors()
+	return registry[profile], err
+}
+
 func observationEventBinding(profile string) (string, string) {
 	switch profile {
+	case MediaChargeProfile:
+		return "execution.media_charge.recorded", "foigent://events/unirouter/media-charge/v1"
 	case RuntimeProfile:
 		return "execution.runtime.observed", "foigent://events/unirouter/runtime-observation/v1"
 	case AttemptProfile:
@@ -62,19 +85,16 @@ func ObservationEvent(d Observation, wire []byte) (eventconnector.ImmutableEvent
 	if !bytes.Equal(canonical, wire) {
 		return eventconnector.ImmutableEvent{}, errors.New("source projection bytes differ")
 	}
-	registry, e := observationDescriptors()
+	descriptor, e := descriptorForObservation(d.Profile)
 	if e != nil {
 		return eventconnector.ImmutableEvent{}, e
 	}
-	descriptor := registry[d.Profile]
 	artifact, ce := eventconnector.NewSourceArtifact(descriptor, d.SourceInstance, d.Revision, wire, eventconnector.StrictJSONOptions{RejectNull: true})
 	if ce != nil {
 		return eventconnector.ImmutableEvent{}, ce
 	}
-	var payload map[string]any
-	decoder := json.NewDecoder(bytes.NewReader(wire))
-	decoder.UseNumber()
-	if e = decoder.Decode(&payload); e != nil {
+	payload, e := observationPayload(d, wire)
+	if e != nil {
 		return eventconnector.ImmutableEvent{}, e
 	}
 	typeName, schema := observationEventBinding(d.Profile)

@@ -170,7 +170,7 @@ func TestFirstCustomerBootstrapAcceptsExactFreshMigrationSeedAfterPasswordRotati
 			statement: `UPDATE model_operation_execution_support_bindings
 			 SET introduced_migration='000999_unapproved_fixture'
 			 WHERE protocol_profile_id='unirouter.openai.responses.text.v2'`,
-			failedCheck: "check fresh compiled execution support: got 4 want 5",
+			failedCheck: "check fresh compiled execution support: got 0 want 1",
 		},
 		{
 			name:    "extra support tuple",
@@ -181,7 +181,7 @@ func TestFirstCustomerBootstrapAcceptsExactFreshMigrationSeedAfterPasswordRotati
 			 executor_contract_version,introduced_migration)
 			 VALUES ('fixture.future.v1','/v1/future','fixture.future','1.0.0',
 			 'fixture.future-executor.v1','000999_unapproved_fixture')`,
-			failedCheck: "check fresh compiled execution support count: got 6 want 5",
+			failedCheck: "check fresh compiled execution support: got 0 want 1",
 		},
 		{
 			name:    "missing public extension",
@@ -189,7 +189,7 @@ func TestFirstCustomerBootstrapAcceptsExactFreshMigrationSeedAfterPasswordRotati
 			trigger: "model_operation_public_execution_contract_extensions_immutable",
 			statement: `DELETE FROM model_operation_public_execution_contract_extensions
 			 WHERE protocol_profile_id='unirouter.anthropic.messages.text-tools.v3'`,
-			failedCheck: "check fresh public execution extension: got 4 want 5",
+			failedCheck: "check fresh public execution extension: got 0 want 1",
 		},
 		{
 			name:    "same-count capability probe contract drift",

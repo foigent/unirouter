@@ -1,0 +1,51 @@
+{
+  "schema_version": "unirouter.endpoint-conformance-fixture.v1",
+  "fixture_id": "dashscope-wan-video-v1",
+  "profile_id": "unirouter.dashscope.video.wan-3.v1",
+  "request": {
+    "base_url": "https://workspace-test.cn-beijing.maas.aliyuncs.com",
+    "requested_model": "company-video",
+    "mapped_model": "wan3.0-video",
+    "request_id": "fixture-video-1",
+    "body": "{\"model\":\"company-video\",\"operation\":\"text_to_video\",\"prompt\":\"synthetic video fixture\"}",
+    "expected_method": "POST",
+    "expected_url": "https://workspace-test.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/video-generation/video-synthesis",
+    "expected_request_id_header": "fixture-video-1",
+    "expected_body": "{\"input\":{\"prompt\":\"synthetic video fixture\"},\"model\":\"wan3.0-video\",\"parameters\":{\"audio\":false,\"duration\":2,\"prompt_extend\":false,\"ratio\":\"16:9\",\"resolution\":\"480P\"}}"
+  },
+  "response": {
+    "status_code": 200,
+    "body": "{\"request_id\":\"fixture-request\",\"output\":{\"task_id\":\"wan-task-fixture\",\"task_status\":\"PENDING\"}}",
+    "expected_outcome": {
+      "contract_version": "unirouter.endpoint-protocol.v1",
+      "profile_id": "unirouter.dashscope.video.wan-3.v1",
+      "provider_state": "pending",
+      "provider_object_id": "wan-task-fixture",
+      "mapped_model": "wan3.0-video",
+      "output_count": 0,
+      "units": null
+    }
+  },
+  "negative_requests": [
+    {
+      "case_id": "image-operation",
+      "body": "{\"model\":\"company-video\",\"operation\":\"text_to_image\",\"prompt\":\"synthetic video fixture\"}",
+      "expected_code": "wan_video_request_invalid"
+    }
+  ],
+  "negative_responses": [
+    {
+      "case_id": "malformed-task",
+      "body": "{\"output\":{\"task_id\":\"../other\",\"task_status\":\"PENDING\"}}",
+      "expected_code": "wan_video_task_identity_mismatch"
+    }
+  ],
+  "status_cases": [
+    {
+      "case_id": "provider-failure",
+      "status_code": 503,
+      "expected_failure_kind": "channel_failure",
+      "expected_retryable": true
+    }
+  ]
+}

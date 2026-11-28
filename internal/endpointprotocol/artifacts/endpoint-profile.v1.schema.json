@@ -34,7 +34,8 @@
     "runtime_state": {
       "enum": [
         "local_contract_only",
-        "repository_local_image_v1"
+        "repository_local_image_v1",
+        "repository_local_async_media_v1"
       ]
     },
     "conformance_level": {

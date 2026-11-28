@@ -2,7 +2,14 @@ package modelprofile
 
 // Output enforcement is typed implementation metadata, not a configurable
 // tokenizer or policy language. A new protocol revision opts in explicitly.
-const DeepSeekProviderCompletionProtocol = "protocol.deepseek-openai-chat.v6"
+const (
+	DeepSeekProviderCompletionProtocol = "protocol.deepseek-openai-chat.v6"
+	DeepSeekInlineJPEGProtocol         = "protocol.deepseek-openai-chat.v7"
+)
+
+func deepSeekExactProviderCompletion(protocolID string) bool {
+	return protocolID == DeepSeekProviderCompletionProtocol || protocolID == DeepSeekInlineJPEGProtocol
+}
 
 const (
 	OutputEnforcementByteUpperBound       = "utf8_byte_upper_bound"
@@ -30,7 +37,11 @@ func ResolveOutputEnforcement(protocolID string) (OutputEnforcement, bool) {
 			Accounting: OutputEnforcementProviderCompletionV1, Scope: "reasoning_and_answer",
 			ProviderDeviationTokens: 10, MaxDecodedOutputBytes: 16 << 20, MaxUpstreamWireBytes: 128 << 20,
 		}
-		if protocolID == DeepSeekProviderCompletionProtocol {
+		if IsQwenHostedSplitProtocol(protocolID) {
+			enforcement.Scope = QwenHostedBudgetScope
+			enforcement.ProviderDeviationTokens = QwenHostedAnswerTolerance
+		}
+		if deepSeekExactProviderCompletion(protocolID) {
 			enforcement.ProviderDeviationTokens = 0
 			enforcement.Scope = "generated_completion"
 		}

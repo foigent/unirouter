@@ -42,8 +42,16 @@ const (
 // compatibility alone is insufficient. The gateway still owns admission,
 // guardrails, and billing; this profile says which exact shapes may be used by
 // an immutable model execution profile.
+const (
+	PlainTextChatMaxTokensProtocol        = "protocol.openai-compatible-text-chat.v1"
+	PlainTextChatCompletionTokensProtocol = "protocol.openai-compatible-text-chat-completion-limit.v1"
+)
+
 type ChatProtocolContract struct {
 	ProfileID string
+	// ExactTextOperationProbe restricts connectivity proof to one completed
+	// assistant text response with the exact reported model and Provider usage.
+	ExactTextOperationProbe bool
 
 	StreamingModeled                   bool
 	Streaming                          bool
@@ -159,16 +167,24 @@ type ChatProtocolContract struct {
 	BuiltinSearchRequiresThinkingDisabled bool
 	MaxBuiltinSearchCalls                 int64
 
-	InlineImageDataURL   bool
-	InlineAudioBase64    bool
-	RemoteImageHTTPSURL  bool
-	RemoteAudioHTTPSURL  bool
-	InlineVideoDataURL   bool
-	RemoteVideoHTTPSURL  bool
-	RemoteFileHTTPSURL   bool
-	ExclusiveMediaKinds  bool
-	InlineImageMIMETypes []string
-	ImageDetails         []string
+	InlineImageDataURL              bool
+	InlineAudioBase64               bool
+	InlineAudioOmitMIME             bool
+	BoundedAudioWAV                 bool
+	InlineAudioFormatOptional       bool
+	RequiredDisabledReasoningEffort string
+	RemoteImageHTTPSURL             bool
+	RemoteAudioHTTPSURL             bool
+	InlineVideoDataURL              bool
+	BoundedInlineMP4                bool
+	InlineVideoOmitMIME             bool
+	PublicVideoHTTPSURL             bool
+	RemoteVideoHTTPSURL             bool
+	RemoteFileHTTPSURL              bool
+	InlinePlainTextFile             bool
+	ExclusiveMediaKinds             bool
+	InlineImageMIMETypes            []string
+	ImageDetails                    []string
 	// ImageInputPolicy adds exact request and admission constraints for an
 	// image-capable immutable protocol. The legacy booleans and MIME list above
 	// remain the transport/MIME authority; a zero policy preserves every
@@ -199,6 +215,7 @@ type ChatImageInputPolicy struct {
 	MaximumPixels               int64
 	MaximumAspectRatio          int64
 	RequiresNonStream           bool
+	RequiresDisabledThinking    bool
 	IncompatibleRequestFields   []string
 	AdmissionTokenUpperPerPixel int64
 	AdmissionEstimateVersion    string
@@ -571,6 +588,16 @@ func hy3ChatSearchContract(profileID string) ChatProtocolContract {
 	return contract
 }
 
+func plainTextChatContract(id, limitField string) ChatProtocolContract {
+	return ChatProtocolContract{
+		ProfileID: id, ExactTextOperationProbe: true,
+		StreamingModeled: true, FunctionToolsModeled: true,
+		OutputLimitModeled: true, OutputLimitField: limitField,
+		OutputLimitAcceptedFields: []string{limitField}, OutputLimitMin: 1, OutputLimitMax: 262_144,
+		ResponseFormatModeled: true, ResponseFormatTypes: []string{"text"},
+	}
+}
+
 func geminiChatBaseContract(profileID string) ChatProtocolContract {
 	return ChatProtocolContract{
 		ProfileID:          profileID,
@@ -654,6 +681,20 @@ func mimoChatToolsContract(profileID string) ChatProtocolContract {
 	contract.FunctionToolNamePattern = `^[a-zA-Z0-9_-]{1,64}$`
 	contract.FunctionToolChoices = []string{"auto"}
 	contract.FunctionToolChoiceRequiresTools = true
+	return contract
+}
+
+func mimoChatExactFunctionToolsContract(profileID string) ChatProtocolContract {
+	contract := mimoChatToolsContract(profileID)
+	contract.FunctionToolParametersRequired = true
+	contract.FunctionToolsRequireNonStream = true
+	contract.FunctionToolInvocationCapabilitiesModeled = true
+	contract.ExactFunctionToolHistoryModeled = true
+	contract.ExactFunctionToolResponseModeled = true
+	contract.AssistantReasoningHistoryModeled = true
+	contract.AssistantReasoningHistoryFields = []string{"reasoning_content"}
+	contract.AssistantReasoningResponseModeled = true
+	contract.AssistantReasoningResponseFields = []string{"reasoning_content"}
 	return contract
 }
 
@@ -883,6 +924,74 @@ func miniMaxM3InlineJPEGContract(profileID string) ChatProtocolContract {
 		AdmissionEstimateVersion:    "chat-inline-jpeg-rgba-pixel-upper.v1",
 	}
 	return contract
+}
+
+const (
+	KimiK3InlineJPEGProtocol      = "protocol.kimi-openai-chat.k3.v7"
+	KimiK3InlineVideoProtocol     = "protocol.kimi-openai-chat.k3.v8"
+	MiniMaxM31InlineJPEGProtocol  = "protocol.minimax-m31-openai-chat.v2"
+	MiniMaxM31InlineVideoProtocol = "protocol.minimax-m31-openai-chat.v3"
+	GLM53InlineJPEGProtocol       = "protocol.glm-openai-chat.v8"
+	GLM53InlineFileProtocol       = "protocol.glm-openai-chat.v9"
+	GLM53PublicVideoProtocol      = "protocol.glm-openai-chat.v10"
+	QwenHybridInlineJPEGProtocol  = "protocol.qwen-openai-chat.hybrid.v2"
+	QwenHybridInlineVideoProtocol = "protocol.qwen-openai-chat.hybrid.v3"
+	MiMo26InlineJPEGProtocol      = "protocol.mimo-openai-chat.v6"
+	MiMo26InlineAudioProtocol     = "protocol.mimo-openai-chat.v7"
+)
+
+func deepSeekInlineJPEGContract(profileID string) ChatProtocolContract {
+	contract := boundedChatInlineJPEG(deepSeekProviderCompletionContract(profileID))
+	contract.ImageInputPolicy.RequiresDisabledThinking = true
+	return contract
+}
+
+func boundedChatInlineJPEG(contract ChatProtocolContract) ChatProtocolContract {
+	contract.InlineImageDataURL = true
+	contract.InlineImageMIMETypes = []string{"image/jpeg"}
+	contract.RemoteImageHTTPSURL = false
+	contract.InlineVideoDataURL, contract.RemoteVideoHTTPSURL = false, false
+	contract.ImageInputPolicy = ChatImageInputPolicy{
+		Modeled: true, DecodedFormat: "jpeg", RequireURLObject: true,
+		AllowedMessageRoles: []string{"user"}, MaximumImages: 1,
+		MaximumDecodedBytes: 256 * 1024, MinimumWidth: 32, MinimumHeight: 32,
+		MinimumPixels: 1024, MaximumPixels: 131_072, MaximumAspectRatio: 8,
+		RequiresNonStream:           true,
+		IncompatibleRequestFields:   []string{"tools", "tool_choice", "parallel_tool_calls", "functions", "function_call", "tool_stream"},
+		AdmissionTokenUpperPerPixel: 4,
+		AdmissionEstimateVersion:    "chat-inline-jpeg-rgba-pixel-upper.v1",
+	}
+	return contract
+}
+
+func glm53InlineFileContract(id string) ChatProtocolContract {
+	c := boundedChatInlineJPEG(glmStreamFunctionToolsContract(glmOpenAIChatV5Contract(id)))
+	c.InlinePlainTextFile = true
+	c.ExclusiveMediaKinds = true
+	return c
+}
+
+func glm53PublicVideoContract() ChatProtocolContract {
+	c := glm53InlineFileContract(GLM53PublicVideoProtocol)
+	c.RemoteVideoHTTPSURL = true
+	c.PublicVideoHTTPSURL = true
+	return c
+}
+
+func boundedInlineMP4Contract(c ChatProtocolContract) ChatProtocolContract {
+	c.InlineVideoDataURL = true
+	c.InlineVideoMIMETypes = []string{"video/mp4"}
+	c.RemoteVideoHTTPSURL = false
+	c.BoundedInlineMP4 = true
+	c.ExclusiveMediaKinds = true
+	return c
+}
+
+func mimo26InlineAudioContract() ChatProtocolContract {
+	contract := boundedChatInlineJPEG(mimoChatExactFunctionToolsContract(MiMo26InlineAudioProtocol))
+	contract.BoundedAudioWAV = true
+	contract.InlineAudioBase64 = true
+	return boundedInlineMP4Contract(contract)
 }
 
 func miniMaxM3ProcessingTierContract(profileID string) ChatProtocolContract {
@@ -1193,6 +1302,7 @@ func doubaoArkInlineJPEGContract(contract ChatProtocolContract) ChatProtocolCont
 
 var chatProtocolContracts = map[string]ChatProtocolContract{
 	DeepSeekProviderCompletionProtocol:              deepSeekProviderCompletionContract(DeepSeekProviderCompletionProtocol),
+	DeepSeekInlineJPEGProtocol:                      deepSeekInlineJPEGContract(DeepSeekInlineJPEGProtocol),
 	"protocol.deepseek-openai-chat.v2":              deepSeekChatContract("protocol.deepseek-openai-chat.v2", true),
 	"protocol.deepseek-openai-chat.v3":              deepSeekV4FlashExactFunctionToolsContract("protocol.deepseek-openai-chat.v3"),
 	"protocol.deepseek-openai-chat.v4":              deepSeekV4ExactFunctionToolHistoryContract("protocol.deepseek-openai-chat.v4"),
@@ -1212,7 +1322,12 @@ var chatProtocolContracts = map[string]ChatProtocolContract{
 	"protocol.minimax-m3-openai-chat.v9":            miniMaxM3FunctionToolsContract("protocol.minimax-m3-openai-chat.v9"),
 	"protocol.minimax-m3-openai-chat.v10":           miniMaxM3StreamFunctionToolsContract("protocol.minimax-m3-openai-chat.v10"),
 	"protocol.minimax-m3-openai-chat.v11":           miniMaxM3StreamFunctionToolsContract("protocol.minimax-m3-openai-chat.v11"),
+	"protocol.minimax-m31-openai-chat.v1":           miniMaxM31StreamFunctionToolsContract("protocol.minimax-m31-openai-chat.v1"),
+	MiniMaxM31InlineJPEGProtocol:                    boundedChatInlineJPEG(miniMaxM31StreamFunctionToolsContract(MiniMaxM31InlineJPEGProtocol)),
+	MiniMaxM31InlineVideoProtocol:                   boundedInlineMP4Contract(boundedChatInlineJPEG(miniMaxM31StreamFunctionToolsContract(MiniMaxM31InlineVideoProtocol))),
 	"protocol.qwen-openai-chat.v1":                  qwenChatBaseContract("protocol.qwen-openai-chat.v1"),
+	PlainTextChatMaxTokensProtocol:                  plainTextChatContract(PlainTextChatMaxTokensProtocol, "max_tokens"),
+	PlainTextChatCompletionTokensProtocol:           plainTextChatContract(PlainTextChatCompletionTokensProtocol, "max_completion_tokens"),
 	"protocol.qwen-openai-chat.v2":                  qwenChatToolsContract("protocol.qwen-openai-chat.v2"),
 	"protocol.qwen-openai-chat.v3":                  qwenChatStructuredOutputContract("protocol.qwen-openai-chat.v3", true),
 	"protocol.qwen-openai-chat.v4":                  qwenChatCacheContract("protocol.qwen-openai-chat.v4", true),
@@ -1223,6 +1338,12 @@ var chatProtocolContracts = map[string]ChatProtocolContract{
 	"protocol.qwen-openai-chat.flash.v5":            qwenChatMultimodalContract("protocol.qwen-openai-chat.flash.v5", false),
 	"protocol.qwen-openai-chat.flash.v6":            qwenChatSearchContract("protocol.qwen-openai-chat.flash.v6", false),
 	"protocol.qwen-openai-chat.flash.v7":            qwenFlashStreamFunctionToolsContract("protocol.qwen-openai-chat.flash.v7"),
+	QwenOmniProtocol:                                qwenOmniChatContract(),
+	QwenHostedSplitProtocol:                         qwenHostedSplitContract(QwenHostedSplitProtocol),
+	QwenHostedVisionProtocol:                        boundedInlineMP4Contract(boundedChatInlineJPEG(qwenHostedSplitContract(QwenHostedVisionProtocol))),
+	QwenHybridStreamToolsProtocol:                   qwenHybridStreamToolsContract(QwenHybridStreamToolsProtocol),
+	QwenHybridInlineJPEGProtocol:                    boundedChatInlineJPEG(qwenHybridStreamToolsContract(QwenHybridInlineJPEGProtocol)),
+	QwenHybridInlineVideoProtocol:                   boundedInlineMP4Contract(boundedChatInlineJPEG(qwenHybridStreamToolsContract(QwenHybridInlineVideoProtocol))),
 	"protocol.qwen-openai-chat.flash.v8":            qwenProviderCompletionContract("protocol.qwen-openai-chat.flash.v8"),
 	"protocol.gemini-openai-chat.v1":                geminiChatBaseContract("protocol.gemini-openai-chat.v1"),
 	"protocol.gemini-openai-chat.v2":                geminiChatToolsContract("protocol.gemini-openai-chat.v2"),
@@ -1234,6 +1355,9 @@ var chatProtocolContracts = map[string]ChatProtocolContract{
 	"protocol.mimo-openai-chat.v2":                  mimoChatToolsContract("protocol.mimo-openai-chat.v2"),
 	"protocol.mimo-openai-chat.v3":                  mimoChatStructuredOutputContract("protocol.mimo-openai-chat.v3"),
 	"protocol.mimo-openai-chat.v4":                  mimoChatMultimodalContract("protocol.mimo-openai-chat.v4"),
+	"protocol.mimo-openai-chat.v5":                  mimoChatExactFunctionToolsContract("protocol.mimo-openai-chat.v5"),
+	MiMo26InlineJPEGProtocol:                        boundedChatInlineJPEG(mimoChatExactFunctionToolsContract(MiMo26InlineJPEGProtocol)),
+	MiMo26InlineAudioProtocol:                       mimo26InlineAudioContract(),
 	"protocol.doubao-seed-2.1-pro-openai-chat.v1":   doubaoSeed21ChatCoreContract("protocol.doubao-seed-2.1-pro-openai-chat.v1"),
 	"protocol.doubao-seed-2.1-pro-openai-chat.v2":   doubaoSeed21ProChatStreamingContract("protocol.doubao-seed-2.1-pro-openai-chat.v2"),
 	"protocol.doubao-seed-2.1-pro-openai-chat.v3":   doubaoSeed21ProChatToolsContract("protocol.doubao-seed-2.1-pro-openai-chat.v3"),
@@ -1339,6 +1463,9 @@ var chatProtocolContracts = map[string]ChatProtocolContract{
 	"protocol.glm-openai-chat.v5":       glmOpenAIChatV5Contract("protocol.glm-openai-chat.v5"),
 	"protocol.glm-openai-chat.v6":       glmExactFunctionToolsContract(glmOpenAIChatV5Contract("protocol.glm-openai-chat.v6")),
 	"protocol.glm-openai-chat.v7":       glmStreamFunctionToolsContract(glmOpenAIChatV5Contract("protocol.glm-openai-chat.v7")),
+	GLM53InlineJPEGProtocol:             boundedChatInlineJPEG(glmStreamFunctionToolsContract(glmOpenAIChatV5Contract(GLM53InlineJPEGProtocol))),
+	GLM53InlineFileProtocol:             glm53InlineFileContract(GLM53InlineFileProtocol),
+	GLM53PublicVideoProtocol:            glm53PublicVideoContract(),
 	"protocol.glm-openai-chat.glm5v.v6": glmStreamFunctionToolsContract(glm5VChatV4Contract("protocol.glm-openai-chat.glm5v.v6")),
 	"protocol.glm-openai-chat.v4": {
 		ProfileID:                       "protocol.glm-openai-chat.v4",
@@ -1418,6 +1545,8 @@ var chatProtocolContracts = map[string]ChatProtocolContract{
 	"protocol.kimi-openai-chat.k3.v5": kimiK3ExactDynamicFunctionToolsContract("protocol.kimi-openai-chat.k3.v5"),
 	"protocol.kimi-openai-chat.v6":    kimiStreamFunctionToolsContract("protocol.kimi-openai-chat.v6", false),
 	"protocol.kimi-openai-chat.k3.v6": kimiStreamFunctionToolsContract("protocol.kimi-openai-chat.k3.v6", true),
+	KimiK3InlineJPEGProtocol:          boundedChatInlineJPEG(kimiStreamFunctionToolsContract(KimiK3InlineJPEGProtocol, true)),
+	KimiK3InlineVideoProtocol:         boundedInlineMP4Contract(boundedChatInlineJPEG(kimiStreamFunctionToolsContract(KimiK3InlineVideoProtocol, true))),
 }
 
 func ResolveChatProtocolContract(profileID string) (ChatProtocolContract, bool) {
@@ -1453,7 +1582,10 @@ func ResolveChatProtocolContract(profileID string) (ChatProtocolContract, bool) 
 func validateChatProtocolContractShape(contract ChatProtocolContract) error {
 	if contract.OutputEnforcement != "" {
 		field, minimum := "max_completion_tokens", int64(11)
-		if contract.ProfileID == DeepSeekProviderCompletionProtocol {
+		if IsQwenHostedSplitProtocol(contract.ProfileID) {
+			field, minimum = "max_tokens", QwenHostedAnswerTolerance+1
+		}
+		if deepSeekExactProviderCompletion(contract.ProfileID) {
 			field, minimum = "max_tokens", 1
 			if !contract.StreamContract.RequireTerminalUsageChoices {
 				return fmt.Errorf("DeepSeek provider completion requires terminal choice usage")
@@ -1614,7 +1746,7 @@ func validateChatProtocolContractShape(contract ChatProtocolContract) error {
 	image := contract.ImageInputPolicy
 	imageConfigured := image.DecodedFormat != "" || image.RequireURLObject || len(image.AllowedMessageRoles) > 0 || image.MaximumImages != 0 || image.MaximumDecodedBytes != 0 ||
 		image.MinimumWidth != 0 || image.MinimumHeight != 0 || image.MinimumPixels != 0 || image.MaximumPixels != 0 ||
-		image.MaximumAspectRatio != 0 || image.RequiresNonStream || len(image.IncompatibleRequestFields) > 0 ||
+		image.MaximumAspectRatio != 0 || image.RequiresNonStream || image.RequiresDisabledThinking || len(image.IncompatibleRequestFields) > 0 ||
 		image.AdmissionTokenUpperPerPixel != 0 || image.AdmissionEstimateVersion != ""
 	if !image.Modeled && imageConfigured {
 		return fmt.Errorf("image input constraints require an exact modeled image policy")
@@ -1661,7 +1793,7 @@ func validateChatProtocolContractShape(contract ChatProtocolContract) error {
 // selected profile remains the semantic authority and validates the original
 // body again before Freeze and provider dispatch.
 func PreProfileChatProtocolContract() ChatProtocolContract {
-	union := ChatProtocolContract{ProfileID: "protocol.preprofile.chat.v2"}
+	union := ChatProtocolContract{ProfileID: "protocol.preprofile.chat.v2", InlineAudioFormatOptional: true}
 	for _, contract := range chatProtocolContracts {
 		union.PartialMode = union.PartialMode || contract.PartialMode
 		union.DynamicSystemTools = union.DynamicSystemTools || contract.DynamicSystemTools
@@ -1686,10 +1818,14 @@ func PreProfileChatProtocolContract() ChatProtocolContract {
 		union.InlineImageDataURL = union.InlineImageDataURL || contract.InlineImageDataURL
 		union.RemoteImageHTTPSURL = union.RemoteImageHTTPSURL || contract.RemoteImageHTTPSURL
 		union.InlineAudioBase64 = union.InlineAudioBase64 || contract.InlineAudioBase64
+		union.InlineAudioOmitMIME = union.InlineAudioOmitMIME || contract.InlineAudioOmitMIME
+		union.InlineAudioFormats = appendUniqueStrings(union.InlineAudioFormats, contract.InlineAudioFormats...)
 		union.RemoteAudioHTTPSURL = union.RemoteAudioHTTPSURL || contract.RemoteAudioHTTPSURL
 		union.InlineVideoDataURL = union.InlineVideoDataURL || contract.InlineVideoDataURL
+		union.InlineVideoOmitMIME = union.InlineVideoOmitMIME || contract.InlineVideoOmitMIME
 		union.RemoteVideoHTTPSURL = union.RemoteVideoHTTPSURL || contract.RemoteVideoHTTPSURL
 		union.RemoteFileHTTPSURL = union.RemoteFileHTTPSURL || contract.RemoteFileHTTPSURL
+		union.InlinePlainTextFile = union.InlinePlainTextFile || contract.InlinePlainTextFile
 		union.ImageDetails = appendUniqueStrings(union.ImageDetails, contract.ImageDetails...)
 		union.VideoResolutions = appendUniqueStrings(union.VideoResolutions, contract.VideoResolutions...)
 		if contract.VideoFPSSupported {
@@ -1710,6 +1846,7 @@ func PreProfileChatProtocolContract() ChatProtocolContract {
 			}
 		}
 	}
+	sort.Strings(union.InlineAudioFormats)
 	sort.Strings(union.ImageDetails)
 	sort.Strings(union.VideoResolutions)
 	sort.Strings(union.AssistantOpaqueHistoryFields)

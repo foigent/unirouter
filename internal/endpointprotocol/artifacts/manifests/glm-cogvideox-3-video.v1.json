@@ -1,0 +1,40 @@
+{
+  "schema_version": "unirouter.endpoint-profile-manifest.v1",
+  "profile_id": "unirouter.glm.video.cogvideox-3.v1",
+  "profile_version": "1.0.0",
+  "provider": "glm",
+  "runtime_state": "repository_local_async_media_v1",
+  "conformance_level": "fixture_verified",
+  "network_verified": false,
+  "descriptor": {
+    "contract_version": "unirouter.endpoint-protocol.v1",
+    "profile_id": "unirouter.glm.video.cogvideox-3.v1",
+    "profile_version": "1.0.0",
+    "provider": "glm",
+    "endpoint_kind": "video_generation",
+    "downstream_endpoint": "/v1/media/jobs",
+    "upstream_endpoint": "/api/paas/v4/videos/generations",
+    "authentication": "bearer",
+    "runtime_state": "repository_local_async_media_v1",
+    "provider_finality": "accepted_task_then_exact_status",
+    "customer_charge_state": "provider_observed_not_customer_chargeable",
+    "supported_modalities": [
+      "text_to_video"
+    ],
+    "observed_unit_classes": null,
+    "unsupported_semantics": [
+      "input_video",
+      "image_to_video",
+      "audio_track",
+      "multiple_videos",
+      "provider_metering"
+    ]
+  },
+  "fixtures": [
+    {
+      "fixture_id": "glm-cogvideox-3-video-v1",
+      "path": "fixtures/glm-cogvideox-3-video-v1.json",
+      "sha256": "sha256:ad96fc8246ab46a79540862e7d7fed32520b261717ae4c9b176fd1572b689e26"
+    }
+  ]
+}

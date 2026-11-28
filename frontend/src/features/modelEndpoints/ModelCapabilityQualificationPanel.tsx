@@ -14,7 +14,7 @@ import {
 import { useAuthStore } from '../../store/auth';
 import { LatencyText, StatusTag, Surface } from '../../ui';
 import { formatDateTime } from '../../utils/formatDate';
-import { upstreamScopeLabel, endpointError, endpointFailureText, type EndpointFailure } from './presentation';
+import { upstreamScopeLabel, endpointError, endpointFailureText, nativeToolContinuationProbe, plannedProviderRequestCount, providerRequestLimitLabel, type EndpointFailure } from './presentation';
 
 const { Text } = Typography;
 
@@ -40,7 +40,13 @@ function probeFailureDetail(stage?: string, member?: string): string {
 
 export type QualifiedCapabilityID = 'streaming' | 'reasoning' | 'reasoning_effort' | 'reasoning_budget' |
   'tools' | 'function_tools' | 'tool_choice_auto' | 'tool_choice_named' |
-  'tool_choice_required' | 'json_object' | 'cache_read_usage' | 'prompt_cache';
+  'tool_choice_required' | 'json_object' | 'cache_read_usage' | 'prompt_cache' | 'vision' |
+  'audio' | 'video' | 'files';
+
+const inputProbeCopy = {
+  emptyEvidence: '尚未运行此项输入探测。',
+  probeContractSummary: '服务端使用当前探测合同指定的输入样本并校验响应。成功探测仍需独立批准。',
+};
 
 const capabilityPresentation: Record<QualifiedCapabilityID, {
   title: string;
@@ -116,6 +122,35 @@ const capabilityPresentation: Record<QualifiedCapabilityID, {
     description: '验证当前精确部署接受 response_format=json_object，并返回严格可解析的目标对象。',
     defaultReason: '已审阅当前环境的 JSON Object 探测证据', emptyEvidence: '尚未运行 typed json_object probe。',
     probeContractSummary: '服务端固定 JSON 提示和 response_format=json_object；响应必须是无重复字段的精确对象。',
+  },
+  vision: {
+    title: '能力验证 · 图片理解',
+    shortName: '图片理解',
+    description: '验证当前部署能读取单张内联 JPEG 并返回文本。',
+    defaultReason: '已审阅当前环境的图片理解探测证据',
+    emptyEvidence: '尚未运行图片理解探测。',
+    probeContractSummary: '服务端生成合成图片并校验答案与最终用量。成功探测仍需独立批准。',
+  },
+  audio: {
+    ...inputProbeCopy,
+    title: '能力验证 · 音频理解',
+    shortName: '音频理解',
+    description: '验证当前部署能否理解探测合同指定的音频输入并返回文本。',
+    defaultReason: '已审阅当前环境的音频理解探测证据',
+  },
+  video: {
+    ...inputProbeCopy,
+    title: '能力验证 · 视频理解',
+    shortName: '视频理解',
+    description: '验证当前部署能否理解探测合同指定的视频输入并返回文本。',
+    defaultReason: '已审阅当前环境的视频理解探测证据',
+  },
+  files: {
+    ...inputProbeCopy,
+    title: '能力验证 · 文件理解',
+    shortName: '文件理解',
+    description: '验证当前部署能否理解探测合同指定的文件输入并返回文本。',
+    defaultReason: '已审阅当前环境的文件理解探测证据',
   },
   cache_read_usage: {
     title: '能力验证 · 缓存读取计量', shortName: '缓存读取计量',
@@ -254,6 +289,12 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
     confirmationRef.current = null;
   }, []);
 
+  const probeContract = `${qualification?.probe_contract_id ?? ''}@${qualification?.probe_contract_version ?? ''}`;
+  const probeRequestLimit = providerRequestLimitLabel(plannedProviderRequestCount(qualification?.planned_provider_requests));
+  const probeAction = t('运行{capability}探测（{limit}）', {
+    capability: translateLabel(presentation.shortName), limit: probeRequestLimit,
+  });
+
   const runProbe = async (binding: CanonicalCredentialBinding, target: typeof targetSummary) => {
     if (identityRef.current !== target.identity) return;
     setWorkingBindingID(binding.id);
@@ -289,13 +330,15 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
       cancelText: t("取消"),
       title: t('运行{capability}探测？', { capability: translateLabel(presentation.shortName) }),
       content: <div>
-        <p>{t("预计发起 1 次真实供应商调用，并计入已批准的测试调用上限。")}</p>
+        <p>{t("{limit}。实际发出的请求计入测试调用上限。", { limit: probeRequestLimit })}</p>
         <p>{t("供应商成本当前不可得；这不表示费用为 ¥0。")}</p>
         <p><Text code>Connection #{target.connectionID}@{target.connectionRevision} · Deployment #{target.deploymentID}@{target.deploymentRevision}</Text></p>
         <p><Text code>{target.operationID}@{target.operationRevision} · {target.executionProfile} · {target.protocolProfile}</Text></p>
-        <p>{translateLabel(presentation.probeContractSummary)}</p>
+        <p>{probeContract === nativeToolContinuationProbe
+          ? t("第一轮获取工具调用。通过校验后，第二轮回传测试工具结果。")
+          : translateLabel(presentation.probeContractSummary)}</p>
       </div>,
-      okText: t('运行{capability}探测（预计 1 次调用）', { capability: translateLabel(presentation.shortName) }),
+      okText: probeAction,
       onOk: () => {
         confirmationRef.current = null;
         if (identityRef.current !== target.identity) return;
@@ -414,7 +457,7 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
             loading={workingBindingID === binding.id}
             title={props.gatewayLicensed ? undefined : props.gatewayRestriction}
             onClick={() => confirmProbe(binding)}
-          >{t('运行{capability}探测（预计 1 次调用）', { capability: translateLabel(presentation.shortName) })} · binding #{binding.id}</Button>)}
+          >{probeAction} · binding #{binding.id}</Button>)}
           {eligibleBindings.length === 0 && <Banner type="warning" closeIcon={null} description={t("当前批准仍可保持有效，但没有可用 credential binding；路由健康与能力批准是两个独立状态。")} />}
         </Space>}
 
@@ -437,7 +480,7 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
           </> : <Banner type="warning" closeIcon={null} description={t("探测已通过，等待平台管理员批准进入当前环境的路由池。")} />}
         </Space>}
 
-        {!qualification.probe_available && <Banner type="warning" closeIcon={null} description={t('当前精确 Profile 没有可执行的 typed {capability} probe（{reason}）。', { capability: capabilityID, reason: qualification.probe_availability_reason_code })} />}
+        {!qualification.probe_available && <Banner type="warning" closeIcon={null} description={t('当前配置未提供可运行的探测（{reason}）。', { reason: qualification.probe_availability_reason_code })} />}
       </>}
     </Space>}
   </Surface>;

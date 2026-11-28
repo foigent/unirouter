@@ -16,6 +16,17 @@ export function endpointFailureText(failure: EndpointFailure) {
   return failure.prefix ? t(failure.prefix, { error: message }) : message;
 }
 
+export const nativeToolContinuationProbe = 'unirouter.capability-probe.native-client-tool-continuation.v1@1.0.0';
+
+export function plannedProviderRequestCount(count: unknown): number | null {
+  return typeof count === 'number' && Number.isSafeInteger(count) && count > 0 ? count : null;
+}
+
+export function providerRequestLimitLabel(count: number | null): string {
+  if (count === null) return t("供应商请求上限未知");
+  return count === 1 ? t("最多 1 次供应商请求") : t("最多 {count} 次供应商请求", { count });
+}
+
 const stateCopy: Record<string, { label: string; help: string }> = {
   active: { label: '稳定路由', help: '当前稳定发布可选中至少一个供应商端点。项目或应用能否调用仍由高级调用诊断确认。' },
   canary: { label: '灰度中', help: '稳定路由仍在，部分流量按服务端分桶进入候选路由。' },

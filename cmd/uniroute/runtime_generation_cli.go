@@ -168,7 +168,12 @@ func maintenancePredecessorControlAllowed(artifact, actual []string, environment
 	if schemaauthority.HasUpgradeAdmissionRecovery(last) {
 		_, err := schemaauthority.RuntimeLedgers(artifact)
 		exactPredecessor := last == schemaauthority.UpgradeAdmissionRecoveryHead && prior == schemaauthority.UpstreamObservationRestoreHead ||
-			last == schemaauthority.CustomerStandardPricingHead && prior == schemaauthority.UpgradeAdmissionRecoveryHead
+			last == schemaauthority.CustomerStandardPricingHead && prior == schemaauthority.UpgradeAdmissionRecoveryHead ||
+			last == schemaauthority.OpenAIResponsesToolsHead && prior == schemaauthority.CustomerStandardPricingHead ||
+			last == schemaauthority.MediaChargeSourceHead && prior == schemaauthority.OpenAIResponsesToolsHead ||
+			last == schemaauthority.NativeInlineJPEGHead && prior == schemaauthority.MediaChargeSourceHead ||
+			last == schemaauthority.CanonicalMediaJobHead && prior == schemaauthority.NativeInlineJPEGHead ||
+			last == schemaauthority.AsyncMediaProviderTaskHead && prior == schemaauthority.CanonicalMediaJobHead
 		return err == nil && exactPredecessor &&
 			command == "inspect" && slices.Equal(actual, artifact[:len(artifact)-1])
 	}

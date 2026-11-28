@@ -1,0 +1,43 @@
+{
+  "schema_version": "unirouter.endpoint-profile-manifest.v1",
+  "profile_id": "unirouter.minimax.video.h3.v1",
+  "profile_version": "1.0.0",
+  "provider": "minimax",
+  "runtime_state": "repository_local_async_media_v1",
+  "conformance_level": "fixture_verified",
+  "network_verified": false,
+  "descriptor": {
+    "contract_version": "unirouter.endpoint-protocol.v1",
+    "profile_id": "unirouter.minimax.video.h3.v1",
+    "profile_version": "1.0.0",
+    "provider": "minimax",
+    "endpoint_kind": "video_generation",
+    "downstream_endpoint": "/v1/media/jobs",
+    "upstream_endpoint": "/v2/video_generation",
+    "authentication": "bearer",
+    "runtime_state": "repository_local_async_media_v1",
+    "provider_finality": "accepted_task_then_exact_status",
+    "customer_charge_state": "provider_observed_not_customer_chargeable",
+    "supported_modalities": [
+      "text_to_video"
+    ],
+    "observed_unit_classes": [
+      "input_video_milliseconds",
+      "output_video_milliseconds",
+      "input_images"
+    ],
+    "unsupported_semantics": [
+      "input_video",
+      "image_to_video",
+      "audio_track",
+      "multiple_videos"
+    ]
+  },
+  "fixtures": [
+    {
+      "fixture_id": "minimax-h3-video-v1",
+      "path": "fixtures/minimax-h3-video-v1.json",
+      "sha256": "sha256:75ba7cab798fe24a792254d62925d4b5c6dbea3a3061f630d7d38b13d20d1f71"
+    }
+  ]
+}

@@ -190,6 +190,9 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 		return true, err
 	}
 	lease.Request = request
+	if lease.Job.providerTaskID != "" {
+		return true, w.readProviderTask(ctx, lease)
+	}
 	limitSubject, err := w.store.ExecutionLimitSubject(ctx, lease)
 	if err != nil {
 		code := "execution_authority_unavailable"
@@ -249,6 +252,10 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 	}
 	lease.Attempt = attached.ProviderAttempt
 	lease.Job.Attempt = attached.ProviderAttempt
+	lease.Job.dispatchRoute = attached.providerRoute
+	if attached.providerRoute != nil {
+		lease.Job.CanonicalDispatch = attached.providerRoute.PublicEvidence
+	}
 	if provider, ok := w.provider.(interface{ SourceObservationsEnabled() bool }); ok && provider.SourceObservationsEnabled() {
 		var observations *sourceMediaSamples
 		ctx, observations = startSourceMediaSamples(ctx)
@@ -277,13 +284,25 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 		}
 		return true, w.finishExecutionTransition(ctx, lease, w.retryOrFail(ctx, lease, code, retryable))
 	}
+	if providerResult.TaskID != "" {
+		store, ok := w.store.(providerTaskStore)
+		if !ok {
+			return true, domainError(ErrUnavailable, "provider_task_storage_unavailable")
+		}
+		err := store.ScheduleProviderStatus(ctx, lease, providerResult.TaskID, w.now().UTC())
+		return true, w.finishExecutionTransition(ctx, lease, err)
+	}
+	return true, w.finishProviderResult(ctx, lease, providerResult)
+}
+
+func (w *Worker) finishProviderResult(ctx context.Context, lease Lease, providerResult ProviderResult) error {
 	if err := w.markProviderSucceeded(
 		ctx, lease, providerResult.MappedModel,
 	); err != nil {
-		return true, err
+		return err
 	}
 	if err := w.finishExecutionTransition(ctx, lease, nil); err != nil {
-		return true, err
+		return err
 	}
 	lease.Job.Lifecycle.Outcome = OutcomeSucceeded
 	lease.Job.MappedModel = providerResult.MappedModel
@@ -295,11 +314,11 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 				ctx, lease, *recovered, w.retention, w.now().UTC(),
 			)
 			if errors.Is(completeErr, ErrLeaseLost) {
-				return true, nil
+				return nil
 			}
-			return true, completeErr
+			return completeErr
 		}
-		return true, w.retryRecoveryOrFail(
+		return w.retryRecoveryOrFail(
 			ctx, lease, objectFailureCode(err),
 		)
 	}
@@ -309,9 +328,58 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 	if errors.Is(err, ErrLeaseLost) {
 		// The immutable receipt is intentionally retained. A reclaimed worker
 		// can finish from Recover without another provider call.
-		return true, nil
+		return nil
 	}
-	return true, err
+	return err
+}
+
+func (w *Worker) readProviderTask(ctx context.Context, lease Lease) error {
+	store, storeOK := w.store.(providerTaskStore)
+	reader, readerOK := w.provider.(providerTaskReader)
+	if !storeOK || !readerOK {
+		_, err := w.store.CompleteUnknown(ctx, lease, "provider_task_reader_unavailable", w.now().UTC())
+		return w.finishExecutionTransition(ctx, lease, err)
+	}
+	route, err := store.AuthorizeProviderStatus(ctx, lease, w.now().UTC())
+	if err != nil {
+		if errors.Is(err, ErrLeaseLost) {
+			return nil
+		}
+		if !errors.Is(err, ErrForbidden) {
+			return w.finishExecutionTransition(ctx, lease, store.ScheduleProviderStatus(ctx, lease, lease.Job.providerTaskID, w.now().UTC()))
+		}
+		_, transitionErr := w.store.CompleteUnknown(ctx, lease, "provider_task_authority_changed", w.now().UTC())
+		return w.finishExecutionTransition(ctx, lease, transitionErr)
+	}
+	lease.Job.dispatchRoute = route
+	deadline := lease.ExpiresAt
+	if lease.Job.providerTaskReadUntil != nil && lease.Job.providerTaskReadUntil.Before(deadline) {
+		deadline = *lease.Job.providerTaskReadUntil
+	}
+	readCtx, cancel := context.WithDeadline(ctx, deadline)
+	result, err := reader.CheckProviderTask(readCtx, lease.Job)
+	cancel()
+	if err != nil {
+		code, retryable, unknown := providerFailure(err)
+		switch {
+		case retryable:
+			err = store.ScheduleProviderStatus(ctx, lease, lease.Job.providerTaskID, w.now().UTC())
+		case unknown:
+			_, err = w.store.CompleteUnknown(ctx, lease, code, w.now().UTC())
+		default:
+			_, err = w.store.CompleteFailure(ctx, lease, code, w.now().UTC())
+		}
+		return w.finishExecutionTransition(ctx, lease, err)
+	}
+	if result.TaskID != "" {
+		if result.TaskID != lease.Job.providerTaskID {
+			_, err = w.store.CompleteUnknown(ctx, lease, "provider_task_changed", w.now().UTC())
+		} else {
+			err = store.ScheduleProviderStatus(ctx, lease, result.TaskID, w.now().UTC())
+		}
+		return w.finishExecutionTransition(ctx, lease, err)
+	}
+	return w.finishProviderResult(ctx, lease, result)
 }
 
 func executionLimitErrorCode(err error) string {
@@ -424,7 +492,9 @@ func (w *Worker) retryRecoveryOrFail(
 	code string,
 ) error {
 	now := w.now().UTC()
-	if lease.Attempt < lease.Job.MaxAttempts {
+	if lease.Job.SingleUpstreamAttempt || lease.Attempt < lease.Job.MaxAttempts {
+		// The store may allow one more read-only recovery lease for an
+		// accepted single-send job. It never creates a provider attempt.
 		_, err := w.store.RequeueRecovery(
 			ctx,
 			lease,
