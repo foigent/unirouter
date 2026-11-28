@@ -61,6 +61,26 @@ func TestSourceBudgetRestoreRejectsUnprovedLedger(t *testing.T) {
 	}
 }
 
+func TestSourceBudgetRestoreRejectsMissingM135ForM136(t *testing.T) {
+	pool, _, org, project := setupContentJournal(t)
+	assertSourceFixtureLedger(t, pool, schemaauthority.AsyncMediaProviderTaskHead)
+	before := budgetCoverageRows(t, pool)
+	readEpoch := func() int64 {
+		var epoch int64
+		err := pool.QueryRow(t.Context(), `SELECT recovery_epoch FROM execution_content_streams WHERE org_id=$1 AND project_id=$2`, org, project).Scan(&epoch)
+		require.NoError(t, err)
+		return epoch
+	}
+	epoch := readEpoch()
+	deleted, err := pool.Exec(t.Context(), `DELETE FROM schema_migrations WHERE version=$1`, schemaauthority.CanonicalMediaJobHead)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, deleted.RowsAffected())
+
+	runContentRestoreReject(t, pool, "budget coverage requires exact M136 predecessor")
+	require.Equal(t, before, budgetCoverageRows(t, pool))
+	require.Equal(t, epoch, readEpoch())
+}
+
 func TestSourceBudgetRestoreRejectsBrokenM121SuffixWithoutWrites(t *testing.T) {
 	helper, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "..", "scripts", "source-budget-restore-rebase.sql"))
 	require.NoError(t, err)

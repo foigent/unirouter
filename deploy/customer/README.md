@@ -297,17 +297,17 @@ restoration instruction. This source template does not itself sign or release it
 
 - Repository path: `scripts/source-budget-restore-rebase.sql`
 - Signed payload path: `payload/scripts/source-budget-restore-rebase.sql`
-- SHA-256: `76f32c1721ce4f9e386a1f35fd9d729e0972f9cf9c4e0d42a0ce43aa975be4bb`
-- Bytes: `17804`
+- SHA-256: `b0c86830372b8175c2eaf48ea0efa441caa01e0d74cc6a3d46993e5e2e81a6e7`
+- Bytes: `19532`
 
 After every supported SQL restore, while all database readers/writers are still
 stopped, run this helper with `psql -v ON_ERROR_STOP=1 -f` before restart. It retains
 the former D coverage epoch and records the database restore boundary. With the
-exact M119, M120, M121, M122, M123, M124, M125, M126, M127, M128, M129 or M130 schema it also changes each C recovery epoch in the same transaction,
-invalidating old C cursors and in-flight grants. It does not change money,
-credentials, source identity, A/B cursors, C registration, manifests or object
-allocation epochs. Any helper failure
-stops restoration validation. The backend then verifies the exact retained schema
+exact supported schema from M119 through M136 it also changes each C recovery
+epoch in the same transaction, invalidating old C cursors and in-flight grants.
+It does not change money, credentials, source identity, A/B cursors, C
+registration, manifests or object allocation epochs. Any helper failure stops
+restoration validation. The backend then verifies the exact retained schema
 and writer proof before enabling D. Config preflight alone is not readiness.
 Pre-D backups without M118 keep their original recovery path; D cannot be enabled
 until normal M118 expansion and a fresh certification have completed.
