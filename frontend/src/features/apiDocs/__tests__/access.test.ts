@@ -193,6 +193,16 @@ describe('API reference audience projection', () => {
       expect(endpointVisibleForAuthz('Admin','PUT',path,context,{agentCapabilities:false})).toBe(['platform_admin','org_admin'].includes(role));
     }
   });
+  it('shows asynchronous operation probe receipts only to the administrators who can manage the binding', () => {
+    const path = '/api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes';
+    for (const endpoint of [path, `${path}/{probeRunRef}`]) {
+      for (const role of ['platform_admin', 'org_admin', 'org_viewer', 'billing_admin', 'member'] as const) {
+        const authz = authzContextForUser({ organization_role: role });
+        expect(endpointVisibleForAuthz('Admin', 'GET', endpoint, authz, { agentCapabilities: false }))
+          .toBe(role === 'platform_admin' || role === 'org_admin');
+      }
+    }
+  });
   it('keeps Responses and Messages production qualification approval platform-only', () => {
     const path = '/api/v1/model-deployments/{deploymentID}/operations/{operationID}/production-approvals';
     expect(endpointVisibleForAuthz(

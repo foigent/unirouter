@@ -468,7 +468,12 @@ func runStrictTestArtifactInstallThrough(ctx context.Context, pool *pgxpool.Pool
 			return err
 		}
 	}
-	if ceiling == schemaauthority.CommercialLicenseRetirementHead || ceiling == schemaauthority.XInsightCommunicationHead || (ceiling == schemaauthority.UpstreamReleaseObservationHead || ceiling == schemaauthority.UpstreamObservationRestoreHead || ceiling == schemaauthority.UpgradeAdmissionRecoveryHead || ceiling == schemaauthority.CustomerStandardPricingHead || ceiling == schemaauthority.OpenAIResponsesToolsHead) {
+	if ceiling != schemaauthority.LatestSupportedMigration &&
+		(ceiling == schemaauthority.CommercialLicenseRetirementHead ||
+			ceiling == schemaauthority.XInsightCommunicationHead ||
+			ceiling == schemaauthority.UpstreamReleaseObservationHead ||
+			ceiling == schemaauthority.UpstreamObservationRestoreHead ||
+			schemaauthority.HasUpgradeAdmissionRecovery(ceiling)) {
 		if err := migrate.RunExistingThrough(ctx, pool, migrationsDir, ceiling); err != nil {
 			return err
 		}

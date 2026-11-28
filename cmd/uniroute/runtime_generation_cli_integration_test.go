@@ -44,7 +44,9 @@ func invokeGenerationCLI(t *testing.T, cfg *config.Config, action string, input 
 }
 
 func TestRuntimeGenerationCLIExpandedLedgerLifecycleIntegration(t *testing.T) {
-	for _, head := range schemaauthority.SupportedSchemaHeads() {
+	schemaHeads := schemaauthority.SupportedSchemaHeads()
+	exactPredecessor := schemaHeads[len(schemaHeads)-2]
+	for _, head := range schemaHeads {
 		t.Run(head, func(t *testing.T) {
 			pool := testutil.SetupMigratedThroughTestDB(t, head)
 			dir := testutil.MigrationsDir(t)
@@ -84,8 +86,8 @@ func TestRuntimeGenerationCLIExpandedLedgerLifecycleIntegration(t *testing.T) {
 				for _, environment := range []string{"test", "development", "production"} {
 					cfg.RuntimeEnvironment = environment
 					_, err := invokeGenerationCLI(t, cfg, "inspect", nil)
-					if head == schemaauthority.UpgradeAdmissionRecoveryHead && environment != "production" {
-						require.NoError(t, err, "M131 may inspect the exact M130 predecessor in an isolated environment")
+					if head == exactPredecessor && environment != "production" {
+						require.NoError(t, err, "the current artifact may inspect its exact predecessor in an isolated environment")
 					} else {
 						require.ErrorContains(t, err, "outside this artifact")
 					}

@@ -402,6 +402,33 @@ func TestContentTablesPreserveAllAndRefuseResetEvenWhenEmpty(t *testing.T) {
 	}
 }
 
+func TestAsyncOperationProbeTasksPreserveHistoryAndRefuseReset(t *testing.T) {
+	const table = "model_deployment_async_probe_tasks"
+	for _, rows := range []int64{0, 1} {
+		snapshot := syntheticClassifiedSnapshot()
+		snapshot.Tables = append(snapshot.Tables, TableInventory{Name: table, RowCount: rows})
+		plan, err := Build(snapshot, testTarget(), "source-a", "source-b", time.Unix(0, 0))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if plan.ScopeComplete || plan.ActionAuthorized || plan.MutationPerformed || Validate(plan) == nil {
+			t.Fatalf("probe task history entered reset authority: %+v", plan.Summary)
+		}
+		index := slices.IndexFunc(plan.Tables, func(entry TablePlan) bool { return entry.Name == table })
+		if index < 0 {
+			t.Fatal("probe task table absent from reset preview")
+		}
+		entry := plan.Tables[index]
+		if entry.Scope != ScopeReviewRequired || entry.Action != ActionPreserveAll ||
+			entry.ExpectedDeletedRows != 0 || entry.ExpectedRetainedRows != rows {
+			t.Fatalf("probe task history is not fully retained: %+v", entry)
+		}
+		if slices.ContainsFunc(plan.DeleteOrder, func(step DeleteStep) bool { return step.Table == table }) {
+			t.Fatal("probe task table entered deletion order")
+		}
+	}
+}
+
 func TestXInsightCredentialJournalPreservesHistoryAndRefusesReset(t *testing.T) {
 	const name = "xinsight_connector_credential_operations"
 	for _, rows := range []int64{0, 1} {

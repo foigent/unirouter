@@ -1475,7 +1475,12 @@ func requiredCapabilitiesForChat(body []byte) ([]string, error) {
 					add(modelCapabilityVision)
 				case "video_url", "input_video":
 					add(modelCapabilityVideo)
-				case "file_url", "file":
+				case "file_url":
+					add(modelCapabilityFiles)
+				case "file":
+					if firstJSONToken(part["file"]) != '{' {
+						return nil, fmt.Errorf("file content part requires a file object")
+					}
 					add(modelCapabilityFiles)
 				case "input_audio", "audio":
 					add(modelCapabilityAudio)

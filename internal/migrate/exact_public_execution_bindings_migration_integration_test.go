@@ -38,7 +38,7 @@ func TestExactPublicExecutionBindingsConstraintRoundTripIntegration(t *testing.T
 }
 
 func TestExactPublicExecutionBindingsMigrationIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool, _ := setupMigratedThrough(t, "000087_anthropic_messages_tools_public_binding.up.sql")
 	ctx := context.Background()
 
 	type tuple struct {

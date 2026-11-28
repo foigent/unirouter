@@ -164,6 +164,24 @@ func TestBoundedChatMediaRequestsUseExactProfiles(t *testing.T) {
 							}
 							require.Len(t, dispatched, 2)
 						}
+						if capability == modelprofile.CapabilityFiles {
+							originalPart, err := json.Marshal(part)
+							require.NoError(t, err)
+							fileIDPart := `{"type":"file","file_id":"x"}`
+							fileIDRequest := strings.Replace(string(body), string(originalPart), fileIDPart, 1)
+							require.NotEqual(t, string(body), fileIDRequest)
+							originalDoer := relay.providerHTTPDoer
+							calls := 0
+							relay.providerHTTPDoer = &http.Client{Transport: executionRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+								calls++
+								return nil, fmt.Errorf("unexpected provider request")
+							})}
+							recorded := httptest.NewRecorder()
+							relay.HandleChatCompletion(recorded, executionRequest(http.MethodPost, "/v1/chat/completions", "fixture-media-file-id", fileIDRequest))
+							relay.providerHTTPDoer = originalDoer
+							require.Equal(t, http.StatusBadRequest, recorded.Code, recorded.Body.String())
+							require.Zero(t, calls)
+						}
 						bad := strings.Replace(string(body), media, "https://example.invalid/not-an-inline-asset", 1)
 						rec := httptest.NewRecorder()
 						relay.HandleChatCompletion(rec, executionRequest(http.MethodPost, "/v1/chat/completions", "fixture-media-wrong", bad))

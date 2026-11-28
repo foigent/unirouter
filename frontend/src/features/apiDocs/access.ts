@@ -179,8 +179,9 @@ export function endpointVisibleForAuthz(
       const isCanonicalModelDeploymentCreate = method === 'POST' && path === '/api/v1/model-deployments';
       const isCanonicalModelDeploymentReleaseAuthor = method === 'POST' &&
         path === '/api/v1/model-deployment-releases';
-      const isCanonicalModelDeploymentProbe = method === 'POST' &&
-        path === '/api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes';
+      const isCanonicalModelDeploymentProbe =
+        ((method === 'POST' || method === 'GET') && path === '/api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes') ||
+        (method === 'GET' && path === '/api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes/{probeRunRef}');
       const isCanonicalModelDeploymentLifecycleWrite =
         organizationModelDeploymentLifecycleWrites.has(`${method} ${path}`);
       const isModelRouteSafetyWrite = organizationModelRouteSafetyWrites.has(`${method} ${path}`);

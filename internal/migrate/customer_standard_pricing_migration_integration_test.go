@@ -24,8 +24,8 @@ func TestV1PricingAuthorityCustomerStandardMigrationIntegration(t *testing.T) {
 	var head string
 	require.NoError(t, pool.QueryRow(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&head))
 	require.Equal(t, predecessor, head)
-	require.NoError(t, migrate.RunExisting(ctx, pool, dir))
-	require.NoError(t, migrate.RunExisting(ctx, pool, dir))
+	require.NoError(t, migrate.RunExistingThrough(ctx, pool, dir, version))
+	require.NoError(t, migrate.RunExistingThrough(ctx, pool, dir, version))
 	require.NoError(t, pool.QueryRow(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&head))
 	require.Equal(t, version, head)
 	_, err := runtimegeneration.ReadBudgetCoverage(ctx, pool)
@@ -37,7 +37,7 @@ func TestV1PricingAuthorityCustomerStandardMigrationIntegration(t *testing.T) {
 	require.NoError(t, pool.QueryRow(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&head))
 	require.Equal(t, predecessor, head)
 
-	require.NoError(t, migrate.RunExisting(ctx, pool, dir))
+	require.NoError(t, migrate.RunExistingThrough(ctx, pool, dir, version))
 	require.NoError(t, pool.QueryRow(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&head))
 	require.Equal(t, version, head)
 	org := testutil.NewTestOrg(t, pool)
