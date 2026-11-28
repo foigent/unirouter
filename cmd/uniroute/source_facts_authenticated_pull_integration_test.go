@@ -112,6 +112,8 @@ func newP3SourceFixture(t *testing.T) *p3SourceFixture {
 
 func newApprovedSourceFixture(t *testing.T, cc14 bool) *p3SourceFixture {
 	t.Helper()
+	scope, scopeErr := p3ProducerScopeFromEnv(os.Getenv)
+	p3Require(t, scopeErr == nil && !(scope.portable && cc14), "approved portable producer scope")
 	if cc14 {
 		cc14RequireApproval(t)
 	}
@@ -122,11 +124,19 @@ func newApprovedSourceFixture(t *testing.T, cc14 bool) *p3SourceFixture {
 	runCtx, stop := signal.NotifyContext(t.Context(), os.Interrupt, syscall.SIGTERM)
 	t.Cleanup(stop)
 	p3Require(t, os.Geteuid() == 0 && os.Getenv("REQUIRE_TEST_DATABASE") == "1", "root and required database guard")
-	p3Require(t, os.Getenv("REDIS_ADDR") == "127.0.0.1:56379" && os.Getenv("REDIS_DB") == "15", "Redis must be 56379/DB15")
+	p3Require(t, os.Getenv("REDIS_ADDR") == fmt.Sprintf("127.0.0.1:%d", scope.redisPort) && os.Getenv("REDIS_DB") == "15", "exact dedicated Redis/DB15")
+	if scope.portable {
+		p3CheckDirectory(t, scope.root, true)
+		p3CheckDirectory(t, scope.credentialParent, true)
+		p3CheckDirectory(t, filepath.Dir(os.Getenv("UR_P3_OUTPUT_DIR")), true)
+	}
 	cfg, err := pgxpool.ParseConfig(os.Getenv("TEST_DATABASE_URL"))
 	p3Require(t, err == nil, "database configuration")
 	c := cfg.ConnConfig
-	p3Require(t, c.Host == "127.0.0.1" && c.Port == 56132 && len(c.Fallbacks) == 0 && c.Database == os.Getenv("UR_P3_BASE_DATABASE") && c.Database != "" && c.Database != "postgres" && !strings.HasPrefix(c.Database, "template"), "exact synthetic UR database")
+	p3Require(t, c.Host == "127.0.0.1" && c.Port == scope.urPort && len(c.Fallbacks) == 0 && c.Database == os.Getenv("UR_P3_BASE_DATABASE") && c.Database != "" && c.Database != "postgres" && !strings.HasPrefix(c.Database, "template"), "exact synthetic UR database")
+	if scope.portable {
+		p3Require(t, p3ProducerDatabaseMatches(c, scope.urPort, os.Getenv("UR_P3_BASE_DATABASE")), "portable UR database without fallbacks or session overrides")
+	}
 	// Read-only identity proof precedes fixture configuration writes.
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
@@ -146,10 +156,10 @@ func newApprovedSourceFixture(t *testing.T, cc14 bool) *p3SourceFixture {
 	if cc14 {
 		cc14RequireApproval(t)
 	} else {
-		p3Require(t, filepath.Dir(credentials) == p3CredentialParent && strings.HasPrefix(filepath.Base(credentials), "p3-") && filepath.Clean(credentials) == credentials, "credential directory scope")
+		p3Require(t, filepath.Dir(credentials) == scope.credentialParent && strings.HasPrefix(filepath.Base(credentials), "p3-") && filepath.Clean(credentials) == credentials, "credential directory scope")
 	}
-	p3Require(t, filepath.Dir(filepath.Dir(output)) == p3EvidenceParent && filepath.Base(output) == "ur" && filepath.Base(filepath.Dir(output)) == filepath.Base(credentials), "evidence directory scope")
-	p3CheckDirectory(t, p3CredentialParent, true)
+	p3Require(t, filepath.Dir(filepath.Dir(output)) == scope.evidenceParent && filepath.Base(output) == "ur" && filepath.Base(filepath.Dir(output)) == filepath.Base(credentials), "evidence directory scope")
+	p3CheckDirectory(t, scope.credentialParent, true)
 	p3CheckDirectory(t, filepath.Dir(output), true)
 	p3Require(t, os.Mkdir(credentials, 0700) == nil, "credential directory must not exist")
 	p3CheckDirectory(t, credentials, true)
