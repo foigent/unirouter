@@ -32,6 +32,7 @@ type modelExecutionProfileEvidence struct {
 	ReasoningEffortEffective      string
 	ReasoningTimeoutSeconds       int
 	ReasoningBudgetRequest        string
+	HostedReasoningTokenLimit     int
 	ReasoningBudgetDefault        string
 	ReasoningPreserveRequest      string
 	ReasoningPreserveDefault      string
@@ -340,6 +341,9 @@ func validateChatExecutionProfileRequest(body []byte, plan modelrouting.Plan) (m
 		if err != nil {
 			return modelExecutionProfileEvidence{}, err
 		}
+		if modelprofile.IsQwenHostedSplitProtocol(plan.ModelProtocolProfile) && reasoningActive && !present {
+			return modelExecutionProfileEvidence{}, fmt.Errorf("thinking_budget is required for this model while reasoning is enabled")
+		}
 		if present {
 			if budget < contract.BudgetControl.Minimum || budget > contract.BudgetControl.Maximum {
 				return modelExecutionProfileEvidence{}, fmt.Errorf("%s must be between %d and %d", contract.BudgetControl.Field, contract.BudgetControl.Minimum, contract.BudgetControl.Maximum)
@@ -351,6 +355,9 @@ func validateChatExecutionProfileRequest(body []byte, plan modelrouting.Plan) (m
 				return modelExecutionProfileEvidence{}, fmt.Errorf("%s and %s cannot be set together for profile %s", contract.BudgetControl.Field, contract.EffortControl.Field, plan.ReasoningProfile)
 			}
 			evidence.ReasoningBudgetRequest = fmt.Sprintf("%d", budget)
+			if modelprofile.IsQwenHostedSplitProtocol(plan.ModelProtocolProfile) {
+				evidence.HostedReasoningTokenLimit = int(budget)
+			}
 		}
 	}
 
@@ -377,6 +384,9 @@ func validateChatExecutionProfileRequest(body []byte, plan modelrouting.Plan) (m
 			if json.Unmarshal(raw, &split) != nil {
 				return modelExecutionProfileEvidence{}, fmt.Errorf("%s must be a boolean", contract.SplitOutputField)
 			}
+			if !split && contract.SplitOutputRequired {
+				return modelExecutionProfileEvidence{}, fmt.Errorf("%s=false is not supported by profile %s", contract.SplitOutputField, plan.ReasoningProfile)
+			}
 			if split && !contract.SplitOutputEnabledSupported {
 				return modelExecutionProfileEvidence{}, fmt.Errorf("%s=true is not supported by profile %s", contract.SplitOutputField, plan.ReasoningProfile)
 			}
@@ -395,15 +405,21 @@ func validateChatExecutionProfileRequest(body []byte, plan modelrouting.Plan) (m
 		if !jsonBooleanField(envelope["stream"]) {
 			evidence.ReasoningTimeoutSeconds = contract.ActiveNonStreamTimeoutSeconds
 		}
-		for field, maximum := range contract.ActiveOutputFieldMaximums {
-			value, present, err := optionalJSONInteger(envelope[field], field)
-			if err != nil {
-				return modelExecutionProfileEvidence{}, err
-			}
-			if present && value > maximum {
-				return modelExecutionProfileEvidence{}, fmt.Errorf("%s must be at most %d while reasoning is active for profile %s", field, maximum, plan.ReasoningProfile)
-			}
+	}
+	outputFieldMaximums, reasoningState := contract.InactiveOutputFieldMaximums, "disabled"
+	if reasoningActive {
+		outputFieldMaximums, reasoningState = contract.ActiveOutputFieldMaximums, "active"
+	}
+	for field, maximum := range outputFieldMaximums {
+		value, present, err := optionalJSONInteger(envelope[field], field)
+		if err != nil {
+			return modelExecutionProfileEvidence{}, err
 		}
+		if present && value > maximum {
+			return modelExecutionProfileEvidence{}, fmt.Errorf("%s must be at most %d while reasoning is %s for profile %s", field, maximum, reasoningState, plan.ReasoningProfile)
+		}
+	}
+	if reasoningActive {
 		for _, field := range contract.UnsupportedRequestFieldsWhileActive {
 			if hasNonNullJSONField(envelope, field) {
 				if field == "tool_choice" && redundantAutoToolChoice(envelope) {

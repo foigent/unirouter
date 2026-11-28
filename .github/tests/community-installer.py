@@ -38,12 +38,14 @@ OBSERVATION_COMMIT = "4eb32b5514d47aa91610fc66ef561368d6a18900"
 OBSERVATION_SCHEMA = "000128_upstream_release_observation"
 RESTORE_SCHEMA = "000129_upstream_observation_restore_namespace"
 ADMISSION_SCHEMA = "000130_upgrade_admission_recovery"
-CURRENT_SCHEMA = "000131_customer_standard_pricing"
+PRICING_SCHEMA = "000131_customer_standard_pricing"
+CURRENT_SCHEMA = "000136_async_media_provider_task"
 PUBLIC_DELTA_TRANSITIONS = {
     ("1.15.5", 22, RESTORE_SCHEMA): ("1.15.6", RESTORE_SCHEMA),
     ("1.15.6", 23, RESTORE_SCHEMA): ("1.15.7", ADMISSION_SCHEMA),
-    ("1.15.7", 24, ADMISSION_SCHEMA): ("1.15.8", CURRENT_SCHEMA),
-    ("1.15.8", 25, CURRENT_SCHEMA): ("1.16.0", CURRENT_SCHEMA),
+    ("1.15.7", 24, ADMISSION_SCHEMA): ("1.15.8", PRICING_SCHEMA),
+    ("1.15.8", 25, PRICING_SCHEMA): ("1.16.0", PRICING_SCHEMA),
+    ("1.16.0", 26, PRICING_SCHEMA): ("1.17.0", CURRENT_SCHEMA),
 }
 FIXTURE_PORTS = {"fresh": 13000, "single": 13001, "edge": 13002, "predecessor": 13003}
 SourceContract = namedtuple("SourceContract", "schema ledger supported_heads")
@@ -128,7 +130,7 @@ def source_contract(repo):
             heads.append(ast.literal_eval(assignments[0]))
         except (ValueError, TypeError):
             raise Failed("shipped schema metadata must be literal") from None
-    require(heads[0] == heads[1] and heads[0] in (RETAINED_SCHEMA, OBSERVATION_SCHEMA, RESTORE_SCHEMA, ADMISSION_SCHEMA, CURRENT_SCHEMA),
+    require(heads[0] == heads[1] and heads[0] in (RETAINED_SCHEMA, OBSERVATION_SCHEMA, RESTORE_SCHEMA, ADMISSION_SCHEMA, PRICING_SCHEMA, CURRENT_SCHEMA),
             "shipped installer/bootstrap schema disagreement or unsupported fixture source")
     text = (repo / "internal/schemaauthority/version.go").read_text()
     constants = dict(re.findall(r'^const ([A-Za-z]+) = "([a-z0-9_]+)"$', text, re.M))
@@ -173,8 +175,8 @@ class Acceptance:
         require(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", self.version), "invalid version")
         self.source_contract = source_contract(repo)
         self.schema = self.source_contract.schema
-        self.release_sequence = {RETAINED_SCHEMA:16, OBSERVATION_SCHEMA:17, RESTORE_SCHEMA:21, ADMISSION_SCHEMA:24, CURRENT_SCHEMA:25}[self.schema]
-        if self.schema == CURRENT_SCHEMA and self.version == "1.16.0":
+        self.release_sequence = {RETAINED_SCHEMA:16, OBSERVATION_SCHEMA:17, RESTORE_SCHEMA:21, ADMISSION_SCHEMA:24, PRICING_SCHEMA:25, CURRENT_SCHEMA:27}[self.schema]
+        if self.schema == PRICING_SCHEMA and self.version == "1.16.0":
             self.release_sequence = 26
         self.result.update(commit=self.commit, tree=self.tree, version=self.version)
         self.release = root / "release"
@@ -313,7 +315,7 @@ class Acceptance:
         deploy = self.release / "payload/deploy"
         deploy.mkdir(parents=True)
         names = ["install.py", "docker-compose.yml", ".env.example", "preflight.sh"]
-        if self.schema in (OBSERVATION_SCHEMA,RESTORE_SCHEMA,ADMISSION_SCHEMA,CURRENT_SCHEMA):
+        if self.schema in (OBSERVATION_SCHEMA,RESTORE_SCHEMA,ADMISSION_SCHEMA,PRICING_SCHEMA,CURRENT_SCHEMA):
             names += ["upgrade.py", "recovery.py"]
         for name in names:
             shutil.copyfile(self.repo / "deploy/customer" / name, deploy / name)
@@ -341,7 +343,7 @@ class Acceptance:
             require(count == 1, "retained fixture backend declaration differs")
             (deploy / "docker-compose.yml").write_text(compose)
             self.result["historical_fixture_config"] = "native body binding; signed synthetic operator configuration before first start"
-        if self.schema in (OBSERVATION_SCHEMA,RESTORE_SCHEMA,ADMISSION_SCHEMA,CURRENT_SCHEMA):
+        if self.schema in (OBSERVATION_SCHEMA,RESTORE_SCHEMA,ADMISSION_SCHEMA,PRICING_SCHEMA,CURRENT_SCHEMA):
             scripts = self.release / "payload/scripts"
             scripts.mkdir()
             shutil.copyfile(self.repo / "scripts/source-budget-restore-rebase.sql",
@@ -1632,7 +1634,7 @@ raise SystemExit("expected cold-pair interruption was not reached")
         # M127 upgrade. Later sources use the ordinary owner.
         if public_predecessor and old.schema == ADMISSION_SCHEMA:
             self.interrupt_upgrade(directory, edge, history)
-        elif retain or (not edge and old.schema in (OBSERVATION_SCHEMA, RESTORE_SCHEMA, ADMISSION_SCHEMA, CURRENT_SCHEMA)):
+        elif retain or (not edge and old.schema in (OBSERVATION_SCHEMA, RESTORE_SCHEMA, ADMISSION_SCHEMA, PRICING_SCHEMA, CURRENT_SCHEMA)):
             self.run_native_upgrade(directory,edge,history)
         elif edge:
             self.interrupt_upgrade(directory, edge, history)

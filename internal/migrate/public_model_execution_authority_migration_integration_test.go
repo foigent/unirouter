@@ -248,13 +248,17 @@ UPDATE billing_provider_attempts
 func TestPublicModelExecutionAuthorityDatabaseGuardsIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
-	var extensions, currentContracts int
+	var extensions, currentContracts, originalContracts int
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT (SELECT COUNT(*) FROM model_operation_public_execution_contract_extensions),
-       (SELECT COUNT(*) FROM model_operation_current_public_execution_contracts)`).Scan(
-		&extensions, &currentContracts,
+       (SELECT COUNT(*) FROM model_operation_current_public_execution_contracts),
+       (SELECT COUNT(*) FROM model_operation_public_execution_contract_extensions
+        WHERE introduced_migration IN ('000077_public_model_execution_authority',
+                                       '000086_exact_public_execution_bindings',
+                                       '000087_anthropic_messages_tools_public_binding'))`).Scan(
+		&extensions, &currentContracts, &originalContracts,
 	))
-	require.Equal(t, 5, extensions, "M77 v1, M86 v2 and M87 tools tuples coexist")
+	require.Equal(t, 5, originalContracts, "M77 v1, M86 v2 and M87 tools tuples coexist")
 	require.Equal(t, extensions, currentContracts)
 	var legacyExtensions int
 	require.NoError(t, pool.QueryRow(ctx, `

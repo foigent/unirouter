@@ -1,0 +1,50 @@
+{
+  "schema_version": "unirouter.endpoint-conformance-fixture.v1",
+  "fixture_id": "glm-image-v1",
+  "profile_id": "unirouter.glm.images.glm-image.v1",
+  "request": {
+    "base_url": "https://open.bigmodel.cn",
+    "requested_model": "project-glm-image",
+    "mapped_model": "glm-image",
+    "request_id": "fixture-video-1",
+    "body": "{\"model\":\"project-glm-image\",\"prompt\":\"synthetic image fixture\"}",
+    "expected_method": "POST",
+    "expected_url": "https://open.bigmodel.cn/api/paas/v4/images/generations",
+    "expected_request_id_header": "fixture-video-1",
+    "expected_body": "{\"model\":\"glm-image\",\"prompt\":\"synthetic image fixture\",\"size\":\"1280x1280\"}"
+  },
+  "response": {
+    "status_code": 200,
+    "body": "{\"created\":1,\"data\":[{\"url\":\"https://sfile.chatglm.cn/synthetic.png\"}]}",
+    "expected_outcome": {
+      "contract_version": "unirouter.endpoint-protocol.v1",
+      "profile_id": "unirouter.glm.images.glm-image.v1",
+      "provider_state": "completed",
+      "mapped_model": "glm-image",
+      "output_count": 1,
+      "units": []
+    }
+  },
+  "negative_requests": [
+    {
+      "case_id": "unsupported-format",
+      "body": "{\"model\":\"project-glm-image\",\"prompt\":\"synthetic image fixture\",\"output_format\":\"png\"}",
+      "expected_code": "glm_image_request_invalid"
+    }
+  ],
+  "negative_responses": [
+    {
+      "case_id": "unreviewed-result-origin",
+      "body": "{\"created\":1,\"data\":[{\"url\":\"https://example.invalid/synthetic.png\"}]}",
+      "expected_code": "glm_image_result_origin_invalid"
+    }
+  ],
+  "status_cases": [
+    {
+      "case_id": "provider-failure",
+      "status_code": 503,
+      "expected_failure_kind": "channel_failure",
+      "expected_retryable": true
+    }
+  ]
+}

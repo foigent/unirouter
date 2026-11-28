@@ -268,6 +268,7 @@ func TestApplyStopsBeforeRedisMutationWhenM119ScopeAlreadyRequiresReview(t *test
 	}
 	require.True(t, blocked["execution_source_budget_coverage"])
 	require.True(t, blocked["execution_source_budget_definitions"])
+	require.True(t, blocked["model_deployment_async_probe_tasks"])
 	_, err = pool.Exec(ctx, `INSERT INTO channels (name, provider, base_url, status) VALUES ('drift', 'fixture', 'https://example.invalid', 'disabled')`)
 	require.NoError(t, err)
 

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
@@ -54,7 +55,10 @@ VALUES ($1,2,$2,$3,$4,$5,$6,$7,$8,$9,$10,'allow',$11)`,
 		route.ExpectedOperationRevision, route.ProtocolProfileID,
 		route.ProtocolProfileVersion, route.PublicPath,
 		route.ExecutorContractVersion, runtimechange.DeploymentCandidateVersion)
-	require.ErrorContains(t, err, "Responses/Messages runtime item requires the exact M77 public execution binding")
+	var rejected *pgconn.PgError
+	require.ErrorAs(t, err, &rejected)
+	require.Equal(t, "23514", rejected.Code)
+	require.Equal(t, "Qualified public runtime item requires the exact M77 public execution binding", rejected.Message)
 
 	var bindingID, itemBindingID int64
 	var releaseID, publicModelID, deploymentID, connectionID, approvalID int64

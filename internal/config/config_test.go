@@ -173,7 +173,7 @@ func TestLoadModelRouteCompatibilityIsStrictAndCanonicalByDefault(t *testing.T) 
 	}
 }
 
-func TestValidateCanonicalRejectsAsyncMedia(t *testing.T) {
+func TestValidateCanonicalPermitsAsyncMediaWithBoundedConfiguration(t *testing.T) {
 	cfg := &Config{
 		JWTSecret: "secret", APIKeyHashSecret: "api-key-secret",
 		EncryptionKey: "0123456789abcdef0123456789abcdef", FreezeSafetyFactor: "1",
@@ -184,8 +184,8 @@ func TestValidateCanonicalRejectsAsyncMedia(t *testing.T) {
 		AsyncMediaPurgeLeaseSeconds: 60, AsyncMediaPollMilliseconds: 500,
 		AsyncMediaProviderTimeoutSecs: 180, AsyncMediaMaxAttempts: 3,
 	}
-	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "ASYNC_MEDIA_ENABLED") {
-		t.Fatalf("canonical authority must reject legacy async-media routing, got %v", err)
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("canonical authority must permit configured async media, got %v", err)
 	}
 }
 
@@ -981,8 +981,9 @@ func TestLoadAsyncMediaDefaultsAndOverrides(t *testing.T) {
 
 	t.Setenv("MODEL_ROUTE_AUTHORITY", "canonical")
 	t.Setenv("MODEL_ROUTE_COMPATIBILITY_ENABLED", "false")
-	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "ASYNC_MEDIA_ENABLED") {
-		t.Fatalf("canonical Load must reject the legacy async-media runtime, got %v", err)
+	cfg, err = Load()
+	if err != nil || !cfg.AsyncMediaEnabled || cfg.AsyncMediaAdmissionEnabled {
+		t.Fatalf("canonical runtime must honor paused media admission, got %v", err)
 	}
 }
 

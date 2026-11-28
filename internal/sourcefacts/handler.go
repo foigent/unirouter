@@ -168,6 +168,9 @@ func (s *Service) eventHandler(resolver middleware.ClientIPResolver, observation
 		}
 		allowed := []string{}
 		for _, p := range requestProfiles {
+			if p == MediaChargeProfile && (!ValidateProfiles(a.profiles) || !ValidateProfiles(a.credentialProfiles)) {
+				continue
+			}
 			if slices.Contains(a.profiles, p) && slices.Contains(a.credentialProfiles, p) {
 				allowed = append(allowed, p)
 			}

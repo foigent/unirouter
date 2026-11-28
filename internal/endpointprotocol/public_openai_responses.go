@@ -102,6 +102,18 @@ func (profile publicOpenAIResponsesProfile) PrepareRequest(
 	if err != nil {
 		return nil, err
 	}
+	if profile.identity.ProfileID == ProfileOpenAIResponsesInlineJPEG {
+		return prepareNativeRequestWithOptionalJPEG((openAIResponsesToolsProfileV3{}).publicProfile(),
+			profile.identity, EndpointResponses, envelope, requestedModel, contract)
+	}
+	if profile.identity.ProfileID == ProfileOpenAIResponsesToolsV3 {
+		if envelope["temperature"] != nil || envelope["top_p"] != nil {
+			return nil, protocolError(ErrUnsupportedSemantics, "unsupported_sampling_parameters")
+		}
+		if envelope["tools"] != nil {
+			return prepareResponsesClientTools(envelope, requestedModel, contract)
+		}
+	}
 	if err := validatePublicOpenAIResponsesRequestForMode(envelope, requestedModel, contract, profile.streaming); err != nil {
 		return nil, err
 	}
@@ -230,10 +242,14 @@ func (profile publicOpenAIResponsesProfile) BuildUpstream(
 	if err != nil {
 		return nil, err
 	}
-	if err := validatePublicOpenAIResponsesRequestForMode(
-		envelope, prepared.requestedModel, prepared.requestContract, profile.streaming,
-	); err != nil {
-		return nil, err
+	nativeImage := profile.identity.ProfileID == ProfileOpenAIResponsesInlineJPEG && prepared.semantics.InlineImagePixels > 0
+	usesV3 := profile.identity.ProfileID == ProfileOpenAIResponsesToolsV3 || profile.identity.ProfileID == ProfileOpenAIResponsesInlineJPEG
+	if !nativeImage && (!usesV3 || !prepared.semantics.FunctionToolsRequested) {
+		if err := validatePublicOpenAIResponsesRequestForMode(
+			envelope, prepared.requestedModel, prepared.requestContract, profile.streaming,
+		); err != nil {
+			return nil, err
+		}
 	}
 	mappedModel, err := json.Marshal(input.MappedModel)
 	if err != nil {
@@ -272,7 +288,8 @@ func (profile publicOpenAIResponsesProfile) BuildUpstream(
 		binding: &publicResponseBinding{
 			identity: prepared.identity, base: baseBinding,
 			requestedModel: prepared.requestedModel, mappedModel: input.MappedModel,
-			requestContract: clonePublicRequestContract(prepared.requestContract),
+			requestContract:     clonePublicRequestContract(prepared.requestContract),
+			invocationSemantics: prepared.semantics,
 		},
 	}, nil
 }
@@ -317,6 +334,7 @@ type publicOpenAIResponsesWireResponse struct {
 	ParallelToolCalls    json.RawMessage                    `json:"parallel_tool_calls,omitempty"`
 	PreviousResponseID   json.RawMessage                    `json:"previous_response_id,omitempty"`
 	Prompt               json.RawMessage                    `json:"prompt,omitempty"`
+	PromptCacheOptions   json.RawMessage                    `json:"prompt_cache_options,omitempty"`
 	PromptCacheKey       json.RawMessage                    `json:"prompt_cache_key,omitempty"`
 	PromptCacheRetention json.RawMessage                    `json:"prompt_cache_retention,omitempty"`
 	Reasoning            json.RawMessage                    `json:"reasoning,omitempty"`
@@ -450,7 +468,12 @@ func (profile publicOpenAIResponsesProfile) parseDelivery(
 		return PublicDelivery{}, protocolError(ErrUpstreamResponse, "http_"+strconv.Itoa(statusCode)+"_"+failureKind)
 	}
 	var wire publicOpenAIResponsesWireResponse
-	if err := decodeStrictPublicResponse(body, &wire, publicOpenAIResponsesExactResponseSchema); err != nil {
+	responseSchema := publicOpenAIResponsesExactResponseSchema
+	usesV3Usage := profile.identity.ProfileID == ProfileOpenAIResponsesToolsV3 || profile.identity.ProfileID == ProfileOpenAIResponsesInlineJPEG
+	if usesV3Usage {
+		responseSchema = responsesToolsExactResponseSchema
+	}
+	if err := decodeStrictPublicResponse(body, &wire, responseSchema); err != nil {
 		return PublicDelivery{}, err
 	}
 	if wire.ID == "" || wire.Object != "response" || wire.Status != "completed" ||
@@ -458,8 +481,17 @@ func (profile publicOpenAIResponsesProfile) parseDelivery(
 		!isExplicitJSONNull(wire.IncompleteDetails) || len(wire.Output) == 0 {
 		return PublicDelivery{}, protocolError(ErrInvalidResponse, "public_response_identity_invalid")
 	}
-	if err := validatePublicOpenAIResponsesCoreMetadata(wire); err != nil {
+	if usesV3Usage {
+		if err := validateResponsesDefaultCacheOptions(wire.PromptCacheOptions); err != nil {
+			return PublicDelivery{}, err
+		}
+	}
+	clientTools := usesV3Usage && binding.invocationSemantics.FunctionToolsRequested
+	if err := validatePublicOpenAIResponsesCoreMetadataForTools(wire, clientTools); err != nil {
 		return PublicDelivery{}, err
+	}
+	if clientTools {
+		return deliverResponsesClientTools(wire, binding)
 	}
 	reasoningEnabled := binding.requestContract.Reasoning != nil
 	outputs, outputText, err := projectPublicOpenAIResponsesMessages(wire.Output, reasoningEnabled)
@@ -473,7 +505,7 @@ func (profile publicOpenAIResponsesProfile) parseDelivery(
 	// boundary has rejected aliases at every output layer. The historical parser
 	// remains unchanged and may continue to tolerate future provider evidence.
 	providerObject := wire.ID
-	if !reasoningEnabled {
+	if !reasoningEnabled && !usesV3Usage {
 		outcome, err := profile.base.ParseResponse(ctx, binding.base, statusCode, body)
 		if err != nil {
 			return PublicDelivery{}, err
@@ -505,6 +537,10 @@ func (profile publicOpenAIResponsesProfile) parseDelivery(
 }
 
 func validatePublicOpenAIResponsesCoreMetadata(response publicOpenAIResponsesWireResponse) error {
+	return validatePublicOpenAIResponsesCoreMetadataForTools(response, false)
+}
+
+func validatePublicOpenAIResponsesCoreMetadataForTools(response publicOpenAIResponsesWireResponse, clientTools bool) error {
 	for _, field := range []struct {
 		name     string
 		raw      json.RawMessage
@@ -580,7 +616,7 @@ func validatePublicOpenAIResponsesCoreMetadata(response publicOpenAIResponsesWir
 		if json.Unmarshal(response.Tools, &tools) != nil {
 			return protocolError(ErrInvalidResponse, "public_response_tools_invalid")
 		}
-		if len(tools) != 0 {
+		if len(tools) != 0 && !clientTools {
 			return protocolError(ErrUnsupportedSemantics, "unsupported_public_tools_response")
 		}
 	}

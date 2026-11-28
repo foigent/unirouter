@@ -1,0 +1,113 @@
+{
+  "schema_version": "unirouter.endpoint-conformance-fixture.v1",
+  "fixture_id": "minimax-h3-image-v1",
+  "profile_id": "unirouter.minimax.images.h3.v1",
+  "request": {
+    "base_url": "https://api.minimax.cn",
+    "requested_model": "company-image",
+    "mapped_model": "MiniMax-H3-Image",
+    "request_id": "fixture-image-1",
+    "body": "{\"model\":\"company-image\",\"prompt\":\"synthetic image fixture\",\"size\":\"1024x1024\",\"output_format\":\"png\"}",
+    "expected_method": "POST",
+    "expected_url": "https://api.minimax.cn/v1/images/generations",
+    "expected_request_id_header": "fixture-image-1",
+    "expected_body": "{\"model\":\"MiniMax-H3-Image\",\"prompt\":\"synthetic image fixture\",\"n\":1,\"size\":\"1024x1024\",\"response_format\":\"b64_json\",\"output_format\":\"png\",\"disable_prompt_enhanced\":true,\"stream\":false}"
+  },
+  "response": {
+    "status_code": 200,
+    "body": "{\"created\":123,\"output_format\":\"png\",\"data\":[{\"b64_json\":\"iVBORw0KGgoAAAANSUhEUgAABAAAAAQAAQAAAABXZhYuAAAAlklEQVR4nO3BAQEAAACCIP+vbkhAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADvBgQeAAGfIdLmAAAAAElFTkSuQmCC\",\"size\":\"1024x1024\"}],\"usage\":{\"generated_images\":1,\"total_tokens\":75,\"input_tokens\":25,\"output_tokens\":50,\"input_tokens_details\":{\"text_tokens\":25,\"image_tokens\":0},\"output_tokens_details\":{\"image_tokens\":50}}}",
+    "expected_outcome": {
+      "contract_version": "unirouter.endpoint-protocol.v1",
+      "profile_id": "unirouter.minimax.images.h3.v1",
+      "provider_state": "completed",
+      "provider_object_id": "",
+      "mapped_model": "MiniMax-H3-Image",
+      "output_count": 1,
+      "units": [
+        {
+          "class": "input_tokens",
+          "quantity": "25",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        },
+        {
+          "class": "input_text_tokens",
+          "quantity": "25",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        },
+        {
+          "class": "input_image_tokens",
+          "quantity": "0",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        },
+        {
+          "class": "output_image_tokens",
+          "quantity": "50",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        },
+        {
+          "class": "output_images",
+          "quantity": "1",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        }
+      ]
+    }
+  },
+  "negative_requests": [
+    {
+      "case_id": "multiple-images-rejected",
+      "body": "{\"model\":\"company-image\",\"prompt\":\"synthetic image fixture\",\"n\":2}",
+      "expected_code": "unsupported_multiple_images"
+    },
+    {
+      "case_id": "stream-rejected",
+      "body": "{\"model\":\"company-image\",\"prompt\":\"synthetic image fixture\",\"stream\":true}",
+      "expected_code": "unsupported_streaming"
+    },
+    {
+      "case_id": "gpt-quality-rejected",
+      "body": "{\"model\":\"company-image\",\"prompt\":\"a\",\"quality\":\"low\"}",
+      "expected_code": "minimax_image_controls_unsupported"
+    }
+  ],
+  "negative_responses": [
+    {
+      "case_id": "item-error-rejected",
+      "body": "{\"created\":123,\"output_format\":\"png\",\"data\":[{\"error\":{\"code\":\"1027\"}}],\"usage\":{\"generated_images\":1,\"total_tokens\":75,\"input_tokens\":25,\"output_tokens\":50,\"input_tokens_details\":{\"text_tokens\":25,\"image_tokens\":0},\"output_tokens_details\":{\"image_tokens\":50}}}",
+      "expected_code": "minimax_image_delivery_mismatch"
+    },
+    {
+      "case_id": "mismatched-output-tokens-rejected",
+      "body": "{\"created\":123,\"output_format\":\"png\",\"data\":[{\"b64_json\":\"iVBORw0KGgoAAAANSUhEUgAABAAAAAQAAQAAAABXZhYuAAAAlklEQVR4nO3BAQEAAACCIP+vbkhAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADvBgQeAAGfIdLmAAAAAElFTkSuQmCC\",\"size\":\"1024x1024\"}],\"usage\":{\"generated_images\":1,\"total_tokens\":75,\"input_tokens\":25,\"output_tokens\":50,\"input_tokens_details\":{\"text_tokens\":25,\"image_tokens\":0},\"output_tokens_details\":{\"image_tokens\":51}}}",
+      "expected_code": "minimax_image_usage_mismatch"
+    },
+    {
+      "case_id": "wrong-reported-model-rejected",
+      "body": "{\"created\":123,\"output_format\":\"png\",\"data\":[{\"b64_json\":\"iVBORw0KGgoAAAANSUhEUgAABAAAAAQAAQAAAABXZhYuAAAAlklEQVR4nO3BAQEAAACCIP+vbkhAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADvBgQeAAGfIdLmAAAAAElFTkSuQmCC\",\"size\":\"1024x1024\"}],\"usage\":{\"generated_images\":1,\"total_tokens\":75,\"input_tokens\":25,\"output_tokens\":50,\"input_tokens_details\":{\"text_tokens\":25,\"image_tokens\":0},\"output_tokens_details\":{\"image_tokens\":50}},\"model\":\"MiniMax-H3-Image-Highspeed\"}",
+      "expected_code": "minimax_image_model_mismatch"
+    }
+  ],
+  "status_cases": [
+    {
+      "case_id": "provider-failure-retry",
+      "status_code": 503,
+      "expected_failure_kind": "channel_failure",
+      "expected_retryable": true
+    },
+    {
+      "case_id": "permission-stop",
+      "status_code": 403,
+      "expected_failure_kind": "auth",
+      "expected_retryable": false
+    }
+  ]
+}

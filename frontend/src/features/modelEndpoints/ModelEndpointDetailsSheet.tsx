@@ -18,6 +18,7 @@ import UpstreamReleaseObservationPanel from './UpstreamReleaseObservationPanel';
 import ModelQualificationWorkspace from './ModelQualificationWorkspace';
 import ModelClientSetup from './ModelClientSetup';
 import ModelCapabilityQualificationPanel, { isQualifiedCapabilityID } from './ModelCapabilityQualificationPanel';
+import AsyncOperationProbe from './AsyncOperationProbe';
 
 const { Text } = Typography;
 
@@ -29,6 +30,7 @@ type Props = {
   gatewayLicensed: boolean;
   gatewayRestriction: string;
   workingBindingID: number;
+  operationProbeTarget: string;
   onClose: () => void;
   onCanonicalStateChanged?: () => void | Promise<void>;
   onProbe: (binding: CanonicalCredentialBinding) => void;
@@ -147,7 +149,7 @@ export default function ModelEndpointDetailsSheet(props: Props) {
               <StatusTag status={binding.status}>{binding.status}</StatusTag>
               <Text type="tertiary">revision {binding.state_revision}</Text>
               {binding.cooldown_until && <Text type="warning">{t('cooldown 至 {time}', { time: formatDateTime(binding.cooldown_until) })}</Text>}
-              {probeAvailability.available && <Button
+              {probeAvailability.available && !operation.async_probe && <Button
                 type="primary"
                 disabled={!binding.eligible || !props.gatewayLicensed || props.workingBindingID !== 0}
                 loading={props.workingBindingID === binding.id}
@@ -155,6 +157,15 @@ export default function ModelEndpointDetailsSheet(props: Props) {
                 onClick={() => props.onProbe(binding)}
               >{t("用此绑定探测精确 Operation")}</Button>}
             </Space>
+            {operation.async_probe === true && probeAvailability.available && binding.eligible && props.gatewayLicensed && (
+              <AsyncOperationProbe
+                key={JSON.stringify([props.operationProbeTarget, binding.id, binding.state_revision])}
+                deployment={selected.deployment}
+                operationID={operation.operation_id}
+                bindingID={binding.id}
+                onVerified={props.onCanonicalStateChanged}
+              />
+            )}
           </div>)}
           {!props.canManage && <Text type="tertiary">{t("只读角色仅查看聚合凭证状态；不展示绑定身份，也不提供凭证或探测操作。")}</Text>}
           {props.canManage && !probeAvailability.available && <Banner

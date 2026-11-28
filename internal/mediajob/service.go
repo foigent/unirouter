@@ -26,6 +26,7 @@ type Service struct {
 	admissionEnabled bool
 	limits           LimitPolicyRuntime
 	requestTTL       time.Duration
+	canonicalRoutes  *CanonicalRoutes
 }
 
 type ServiceOptions struct {
@@ -36,20 +37,22 @@ type ServiceOptions struct {
 	AdmissionEnabled bool
 	LimitPolicy      LimitPolicyRuntime
 	RequestTTL       time.Duration
+	CanonicalRoutes  *CanonicalRoutes
 }
 
 type SubmitInput struct {
-	Scope              Scope
-	APIKeyID           int64
-	AccessGrantID      int64
-	AccessCredentialID int64
-	CredentialRef      string
-	RequestID          string
-	ClientRequestID    string
-	IdempotencyKey     string
-	AllowedModels      string
-	LimitSubject       limitpolicy.Subject
-	Body               []byte
+	Scope                 Scope
+	APIKeyID              int64
+	AccessGrantID         int64
+	AccessCredentialID    int64
+	CredentialRef         string
+	RequestID             string
+	ClientRequestID       string
+	IdempotencyKey        string
+	AllowedModels         string
+	LimitSubject          limitpolicy.Subject
+	SingleUpstreamAttempt bool
+	Body                  []byte
 }
 
 func NewService(
@@ -97,7 +100,7 @@ func NewService(
 		retention:      options.Retention, maxAttempts: options.MaxAttempts,
 		now: options.Now, runtimeEnabled: options.RuntimeEnabled,
 		admissionEnabled: options.AdmissionEnabled, limits: options.LimitPolicy,
-		requestTTL: options.RequestTTL,
+		requestTTL: options.RequestTTL, canonicalRoutes: options.CanonicalRoutes,
 	}, nil
 }
 
@@ -122,6 +125,11 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (CreateResult, 
 	if err != nil {
 		return CreateResult{}, err
 	}
+	maxAttempts := s.maxAttempts
+	if input.SingleUpstreamAttempt {
+		maxAttempts = 1
+		requestHash = singleSubmissionRequestSHA256(normalizedBody)
+	}
 	idempotencyHash, err := AccessIdempotencyHash(
 		s.idempotencyKey,
 		input.Scope,
@@ -137,13 +145,16 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (CreateResult, 
 		Scope: input.Scope, SubjectType: subjectType, SubjectID: subjectID, Hash: idempotencyHash,
 	})
 	if existingErr == nil {
-		if existing.RequestSHA256 != requestHash {
+		if existing.RequestSHA256 != requestHash || input.SingleUpstreamAttempt != existing.SingleUpstreamAttempt {
 			return CreateResult{}, domainError(ErrConflict, "idempotency_payload_conflict")
 		}
 		return CreateResult{Job: existing, Reused: true}, nil
 	}
 	if !errors.Is(existingErr, ErrNotFound) {
 		return CreateResult{}, existingErr
+	}
+	if s.canonicalRoutes != nil && s.admissionEnabled && !input.SingleUpstreamAttempt {
+		return CreateResult{}, domainError(ErrInvalid, "canonical_media_requires_single_upstream_attempt")
 	}
 	authorization, err := s.authorizer.AuthorizeModel(ctx, input.Scope, request.Model)
 	if err != nil {
@@ -197,6 +208,14 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (CreateResult, 
 		return CreateResult{}, err
 	}
 	now := s.now().UTC()
+	operation := request.Operation
+	if operation == "" {
+		operation = OperationTextToImage
+	}
+	if operation != OperationTextToImage && s.canonicalRoutes == nil {
+		s.cancelRateReservation(ctx, rateReservation)
+		return CreateResult{}, domainError(ErrInvalid, "canonical_media_operation_required")
+	}
 	record := CreateRecord{
 		AllowCreate:          s.admissionEnabled,
 		ExpectedLimitSubject: limitSubject,
@@ -209,7 +228,7 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (CreateResult, 
 			CredentialRef:          input.CredentialRef,
 			RequestID:              input.RequestID,
 			ClientRequestID:        strings.TrimSpace(input.ClientRequestID),
-			Operation:              OperationTextToImage,
+			Operation:              operation,
 			ProfileID:              endpointprotocol.ProfileOpenAIImageGPT,
 			RequestedModel:         request.Model,
 			RoutingModel:           authorization.RoutingModel,
@@ -225,17 +244,28 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (CreateResult, 
 				Cancellation: CancellationNotRequested,
 				Object:       ObjectPending, Settlement: SettlementNotEligible,
 			},
-			MaxAttempts:   s.maxAttempts,
-			NextAttemptAt: now,
-			CreatedAt:     now, UpdatedAt: now,
+			MaxAttempts:           maxAttempts,
+			SingleUpstreamAttempt: input.SingleUpstreamAttempt,
+			NextAttemptAt:         now,
+			CreatedAt:             now, UpdatedAt: now,
 		},
+	}
+	if s.canonicalRoutes != nil && record.AllowCreate {
+		plan, route, routeErr := s.canonicalRoutes.plan(ctx, record.Job, request)
+		if routeErr != nil {
+			s.cancelRateReservation(ctx, rateReservation)
+			return CreateResult{}, routeErr
+		}
+		record.Job.ProfileID = plan.Definition.Profile().ProtocolProfile
+		record.Job.CanonicalRoute = route.PublicEvidence
 	}
 	job, reused, err := s.store.CreateOrGet(ctx, record)
 	if err != nil {
 		s.cancelRateReservation(ctx, rateReservation)
 		return CreateResult{}, err
 	}
-	if reused && job.RequestSHA256 != requestHash {
+	if reused && (job.RequestSHA256 != requestHash || input.SingleUpstreamAttempt != job.SingleUpstreamAttempt) {
+		s.cancelRateReservation(ctx, rateReservation)
 		return CreateResult{}, domainError(ErrConflict, "idempotency_payload_conflict")
 	}
 	if rateReservation != nil {
@@ -385,7 +415,7 @@ func decodeStoredRequest(cipher PayloadCipher, job Job) (NormalizedRequest, erro
 		return NormalizedRequest{}, domainError(ErrUnavailable, "stored_request_invalid")
 	}
 	normalized, err := NormalizeSubmitRequest(SubmitRequest{
-		Model: request.Model, Prompt: request.Prompt, N: &request.N,
+		Operation: request.Operation, Model: request.Model, Prompt: request.Prompt, InputMedia: request.InputMedia, N: &request.N,
 		Size: request.Size, Quality: request.Quality,
 		Background: request.Background, OutputFormat: request.OutputFormat,
 		Stream: &request.Stream,
@@ -393,8 +423,11 @@ func decodeStoredRequest(cipher PayloadCipher, job Job) (NormalizedRequest, erro
 	if err != nil {
 		return NormalizedRequest{}, domainError(ErrUnavailable, "stored_request_invalid")
 	}
-	hash, _, err := RequestSHA256(normalized)
-	if err != nil || hash != job.RequestSHA256 {
+	hash, body, err := RequestSHA256(normalized)
+	if job.SingleUpstreamAttempt {
+		hash = singleSubmissionRequestSHA256(body)
+	}
+	if err != nil || hash != job.RequestSHA256 || job.SingleUpstreamAttempt && job.MaxAttempts != 1 {
 		return NormalizedRequest{}, domainError(ErrConflict, "stored_request_hash_mismatch")
 	}
 	return normalized, nil

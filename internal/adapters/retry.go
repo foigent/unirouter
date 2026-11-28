@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/http"
 	"syscall"
 )
 
@@ -75,4 +76,21 @@ func ClassifyTransportError(ctx context.Context, cause error) *NormalizedError {
 		normalized.Retryable = true
 	}
 	return normalized
+}
+
+// ConfigureSingleSendTransport limits an owned transport to fresh HTTP/1.1
+// connections. The caller must also disable request GetBody and redirects and
+// prevent application-level retries for the operation.
+func ConfigureSingleSendTransport(transport *http.Transport) {
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	transport.Protocols = protocols
+	transport.ForceAttemptHTTP2 = false
+	transport.TLSNextProto = nil
+	if transport.TLSClientConfig != nil {
+		// A cloned client may already have advertised h2. Keep its roots
+		// and TLS policy, but advertise only the protocol we will speak.
+		transport.TLSClientConfig.NextProtos = []string{"http/1.1"}
+	}
+	transport.DisableKeepAlives = true
 }

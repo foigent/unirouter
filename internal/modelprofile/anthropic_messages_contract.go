@@ -43,6 +43,18 @@ type AnthropicMessagesFunctionToolsContract struct {
 }
 
 var anthropicMessagesOperationContracts = map[string]AnthropicMessagesOperationContract{
+	AnthropicMessages55ToolsPolicy: {
+		ProfileID: AnthropicMessages55ToolsPolicy, RequireFinalUserMessage: true,
+		AllowedResponseStops: []string{"end_turn", "max_tokens", "refusal", "stop_sequence", "tool_use"},
+		RefusalStopDetails:   true, ResponseInferenceGeo: true, ResponseServiceTier: true,
+		FunctionTools: &AnthropicMessagesFunctionToolsContract{
+			MaxTools: 64, ToolNamePattern: `^[a-zA-Z0-9_-]{1,64}$`,
+			ToolChoices: []string{"auto", "none"}, ProviderDefaultChoice: "auto",
+			ExactHistory: true, ExactResponse: true, RequiresNonStream: true,
+			ToolInputIdentityGuarded: true, ThinkingHistoryIdentityOnly: true,
+		},
+	},
+
 	AnthropicMessagesSonnet5CorePolicyV1: {
 		ProfileID:               AnthropicMessagesSonnet5CorePolicyV1,
 		RequireFinalUserMessage: true,

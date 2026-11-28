@@ -406,6 +406,14 @@ func decodePublicAnthropicToolChoice(
 	semantics.ToolChoiceEffective = map[string]string{
 		"auto": "auto", "none": "none", "any": "required", "tool": "named",
 	}[choice.Type]
+	if contract.ForceSerial && choice.Type != "none" {
+		if choice.DisableParallelToolUse != nil && !*choice.DisableParallelToolUse {
+			return nil, PublicInvocationSemantics{}, protocolError(ErrUnsupportedSemantics, "unsupported_parallel_client_tools")
+		}
+		disabled := true
+		choice.DisableParallelToolUse = &disabled
+		return choice, semantics, nil
+	}
 	disabled := choice.DisableParallelToolUse != nil && *choice.DisableParallelToolUse
 	semantics.ParallelToolUseEffective = choice.Type != "none" && contract.ParallelProviderDefault && !disabled
 	if !semantics.ToolChoiceExplicit {
@@ -456,7 +464,7 @@ func decodePublicAnthropicToolHistory(
 				return nil, nil, protocolError(ErrInvalidRequest, "tool_history_result_missing")
 			}
 			blocks, blockRefs, toolIDs, err := decodePublicAnthropicAssistantToolBlocks(
-				rawBlocks, messageIndex, declared, allIDs, reasoningDisabled,
+				rawBlocks, messageIndex, declared, allIDs, reasoningDisabled, contract.FunctionTools.ForceSerial,
 			)
 			if err != nil {
 				return nil, nil, err
@@ -489,7 +497,7 @@ func decodePublicAnthropicAssistantToolBlocks(
 	messageIndex int,
 	declared map[string]struct{},
 	allIDs map[string]struct{},
-	reasoningDisabled bool,
+	reasoningDisabled, exactReplay bool,
 ) ([]publicAnthropicToolsContentBlock, []publicAnthropicToolsTextRef, map[string]struct{}, error) {
 	blocks := make([]publicAnthropicToolsContentBlock, 0, len(rawBlocks))
 	refs := make([]publicAnthropicToolsTextRef, 0)
@@ -535,7 +543,7 @@ func decodePublicAnthropicAssistantToolBlocks(
 			block.Text = &text
 			refs = append(refs, publicAnthropicToolsTextRef{
 				path: "messages[" + strconv.Itoa(messageIndex) + "].content[" + strconv.Itoa(blockIndex) + "].text",
-				text: text, kind: "text", message: messageIndex, block: blockIndex,
+				text: text, identityOnly: exactReplay, kind: "text", message: messageIndex, block: blockIndex,
 			})
 		case "tool_use":
 			id, idOK := decodeRequiredString(fields["id"])

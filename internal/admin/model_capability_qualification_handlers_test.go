@@ -862,7 +862,15 @@ func TestPublishedCapabilityBindingsHaveActualResponseValidator(t *testing.T) {
 			require.NoError(t, err)
 			bundle, err := publication.DecodeBundleV2(wire)
 			require.NoError(t, err)
-			require.NotEmpty(t, bundle.BindingDelta)
+			if len(bundle.BindingDelta) == 0 {
+				require.NotEmpty(t, bundle.Definitions)
+				require.Empty(t, bundle.SelectorDelta)
+				for _, raw := range bundle.Definitions {
+					definition, err := modelprofile.DecodeDefinition(raw)
+					require.NoError(t, err)
+					require.True(t, modelprofile.MediaJobProfile(definition.Profile()), "only the installed image operation uses an operation-only bundle")
+				}
+			}
 			for _, row := range bundle.BindingDelta {
 				d, ok := definitions[row.ProfileDefinitionDigest]
 				require.True(t, ok, "binding must use its published exact Definition")
@@ -874,9 +882,16 @@ func TestPublishedCapabilityBindingsHaveActualResponseValidator(t *testing.T) {
 					ExpectedProvider: row.ExpectedProvider, ExpectedUpstreamModel: row.ExpectedUpstreamModel, PublicPath: row.PublicPath,
 				}, d)
 				require.NoError(t, err)
-				require.NotNil(t, resolveModelCapabilityProbeResponseValidator(modelCapabilitySnapshot{
+				snapshot := modelCapabilitySnapshot{
 					Definition: d, DataBinding: binding, ProbeContractID: row.ProbeContractID, ProbeContractVersion: row.ProbeContractVersion,
-				}), "%s/%s must reach the actual admin response handler", row.ExecutionProfileID, row.CapabilityID)
+				}
+				if row.ProbeContractID == modelcapabilityqualification.NativeToolProbeContractID ||
+					row.ProbeContractID == modelcapabilityqualification.NativeInlineJPEGProbeContractID {
+					requireNativeBindingReachesProbeTransport(t, snapshot, binding)
+					continue
+				}
+				require.NotNil(t, resolveModelCapabilityProbeResponseValidator(snapshot),
+					"%s/%s must reach the actual admin response handler", row.ExecutionProfileID, row.CapabilityID)
 			}
 		})
 	}

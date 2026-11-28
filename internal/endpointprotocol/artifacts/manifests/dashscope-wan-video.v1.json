@@ -1,0 +1,43 @@
+{
+  "schema_version": "unirouter.endpoint-profile-manifest.v1",
+  "profile_id": "unirouter.dashscope.video.wan-3.v1",
+  "profile_version": "1.0.0",
+  "provider": "dashscope",
+  "runtime_state": "repository_local_async_media_v1",
+  "conformance_level": "fixture_verified",
+  "network_verified": false,
+  "descriptor": {
+    "contract_version": "unirouter.endpoint-protocol.v1",
+    "profile_id": "unirouter.dashscope.video.wan-3.v1",
+    "profile_version": "1.0.0",
+    "provider": "dashscope",
+    "endpoint_kind": "video_generation",
+    "downstream_endpoint": "/v1/media/jobs",
+    "upstream_endpoint": "/api/v1/services/aigc/video-generation/video-synthesis",
+    "authentication": "bearer",
+    "runtime_state": "repository_local_async_media_v1",
+    "provider_finality": "accepted_task_then_exact_status",
+    "customer_charge_state": "provider_observed_not_customer_chargeable",
+    "supported_modalities": [
+      "text_to_video"
+    ],
+    "observed_unit_classes": [
+      "input_video_milliseconds",
+      "output_video_milliseconds"
+    ],
+    "unsupported_semantics": [
+      "input_video",
+      "image_to_video",
+      "audio_track",
+      "prime_fallback",
+      "multiple_videos"
+    ]
+  },
+  "fixtures": [
+    {
+      "fixture_id": "dashscope-wan-video-v1",
+      "path": "fixtures/dashscope-wan-video-v1.json",
+      "sha256": "sha256:c3dea92eb8580c9651efcf4c0c26097660cdc579b8c443ab7c0ded67a5802832"
+    }
+  ]
+}

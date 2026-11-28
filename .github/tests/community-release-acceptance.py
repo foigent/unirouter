@@ -30,18 +30,26 @@ SCHEMA = "000127_xinsight_communication_policy"
 WORKFLOW = "foigent/unirouter/.github/workflows/community-release-acceptance.yml@refs/heads/main"
 RELEASE_KEYS = {"release_sequence", "created_at", "expires_at", "tag", "bootstrap_url",
                 "bootstrap_size", "bootstrap_sha256", "package_size", "package_sha256"}
-UPGRADE_SOURCE = '.github/release-inputs/community-upgrade-source.json'
+UPGRADE_SOURCE = '.github/release-inputs/community-upgrade-source-1.16.0.json'
 PREDECESSOR_DIRECTORY = '.community-retained-source'
-REQUIRED_DELTA_VERSIONS = frozenset({'1.15.6', '1.15.7', '1.15.8', '1.16.0'})
+REQUIRED_DELTA_VERSIONS = frozenset({'1.15.6', '1.15.7', '1.15.8', '1.16.0', '1.17.0'})
 RESTORE_SCHEMA = '000129_upstream_observation_restore_namespace'
 ADMISSION_SCHEMA = '000130_upgrade_admission_recovery'
 PRICING_SCHEMA = '000131_customer_standard_pricing'
-PUBLIC_SCHEMA_EXPANSIONS = {RESTORE_SCHEMA: ADMISSION_SCHEMA, ADMISSION_SCHEMA: PRICING_SCHEMA}
-PUBLIC_UPGRADE_SCHEMAS = (RESTORE_SCHEMA, ADMISSION_SCHEMA, PRICING_SCHEMA)
+RESPONSES_TOOLS_SCHEMA = '000132_openai_responses_client_tools'
+MEDIA_CHARGE_SCHEMA = '000133_media_charge_source_facts'
+NATIVE_INLINE_JPEG_SCHEMA = '000134_native_inline_jpeg_public_bindings'
+CANONICAL_MEDIA_SCHEMA = '000135_canonical_media_job_authority'
+ASYNC_MEDIA_SCHEMA = '000136_async_media_provider_task'
+PUBLIC_SCHEMA_EXPANSIONS = {RESTORE_SCHEMA: ADMISSION_SCHEMA, ADMISSION_SCHEMA: PRICING_SCHEMA, PRICING_SCHEMA: RESPONSES_TOOLS_SCHEMA, RESPONSES_TOOLS_SCHEMA: MEDIA_CHARGE_SCHEMA, MEDIA_CHARGE_SCHEMA: NATIVE_INLINE_JPEG_SCHEMA, NATIVE_INLINE_JPEG_SCHEMA: CANONICAL_MEDIA_SCHEMA, CANONICAL_MEDIA_SCHEMA: ASYNC_MEDIA_SCHEMA}
+PUBLIC_UPGRADE_SCHEMAS = (RESTORE_SCHEMA, ADMISSION_SCHEMA, PRICING_SCHEMA, RESPONSES_TOOLS_SCHEMA, MEDIA_CHARGE_SCHEMA, NATIVE_INLINE_JPEG_SCHEMA, CANONICAL_MEDIA_SCHEMA, ASYNC_MEDIA_SCHEMA)
 
 
 def supported_public_schema_transition(source, target):
-    return source in PUBLIC_UPGRADE_SCHEMAS and (source == target or PUBLIC_SCHEMA_EXPANSIONS.get(source) == target)
+    return source in PUBLIC_UPGRADE_SCHEMAS and (
+        source == target or PUBLIC_SCHEMA_EXPANSIONS.get(source) == target
+        or (source, target) in ((PRICING_SCHEMA, MEDIA_CHARGE_SCHEMA), (PRICING_SCHEMA, NATIVE_INLINE_JPEG_SCHEMA), (PRICING_SCHEMA, CANONICAL_MEDIA_SCHEMA), (PRICING_SCHEMA, ASYNC_MEDIA_SCHEMA))
+    )
 
 
 class Stop(Exception):
@@ -289,7 +297,7 @@ def asset_url(release, name):
     return "https://github.com/foigent/unirouter/releases/download/" + release["tag"] + "/" + name
 
 
-STAGE_PROGRAM_SHA256 = '5d9eb8e192426f21355e4678212eb2373a78bccc666bdfdc18fefbaf8bcbec77'
+STAGE_PROGRAM_SHA256 = '1b36d8989f4f68c3013220a001f6a5de2e39cdcbc47f64fcea584990fdee807c'
 
 
 def stage_module():

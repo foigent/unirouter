@@ -191,6 +191,31 @@ describe('two-axis navigation boundaries', () => {
 	expect(getOpenKeysForPath('/model-governance', context('org_admin'))).toEqual(['g-model-access']);
   });
 
+  it('discovers media jobs from the membership projection in /me', () => {
+    const fromMe = (organization_role: OrganizationRole, has_live_project_membership: boolean) => authzContextForUser({
+      organization_role,
+      role: organization_role,
+      navigation_capabilities: {
+        has_live_project_membership,
+        has_project_admin_membership: false,
+        can_discover_access_review: organization_role === 'org_admin',
+        can_discover_workloads: organization_role === 'org_admin',
+      },
+    });
+
+    const member = fromMe('member', true);
+    expect(member.projectMembershipKnown).toBe(false);
+    expect(routeKeys(member)).toContain('/media-jobs');
+    expect(isRouteAllowedForAuthz('/media-jobs', member)).toBe(true);
+    expect(canCreateProjectKey(member)).toBe(false);
+    expect(routeKeys(fromMe('member', false))).not.toContain('/media-jobs');
+    expect(routeKeys(fromMe('org_admin', false))).toContain('/media-jobs');
+    const restricted = getNavItemsForAuthz(member, licenseAccess('active', true))
+      .flatMap(item => item.items ?? [])
+      .find(item => item.itemKey === '/media-jobs');
+    expect(restricted?.disabled).toBe(true);
+  });
+
 	it('uses shell discovery capabilities without granting selected-project actions', () => {
 		const capabilities = {
 			has_live_project_membership: true,

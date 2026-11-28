@@ -44,6 +44,7 @@ const (
 	GLMChatFunctionToolsProbeContractID           = "unirouter.capability-probe.glm-chat-function-tools.v1"
 	GLMToggleChatFunctionToolsProbeContractID     = "unirouter.capability-probe.glm-toggle-chat-function-tools.v1"
 	GLMStreamFunctionToolsProbeContractID         = "unirouter.capability-probe.glm-chat-stream-tools.v1"
+	MiMoChatFunctionToolsProbeContractID          = "unirouter.capability-probe.mimo-chat-function-tools.v1"
 	OpenAIChatFunctionToolsProbeContractVersion   = "1.0.0"
 	OpenAIChatRuntimeFunctionToolsProbeContractV2 = "2.0.0"
 	ProbeSourceKind                               = "admin.model_capability_probe.v1"
@@ -52,8 +53,17 @@ const (
 
 var ErrUnsupported = errors.New("model capability qualification contract is unsupported")
 
-// Binding is one immutable provider/product/surface capability probe contract.
-// It must match M88's immutable database support row exactly.
+const NativeToolProbeContractID = "unirouter.capability-probe.native-client-tool-continuation.v1"
+const NativeInlineJPEGProbeContractID = "unirouter.capability-probe.native-inline-jpeg.v1"
+
+func NativeToolProbeProfile(binding Binding) (modelprofile.Profile, error) {
+	if binding.ProbeContractID != NativeToolProbeContractID || binding.ProbeContractVersion != "1.0.0" || binding.definition == nil {
+		return modelprofile.Profile{}, ErrUnsupported
+	}
+	return binding.ExecutionProfile()
+}
+
+// Binding is one immutable provider/product/surface capability Probe contract.
 type Binding struct {
 	definition              *modelprofile.Definition
 	OperationID             string

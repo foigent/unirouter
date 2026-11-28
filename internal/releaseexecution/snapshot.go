@@ -76,6 +76,11 @@ func (s Snapshot) ValidateDefinition(d modelprofile.Definition) error {
 	if err := modelprofile.ValidateEffectiveLimits(p, s.PublicContextLimit, s.PublicOutputLimit); err != nil {
 		return err
 	}
+	for _, pin := range s.CapabilityPins {
+		if _, err := d.OperationProtocolIdentity(pin.OperationID); err != nil {
+			return fmt.Errorf("Release pin operation differs from the Profile definition")
+		}
+	}
 	if !slices.Equal(s.Requirements, Requirements(d, s.CapabilityPins)) {
 		return fmt.Errorf("Release requirements differ from exact execution components")
 	}
@@ -91,7 +96,7 @@ func (s Snapshot) CanonicalBytes() ([]byte, error) {
 	seen := map[string]bool{}
 	for _, pin := range s.CapabilityPins {
 		key := fmt.Sprintf("%d/%s/%s", pin.DeploymentID, pin.OperationID, pin.CapabilityID)
-		if pin.DeploymentID <= 0 || pin.OperationID != modelprofile.OperationOpenAIChat || pin.CapabilityID == "" || pin.ApprovalID <= 0 || pin.ProbeID <= 0 ||
+		if pin.DeploymentID <= 0 || (pin.OperationID != modelprofile.OperationOpenAIChat && pin.OperationID != modelprofile.OperationOpenAIResponses && pin.OperationID != modelprofile.OperationAnthropicMessage) || pin.CapabilityID == "" || pin.ApprovalID <= 0 || pin.ProbeID <= 0 ||
 			pin.ProbeContractID == "" || pin.ProbeContractVersion == "" || pin.DecisionContract != DecisionContract ||
 			!modelprofile.IsDefinitionDigest(pin.BindingDigest) || !modelprofile.IsDefinitionDigest(pin.EvidenceDigest) ||
 			!modelprofile.IsDefinitionDigest(pin.SelectorDigest) || seen[key] {

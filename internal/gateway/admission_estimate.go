@@ -139,6 +139,7 @@ func estimateChatAdmissionForPlanWithEvidence(
 	validationBody := body
 	var imageAdmissionTokenUpper int64
 	imageAdmissionEstimateVersion := ""
+	videoRequested := false
 	protocolContract, advanced := modelprofile.ResolveChatProtocolContract(plan.ModelProtocolProfile)
 	if advanced {
 		if evidence != nil {
@@ -150,6 +151,7 @@ func estimateChatAdmissionForPlanWithEvidence(
 			validationBody = evidence.AdmissionShadowBody
 			imageAdmissionTokenUpper = evidence.ImageAdmissionTokenUpper
 			imageAdmissionEstimateVersion = evidence.ImageAdmissionEstimateVersion
+			videoRequested = evidence.VideoRequested
 		} else {
 			legacyProtocolAuthority := false
 			if profile, err := plan.ExecutionProfile(); err == nil {
@@ -162,6 +164,7 @@ func estimateChatAdmissionForPlanWithEvidence(
 			validationBody = validation.SanitizedBody
 			imageAdmissionTokenUpper = validation.ImageAdmissionTokenUpper
 			imageAdmissionEstimateVersion = validation.ImageAdmissionEstimateVersion
+			videoRequested = validation.VideoRequested
 		}
 	}
 	if reasoningContract, modeled := modelprofile.ResolveReasoningContract(plan.ReasoningProfile); modeled {
@@ -182,7 +185,15 @@ func estimateChatAdmissionForPlanWithEvidence(
 	if err != nil {
 		return requestAdmissionEstimate{}, err
 	}
-	if imageAdmissionTokenUpper > 0 {
+	binaryAdmissionUpper := imageAdmissionTokenUpper
+	binaryEstimateVersion := imageAdmissionEstimateVersion
+	if protocolContract.BoundedInlineMP4 && videoRequested {
+		// Encoded bytes alone are not a useful estimate for a highly
+		// compressible clip. Reserve separately for bounded frames.
+		binaryAdmissionUpper = 24_576
+		binaryEstimateVersion = "chat-inline-mp4-upper.v1"
+	}
+	if binaryAdmissionUpper > 0 {
 		shadowMessages, shadowCollections, cardinalityErr := chatEnvelopeCardinality(validationBody)
 		if cardinalityErr != nil {
 			return requestAdmissionEstimate{}, cardinalityErr
@@ -191,14 +202,14 @@ func estimateChatAdmissionForPlanWithEvidence(
 		if textErr != nil {
 			return requestAdmissionEstimate{}, textErr
 		}
-		imageAwareTokens, intErr := checkedAdmissionInt(int64(textUpper.InputTokens), imageAdmissionTokenUpper)
+		mediaAwareTokens, intErr := checkedAdmissionInt(int64(textUpper.InputTokens), binaryAdmissionUpper)
 		if intErr != nil {
 			return requestAdmissionEstimate{}, intErr
 		}
-		if imageAwareTokens > byteUpper.InputTokens {
-			byteUpper.InputTokens = imageAwareTokens
+		if mediaAwareTokens > byteUpper.InputTokens {
+			byteUpper.InputTokens = mediaAwareTokens
 		}
-		byteUpper.Version = imageAdmissionEstimateVersion + "+" + chatAdmissionEstimateVersion
+		byteUpper.Version = binaryEstimateVersion + "+" + chatAdmissionEstimateVersion
 	}
 	switch plan.TokenizerProfileID + "\x00" + plan.TokenizerProfileVersion {
 	case modelprofile.TokenizerByteUpperID + "\x00" + modelprofile.TokenizerByteUpperVersion:
@@ -365,6 +376,21 @@ func estimateProviderJSONAdmission(body []byte) (requestAdmissionEstimate, error
 		return requestAdmissionEstimate{}, err
 	}
 	return requestAdmissionEstimate{InputTokens: tokens, Version: providerAdmissionEstimateVersion}, nil
+}
+
+func estimatePublicRequestAdmission(body []byte, imagePixels int64) (requestAdmissionEstimate, error) {
+	estimate, err := estimateProviderJSONAdmission(body)
+	if err != nil || imagePixels == 0 {
+		return estimate, err
+	}
+	// Admit against the serialized envelope and the decoded-image budget.
+	// The pixel term is a local bound, not provider metering evidence.
+	if imagePixels < 1024 || imagePixels > 131_072 {
+		return requestAdmissionEstimate{}, fmt.Errorf("%w: invalid inline image pixels", errAdmissionUnsupportedShape)
+	}
+	estimate.InputTokens, err = checkedAdmissionInt(int64(estimate.InputTokens), imagePixels*4)
+	estimate.Version = "public-json-with-inline-jpeg-pixel-budget.v1"
+	return estimate, err
 }
 
 func estimateProviderEmbeddingsAdmission(body []byte) (requestAdmissionEstimate, error) {

@@ -64,7 +64,8 @@ WHERE d.id=$1 AND o.operation_id=$2`, route.DeploymentID, route.ModelOperationID
 		if operationDefinition != definition.Digest() && !(operationDefinition == "" && legacyID == p.ID && legacyVersion == p.Version) {
 			return s, fmt.Errorf("%w: candidate operation is not bound to the selected exact definition", ErrConflict)
 		}
-		if route.ProtocolProfileID != p.ProtocolProfile || route.ProtocolProfileVersion != modelprofile.ChatOperationProtocolBindingVersionV1 {
+		identity, err := definition.OperationProtocolIdentity(route.ModelOperationID)
+		if err != nil || route.ProtocolProfileID != identity.ProtocolProfileID || route.ProtocolProfileVersion != identity.ProtocolProfileVersion {
 			return s, fmt.Errorf("%w: data Profile protocol differs from route", ErrConflict)
 		}
 		targets[route.DeploymentID] = releaseexecution.CapabilityTarget{CustomerOrgID: command.CustomerOrgID, PublicModelID: command.Mutation.PublicModelID, DeploymentID: route.DeploymentID,

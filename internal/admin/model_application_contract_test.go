@@ -1013,7 +1013,8 @@ func TestResolveCanonicalOperationProfileUsesOnlyServerRegisteredTemplates(t *te
 		{name: "openai adapter cannot claim anthropic messages", operation: modeloperation.IDMessages, adapter: adapters.TypeOpenAICompatible, wantError: true},
 		{name: "azure responses template not registered", operation: modeloperation.IDResponses, adapter: adapters.TypeAzureOpenAI, wantError: true},
 		{name: "models list is not a provider deployment", operation: modeloperation.IDModelsList, adapter: adapters.TypeOpenAICompatible, wantError: true},
-		{name: "media jobs need their own provider template", operation: modeloperation.IDMediaJobs, adapter: adapters.TypeOpenAICompatible, wantError: true},
+		{name: "canonical image job template", operation: modeloperation.IDMediaJobs, adapter: adapters.TypeOpenAICompatible, wantID: endpointprotocol.ProfileOpenAIImageGPT, wantVersion: "1.0.0"},
+		{name: "Anthropic adapter cannot claim image job", operation: modeloperation.IDMediaJobs, adapter: adapters.TypeAnthropicNative, wantError: true},
 	}
 	for _, test := range tests {
 		test := test

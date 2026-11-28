@@ -5,6 +5,7 @@ export const canonicalOperationPaths = {
   'openai.embeddings.v1': '/v1/embeddings',
   'openai.responses.v1': '/v1/responses',
   'anthropic.messages.v1': '/v1/messages',
+  'unirouter.media_jobs.v1': '/v1/media/jobs',
 } as const;
 
 export type CanonicalOperationID = keyof typeof canonicalOperationPaths;
@@ -174,6 +175,7 @@ export type CanonicalOperation = {
   probe_reason_code: string;
   probe_available: boolean;
   probe_availability_reason_code: string;
+  async_probe?: boolean;
   capability_probe_contracts: Array<{
     capability_id: string;
     probe_contract_id: string;
@@ -310,6 +312,8 @@ export type CanonicalOperationProbeRequest = {
 };
 
 export type CanonicalOperationProbeResult = {
+  pending?: boolean;
+  probe_run_ref?: string;
   probe_id: number;
   deployment_id: number;
   operation_id: CanonicalOperationID;
@@ -371,6 +375,7 @@ export type CanonicalCapabilityQualification = {
   protocol_profile_version: string;
   probe_contract_id?: string;
   probe_contract_version?: string;
+  planned_provider_requests?: number;
   probe_available: boolean;
   probe_availability_reason_code: string;
   state: 'not_probed' | 'probe_failed' | 'probe_stale' | 'probed_awaiting_approval' | 'approved_current' | string;
@@ -482,6 +487,21 @@ export const modelDeploymentApi = {
     `/model-deployments/${deploymentID}/operations/${encodeURIComponent(operationID)}/probes`,
     { method: 'POST', body: JSON.stringify(input) },
   ),
+  readOperationProbe: (
+    deploymentID: number,
+    operationID: CanonicalOperationID,
+    input: Pick<CanonicalOperationProbeRequest, 'credential_binding_id' | 'expected_upstream_observation_identity'>,
+    probeRunRef?: string,
+  ) => {
+    const query = new URLSearchParams({ credential_binding_id: String(input.credential_binding_id) });
+    if (input.expected_upstream_observation_identity) {
+      query.set('expected_upstream_observation_identity', input.expected_upstream_observation_identity);
+    }
+    const runPath = probeRunRef ? `/${encodeURIComponent(probeRunRef)}` : '';
+    return request<CanonicalOperationProbeResult>(
+      `/model-deployments/${deploymentID}/operations/${encodeURIComponent(operationID)}/probes${runPath}?${query}`,
+    );
+  },
   getCapabilityQualification: (
     deploymentID: number,
     operationID: CanonicalOperationID,

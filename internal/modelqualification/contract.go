@@ -14,17 +14,25 @@ import (
 	"strings"
 
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
+	"github.com/uniroute/unirouter/internal/executionevidence"
 	"github.com/uniroute/unirouter/internal/modeloperation"
 )
 
 const (
-	ExecutorContractVersion         = "unirouter.endpoint-profile-nonstream-executor.v1"
-	ResponsesDualExecutorContractV1 = "unirouter.endpoint-profile-responses-dual-executor.v1"
-	MessagesDualExecutorContractV1  = endpointprotocol.PublicMessagesDualExecutorContractV1
-	MessagesToolsExecutorContractV1 = endpointprotocol.PublicMessagesToolsExecutorContractV1
-	LiveProbeSourceKind             = "admin.endpointprotocol_live_probe.v1"
-	ApprovalSourceKind              = "admin.model_operation_production_approval.v1"
-	PublicBindingSourceKind         = "runtime.public_execution_binding.v1"
+	MediaSpeechExecutorContractV1       = "unirouter.endpoint-profile-speech-job-executor.v1"
+	MediaOCRExecutorContractV1          = "unirouter.endpoint-profile-ocr-job-executor.v1"
+	MediaGLMImageExecutorContractV1     = "unirouter.endpoint-profile-glm-image-job-executor.v1"
+	MediaVideoExecutorContractV1        = "unirouter.endpoint-profile-async-video-job-executor.v1"
+	MediaMiniMaxImageExecutorContractV1 = "unirouter.endpoint-profile-minimax-image-job-executor.v1"
+	MediaQwenImageExecutorContractV1    = "unirouter.endpoint-profile-qwen-image-job-executor.v1"
+	MediaImageExecutorContractV1        = "unirouter.endpoint-profile-gpt-image-job-executor.v1"
+	ExecutorContractVersion             = "unirouter.endpoint-profile-nonstream-executor.v1"
+	ResponsesDualExecutorContractV1     = "unirouter.endpoint-profile-responses-dual-executor.v1"
+	MessagesDualExecutorContractV1      = endpointprotocol.PublicMessagesDualExecutorContractV1
+	MessagesToolsExecutorContractV1     = endpointprotocol.PublicMessagesToolsExecutorContractV1
+	LiveProbeSourceKind                 = "admin.endpointprotocol_live_probe.v1"
+	ApprovalSourceKind                  = "admin.model_operation_production_approval.v1"
+	PublicBindingSourceKind             = "runtime.public_execution_binding.v1"
 )
 
 var (
@@ -47,6 +55,87 @@ type Binding struct {
 }
 
 var compiledBindings = map[string][]Binding{
+	string(modeloperation.IDMediaJobs): {{
+		OperationID: string(modeloperation.IDMediaJobs), PublicPath: modeloperation.PathMediaJobs,
+		ProtocolProfileID: endpointprotocol.ProfileOpenAIImageGPT, ProtocolProfileVersion: "1.0.0",
+		ExecutorContractVersion: MediaImageExecutorContractV1,
+	}, {
+		OperationID: string(modeloperation.IDMediaJobs), PublicPath: modeloperation.PathMediaJobs,
+		ProtocolProfileID: endpointprotocol.ProfileDashScopeQwenImage, ProtocolProfileVersion: "1.0.0",
+		ExecutorContractVersion: MediaQwenImageExecutorContractV1,
+	}, {
+		OperationID: string(modeloperation.IDMediaJobs), PublicPath: modeloperation.PathMediaJobs,
+		ProtocolProfileID: endpointprotocol.ProfileMiniMaxH3Image, ProtocolProfileVersion: "1.0.0",
+		ExecutorContractVersion: MediaMiniMaxImageExecutorContractV1,
+	}, {
+		OperationID: string(modeloperation.IDMediaJobs), PublicPath: modeloperation.PathMediaJobs,
+		ProtocolProfileID: endpointprotocol.ProfileDashScopeWanVideo, ProtocolProfileVersion: "1.0.0",
+		ExecutorContractVersion: MediaVideoExecutorContractV1,
+	}, {
+		OperationID: string(modeloperation.IDMediaJobs), PublicPath: modeloperation.PathMediaJobs,
+		ProtocolProfileID: endpointprotocol.ProfileMiniMaxH3Video, ProtocolProfileVersion: "1.0.0",
+		ExecutorContractVersion: MediaVideoExecutorContractV1,
+	}, {
+		OperationID: string(modeloperation.IDMediaJobs), PublicPath: modeloperation.PathMediaJobs,
+		ProtocolProfileID: endpointprotocol.ProfileGLMCogVideo, ProtocolProfileVersion: "1.0.0",
+		ExecutorContractVersion: MediaVideoExecutorContractV1,
+	}, {
+		OperationID: string(modeloperation.IDMediaJobs), PublicPath: modeloperation.PathMediaJobs,
+		ProtocolProfileID: endpointprotocol.ProfileGLMImage, ProtocolProfileVersion: "1.0.0",
+		ExecutorContractVersion: MediaGLMImageExecutorContractV1,
+	}, {
+		OperationID: string(modeloperation.IDMediaJobs), PublicPath: modeloperation.PathMediaJobs,
+		ProtocolProfileID: endpointprotocol.ProfileDeepSeekOCR, ProtocolProfileVersion: "1.0.0",
+		ExecutorContractVersion: MediaOCRExecutorContractV1,
+	}, {
+		OperationID: string(modeloperation.IDMediaJobs), PublicPath: modeloperation.PathMediaJobs,
+		ProtocolProfileID: endpointprotocol.ProfileGLMOCR, ProtocolProfileVersion: "1.0.0",
+		ExecutorContractVersion: MediaOCRExecutorContractV1,
+	}, {
+		OperationID: string(modeloperation.IDMediaJobs), PublicPath: modeloperation.PathMediaJobs,
+		ProtocolProfileID: endpointprotocol.ProfileDeepSeekASR, ProtocolProfileVersion: "1.0.0",
+		ExecutorContractVersion: MediaSpeechExecutorContractV1,
+	}, {
+		OperationID: string(modeloperation.IDMediaJobs), PublicPath: modeloperation.PathMediaJobs,
+		ProtocolProfileID: endpointprotocol.ProfileDeepSeekTTS, ProtocolProfileVersion: "1.0.0",
+		ExecutorContractVersion: MediaSpeechExecutorContractV1,
+	}, {
+		OperationID: string(modeloperation.IDMediaJobs), PublicPath: modeloperation.PathMediaJobs,
+		ProtocolProfileID: endpointprotocol.ProfileMiniMaxASR, ProtocolProfileVersion: "1.0.0",
+		ExecutorContractVersion: MediaSpeechExecutorContractV1,
+	}, {
+		OperationID: string(modeloperation.IDMediaJobs), PublicPath: modeloperation.PathMediaJobs,
+		ProtocolProfileID: endpointprotocol.ProfileMiniMaxTTS, ProtocolProfileVersion: "1.0.0",
+		ExecutorContractVersion: MediaSpeechExecutorContractV1,
+	}, {
+		OperationID: string(modeloperation.IDMediaJobs), PublicPath: modeloperation.PathMediaJobs,
+		ProtocolProfileID: endpointprotocol.ProfileGLMASR, ProtocolProfileVersion: "1.0.0",
+		ExecutorContractVersion: MediaSpeechExecutorContractV1,
+	}, {
+		OperationID: string(modeloperation.IDMediaJobs), PublicPath: modeloperation.PathMediaJobs,
+		ProtocolProfileID: endpointprotocol.ProfileGLMTTS, ProtocolProfileVersion: "1.0.0",
+		ExecutorContractVersion: MediaSpeechExecutorContractV1,
+	}, {
+		OperationID: string(modeloperation.IDMediaJobs), PublicPath: modeloperation.PathMediaJobs,
+		ProtocolProfileID: endpointprotocol.ProfileOpenAITranscribe, ProtocolProfileVersion: "1.0.0",
+		ExecutorContractVersion: MediaSpeechExecutorContractV1,
+	}, {
+		OperationID: string(modeloperation.IDMediaJobs), PublicPath: modeloperation.PathMediaJobs,
+		ProtocolProfileID: endpointprotocol.ProfileMiMoASR, ProtocolProfileVersion: "1.0.0",
+		ExecutorContractVersion: MediaSpeechExecutorContractV1,
+	}, {
+		OperationID: string(modeloperation.IDMediaJobs), PublicPath: modeloperation.PathMediaJobs,
+		ProtocolProfileID: endpointprotocol.ProfileMiMoTTS, ProtocolProfileVersion: "1.0.0",
+		ExecutorContractVersion: MediaSpeechExecutorContractV1,
+	}, {
+		OperationID: string(modeloperation.IDMediaJobs), PublicPath: modeloperation.PathMediaJobs,
+		ProtocolProfileID: endpointprotocol.ProfileDashScopeASR, ProtocolProfileVersion: "1.0.0",
+		ExecutorContractVersion: MediaSpeechExecutorContractV1,
+	}, {
+		OperationID: string(modeloperation.IDMediaJobs), PublicPath: modeloperation.PathMediaJobs,
+		ProtocolProfileID: endpointprotocol.ProfileDashScopeTTS, ProtocolProfileVersion: "1.0.0",
+		ExecutorContractVersion: MediaSpeechExecutorContractV1,
+	}},
 	string(modeloperation.IDResponses): {
 		{
 			OperationID:             string(modeloperation.IDResponses),
@@ -61,6 +150,16 @@ var compiledBindings = map[string][]Binding{
 			ProtocolProfileID:       endpointprotocol.ProfileOpenAIResponsesTextV2,
 			ProtocolProfileVersion:  "1.0.0",
 			ExecutorContractVersion: ResponsesDualExecutorContractV1,
+		},
+		{
+			OperationID: string(modeloperation.IDResponses), PublicPath: modeloperation.PathResponses,
+			ProtocolProfileID: endpointprotocol.ProfileOpenAIResponsesToolsV3, ProtocolProfileVersion: "1.0.0",
+			ExecutorContractVersion: endpointprotocol.PublicResponsesToolsExecutorV1,
+		},
+		{
+			OperationID: string(modeloperation.IDResponses), PublicPath: modeloperation.PathResponses,
+			ProtocolProfileID: endpointprotocol.ProfileOpenAIResponsesInlineJPEG, ProtocolProfileVersion: "1.0.0",
+			ExecutorContractVersion: endpointprotocol.PublicResponsesInlineJPEGExecutorV1,
 		},
 	},
 	string(modeloperation.IDMessages): {
@@ -85,7 +184,25 @@ var compiledBindings = map[string][]Binding{
 			ProtocolProfileVersion:  "1.0.0",
 			ExecutorContractVersion: MessagesToolsExecutorContractV1,
 		},
+		{
+			OperationID: string(modeloperation.IDMessages), PublicPath: modeloperation.PathMessages,
+			ProtocolProfileID: endpointprotocol.ProfileAnthropicMessagesInlineJPEG, ProtocolProfileVersion: "1.0.0",
+			ExecutorContractVersion: endpointprotocol.PublicMessagesInlineJPEGExecutorV1,
+		},
 	},
+}
+
+// SupportsExecutorContract checks a declared executor before the operation's
+// exact SQL-backed proof is loaded and matched.
+func SupportsExecutorContract(version string) bool {
+	for _, bindings := range compiledBindings {
+		for _, b := range bindings {
+			if b.ExecutorContractVersion == version {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func IsQualificationRequired(operationID string) bool {
@@ -159,12 +276,26 @@ func CompiledPublicBindingFor(binding Binding) (endpointprotocol.PublicContractI
 	if err := ValidateCompiledBinding(binding); err != nil {
 		return endpointprotocol.PublicContractIdentity{}, err
 	}
+	if binding.OperationID == string(modeloperation.IDMediaJobs) {
+		return endpointprotocol.PublicContractIdentity{
+			ModelOperationID: binding.OperationID, PublicPath: binding.PublicPath,
+			ProfileID: binding.ProtocolProfileID, ProfileVersion: binding.ProtocolProfileVersion,
+			ExecutorContractVersion:    binding.ExecutorContractVersion,
+			DeliveryContractVersion:    executionevidence.MediaJobDeliveryContractV1,
+			ChargeContractVersion:      executionevidence.MediaJobChargeContractV1,
+			IdempotencyContractVersion: executionevidence.MediaJobIdempotencyContractV1,
+		}, nil
+	}
 	delivery := endpointprotocol.PublicDeliveryContractV1
-	if binding.ExecutorContractVersion == ResponsesDualExecutorContractV1 {
+	if binding.ExecutorContractVersion == endpointprotocol.PublicResponsesToolsExecutorV1 ||
+		binding.ExecutorContractVersion == endpointprotocol.PublicResponsesInlineJPEGExecutorV1 {
+		delivery = endpointprotocol.PublicResponsesToolsDeliveryV1
+	} else if binding.ExecutorContractVersion == ResponsesDualExecutorContractV1 {
 		delivery = endpointprotocol.PublicResponsesDeliveryContractV2
 	} else if binding.ExecutorContractVersion == MessagesDualExecutorContractV1 {
 		delivery = endpointprotocol.PublicAnthropicMessagesDeliveryContractV2
-	} else if binding.ExecutorContractVersion == MessagesToolsExecutorContractV1 {
+	} else if binding.ExecutorContractVersion == MessagesToolsExecutorContractV1 ||
+		binding.ExecutorContractVersion == endpointprotocol.PublicMessagesInlineJPEGExecutorV1 {
 		delivery = endpointprotocol.PublicAnthropicMessagesToolsDeliveryV1
 	}
 	return endpointprotocol.PublicContractIdentity{

@@ -11,8 +11,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/guardrail"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 )
 
 type streamReservationContextKey struct{}
@@ -21,8 +23,10 @@ type admissionInputEstimateContextKey struct{}
 const streamAdvisoryGapRecordWait = 2 * time.Second
 
 type streamReservationState struct {
-	ReservedCompletionTokens int
-	AllowExtension           bool
+	ReservedCompletionTokens  int
+	AllowExtension            bool
+	HostedReasoningTokenLimit int
+	HostedOutputBudgetKnown   bool
 }
 
 func contextWithStreamReservation(ctx context.Context, reservedCompletionTokens int, allowExtension bool) context.Context {
@@ -30,6 +34,19 @@ func contextWithStreamReservation(ctx context.Context, reservedCompletionTokens 
 		ReservedCompletionTokens: reservedCompletionTokens,
 		AllowExtension:           allowExtension,
 	})
+}
+
+func contextWithExecutionOutputBudget(ctx context.Context, limits modelExecutionRequestLimits) context.Context {
+	return context.WithValue(ctx, streamReservationContextKey{}, streamReservationState{
+		ReservedCompletionTokens:  limits.EstimatedOutputTokens,
+		HostedReasoningTokenLimit: limits.HostedReasoningTokenLimit,
+		HostedOutputBudgetKnown:   limits.OutputEnforcement.Scope == modelprofile.QwenHostedBudgetScope,
+	})
+}
+
+func hostedCompletionFits(state streamReservationState, usage adapters.Usage) bool {
+	return state.HostedOutputBudgetKnown && usage.FitsProviderCompletionSplit(
+		state.ReservedCompletionTokens-state.HostedReasoningTokenLimit, state.HostedReasoningTokenLimit)
 }
 
 func streamReservationFromContext(ctx context.Context) streamReservationState {

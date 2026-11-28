@@ -1842,6 +1842,22 @@ body {
   overflow-wrap: anywhere;
 }
 
+.ur-media-units {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr));
+  margin-top: 0;
+}
+
+.ur-media-units > div {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ur-media-units strong {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
 .ur-media-detail-section {
   display: grid;
   gap: 12px;
@@ -1858,6 +1874,17 @@ body {
   border: 1px solid var(--ur-border-soft);
   border-radius: 12px;
   background: #fff;
+}
+
+.ur-media-transcript {
+  max-height: 360px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  border: 1px solid var(--ur-border-soft);
+  border-radius: 12px;
 }
 
 .ur-governance-actions {

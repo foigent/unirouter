@@ -5,6 +5,8 @@ import (
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/uniroute/unirouter/internal/executionevidence"
 )
 
 // 128 is the original routing-policy maximum candidate count. Image Generate
@@ -12,6 +14,7 @@ import (
 const MaxSourceMediaRoutes = 128
 
 type SourceMediaRoute struct {
+	Canonical                                      *executionevidence.EvidenceV2
 	Sequence, Total                                int
 	ChannelID, ChannelKeyID                        int64
 	Provider, Origin, Model, Operation             string

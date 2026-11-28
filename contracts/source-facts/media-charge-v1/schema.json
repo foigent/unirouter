@@ -1,0 +1,402 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source_instance",
+    "org_id",
+    "project_id",
+    "request_id",
+    "profile",
+    "subject_kind",
+    "subject_id",
+    "observation_kind",
+    "source_fact_id",
+    "revision",
+    "event_id",
+    "occurred_at",
+    "recorded_at",
+    "coverage",
+    "capture_expected",
+    "media_charge"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "unirouter.media-charge.v1"
+    },
+    "profile": {
+      "const": "unirouter.media-charge.v1"
+    },
+    "source_instance": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "org_id": {
+      "$ref": "#/$defs/positive"
+    },
+    "project_id": {
+      "$ref": "#/$defs/positive"
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "subject_kind": {
+      "const": "media_job"
+    },
+    "subject_id": {
+      "$ref": "#/$defs/job"
+    },
+    "observation_kind": {
+      "const": "media_charge"
+    },
+    "source_fact_id": {
+      "$ref": "#/$defs/id"
+    },
+    "revision": {
+      "$ref": "#/$defs/positive"
+    },
+    "event_id": {
+      "$ref": "#/$defs/id"
+    },
+    "previous_revision": {
+      "$ref": "#/$defs/positive"
+    },
+    "previous_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "correction_reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "occurred_at": {
+      "type": "string",
+      "maxLength": 27
+    },
+    "recorded_at": {
+      "type": "string",
+      "maxLength": 27
+    },
+    "coverage": {
+      "const": "observed"
+    },
+    "capture_expected": {
+      "type": "array",
+      "maxItems": 0
+    },
+    "media_charge": {
+      "$ref": "#/$defs/media_charge"
+    }
+  },
+  "if": {
+    "properties": {
+      "revision": {
+        "const": "1"
+      }
+    }
+  },
+  "then": {
+    "not": {
+      "anyOf": [
+        {
+          "required": [
+            "previous_revision"
+          ]
+        },
+        {
+          "required": [
+            "previous_hash"
+          ]
+        },
+        {
+          "required": [
+            "correction_reason"
+          ]
+        }
+      ]
+    }
+  },
+  "else": {
+    "required": [
+      "previous_revision",
+      "previous_hash",
+      "correction_reason"
+    ]
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^uf1_[0-9a-f]{64}$"
+    },
+    "job": {
+      "type": "string",
+      "pattern": "^mediajob_[0-9a-f]{32}$"
+    },
+    "positive": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,18}$"
+    },
+    "counter": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,18})$"
+    },
+    "media_charge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "job_id",
+        "terminal_status",
+        "amount_state",
+        "units"
+      ],
+      "properties": {
+        "job_id": {
+          "$ref": "#/$defs/job"
+        },
+        "charge_fact_id": {
+          "type": "string",
+          "pattern": "^mediacharge_[0-9a-f]{32}$"
+        },
+        "terminal_status": {
+          "enum": [
+            "succeeded",
+            "failed",
+            "not_started",
+            "unknown"
+          ]
+        },
+        "amount_state": {
+          "enum": [
+            "pricing_pending_media_rate_card",
+            "not_eligible",
+            "charged"
+          ]
+        },
+        "units": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/unit"
+          },
+          "maxItems": 5
+        },
+        "customer_charge": {
+          "$ref": "#/$defs/customer_charge"
+        },
+        "meter_profile": {
+          "description": "Legacy candidate label. Omit it when emitting a new observation."
+        }
+      },
+      "anyOf": [
+        {
+          "not": { "required": ["meter_profile"] },
+          "properties": {
+            "units": {
+              "items": {
+                "properties": {
+                  "class": { "enum": ["input_tokens", "output_tokens", "input_audio_milliseconds"] }
+                }
+              }
+            }
+          }
+        },
+        {
+          "not": { "required": ["meter_profile"] },
+          "properties": {
+            "units": {
+              "items": {
+                "properties": {
+                  "class": { "enum": ["input_tokens", "input_text_tokens", "input_audio_tokens", "output_tokens"] }
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "meter_profile": { "const": "openai.gpt-image.v1" },
+            "units": {
+              "items": {
+                "properties": {
+                  "class": { "enum": ["input_tokens", "input_text_tokens", "input_image_tokens", "output_image_tokens", "output_images"] }
+                }
+              }
+            }
+          },
+          "if": { "required": ["meter_profile"] },
+          "then": {
+            "properties": {
+              "units": { "not": { "contains": { "properties": { "class": { "const": "output_images" } } } } }
+            }
+          }
+        },
+        {
+          "properties": {
+            "meter_profile": { "const": "alibaba.qwen-image-3.0.v1" },
+            "units": {
+              "items": { "properties": { "class": { "enum": ["input_images", "output_images"] } } }
+            }
+          }
+        },
+        {
+          "properties": {
+            "meter_profile": { "const": "alibaba.wan-video.v1" },
+            "units": {
+              "items": {
+                "properties": {
+                  "class": { "enum": ["input_video_milliseconds", "output_video_milliseconds", "input_images"] }
+                }
+              }
+            }
+          },
+          "if": { "required": ["meter_profile"] },
+          "then": {
+            "properties": {
+              "units": { "not": { "contains": { "properties": { "class": { "const": "input_images" } } } } }
+            }
+          }
+        },
+        {
+          "properties": {
+            "meter_profile": { "const": "deepseek.ocr.v1" },
+            "units": { "items": { "properties": { "class": { "const": "recognized_pages" } } } }
+          }
+        },
+        {
+          "properties": {
+            "meter_profile": { "const": "deepseek.asr.v1" },
+            "units": { "items": { "properties": { "class": { "const": "input_audio_milliseconds" } } } }
+          }
+        },
+        {
+          "properties": {
+            "meter_profile": { "const": "deepseek.tts.v1" },
+            "units": { "items": { "properties": { "class": { "const": "input_billable_characters" } } } }
+          },
+          "if": { "required": ["meter_profile"] },
+          "then": { "properties": { "units": { "maxItems": 0 } } }
+        }
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "amount_state": {
+                "const": "not_eligible"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "units": {
+                "maxItems": 0
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "charge_fact_id"
+                  ]
+                },
+                {
+                  "required": [
+                    "customer_charge"
+                  ]
+                }
+              ]
+            }
+          },
+          "else": {
+            "required": [
+              "charge_fact_id"
+            ],
+            "properties": {
+              "terminal_status": {
+                "const": "succeeded"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "amount_state": {
+                "const": "charged"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "customer_charge"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "customer_charge"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "unit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "quantity",
+        "authority",
+        "finality",
+        "charge_state"
+      ],
+      "properties": {
+        "class": {
+          "type": "string"
+        },
+        "quantity": {
+          "$ref": "#/$defs/counter"
+        },
+        "authority": {
+          "const": "provider_reported"
+        },
+        "finality": {
+          "const": "final"
+        },
+        "charge_state": {
+          "const": "provider_observed_not_customer_chargeable"
+        }
+      }
+    },
+    "customer_charge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "amount_micros",
+        "currency",
+        "amount_scale",
+        "settlement_ref"
+      ],
+      "properties": {
+        "amount_micros": {
+          "$ref": "#/$defs/counter"
+        },
+        "currency": {
+          "const": "CNY"
+        },
+        "amount_scale": {
+          "const": 1000000
+        },
+        "settlement_ref": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        }
+      }
+    }
+  }
+}

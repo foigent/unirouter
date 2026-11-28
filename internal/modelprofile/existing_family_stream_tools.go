@@ -38,6 +38,16 @@ func miniMaxM3StreamFunctionToolsContract(id string) ChatProtocolContract {
 	return c
 }
 
+func miniMaxM31StreamFunctionToolsContract(id string) ChatProtocolContract {
+	contract := miniMaxM3StreamFunctionToolsContract(id)
+	contract.ProcessingTierPolicyID = ""
+	contract.AssistantReasoningHistoryFields = []string{"reasoning_content"}
+	contract.AssistantReasoningResponseFields = []string{"reasoning_content"}
+	contract.AssistantToolResponseReplayField = "reasoning_content"
+	contract.StreamContract.DeltaTextFields = []string{"content", "reasoning_content"}
+	return contract
+}
+
 func miniMaxM3StreamReasoningContract() ReasoningContract {
 	return ReasoningContract{
 		ProfileID: "reasoning.minimax-m3-adaptive-embedded.v2", Mode: ReasoningModeToggle,

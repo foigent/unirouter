@@ -50,6 +50,9 @@ func (d Definition) CanonicalBytes() []byte    { return bytes.Clone(d.canonical)
 // OperationProtocolIdentity comes from validated immutable data. The legacy
 // Profile-address registry remains solely the explicit compiled fallback.
 func (d Definition) OperationProtocolIdentity(operation string) (OperationProtocolIdentity, error) {
+	if d.digest != "" && (NativeClientToolsProfile(d.profile) || NativeInlineJPEGProfile(d.profile) || MediaJobProfile(d.profile)) && d.profile.Operations[0] == operation {
+		return OperationProtocolIdentity{OperationID: operation, ProtocolProfileID: d.profile.ProtocolProfile, ProtocolProfileVersion: d.profile.ProtocolProfileVersion}, nil
+	}
 	if d.digest == "" || operation != OperationOpenAIChat || d.profile.APISurface != APISurfaceOpenAIChat {
 		return OperationProtocolIdentity{}, fmt.Errorf("unsupported data Profile operation")
 	}
@@ -77,8 +80,7 @@ func NewDefinition(profile Profile, lineage, predecessor string) (Definition, er
 
 // DecodeDefinition rejects ambiguous JSON, unknown fields and unavailable
 // implementation references. It never guesses behavior from a model name.
-// Schema v1 authoring covers typed Chat; existing native protocol Profiles
-// continue through their established immutable path.
+// Schema v1 authoring covers typed Chat and the bounded native tool contracts.
 func DecodeDefinition(wire []byte) (Definition, error) {
 	if len(wire) == 0 || len(wire) > MaximumDefinitionBytes {
 		return Definition{}, fmt.Errorf("profile definition size is invalid")
@@ -197,9 +199,8 @@ func validateDefinitionProfile(p Profile) error {
 		}
 	}
 	if !definitionProfileID.MatchString(p.ID) || !definitionVersion.MatchString(p.Version) || len(p.Version) > 40 ||
-		p.ID == UnverifiedProfileID || p.LegacyProtocolAuthority || p.Current ||
-		p.APISurface != APISurfaceOpenAIChat || p.ProtocolProfileVersion != "" || p.OperationPolicyProfile != "" {
-		return fmt.Errorf("profile definition requires a typed Chat execution identity")
+		p.ID == UnverifiedProfileID || p.LegacyProtocolAuthority || p.Current {
+		return fmt.Errorf("profile definition requires a typed execution identity")
 	}
 	for _, value := range []string{p.Provider, p.Region, p.Label} {
 		if value == "" || value != strings.TrimSpace(value) || strings.ContainsAny(value, "\x00\r\n") {
@@ -227,13 +228,30 @@ func validateDefinitionProfile(p Profile) error {
 			return fmt.Errorf("unknown endpoint implementation %q", endpoint)
 		}
 	}
-	if _, ok := ResolveChatProtocolContract(p.ProtocolProfile); !ok {
+	if _, ok := ResolveChatProtocolContract(p.ProtocolProfile); p.APISurface == APISurfaceOpenAIChat && !ok {
 		return fmt.Errorf("unknown Chat implementation")
+	}
+	if (p.ProtocolProfile == QwenOmniProtocol || p.CacheUsageProfile == QwenOmniUsageProfile ||
+		p.ReasoningProfile == QwenOmniReasoningProfile) && !QwenOmniChatProfile(p) {
+		return fmt.Errorf("invalid Qwen Omni execution identity")
+	}
+	if IsQwenHostedSplitProtocol(p.ProtocolProfile) && !QwenHostedSplitProfile(p) {
+		return fmt.Errorf("invalid hosted Qwen split completion identity")
+	}
+	if p.APISurface == APISurfaceOpenAIChat {
+		if p.ProtocolProfileVersion != "" || p.OperationPolicyProfile != "" {
+			return fmt.Errorf("profile definition requires the typed Chat execution identity")
+		}
+	} else if !NativeClientToolsProfile(p) && !NativeInlineJPEGProfile(p) && !MediaJobProfile(p) {
+		return fmt.Errorf("unknown native execution identity")
+	}
+	if MediaJobProfile(p) {
+		return validateExecutableComponents(p, false)
 	}
 	if _, ok := ResolveReasoningContract(p.ReasoningProfile); !ok {
 		return fmt.Errorf("unknown reasoning implementation")
 	}
-	if _, ok := ResolveCacheUsageContract(p.CacheUsageProfile); !ok {
+	if _, ok := ResolveCacheUsageContract(p.CacheUsageProfile); !ok && !NativeClientToolsProfile(p) && !NativeInlineJPEGProfile(p) {
 		return fmt.Errorf("unknown usage implementation")
 	}
 	if !tokenprofile.Supports(p.TokenizerProfileID, p.TokenizerProfileVersion) &&

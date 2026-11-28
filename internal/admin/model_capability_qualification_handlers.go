@@ -35,20 +35,7 @@ const (
 	modelCapabilityApprovalReasonMaxBytes  = 512
 )
 
-var modelCapabilityProbeDefaultHTTPClient = newModelCapabilityProbeHTTPClient()
-
-func newModelCapabilityProbeHTTPClient() *http.Client {
-	client := newCanonicalOperationProbeHTTPClient()
-	client.Timeout = modelCapabilityProbeTimeout
-	return client
-}
-
-func (h *Handler) modelCapabilityProbeDoer() modelDeploymentProbeHTTPDoer {
-	if h != nil && h.modelDeploymentProbeHTTPDoer != nil {
-		return h.modelDeploymentProbeHTTPDoer
-	}
-	return modelCapabilityProbeDefaultHTTPClient
-}
+var modelCapabilityProbeDefaultHTTPClient = newSingleSendProbeHTTPClient(modelCapabilityProbeTimeout)
 
 var (
 	errModelCapabilityInvalid     = errors.New("model capability qualification request is invalid")
@@ -128,6 +115,7 @@ type modelCapabilityQualificationView struct {
 	ProbeContractID            string                        `json:"probe_contract_id,omitempty"`
 	ProbeContractVersion       string                        `json:"probe_contract_version,omitempty"`
 	ProbeAvailable             bool                          `json:"probe_available"`
+	PlannedProviderRequests    int                           `json:"planned_provider_requests,omitempty"`
 	ProbeAvailabilityReason    string                        `json:"probe_availability_reason_code"`
 	State                      string                        `json:"state"`
 	Qualified                  bool                          `json:"qualified"`
@@ -169,6 +157,11 @@ type modelCapabilitySnapshot struct {
 	UpstreamObservation       *upstreamrelease.Observation
 	Definition                modelprofile.Definition
 	DataBinding               modelcapabilityqualification.Binding
+	imageChallenge            modelcapabilityqualification.ChatInlineJPEGChallenge
+	fileChallenge             modelcapabilityqualification.ChatInlineTextFileChallenge
+	videoChallenge            modelcapabilityqualification.ChatInlineVideoChallenge
+	audioChallengeBody        []byte
+	audioChallengeAnswer      string
 	CustomerOrgID             int64
 	DeploymentID              int64
 	PublicModelID             int64
@@ -603,7 +596,71 @@ func (h *Handler) probeCanonicalModelCapability(ctx context.Context, orgID, acto
 	return h.persistModelCapabilityProbe(ctx, actorID, snapshot, outcome, sourceRef, audit)
 }
 
+// A known plan is the ceiling on provider POSTs. Every step still validates
+// its route, credential, and typed request before the shared single sender.
+func plannedCapabilityProbeProviderRequests(binding modelcapabilityqualification.Binding) int {
+	if binding.ProbeContractID == modelcapabilityqualification.NativeToolProbeContractID {
+		if _, err := modelcapabilityqualification.NativeToolProbeProfile(binding); err == nil {
+			return 2
+		}
+		return 0
+	}
+	if binding.ProbeContractID == modelcapabilityqualification.NativeInlineJPEGProbeContractID {
+		p, err := binding.ExecutionProfile()
+		if err == nil && binding.ProbeContractVersion == "1.0.0" && modelprofile.NativeInlineJPEGProfile(p) {
+			return 1
+		}
+		return 0
+	}
+	if binding.ProbeContractVersion != "" && resolveModelCapabilityProbeResponseValidator(modelCapabilitySnapshot{
+		ProbeContractID: binding.ProbeContractID, ProbeContractVersion: binding.ProbeContractVersion, DataBinding: binding,
+	}) != nil {
+		return 1
+	}
+	return 0
+}
+
 func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot modelCapabilitySnapshot, requestID string) modelCapabilityProbeOutcome {
+	if snapshot.ProbeContractID == modelcapabilityqualification.NativeToolProbeContractID {
+		return h.executeNativeToolProbe(ctx, snapshot, requestID)
+	}
+	if snapshot.ProbeContractID == modelcapabilityqualification.NativeInlineJPEGProbeContractID {
+		return h.executeNativeInlineJPEGProbe(ctx, snapshot, requestID)
+	}
+	if snapshot.ProbeContractID == modelcapabilityqualification.ChatInlineJPEGProbeID {
+		challenge, err := modelcapabilityqualification.NewChatInlineJPEGChallenge(snapshot.DataBinding)
+		if err != nil {
+			return modelCapabilityProbeOutcome{ReasonCode: "request_build_failed", DispatchState: "not_started"}
+		}
+		snapshot.imageChallenge = challenge
+	}
+	if snapshot.ProbeContractID == modelcapabilityqualification.ChatInlineVideoProbeID {
+		challenge, err := modelcapabilityqualification.NewChatInlineVideoChallenge(snapshot.DataBinding, h.runtimeOptions.Commit)
+		if err != nil {
+			return modelCapabilityProbeOutcome{ReasonCode: "request_build_failed", DispatchState: "not_started"}
+		}
+		snapshot.videoChallenge = challenge
+	}
+
+	if snapshot.ProbeContractID == modelcapabilityqualification.ChatInlineTextFileProbeID {
+		challenge, err := modelcapabilityqualification.NewChatInlineTextFileChallenge(snapshot.DataBinding)
+		if err != nil {
+			return modelCapabilityProbeOutcome{ReasonCode: "request_build_failed", DispatchState: "not_started"}
+		}
+		snapshot.fileChallenge = challenge
+	}
+
+	if snapshot.ProbeContractID == modelcapabilityqualification.ChatInlineWAVProbeID {
+		wave, answer, err := makeASRProbeWAV()
+		if err != nil {
+			return modelCapabilityProbeOutcome{ReasonCode: "request_build_failed", DispatchState: "not_started"}
+		}
+		snapshot.audioChallengeBody, err = modelcapabilityqualification.BuildChatInlineWAVProbeRequest(snapshot.DataBinding, wave)
+		if err != nil {
+			return modelCapabilityProbeOutcome{ReasonCode: "request_build_failed", DispatchState: "not_started"}
+		}
+		snapshot.audioChallengeAnswer = answer
+	}
 	responseValidator := resolveModelCapabilityProbeResponseValidator(snapshot)
 	if responseValidator == nil {
 		return modelCapabilityProbeOutcome{ReasonCode: "probe_contract_unsupported", DispatchState: "not_started"}
@@ -644,7 +701,11 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 	}
 	started := time.Now()
 	outcome.DispatchState = "started"
-	response, err := h.modelCapabilityProbeDoer().Do(request)
+	client := modelCapabilityProbeDefaultHTTPClient
+	if snapshot.ProbeContractID == modelcapabilityqualification.ChatInlineJPEGProbeID {
+		client = singleOperationProbeHTTPClient
+	}
+	response, err := h.sendModelProbe(request, client)
 	if response != nil {
 		outcome.DispatchState = "response_received"
 	}
@@ -686,6 +747,74 @@ type modelCapabilityProbeResponseValidator func(context.Context, adapters.Adapte
 
 func resolveModelCapabilityProbeResponseValidator(snapshot modelCapabilitySnapshot) modelCapabilityProbeResponseValidator {
 	switch snapshot.ProbeContractID {
+	case modelcapabilityqualification.ChatInlineWAVProbeID:
+		return func(_ context.Context, _ adapters.Adapter, response *http.Response, outcome modelCapabilityProbeOutcome, _ time.Time) modelCapabilityProbeOutcome {
+			text, usage, size, err := modelcapabilityqualification.ObserveChatInlineWAV(snapshot.DataBinding, response.Header.Get("Content-Type"), response.Body)
+			outcome.ResponseBytes = size
+			if err != nil || !matchesSpokenDigits(text, snapshot.audioChallengeAnswer) {
+				outcome.ReasonCode = "provider_audio_contract_invalid"
+				return outcome
+			}
+			outcome.ReportedModel = snapshot.DataBinding.ExpectedUpstreamModel
+			outcome.FinishReason = "stop"
+			outcome.PromptTokens, outcome.CompletionTokens, outcome.TotalTokens = int64(usage.PromptTokens), int64(usage.CompletionTokens), int64(usage.TotalTokens)
+			return outcome
+		}
+	case modelcapabilityqualification.ChatInlineVideoProbeID:
+		return func(_ context.Context, _ adapters.Adapter, response *http.Response, outcome modelCapabilityProbeOutcome, _ time.Time) modelCapabilityProbeOutcome {
+			usage, size, err := snapshot.videoChallenge.Observe(response.Header.Get("Content-Type"), response.Body)
+			outcome.ResponseBytes = size
+			if err != nil {
+				outcome.ReasonCode = "provider_video_contract_invalid"
+				return outcome
+			}
+			outcome.ReportedModel = snapshot.DataBinding.ExpectedUpstreamModel
+			outcome.FinishReason = "stop"
+			outcome.PromptTokens, outcome.CompletionTokens, outcome.TotalTokens = int64(usage.PromptTokens), int64(usage.CompletionTokens), int64(usage.TotalTokens)
+			return outcome
+		}
+
+	case modelcapabilityqualification.ChatInlineTextFileProbeID:
+		return func(_ context.Context, _ adapters.Adapter, response *http.Response, outcome modelCapabilityProbeOutcome, _ time.Time) modelCapabilityProbeOutcome {
+			usage, size, err := snapshot.fileChallenge.Observe(response.Header.Get("Content-Type"), response.Body)
+			outcome.ResponseBytes = size
+			if err != nil {
+				outcome.ReasonCode = "provider_file_contract_invalid"
+				return outcome
+			}
+			outcome.ReportedModel = snapshot.DataBinding.ExpectedUpstreamModel
+			outcome.FinishReason = "stop"
+			outcome.PromptTokens, outcome.CompletionTokens, outcome.TotalTokens = int64(usage.PromptTokens), int64(usage.CompletionTokens), int64(usage.TotalTokens)
+			return outcome
+		}
+
+	case modelcapabilityqualification.ChatInlineJPEGProbeID:
+		return func(_ context.Context, _ adapters.Adapter, response *http.Response, outcome modelCapabilityProbeOutcome, _ time.Time) modelCapabilityProbeOutcome {
+			usage, size, err := snapshot.imageChallenge.Observe(response.Header.Get("Content-Type"), response.Body)
+			outcome.ResponseBytes = size
+			if err != nil {
+				outcome.ReasonCode = "provider_vision_contract_invalid"
+				return outcome
+			}
+			outcome.ReportedModel = snapshot.DataBinding.ExpectedUpstreamModel
+			outcome.FinishReason = "stop"
+			outcome.PromptTokens, outcome.CompletionTokens, outcome.TotalTokens = int64(usage.PromptTokens), int64(usage.CompletionTokens), int64(usage.TotalTokens)
+			return outcome
+		}
+	case modelcapabilityqualification.PlainChatReasoningProbeID:
+		return func(_ context.Context, _ adapters.Adapter, response *http.Response, outcome modelCapabilityProbeOutcome, _ time.Time) modelCapabilityProbeOutcome {
+			usage, size, err := modelcapabilityqualification.ObservePlainChatReasoning(snapshot.DataBinding, response.Header.Get("Content-Type"), response.Body)
+			outcome.ResponseBytes = size
+			if err != nil {
+				outcome.ReasonCode = "provider_reasoning_contract_invalid"
+				return outcome
+			}
+			outcome.ReportedModel = snapshot.DataBinding.ExpectedUpstreamModel
+			outcome.FinishReason = "stop"
+			outcome.PromptTokens, outcome.CompletionTokens, outcome.TotalTokens = int64(usage.PromptTokens), int64(usage.CompletionTokens), int64(usage.TotalTokens)
+			outcome.ReasoningObserved = true
+			return outcome
+		}
 	case modelcapabilityqualification.DeepSeekChatSSEProbeContractID:
 		return func(probeCtx context.Context, adapter adapters.Adapter, response *http.Response, outcome modelCapabilityProbeOutcome, started time.Time) modelCapabilityProbeOutcome {
 			observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatSSEForBinding(
@@ -888,7 +1017,8 @@ func resolveModelCapabilityProbeResponseValidator(snapshot modelCapabilitySnapsh
 		modelcapabilityqualification.MiniMaxPAYGM3ChatFunctionToolsProbeContractID,
 		modelcapabilityqualification.MiniMaxPAYGM2ChatFunctionToolsProbeContractID,
 		modelcapabilityqualification.GLMChatFunctionToolsProbeContractID,
-		modelcapabilityqualification.GLMToggleChatFunctionToolsProbeContractID:
+		modelcapabilityqualification.GLMToggleChatFunctionToolsProbeContractID,
+		modelcapabilityqualification.MiMoChatFunctionToolsProbeContractID:
 		return func(probeCtx context.Context, adapter adapters.Adapter, response *http.Response, outcome modelCapabilityProbeOutcome, started time.Time) modelCapabilityProbeOutcome {
 			normalized, normalizeErr := normalizeOpenAIChatFunctionToolsProbeResponse(
 				probeCtx, adapter, snapshot, response,
@@ -927,7 +1057,50 @@ func resolveModelCapabilityProbeResponseValidator(snapshot modelCapabilitySnapsh
 }
 
 func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]byte, error) {
+	if snapshot.ProbeContractID == modelcapabilityqualification.NativeToolProbeContractID {
+		p, err := modelcapabilityqualification.NativeToolProbeProfile(modelCapabilityProbeBindingFromSnapshot(snapshot))
+		if err != nil {
+			return nil, err
+		}
+		return nativeToolProbeRequest(p, snapshot.UpstreamModel)
+	}
 	if snapshot.Definition.Digest() != "" {
+		if snapshot.ProbeContractID == modelcapabilityqualification.PlainChatReasoningProbeID || snapshot.ProbeContractID == modelcapabilityqualification.ChatInlineJPEGProbeID || snapshot.ProbeContractID == modelcapabilityqualification.ChatInlineWAVProbeID || snapshot.ProbeContractID == modelcapabilityqualification.ChatInlineTextFileProbeID || snapshot.ProbeContractID == modelcapabilityqualification.ChatInlineVideoProbeID {
+			profile := snapshot.Definition.Profile()
+			pathMode, err := adapters.EffectiveEndpointPathMode(snapshot.AdapterType, snapshot.AdapterConfig)
+			if err != nil || modelprofile.ValidateProductBinding(profile, modelprofile.ProductBinding{
+				Provider: snapshot.Provider, BaseURL: snapshot.BaseURL, AdapterType: snapshot.AdapterType, EndpointPathMode: pathMode,
+				OperationID: snapshot.OperationID, ProtocolProfileID: snapshot.ProtocolProfileID,
+				ProtocolProfileVersion: snapshot.ProtocolProfileVersion, UpstreamModel: snapshot.UpstreamModel,
+			}) != nil {
+				return nil, errModelCapabilityUnsupported
+			}
+			if snapshot.ProbeContractID == modelcapabilityqualification.ChatInlineJPEGProbeID {
+				if len(snapshot.imageChallenge.Body) == 0 {
+					return nil, errModelCapabilityUnsupported
+				}
+				return snapshot.imageChallenge.Body, nil
+			}
+			if snapshot.ProbeContractID == modelcapabilityqualification.ChatInlineVideoProbeID {
+				if len(snapshot.videoChallenge.Body) == 0 {
+					return nil, errModelCapabilityUnsupported
+				}
+				return snapshot.videoChallenge.Body, nil
+			}
+			if snapshot.ProbeContractID == modelcapabilityqualification.ChatInlineTextFileProbeID {
+				if len(snapshot.fileChallenge.Body) == 0 {
+					return nil, errModelCapabilityUnsupported
+				}
+				return snapshot.fileChallenge.Body, nil
+			}
+			if snapshot.ProbeContractID == modelcapabilityqualification.ChatInlineWAVProbeID {
+				if len(snapshot.audioChallengeBody) == 0 {
+					return nil, errModelCapabilityUnsupported
+				}
+				return snapshot.audioChallengeBody, nil
+			}
+			return modelcapabilityqualification.BuildPlainChatReasoningProbeRequest(snapshot.DataBinding)
+		}
 		return modelcapabilityqualification.BuildOpenAIChatFunctionToolsProbeRequest(snapshot.DataBinding)
 	}
 	const (
@@ -1070,7 +1243,8 @@ func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]b
 		modelcapabilityqualification.MiniMaxPAYGM3ChatFunctionToolsProbeContractID,
 		modelcapabilityqualification.MiniMaxPAYGM2ChatFunctionToolsProbeContractID,
 		modelcapabilityqualification.GLMChatFunctionToolsProbeContractID,
-		modelcapabilityqualification.GLMToggleChatFunctionToolsProbeContractID:
+		modelcapabilityqualification.GLMToggleChatFunctionToolsProbeContractID,
+		modelcapabilityqualification.MiMoChatFunctionToolsProbeContractID:
 		return modelcapabilityqualification.BuildOpenAIChatFunctionToolsProbeRequest(
 			modelCapabilityProbeBindingFromSnapshot(snapshot),
 		)
@@ -1697,8 +1871,11 @@ SELECT deployment.id,operation.operation_id,capability.capability_id,
 	if probeContractID != nil && probeContractVersion != nil {
 		view.ProbeContractID = *probeContractID
 		view.ProbeContractVersion = *probeContractVersion
-		_, resolveErr := modelcapabilityqualification.Resolve(view.OperationID, view.CapabilityID,
+		binding, resolveErr := modelcapabilityqualification.Resolve(view.OperationID, view.CapabilityID,
 			view.ExecutionProfileID, view.ExecutionProfileVersion, view.ProtocolProfileID, view.ProtocolProfileVersion)
+		if resolveErr == nil && (binding.ProbeContractID != view.ProbeContractID || binding.ProbeContractVersion != view.ProbeContractVersion) {
+			resolveErr = errModelCapabilityUnsupported
+		}
 		if view.ProfileDefinitionDigest != "" {
 			definition, err := modelprofile.ReadDefinition(ctx, tx, view.ProfileDefinitionDigest)
 			if err != nil {
@@ -1707,9 +1884,9 @@ SELECT deployment.id,operation.operation_id,capability.capability_id,
 			bindings, err := modelcapabilityqualification.ResolveDefinitionBindings(ctx, tx, definition, view.OperationID, view.ProtocolProfileID, view.ProtocolProfileVersion)
 			resolveErr = errModelCapabilityUnsupported
 			if err == nil {
-				for _, binding := range bindings {
-					if binding.CapabilityID == view.CapabilityID && binding.ProbeContractID == view.ProbeContractID && binding.ProbeContractVersion == view.ProbeContractVersion {
-						resolveErr = nil
+				for _, candidate := range bindings {
+					if candidate.CapabilityID == view.CapabilityID && candidate.ProbeContractID == view.ProbeContractID && candidate.ProbeContractVersion == view.ProbeContractVersion {
+						binding, resolveErr = candidate, nil
 						break
 					}
 				}
@@ -1717,6 +1894,7 @@ SELECT deployment.id,operation.operation_id,capability.capability_id,
 		}
 		view.ProbeAvailable = resolveErr == nil && view.SupportState == "enabled"
 		if view.ProbeAvailable {
+			view.PlannedProviderRequests = plannedCapabilityProbeProviderRequests(binding)
 			view.ProbeAvailabilityReason = "typed_probe_available"
 		} else if resolveErr != nil {
 			view.ProbeAvailabilityReason = "compiled_probe_contract_unavailable"

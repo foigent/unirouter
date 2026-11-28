@@ -380,6 +380,46 @@ func runOnConnection(ctx context.Context, conn *pgxpool.Conn, dir string, option
 	}
 	plannedVersions := append([]string(nil), appliedVersions...)
 	for _, version := range allowed {
+		if version == schemaauthority.AsyncMediaProviderTaskHead {
+			if !options.maintenance && !(options.fresh != nil && options.freshExpand == version) {
+				return fmt.Errorf("M136 requires an explicit maintenance/fresh owner")
+			}
+			if err := validateExactLedgerPrefix(plannedVersions, artifactVersions, schemaauthority.CanonicalMediaJobHead); err != nil {
+				return fmt.Errorf("M136 requires the complete exact M135 ledger: %w", err)
+			}
+		}
+		if version == schemaauthority.CanonicalMediaJobHead {
+			if !options.maintenance && !(options.fresh != nil && options.freshExpand == version) {
+				return fmt.Errorf("M135 requires an explicit maintenance/fresh owner")
+			}
+			if err := validateExactLedgerPrefix(plannedVersions, artifactVersions, schemaauthority.NativeInlineJPEGHead); err != nil {
+				return fmt.Errorf("M135 requires the complete exact M134 ledger: %w", err)
+			}
+		}
+		if version == schemaauthority.NativeInlineJPEGHead {
+			if !options.maintenance && !(options.fresh != nil && options.freshExpand == version) {
+				return fmt.Errorf("M134 requires an explicit maintenance/fresh owner")
+			}
+			if err := validateExactLedgerPrefix(plannedVersions, artifactVersions, schemaauthority.MediaChargeSourceHead); err != nil {
+				return fmt.Errorf("M134 requires the complete exact M133 ledger: %w", err)
+			}
+		}
+		if version == schemaauthority.MediaChargeSourceHead {
+			if !options.maintenance && !(options.fresh != nil && options.freshExpand == version) {
+				return fmt.Errorf("M133 requires an explicit maintenance/fresh owner")
+			}
+			if err := validateExactLedgerPrefix(plannedVersions, artifactVersions, schemaauthority.OpenAIResponsesToolsHead); err != nil {
+				return fmt.Errorf("M133 requires the complete exact M132 ledger: %w", err)
+			}
+		}
+		if version == schemaauthority.OpenAIResponsesToolsHead {
+			if !options.maintenance && !(options.fresh != nil && options.freshExpand == version) {
+				return fmt.Errorf("M132 requires an explicit maintenance/fresh owner")
+			}
+			if err := validateExactLedgerPrefix(plannedVersions, artifactVersions, schemaauthority.CustomerStandardPricingHead); err != nil {
+				return fmt.Errorf("M132 requires the complete exact M131 ledger: %w", err)
+			}
+		}
 		if version == schemaauthority.CustomerStandardPricingHead {
 			if (!options.maintenance && !(options.fresh != nil && options.freshExpand == version)) || len(plannedVersions) == 0 || plannedVersions[len(plannedVersions)-1] != schemaauthority.UpgradeAdmissionRecoveryHead {
 				return fmt.Errorf("M131 requires exact M130 and an explicit maintenance/fresh owner")
@@ -728,6 +768,21 @@ func migrationTransactionBody(sqlContent string) string {
 }
 
 func validateCommercialRetirement(applied, artifact []string, maintenance, fresh bool) error {
+	if len(artifact) > 0 && artifact[len(artifact)-1] == schemaauthority.AsyncMediaProviderTaskHead {
+		artifact = artifact[:len(artifact)-1]
+	}
+	if len(artifact) > 0 && artifact[len(artifact)-1] == schemaauthority.CanonicalMediaJobHead {
+		artifact = artifact[:len(artifact)-1]
+	}
+	if len(artifact) > 0 && artifact[len(artifact)-1] == schemaauthority.NativeInlineJPEGHead {
+		artifact = artifact[:len(artifact)-1]
+	}
+	if len(artifact) > 0 && artifact[len(artifact)-1] == schemaauthority.MediaChargeSourceHead {
+		artifact = artifact[:len(artifact)-1]
+	}
+	if len(artifact) > 0 && artifact[len(artifact)-1] == schemaauthority.OpenAIResponsesToolsHead {
+		artifact = artifact[:len(artifact)-1]
+	}
 	if len(artifact) > 0 && artifact[len(artifact)-1] == schemaauthority.CustomerStandardPricingHead {
 		artifact = artifact[:len(artifact)-1]
 	}

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/uniroute/unirouter/internal/endpointprotocol"
 	"github.com/uniroute/unirouter/internal/eventconnector"
 )
 
@@ -52,10 +53,37 @@ func NormalizeSubmitRequest(request SubmitRequest) (NormalizedRequest, error) {
 	if request.Model == "" || len(request.Model) > 200 || containsControl(request.Model) {
 		return NormalizedRequest{}, domainError(ErrInvalid, "model_invalid")
 	}
-	if strings.TrimSpace(request.Prompt) == "" ||
-		len(request.Prompt) > MaxPromptBytes ||
-		containsDisallowedControl(request.Prompt) {
-		return NormalizedRequest{}, domainError(ErrInvalid, "prompt_invalid")
+	if request.Operation == OperationTextToImage {
+		request.Operation = "" // Keep the original image idempotency fingerprint.
+	}
+	switch request.Operation {
+	case "", OperationTextToVideo, OperationTextToSpeech:
+		if strings.TrimSpace(request.Prompt) == "" || len(request.Prompt) > MaxPromptBytes || containsDisallowedControl(request.Prompt) {
+			return NormalizedRequest{}, domainError(ErrInvalid, "prompt_invalid")
+		}
+		if request.InputMedia != "" {
+			return NormalizedRequest{}, domainError(ErrInvalid, "media_controls_invalid")
+		}
+	case OperationSpeechToText:
+		if request.Prompt != "" {
+			return NormalizedRequest{}, domainError(ErrInvalid, "prompt_invalid")
+		}
+		if _, _, err := endpointprotocol.DecodeASRInputWAV(request.InputMedia); err != nil {
+			return NormalizedRequest{}, domainError(ErrInvalid, "asr_wav_input_invalid")
+		}
+	case OperationImageToText:
+		if request.Prompt != "" {
+			return NormalizedRequest{}, domainError(ErrInvalid, "prompt_invalid")
+		}
+		if _, err := endpointprotocol.DecodeOCRInputPNG(request.InputMedia); err != nil {
+			return NormalizedRequest{}, domainError(ErrInvalid, "ocr_png_input_invalid")
+		}
+	default:
+		return NormalizedRequest{}, domainError(ErrInvalid, "media_operation_invalid")
+	}
+	if request.Operation != "" &&
+		(request.Size != "" || request.Quality != "" || request.Background != "" || request.OutputFormat != "") {
+		return NormalizedRequest{}, domainError(ErrInvalid, "media_controls_invalid")
 	}
 	if request.N != nil && *request.N != 1 {
 		return NormalizedRequest{}, domainError(ErrInvalid, "multiple_images_unsupported")
@@ -76,7 +104,7 @@ func NormalizeSubmitRequest(request SubmitRequest) (NormalizedRequest, error) {
 		return NormalizedRequest{}, domainError(ErrInvalid, "output_format_invalid")
 	}
 	return NormalizedRequest{
-		Model: request.Model, Prompt: request.Prompt, N: 1,
+		Operation: request.Operation, Model: request.Model, Prompt: request.Prompt, InputMedia: request.InputMedia, N: 1,
 		Size: request.Size, Quality: request.Quality,
 		Background: request.Background, OutputFormat: request.OutputFormat,
 		Stream: false,
@@ -102,6 +130,15 @@ func RequestSHA256(request NormalizedRequest) (string, []byte, error) {
 	}
 	sum := sha256.Sum256(body)
 	return "sha256:" + hex.EncodeToString(sum[:]), body, nil
+}
+
+// The header is part of the immutable request identity. Historical jobs retain
+// their original body-only digest, even if their instance default was one.
+func singleSubmissionRequestSHA256(body []byte) string {
+	hash := sha256.New()
+	_, _ = hash.Write([]byte("unirouter.async-media.single-provider-submission.v1\x00"))
+	_, _ = hash.Write(body)
+	return "sha256:" + hex.EncodeToString(hash.Sum(nil))
 }
 
 func IdempotencyHash(secret []byte, scope Scope, apiKeyID int64, value string) (string, error) {

@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+
+	"github.com/uniroute/unirouter/internal/endpointprotocol"
 )
 
 // ProductBinding is the effective, server-observed connection identity bound
@@ -46,7 +48,7 @@ func ValidateProductBinding(profile Profile, binding ProductBinding) error {
 	}
 	expectedAdapter := ""
 	switch profile.APISurface {
-	case APISurfaceOpenAIChat, APISurfaceOpenAIResponses:
+	case APISurfaceOpenAIChat, APISurfaceOpenAIResponses, APISurfaceOpenAIImages, APISurfaceVideoJobs, APISurfaceMediaTools:
 		expectedAdapter = "openai_compatible"
 	case APISurfaceAnthropicMessage:
 		expectedAdapter = "anthropic_native"
@@ -78,15 +80,21 @@ var endpointPathModes = map[string]string{
 	EndpointClassGeminiOpenAICompatibility:      EndpointPathModeBaseRelative,
 	EndpointClassDeepSeekOfficialOpenAI:         EndpointPathModeBaseRelative,
 	EndpointClassGLMOfficialOpenAIV4:            EndpointPathModeBaseRelative,
+	EndpointClassGLMOfficialMediaOrigin:         EndpointPathModeCanonicalV1,
 	EndpointClassDoubaoArkBeijingOpenAIV3:       EndpointPathModeBaseRelative,
 	EndpointClassOpenAIOfficialOrigin:           EndpointPathModeCanonicalV1,
 	EndpointClassOpenAIOfficialV1:               EndpointPathModeCanonicalV1,
 	EndpointClassKimiPlatformOpenAIV1:           EndpointPathModeCanonicalV1,
+	EndpointClassMiMoChinaPayGoOpenAIV1:         EndpointPathModeCanonicalV1,
+	EndpointClassMiMoChinaSpeechOrigin:          EndpointPathModeCanonicalV1,
+	EndpointClassHunyuanTokenHubOpenAIV1:        EndpointPathModeCanonicalV1,
 	EndpointClassMiniMaxCNOpenAIV1:              EndpointPathModeCanonicalV1,
 	EndpointClassMiniMaxOfficialCNOpenAIV1:      EndpointPathModeCanonicalV1,
+	EndpointClassMiniMaxOfficialCNMediaOrigin:   EndpointPathModeCanonicalV1,
 	EndpointClassXAIOfficialOpenAIV1:            EndpointPathModeCanonicalV1,
 	EndpointClassAnthropicOfficialOrigin:        EndpointPathModeCanonicalV1,
 	EndpointClassDashScopeBeijingWorkspacePayGo: EndpointPathModeCanonicalV1,
+	EndpointClassDashScopeBeijingMediaOrigin:    EndpointPathModeCanonicalV1,
 	EndpointClassDashScopeBeijingSharedPayGo:    EndpointPathModeCanonicalV1,
 }
 
@@ -170,7 +178,21 @@ func ClassifyEndpoint(provider, rawBaseURL string) (string, error) {
 		}
 		return "", fmt.Errorf("Kimi endpoint must be the official pay-as-you-go platform OpenAI API root")
 	}
+	if provider == "mimo" && strings.TrimSuffix(strings.TrimSpace(rawBaseURL), "/") == endpointprotocol.MiMoSpeechOrigin {
+		return EndpointClassMiMoChinaSpeechOrigin, nil
+	}
+	if provider == "mimo" && parsed.Port() == "" && strings.EqualFold(parsed.Hostname(), "api.xiaomimimo.com") &&
+		strings.TrimSuffix(parsed.EscapedPath(), "/") == "/v1" {
+		return EndpointClassMiMoChinaPayGoOpenAIV1, nil
+	}
+	if provider == "hy3" && parsed.Port() == "" && strings.EqualFold(parsed.Hostname(), "tokenhub.tencentmaas.com") &&
+		strings.TrimSuffix(parsed.EscapedPath(), "/") == "/v1" {
+		return EndpointClassHunyuanTokenHubOpenAIV1, nil
+	}
 	if provider == "minimax" {
+		if strings.TrimSuffix(strings.TrimSpace(rawBaseURL), "/") == endpointprotocol.MiniMaxChinaImageOrigin {
+			return EndpointClassMiniMaxOfficialCNMediaOrigin, nil
+		}
 		if parsed.Port() == "" && strings.EqualFold(parsed.Hostname(), "api.minimaxi.com") &&
 			strings.TrimSuffix(parsed.EscapedPath(), "/") == "/v1" {
 			return EndpointClassMiniMaxCNOpenAIV1, nil
@@ -182,6 +204,9 @@ func ClassifyEndpoint(provider, rawBaseURL string) (string, error) {
 		return "", fmt.Errorf("MiniMax endpoint must be an exact reviewed China OpenAI API root")
 	}
 	if provider == "glm" {
+		if strings.TrimSuffix(strings.TrimSpace(rawBaseURL), "/") == endpointprotocol.GLMChinaMediaOrigin {
+			return EndpointClassGLMOfficialMediaOrigin, nil
+		}
 		if parsed.Port() == "" && strings.EqualFold(parsed.Hostname(), "open.bigmodel.cn") &&
 			strings.TrimSuffix(parsed.EscapedPath(), "/") == "/api/paas/v4" {
 			return EndpointClassGLMOfficialOpenAIV4, nil
@@ -217,6 +242,9 @@ func ClassifyEndpoint(provider, rawBaseURL string) (string, error) {
 	}
 	host := strings.ToLower(parsed.Hostname())
 	path := strings.TrimSuffix(parsed.EscapedPath(), "/")
+	if endpointprotocol.IsDashScopeBeijingMediaOrigin(strings.TrimSpace(rawBaseURL)) {
+		return EndpointClassDashScopeBeijingMediaOrigin, nil
+	}
 	if host == "dashscope.aliyuncs.com" && path == "/compatible-mode/v1" {
 		return EndpointClassDashScopeBeijingSharedPayGo, nil
 	}

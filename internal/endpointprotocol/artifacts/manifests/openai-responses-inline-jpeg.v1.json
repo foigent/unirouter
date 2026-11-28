@@ -1,0 +1,46 @@
+{
+  "schema_version": "unirouter.endpoint-profile-manifest.v1",
+  "profile_id": "unirouter.openai.responses.inline-jpeg.v1",
+  "profile_version": "1.0.0",
+  "provider": "openai",
+  "runtime_state": "local_contract_only",
+  "conformance_level": "fixture_verified",
+  "network_verified": false,
+  "descriptor": {
+    "contract_version": "unirouter.endpoint-protocol.v1",
+    "profile_id": "unirouter.openai.responses.inline-jpeg.v1",
+    "profile_version": "1.0.0",
+    "provider": "openai",
+    "endpoint_kind": "responses",
+    "downstream_endpoint": "/v1/responses",
+    "upstream_endpoint": "/v1/responses",
+    "authentication": "bearer",
+    "runtime_state": "local_contract_only",
+    "provider_finality": "response.completed_with_provider_usage",
+    "customer_charge_state": "provider_observed_not_customer_chargeable",
+    "supported_modalities": [
+      "text",
+      "image/jpeg"
+    ],
+    "observed_unit_classes": [
+      "input_tokens",
+      "cache_read_tokens",
+      "cache_write_tokens",
+      "output_tokens"
+    ],
+    "unsupported_semantics": [
+      "files",
+      "inline_jpeg_and_tools",
+      "multiple_images",
+      "remote_images",
+      "streaming"
+    ]
+  },
+  "fixtures": [
+    {
+      "fixture_id": "openai-responses-inline-jpeg.v1",
+      "path": "fixtures/openai-responses-inline-jpeg.v1.json",
+      "sha256": "sha256:4bf6bd792ed1acdd1d0b1a87a7b2d02a045bad2451caa4c9b75a9deb02d9ea47"
+    }
+  ]
+}

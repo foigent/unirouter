@@ -32,6 +32,7 @@ SOURCE_HEADS = (
     "000129_upstream_observation_restore_namespace",
     "000130_upgrade_admission_recovery",
     "000131_customer_standard_pricing",
+    "000132_openai_responses_client_tools",
 )
 HEADS = frozenset(SOURCE_HEADS)
 RING = {"key_id": "ur-community-upgrade-20261011-a", "bytes": 83,

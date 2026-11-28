@@ -7,10 +7,10 @@ import (
 )
 
 // First-customer bootstrap may accept the current schema only while all
-// content and X-Insight machine authority state is empty. This inventory does
+// content, asynchronous probes and X-Insight authority state are empty. This inventory does
 // not authorize resetting those tables; reset retains its separately reviewed
 // table inventory and refusal rules.
-func firstCustomerContentTables() []string {
+func firstCustomerBootstrapOnlyTables() []string {
 	return []string{
 		"execution_content_enterprise_policies",
 		"execution_content_health",
@@ -22,6 +22,7 @@ func firstCustomerContentTables() []string {
 		"execution_source_content_bindings",
 		"execution_source_content_operations",
 		"execution_source_content_scopes",
+		"model_deployment_async_probe_tasks",
 		"xinsight_connector_credential_operations", "xinsight_communication_policies", "xinsight_communication_runs",
 		"xinsight_receiver_adoptions",
 		"xinsight_machine_credentials",
@@ -34,13 +35,13 @@ func firstCustomerContentTables() []string {
 }
 
 func firstCustomerExpectedPublicTables() []string {
-	tables := append(resetplan.ExpectedPublicTables(), firstCustomerContentTables()...)
+	tables := append(resetplan.ExpectedPublicTables(), firstCustomerBootstrapOnlyTables()...)
 	slices.Sort(tables)
 	return tables
 }
 
 func firstCustomerZeroTables() []string {
-	tables := append(resetplan.BootstrapZeroTables(), firstCustomerContentTables()...)
+	tables := append(resetplan.BootstrapZeroTables(), firstCustomerBootstrapOnlyTables()...)
 	slices.Sort(tables)
 	return tables
 }

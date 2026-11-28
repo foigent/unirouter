@@ -1,0 +1,102 @@
+{
+  "schema_version": "unirouter.endpoint-conformance-fixture.v1",
+  "fixture_id": "dashscope-qwen-image-3-v1",
+  "profile_id": "unirouter.dashscope.images.qwen-3.v1",
+  "request": {
+    "base_url": "https://workspace-test.cn-beijing.maas.aliyuncs.com",
+    "requested_model": "company-image",
+    "mapped_model": "qwen-image-3.0",
+    "request_id": "fixture-image-1",
+    "body": "{\"model\":\"company-image\",\"prompt\":\"synthetic image fixture\",\"size\":\"1024x1024\",\"output_format\":\"png\"}",
+    "expected_method": "POST",
+    "expected_url": "https://workspace-test.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/images/generations",
+    "expected_request_id_header": "fixture-image-1",
+    "expected_body": "{\"model\":\"qwen-image-3.0\",\"prompt\":\"synthetic image fixture\",\"n\":1,\"size\":\"1024x1024\",\"response_format\":\"b64_json\",\"prompt_extend\":false}"
+  },
+  "response": {
+    "status_code": 200,
+    "body": "{\"created\":123,\"data\":[{\"b64_json\":\"iVBORw0KGgoAAAANSUhEUgAABAAAAAQAAQAAAABXZhYuAAAAlklEQVR4nO3BAQEAAACCIP+vbkhAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADvBgQeAAGfIdLmAAAAAElFTkSuQmCC\"}],\"usage\":{\"input_image_count\":0,\"output_image_count\":1,\"output_height\":1024,\"output_width\":1024}}",
+    "expected_outcome": {
+      "contract_version": "unirouter.endpoint-protocol.v1",
+      "profile_id": "unirouter.dashscope.images.qwen-3.v1",
+      "provider_state": "completed",
+      "provider_object_id": "",
+      "mapped_model": "qwen-image-3.0",
+      "output_count": 1,
+      "units": [
+        {
+          "class": "input_images",
+          "quantity": "0",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        },
+        {
+          "class": "output_images",
+          "quantity": "1",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        }
+      ]
+    }
+  },
+  "negative_requests": [
+    {
+      "case_id": "multiple-images-rejected",
+      "body": "{\"model\":\"company-image\",\"prompt\":\"synthetic image fixture\",\"n\":2}",
+      "expected_code": "unsupported_multiple_images"
+    },
+    {
+      "case_id": "stream-rejected",
+      "body": "{\"model\":\"company-image\",\"prompt\":\"synthetic image fixture\",\"stream\":true}",
+      "expected_code": "unsupported_streaming"
+    },
+    {
+      "case_id": "gpt-quality-rejected",
+      "body": "{\"model\":\"company-image\",\"prompt\":\"a\",\"quality\":\"low\"}",
+      "expected_code": "qwen_image_controls_unsupported"
+    }
+  ],
+  "negative_responses": [
+    {
+      "case_id": "hosted-url-rejected",
+      "body": "{\"created\":123,\"data\":[{\"url\":\"https://provider.example/image\"}],\"usage\":{\"input_image_count\":0,\"output_image_count\":1,\"output_height\":1024,\"output_width\":1024}}",
+      "expected_code": "unsupported_provider_hosted_url"
+    },
+    {
+      "case_id": "older-metering-shape-rejected",
+      "body": "{\"created\":123,\"data\":[{\"b64_json\":\"iVBORw0KGgoAAAANSUhEUgAABAAAAAQAAQAAAABXZhYuAAAAlklEQVR4nO3BAQEAAACCIP+vbkhAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADvBgQeAAGfIdLmAAAAAElFTkSuQmCC\"}],\"usage\":{\"image_count\":1}}",
+      "expected_code": "qwen_image_counts_invalid"
+    },
+    {
+      "case_id": "charge-count-mismatch-rejected",
+      "body": "{\"created\":123,\"data\":[{\"b64_json\":\"iVBORw0KGgoAAAANSUhEUgAABAAAAAQAAQAAAABXZhYuAAAAlklEQVR4nO3BAQEAAACCIP+vbkhAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADvBgQeAAGfIdLmAAAAAElFTkSuQmCC\"}],\"usage\":{\"input_image_count\":0,\"output_image_count\":2}}",
+      "expected_code": "qwen_image_counts_invalid"
+    },
+    {
+      "case_id": "wrong-model-rejected",
+      "body": "{\"created\":123,\"data\":[{\"b64_json\":\"iVBORw0KGgoAAAANSUhEUgAABAAAAAQAAQAAAABXZhYuAAAAlklEQVR4nO3BAQEAAACCIP+vbkhAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADvBgQeAAGfIdLmAAAAAElFTkSuQmCC\"}],\"usage\":{\"input_image_count\":0,\"output_image_count\":1,\"output_height\":1024,\"output_width\":1024},\"model\":\"qwen-image-3.0-pro\"}",
+      "expected_code": "qwen_image_model_mismatch"
+    },
+    {
+      "case_id": "truncated-png-rejected",
+      "body": "{\"created\":123,\"data\":[{\"b64_json\":\"iVBORw0KGgoAAAANSUhEUgAABAAAAAQAAQAAAABXZhYuAAAAlklEQVR4nO3BAQEAAACCIP+vbkhAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADvBgQeAAE=\"}],\"usage\":{\"input_image_count\":0,\"output_image_count\":1,\"output_height\":1024,\"output_width\":1024}}",
+      "expected_code": "image_invalid_png"
+    }
+  ],
+  "status_cases": [
+    {
+      "case_id": "provider-failure-retry",
+      "status_code": 503,
+      "expected_failure_kind": "channel_failure",
+      "expected_retryable": true
+    },
+    {
+      "case_id": "permission-stop",
+      "status_code": 403,
+      "expected_failure_kind": "auth",
+      "expected_retryable": false
+    }
+  ]
+}

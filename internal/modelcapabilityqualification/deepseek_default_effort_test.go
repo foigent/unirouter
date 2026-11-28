@@ -42,7 +42,7 @@ func TestDeepSeekFlashDefaultEffortBundleAndProbeV2(t *testing.T) {
 		ExpectedProvider: row.ExpectedProvider, ExpectedUpstreamModel: row.ExpectedUpstreamModel, PublicPath: row.PublicPath}
 	b, err = BindDefinition(b, d)
 	require.NoError(t, err)
-	key, err := SharedStreamProbeContract(b)
+	key, err := SharedProbeContract(b)
 	require.NoError(t, err)
 	require.Equal(t, DeepSeekStreamFunctionToolsProbeContractID+"@2.0.0", key)
 	request, err := BuildOpenAIChatFunctionToolsProbeRequest(b)

@@ -108,15 +108,16 @@ type publicNonStreamRequest struct {
 	// PublicModel is the caller-visible model identity retained in the public
 	// protocol document and delivery. ResolvedModel is the server-authorized
 	// canonical catalog identity used by planning, policy pinning, and billing.
-	PublicModel        string
-	ResolvedModel      string
-	RequestID          string
-	OrgID              int64
-	ProjectID          int64
-	APIKeyID           int64
-	AccessCredentialID int64
-	CredentialRef      string
-	AccessGrantID      int64
+	PublicModel           string
+	ResolvedModel         string
+	RequestID             string
+	OrgID                 int64
+	ProjectID             int64
+	APIKeyID              int64
+	AccessCredentialID    int64
+	CredentialRef         string
+	AccessGrantID         int64
+	SingleUpstreamAttempt bool
 }
 
 type preparedPublicNonStreamRoute struct {
@@ -285,6 +286,9 @@ func publicRequestContractForProfile(
 		!slices.Contains(profile.Operations, operation) {
 		return endpointprotocol.PublicRequestContract{}, errPublicNonStreamContractMismatch
 	}
+	if modelprofile.NativeClientToolsProfile(profile) || modelprofile.NativeInlineJPEGProfile(profile) {
+		return modelprofile.NativeClientToolsRequestContract(profile), nil
+	}
 	contract := endpointprotocol.PublicRequestContract{
 		ExecutionProfileID: profile.ID, ExecutionProfileVersion: profile.Version,
 	}
@@ -410,11 +414,25 @@ func publicInvocationCapabilityRequirements(
 		return nil, fmt.Errorf("public prepared request is required")
 	}
 	semantics := prepared.InvocationSemantics()
+	native := modelprofile.NativeClientToolsProfile(profile) || modelprofile.NativeInlineJPEGProfile(profile)
+	if native && (semantics.ReasoningEffortExplicit || semantics.ReasoningControlExplicit) {
+		return nil, fmt.Errorf("public optional reasoning controls require separate qualification")
+	}
 	requirements := make([]modelrouting.CapabilityRequirement, 0, 8)
+	if semantics.InlineImagePixels > 0 {
+		if !slices.Contains(profile.Capabilities, modelprofile.CapabilityVision) {
+			return nil, fmt.Errorf("public inline JPEG capability is not supported")
+		}
+		requirements = append(requirements, modelrouting.CapabilityRequirement{
+			CapabilityID: modelprofile.CapabilityVision,
+			Origins:      []string{modelrouting.CapabilityOriginExplicitRequest},
+		})
+	}
 	if slices.Contains(profile.Capabilities, modelprofile.CapabilityReasoning) {
 		reasoning, modeled := modelprofile.ResolveReasoningContract(profile.ReasoningProfile)
 		if !modeled || reasoning.DefaultAuthority != modelprofile.ReasoningDefaultProvider ||
-			reasoning.ToggleControl.ProviderDefault == "" {
+			(!native && reasoning.ToggleControl.ProviderDefault == "") ||
+			(native && modelprofile.DefaultChatReasoningCapability(profile) != modelprofile.CapabilityReasoning) {
 			return nil, fmt.Errorf("public reasoning default is not modeled")
 		}
 		origin := modelrouting.CapabilityOriginProviderDefault
@@ -685,6 +703,7 @@ func (orchestrator *publicNonStreamOrchestrator) execute(
 	if err != nil {
 		return orchestrator.cancelFrozen(ctx, request, fmt.Errorf("%w: executor", errPublicNonStreamRuntimeUnavailable))
 	}
+	executor.singleUpstreamAttempt = request.SingleUpstreamAttempt
 
 	var lastFailure error
 	for index := range routes {
@@ -746,7 +765,7 @@ func (orchestrator *publicNonStreamOrchestrator) execute(
 			switch outcome.completion.Outcome {
 			case billing.ProviderAttemptOutcomeRejected:
 				lastFailure = executionErr
-				if outcome.retry {
+				if outcome.retry && !request.SingleUpstreamAttempt {
 					continue
 				}
 				break
@@ -859,7 +878,7 @@ func (orchestrator *publicNonStreamOrchestrator) prepare(
 		return publicExecutionPreparation{}, err
 	}
 	admission := prepared.Admission()
-	inputEstimate, err := estimateProviderJSONAdmission(prepared.CanonicalBody())
+	inputEstimate, err := estimatePublicRequestAdmission(prepared.CanonicalBody(), admission.InlineImagePixels)
 	if err != nil {
 		return publicExecutionPreparation{}, fmt.Errorf("%w: request estimate", errPublicNonStreamRequestInvalid)
 	}
@@ -961,6 +980,7 @@ func (orchestrator *publicNonStreamOrchestrator) prepareRoutes(
 	outputEstimate int,
 ) ([]preparedPublicNonStreamRoute, int, error) {
 	maximumInput := inputEstimate
+	imagePixels := prepared.InvocationSemantics().InlineImagePixels
 	routes := make([]preparedPublicNonStreamRoute, 0, len(plan.Routes))
 	for _, route := range plan.Routes {
 		routeIdentity, err := publicContractIdentityForRoute(route)
@@ -989,7 +1009,7 @@ func (orchestrator *publicNonStreamOrchestrator) prepareRoutes(
 		if err != nil {
 			continue
 		}
-		estimate, err := estimateProviderJSONAdmission(providerBody)
+		estimate, err := estimatePublicRequestAdmission(providerBody, imagePixels)
 		if err != nil {
 			continue
 		}

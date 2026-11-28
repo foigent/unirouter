@@ -142,6 +142,14 @@ func (profile publicAnthropicMessagesProfile) PrepareRequest(
 	if contract.Reasoning != nil {
 		return nil, protocolError(ErrUnsupportedSemantics, "unsupported_reasoning_controls")
 	}
+	if profile.identity.ProfileID == ProfileAnthropicMessagesInlineJPEG {
+		envelope, err := objectKeys(body)
+		if err != nil {
+			return nil, err
+		}
+		core := publicAnthropicMessagesProfile{base: anthropicMessagesProfile{}, identity: anthropicMessagesV3PublicIdentity()}
+		return prepareNativeRequestWithOptionalJPEG(core, profile.identity, EndpointMessages, envelope, requestedModel, contract)
+	}
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(body, &envelope); err != nil || envelope == nil {
 		return nil, protocolError(ErrInvalidRequest, "public_request_shape_invalid")
@@ -389,6 +397,12 @@ func (profile publicAnthropicMessagesProfile) BuildUpstream(
 		wire := document.request
 		wire.Model = input.MappedModel
 		body, err = json.Marshal(wire)
+	case publicInlineJPEGDocument:
+		var core []byte
+		core, err = document.core.canonicalBody()
+		if err == nil {
+			body, err = document.input.withImage(core, input.MappedModel)
+		}
 	default:
 		return nil, protocolError(ErrPublicContractMismatch, "public_prepared_request_mismatch")
 	}
@@ -518,6 +532,7 @@ type publicAnthropicDeliveryDocument struct {
 	response              publicAnthropicProviderResponse
 	thinkingTextIsVisible bool
 	toolResponse          bool
+	exactToolReplay       bool
 }
 
 func (document publicAnthropicDeliveryDocument) canonicalBody() ([]byte, error) {
@@ -609,6 +624,9 @@ func (document publicAnthropicDeliveryDocument) withTexts(replacements []string)
 		}
 		replacement := replacements[replacementIndex]
 		if isText {
+			if document.exactToolReplay && replacement != *response.Content[index].Text {
+				return nil, protocolError(ErrPublicTextReplacement, "tool_history_rewrite_forbidden")
+			}
 			response.Content[index].Text = &replacement
 		} else {
 			if document.toolResponse && replacement != *response.Content[index].Thinking {
@@ -633,7 +651,7 @@ func (document publicAnthropicDeliveryDocument) withTexts(replacements []string)
 	}
 	return publicAnthropicDeliveryDocument{
 		response: response, thinkingTextIsVisible: document.thinkingTextIsVisible,
-		toolResponse: document.toolResponse,
+		toolResponse: document.toolResponse, exactToolReplay: document.exactToolReplay,
 	}, nil
 }
 
@@ -811,7 +829,8 @@ func (profile publicAnthropicMessagesProfile) parseDelivery(
 	response.Model = binding.requestedModel
 	document := publicAnthropicDeliveryDocument{
 		response: response, thinkingTextIsVisible: thinkingEnabled && thinkingTextMode == "summarized",
-		toolResponse: toolUseCount > 0,
+		toolResponse:    toolUseCount > 0,
+		exactToolReplay: toolUseCount > 0 && messagesContract.FunctionTools.ForceSerial,
 	}
 	if err := validatePublicDeliveryDocument(document); err != nil {
 		return PublicDelivery{}, err

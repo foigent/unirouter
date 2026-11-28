@@ -272,10 +272,31 @@ func main() {
 		log.Fatalf("Failed to initialize runtime change control: %v", err)
 	}
 	router.SetRuntimeResolver(runtimeChangeManager)
-	mediaExecutionAuthorizer := newMediaExecutionAuthorizer(modelAuthorizationEvaluator)
+	billingSvc := billing.NewBilling(postgres.Pool, redisClient.Client).
+		WithMode(cfg.BillingMode).
+		WithRequestPricingAuthority(cfg.RequestPricingAuthority)
+	executionConfig, err := modelexecution.ConfigFromRoutingPolicy(effectiveConfig.RoutingPolicy.Config)
+	if err != nil {
+		log.Fatalf("Failed to initialize model execution configuration: %v", err)
+	}
+	executionCoordinator, err := modelexecution.New(postgres.Pool, billingSvc, executionConfig)
+	if err != nil {
+		log.Fatalf("Failed to initialize model execution coordinator: %v", err)
+	}
+	var mediaRoutes *mediajob.CanonicalRoutes
+	if cfg.AsyncMediaEnabled && cfg.ModelRouteAuthority == modelrouting.ModeCanonical {
+		mediaRoutes = &mediajob.CanonicalRoutes{Planner: executionPlanner, Coordinator: executionCoordinator}
+	}
+	mediaExecutionAuthorizer := mediajob.NewExecutionAuthorizer(modelAuthorizationEvaluator)
 	mediaStore, err := mediajob.NewPostgresStore(postgres.Pool, mediaExecutionAuthorizer)
 	if err != nil {
 		log.Fatalf("Failed to initialize async-media store: %v", err)
+	}
+	mediaStore.SetCanonicalRoutes(mediaRoutes)
+	if cfg.AsyncMediaEnabled {
+		if err := mediaStore.CheckWorkerAuthority(context.Background()); err != nil {
+			log.Fatalf("Async-media worker authority preflight refused: %v", err)
+		}
 	}
 	mediaCipher, err := mediajob.NewApplicationCipher([]byte(cfg.EncryptionKey))
 	if err != nil {
@@ -294,7 +315,7 @@ func main() {
 			log.Fatalf("Failed to initialize async-media object store: %v", err)
 		}
 	}
-	mediaAuthorizer := newMediaSubmissionAuthorizer(postgres.Pool, modelAuthorizationEvaluator)
+	mediaAuthorizer := mediajob.NewSubmissionAuthorizer(postgres.Pool, modelAuthorizationEvaluator)
 	mediaService, err := mediajob.NewService(
 		mediaStore, mediaObjects, mediaCipher, mediaAuthorizer,
 		mediaIdentitySecret[:],
@@ -305,6 +326,7 @@ func main() {
 			RuntimeEnabled:   cfg.AsyncMediaEnabled,
 			AdmissionEnabled: cfg.AsyncMediaAdmissionEnabled,
 			LimitPolicy:      limitPolicyService,
+			CanonicalRoutes:  mediaRoutes,
 		},
 	)
 	if err != nil {
@@ -313,17 +335,6 @@ func main() {
 	mediaHandler, err := mediajob.NewHTTPHandler(mediaService, postgres.Pool)
 	if err != nil {
 		log.Fatalf("Failed to initialize async-media HTTP boundary: %v", err)
-	}
-	billingSvc := billing.NewBilling(postgres.Pool, redisClient.Client).
-		WithMode(cfg.BillingMode).
-		WithRequestPricingAuthority(cfg.RequestPricingAuthority)
-	executionConfig, err := modelexecution.ConfigFromRoutingPolicy(effectiveConfig.RoutingPolicy.Config)
-	if err != nil {
-		log.Fatalf("Failed to initialize model execution configuration: %v", err)
-	}
-	executionCoordinator, err := modelexecution.New(postgres.Pool, billingSvc, executionConfig)
-	if err != nil {
-		log.Fatalf("Failed to initialize model execution coordinator: %v", err)
 	}
 	log.Printf(
 		"Request pricing authority: mode=%s legacy_is_upgrade_compatibility=%t",
@@ -787,11 +798,11 @@ func main() {
 	// Repeat live authentication after the complete body is retained. A slow
 	// upload cannot carry a pre-revocation Grant, Credential, membership,
 	// capability, endpoint, or provider-liability snapshot into paid admission.
-	mux.Handle("POST /v1/chat/completions", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(captureExecutionContext(capturePublicContent(middleware.StrictJSONIngress(middleware.ChatUpstreamAttemptPolicy(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(chatHandler))))))))
-	mux.Handle("POST /v1/chat/completions/preflight", chatPreflightOperation(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(middleware.StrictJSONIngress(middleware.ChatUpstreamAttemptPolicy(newGatewayChatPreflightHandler(postgres.Pool, relay))))))
+	mux.Handle("POST /v1/chat/completions", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(captureExecutionContext(capturePublicContent(middleware.StrictJSONIngress(middleware.UpstreamAttemptPolicy(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(chatHandler))))))))
+	mux.Handle("POST /v1/chat/completions/preflight", chatPreflightOperation(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(middleware.StrictJSONIngress(middleware.UpstreamAttemptPolicy(newGatewayChatPreflightHandler(postgres.Pool, relay))))))
 	mux.Handle("POST /v1/embeddings", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, embeddingsPayloadGuard)(captureExecutionContext(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(embeddingsHandler)))))))
-	mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(responsesHandler)))))))
-	mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(capturePublicContent(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(messagesHandler)))))))
+	mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(capturePublicContent(middleware.StrictJSONIngress(middleware.UpstreamAttemptPolicy(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(responsesHandler))))))))
+	mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(captureExecutionContext(capturePublicContent(middleware.StrictJSONIngress(middleware.UpstreamAttemptPolicy(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(messagesHandler))))))))
 	mux.Handle("GET /v1/models", gatewayAuth(admissionMiddleware(http.HandlerFunc(relay.HandleModels))))
 	mux.Handle("POST /v1/media/jobs", middleware.GatewayAuthAcrossBufferedBody(mediaAuth, mediaPayloadGuard)(captureExecutionContext(capturePublicContent(http.HandlerFunc(mediaHandler.Submit)))))
 	mux.Handle("GET /v1/media/jobs/{id}", mediaAuth(http.HandlerFunc(mediaHandler.Get)))
@@ -923,10 +934,10 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">POST</td><td><code>/v1/embeddings</code></td><td>OpenAI-compatible embeddings</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/responses</code></td><td>Strict OpenAI Responses text subset with SSE on qualified execution profiles, Bearer auth, metadata-only at-most-once idempotency and cache bypass</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/messages</code></td><td>Strict Anthropic Messages non-stream text subset; x-api-key plus anthropic-version 2023-06-01, metadata-only at-most-once idempotency, cache bypass</td></tr>
-<tr><td class="method">POST</td><td><code>/v1/media/jobs</code></td><td>Submit one asynchronous GPT Image V1 job using a project root API key</td></tr>
-<tr><td class="method">GET</td><td><code>/v1/media/jobs/{id}</code></td><td>Read tenant-scoped image job metadata</td></tr>
+<tr><td class="method">POST</td><td><code>/v1/media/jobs</code></td><td>Submit one media job using a project root API key. Canonical submissions require X-UniRouter-Max-Upstream-Attempts: 1 and an active media release.</td></tr>
+<tr><td class="method">GET</td><td><code>/v1/media/jobs/{id}</code></td><td>Read project-scoped media job metadata</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/media/jobs/{id}/cancel</code></td><td>Request cancellation without refund semantics</td></tr>
-<tr><td class="method">GET</td><td><code>/v1/media/jobs/{id}/content</code></td><td>Read authenticated image bytes before fixed expiry</td></tr>
+<tr><td class="method">GET</td><td><code>/v1/media/jobs/{id}/content</code></td><td>Read authenticated project media output before expiry</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/agent-capabilities/exchange</code></td><td>Register root Agent workflow using a root API key</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/agent-capabilities/delegate</code></td><td>Register one child Agent with attenuation-only authority</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/agent-capabilities/refresh</code></td><td>Refresh a five-minute Agent capability</td></tr>

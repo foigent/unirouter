@@ -44,7 +44,7 @@ func currentFlashBinding(t *testing.T) (Binding, modelprofile.Definition) {
 		require.Equal(t, row.ProbeContractVersion, selector.Final.ProbeContractVersion)
 		b, e := BindDefinition(Binding{OperationID: row.OperationID, CapabilityID: row.CapabilityID, ExecutionProfileID: row.ExecutionProfileID, ExecutionProfileVersion: row.ExecutionProfileVersion, ProtocolProfileID: row.ProtocolProfileID, ProtocolProfileVersion: row.ProtocolProfileVersion, ProbeContractID: row.ProbeContractID, ProbeContractVersion: row.ProbeContractVersion, ExpectedProvider: row.ExpectedProvider, ExpectedUpstreamModel: row.ExpectedUpstreamModel, PublicPath: row.PublicPath}, d)
 		require.NoError(t, e)
-		key, e := SharedStreamProbeContract(b)
+		key, e := SharedProbeContract(b)
 		require.NoError(t, e)
 		require.Equal(t, b.ProbeContractID+"@"+b.ProbeContractVersion, key)
 		if b.CapabilityID == modelprofile.CapabilityReasoningEffort {
@@ -80,7 +80,7 @@ func TestCurrentDeepSeekFlashDefinitionBundleAndProbeV3(t *testing.T) {
 		mutate(&bad)
 		_, err = BuildOpenAIChatFunctionToolsProbeRequest(bad)
 		require.Error(t, err)
-		_, err = SharedStreamProbeContract(bad)
+		_, err = SharedProbeContract(bad)
 		require.Error(t, err)
 	}
 	// General composition support is independent of a single Profile address.

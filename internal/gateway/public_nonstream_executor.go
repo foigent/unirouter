@@ -144,9 +144,10 @@ type PublicNonStreamOutputGuard interface {
 // billing dependency. Those authorities must complete before/after this leaf
 // in the gateway orchestration layer.
 type PublicNonStreamExecutor struct {
-	doer             PublicNonStreamHTTPDoer
-	outputGuard      PublicNonStreamOutputGuard
-	maxResponseBytes int64
+	doer                  PublicNonStreamHTTPDoer
+	outputGuard           PublicNonStreamOutputGuard
+	maxResponseBytes      int64
+	singleUpstreamAttempt bool
 }
 
 func NewPublicNonStreamExecutor(
@@ -207,6 +208,9 @@ func (executor *PublicNonStreamExecutor) Execute(
 		)
 	}
 	request, observeResponse := observePublicProvider(ctx, request)
+	if executor.singleUpstreamAttempt {
+		request.GetBody = nil
+	}
 	finishMeasurement := executionmeasurement.HTTPStart(ctx, "")
 	response, err := executor.doer.Do(request)
 	observedHTTPStatus := 0

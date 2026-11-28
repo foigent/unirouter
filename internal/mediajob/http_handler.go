@@ -34,6 +34,11 @@ func (h *HTTPHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		writeMediaError(w, domainError(ErrForbidden, "project_scoped_api_key_required"))
 		return
 	}
+	single, err := middleware.ReadSingleUpstreamAttempt(r.Header)
+	if err != nil {
+		writeMediaError(w, domainError(ErrInvalid, "upstream_attempts_must_be_one"))
+		return
+	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, MaxRequestBytes+1))
 	if err != nil || len(body) > MaxRequestBytes {
 		writeMediaError(w, domainError(ErrInvalid, "request_size_invalid"))
@@ -41,15 +46,16 @@ func (h *HTTPHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.service.Submit(r.Context(), SubmitInput{
 		Scope: scope, APIKeyID: apiKey.ID,
-		AccessGrantID:      nullableIDValue(apiKey.AccessGrantID),
-		AccessCredentialID: nullableIDValue(apiKey.AccessCredentialID),
-		CredentialRef:      apiKey.CredentialRef,
-		RequestID:          middleware.GetRequestIDFromContext(r.Context()),
-		ClientRequestID:    middleware.GetClientRequestIDFromContext(r.Context()),
-		IdempotencyKey:     r.Header.Get("Idempotency-Key"),
-		AllowedModels:      apiKey.AllowedModels,
-		LimitSubject:       mediaLimitSubject(*apiKey, scope.OrgID, scope.ProjectID, ""),
-		Body:               body,
+		AccessGrantID:         nullableIDValue(apiKey.AccessGrantID),
+		AccessCredentialID:    nullableIDValue(apiKey.AccessCredentialID),
+		CredentialRef:         apiKey.CredentialRef,
+		RequestID:             middleware.GetRequestIDFromContext(r.Context()),
+		ClientRequestID:       middleware.GetClientRequestIDFromContext(r.Context()),
+		IdempotencyKey:        r.Header.Get("Idempotency-Key"),
+		SingleUpstreamAttempt: single,
+		AllowedModels:         apiKey.AllowedModels,
+		LimitSubject:          mediaLimitSubject(*apiKey, scope.OrgID, scope.ProjectID, ""),
+		Body:                  body,
 	})
 	if err != nil {
 		writeMediaError(w, err)
@@ -58,6 +64,9 @@ func (h *HTTPHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	status := http.StatusAccepted
 	if result.Reused {
 		status = http.StatusOK
+	}
+	if single {
+		w.Header().Set(middleware.ChatUpstreamAttemptsHeader, "1")
 	}
 	w.Header().Set("Location", "/v1/media/jobs/"+result.Job.JobID)
 	writeMediaJSON(w, status, result)
@@ -178,11 +187,9 @@ func (h *HTTPHandler) Contract(w http.ResponseWriter, r *http.Request) {
 		writeMediaError(w, err)
 		return
 	}
-	writeMediaJSON(
-		w,
-		http.StatusOK,
-		Evidence(h.service.RuntimeEnabled(), h.service.AdmissionEnabled()),
-	)
+	evidence := Evidence(h.service.RuntimeEnabled(), h.service.AdmissionEnabled())
+	evidence.VideoEnabled = evidence.RuntimeEnabled && h.service.canonicalRoutes != nil
+	writeMediaJSON(w, http.StatusOK, evidence)
 }
 
 func (h *HTTPHandler) writeContent(
@@ -204,7 +211,14 @@ func (h *HTTPHandler) writeContent(
 		extension = "jpg"
 	case "image/webp":
 		extension = "webp"
+	case "video/mp4":
+		extension = "mp4"
+	case "audio/wav":
+		extension = "wav"
+	case "text/plain; charset=utf-8":
+		extension = "txt"
 	}
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Type", output.MediaType)
 	w.Header().Set("Content-Length", strconv.Itoa(len(output.Bytes)))
 	w.Header().Set("Cache-Control", "private, no-store")

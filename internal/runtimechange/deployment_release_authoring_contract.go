@@ -250,6 +250,7 @@ func NormalizeDeploymentReleaseAuthoringMutation(
 		string(modeloperation.IDEmbeddings):      {},
 		string(modeloperation.IDResponses):       {},
 		string(modeloperation.IDMessages):        {},
+		string(modeloperation.IDMediaJobs):       {},
 	}
 	seen := make(map[string]struct{}, len(mutation.Selections))
 	for index := range mutation.Selections {
@@ -258,8 +259,8 @@ func NormalizeDeploymentReleaseAuthoringMutation(
 		if !upstreamrelease.ValidIdentity(selection.ExpectedUpstreamObservationIdentity) {
 			return DeploymentReleaseAuthoringMutation{}, fmt.Errorf("%w: upstream observation identity", ErrInvalid)
 		}
-		if mutation.ProfileDefinitionDigest != "" && selection.OperationID != modelprofile.OperationOpenAIChat {
-			return DeploymentReleaseAuthoringMutation{}, fmt.Errorf("%w: data Release v1 supports typed Chat only", ErrInvalid)
+		if mutation.ProfileDefinitionDigest != "" && selection.OperationID == string(modeloperation.IDEmbeddings) {
+			return DeploymentReleaseAuthoringMutation{}, fmt.Errorf("%w: no data Profile supports embeddings", ErrInvalid)
 		}
 		if selection.DeploymentID <= 0 {
 			return DeploymentReleaseAuthoringMutation{}, fmt.Errorf("%w: selections[%d].deployment_id", ErrInvalid, index)

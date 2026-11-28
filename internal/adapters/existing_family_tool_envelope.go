@@ -28,7 +28,12 @@ type ToolStreamEnvelope struct {
 func NewToolStreamEnvelope(protocol, provider, model, cache string) (*ToolStreamEnvelope, error) {
 	var kimi bool
 	switch protocol {
-	case "protocol.qwen-openai-chat.flash.v7", "protocol.qwen-openai-chat.flash.v8":
+	case modelprofile.QwenHostedSplitProtocol, modelprofile.QwenHostedVisionProtocol:
+		if provider != "dashscope" || cache != modelprofile.QwenHostedSplitUsageProfile || model == "" {
+			return nil, fmt.Errorf("Qwen hosted tool stream component mismatch")
+		}
+		return &ToolStreamEnvelope{model: model, qwen: true}, nil
+	case "protocol.qwen-openai-chat.flash.v7", "protocol.qwen-openai-chat.flash.v8", modelprofile.QwenHybridStreamToolsProtocol, modelprofile.QwenHybridInlineJPEGProtocol, modelprofile.QwenHybridInlineVideoProtocol:
 		if provider != "dashscope" || cache != "cache-usage.qwen-context-cache.v1" || model == "" {
 			return nil, fmt.Errorf("Qwen tool stream component mismatch")
 		}
@@ -38,12 +43,16 @@ func NewToolStreamEnvelope(protocol, provider, model, cache string) (*ToolStream
 			return nil, fmt.Errorf("MiniMax tool stream component mismatch")
 		}
 		return &ToolStreamEnvelope{model: model, miniMaxTier: true}, nil
-	case "protocol.deepseek-openai-chat.v5", modelprofile.DeepSeekProviderCompletionProtocol:
+	case "protocol.deepseek-openai-chat.v5", modelprofile.DeepSeekProviderCompletionProtocol, modelprofile.DeepSeekInlineJPEGProtocol:
 		if provider != "deepseek" || cache != "cache-usage.deepseek-v4.v1" {
 			return nil, fmt.Errorf("DeepSeek tool stream component mismatch")
 		}
-	case "protocol.kimi-openai-chat.v6", "protocol.kimi-openai-chat.k3.v6":
-		if provider != "kimi" || cache != kimiChatCacheUsageProfile {
+	case "protocol.kimi-openai-chat.v6", "protocol.kimi-openai-chat.k3.v6", modelprofile.KimiK3InlineJPEGProtocol, modelprofile.KimiK3InlineVideoProtocol:
+		mediaProtocol := protocol == modelprofile.KimiK3InlineJPEGProtocol || protocol == modelprofile.KimiK3InlineVideoProtocol
+		readWrite := (protocol == "protocol.kimi-openai-chat.k3.v6" || mediaProtocol) &&
+			cache == modelprofile.KimiChatReadWriteCacheUsageProfile
+		if provider != "kimi" || (cache != kimiChatCacheUsageProfile && !readWrite) ||
+			mediaProtocol && !readWrite {
 			return nil, fmt.Errorf("Kimi tool stream component mismatch")
 		}
 		kimi = true

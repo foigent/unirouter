@@ -10,7 +10,8 @@
 
 Image V1 uses the existing
 `unirouter.openai.images.gpt-image.v1` Endpoint Profile as its provider-wire
-evidence baseline. Outputs are stored in a tenant-scoped S3-compatible object
+evidence baseline for legacy releases. Canonical releases use the published
+provider Profile. Outputs are stored in a tenant-scoped S3-compatible object
 store and expire seven days after durable persistence. Video remains disabled
 until it has an independent Endpoint Profile and conformance evidence.
 
@@ -55,6 +56,63 @@ the credential-bearing request to a second location. The shared Image V1
 profile owns one 32 MiB decoded-image ceiling and the corresponding bounded
 Base64 JSON-envelope ceiling; Provider parsing and object persistence use
 those same constants.
+
+Canonical routing requires an active published image release and
+`X-UniRouter-Max-Upstream-Attempts: 1` on new submissions. The installed canonical image Profiles are GPT Image Flare, Beijing Qwen Image
+3.0 and 3.0 Pro, and MiniMax China H3-Image. In legacy routing the header is
+optional. Canonical Flare validates an explicit size and PNG or JPEG output
+against the decoded image. Qwen and MiniMax accept one 1024×1024 PNG with
+prompt enhancement disabled and without GPT-specific quality or background
+controls. Qwen reports input and output images. MiniMax reports input Token
+partitions, image output Tokens and the actual image count. A successful acceptance or exact replay echoes the header and
+returns a job with `max_attempts: 1`. This limits that job to one
+credential-bearing provider POST through the first compatible route. It uses
+a fresh HTTP/1.1 connection and a non-replayable request body. An unknown
+provider outcome stays unknown. Known provider success may reclaim one
+recovery lease to verify the original stored result. No recovery sends
+another generation request.
+
+The header is part of the immutable idempotency intent. Reusing the key
+with a different value or presence returns 409 without echoing the limit.
+Requests without the header use the instance's existing default and retain
+their original request digest and route failover within a worker attempt,
+including instances whose default is one. The stored job keeps the explicit
+submission commitment through recovery. A legacy job cannot be converted
+into an acknowledged bounded request. A canonical job records the accepted
+release, Profile and credential identity before dispatch. An exact replay
+returns the original job across release changes. If that route changes or the
+project's access is revoked before dispatch, the worker stops the pending job.
+
+### Project quick example / 项目调用示例
+
+Use a root API key issued for a project whose policy allows the published
+image model. The model name is the public name in UniRouter. A project viewer
+can inspect authorized results in the console. A project user needs a project
+grant and an eligible key to submit a job.
+
+使用获准调用该模型的项目根 Key。请求中的模型名是 UniRouter 已发布的公开
+模型名。项目查看者可在控制台查看本项目已授权的结果，项目调用者需要相应
+授权及 Key。
+
+```sh
+# Set UR_BASE_URL and UR_PROJECT_KEY locally. Use a unique key for each new intent.
+curl -i "$UR_BASE_URL/v1/media/jobs" \
+  -H "Authorization: Bearer $UR_PROJECT_KEY" \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: example-first-image-v1' \
+  -H 'X-UniRouter-Max-Upstream-Attempts: 1' \
+  --data '{"model":"your-published-image-model","prompt":"One blue square on a white background","n":1,"output_format":"png"}'
+```
+
+Save the returned `Location`. Read that path with the same project key and
+append `/content` to download the PNG when the result is ready. If the result
+of submission is uncertain, use the same key and payload to recover the same
+job. New generation can incur a provider charge. X-Insight receives optional
+reconciliation metadata when explicitly enrolled for the project.
+
+保存响应的 `Location`，用同一项目 Key 查询。结果就绪后，在该路径末尾加
+`/content` 下载 PNG。提交结果不明时，用原幂等键和原请求体找回原作业。
+新生成可能产生供应商费用；项目明确登记后，X-Insight 可接收对账元数据。
 
 ## Durable Identity
 

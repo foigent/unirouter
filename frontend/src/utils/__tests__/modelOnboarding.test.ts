@@ -115,6 +115,24 @@ describe('model onboarding profile composition', () => {
     });
   });
 
+  it('uses only the published media definition on the separate GLM Image origin', () => {
+    const image = profile({
+      id: 'glm.image.api', provider: 'glm', label: 'GLM Image',
+      aliases: ['glm-image'], upstream_model_ids: ['glm-image'],
+      endpoint_classes: ['glm_official_media_origin'],
+      api_surface: 'openai_images', operations: ['unirouter.media_jobs.v1'],
+      profile_definition_digest: 'b'.repeat(64), product_lineage_id: 'glm/glm-image',
+    });
+    const compiled = { ...image, profile_definition_digest: undefined };
+    const mismatched: ModelExecutionProfile = { ...image, operations: ['openai.chat_completions.v1'] };
+    expect(reviewedModelOptions([compiled, mismatched], providerPreset('glm-image'))).toEqual([]);
+    expect(reviewedModelOptions([image], providerPreset('glm'))).toEqual([]);
+    expect(reviewedModelOptions([image], providerPreset('glm-image'))[0]).toMatchObject({
+      recommendedUpstreamModelID: 'glm-image',
+      operationIDs: ['unirouter.media_jobs.v1'],
+    });
+  });
+
   it('compares semantic versions numerically', () => {
     expect(compareProfileVersions('1.10.0', '1.9.9')).toBeGreaterThan(0);
     expect(compareProfileVersions('2.0.0', '10.0.0')).toBeLessThan(0);

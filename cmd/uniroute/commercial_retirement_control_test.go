@@ -1,11 +1,12 @@
 package main
 
 import (
+	"slices"
+	"testing"
+
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/runtimegeneration"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
-	"slices"
-	"testing"
 )
 
 func TestCommercialRetirementControlRejectsExpansionAndOtherSchemas(t *testing.T) {
@@ -67,9 +68,9 @@ func TestCorrectedObservationMaintenanceCarrierKeepsFiniteWithdrawalBoundary(t *
 func TestAdmissionRecoveryCarrierOnlyInspectsExactM129InTest(t *testing.T) {
 	artifact, err := schemaauthority.ExpectedLedger("../../migrations")
 	require.NoError(t, err)
-	require.Equal(t, schemaauthority.CustomerStandardPricingHead, artifact[len(artifact)-1])
-	artifact = artifact[:len(artifact)-1]
-	require.Equal(t, schemaauthority.UpgradeAdmissionRecoveryHead, artifact[len(artifact)-1])
+	historical := slices.Index(artifact, schemaauthority.UpgradeAdmissionRecoveryHead)
+	require.GreaterOrEqual(t, historical, 1)
+	artifact = artifact[:historical+1]
 	prior := artifact[:len(artifact)-1]
 	require.True(t, maintenancePredecessorControlAllowed(artifact, prior, "test", "inspect", nil))
 	require.False(t, maintenancePredecessorControlAllowed(artifact, prior, "production", "inspect", nil))
@@ -82,9 +83,35 @@ func TestAdmissionRecoveryCarrierOnlyInspectsExactM129InTest(t *testing.T) {
 func TestCustomerPricingCarrierOnlyInspectsExactM130InTest(t *testing.T) {
 	artifact, err := schemaauthority.ExpectedLedger("../../migrations")
 	require.NoError(t, err)
+	historical := slices.Index(artifact, schemaauthority.CustomerStandardPricingHead)
+	require.GreaterOrEqual(t, historical, 1)
+	artifact = artifact[:historical+1]
 	prior := artifact[:len(artifact)-1]
 	require.True(t, maintenancePredecessorControlAllowed(artifact, prior, "test", "inspect", nil))
 	require.False(t, maintenancePredecessorControlAllowed(artifact, prior, "production", "inspect", nil))
 	require.False(t, maintenancePredecessorControlAllowed(artifact, prior[:len(prior)-1], "test", "inspect", nil))
 	require.False(t, maintenancePredecessorControlAllowed(artifact, prior, "test", "prepare", nil))
+}
+
+func TestNativeAndMediaCarriersOnlyInspectExactPredecessorsInTest(t *testing.T) {
+	artifact, err := schemaauthority.ExpectedLedger("../../migrations")
+	require.NoError(t, err)
+	for _, release := range []struct{ head, predecessor string }{
+		{schemaauthority.MediaChargeSourceHead, schemaauthority.OpenAIResponsesToolsHead},
+		{schemaauthority.NativeInlineJPEGHead, schemaauthority.MediaChargeSourceHead},
+		{schemaauthority.CanonicalMediaJobHead, schemaauthority.NativeInlineJPEGHead},
+		{schemaauthority.AsyncMediaProviderTaskHead, schemaauthority.CanonicalMediaJobHead},
+	} {
+		t.Run(release.head, func(t *testing.T) {
+			index := slices.Index(artifact, release.head)
+			require.GreaterOrEqual(t, index, 2)
+			prior := artifact[:index]
+			current := artifact[:index+1]
+			require.Equal(t, release.predecessor, prior[len(prior)-1])
+			require.True(t, maintenancePredecessorControlAllowed(current, prior, "test", "inspect", nil))
+			require.False(t, maintenancePredecessorControlAllowed(current, prior, "production", "inspect", nil))
+			require.False(t, maintenancePredecessorControlAllowed(current, prior[:len(prior)-1], "test", "inspect", nil))
+			require.False(t, maintenancePredecessorControlAllowed(current, prior, "test", "prepare", nil))
+		})
+	}
 }

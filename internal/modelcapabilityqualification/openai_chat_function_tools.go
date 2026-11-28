@@ -236,7 +236,10 @@ func isMiniMaxFunctionToolsProbe(contractID string) bool {
 
 func openAIChatRuntimeCapabilityAllowed(binding Binding) bool {
 	if binding.definition != nil {
-		return binding.validateDataDefinition() == nil && (binding.ProbeContractID == MiniMaxPAYGM2ChatFunctionToolsProbeContractID || binding.ProbeContractID == MiniMaxPAYGM3ChatFunctionToolsProbeContractID)
+		return binding.validateDataDefinition() == nil &&
+			(binding.ProbeContractID == MiniMaxPAYGM2ChatFunctionToolsProbeContractID ||
+				binding.ProbeContractID == MiniMaxPAYGM3ChatFunctionToolsProbeContractID ||
+				binding.ProbeContractID == MiMoChatFunctionToolsProbeContractID)
 	}
 	var capabilities []string
 	switch binding.ProbeContractID {

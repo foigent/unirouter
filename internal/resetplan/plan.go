@@ -587,6 +587,8 @@ func Validate(plan Plan) error {
 
 func ClassifyTable(name string) (scope, action, reason string) {
 	switch name {
+	case "model_deployment_async_probe_tasks":
+		return ScopeReviewRequired, ActionPreserveAll, "retained provider probe tasks require a separately reviewed reset lifecycle"
 	case "execution_content_streams", "execution_source_content_scopes",
 		"execution_source_content_bindings", "execution_source_content_operations",
 		"execution_content_policies", "execution_content_enterprise_policies", "execution_content_user_policies",

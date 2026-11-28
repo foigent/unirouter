@@ -20,7 +20,8 @@ func TestCommercialRetirementCLIWithdrawalIntegration(t *testing.T) {
 	dir := testutil.MigrationsDir(t)
 	artifact, err := schemaauthority.ExpectedLedger(dir)
 	require.NoError(t, err)
-	for _, head := range []string{schemaauthority.UpgradeAdmissionRecoveryHead, schemaauthority.CustomerStandardPricingHead} {
+	schemaHeads := schemaauthority.SupportedSchemaHeads()
+	for _, head := range schemaHeads[len(schemaHeads)-2:] {
 		t.Run(head, func(t *testing.T) {
 			testRetirementCLIWithdrawal(t, dir, artifact, head)
 		})

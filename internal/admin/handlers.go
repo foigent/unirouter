@@ -107,6 +107,7 @@ type Handler struct {
 	requestPricingAuthority      string
 	billingMode                  billing.BillingMode
 	modelDeploymentProbeHTTPDoer modelDeploymentProbeHTTPDoer
+	asyncMediaProbeNow           func() time.Time
 	modelRouteSafetyController   *modelrouteauthority.Service
 	modelRouteAuthorityMode      modelrouting.Mode
 	modelRoutePlanner            modelRoutePlanner

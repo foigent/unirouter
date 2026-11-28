@@ -33,6 +33,7 @@ func TestRequiredCapabilitiesForChat(t *testing.T) {
 		{name: "json schema", body: `{"model":"m","messages":[],"response_format":{"type":"json_schema","json_schema":{"name":"x","schema":{}}}}`, want: []string{"json_schema"}},
 		{name: "strict json schema", body: `{"model":"m","messages":[],"response_format":{"type":"json_schema","json_schema":{"name":"x","strict":true,"schema":{}}}}`, want: []string{"strict_json_schema"}},
 		{name: "vision audio and text", body: `{"model":"m","messages":[{"role":"user","content":[{"type":"text","text":"x"},{"type":"image_url","image_url":{"url":"x"}},{"type":"input_audio","input_audio":{"data":"x","format":"wav"}}]}]}`, want: []string{"audio", "vision"}},
+		{name: "inline text file", body: `{"model":"m","messages":[{"role":"user","content":[{"type":"file","file":{"file_data":"data:text/plain;base64,eA=="}}]}]}`, want: []string{"files"}},
 		{name: "remote file", body: `{"model":"m","messages":[{"role":"user","content":[{"type":"file_url","file_url":{"url":"https://example.test/file.pdf"}}]}]}`, want: []string{"files"}},
 		{name: "audio output modality", body: `{"model":"m","messages":[],"modalities":["text","audio"],"audio":{"voice":"alloy","format":"wav"}}`, want: []string{"audio"}},
 		{name: "reasoning and stream", body: `{"model":"m","messages":[],"reasoning_effort":"high","stream":true,"stream_options":{"include_usage":true}}`, want: []string{"reasoning", "streaming"}},

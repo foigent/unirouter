@@ -119,6 +119,7 @@ type PublicAdmission struct {
 	ExplicitMaxOutputTokens int64        `json:"explicit_max_output_tokens"`
 	CanonicalBodyBytes      int          `json:"canonical_body_bytes"`
 	InputTextBytes          int          `json:"input_text_bytes"`
+	InlineImagePixels       int64        `json:"inline_image_pixels,omitempty"`
 	Texts                   []PublicText `json:"texts"`
 	CachePolicy             string       `json:"cache_policy"`
 }
@@ -164,6 +165,7 @@ type PublicAnthropicFunctionToolsContract struct {
 	RequiresNonStream           bool     `json:"requires_non_stream"`
 	ToolInputIdentityGuarded    bool     `json:"tool_input_identity_guarded"`
 	ThinkingHistoryIdentityOnly bool     `json:"thinking_history_identity_only"`
+	ForceSerial                 bool     `json:"force_serial,omitempty"`
 }
 
 // PublicAnthropicReasoningRequestContract projects the independently nested
@@ -343,9 +345,12 @@ func resolvePublicRequestContract(values []PublicRequestContract) (PublicRequest
 			}
 		}
 		if tools := messages.FunctionTools; tools != nil {
+			legacyChoice := !tools.ForceSerial && tools.NamedChoice && tools.ParallelToolUse && tools.ParallelProviderDefault
+			serialChoice := tools.ForceSerial && !tools.NamedChoice && !tools.ParallelToolUse && !tools.ParallelProviderDefault &&
+				tools.ProviderDefaultChoice == "auto" && slices.Equal(tools.ToolChoices, []string{"auto", "none"})
 			if tools.MaxTools <= 0 || tools.ToolNamePattern == "" || len(tools.ToolChoices) == 0 ||
 				!slices.IsSorted(tools.ToolChoices) || !slices.Contains(tools.ToolChoices, tools.ProviderDefaultChoice) ||
-				!tools.NamedChoice || !tools.ParallelToolUse || !tools.ParallelProviderDefault ||
+				(!legacyChoice && !serialChoice) ||
 				!tools.ExactHistory || !tools.ExactResponse || !tools.RequiresNonStream ||
 				!tools.ToolInputIdentityGuarded || !tools.ThinkingHistoryIdentityOnly {
 				return PublicRequestContract{}, protocolError(ErrInvalidConfiguration, "public_anthropic_tools_contract_invalid")
@@ -389,6 +394,7 @@ type PublicInvocationSemantics struct {
 	ReasoningEffortEffective  string
 	ReasoningBudgetExplicit   bool
 	ReasoningBudgetEffective  int64
+	InlineImagePixels         int64
 	Streaming                 bool
 	FunctionToolsRequested    bool
 	DeclaredToolNames         []string
@@ -418,6 +424,7 @@ func (request *PublicPreparedRequest) Admission() PublicAdmission {
 		ExplicitMaxOutputTokens: request.maxOutput,
 		CanonicalBodyBytes:      len(body),
 		InputTextBytes:          inputBytes,
+		InlineImagePixels:       request.semantics.InlineImagePixels,
 		Texts:                   clonePublicTexts(texts),
 		CachePolicy:             PublicCachePolicyBypass,
 	}
@@ -625,6 +632,9 @@ type PublicNonStreamRegistry struct {
 
 func NewPublicNonStreamRegistry() *PublicNonStreamRegistry {
 	return newPublicNonStreamRegistry(
+		(openAIResponsesToolsProfileV3{}).publicProfile(),
+		publicResponsesInlineJPEGProfile(),
+		publicMessagesInlineJPEGProfile(),
 		publicOpenAIResponsesProfile{
 			base: openAIResponsesProfile{},
 			identity: publicIdentity(

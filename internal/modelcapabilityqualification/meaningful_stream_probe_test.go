@@ -49,7 +49,7 @@ func TestMeaningfulStreamProbeExactTaskOracleAndRetainedBundle(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, body, 780)
 		require.Equal(t, "32c62ada6083f2fd5c46321c51039dafc18d417babe2cd7676dbd937ee2b2a0c", fmt.Sprintf("%x", sha256.Sum256(body)))
-		group, err := SharedStreamProbeContract(b)
+		group, err := SharedProbeContract(b)
 		require.NoError(t, err)
 		require.Equal(t, DeepSeekProviderCompletionProbeContractID+"@2.0.0", group)
 		require.Equal(t, d.Digest(), bundle.BindingDelta[i].ProfileDefinitionDigest)

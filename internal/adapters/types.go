@@ -34,21 +34,22 @@ const (
 )
 
 type Usage struct {
-	PromptTokens         int
-	UncachedPromptTokens int
-	CacheReadTokens      int
-	CacheCreationTokens  int
-	CompletionTokens     int
-	TotalTokens          int
-	Source               string
-	Authority            metering.UsageAuthority
-	Purpose              metering.UsagePurpose
-	Finality             metering.UsageFinality
-	ContractVersion      string
-	EstimateVersion      string
-	CacheUsageSchema     string
-	CacheUsageStatus     string
-	MeterUsage           []metering.MeterQuantity
+	PromptTokens            int
+	UncachedPromptTokens    int
+	CacheReadTokens         int
+	CacheCreationTokens     int
+	CompletionTokens        int
+	ProviderReasoningTokens *int // Present only for versioned provider completion partitions.
+	TotalTokens             int
+	Source                  string
+	Authority               metering.UsageAuthority
+	Purpose                 metering.UsagePurpose
+	Finality                metering.UsageFinality
+	ContractVersion         string
+	EstimateVersion         string
+	CacheUsageSchema        string
+	CacheUsageStatus        string
+	MeterUsage              []metering.MeterQuantity
 }
 
 type ProviderMeta struct {
@@ -68,6 +69,23 @@ type NormalizedError struct {
 	Message     string
 	Retryable   bool
 	FailureKind FailureKind
+}
+
+// FitsProviderCompletionSplit checks authoritative provider usage for a contract
+// that limits answer and reasoning separately. The total remains billable once.
+func (u Usage) FitsProviderCompletionSplit(answerLimit, reasoningLimit int) bool {
+	if answerLimit < 0 || reasoningLimit < 0 || u.Authority != metering.UsageAuthorityProviderReported ||
+		u.Finality != metering.UsageFinalityFinal {
+		return false
+	}
+	reasoning := 0
+	if u.ProviderReasoningTokens != nil {
+		reasoning = *u.ProviderReasoningTokens
+	} else if reasoningLimit != 0 {
+		return false
+	}
+	return reasoning >= 0 && reasoning <= reasoningLimit && u.CompletionTokens >= reasoning &&
+		u.CompletionTokens-reasoning <= answerLimit
 }
 
 type RequestInput struct {

@@ -12,10 +12,15 @@ const (
 	CacheUsageModeAutomatic = "automatic"
 
 	CacheUsageWireMoonshotCachedTokensV1 = "moonshot.cached_tokens.v1"
+	CacheUsageWireMoonshotReadWriteV1    = "moonshot.prompt_tokens_details.read-write.v1"
 	CacheUsageWireDeepSeekHitMissV1      = "deepseek.prompt-cache-hit-miss.v1"
 	CacheUsageWireOpenAICachedTokensV1   = "openai.prompt_tokens_details.v1"
 	CacheUsageWireOpenAIReadWriteV1      = "openai.prompt_tokens_details.read-write.v1"
 	CacheUsageWireQwenContextCacheV1     = "qwen.prompt_tokens_details.v1"
+	CacheUsageWireXAIAdditiveReasoningV1 = "xai.chat-additive-reasoning.v1"
+
+	KimiChatReadWriteCacheUsageProfile        = "cache-usage.kimi-platform.v2"
+	XAIChatAdditiveReasoningCacheUsageProfile = "cache-usage.xai-chat-additive-reasoning.v1"
 
 	ReasoningControlWireString  = "string"
 	ReasoningControlWireBoolean = "boolean"
@@ -95,6 +100,7 @@ type ReasoningContract struct {
 	EffortEffectiveWithTools                  map[string]string
 	ToggleAndEffortMutuallyExclusive          bool
 	ActiveNonStreamTimeoutSeconds             int
+	InactiveOutputFieldMaximums               map[string]int64
 	ActiveOutputFieldMaximums                 map[string]int64
 	PreserveThinkingField                     string
 	PreserveThinkingProviderDefault           bool
@@ -104,6 +110,7 @@ type ReasoningContract struct {
 	// contract so admission, execution evidence, and historical fail-closed
 	// behavior cannot drift into separate authorities.
 	SplitOutputField            string
+	SplitOutputRequired         bool
 	SplitOutputProviderDefault  bool
 	SplitOutputEnabledSupported bool
 	ActiveStreamingUnsupported  bool
@@ -143,6 +150,16 @@ type CacheUsageContract struct {
 }
 
 var reasoningContracts = map[string]ReasoningContract{
+	openAI62ResponsesReasoning: {
+		ProfileID: openAI62ResponsesReasoning, Mode: ReasoningModeAlwaysOn, RequestObjectField: "reasoning",
+		EffortControl: ReasoningControlContract{Field: "effort", WireType: ReasoningControlWireString,
+			AllowedValues: []string{"low", "medium", "high", "xhigh", "max"}},
+		DefaultAuthority: ReasoningDefaultProvider,
+	},
+	claudeOpus55Reasoning:   claude55Reasoning(claudeOpus55Reasoning, "medium", []string{"adaptive"}, nil),
+	claudeSonnet55Reasoning: claude55Reasoning(claudeSonnet55Reasoning, "high", []string{"adaptive", "between_tools"}, nil),
+	claudeHaiku55Reasoning:  claude55Reasoning(claudeHaiku55Reasoning, "medium", []string{"adaptive", "disabled"}, []string{"disabled"}),
+
 	"reasoning.minimax-m3-adaptive-embedded.v2": miniMaxM3StreamReasoningContract(),
 	"reasoning.minimax-m3-adaptive-embedded.v3": miniMaxM3ToolContinuationReasoningContract(),
 	"reasoning.minimax-m2-required-embedded.v2": miniMaxRequiredToolContinuationReasoningContract("reasoning.minimax-m2-required-embedded.v2"),
@@ -352,6 +369,44 @@ var reasoningContracts = map[string]ReasoningContract{
 		NamedToolChoiceWhileReasoning:    true,
 		RequiredToolChoiceWhileReasoning: true,
 	},
+	"reasoning.openai-gpt-6.2-chat.v1": {
+		ProfileID: "reasoning.openai-gpt-6.2-chat.v1", Mode: ReasoningModeAlwaysOn,
+		EffortControl: ReasoningControlContract{
+			Field: "reasoning_effort", WireType: ReasoningControlWireString,
+			AllowedValues: []string{"low", "medium", "high", "xhigh", "max"},
+		},
+		ForbiddenRequestFieldsWhileActive: []string{"temperature", "top_p", "logprobs", "top_logprobs"},
+		DefaultAuthority:                  ReasoningDefaultProvider,
+	},
+	"reasoning.gemini-4-xhigh-chat.v1": {
+		ProfileID: "reasoning.gemini-4-xhigh-chat.v1", Mode: ReasoningModeAlwaysOn,
+		EffortControl: ReasoningControlContract{
+			Field: "reasoning_effort", WireType: ReasoningControlWireString,
+			AllowedValues: []string{"low", "medium", "high", "xhigh"}, CompatibilityValues: map[string]string{"minimal": "low"},
+		},
+		DefaultAuthority: ReasoningDefaultProvider,
+	},
+	"reasoning.gemini-3.8-flash-chat.v1": {
+		ProfileID: "reasoning.gemini-3.8-flash-chat.v1", Mode: ReasoningModeAlwaysOn,
+		EffortControl: ReasoningControlContract{
+			Field: "reasoning_effort", WireType: ReasoningControlWireString, AllowedValues: []string{"low", "medium", "high"},
+		},
+		DefaultAuthority: ReasoningDefaultProvider,
+	},
+	"reasoning.hy4-chat.v1": {
+		ProfileID: "reasoning.hy4-chat.v1", Mode: ReasoningModeToggle,
+		ToggleControl: ReasoningControlContract{
+			Field: "thinking", AllowedValues: []string{"enabled", "disabled"}, ProviderDefault: "enabled",
+		},
+		DefaultAuthority: ReasoningDefaultProvider,
+	},
+	"reasoning.grok-4.7-chat.v1": {
+		ProfileID: "reasoning.grok-4.7-chat.v1", Mode: ReasoningModeAlwaysOn,
+		EffortControl: ReasoningControlContract{
+			Field: "reasoning_effort", WireType: ReasoningControlWireString, AllowedValues: []string{"low", "medium", "high", "xhigh"}, ProviderDefault: "high",
+		},
+		DefaultAuthority: ReasoningDefaultProvider,
+	},
 	"reasoning.hy3-chat.v1": {
 		ProfileID: "reasoning.hy3-chat.v1",
 		Mode:      ReasoningModeToggle,
@@ -409,6 +464,8 @@ var reasoningContracts = map[string]ReasoningContract{
 		},
 		DefaultAuthority: ReasoningDefaultProvider,
 	},
+	QwenHosted27BReasoning:  qwenHostedReasoning(QwenHosted27BReasoning, true),
+	QwenHostedA95BReasoning: qwenHostedReasoning(QwenHostedA95BReasoning, false),
 	"reasoning.qwen3.7-hybrid.v1": {
 		ProfileID: "reasoning.qwen3.7-hybrid.v1",
 		Mode:      ReasoningModeToggle,
@@ -424,6 +481,22 @@ var reasoningContracts = map[string]ReasoningContract{
 		PreserveThinkingField:           "preserve_thinking",
 		PreserveThinkingProviderDefault: false,
 	},
+	QwenOmniReasoningProfile: {
+		ProfileID: QwenOmniReasoningProfile, Mode: ReasoningModeToggle, EffortEnablesReasoning: true,
+		DefaultAuthority: ReasoningDefaultProvider,
+		EffortControl: ReasoningControlContract{
+			Field: "reasoning_effort", WireType: ReasoningControlWireString,
+			AllowedValues: []string{"low", "medium", "xhigh"}, DisabledValues: []string{"none"}, ProviderDefault: "xhigh",
+		},
+	},
+	"reasoning.qwen4-max-hybrid.v1": func() ReasoningContract {
+		contract := qwenNewHybridReasoningContract("reasoning.qwen4-max-hybrid.v1", "high", 131_072,
+			[]string{"low", "high", "xhigh"}, map[string]string{"minimal": "low", "medium": "high", "max": "xhigh"})
+		contract.InactiveOutputFieldMaximums = map[string]int64{"max_completion_tokens": 131_072}
+		return contract
+	}(),
+	"reasoning.qwen3.8-flash-hybrid.v1": qwenNewHybridReasoningContract("reasoning.qwen3.8-flash-hybrid.v1", "xhigh", 262_144,
+		[]string{"low", "medium", "xhigh"}, map[string]string{"minimal": "low", "high": "xhigh", "max": "xhigh"}),
 	"reasoning.qwen3.8-max-hybrid.v1": {
 		ProfileID: "reasoning.qwen3.8-max-hybrid.v1",
 		Mode:      ReasoningModeToggle,
@@ -769,6 +842,21 @@ var reasoningContracts = map[string]ReasoningContract{
 		ActiveStreamingUnsupported:      true,
 		AssistantToolHistoryReplayField: "content",
 	},
+	"reasoning.minimax-m31-required-split.v1": {
+		ProfileID: "reasoning.minimax-m31-required-split.v1",
+		Mode:      ReasoningModeRequired, DefaultAuthority: ReasoningDefaultProvider,
+		ToggleControl: ReasoningControlContract{
+			Field: "thinking", AllowedValues: []string{"adaptive"}, ProviderDefault: "adaptive",
+		},
+		EffortControl: ReasoningControlContract{
+			Field: "reasoning_effort", WireType: ReasoningControlWireString,
+			AllowedValues: []string{"low", "medium", "high", "xhigh", "max"}, ProviderDefault: "max",
+		},
+		SplitOutputField: "reasoning_split", SplitOutputProviderDefault: true,
+		SplitOutputEnabledSupported: true, SplitOutputRequired: true,
+		PreserveAssistantReasoningForTools:  true,
+		UnsupportedRequestFieldsWhileActive: []string{"tool_choice"},
+	},
 	"reasoning.minimax-m27-required-embedded.v2": miniMaxRequiredToolContinuationReasoningContract("reasoning.minimax-m27-required-embedded.v2"),
 	"reasoning.minimax-m2-required-embedded.v1": {
 		ProfileID:                       "reasoning.minimax-m2-required-embedded.v1",
@@ -783,6 +871,14 @@ var reasoningContracts = map[string]ReasoningContract{
 }
 
 var cacheUsageContracts = map[string]CacheUsageContract{
+	XAIChatAdditiveReasoningCacheUsageProfile: {
+		ProfileID: XAIChatAdditiveReasoningCacheUsageProfile,
+		Mode:      CacheUsageModeAutomatic, WireSchema: CacheUsageWireXAIAdditiveReasoningV1, ReportsRead: true,
+	},
+	"cache-usage.openai-compatible-read.v1": {
+		ProfileID: "cache-usage.openai-compatible-read.v1",
+		Mode:      CacheUsageModeAutomatic, WireSchema: CacheUsageWireOpenAICachedTokensV1, ReportsRead: true,
+	},
 	"cache-usage.openai-gpt-5.6.v1": {
 		ProfileID: "cache-usage.openai-gpt-5.6.v1",
 		Mode:      CacheUsageModeAutomatic, WireSchema: CacheUsageWireOpenAIReadWriteV1,
@@ -804,6 +900,10 @@ var cacheUsageContracts = map[string]CacheUsageContract{
 		ProfileID: "cache-usage.doubao-ark-chat.v1",
 		Mode:      CacheUsageModeAutomatic, WireSchema: CacheUsageWireOpenAICachedTokensV1,
 		ReportsRead: true, RequireReadCounter: true,
+	},
+	"cache-usage.minimax-m31-openai.v1": {
+		ProfileID: "cache-usage.minimax-m31-openai.v1",
+		Mode:      CacheUsageModeAutomatic, WireSchema: CacheUsageWireOpenAICachedTokensV1, ReportsRead: true,
 	},
 	"cache-usage.minimax-openai.v1": {
 		ProfileID: "cache-usage.minimax-openai.v1",
@@ -827,9 +927,24 @@ var cacheUsageContracts = map[string]CacheUsageContract{
 		ProfileID: "cache-usage.kimi-platform.v1",
 		Mode:      CacheUsageModeAutomatic, WireSchema: CacheUsageWireMoonshotCachedTokensV1, ReportsRead: true,
 	},
+	KimiChatReadWriteCacheUsageProfile: {
+		ProfileID: KimiChatReadWriteCacheUsageProfile,
+		Mode:      CacheUsageModeAutomatic, WireSchema: CacheUsageWireMoonshotReadWriteV1,
+		ReportsRead: true, ReportsCreation: true,
+	},
 	"cache-usage.deepseek-v4.v1": {
 		ProfileID: "cache-usage.deepseek-v4.v1",
 		Mode:      CacheUsageModeAutomatic, WireSchema: CacheUsageWireDeepSeekHitMissV1, ReportsRead: true,
+	},
+	QwenOmniUsageProfile: {
+		ProfileID: QwenOmniUsageProfile,
+		Mode:      CacheUsageModeAutomatic, WireSchema: CacheUsageWireOpenAICachedTokensV1,
+		ReportsRead: true,
+	},
+	QwenHostedSplitUsageProfile: {
+		ProfileID: QwenHostedSplitUsageProfile,
+		Mode:      CacheUsageModeAutomatic, WireSchema: CacheUsageWireQwenContextCacheV1,
+		ReportsRead: true, ReportsCreation: true,
 	},
 	"cache-usage.qwen-context-cache.v1": {
 		ProfileID: "cache-usage.qwen-context-cache.v1",
@@ -858,6 +973,7 @@ func ResolveReasoningContract(profileID string) (ReasoningContract, bool) {
 	contract.FixedRequestNumbersWhenDisabled = cloneStringMap(contract.FixedRequestNumbersWhenDisabled)
 	contract.EffortEffectiveWithTools = cloneStringMap(contract.EffortEffectiveWithTools)
 	contract.ActiveOutputFieldMaximums = cloneInt64Map(contract.ActiveOutputFieldMaximums)
+	contract.InactiveOutputFieldMaximums = cloneInt64Map(contract.InactiveOutputFieldMaximums)
 	return contract, true
 }
 

@@ -38,6 +38,8 @@ type chatPreflightResult struct {
 	OutputEnforcement          *modelprofile.OutputEnforcement `json:"output_enforcement,omitempty"`
 	AcceptedCompletionTokens   int                             `json:"accepted_completion_tokens,omitempty"`
 	ProviderCompletionTokens   int                             `json:"provider_completion_tokens,omitempty"`
+	ProviderAnswerTokens       int                             `json:"provider_answer_tokens,omitempty"`
+	ProviderReasoningTokens    *int                            `json:"provider_reasoning_tokens,omitempty"`
 	Object                     string                          `json:"object"`
 	RequestModel               string                          `json:"request_model"`
 	Operation                  string                          `json:"operation"`
@@ -114,7 +116,11 @@ func (relay *Relay) HandleChatPreflight(w http.ResponseWriter, r *http.Request) 
 			enforcement := batch.limits.OutputEnforcement
 			result.OutputEnforcement = &enforcement
 			result.AcceptedCompletionTokens = batch.limits.EstimatedOutputTokens
-			result.ProviderCompletionTokens = batch.limits.ProviderOutputLimit
+			result.ProviderCompletionTokens = batch.limits.ProviderOutputLimit + batch.limits.HostedReasoningTokenLimit
+			if enforcement.Scope == modelprofile.QwenHostedBudgetScope {
+				result.ProviderAnswerTokens = batch.limits.ProviderOutputLimit
+				result.ProviderReasoningTokens = &batch.limits.HostedReasoningTokenLimit
+			}
 		}
 		result.RequiredCapabilities = append(result.RequiredCapabilities, plan.RequiredCapabilities...)
 		if !plan.DatabaseTime.IsZero() {

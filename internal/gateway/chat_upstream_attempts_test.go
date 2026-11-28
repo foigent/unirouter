@@ -119,7 +119,7 @@ func TestChatUpstreamAttemptLimitAtProvider(t *testing.T) {
 				r.Header.Set(middleware.ChatUpstreamAttemptsHeader, "1")
 			}
 			w := httptest.NewRecorder()
-			middleware.ChatUpstreamAttemptPolicy(http.HandlerFunc(relay.HandleChatCompletion)).ServeHTTP(w, r)
+			middleware.UpstreamAttemptPolicy(http.HandlerFunc(relay.HandleChatCompletion)).ServeHTTP(w, r)
 
 			require.Equal(t, test.wantStatus, w.Code, w.Body.String())
 			require.Equal(t, test.wantFirst, firstPosts.Load(), "first provider POST count")

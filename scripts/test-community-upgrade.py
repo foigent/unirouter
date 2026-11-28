@@ -56,8 +56,11 @@ class OfflineTar:
 
 class UpgradeBoundaryTests(unittest.TestCase):
     def test_customer_pricing_retains_exact_admission_predecessor(self):
-        self.assertEqual(M.transition_ledger([M.ADMISSION_SCHEMA]), [M.ADMISSION_SCHEMA, M.TARGET_SCHEMA])
-        self.assertEqual(M.transition_ledger([M.RESTORE_SCHEMA]), [M.RESTORE_SCHEMA, M.ADMISSION_SCHEMA, M.TARGET_SCHEMA])
+        target_suffix = [M.RESPONSES_TOOLS_SCHEMA, M.MEDIA_CHARGE_SCHEMA, M.NATIVE_INLINE_JPEG_SCHEMA, M.CANONICAL_MEDIA_SCHEMA, M.TARGET_SCHEMA]
+        self.assertEqual(M.transition_ledger([M.ADMISSION_SCHEMA]), [M.ADMISSION_SCHEMA, M.CUSTOMER_PRICING_SCHEMA, *target_suffix])
+        self.assertEqual(M.transition_ledger([M.CUSTOMER_PRICING_SCHEMA]), [M.CUSTOMER_PRICING_SCHEMA, *target_suffix])
+        self.assertEqual(M.transition_ledger([M.RESTORE_SCHEMA]), [M.RESTORE_SCHEMA, M.ADMISSION_SCHEMA, M.CUSTOMER_PRICING_SCHEMA, *target_suffix])
+        self.assertEqual(M.transition_ledger([M.RESPONSES_TOOLS_SCHEMA]), target_suffix)
 
     def test_native_lease_expiry_preserves_postgres_precision_and_offsets(self):
         for digits in range(7):
@@ -834,10 +837,29 @@ class WholeUpgradeTests(unittest.TestCase):
             if db == source_db:
                 return {"metadata": state.metadata, "coverage": state.coverage, "streams": state.streams, "objects": state.objects, "business": state.business, "models": state.models, "setups": state.setups, "sessions":state.sessions}
             return state.clones[db]
+        support_columns = ("operation_id", "public_path", "protocol_profile_id", "protocol_profile_version", "executor_contract_version")
+        extension_columns = ("delivery_contract_version", "charge_contract_version", "idempotency_contract_version")
+        support_table = "model_operation_execution_support_bindings"
+        extensions_table = "model_operation_public_execution_contract_extensions"
+        contract_tables = {support_table: support_columns, extensions_table: support_columns + extension_columns}
         def tables(db):
             data = database(db); meta = data["metadata"]
+            contracts = {
+                name: [dict(zip(fields, row), introduced_migration=head) for head in meta["ledger"]
+                       for row in M.QUALIFIED_EXECUTION_MIGRATIONS.get(head, ())]
+                for name, fields in contract_tables.items()
+            }
+            job = {"job_id": "legacy-media", "request_sha256": "legacy-immutable-request"}
+            if M.MEDIA_CHARGE_SCHEMA in meta["ledger"]:
+                job["single_upstream_attempt"] = False
+            if M.CANONICAL_MEDIA_SCHEMA in meta["ledger"]:
+                job.update(canonical_route=None, canonical_dispatch_route=None)
             pricing = dict.fromkeys(M.CUSTOMER_PRICING_TABLES, []) if M.CUSTOMER_PRICING_SCHEMA in meta["ledger"] else {}
-            return {**pricing, "business_history": data["business"], "model_deployments": data["models"], "xinsight_connector_installations": data["setups"], "admin_sessions":data["sessions"],
+            probe_tasks = {}
+            if M.ASYNC_MEDIA_SCHEMA in meta["ledger"]:
+                job.update(provider_task_id=None, provider_task_read_until=None, provider_status_reads=0)
+                probe_tasks["model_deployment_async_probe_tasks"] = []
+            return {**pricing, **contracts, **probe_tasks, "async_media_jobs": [job], "business_history": data["business"], "model_deployments": data["models"], "xinsight_connector_installations": data["setups"], "admin_sessions":data["sessions"],
                 "schema_migrations": [{"version": value} for value in meta["ledger"]],
                 "runtime_generations": meta["generations"], "runtime_support_manifests": meta["manifests"],
                 "runtime_ingress_changes": meta["ingress"], "release_state": [meta["release"]], "release_history": meta["history"],
@@ -860,6 +882,20 @@ class WholeUpgradeTests(unittest.TestCase):
                 row = next(row for row in database(db)["setups"] if row["installation_id"] == identity)
                 return json.dumps({"row": copy.deepcopy(row), "stable_sha256": hashlib.sha256(M.canonical({k:v for k,v in row.items() if k != "updated_at"})).hexdigest(),
                     "progress_sha256": hashlib.sha256(M.canonical(row["setup_progress"])).hexdigest(), "clock": "2026-11-01T00:00:00Z"})
+            if query.startswith("SELECT introduced_migration,operation_id,public_path,protocol_profile_id,"):
+                table = query.split(" FROM ", 1)[1].split(" ", 1)[0]
+                fields = query.split(" FROM ", 1)[0].removeprefix("SELECT ").split(",")
+                heads = re.findall("'([^']*)'", query.split("WHERE introduced_migration IN", 1)[1])
+                return "\n".join("|".join(row[key] for key in fields) for row in tables(db)[table]
+                                 if row["introduced_migration"] in heads)
+            if query == "SELECT count(*) FROM async_media_jobs WHERE single_upstream_attempt;":
+                return str(sum(bool(row.get("single_upstream_attempt")) for row in tables(db)["async_media_jobs"]))
+            if query == "SELECT count(*) FROM async_media_jobs WHERE canonical_route IS NOT NULL OR canonical_dispatch_route IS NOT NULL;":
+                return str(sum(row.get("canonical_route") is not None or row.get("canonical_dispatch_route") is not None
+                               for row in tables(db)["async_media_jobs"]))
+            if query == "SELECT count(*) FROM async_media_jobs WHERE provider_task_id IS NOT NULL OR provider_task_read_until IS NOT NULL OR provider_status_reads<>0;":
+                return str(sum(row.get("provider_task_id") is not None or row.get("provider_task_read_until") is not None or row.get("provider_status_reads", 0) != 0
+                               for row in tables(db)["async_media_jobs"]))
             if "FROM pg_tables" in query: return json.dumps(sorted(tables(db)))
             if "fingerprints;" in query:
                 result = {}
@@ -869,6 +905,12 @@ class WholeUpgradeTests(unittest.TestCase):
                     values = copy.deepcopy(rows)
                     if name == "model_deployments" and "-'upstream_release_observation'" in part:
                         values = [{key: value for key, value in row.items() if key not in ("upstream_release_observation", "upstream_observation_revision")} for row in values]
+                    if name in contract_tables and "WHERE NOT (introduced_migration IN" in part:
+                        heads = re.findall("'([^']*)'", part.split("WHERE NOT (introduced_migration IN", 1)[1])
+                        values = [row for row in values if row["introduced_migration"] not in heads]
+                    if name == "async_media_jobs":
+                        excluded = re.findall("-'([^']*)'", part)
+                        values = [{key: value for key, value in row.items() if key not in excluded} for row in values]
                     if name == "schema_migrations" and "WHERE version NOT IN" in part:
                         excluded = re.findall("'([^']*)'",part.split("WHERE version NOT IN",1)[1])
                         values = [row for row in values if row["version"] not in excluded]

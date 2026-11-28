@@ -355,25 +355,35 @@ paths:
   /v1/responses:
     post:
       tags: [Gateway]
-      summary: Strict OpenAI Responses text execution
+      summary: OpenAI Responses text, qualified client function tools and inline JPEG
       description: |
-        Executes only an exact M77-qualified public Responses profile. V1 remains strict non-stream text. Current Sol/Terra/Luna Responses `@1.3.0` pin `unirouter.openai.responses.text.v2@1.0.0` and additionally admit exact core-text SSE when `stream=true`. The caller's public model remains the downstream identity; provider mapping is private. The retained request budget is 8 MiB and the endpoint-protocol document is limited to 2 MiB. All three current Profiles admit only `reasoning.effort=none|low|medium|high|xhigh|max`; omission preserves the provider default. Tools, state/replay, reasoning summaries or encrypted output, background work, structured or multimodal input/output, include expansions, prompt templates, and unknown root or nested members fail before provider dispatch. Exact text SSE validates event order, sequence, response identity, final usage and guarded text reconciliation; failed or incomplete streams do not settle. Response cache reads and writes are always bypassed. `Idempotency-Key` reserves metadata at most once for 24 hours and never stores or replays response bytes.
+        Executes only an exact M77-qualified public Responses profile. V1 remains strict non-stream text. Current Sol/Terra/Luna Responses `@1.3.0` pin `unirouter.openai.responses.text.v2@1.0.0` and additionally admit exact core-text SSE when `stream=true`. The caller's public model remains the downstream identity; provider mapping is private. The retained request budget is 8 MiB and the endpoint-protocol document is limited to 2 MiB. All three current Profiles admit only `reasoning.effort=none|low|medium|high|xhigh|max`; omission preserves the provider default. The historical V1 and V2 profiles reject tools and continuation history. The GPT-6.2 Astra and Sol V3 data Profiles admit non-streaming client function tools with automatic single-tool selection, `store=false`, and stateless continuation. Replay the ordered assistant items (including opaque encrypted reasoning) and the matching `function_call_output` in a new request. Hosted tools, previous_response_id, background work, arbitrary includes, and optional effort changes remain outside this tool qualification. The Astra and Sol inline JPEG successors also accept one JPEG alongside text on the same public model and release. Images cannot be combined with tools or streaming. Exact text SSE validates event order, sequence, response identity, final usage and guarded text reconciliation; failed or incomplete streams do not settle. Response cache reads and writes are always bypassed. `Idempotency-Key` reserves metadata at most once for 24 hours and never stores or replays response bytes.
       security:
         - gatewayKey: []
       parameters:
         - $ref: "#/components/parameters/XRequestId"
         - $ref: "#/components/parameters/ClientRequestId"
         - $ref: "#/components/parameters/IdempotencyKey"
+        - in: header
+          name: X-UniRouter-Max-Upstream-Attempts
+          schema: { type: string, enum: ["1"] }
+          description: Optional cap of one upstream POST for this non-streaming request. Streaming rejects this option.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/PublicResponsesRequest"
+              anyOf:
+                - $ref: "#/components/schemas/PublicResponsesRequest"
+                - $ref: "#/components/schemas/PublicResponsesToolsRequest"
+                - $ref: "#/components/schemas/PublicResponsesInlineJPEGRequest"
       responses:
         "200":
           description: Completed, guard-approved canonical Responses body with the caller's public model and exact provider-reported usage. Unknown provider fields are never delivered.
           headers:
+            X-UniRouter-Max-Upstream-Attempts:
+              description: Echoed when the requested single-attempt cap was accepted.
+              schema: { type: string, enum: ["1"] }
             X-Request-ID:
               $ref: "#/components/headers/OperationId"
             X-UniRouter-Client-Request-ID:
@@ -381,7 +391,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PublicResponsesResponse"
+                anyOf:
+                  - $ref: "#/components/schemas/PublicResponsesResponse"
+                  - $ref: "#/components/schemas/PublicResponsesToolsResponse"
             text/event-stream:
               schema:
                 type: string
@@ -399,9 +411,9 @@ paths:
   /v1/messages:
     post:
       tags: [Gateway]
-      summary: Strict Anthropic Messages non-stream text execution
+      summary: Anthropic Messages text, qualified client function tools and inline JPEG
       description: |
-        Executes only the exact M77-qualified `unirouter.anthropic.messages.text.v1` public profile. The caller's public model remains the downstream identity; provider mapping is private. The retained request budget is 8 MiB and the endpoint-protocol document is limited to 2 MiB. Messages are exact `user` or `assistant` string-content objects with an optional string system prompt. Tools, cache controls, beta features, thinking, structured or multimodal content, streaming, and unknown root or nested members fail before provider dispatch. Response cache reads and writes are always bypassed. `Idempotency-Key` reserves metadata at most once for 24 hours and never stores or replays response bytes.
+        Executes an exact qualified Messages profile. The retained V1 profile requires string-content messages. The Claude 5.5 Profiles admit non-streaming client function tools with automatic, serial tool selection and default provider thinking. In a second request, replay the whole assistant content array in its original order and append a user tool_result with the original tool_use_id. Signed thinking must go back to the producing account or a linked account. Each leg is separately metered and uses a new idempotency key. The caller's public model remains the downstream identity. The Opus, Sonnet and Haiku inline JPEG successors also accept one JPEG alongside text on the same public model and release. Images cannot be combined with tools or streaming. Cache controls and hosted/beta tools are unsupported; thinking and effort are validated against the selected Profile. Response cache reads and writes are always bypassed. `Idempotency-Key` reserves metadata at most once for 24 hours and never stores or replays response bytes.
       security:
         - anthropicGatewayKey: []
       parameters:
@@ -409,16 +421,26 @@ paths:
         - $ref: "#/components/parameters/ClientRequestId"
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/AnthropicVersion"
+        - in: header
+          name: X-UniRouter-Max-Upstream-Attempts
+          schema: { type: string, enum: ["1"] }
+          description: Optional cap of one upstream POST for this non-streaming request. Streaming rejects this option.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/PublicMessagesRequest"
+              anyOf:
+                - $ref: "#/components/schemas/PublicMessagesRequest"
+                - $ref: "#/components/schemas/PublicMessagesToolsRequest"
+                - $ref: "#/components/schemas/PublicMessagesInlineJPEGRequest"
       responses:
         "200":
           description: Completed, guard-approved canonical Anthropic message with the caller's public model and exact provider-reported usage. Unknown provider fields are never delivered.
           headers:
+            X-UniRouter-Max-Upstream-Attempts:
+              description: Echoed when the requested single-attempt cap was accepted.
+              schema: { type: string, enum: ["1"] }
             X-Request-ID:
               $ref: "#/components/headers/OperationId"
             request-id:
@@ -428,7 +450,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PublicMessagesResponse"
+                anyOf:
+                  - $ref: "#/components/schemas/PublicMessagesResponse"
+                  - $ref: "#/components/schemas/PublicMessagesToolsResponse"
         "400": { $ref: "#/components/responses/PublicAnthropicError" }
         "401": { $ref: "#/components/responses/PublicAnthropicError" }
         "403": { $ref: "#/components/responses/PublicAnthropicError" }
@@ -524,9 +548,22 @@ paths:
   /v1/media/jobs:
     post:
       tags: [Async Media]
-      summary: Submit one asynchronous text-to-image job
+      summary: Submit one media generation job
       description: |
-        Creates one GPT Image V1 job in the API key's exact organization and project.
+        Creates one media job in the root API key's exact organization and project.
+        Wan 3.0 Beijing, MiniMax H3, and CogVideoX-3 accept text_to_video and return one silent MP4 with a fixed profile resolution and duration.
+        DeepSeek OCR accepts image_to_text with one inline PNG up to 32 KiB and returns one UTF-8 transcript. It uses a dedicated tools API, and the input is not sent to a chat model.
+        GLM-OCR accepts the same inline PNG and returns recognized Markdown as UTF-8 text. DeepSeek ASR accepts speech_to_text with one inline PCM16 mono WAV up to 45 KiB and returns UTF-8 text. DeepSeek TTS accepts text_to_speech with prompt up to 256 UTF-8 bytes and returns at most 30 seconds of complete PCM WAV with a fixed voice. MiniMax China asr-1.0 and speech-2.8-turbo accept the same project operations. MiniMax reports input audio milliseconds for ASR and can report billable characters for TTS. GLM ASR and TTS leave unreported units unknown. OpenAI gpt-transcribe can report input duration or token usage. MiMo and Beijing DashScope speech operations use the same project input and retain their model-specific reported units.
+        GLM-Image returns one 1280x1280 image without client-selected size, quality, background or output format.
+        The model must be accessible to that key. In canonical routing, a new
+        job also requires an active published media release and
+        X-UniRouter-Max-Upstream-Attempts: 1. Dispatch retains the accepted
+        release and credential identity. GPT Image Flare accepts explicit PNG
+        or JPEG. Beijing Qwen Image 3.0 and Pro and MiniMax China H3-Image
+        accept one 1024x1024 PNG without quality or background controls.
+        Legacy routes retain their original image parameters. A changed slot or revoked key can stop
+        an undispatched job. Repeating the original idempotency key does not
+        create another provider submission.
         Admission requires both the isolated media runtime and its explicit
         new-job admission control to be enabled. New work is capped at 10
         nonterminal jobs per project and 100 per organization. An exact
@@ -546,6 +583,11 @@ paths:
       parameters:
         - $ref: "#/components/parameters/XRequestId"
         - $ref: "#/components/parameters/ClientRequestId"
+        - name: X-UniRouter-Max-Upstream-Attempts
+          in: header
+          required: false
+          schema: {type: string, enum: ["1"]}
+          description: Required for new canonical media jobs. Limits this durable job to one provider POST and forms part of its immutable idempotency intent.
         - name: Idempotency-Key
           in: header
           required: true
@@ -553,7 +595,7 @@ paths:
             type: string
             minLength: 1
             maxLength: 255
-          description: Tenant, project, API-key and payload-bound job identity. Reuse with different request bytes returns 409.
+          description: Tenant, project, API-key and payload-bound job identity. Reuse with different request bytes or attempt policy returns 409.
       requestBody:
         required: true
         content:
@@ -563,12 +605,20 @@ paths:
       responses:
         "200":
           description: Existing job returned for an exact idempotent retry
+          headers:
+            X-UniRouter-Max-Upstream-Attempts:
+              schema: {type: string, enum: ["1"]}
+              description: Present only when this request's single-submission intent was accepted.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/MediaJobCreateResult"
         "202":
           description: New job accepted
+          headers:
+            X-UniRouter-Max-Upstream-Attempts:
+              schema: {type: string, enum: ["1"]}
+              description: Present only when this request's single-submission intent was accepted.
           content:
             application/json:
               schema:
@@ -637,7 +687,7 @@ paths:
   /v1/media/jobs/{id}/content:
     get:
       tags: [Async Media]
-      summary: Read authenticated image bytes before fixed expiry
+      summary: Read authenticated media bytes before fixed expiry
       description: No public or presigned object URL is returned. Reads fail with 410 at the seven-day deadline even while physical deletion is retrying.
       security:
         - gatewayRootKey: []
@@ -645,7 +695,7 @@ paths:
         - $ref: "#/components/parameters/MediaJobId"
       responses:
         "200":
-          description: Persisted PNG, JPEG, or WebP bytes
+          description: Persisted image, MP4, WAV or UTF-8 transcript bytes
           headers:
             Cache-Control:
               schema: { type: string, enum: ["private, no-store"] }
@@ -653,6 +703,9 @@ paths:
             image/png: { schema: { type: string, format: binary } }
             image/jpeg: { schema: { type: string, format: binary } }
             image/webp: { schema: { type: string, format: binary } }
+            video/mp4: { schema: { type: string, format: binary } }
+            "text/plain; charset=utf-8": { schema: { type: string } }
+            audio/wav: { schema: { type: string, format: binary } }
         "401":
           $ref: "#/components/responses/Error"
         "403":
@@ -1209,6 +1262,9 @@ paths:
         a missing value is not zero. Destination origins are disclosed only by
         their explicit profile grant. No provider receipt, residency, input
         binding, or additional financial amount is inferred from these events.
+        For media charge evidence, the connection and credential must both
+        explicitly allow the media charge, runtime and cost profiles. Media
+        charge pages contain metadata only. Pending pricing omits the amount.
       security:
         - sourceFactsKey: []
       parameters:
@@ -1839,6 +1895,23 @@ paths:
   /api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes:
     x-unirouter-rbac:
       post: [platform_admin, org_admin]
+      get: [platform_admin, org_admin]
+    get:
+      tags: [Admin]
+      summary: Discover the asynchronous operation probe for the current exact binding
+      description: Checks only the retained UR probe receipt. It performs no supplier request. A 404 indicates there is no discoverable receipt.
+      parameters:
+        - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: operationID, in: path, required: true, schema: { type: string, enum: [unirouter.media_jobs.v1] } }
+        - { name: credential_binding_id, in: query, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: expected_upstream_observation_identity, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Retained sanitized terminal result. }
+        "202": { $ref: "#/components/responses/AsyncModelOperationProbePending" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
     post:
       tags: [Admin]
       summary: Probe one exact canonical model operation with one exact credential binding
@@ -1846,7 +1919,7 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
-        - { name: operationID, in: path, required: true, schema: { type: string, enum: [openai.chat_completions.v1, openai.embeddings.v1, openai.responses.v1, anthropic.messages.v1] } }
+        - { name: operationID, in: path, required: true, schema: { type: string, enum: [openai.chat_completions.v1, openai.embeddings.v1, openai.responses.v1, anthropic.messages.v1, unirouter.media_jobs.v1] } }
       requestBody:
         required: true
         content:
@@ -1861,7 +1934,7 @@ paths:
                 probe_text: { type: string, maxLength: 256, x-unirouter-max-utf8-bytes: 256, description: Optional bounded UTF-8 text used only for this live request and never persisted or returned. }
       responses:
         "200":
-          description: Sanitized persisted probe result. provider_success reports the bounded upstream response. success is true only when that provider success remains usable for the exact unchanged routing inputs. current is false when any snapshotted identity or revision changed; all such stale results persist success=false and never advance operation evidence. provider_reason_code preserves the provider outcome independently of stale classification.
+          description: Sanitized terminal probe result. A zero probe_id on an expired asynchronous probe indicates that no conclusive provider result was persisted. provider_success reports the bounded upstream response. success is true only when that provider success remains usable for the exact unchanged routing inputs. current is false when any snapshotted identity or revision changed; all such stale results persist success=false and never advance operation evidence. provider_reason_code preserves the provider outcome independently of stale classification.
           content:
             application/json:
               schema:
@@ -1869,9 +1942,10 @@ paths:
                 additionalProperties: false
                 required: [probe_id, deployment_id, operation_id, credential_binding_id, success, provider_success, current, stale, operation_advanced, reason_code, provider_reason_code, status_code, latency_ms]
                 properties:
-                  probe_id: { type: integer, format: int64, minimum: 1 }
+                  probe_run_ref: { type: string, pattern: '^op_[a-f0-9]{32}$' }
+                  probe_id: { type: integer, format: int64, minimum: 0 }
                   deployment_id: { type: integer, format: int64, minimum: 1 }
-                  operation_id: { type: string, enum: [openai.chat_completions.v1, openai.embeddings.v1, openai.responses.v1, anthropic.messages.v1] }
+                  operation_id: { type: string, enum: [openai.chat_completions.v1, openai.embeddings.v1, openai.responses.v1, anthropic.messages.v1, unirouter.media_jobs.v1] }
                   credential_binding_id: { type: integer, format: int64, minimum: 1 }
                   success: { type: boolean, description: "True only when the provider succeeded and the exact routing inputs, actor and root-customer authority remained usable." }
                   provider_success: { type: boolean, description: Result of the bounded provider request before current-state classification. }
@@ -1889,6 +1963,28 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+        "202": { $ref: "#/components/responses/AsyncModelOperationProbePending" }
+
+  /api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes/{probeRunRef}:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+    get:
+      tags: [Admin]
+      summary: Continue reading one asynchronous operation probe
+      description: Rechecks the original deployment, operation revision and credential binding. Reads the retained supplier task when due. No supplier submission is made by this endpoint.
+      parameters:
+        - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: operationID, in: path, required: true, schema: { type: string, enum: [unirouter.media_jobs.v1] } }
+        - { name: probeRunRef, in: path, required: true, schema: { type: string, pattern: '^op_[a-f0-9]{32}$' } }
+        - { name: credential_binding_id, in: query, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: expected_upstream_observation_identity, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Sanitized terminal result including separate success and provider outcome fields. }
+        "202": { $ref: "#/components/responses/AsyncModelOperationProbePending" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
 
   /api/v1/model-deployments/{deploymentID}/operations/{operationID}/production-approvals:
     x-unirouter-rbac:
@@ -1915,7 +2011,7 @@ paths:
                 expected_connection_revision: { type: integer, format: int64, minimum: 1 }
                 expected_deployment_revision: { type: integer, format: int64, minimum: 1 }
                 expected_operation_revision: { type: integer, format: int64, minimum: 1, description: Current live_probed operation revision derived from the exact probe receipt. }
-                expected_executor_contract_version: { type: string, enum: [unirouter.endpoint-profile-nonstream-executor.v1] }
+                expected_executor_contract_version: { type: string, enum: [unirouter.endpoint-profile-nonstream-executor.v1, unirouter.endpoint-profile-responses-dual-executor.v1, unirouter.endpoint-profile-messages-dual-executor.v1, unirouter.endpoint-profile-messages-tools-executor.v1, unirouter.endpoint-profile-responses-tools-executor.v1] }
                 reason: { type: string, minLength: 1, maxLength: 512, description: Trimmed UTF-8 administrative reason; NUL and line breaks are rejected. }
       responses:
         "200":
@@ -5941,6 +6037,24 @@ components:
         enum: [SHADOW, CANARY, APPLIED]
 
   responses:
+    AsyncModelOperationProbePending:
+      description: The same UR probe is awaiting a verifiable supplier outcome. It confers no qualification.
+      headers:
+        Retry-After: { schema: { type: integer, example: 15 } }
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [pending, probe_run_ref, reason_code, success, provider_success, deployment_id, operation_id, credential_binding_id]
+            properties:
+              pending: { type: boolean, enum: [true] }
+              probe_run_ref: { type: string, pattern: '^op_[a-f0-9]{32}$' }
+              reason_code: { type: string }
+              success: { type: boolean, enum: [false] }
+              provider_success: { type: boolean, enum: [false] }
+              deployment_id: { type: integer, format: int64 }
+              operation_id: { type: string }
+              credential_binding_id: { type: integer, format: int64 }
     JSON:
       description: JSON response
       content:
@@ -6101,15 +6215,15 @@ components:
     SourceProfileSet:
       type: array
       minItems: 1
-      maxItems: 11
+      maxItems: 12
       uniqueItems: true
-      description: Exact fixed profiles, sorted in ascending byte order. Every profile is explicitly granted; B profiles require enabled observation capture and D profiles require enabled budget snapshots. Existing credentials gain no profiles during upgrade.
+      description: Exact fixed profiles, sorted in ascending byte order. Every profile is explicitly granted; B profiles require enabled observation capture and D profiles require enabled budget snapshots. Existing credentials gain no profiles during upgrade. Media charge also requires the runtime and cost profiles.
       items:
         type: string
-        enum: [unirouter.attempt-observation.v1, unirouter.budget-alert.v1, unirouter.budget-definition.v1, unirouter.budget-period-summary.v1, unirouter.capability-snapshot.v1, unirouter.cost-basis.v1, unirouter.destination-observation.v1, unirouter.execution-context.v1, unirouter.execution-identity.v1, unirouter.policy-observation.v1, unirouter.runtime-observation.v1]
+        enum: [unirouter.attempt-observation.v1, unirouter.budget-alert.v1, unirouter.budget-definition.v1, unirouter.budget-period-summary.v1, unirouter.capability-snapshot.v1, unirouter.cost-basis.v1, unirouter.destination-observation.v1, unirouter.execution-context.v1, unirouter.execution-identity.v1, unirouter.media-charge.v1, unirouter.policy-observation.v1, unirouter.runtime-observation.v1, unirouter.runtime-observation.v2]
     SourceObservationProfile:
       type: string
-      enum: [unirouter.attempt-observation.v1, unirouter.capability-snapshot.v1, unirouter.destination-observation.v1, unirouter.policy-observation.v1, unirouter.runtime-observation.v1]
+      enum: [unirouter.attempt-observation.v1, unirouter.capability-snapshot.v1, unirouter.destination-observation.v1, unirouter.media-charge.v1, unirouter.policy-observation.v1, unirouter.runtime-observation.v1, unirouter.runtime-observation.v2]
     SourceObservationEventBatch:
       type: object
       additionalProperties: false
@@ -6125,7 +6239,7 @@ components:
           maxItems: 50
           items:
             type: object
-            description: Foigent 2.0.2 immutable Event Envelope. The exact source field constraints, finite kinds, measurement definitions and disclosure allowlists are in contracts/source-facts/v2/source-observation.schema.json, independently versioned from A.
+            description: Foigent 2.0.2 immutable Event Envelope. The exact source field constraints, finite kinds, measurement definitions and disclosure allowlists are in contracts/source-facts/v2/source-observation.schema.json, independently versioned from A. Media charge uses contracts/source-facts/media-charge-v1/schema.json and its own cursor.
         next_cursor: {type: string, maxLength: 512}
         high_watermark: {type: string, maxLength: 512}
         has_more: {type: boolean}
@@ -6138,11 +6252,11 @@ components:
         source_instance: {type: string, maxLength: 128}
         profiles:
           type: array
-          maxItems: 8
+          maxItems: 10
           uniqueItems: true
           items:
             type: string
-            enum: [unirouter.attempt-observation.v1, unirouter.budget-alert.v1, unirouter.budget-definition.v1, unirouter.budget-period-summary.v1, unirouter.capability-snapshot.v1, unirouter.destination-observation.v1, unirouter.policy-observation.v1, unirouter.runtime-observation.v1]
+            enum: [unirouter.attempt-observation.v1, unirouter.budget-alert.v1, unirouter.budget-definition.v1, unirouter.budget-period-summary.v1, unirouter.capability-snapshot.v1, unirouter.destination-observation.v1, unirouter.media-charge.v1, unirouter.policy-observation.v1, unirouter.runtime-observation.v1, unirouter.runtime-observation.v2]
         profile_version: {type: string, enum: [2.0.0]}
         status: {type: string, enum: [paused, active]}
         credential_status: {type: string, enum: [feed_staged, feed_active]}
@@ -7361,7 +7475,7 @@ components:
         request_digest: { type: string, pattern: '^[0-9a-f]{64}$' }
         capability_ids: { type: array, items: { type: string } }
         probe_contract: { type: string }
-        planned_provider_requests: { type: integer, enum: [1] }
+        planned_provider_requests: { type: integer, enum: [1, 2] }
     CapabilityProbePlan:
       type: object
       required: [deployment_id, operation_id, credential_binding_id, groups, separate_capabilities]
@@ -8059,7 +8173,7 @@ components:
         public_path: { type: string, enum: [/v1/responses, /v1/messages] }
         protocol_profile_id: { type: string }
         protocol_profile_version: { type: string }
-        executor_contract_version: { type: string, enum: [unirouter.endpoint-profile-nonstream-executor.v1] }
+        executor_contract_version: { type: string, enum: [unirouter.endpoint-profile-nonstream-executor.v1, unirouter.endpoint-profile-responses-dual-executor.v1, unirouter.endpoint-profile-messages-dual-executor.v1, unirouter.endpoint-profile-messages-tools-executor.v1, unirouter.endpoint-profile-responses-tools-executor.v1] }
         https_origin: { type: string, format: uri, description: "Normalized exact HTTPS origin; paths, queries, fragments and userinfo are forbidden." }
         source_connection_revision: { type: integer, format: int64, minimum: 1 }
         source_deployment_revision: { type: integer, format: int64, minimum: 1 }
@@ -8114,18 +8228,22 @@ components:
         upstream_scope: { $ref: "#/components/schemas/UpstreamScope" }
         contract_version: { type: string, enum: [unirouter.model-capability-qualification.v1] }
         deployment_id: { type: integer, format: int64, minimum: 1 }
-        operation_id: { type: string, enum: [openai.chat_completions.v1] }
-        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, reasoning_budget, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage] }
+        operation_id: { type: string, enum: [openai.chat_completions.v1, openai.responses.v1, anthropic.messages.v1] }
+        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, reasoning_budget, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage, vision, audio, video, files] }
         support_state: { type: string, enum: [enabled, unsupported] }
         support_revision: { type: integer, format: int64, minimum: 1 }
         execution_profile_id: { type: string, maxLength: 100, pattern: '^[a-z0-9][a-z0-9._-]{2,99}$', description: Exact compiled or published immutable Profile identity; format alone grants no qualification. }
         execution_profile_version: { type: string, maxLength: 40, pattern: '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$', description: Exact retained revision; no mutable latest lookup. }
-        protocol_profile_id: { type: string, enum: [protocol.deepseek-openai-chat.v4, protocol.deepseek-openai-chat.v5, protocol.deepseek-openai-chat.v6, protocol.glm-openai-chat.glm5v.v5, protocol.glm-openai-chat.v5, protocol.glm-openai-chat.v6, protocol.glm-openai-chat.v7, protocol.glm-openai-chat.glm5v.v6, openai.chat_completions, protocol.kimi-openai-chat.v5, protocol.kimi-openai-chat.v6, protocol.kimi-openai-chat.k3.v5, protocol.kimi-openai-chat.k3.v6, protocol.minimax-m2-openai-chat.v7, protocol.minimax-m2-openai-chat.v8, protocol.minimax-m27-openai-chat.v1, protocol.minimax-m3-openai-chat.v9, protocol.minimax-m3-openai-chat.v10, protocol.minimax-m3-openai-chat.v11, protocol.qwen-openai-chat.flash.v7, protocol.qwen-openai-chat.flash.v8] }
+        protocol_profile_id: { type: string, enum: [protocol.deepseek-openai-chat.v4, protocol.deepseek-openai-chat.v5, protocol.deepseek-openai-chat.v6, protocol.deepseek-openai-chat.v7, protocol.glm-openai-chat.glm5v.v5, protocol.glm-openai-chat.v5, protocol.glm-openai-chat.v6, protocol.glm-openai-chat.v7, protocol.glm-openai-chat.v8, protocol.glm-openai-chat.v9, protocol.glm-openai-chat.v10, protocol.glm-openai-chat.glm5v.v6, openai.chat_completions, protocol.kimi-openai-chat.v5, protocol.kimi-openai-chat.v6, protocol.kimi-openai-chat.k3.v5, protocol.kimi-openai-chat.k3.v6, protocol.kimi-openai-chat.k3.v7, protocol.kimi-openai-chat.k3.v8, protocol.minimax-m2-openai-chat.v7, protocol.minimax-m2-openai-chat.v8, protocol.minimax-m27-openai-chat.v1, protocol.minimax-m3-openai-chat.v9, protocol.minimax-m3-openai-chat.v10, protocol.minimax-m3-openai-chat.v11, protocol.minimax-m31-openai-chat.v1, protocol.minimax-m31-openai-chat.v2, protocol.minimax-m31-openai-chat.v3, protocol.mimo-openai-chat.v5, protocol.mimo-openai-chat.v6, protocol.mimo-openai-chat.v7, protocol.openai-compatible-text-chat.v1, protocol.openai-compatible-text-chat-completion-limit.v1, protocol.qwen-openai-chat.flash.v7, protocol.qwen-openai-chat.flash.v8, protocol.qwen-openai-chat.hybrid.v1, protocol.qwen-openai-chat.hybrid.v2, protocol.qwen-openai-chat.hybrid.v3, protocol.qwen-openai-chat.hosted-split.v1, protocol.qwen-openai-chat.hosted-split.v2, protocol.qwen-openai-chat.omni-text.v1, unirouter.openai.responses.text-tools.v3, unirouter.openai.responses.inline-jpeg.v1, unirouter.anthropic.messages.inline-jpeg.v1, unirouter.anthropic.messages.text-tools.v3] }
         protocol_profile_version: { type: string, enum: [1.0.0] }
-        probe_contract_id: { type: string, enum: [unirouter.capability-probe.deepseek-chat-stream-tools.v1, unirouter.capability-probe.deepseek-chat-stream-tools.v2, unirouter.capability-probe.kimi-chat-stream-tools.v1, unirouter.capability-probe.minimax-m3-chat-stream-tools.v1, unirouter.capability-probe.deepseek-chat-sse.v1, unirouter.capability-probe.deepseek-chat-reasoning.v1, unirouter.capability-probe.deepseek-chat-reasoning-effort.v1, unirouter.capability-probe.deepseek-chat-function-tools.v1, unirouter.capability-probe.deepseek-chat-json-object.v1, unirouter.capability-probe.glm-chat-function-tools.v1, unirouter.capability-probe.glm-toggle-chat-function-tools.v1, unirouter.capability-probe.glm-chat-stream-tools.v1, unirouter.capability-probe.kimi-chat-sse.v1, unirouter.capability-probe.kimi-chat-reasoning.v1, unirouter.capability-probe.kimi-chat-reasoning-effort.v1, unirouter.capability-probe.kimi-chat-function-tools.v1, unirouter.capability-probe.kimi-chat-json-object.v1, unirouter.capability-probe.minimax-chat-function-tools.v1, unirouter.capability-probe.minimax-payg-m2-chat-function-tools.v1, unirouter.capability-probe.minimax-m27-chat-stream-tools.v1, unirouter.capability-probe.minimax-payg-m3-chat-function-tools.v1, unirouter.capability-probe.qwen-chat-stream-tools.v1, unirouter.capability-probe.qwen-chat-stream-tools.v2] }
+        probe_contract_id: { type: string, enum: [unirouter.capability-probe.deepseek-chat-stream-tools.v1, unirouter.capability-probe.deepseek-chat-stream-tools.v2, unirouter.capability-probe.kimi-chat-stream-tools.v1, unirouter.capability-probe.minimax-m3-chat-stream-tools.v1, unirouter.capability-probe.deepseek-chat-sse.v1, unirouter.capability-probe.deepseek-chat-reasoning.v1, unirouter.capability-probe.deepseek-chat-reasoning-effort.v1, unirouter.capability-probe.deepseek-chat-function-tools.v1, unirouter.capability-probe.deepseek-chat-json-object.v1, unirouter.capability-probe.glm-chat-function-tools.v1, unirouter.capability-probe.glm-toggle-chat-function-tools.v1, unirouter.capability-probe.glm-chat-stream-tools.v1, unirouter.capability-probe.kimi-chat-sse.v1, unirouter.capability-probe.kimi-chat-reasoning.v1, unirouter.capability-probe.kimi-chat-reasoning-effort.v1, unirouter.capability-probe.kimi-chat-function-tools.v1, unirouter.capability-probe.kimi-chat-json-object.v1, unirouter.capability-probe.minimax-chat-function-tools.v1, unirouter.capability-probe.minimax-payg-m2-chat-function-tools.v1, unirouter.capability-probe.minimax-m27-chat-stream-tools.v1, unirouter.capability-probe.mimo-chat-function-tools.v1, unirouter.capability-probe.minimax-payg-m3-chat-function-tools.v1, unirouter.capability-probe.native-client-tool-continuation.v1, unirouter.capability-probe.plain-chat-reasoning.v1, unirouter.capability-probe.chat-inline-jpeg.v1, unirouter.capability-probe.chat-inline-wav.v1, unirouter.capability-probe.chat-inline-video.v1, unirouter.capability-probe.chat-inline-text-file.v1, unirouter.capability-probe.native-inline-jpeg.v1, unirouter.capability-probe.qwen-chat-stream-tools.v1, unirouter.capability-probe.qwen-chat-stream-tools.v2] }
         probe_contract_version: { type: string, enum: [1.0.0, 2.0.0, 3.0.0, 4.0.0], description: "Exact version is selected by the model, operation, capability, Execution Profile, and protocol-profile tuple. DeepSeek streamed-tools v3 qualifies current deepseek-flash default effort through an exact immutable data binding; historical v1/v2 remain unchanged." }
         probe_available: { type: boolean }
         probe_availability_reason_code: { type: string }
+        planned_provider_requests:
+          type: integer
+          enum: [1, 2]
+          description: Maximum planned provider POSTs for the resolved probe contract. Omitted when unavailable or the count cannot be determined.
         state: { type: string, enum: [not_probed, probe_failed, probe_stale, probed_awaiting_approval, approved_current] }
         qualified: { type: boolean }
         qualification_state: { type: string }
@@ -8139,8 +8257,8 @@ components:
       properties:
         capability_probe_id: { type: integer, format: int64, minimum: 1 }
         deployment_id: { type: integer, format: int64, minimum: 1 }
-        operation_id: { type: string, enum: [openai.chat_completions.v1] }
-        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, reasoning_budget, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage] }
+        operation_id: { type: string, enum: [openai.chat_completions.v1, openai.responses.v1, anthropic.messages.v1] }
+        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, reasoning_budget, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage, vision, audio, video, files] }
         success: { type: boolean }
         provider_success: { type: boolean }
         current: { type: boolean }
@@ -8217,8 +8335,8 @@ components:
         approval_id: { type: integer, format: int64, minimum: 1 }
         capability_probe_id: { type: integer, format: int64, minimum: 1 }
         deployment_id: { type: integer, format: int64, minimum: 1 }
-        operation_id: { type: string, enum: [openai.chat_completions.v1] }
-        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, reasoning_budget, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage] }
+        operation_id: { type: string, enum: [openai.chat_completions.v1, openai.responses.v1, anthropic.messages.v1] }
+        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, reasoning_budget, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage, vision, audio, video, files] }
         qualified: { type: boolean }
         qualification_state: { type: string }
         evidence_ref: { type: string, pattern: '^capability_approval:[1-9][0-9]*$' }
@@ -8948,10 +9066,21 @@ components:
     MediaJobSubmitRequest:
       type: object
       additionalProperties: false
-      required: [model, prompt]
+      required: [model]
+      oneOf:
+        - required: [prompt]
+          properties:
+            operation: { type: string, enum: [text_to_image, text_to_video, text_to_speech] }
+          not: { required: [input_media] }
+        - required: [operation, input_media]
+          properties:
+            operation: { type: string, enum: [image_to_text, speech_to_text] }
+          not: { required: [prompt] }
       properties:
+        operation: { type: string, enum: [text_to_image, text_to_video, image_to_text, speech_to_text, text_to_speech], default: text_to_image }
         model: { type: string, minLength: 1, maxLength: 200 }
         prompt: { type: string, minLength: 1, maxLength: 32000 }
+        input_media: { type: string, pattern: '^data:(image/png|audio/wav);base64,', maxLength: 61462, description: A single inline PNG up to 32 KiB for image_to_text or PCM16 mono WAV up to 45 KiB for speech_to_text. }
         n: { type: integer, enum: [1], default: 1 }
         size: { type: string, enum: [auto, 1024x1024, 1536x1024, 1024x1536] }
         quality: { type: string, enum: [auto, low, medium, high] }
@@ -8976,7 +9105,7 @@ components:
       additionalProperties: false
       required: [class, quantity, authority, finality, charge_state]
       properties:
-        class: { type: string, enum: [input_tokens, input_text_tokens, input_image_tokens, output_image_tokens] }
+        class: { type: string, enum: [input_tokens, input_text_tokens, input_image_tokens, output_image_tokens, input_images, output_images, input_video_milliseconds, output_video_milliseconds, input_audio_milliseconds, input_billable_characters, input_audio_tokens, output_tokens, recognized_pages] }
         quantity: { type: string, pattern: '^(0|[1-9][0-9]*)$' }
         authority: { type: string, enum: [provider_reported] }
         finality: { type: string, enum: [final] }
@@ -8987,7 +9116,7 @@ components:
       required: [content_sha256, media_type, size_bytes, persisted_at, expires_at]
       properties:
         content_sha256: { type: string, pattern: '^sha256:[a-f0-9]{64}$' }
-        media_type: { type: string, enum: [image/png, image/jpeg, image/webp] }
+        media_type: { type: string, enum: [image/png, image/jpeg, image/webp, video/mp4, audio/wav, "text/plain; charset=utf-8"] }
         size_bytes: { type: integer, format: int64, minimum: 1, maximum: 33554432 }
         persisted_at: { type: string, format: date-time }
         expires_at: { type: string, format: date-time, description: Exactly seven days after persisted_at. }
@@ -9000,11 +9129,11 @@ components:
         fact_id: { type: string, pattern: '^mediacharge_[a-f0-9]{32}$' }
         trigger: { type: string, enum: [provider_terminal_success_and_output_persisted] }
         amount_state: { type: string, enum: [pricing_pending_media_rate_card] }
-        amount_micros: { type: integer, format: int64, nullable: true, description: Always absent/null in Image V1; no wallet debit is synthesized. }
+        amount_micros: { type: integer, format: int64, nullable: true, description: Absent or null for media facts pending actual pricing. }
         units:
           type: array
-          minItems: 4
-          maxItems: 4
+          minItems: 0
+          maxItems: 5
           items: { $ref: "#/components/schemas/MediaUnitObservation" }
         recorded_at: { type: string, format: date-time }
     MediaJob:
@@ -9023,8 +9152,8 @@ components:
             project_id: { type: integer, format: int64, minimum: 1 }
         request_id: { type: string }
         client_request_id: { type: string }
-        operation: { type: string, enum: [text_to_image] }
-        profile_id: { type: string, enum: [unirouter.openai.images.gpt-image.v1] }
+        operation: { type: string, enum: [text_to_image, text_to_video, image_to_text, speech_to_text, text_to_speech] }
+        profile_id: { type: string, enum: [unirouter.openai.images.gpt-image.v1, unirouter.dashscope.images.qwen-3.v1, unirouter.minimax.images.h3.v1, unirouter.dashscope.video.wan-3.v1, unirouter.minimax.video.h3.v1, unirouter.glm.video.cogvideox-3.v1, unirouter.glm.images.glm-image.v1, unirouter.deepseek.tools.ocr.v1, unirouter.glm.ocr.layout.v1, unirouter.deepseek.tools.asr.v1, unirouter.deepseek.tools.tts.v1, unirouter.minimax.speech.asr-1.v1, unirouter.minimax.speech.2-8-turbo.v1, unirouter.glm.speech.asr-2512.v1, unirouter.glm.speech.tts.v1, unirouter.openai.audio.transcribe.v1, unirouter.mimo.audio.asr.v1, unirouter.mimo.audio.tts.v1, unirouter.dashscope.speech.asr-3-1.v1, unirouter.dashscope.speech.tts-3-1.v1] }
         requested_model: { type: string }
         routing_model: { type: string }
         mapped_model: { type: string }
@@ -9077,9 +9206,9 @@ components:
       required: [contract_version, profile_id, retention, video_enabled, runtime_enabled, admission_enabled, charge_trigger, amount_state]
       properties:
         contract_version: { type: string, enum: [unirouter.async-media-runtime.v1] }
-        profile_id: { type: string, enum: [unirouter.openai.images.gpt-image.v1] }
+        profile_id: { type: string, enum: [unirouter.openai.images.gpt-image.v1], description: Legacy runtime identifier. Each job reports its actual profile. }
         retention: { type: string, enum: [P7D] }
-        video_enabled: { type: boolean, enum: [false] }
+        video_enabled: { type: boolean }
         runtime_enabled: { type: boolean }
         admission_enabled: { type: boolean }
         charge_trigger: { type: string, enum: [provider_terminal_success_and_output_persisted] }
@@ -10463,7 +10592,10 @@ components:
       required: [accounting]
       properties:
         accounting: { type: string, enum: [utf8_byte_upper_bound, provider_completion_final_v1] }
-        scope: { type: string, enum: [reasoning_and_answer] }
+        scope:
+          type: string
+          enum: [reasoning_and_answer, generated_completion, separate_reasoning_and_answer]
+          description: "The separately bounded Qwen contract checks final provider usage before delivering a response. Stream frames for that contract are retained up to 1 MiB and 8,192 frames until the terminal counters are verified."
         provider_deviation_tokens: { type: integer, enum: [10], description: Subtracted once from the accepted total before dispatch; final supplier usage is checked against the accepted total. }
         max_decoded_output_bytes: { type: integer, enum: [16777216] }
         max_upstream_wire_bytes: { type: integer, enum: [134217728] }
@@ -10491,6 +10623,8 @@ components:
         output_enforcement: { $ref: "#/components/schemas/StreamOutputEnforcement" }
         accepted_completion_tokens: { type: integer, minimum: 11 }
         provider_completion_tokens: { type: integer, minimum: 1 }
+        provider_answer_tokens: { type: integer, minimum: 1, description: "Provider answer limit when the selected contract separately bounds answer and reasoning." }
+        provider_reasoning_tokens: { type: integer, minimum: 0, description: "Provider reasoning limit for a split output contract; zero means the request explicitly disables reasoning." }
         object: { type: string, enum: [chat.completion.preflight] }
         request_model: { type: string }
         operation: { type: string, enum: [openai.chat_completions.v1] }
@@ -10717,6 +10851,104 @@ components:
               properties:
                 type: { type: string, enum: [text] }
             verbosity: { type: string, enum: [low, medium, high] }
+    PublicResponsesToolsRequest:
+      type: object
+      additionalProperties: false
+      required: [model, input, max_output_tokens, tools]
+      properties:
+        model: { type: string, minLength: 1 }
+        input:
+          description: Initial user text, or user text followed by the ordered assistant items and one matching function_call_output.
+          anyOf:
+            - { type: string, minLength: 1 }
+            - { type: array, minItems: 3, maxItems: 32, items: { $ref: "#/components/schemas/PublicResponsesToolItem" } }
+        max_output_tokens: { type: integer, format: int64, minimum: 16 }
+        instructions: { type: string }
+        metadata: { type: object, maxProperties: 16, additionalProperties: { type: string, maxLength: 512 } }
+        text: { type: object, description: Exact plain-text format options. }
+        store: { type: boolean, enum: [false], default: false }
+        stream: { type: boolean, enum: [false], default: false }
+        parallel_tool_calls: { type: boolean, enum: [false], default: false }
+        include: { type: array, maxItems: 1, items: { type: string, enum: [reasoning.encrypted_content] } }
+        tool_choice: { type: string, enum: [auto, none], default: auto }
+        tools:
+          type: array
+          minItems: 1
+          maxItems: 64
+          items:
+            type: object
+            additionalProperties: false
+            required: [type, name, parameters]
+            properties:
+              type: { type: string, enum: [function] }
+              name: { type: string, pattern: '^[a-zA-Z0-9_-]{1,64}$' }
+              description: { type: string }
+              strict: { type: boolean }
+              parameters: { type: object, required: [type], properties: { type: { type: string, enum: [object] } } }
+    PublicResponsesToolItem:
+      description: Server validates exact members for the item type, assistant item order and function-call identity.
+      type: object
+      properties:
+        type: { type: string, enum: [message, reasoning, function_call, function_call_output] }
+        call_id: { type: string, minLength: 1 }
+    PublicResponsesInlineJPEGRequest:
+      type: object
+      additionalProperties: false
+      required: [model, input, max_output_tokens]
+      properties:
+        model: { type: string, minLength: 1 }
+        max_output_tokens: { type: integer, format: int64, minimum: 16 }
+        instructions: { type: string }
+        metadata: { type: object }
+        reasoning:
+          type: object
+          additionalProperties: false
+          required: [effort]
+          properties:
+            effort: { type: string, enum: [low, medium, high, xhigh, max] }
+        text: { type: object, description: Exact plain-text format options. }
+        store: { type: boolean, enum: [false], default: false }
+        stream: { type: boolean, enum: [false], default: false }
+        input:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [role, content]
+            properties:
+              role: { type: string, enum: [user] }
+              content:
+                description: Exactly one text part and one inline JPEG part in either order. Decoded JPEG is at most 256 KiB and 131072 pixels.
+                type: array
+                minItems: 2
+                maxItems: 2
+                items:
+                  oneOf:
+                    - type: object
+                      additionalProperties: false
+                      required: [type, text]
+                      properties:
+                        type: { type: string, enum: [input_text] }
+                        text: { type: string, minLength: 1 }
+                    - type: object
+                      additionalProperties: false
+                      required: [type, image_url]
+                      properties:
+                        type: { type: string, enum: [input_image] }
+                        image_url: { type: string, pattern: '^data:image/jpeg;base64,' }
+    PublicResponsesToolsResponse:
+      type: object
+      required: [id, object, status, model, output, usage]
+      properties:
+        id: { type: string }
+        object: { type: string, enum: [response] }
+        status: { type: string, enum: [completed] }
+        model: { type: string }
+        output_text: { type: string }
+        output: { type: array, items: { $ref: "#/components/schemas/PublicResponsesToolItem" } }
+        usage: { type: object, required: [input_tokens, output_tokens, total_tokens] }
     PublicResponsesResponse:
       type: object
       additionalProperties: false
@@ -10791,6 +11023,115 @@ components:
         temperature: { type: number, minimum: 0, maximum: 1 }
         top_p: { type: number, minimum: 0, maximum: 1 }
         stream: { type: boolean, enum: [false], default: false }
+    PublicMessagesToolsRequest:
+      type: object
+      additionalProperties: false
+      required: [model, max_tokens, messages, tools]
+      properties:
+        model: { type: string, minLength: 1 }
+        max_tokens: { type: integer, format: int64, minimum: 1 }
+        messages:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [role, content]
+            properties:
+              role: { type: string, enum: [user, assistant] }
+              content:
+                anyOf:
+                  - { type: string, minLength: 1 }
+                  - { type: array, minItems: 1, items: { $ref: "#/components/schemas/PublicMessagesToolBlock" } }
+        system: { type: string, minLength: 1 }
+        stream: { type: boolean, enum: [false], default: false }
+        tool_choice:
+          type: object
+          additionalProperties: false
+          required: [type]
+          properties:
+            type: { type: string, enum: [auto, none] }
+            disable_parallel_tool_use: { type: boolean, enum: [true] }
+        tools:
+          type: array
+          minItems: 1
+          maxItems: 64
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, input_schema]
+            properties:
+              name: { type: string, pattern: '^[a-zA-Z0-9_-]{1,64}$' }
+              description: { type: string }
+              input_schema: { type: object, required: [type], properties: { type: { type: string, enum: [object] } } }
+    PublicMessagesToolBlock:
+      description: Server validates exact members per block type, preserves signed assistant blocks and matches the tool result ID.
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, enum: [text, thinking, redacted_thinking, tool_use, tool_result] }
+        tool_use_id: { type: string, minLength: 1 }
+    PublicMessagesInlineJPEGRequest:
+      type: object
+      additionalProperties: false
+      required: [model, messages, max_tokens]
+      properties:
+        model: { type: string, minLength: 1 }
+        max_tokens: { type: integer, format: int64, minimum: 1 }
+        system: { type: string, minLength: 1 }
+        thinking: { type: object, description: Exact controls from the selected Claude Profile. }
+        output_config: { type: object, description: Exact controls from the selected Claude Profile. }
+        temperature: { type: number, minimum: 0, maximum: 1 }
+        top_p: { type: number, minimum: 0, maximum: 1 }
+        stream: { type: boolean, enum: [false], default: false }
+        messages:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [role, content]
+            properties:
+              role: { type: string, enum: [user] }
+              content:
+                description: Exactly one text part and one inline JPEG part in either order. Decoded JPEG is at most 256 KiB and 131072 pixels.
+                type: array
+                minItems: 2
+                maxItems: 2
+                items:
+                  oneOf:
+                    - type: object
+                      additionalProperties: false
+                      required: [type, text]
+                      properties:
+                        type: { type: string, enum: [text] }
+                        text: { type: string, minLength: 1 }
+                    - type: object
+                      additionalProperties: false
+                      required: [type, source]
+                      properties:
+                        type: { type: string, enum: [image] }
+                        source:
+                          type: object
+                          additionalProperties: false
+                          required: [type, media_type, data]
+                          properties:
+                            type: { type: string, enum: [base64] }
+                            media_type: { type: string, enum: [image/jpeg] }
+                            data: { type: string, format: byte }
+    PublicMessagesToolsResponse:
+      type: object
+      required: [id, type, role, model, content, stop_reason, stop_sequence, usage]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [message] }
+        role: { type: string, enum: [assistant] }
+        model: { type: string }
+        content: { type: array, items: { $ref: "#/components/schemas/PublicMessagesToolBlock" } }
+        stop_reason: { type: string, enum: [end_turn, max_tokens, stop_sequence, tool_use, refusal] }
+        stop_sequence: { type: string, nullable: true }
+        usage: { type: object, required: [input_tokens, output_tokens] }
     PublicMessagesResponse:
       type: object
       additionalProperties: false

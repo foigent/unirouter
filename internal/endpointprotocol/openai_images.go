@@ -2,7 +2,6 @@ package endpointprotocol
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"math"
 	"net/http"
@@ -13,6 +12,7 @@ const (
 	// MaxOpenAIImageBinaryBytes is the repository Image V1 output ceiling.
 	// Base64 expands by roughly 4/3; one additional MiB bounds the JSON usage
 	// and data envelope without silently lowering the binary limit.
+	OpenAIImageFlare            = "gpt-image-2.6-flare"
 	MaxOpenAIImageBinaryBytes   = 32 << 20
 	MaxOpenAIImageResponseBytes = ((MaxOpenAIImageBinaryBytes + 2) / 3 * 4) + (1 << 20)
 )
@@ -143,6 +143,13 @@ func (profile openAIImageProfile) BuildRequest(
 	if !oneOfOrEmpty(downstream.OutputFormat, "png", "jpeg", "webp") {
 		return nil, nil, protocolError(ErrInvalidRequest, "image_output_format_invalid")
 	}
+	var imageDelivery imageDeliveryConstraints
+	if input.MappedModel == OpenAIImageFlare && !input.LegacyImageDelivery {
+		if !SupportsCanonicalFlareImageFormat(downstream.OutputFormat) {
+			return nil, nil, protocolError(ErrUnsupportedSemantics, "canonical_image_output_format_unsupported")
+		}
+		imageDelivery = flareImageDeliveryControls(downstream.Size, downstream.OutputFormat)
+	}
 	wireBody, marshalErr := json.Marshal(openAIImageWireRequest{
 		Model:        input.MappedModel,
 		Prompt:       downstream.Prompt,
@@ -173,6 +180,7 @@ func (profile openAIImageProfile) BuildRequest(
 		requestedModel: input.RequestedModel,
 		mappedModel:    input.MappedModel,
 		outputCount:    1,
+		imageDelivery:  imageDelivery,
 	}, nil
 }
 
@@ -202,18 +210,15 @@ func (profile openAIImageProfile) ParseResponse(
 	if len(response.Data) != binding.outputCount {
 		return Outcome{}, protocolError(ErrInvalidResponse, "image_count_invalid")
 	}
-	for _, data := range response.Data {
-		if data.URL != nil {
-			return Outcome{}, protocolError(ErrUnsupportedSemantics, "unsupported_provider_hosted_url")
-		}
-		if data.B64JSON == nil || *data.B64JSON == "" {
-			return Outcome{}, protocolError(ErrInvalidResponse, "image_base64_missing")
-		}
-		decoded, err := base64.StdEncoding.Strict().DecodeString(*data.B64JSON)
-		if err != nil || len(decoded) == 0 ||
-			len(decoded) > MaxOpenAIImageBinaryBytes {
-			return Outcome{}, protocolError(ErrInvalidResponse, "image_base64_invalid")
-		}
+	if len(response.Data) != 1 {
+		return Outcome{}, protocolError(ErrInvalidResponse, "image_count_invalid")
+	}
+	if response.Data[0].URL != nil {
+		return Outcome{}, protocolError(ErrUnsupportedSemantics, "unsupported_provider_hosted_url")
+	}
+	media, err := decodeMediaImage(response.Data[0].B64JSON, binding.imageDelivery)
+	if err != nil {
+		return Outcome{}, err
 	}
 	if response.Usage == nil || response.Usage.InputTokenDetails == nil {
 		return Outcome{}, protocolError(ErrMissingUsage, "provider_usage_missing")
@@ -245,6 +250,7 @@ func (profile openAIImageProfile) ParseResponse(
 		return Outcome{}, protocolError(ErrInvalidResponse, "image_input_partition_mismatch")
 	}
 	return Outcome{
+		Media:           media,
 		ContractVersion: ContractVersion,
 		ProfileID:       profile.Descriptor().ProfileID,
 		ProviderState:   "completed",

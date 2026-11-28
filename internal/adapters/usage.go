@@ -8,6 +8,7 @@ import (
 
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/modelprofile"
+	"github.com/uniroute/unirouter/internal/strictjson"
 )
 
 const (
@@ -289,10 +290,15 @@ type openAIUsageWire struct {
 	PromptDetails    *struct {
 		CachedTokens             json.RawMessage `json:"cached_tokens"`
 		CacheWriteTokens         *int            `json:"cache_write_tokens"`
+		TextTokens               json.RawMessage `json:"text_tokens"`
+		AudioTokens              json.RawMessage `json:"audio_tokens"`
+		ImageTokens              json.RawMessage `json:"image_tokens"`
+		VideoTokens              json.RawMessage `json:"video_tokens"`
 		CacheCreationInputTokens *int            `json:"cache_creation_input_tokens"`
 	} `json:"prompt_tokens_details,omitempty"`
-	PromptCacheHitTokens  *int `json:"prompt_cache_hit_tokens,omitempty"`
-	PromptCacheMissTokens *int `json:"prompt_cache_miss_tokens,omitempty"`
+	CompletionDetails     json.RawMessage `json:"completion_tokens_details"`
+	PromptCacheHitTokens  *int            `json:"prompt_cache_hit_tokens,omitempty"`
+	PromptCacheMissTokens *int            `json:"prompt_cache_miss_tokens,omitempty"`
 }
 
 type optionalUsageCounter struct {
@@ -329,6 +335,16 @@ func parseOpenAICompatibleUsageWithContext(data []byte, endpoint Endpoint, sourc
 	default:
 		return Usage{}, false, fmt.Errorf("unsupported OpenAI-compatible usage endpoint %q", endpoint)
 	}
+	cacheContract, cacheModeled := modelprofile.ResolveCacheUsageContract(strings.TrimSpace(cacheUsageProfile))
+	kimiReadWrite := cacheContract.WireSchema == modelprofile.CacheUsageWireMoonshotReadWriteV1
+	xaiAdditive := cacheContract.WireSchema == modelprofile.CacheUsageWireXAIAdditiveReasoningV1
+	splitCompletion := cacheUsageProfile == modelprofile.QwenHostedSplitUsageProfile
+	omniCompletion := cacheUsageProfile == modelprofile.QwenOmniUsageProfile
+	if kimiReadWrite || xaiAdditive || splitCompletion || omniCompletion {
+		if err := strictjson.Validate(data); err != nil {
+			return Usage{}, false, fmt.Errorf("decode %s usage: %w", cacheContract.WireSchema, err)
+		}
+	}
 
 	var envelope struct {
 		Usage *openAIUsageWire `json:"usage"`
@@ -349,7 +365,54 @@ func parseOpenAICompatibleUsageWithContext(data []byte, endpoint Endpoint, sourc
 	promptTokens := *wire.PromptTokens
 	completionTokens := valueOrZero(wire.CompletionTokens)
 	totalTokens := valueOrZero(wire.TotalTokens)
-	cacheContract, cacheModeled := modelprofile.ResolveCacheUsageContract(strings.TrimSpace(cacheUsageProfile))
+	if xaiAdditive {
+		var details struct {
+			ReasoningTokens json.RawMessage `json:"reasoning_tokens"`
+		}
+		detailsErr := json.Unmarshal(wire.CompletionDetails, &details)
+		reasoning, reported, err := parseOptionalUsageCounter(details.ReasoningTokens, "completion_tokens_details.reasoning_tokens")
+		if endpoint != EndpointChatCompletions || streaming || detailsErr != nil || err != nil || !reported || wire.TotalTokens == nil ||
+			totalTokens < promptTokens || totalTokens-promptTokens < completionTokens ||
+			totalTokens-promptTokens-completionTokens != reasoning {
+			return Usage{}, true, fmt.Errorf("xAI Chat usage must reconcile prompt, visible completion, and additive reasoning")
+		}
+		// UR settlement represents all output as completion. The downstream
+		// provider body retains its original visible/reasoning partition.
+		completionTokens = totalTokens - promptTokens
+	}
+	var splitReasoning *int
+	if splitCompletion {
+		if endpoint != EndpointChatCompletions || wire.TotalTokens == nil ||
+			totalTokens < promptTokens || totalTokens-promptTokens != completionTokens {
+			return Usage{}, true, fmt.Errorf("hosted Qwen completion requires complete provider totals")
+		}
+		if len(wire.CompletionDetails) != 0 && !isJSONNullUsage(wire.CompletionDetails) {
+			var details struct {
+				ReasoningTokens json.RawMessage `json:"reasoning_tokens"`
+				TextTokens      json.RawMessage `json:"text_tokens"`
+			}
+			if err := json.Unmarshal(wire.CompletionDetails, &details); err != nil {
+				return Usage{}, true, fmt.Errorf("invalid hosted Qwen completion details")
+			}
+			reasoning, reported, err := parseOptionalUsageCounter(details.ReasoningTokens, "completion_tokens_details.reasoning_tokens")
+			text, textReported, textErr := parseOptionalUsageCounter(details.TextTokens, "completion_tokens_details.text_tokens")
+			// DashScope's pure-text text_tokens includes reasoning_tokens.
+			// Only the complement of reasoning is visible in the answer.
+			if err != nil || textErr != nil || reasoning > completionTokens || (textReported && text != completionTokens) {
+				return Usage{}, true, fmt.Errorf("invalid hosted Qwen completion partition")
+			}
+			if reported {
+				splitReasoning = &reasoning
+			}
+		}
+	}
+	if omniCompletion {
+		var err error
+		splitReasoning, err = validateQwenOmniUsage(wire, endpoint, promptTokens, completionTokens, totalTokens)
+		if err != nil {
+			return Usage{}, true, err
+		}
+	}
 	var promptCachedTokens int
 	var promptCachedReported, promptCachedNull bool
 	if cacheModeled && wire.PromptDetails != nil {
@@ -479,18 +542,29 @@ func parseOpenAICompatibleUsageWithContext(data []byte, endpoint Endpoint, sourc
 				cachedTokens, creationTokens, completionTokens, totalTokens,
 				source, CacheUsageSchemaQwenV1, status,
 			)
+			usage.ProviderReasoningTokens = splitReasoning
 			return usage, true, err
 		}
 	}
 
-	// GPT-5.6 reports cache reads and writes as separate prompt token classes.
-	// Both fields are required to remain inside prompt_tokens_details so a
-	// similarly named provider extension cannot silently become billing truth.
-	if cacheModeled && cacheContract.WireSchema == modelprofile.CacheUsageWireOpenAIReadWriteV1 {
-		if (len(wire.CachedTokens) > 0 && !isJSONNullUsage(wire.CachedTokens)) ||
-			wire.PromptCacheHitTokens != nil || wire.PromptCacheMissTokens != nil ||
+	// The nested counters own the partition. Only Moonshot allows a matching
+	// legacy top-level read mirror in addition to its authoritative member.
+	if cacheModeled && (cacheContract.WireSchema == modelprofile.CacheUsageWireOpenAIReadWriteV1 || kimiReadWrite) {
+		if wire.PromptCacheHitTokens != nil || wire.PromptCacheMissTokens != nil ||
 			(wire.PromptDetails != nil && wire.PromptDetails.CacheCreationInputTokens != nil) {
 			return Usage{}, true, fmt.Errorf("cache profile %s requires prompt_tokens_details cached_tokens/cache_write_tokens without another cache schema", cacheContract.ProfileID)
+		}
+		if len(wire.CachedTokens) > 0 && !isJSONNullUsage(wire.CachedTokens) {
+			if !kimiReadWrite {
+				return Usage{}, true, fmt.Errorf("cache profile %s requires prompt_tokens_details cached_tokens/cache_write_tokens without another cache schema", cacheContract.ProfileID)
+			}
+			mirror, _, err := parseOptionalUsageCounter(wire.CachedTokens, "cached_tokens")
+			if err != nil {
+				return Usage{}, true, err
+			}
+			if !promptCachedReported || mirror != promptCachedTokens {
+				return Usage{}, true, fmt.Errorf("Kimi cached_tokens mirror must match prompt_tokens_details.cached_tokens")
+			}
 		}
 		if wire.PromptDetails != nil && (promptCachedReported || wire.PromptDetails.CacheWriteTokens != nil) {
 			if err := validateOptionalUsageCounters(
@@ -518,13 +592,13 @@ func parseOpenAICompatibleUsageWithContext(data []byte, endpoint Endpoint, sourc
 	// prompt_tokens_details.cached_tokens. The profile rejects top-level,
 	// hit/miss, and cache-write counters rather than treating a different
 	// provider schema as equivalent billing evidence.
-	if cacheModeled && cacheContract.WireSchema == modelprofile.CacheUsageWireOpenAICachedTokensV1 {
+	if cacheModeled && (cacheContract.WireSchema == modelprofile.CacheUsageWireOpenAICachedTokensV1 || xaiAdditive) {
 		if (len(wire.CachedTokens) > 0 && !isJSONNullUsage(wire.CachedTokens)) ||
 			wire.PromptCacheHitTokens != nil || wire.PromptCacheMissTokens != nil ||
 			(wire.PromptDetails != nil && (wire.PromptDetails.CacheWriteTokens != nil || wire.PromptDetails.CacheCreationInputTokens != nil)) {
 			return Usage{}, true, fmt.Errorf("cache profile %s requires prompt_tokens_details.cached_tokens without another cache schema", cacheContract.ProfileID)
 		}
-		if promptCachedNull && cacheContract.ReadCounterRequiredAtOrAbovePromptTokens > 0 {
+		if promptCachedNull && (cacheContract.ReadCounterRequiredAtOrAbovePromptTokens > 0 || xaiAdditive) {
 			return Usage{}, true, fmt.Errorf("cache profile %s rejects null prompt_tokens_details.cached_tokens", cacheContract.ProfileID)
 		}
 		if promptCachedReported {
@@ -540,6 +614,7 @@ func parseOpenAICompatibleUsageWithContext(data []byte, endpoint Endpoint, sourc
 				CacheUsageSchemaOpenAIV1,
 				CacheUsageStatusReadReported,
 			)
+			usage.ProviderReasoningTokens = splitReasoning
 			return usage, true, err
 		}
 		if cacheContract.RequireReadCounter && !(streaming && cacheContract.StreamReadCounterOptional) && (cacheContract.ReadCounterRequiredAtOrAbovePromptTokens == 0 ||
@@ -558,6 +633,7 @@ func parseOpenAICompatibleUsageWithContext(data []byte, endpoint Endpoint, sourc
 		totalTokens,
 		source,
 	)
+	usage.ProviderReasoningTokens = splitReasoning
 	return usage, true, err
 }
 

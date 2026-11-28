@@ -1,0 +1,80 @@
+{
+  "schema_version": "unirouter.endpoint-conformance-fixture.v1",
+  "fixture_id": "dashscope-tts-v1",
+  "profile_id": "unirouter.dashscope.speech.tts-3-1.v1",
+  "request": {
+    "base_url": "https://workspace-test.cn-beijing.maas.aliyuncs.com",
+    "requested_model": "project-tts",
+    "mapped_model": "qwen-audio-3.1-tts-flash",
+    "request_id": "fixture-video-1",
+    "body": "{\"model\":\"project-tts\",\"operation\":\"text_to_speech\",\"prompt\":\"Hello.\"}",
+    "expected_method": "POST",
+    "expected_url": "https://workspace-test.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer",
+    "expected_request_id_header": "fixture-video-1",
+    "expected_body": "{\"input\":{\"enable_ssml\":false,\"format\":\"wav\",\"sample_rate\":24000,\"text\":\"Hello.\",\"voice\":\"longanhuan_v3.1\"},\"model\":\"qwen-audio-3.1-tts-flash\"}"
+  },
+  "response": {
+    "status_code": 200,
+    "expected_outcome": {
+      "contract_version": "unirouter.endpoint-protocol.v1",
+      "profile_id": "unirouter.dashscope.speech.tts-3-1.v1",
+      "provider_state": "completed",
+      "mapped_model": "qwen-audio-3.1-tts-flash",
+      "output_count": 1,
+      "units": [
+        {
+          "class": "input_tokens",
+          "quantity": "12",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        },
+        {
+          "class": "output_tokens",
+          "quantity": "16",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        }
+      ]
+    },
+    "body": "{\"output\":{\"audio\":{\"data\":\"\",\"url\":\"http://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/local/speech.wav?scope=fixture\"},\"finish_reason\":\"stop\"},\"request_id\":\"fixture-tts\",\"usage\":{\"input_tokens\":12,\"output_tokens\":16,\"total_tokens\":28}}"
+  },
+  "negative_requests": [
+    {
+      "case_id": "empty-input",
+      "body": "{\"model\":\"project-tts\",\"operation\":\"text_to_speech\",\"prompt\":\"\"}",
+      "expected_code": "dashscope_tts_text_invalid"
+    }
+  ],
+  "negative_responses": [
+    {
+      "case_id": "wrong-origin",
+      "body": "{\"output\":{\"audio\":{\"url\":\"https://example.invalid/file.wav\"},\"finish_reason\":\"stop\"},\"request_id\":\"fixture-tts\",\"usage\":{\"input_tokens\":12,\"output_tokens\":16,\"total_tokens\":28}}",
+      "expected_code": "dashscope_tts_asset_origin_invalid"
+    },
+    {
+      "case_id": "no-finality",
+      "body": "{\"output\":{\"audio\":{\"data\":\"\",\"url\":\"http://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/local/speech.wav?scope=fixture\"},\"finish_reason\":null},\"request_id\":\"fixture-tts\",\"usage\":{\"input_tokens\":12,\"output_tokens\":16,\"total_tokens\":28}}",
+      "expected_code": "dashscope_tts_result_invalid"
+    },
+    {
+      "case_id": "negative-input",
+      "body": "{\"output\":{\"audio\":{\"data\":\"\",\"url\":\"http://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/local/speech.wav?scope=fixture\"},\"finish_reason\":\"stop\"},\"request_id\":\"fixture-tts\",\"usage\":{\"input_tokens\":-1}}",
+      "expected_code": "media_usage_partition_invalid"
+    },
+    {
+      "case_id": "contradictory-totals",
+      "body": "{\"output\":{\"audio\":{\"data\":\"\",\"url\":\"http://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/local/speech.wav?scope=fixture\"},\"finish_reason\":\"stop\"},\"request_id\":\"fixture-tts\",\"usage\":{\"input_tokens\":12,\"output_tokens\":0,\"total_tokens\":11}}",
+      "expected_code": "media_usage_partition_invalid"
+    }
+  ],
+  "status_cases": [
+    {
+      "case_id": "provider-failure",
+      "status_code": 503,
+      "expected_failure_kind": "channel_failure",
+      "expected_retryable": true
+    }
+  ]
+}

@@ -15,6 +15,8 @@ const (
 	DeepSeekCurrentFlashDefaultEffortProbeVersion = "3.0.0"
 	KimiStreamFunctionToolsProbeContractID        = "unirouter.capability-probe.kimi-chat-stream-tools.v1"
 	KimiStreamReasoningEffortProbeVersion         = "2.0.0"
+	KimiStreamReadWriteUsageProbeVersion          = "3.0.0"
+	MiniMaxM31StreamFunctionToolsProbeVersion     = "2.0.0"
 	MiniMaxM3StreamFunctionToolsProbeContractID   = "unirouter.capability-probe.minimax-m3-chat-stream-tools.v1"
 )
 
@@ -28,7 +30,9 @@ func validExistingFamilyStreamComposition(b Binding, p modelprofile.Profile) boo
 	}
 	switch b.ProbeContractID {
 	case DeepSeekProviderCompletionProbeContractID:
-		return p.Provider == "deepseek" && p.ProtocolProfile == modelprofile.DeepSeekProviderCompletionProtocol &&
+		compatibleProtocol := p.ProtocolProfile == modelprofile.DeepSeekProviderCompletionProtocol ||
+			(p.ProtocolProfile == modelprofile.DeepSeekInlineJPEGProtocol && b.ProbeContractVersion == DeepSeekMeaningfulStreamProbeVersion)
+		return p.Provider == "deepseek" && compatibleProtocol &&
 			p.CacheUsageProfile == "cache-usage.deepseek-v4.v1" && p.ReasoningProfile == "reasoning.deepseek-v4-flash-thinking-toggle.v5" &&
 			b.ExpectedUpstreamModel == "deepseek-flash" && len(p.UpstreamModelIDs) == 1 && p.UpstreamModelIDs[0] == "deepseek-flash" &&
 			p.UpstreamModelFamily == "deepseek-flash" && p.UpstreamVersionPolicy == "floating"

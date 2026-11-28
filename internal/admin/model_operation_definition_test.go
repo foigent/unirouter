@@ -2,10 +2,17 @@ package admin
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/uniroute/unirouter/internal/adapters"
+	"github.com/uniroute/unirouter/internal/auth"
+	publication "github.com/uniroute/unirouter/internal/modelcapabilitypublication"
 	"github.com/uniroute/unirouter/internal/modelprofile"
 )
 
@@ -62,6 +69,81 @@ func TestDataOperationProbeRejectsIdentityDriftBeforePayloadOrSummary(t *testing
 			summary, err := canonicalOperationProbeRequestSummary(s)
 			require.ErrorIs(t, err, errCanonicalOperationProbeUnsupported)
 			require.Empty(t, summary)
+		})
+	}
+}
+
+func TestQwenHostedOperationProbeChecksSentBoundsAndResponse(t *testing.T) {
+	raw, err := os.ReadFile("../../capability-bundles/qwen-beijing-hosted-chat.json")
+	require.NoError(t, err)
+	bundle, err := publication.DecodeBundleV2(raw)
+	require.NoError(t, err)
+	key := []byte("0123456789abcdef01234567")
+	encrypted, err := auth.EncryptKey([]byte("fixture-only"), key)
+	require.NoError(t, err)
+	for _, rawDefinition := range bundle.Definitions {
+		d, err := modelprofile.DecodeDefinition(rawDefinition)
+		require.NoError(t, err)
+		p := d.Profile()
+		model := p.UpstreamModelIDs[0]
+		t.Run(model, func(t *testing.T) {
+			snapshot := canonicalOperationProbeSnapshot{
+				Definition: d, ProfileDefinitionDigest: d.Digest(),
+				Provider: p.Provider, BaseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1", AdapterType: adapters.TypeOpenAICompatible,
+				AdapterConfig: json.RawMessage(`{"endpoint_path_mode":"` + modelprofile.EndpointPathModeCanonicalV1 + `"}`),
+				OperationID:   modelprofile.OperationOpenAIChat, UpstreamModel: model, EncryptedSecret: encrypted,
+				ExecutionProfileID: p.ID, ExecutionProfileVersion: p.Version,
+				ProfileID: p.ProtocolProfile, ProfileVersion: modelprofile.ChatOperationProtocolBindingVersionV1,
+			}
+			requiresThinking := p.ReasoningProfile == modelprofile.QwenHostedA95BReasoning
+			thinking := 0
+			if requiresThinking {
+				thinking = 512
+			}
+			for _, tc := range []struct {
+				name              string
+				answer, reasoning int
+				include, ok       bool
+			}{
+				{"bounded", 12, thinking, true, true},
+				{"official text includes reasoning", 29, min(thinking, 15), true, true},
+				{"answer over", 257, 0, true, false},
+				{"thinking over", 1, thinking + 1, true, false},
+				{"missing partition", 8, 0, false, !requiresThinking},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					response := fmt.Sprintf(`{"id":"fixture","object":"chat.completion","model":%q,"choices":[{"index":0,"message":{"role":"assistant","content":"Ready."},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":%d,"total_tokens":%d`, model, tc.answer+tc.reasoning, 12+tc.answer+tc.reasoning)
+					if tc.include {
+						response += fmt.Sprintf(`,"completion_tokens_details":{"reasoning_tokens":%d,"text_tokens":%d}`, tc.reasoning, tc.answer+tc.reasoning)
+					}
+					response += "}}"
+					h := NewHandler(nil, "fixture-jwt", key, nil)
+					requests := 0
+					h.SetModelDeploymentProbeHTTPDoer(canonicalOperationProbeDoerFunc(func(req *http.Request) (*http.Response, error) {
+						requests++
+						require.Equal(t, http.MethodPost, req.Method)
+						require.Nil(t, req.GetBody)
+						require.Equal(t, snapshot.BaseURL+"/chat/completions", req.URL.String())
+						var sent map[string]any
+						require.NoError(t, json.NewDecoder(req.Body).Decode(&sent))
+						require.Equal(t, model, sent["model"])
+						require.EqualValues(t, 246, sent["max_tokens"])
+						require.NotContains(t, sent, "max_completion_tokens")
+						require.NotContains(t, sent, "reasoning_effort")
+						if requiresThinking {
+							require.EqualValues(t, thinking, sent["thinking_budget"])
+							require.NotContains(t, sent, "enable_thinking")
+						} else {
+							require.Equal(t, false, sent["enable_thinking"])
+							require.NotContains(t, sent, "thinking_budget")
+						}
+						return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(response))}, nil
+					}))
+					outcome := h.executeCanonicalOperationProbe(t.Context(), snapshot, "", "fixture")
+					require.Equal(t, 1, requests, outcome.ReasonCode)
+					require.Equal(t, tc.ok, outcome.ProviderSuccess, outcome.ReasonCode)
+				})
+			}
 		})
 	}
 }

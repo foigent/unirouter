@@ -1,0 +1,80 @@
+{
+  "schema_version": "unirouter.endpoint-conformance-fixture.v1",
+  "fixture_id": "openai-responses-text-tools.v3",
+  "profile_id": "unirouter.openai.responses.text-tools.v3",
+  "request": {
+    "base_url": "https://api.openai.example",
+    "requested_model": "company-native",
+    "mapped_model": "gpt-6.2-sol",
+    "request_id": "fixture-native-function",
+    "body": "{\"input\":\"Call the function.\",\"max_output_tokens\":1024,\"model\":\"company-native\",\"tools\":[{\"description\":\"Return a value.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"key\":{\"type\":\"string\"}},\"required\":[\"key\"],\"type\":\"object\"},\"strict\":true,\"type\":\"function\"}]}",
+    "expected_method": "POST",
+    "expected_url": "https://api.openai.example/v1/responses",
+    "expected_request_id_header": "fixture-native-function",
+    "expected_body": "{\"include\":[\"reasoning.encrypted_content\"],\"input\":\"Call the function.\",\"max_output_tokens\":1024,\"model\":\"gpt-6.2-sol\",\"parallel_tool_calls\":false,\"store\":false,\"stream\":false,\"tools\":[{\"description\":\"Return a value.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"key\":{\"type\":\"string\"}},\"required\":[\"key\"],\"type\":\"object\"},\"strict\":true,\"type\":\"function\"}]}"
+  },
+  "response": {
+    "status_code": 200,
+    "body": "{\"error\":null,\"id\":\"resp_fixture\",\"incomplete_details\":null,\"model\":\"gpt-6.2-sol\",\"object\":\"response\",\"output\":[{\"encrypted_content\":\"opaque-fixture\",\"id\":\"rs_fixture\",\"summary\":[],\"type\":\"reasoning\"},{\"arguments\":\"{\\\"key\\\":\\\"check\\\"}\",\"call_id\":\"call_fixture\",\"id\":\"fc_fixture\",\"name\":\"unirouter_probe_echo\",\"status\":\"completed\",\"type\":\"function_call\"}],\"parallel_tool_calls\":false,\"status\":\"completed\",\"store\":false,\"tools\":[{\"description\":\"Return a value.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"key\":{\"type\":\"string\"}},\"required\":[\"key\"],\"type\":\"object\"},\"strict\":true,\"type\":\"function\"}],\"usage\":{\"input_tokens\":12,\"input_tokens_details\":{\"cache_write_tokens\":2,\"cached_tokens\":4},\"output_tokens\":8,\"output_tokens_details\":{\"reasoning_tokens\":5},\"total_tokens\":20}}",
+    "expected_outcome": {
+      "contract_version": "unirouter.endpoint-protocol.v1",
+      "profile_id": "unirouter.openai.responses.text-tools.v3",
+      "provider_state": "completed",
+      "provider_object_id": "resp_fixture",
+      "mapped_model": "gpt-6.2-sol",
+      "output_count": 1,
+      "units": [
+        {
+          "class": "input_tokens",
+          "quantity": "6",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        },
+        {
+          "class": "cache_read_tokens",
+          "quantity": "4",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        },
+        {
+          "class": "cache_write_tokens",
+          "quantity": "2",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        },
+        {
+          "class": "output_tokens",
+          "quantity": "8",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        }
+      ]
+    }
+  },
+  "negative_requests": [
+    {
+      "case_id": "parallel-rejected",
+      "body": "{\"input\":\"Call the function.\",\"max_output_tokens\":1024,\"model\":\"company-native\",\"parallel_tool_calls\":true,\"tools\":[{\"description\":\"Return a value.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"key\":{\"type\":\"string\"}},\"required\":[\"key\"],\"type\":\"object\"},\"strict\":true,\"type\":\"function\"}]}",
+      "expected_code": "unsupported_parallel_client_tools"
+    }
+  ],
+  "negative_responses": [
+    {
+      "case_id": "foreign-model-rejected",
+      "body": "{\"error\":null,\"id\":\"resp_fixture\",\"incomplete_details\":null,\"model\":\"gpt-6.2-astra\",\"object\":\"response\",\"output\":[{\"encrypted_content\":\"opaque-fixture\",\"id\":\"rs_fixture\",\"summary\":[],\"type\":\"reasoning\"},{\"arguments\":\"{\\\"key\\\":\\\"check\\\"}\",\"call_id\":\"call_fixture\",\"id\":\"fc_fixture\",\"name\":\"unirouter_probe_echo\",\"status\":\"completed\",\"type\":\"function_call\"}],\"parallel_tool_calls\":false,\"status\":\"completed\",\"store\":false,\"tools\":[{\"description\":\"Return a value.\",\"name\":\"unirouter_probe_echo\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"key\":{\"type\":\"string\"}},\"required\":[\"key\"],\"type\":\"object\"},\"strict\":true,\"type\":\"function\"}],\"usage\":{\"input_tokens\":12,\"input_tokens_details\":{\"cache_write_tokens\":2,\"cached_tokens\":4},\"output_tokens\":8,\"output_tokens_details\":{\"reasoning_tokens\":5},\"total_tokens\":20}}",
+      "expected_code": "public_response_identity_invalid"
+    }
+  ],
+  "status_cases": [
+    {
+      "case_id": "rate-limit",
+      "status_code": 429,
+      "expected_failure_kind": "rate_limit",
+      "expected_retryable": true
+    }
+  ]
+}

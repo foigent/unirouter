@@ -1,0 +1,42 @@
+{
+  "schema_version": "unirouter.endpoint-profile-manifest.v1",
+  "profile_id": "unirouter.minimax.speech.2-8-turbo.v1",
+  "profile_version": "1.0.0",
+  "provider": "minimax",
+  "runtime_state": "repository_local_async_media_v1",
+  "conformance_level": "fixture_verified",
+  "network_verified": false,
+  "descriptor": {
+    "contract_version": "unirouter.endpoint-protocol.v1",
+    "profile_id": "unirouter.minimax.speech.2-8-turbo.v1",
+    "profile_version": "1.0.0",
+    "provider": "minimax",
+    "endpoint_kind": "speech_synthesis",
+    "downstream_endpoint": "/v1/media/jobs",
+    "upstream_endpoint": "/v1/t2a_v2",
+    "authentication": "bearer",
+    "runtime_state": "repository_local_async_media_v1",
+    "provider_finality": "complete_bounded_pcm_wave_with_optional_reported_characters",
+    "customer_charge_state": "provider_observed_not_customer_chargeable",
+    "supported_modalities": [
+      "text_to_speech"
+    ],
+    "observed_unit_classes": [
+      "input_billable_characters"
+    ],
+    "unsupported_semantics": [
+      "websocket",
+      "streaming",
+      "raw_pcm",
+      "voice_selection",
+      "subtitle"
+    ]
+  },
+  "fixtures": [
+    {
+      "fixture_id": "minimax-tts-v1",
+      "path": "fixtures/minimax-tts-v1.json",
+      "sha256": "sha256:213106ef56cff99d6e25ccc5d58e97d2f922bdb3a7a8894ffb722a9c1bf8fd3b"
+    }
+  ]
+}

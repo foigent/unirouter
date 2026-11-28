@@ -206,7 +206,7 @@ func TestCommunityFirstUseBusinessBrowserE2E(t *testing.T) {
 	}))
 	chat := middleware.IdempotencyGuard(middleware.NewPostgresIdempotencyStore(pool), pr4BrowserAPIKeySecret, newGatewayChatHandler(pool, relay, events))
 	gatewayAuth := middleware.GatewayAuth(pool, pr4BrowserAPIKeySecret)
-	gatewayChat := middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, payloadpolicy.RequestMiddleware(payload, payloadpolicy.ProfileChatRequest, middleware.GetOrgIDFromContext))(middleware.StrictJSONIngress(middleware.ChatUpstreamAttemptPolicy(shared.GatewayRateAdmission(chat))))
+	gatewayChat := middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, payloadpolicy.RequestMiddleware(payload, payloadpolicy.ProfileChatRequest, middleware.GetOrgIDFromContext))(middleware.StrictJSONIngress(middleware.UpstreamAttemptPolicy(shared.GatewayRateAdmission(chat))))
 	mux.HandleFunc("POST /v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
 		// The last synthetic request loses only this fixture's limit client.
 		// Auth, the production admission path and durable evidence stay in service.
@@ -218,7 +218,7 @@ func TestCommunityFirstUseBusinessBrowserE2E(t *testing.T) {
 		}
 		gatewayChat.ServeHTTP(w, r)
 	})
-	mux.Handle("POST /v1/chat/completions/preflight", chatPreflightOperation(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, payloadpolicy.RequestMiddleware(payload, payloadpolicy.ProfileChatRequest, middleware.GetOrgIDFromContext))(middleware.StrictJSONIngress(middleware.ChatUpstreamAttemptPolicy(newGatewayChatPreflightHandler(pool, relay))))))
+	mux.Handle("POST /v1/chat/completions/preflight", chatPreflightOperation(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, payloadpolicy.RequestMiddleware(payload, payloadpolicy.ProfileChatRequest, middleware.GetOrgIDFromContext))(middleware.StrictJSONIngress(middleware.UpstreamAttemptPolicy(newGatewayChatPreflightHandler(pool, relay))))))
 	server := httptest.NewServer(pr4BrowserSPAHandler(filepath.Join(pr4BrowserRepositoryRoot(t), "frontend", "dist"), middleware.SecurityHeaders(middleware.OperationIdentityWithSecret(pr4BrowserAPIKeySecret)(mux))))
 	t.Cleanup(server.Close)
 	f.BaseURL = server.URL

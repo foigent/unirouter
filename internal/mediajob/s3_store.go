@@ -11,8 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -244,7 +244,7 @@ func (s *S3ObjectStore) Recover(
 		return nil, err
 	}
 	if receipt == nil {
-		receipt, err = s.recoverImageMetadata(ctx, job)
+		receipt, err = s.recoverMediaMetadata(ctx, job)
 		if err != nil || receipt == nil {
 			return nil, err
 		}
@@ -322,12 +322,12 @@ func (s *S3ObjectStore) readReceipt(
 	return &receipt, nil
 }
 
-func (s *S3ObjectStore) recoverImageMetadata(
+func (s *S3ObjectStore) recoverMediaMetadata(
 	ctx context.Context,
 	job Job,
 ) (*recoveryReceipt, error) {
 	var recovered *recoveryReceipt
-	for _, mediaType := range []string{"image/png", "image/jpeg", "image/webp"} {
+	for _, mediaType := range jobMediaTypes(job) {
 		objectKey, receiptKey, err := s.objectKeys(job, mediaType)
 		if err != nil {
 			return nil, err
@@ -410,7 +410,7 @@ func receiptFromObjectMetadata(
 }
 
 func validateRecoveryReceipt(job Job, receipt recoveryReceipt) error {
-	if _, err := imageExtension(receipt.MediaType); err != nil {
+	if !slices.Contains(jobMediaTypes(job), receipt.MediaType) {
 		return domainError(ErrConflict, "receipt_identity_conflict")
 	}
 	if receipt.SchemaVersion != ContractVersion+".recovery-receipt" ||
@@ -420,7 +420,7 @@ func validateRecoveryReceipt(job Job, receipt recoveryReceipt) error {
 		!validSHA256(receipt.ContentSHA256) ||
 		receipt.MappedModel == "" || len(receipt.MappedModel) > 200 ||
 		containsControl(receipt.MappedModel) ||
-		validateImageOutcome(job.ProfileID, receipt.MappedModel, receipt.Outcome) != nil {
+		endpointprotocol.ValidateMediaOutcome(job.ProfileID, receipt.MappedModel, receipt.Outcome) != nil {
 		return domainError(ErrConflict, "receipt_identity_conflict")
 	}
 	return nil
@@ -485,7 +485,7 @@ func (s *S3ObjectStore) Read(
 	}
 	if int64(len(body)) != job.Output.SizeBytes ||
 		sha256Digest(body) != job.Output.ContentSHA256 ||
-		detectImageMediaType(body) != job.Output.MediaType {
+		!matchesMediaType(job, job.Output.MediaType, body) {
 		return OutputContent{}, domainError(ErrConflict, "stored_object_bytes_conflict")
 	}
 	return OutputContent{MediaType: job.Output.MediaType, Bytes: body}, nil
@@ -518,7 +518,7 @@ func (s *S3ObjectStore) objectKeys(job Job, mediaType string) (string, string, e
 	if !job.Scope.Valid() || !ValidJobID(job.JobID) {
 		return "", "", domainError(ErrInvalid, "object_identity_invalid")
 	}
-	extension, err := imageExtension(mediaType)
+	extension, err := mediaExtension(mediaType)
 	if err != nil {
 		// Recover does not know the media type before reading the receipt. The
 		// receipt key is extension-independent.
@@ -544,58 +544,10 @@ func (s *S3ObjectStore) objectKeys(job Job, mediaType string) (string, string, e
 func validateProviderResult(job Job, result ProviderResult) error {
 	if !job.Scope.Valid() || !ValidJobID(job.JobID) ||
 		len(result.Bytes) == 0 || len(result.Bytes) > MaxOutputBytes ||
-		result.MediaType != detectImageMediaType(result.Bytes) ||
+		!matchesMediaType(job, result.MediaType, result.Bytes) ||
 		result.MappedModel == "" ||
-		validateImageOutcome(job.ProfileID, result.MappedModel, result.Outcome) != nil {
+		endpointprotocol.ValidateMediaOutcome(job.ProfileID, result.MappedModel, result.Outcome) != nil {
 		return domainError(ErrInvalid, "provider_result_invalid")
-	}
-	return nil
-}
-
-func validateImageOutcome(
-	profileID string,
-	mappedModel string,
-	outcome endpointprotocol.Outcome,
-) error {
-	if profileID != endpointprotocol.ProfileOpenAIImageGPT ||
-		mappedModel == "" || len(mappedModel) > 200 ||
-		containsControl(mappedModel) ||
-		outcome.ContractVersion != endpointprotocol.ContractVersion ||
-		outcome.ProfileID != profileID ||
-		outcome.ProviderState != "completed" ||
-		outcome.MappedModel != mappedModel ||
-		outcome.OutputCount != 1 ||
-		len(outcome.Units) != 4 {
-		return domainError(ErrInvalid, "image_outcome_invalid")
-	}
-	expected := map[endpointprotocol.UnitClass]bool{
-		endpointprotocol.UnitInputTokens:       false,
-		endpointprotocol.UnitInputTextTokens:   false,
-		endpointprotocol.UnitInputImageTokens:  false,
-		endpointprotocol.UnitOutputImageTokens: false,
-	}
-	quantities := make(map[endpointprotocol.UnitClass]int64, len(expected))
-	for _, unit := range outcome.Units {
-		seen, exists := expected[unit.Class]
-		if !exists || seen ||
-			unit.Authority != "provider_reported" ||
-			unit.Finality != "final" ||
-			unit.ChargeState != endpointprotocol.ChargeObservedOnly {
-			return domainError(ErrInvalid, "image_usage_units_invalid")
-		}
-		if quantity, err := strconv.ParseInt(unit.Quantity, 10, 64); err != nil ||
-			quantity < 0 || strconv.FormatInt(quantity, 10) != unit.Quantity {
-			return domainError(ErrInvalid, "image_usage_quantity_invalid")
-		} else {
-			quantities[unit.Class] = quantity
-		}
-		expected[unit.Class] = true
-	}
-	textTokens := quantities[endpointprotocol.UnitInputTextTokens]
-	imageTokens := quantities[endpointprotocol.UnitInputImageTokens]
-	if textTokens > 9_223_372_036_854_775_807-imageTokens ||
-		quantities[endpointprotocol.UnitInputTokens] != textTokens+imageTokens {
-		return domainError(ErrInvalid, "image_usage_partition_invalid")
 	}
 	return nil
 }
@@ -617,7 +569,39 @@ func persistedFromReceipt(receipt recoveryReceipt) PersistedResult {
 	}
 }
 
-func imageExtension(mediaType string) (string, error) {
+func jobMediaTypes(job Job) []string {
+	switch job.Operation {
+	case OperationTextToVideo:
+		return []string{"video/mp4"}
+	case OperationImageToText, OperationSpeechToText:
+		return []string{"text/plain; charset=utf-8"}
+	case OperationTextToSpeech:
+		return []string{"audio/wav"}
+	default:
+		return []string{"image/png", "image/jpeg", "image/webp"}
+	}
+}
+
+func matchesMediaType(job Job, mediaType string, body []byte) bool {
+	if mediaType == "" || !slices.Contains(jobMediaTypes(job), mediaType) {
+		return false
+	}
+	if mediaType == "text/plain; charset=utf-8" {
+		return endpointprotocol.ValidMediaTranscript(body)
+	}
+	if mediaType == "audio/wav" {
+		info, ok := endpointprotocol.ValidatePCM16WAV(body)
+		return ok && info.HasSignal && info.DurationMS <= endpointprotocol.MediaTTSMaxOutputMS
+	}
+	if mediaType == "video/mp4" {
+		profile, err := endpointprotocol.NewRegistry().Get(job.ProfileID)
+		async, ok := profile.(endpointprotocol.AsyncMediaProfile)
+		return err == nil && ok && endpointprotocol.ValidateMP4(body, async.VideoRequirements())
+	}
+	return endpointprotocol.DetectImageMediaType(body) == mediaType
+}
+
+func mediaExtension(mediaType string) (string, error) {
 	switch mediaType {
 	case "image/png":
 		return ".png", nil
@@ -625,28 +609,14 @@ func imageExtension(mediaType string) (string, error) {
 		return ".jpg", nil
 	case "image/webp":
 		return ".webp", nil
+	case "video/mp4":
+		return ".mp4", nil
+	case "text/plain; charset=utf-8":
+		return ".txt", nil
+	case "audio/wav":
+		return ".wav", nil
 	default:
 		return "", domainError(ErrInvalid, "media_type_invalid")
-	}
-}
-
-func detectImageMediaType(body []byte) string {
-	if len(body) < 12 {
-		return ""
-	}
-	switch {
-	case bytes.HasPrefix(body, []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}):
-		return "image/png"
-	case bytes.HasPrefix(body, []byte{0xff, 0xd8, 0xff}):
-		return "image/jpeg"
-	case bytes.Equal(body[:4], []byte("RIFF")) && bytes.Equal(body[8:12], []byte("WEBP")):
-		return "image/webp"
-	default:
-		detected := http.DetectContentType(body)
-		if detected == "image/png" || detected == "image/jpeg" || detected == "image/webp" {
-			return detected
-		}
-		return ""
 	}
 }
 

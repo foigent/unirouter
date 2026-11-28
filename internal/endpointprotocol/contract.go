@@ -20,10 +20,14 @@ const (
 	ProfileAnthropicMessagesTextV2 = "unirouter.anthropic.messages.text.v2"
 	ProfileAnthropicMessagesTextV3 = "unirouter.anthropic.messages.text-tools.v3"
 	ProfileCohereRerankV2          = "unirouter.cohere.rerank.v2"
+	ProfileMiniMaxH3Image          = "unirouter.minimax.images.h3.v1"
+	ProfileDashScopeQwenImage      = "unirouter.dashscope.images.qwen-3.v1"
 	ProfileOpenAIImageGPT          = "unirouter.openai.images.gpt-image.v1"
 
 	RuntimeContractOnly      = "local_contract_only"
 	RuntimeRepositoryImageV1 = "repository_local_image_v1"
+
+	RuntimeRepositoryAsyncMediaV1 = "repository_local_async_media_v1"
 
 	ChargeObservedOnly = "provider_observed_not_customer_chargeable"
 )
@@ -34,7 +38,11 @@ const (
 	EndpointResponses       EndpointKind = "responses"
 	EndpointMessages        EndpointKind = "messages"
 	EndpointRerank          EndpointKind = "rerank"
+	EndpointVideoGeneration EndpointKind = "video_generation"
 	EndpointImageGeneration EndpointKind = "image_generation"
+	EndpointOCR             EndpointKind = "ocr"
+	EndpointTranscription   EndpointKind = "transcription"
+	EndpointSpeechSynthesis EndpointKind = "speech_synthesis"
 )
 
 type UnitClass string
@@ -46,7 +54,10 @@ const (
 	UnitOutputTokens      UnitClass = "output_tokens"
 	UnitSearchUnits       UnitClass = "search_units"
 	UnitInputTextTokens   UnitClass = "input_text_tokens"
+	UnitInputImages       UnitClass = "input_images"
+	UnitOutputImages      UnitClass = "output_images"
 	UnitInputImageTokens  UnitClass = "input_image_tokens"
+	UnitInputAudioTokens  UnitClass = "input_audio_tokens"
 	UnitOutputImageTokens UnitClass = "output_image_tokens"
 )
 
@@ -108,12 +119,15 @@ type BuildInput struct {
 	RequestedModel string
 	MappedModel    string
 	Body           []byte
+	// LegacyImageDelivery is restricted to historical media routing.
+	LegacyImageDelivery bool
 }
 
 // Binding is an opaque parse capability created only after a request passes a
 // profile's strict request validation. It binds response checks to the exact
 // request semantics without becoming a log or API payload.
 type Binding struct {
+	inputDurationMS int64
 	profileID       string
 	profileVersion  string
 	requestedModel  string
@@ -122,6 +136,7 @@ type Binding struct {
 	documentCount   int
 	topN            int
 	outputCount     int
+	imageDelivery   imageDeliveryConstraints
 	publicContract  *PublicRequestContract
 	publicSemantics PublicInvocationSemantics
 }
@@ -134,14 +149,24 @@ type UnitObservation struct {
 	ChargeState string    `json:"charge_state"`
 }
 
+// MediaArtifact is delivery data for the local worker. Provider assets are
+// deliberately absent from evidence, public responses and recovery receipts.
+type MediaArtifact struct {
+	Bytes     []byte
+	MediaType string
+}
+
 type Outcome struct {
-	ContractVersion string            `json:"contract_version"`
-	ProfileID       string            `json:"profile_id"`
-	ProviderState   string            `json:"provider_state"`
-	ProviderObject  string            `json:"provider_object_id"`
-	MappedModel     string            `json:"mapped_model,omitempty"`
-	OutputCount     int               `json:"output_count"`
-	Units           []UnitObservation `json:"units"`
+	VerifiedProviderModel string            `json:"-"`
+	ResultURL             string            `json:"-"`
+	Media                 *MediaArtifact    `json:"-"`
+	ContractVersion       string            `json:"contract_version"`
+	ProfileID             string            `json:"profile_id"`
+	ProviderState         string            `json:"provider_state"`
+	ProviderObject        string            `json:"provider_object_id"`
+	MappedModel           string            `json:"mapped_model,omitempty"`
+	OutputCount           int               `json:"output_count"`
+	Units                 []UnitObservation `json:"units"`
 }
 
 type Profile interface {
@@ -167,11 +192,33 @@ func NewRegistry() *Registry {
 	return newRegistry(
 		openAIResponsesProfile{},
 		openAIResponsesProfileV2{},
+		openAIResponsesToolsProfileV3{},
 		anthropicMessagesProfile{},
 		anthropicMessagesProfileV2{},
 		anthropicMessagesProfileV3{},
 		cohereRerankProfile{},
 		openAIImageProfile{},
+		dashScopeQwenImageProfile{},
+		miniMaxH3ImageProfile{},
+		dashScopeWanVideoProfile{},
+		miniMaxH3VideoProfile{},
+		glmCogVideoProfile{},
+		glmImageProfile{},
+		deepSeekOCRProfile{},
+		glmOCRProfile{},
+		deepSeekSpeechProfile{},
+		deepSeekSpeechProfile{synthesize: true},
+		miniMaxSpeechProfile{},
+		miniMaxSpeechProfile{synthesize: true},
+		glmSpeechProfile{},
+		glmSpeechProfile{synthesize: true},
+		openAITranscribeProfile{},
+		miMoSpeechProfile{},
+		miMoSpeechProfile{synthesize: true},
+		dashScopeSpeechProfile{},
+		dashScopeSpeechSynthesisProfile{},
+		nativeInlineJPEGRepositoryProfile{codec: publicResponsesInlineJPEGProfile()},
+		nativeInlineJPEGRepositoryProfile{codec: publicMessagesInlineJPEGProfile()},
 	)
 }
 

@@ -61,6 +61,7 @@ function operationIDs(profile: ModelExecutionProfile): CanonicalOperationID[] {
     openai_chat_completions: 'openai.chat_completions.v1',
     openai_responses: 'openai.responses.v1',
     anthropic_messages: 'anthropic.messages.v1',
+    openai_images: 'unirouter.media_jobs.v1',
   };
   const expected = expectedBySurface[profile.api_surface];
   const declared = unique((profile.operations || []).map(value => String(value || '').trim()));
@@ -85,7 +86,7 @@ export function reviewedModelOptions(
       published.push(profile);
       continue;
     }
-    if (profile.current !== true) continue;
+    if (profile.api_surface === 'openai_images' || profile.current !== true) continue;
     if (current.has(profile.id)) {
       ambiguous.add(profile.id);
       current.delete(profile.id);

@@ -25,6 +25,8 @@ func registerModelDeploymentRoutes(mux *http.ServeMux, handler *admin.Handler, g
 	mux.Handle("GET /api/v1/model-deployments/{deploymentID}/model-discovery", guards.write(handler.DiscoverCanonicalModels))
 	mux.Handle("POST /api/v1/model-deployments", guards.write(handler.CreateCanonicalModelApplication))
 	mux.Handle("POST /api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes", guards.write(handler.ProbeCanonicalModelOperation))
+	mux.Handle("GET /api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes", guards.write(handler.ReadCanonicalAsyncModelOperationProbe))
+	mux.Handle("GET /api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes/{probeRunRef}", guards.write(handler.ReadCanonicalAsyncModelOperationProbe))
 	mux.Handle("POST /api/v1/model-deployments/{deploymentID}/operations/{operationID}/production-approvals", guards.approve(handler.ApproveCanonicalModelOperationProduction))
 	mux.Handle("GET /api/v1/model-deployments/{deploymentID}/operations/{operationID}/capabilities/{capabilityID}", guards.read(handler.GetCanonicalModelCapabilityQualification))
 	mux.Handle("POST /api/v1/model-deployments/{deploymentID}/operations/{operationID}/capabilities/{capabilityID}/probes", guards.write(handler.ProbeCanonicalModelCapability))

@@ -9,10 +9,15 @@ import (
 	"time"
 
 	"github.com/uniroute/unirouter/internal/executioncontext"
+	"github.com/uniroute/unirouter/internal/executionevidence"
 	"github.com/uniroute/unirouter/internal/mediajob"
 )
 
 func (s *Service) mediaRouteID(job mediajob.Job, route mediajob.SourceMediaRoute) string {
+	if route.Canonical != nil {
+		digest, _ := executionevidence.DigestV2(*route.Canonical)
+		return sourceID("unirouter.media-canonical-route.v1", s.mediaAttemptID(job, job.Attempt), digest)
+	}
 	return sourceID("unirouter.media-route.v1", s.mediaAttemptID(job, job.Attempt), strconv.Itoa(route.Sequence), executioncontext.ID(route.ChannelID), executioncontext.ID(route.ChannelKeyID))
 }
 func (s *Service) mediaRouteObservation(job mediajob.Job, route mediajob.SourceMediaRoute, profile, kind string, at time.Time) Observation {
@@ -21,10 +26,21 @@ func (s *Service) mediaRouteObservation(job mediajob.Job, route mediajob.SourceM
 	return d
 }
 func validateMediaRoute(job mediajob.Job, route mediajob.SourceMediaRoute) error {
-	if job.Attempt <= 0 || job.Attempt > job.MaxAttempts || route.Sequence < 1 || route.Sequence > route.Total || route.Total > mediajob.MaxSourceMediaRoutes || route.ChannelID <= 0 || route.ChannelKeyID <= 0 {
+	if job.Attempt <= 0 || job.Attempt > job.MaxAttempts || route.Sequence < 1 || route.Sequence > route.Total || route.Total > mediajob.MaxSourceMediaRoutes {
 		return errors.New("invalid media route observation")
 	}
-	return nil
+	if job.CanonicalDispatch != nil && route.Canonical != nil && route.ChannelID == 0 && route.ChannelKeyID == 0 &&
+		route.Sequence == 1 && route.Total == 1 {
+		accepted, acceptedErr := executionevidence.DigestV2(*job.CanonicalDispatch)
+		dispatched, dispatchedErr := executionevidence.DigestV2(*route.Canonical)
+		if acceptedErr == nil && dispatchedErr == nil && accepted == dispatched {
+			return nil
+		}
+	}
+	if job.CanonicalRoute == nil && route.Canonical == nil && route.ChannelID > 0 && route.ChannelKeyID > 0 {
+		return nil
+	}
+	return errors.New("invalid media route observation authority")
 }
 func (s *Service) BeforeMediaRoute(ctx context.Context, job mediajob.Job, route mediajob.SourceMediaRoute) error {
 	if !s.ObservationsEnabled() {

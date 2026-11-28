@@ -421,7 +421,7 @@ func canonicalEligibility(value snapshot, candidate canonicalCandidate, operatio
 // contracts are safe to expose to customer traffic.
 func operationEvidenceAdmitsProduction(operation, evidenceState string) bool {
 	switch modeloperation.ID(operation) {
-	case modeloperation.IDResponses, modeloperation.IDMessages:
+	case modeloperation.IDResponses, modeloperation.IDMessages, modeloperation.IDMediaJobs:
 		return evidenceState == "production_approved"
 	default:
 		switch evidenceState {

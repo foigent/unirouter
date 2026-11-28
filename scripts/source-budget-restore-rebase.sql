@@ -22,6 +22,31 @@ BEGIN
     LOCK TABLE schema_migrations IN SHARE MODE;
     SELECT array_agg(version::text ORDER BY version) INTO ledger FROM schema_migrations;
     certified_ledger := ledger;
+    IF ledger[cardinality(ledger)]='000136_async_media_provider_task' THEN
+      IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000135_canonical_media_job_authority' THEN
+        RAISE EXCEPTION 'budget coverage requires exact M136 predecessor'; END IF;
+      ledger := ledger[1:cardinality(ledger)-1];
+    END IF;
+    IF ledger[cardinality(ledger)]='000135_canonical_media_job_authority' THEN
+      IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000134_native_inline_jpeg_public_bindings' THEN
+        RAISE EXCEPTION 'budget coverage requires exact M135 predecessor'; END IF;
+      ledger := ledger[1:cardinality(ledger)-1];
+    END IF;
+    IF ledger[cardinality(ledger)]='000134_native_inline_jpeg_public_bindings' THEN
+      IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000133_media_charge_source_facts' THEN
+        RAISE EXCEPTION 'budget coverage requires exact M134 predecessor'; END IF;
+      ledger := ledger[1:cardinality(ledger)-1];
+    END IF;
+    IF ledger[cardinality(ledger)]='000133_media_charge_source_facts' THEN
+      IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000132_openai_responses_client_tools' THEN
+        RAISE EXCEPTION 'budget coverage requires exact M133 predecessor'; END IF;
+      ledger := ledger[1:cardinality(ledger)-1];
+    END IF;
+    IF ledger[cardinality(ledger)]='000132_openai_responses_client_tools' THEN
+      IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000131_customer_standard_pricing' THEN
+        RAISE EXCEPTION 'budget coverage requires exact M132 predecessor'; END IF;
+      ledger := ledger[1:cardinality(ledger)-1];
+    END IF;
     IF ledger[cardinality(ledger)]='000131_customer_standard_pricing' THEN
       IF ledger[cardinality(ledger)-1] IS DISTINCT FROM '000130_upgrade_admission_recovery' THEN
         RAISE EXCEPTION 'budget coverage requires exact M131 predecessor'; END IF;
@@ -174,12 +199,17 @@ BEGIN
        AND head IS DISTINCT FROM '000126_commercial_license_retirement' AND head IS DISTINCT FROM '000127_xinsight_communication_policy'
        AND head IS DISTINCT FROM '000128_upstream_release_observation' AND head IS DISTINCT FROM '000129_upstream_observation_restore_namespace'
        AND head IS DISTINCT FROM '000130_upgrade_admission_recovery'
-       AND head IS DISTINCT FROM '000131_customer_standard_pricing' THEN
+       AND head IS DISTINCT FROM '000131_customer_standard_pricing'
+       AND head IS DISTINCT FROM '000132_openai_responses_client_tools'
+       AND head IS DISTINCT FROM '000133_media_charge_source_facts'
+       AND head IS DISTINCT FROM '000134_native_inline_jpeg_public_bindings'
+       AND head IS DISTINCT FROM '000135_canonical_media_job_authority'
+       AND head IS DISTINCT FROM '000136_async_media_provider_task' THEN
       IF present<>0 THEN RAISE EXCEPTION 'restored C tables require the exact M119 ledger'; END IF;
       RETURN;
     END IF;
     IF present<>8 THEN RAISE EXCEPTION 'restored C schema is incomplete'; END IF;
-    IF head IN ('000120_unpublished_content_reclamation','000121_gateway_pre_dispatch_terminal','000122_scoped_content_policy','000123_xinsight_policy_delegation','000124_xinsight_receiver_adoption','000125_xinsight_control_credential_lifecycle','000126_commercial_license_retirement','000127_xinsight_communication_policy','000128_upstream_release_observation','000129_upstream_observation_restore_namespace','000130_upgrade_admission_recovery','000131_customer_standard_pricing') THEN
+    IF head IN ('000120_unpublished_content_reclamation','000121_gateway_pre_dispatch_terminal','000122_scoped_content_policy','000123_xinsight_policy_delegation','000124_xinsight_receiver_adoption','000125_xinsight_control_credential_lifecycle','000126_commercial_license_retirement','000127_xinsight_communication_policy','000128_upstream_release_observation','000129_upstream_observation_restore_namespace','000130_upgrade_admission_recovery','000131_customer_standard_pricing','000132_openai_responses_client_tools','000133_media_charge_source_facts','000134_native_inline_jpeg_public_bindings','000135_canonical_media_job_authority','000136_async_media_provider_task') THEN
       IF NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='execution_content_objects'::regclass AND attname='reclaimed_at' AND NOT attisdropped AND atttypid='timestamptz'::regtype AND NOT attnotnull) THEN
         RAISE EXCEPTION 'restored content reclamation schema mismatch'; END IF;
     ELSIF EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='execution_content_objects'::regclass AND attname='reclaimed_at' AND NOT attisdropped) THEN

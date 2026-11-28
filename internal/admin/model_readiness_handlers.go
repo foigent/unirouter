@@ -425,7 +425,7 @@ func canonicalReadinessOperationVerified(operation canonicalOperationAxis) bool 
 		return false
 	}
 	switch modeloperation.ID(operation.OperationID) {
-	case modeloperation.IDResponses, modeloperation.IDMessages:
+	case modeloperation.IDResponses, modeloperation.IDMessages, modeloperation.IDMediaJobs:
 		return operation.EvidenceState == "production_approved" &&
 			operation.ProductionQualification.Qualified &&
 			operation.ProductionQualification.State == "production_qualified"

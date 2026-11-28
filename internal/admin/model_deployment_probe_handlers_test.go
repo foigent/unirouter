@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -161,6 +162,82 @@ func TestCanonicalOperationProbeDefaultTransportBoundsTimeAndHeadersAndRejectsRe
 	require.True(t, ok)
 	require.Equal(t, int64(canonicalOperationProbeMaxHeaderBytes), transport.MaxResponseHeaderBytes)
 	require.ErrorIs(t, client.CheckRedirect(&http.Request{}, nil), http.ErrUseLastResponse)
+}
+
+func TestManagementProbePaidPOSTsUseSingleSendTransport(t *testing.T) {
+	for _, path := range []struct {
+		name    string
+		client  *http.Client
+		timeout time.Duration
+	}{
+		{"connection and native leg", singleOperationProbeHTTPClient, canonicalOperationProbeTimeout},
+		{"typed capability and group", modelCapabilityProbeDefaultHTTPClient, modelCapabilityProbeTimeout},
+		{"image operation", canonicalImageProbeHTTPClient, canonicalImageProbeTimeout},
+	} {
+		t.Run(path.name, func(t *testing.T) {
+			for _, scenario := range []string{"normal", "body read then disconnect", "redirect"} {
+				t.Run(scenario, func(t *testing.T) {
+					var received atomic.Int32
+					const body = `{"model":"synthetic","prompt":"probe"}`
+					upstream := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+						received.Add(1)
+						wire, err := io.ReadAll(req.Body)
+						if err != nil || req.ProtoMajor != 1 || req.Method != http.MethodPost || string(wire) != body {
+							t.Errorf("unexpected physical request method=%s proto=%s", req.Method, req.Proto)
+							http.Error(w, "unexpected fixture request", http.StatusBadRequest)
+							return
+						}
+						switch scenario {
+						case "body read then disconnect":
+							conn, _, err := w.(http.Hijacker).Hijack()
+							if err != nil {
+								t.Error(err)
+								return
+							}
+							_ = conn.Close()
+						case "redirect":
+							w.Header().Set("Location", "/unexpected-replay")
+							w.WriteHeader(http.StatusTemporaryRedirect)
+						default:
+							w.WriteHeader(http.StatusOK)
+						}
+					}))
+					upstream.EnableHTTP2 = true
+					upstream.StartTLS()
+					defer upstream.Close()
+					configured := path.client.Transport.(*http.Transport)
+					require.Equal(t, path.timeout, path.client.Timeout)
+					require.True(t, configured.Protocols.HTTP1())
+					require.False(t, configured.Protocols.HTTP2())
+					require.True(t, configured.DisableKeepAlives)
+					transport := configured.Clone()
+					transport.Proxy = nil
+					transport.TLSClientConfig = upstream.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
+					transport.TLSClientConfig.NextProtos = []string{"http/1.1"}
+					client := *path.client
+					client.Transport = transport
+					req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, upstream.URL, strings.NewReader(body))
+					require.NoError(t, err)
+					require.NotNil(t, req.GetBody)
+					reply, err := (&Handler{}).sendModelProbe(req, &client)
+					require.Nil(t, req.GetBody)
+					require.EqualValues(t, 1, received.Load())
+					if scenario == "body read then disconnect" {
+						require.Error(t, err)
+						require.Nil(t, reply)
+					} else {
+						require.NoError(t, err)
+						defer reply.Body.Close()
+						wantStatus := http.StatusOK
+						if scenario == "redirect" {
+							wantStatus = http.StatusTemporaryRedirect
+						}
+						require.Equal(t, wantStatus, reply.StatusCode)
+					}
+				})
+			}
+		})
+	}
 }
 
 func TestCanonicalOperationProbeUsesConfiguredAzureAdapterForEmbeddings(t *testing.T) {

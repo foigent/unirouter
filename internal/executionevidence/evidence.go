@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/uniroute/unirouter/internal/modeloperation"
 	"time"
 )
 
@@ -153,8 +155,7 @@ func NormalizeCompact(value CompactProjection) (CompactProjection, error) {
 		return CompactProjection{}, invalid("compact_v1_public_bundle")
 	}
 	if value.ContractVersion == ContractVersionV2 && (!publicPresent ||
-		value.AuthorityMode != ModeCanonical ||
-		(value.ModelOperationID != "openai.responses.v1" && value.ModelOperationID != "anthropic.messages.v1")) {
+		value.AuthorityMode != ModeCanonical || !isPublicOperation(value.ModelOperationID)) {
 		return CompactProjection{}, invalid("compact_v2_public_bundle")
 	}
 	switch value.AuthorityMode {
@@ -376,7 +377,12 @@ func isKnownContractVersion(value string) bool {
 }
 
 func isPublicOperation(value string) bool {
-	return value == "openai.responses.v1" || value == "anthropic.messages.v1"
+	switch modeloperation.ID(value) {
+	case modeloperation.IDResponses, modeloperation.IDMessages, modeloperation.IDMediaJobs:
+		return true
+	default:
+		return false
+	}
 }
 
 func validBounded(value string, limit int) bool {
